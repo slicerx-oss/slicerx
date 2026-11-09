@@ -8,6 +8,7 @@ import { useStore } from 'zustand'
 import { playback, playbackTime } from './playback'
 import { buildTimeline, clock, fitOf, movesAt, movesOf, positionAt, sliderOf, timeOfSlider } from '../../lib/preview-timeline'
 import { toolChangerFor } from '../../lib/toolchanger'
+import { changeLabel } from './change-label'
 import { lengthLabel, previewStats } from '../../lib/preview-stats'
 import { resolveSlots } from '../../filament/slots'
 import { Swatch } from '../../parts'
@@ -382,17 +383,23 @@ export function LayerDock() {
   // A typed layer, a pin and a right-click on the Layer track all go to a layer the same way: playback stops there.
   const jump = (k: number) => (setPlaying(false), stepLayer(0, k))
 
+  // A narrow bar or a phone says "Change 3 of 8"; a wide one the whole line with the slot.
+  const changeText = toolChange ? changeLabel(changer?.kind === 'filament-swap', changeIndex, timeline.changes.length, changeTo, narrow || compact) : null
   // Layer, Z and layer time, or the change and purge in their place.
   const readout = (
     <span className="dock-read sx-mono sx-dim">
       {/* During a purge its grams take the layer's place (the layer slider shows both), so the line keeps its length. */}
-      {purge && !layerJump ? null : (
+      {/* On a phone a change's words take the layer's place the same way (the Layer slider shows it). */}
+      {(purge || (changeText && compact)) && !layerJump ? null : (
         <>
           <LayerJump top={top} n={n} layerZ={preview.layerZ} short={narrow} onJump={jump} />
-          <span className="hide-sm dock-z" {...(narrow ? tipAttrs({ title: 'Height of this layer' }) : {})}>
-            {narrow ? null : 'Z '}
-            <b>{z.toFixed(2)}</b> mm
-          </span>
+          {/* On a narrow bar a change's words take the Z's place (the Layer row shows it too). */}
+          {changeText && (narrow || compact) ? null : (
+            <span className="hide-sm dock-z" {...(narrow ? tipAttrs({ title: 'Height of this layer' }) : {})}>
+              {narrow ? null : 'Z '}
+              <b>{z.toFixed(2)}</b> mm
+            </span>
+          )}
         </>
       )}
       {/* A change takes the layer time's place, so the readout keeps its line and the transport does not move. */}
@@ -402,9 +409,9 @@ export function LayerDock() {
           <b>{layerT < 60 ? `${layerT.toFixed(0)} s` : `${Math.floor(layerT / 60)}m ${Math.round(layerT % 60)}s`}</b>
         </span>
       )}
-      {toolChange ? (
-        <span data-testid="pv-change">
-          {changer?.kind === 'filament-swap' ? 'Filament change' : 'Tool change'} <b>{changeIndex + 1}</b> of {timeline.changes.length}, to slot {changeTo + 1}
+      {changeText ? (
+        <span className="dock-change" data-testid="pv-change" aria-label={changeText.full} {...(changeText.tail ? {} : tipAttrs({ title: changeText.full }))}>
+          {changeText.lead} <b>{changeText.n}</b> of {changeText.count}{changeText.tail}
         </span>
       ) : null}
       {purge ? (

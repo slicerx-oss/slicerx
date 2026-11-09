@@ -28,7 +28,7 @@ import { framingIsHeld, hideOtherTag, otherPick, selectOther, selectOtherOn, set
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
-import { appStore, selectedIds, set, shownSlice, toast, toggledSelection, useApp, type AppState } from '../state/store'
+import { appStore, get, selectedIds, set, shownSlice, toast, toggledSelection, useApp, type AppState } from '../state/store'
 import { cadShown, modelMode, showsDesign } from '../state/model-mode'
 import { isPhoneLayout, onPhoneLayout } from '../lib/phone-layout'
 import { modelReveal, type RevealMemory } from './model-reveal'
@@ -462,6 +462,22 @@ export function ViewportHost({ layers }: { layers: boolean }) {
           })
           .catch(() => {})
       }
+      // An IDEX print's copy mode, read from the start G-code once per preview: in duplication or mirror mode both
+      // carriages print, so the tool changer drops out (toolChangerFor). A mode read for an older preview counts for none.
+      let copyFor: PreviewBuffers | null = null
+      const syncCopyMode = (s: AppState) => {
+        const p = s.preview
+        // The text is there once the slice is done; until then the same preview is tried again.
+        if (p === copyFor || (p && s.slice.status !== 'done')) return
+        copyFor = p
+        if (!p || toolChangerFor(s)?.kind !== 'idex-park') return
+        void import('../workspaces/preview/copy-mode')
+          .then((d) => d.loadCopyMode(host, p))
+          .then((mode) => {
+            if (mode && copyFor === p && get().preview === p) set({ copyMode: { preview: p, mode } })
+          })
+          .catch(() => {})
+      }
       const pushPaint = (entries: AppState['plate'], before: AppState['plate'] | null) => {
         if (!vp.setPaintData) return
         for (const e of entries) {
@@ -542,7 +558,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (first || s.moveCut !== prev.moveCut || s.layerHi !== prev.layerHi || s.preview !== prev.preview) vp.setMoveCut(moveCount(s.preview, s.layerHi, s.moveCut))
         // The printer's own toolhead, its tool changer and, during playback, where the head is in a change.
         if (vp.setHeadModel && (first || s.profile !== prev.profile)) vp.setHeadModel(headFor(s.profile?.printerId))
-        if (vp.setToolChanger && (first || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy || s.bed !== prev.bed || s.preview !== prev.preview || s.slice !== prev.slice)) {
+        if (vp.setToolChanger && (first || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy || s.bed !== prev.bed || s.preview !== prev.preview || s.slice !== prev.slice || s.copyMode !== prev.copyMode)) {
+          syncCopyMode(s)
           const spec = toolChangerFor(s)
           if (spec !== changerSent) {
             changerSent = spec

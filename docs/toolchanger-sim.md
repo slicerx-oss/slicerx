@@ -140,7 +140,7 @@ How it works. Two complete carriages, each with its own hotend and filament, rid
 
 Which printers get it. `kindOf` reads the catalog's kinematics (`printers.json`, `idex`) before it counts nozzles, so the J1's two nozzles are two carriages, not the H2D's head. An IDEX printer whose settings have one extruder (the Sovol SV04 today, which has no machine profile and slices with manual swaps) plays no change. The Snapmaker Artisan's dual extrusion module is neither IDEX nor the H2D's head, and plays no change until its mechanism is checked.
 
-Not played. Duplication and mirror modes (the J1's plate names `IDEXDupl`, `IDEXCopy`, `IDEXMirr` and `M605 S2` or `S3`) print with both carriages at once. Preview cannot tell them from a normal print, since the mode comes from the start G-code text, which it does not read before playback; such a print with two filaments would show the swaps of a normal one.
+Not played. Duplication and mirror modes print with both carriages at once, each its own copy, so there is no change to play. Once a slice is done, the app reads the lines of its G-code before the first move (the rendered start G-code, the same way the purge reader reads the lines it needs) and takes the mode from the last `M605` outside a comment: `S2` duplicates, `S3` mirrors, any other mode clears it, the rule the engine's copy check uses. The J1's start G-code writes `M605 S2 X162 R0` for a plate named `IDEXDupl` or `IDEXCopy`, `M605 S3` for `IDEXMirr` and `M605 S4` (backup, one carriage at a time, changes play as usual) for `IDEXBack`. In a copy mode `toolChangerSpec` gets `copy` in its hints and returns no changer for `idex-park`, so the timeline has no changes and Preview draws the printer's one head, as for any printer without a changer (the second carriage and its copy are not drawn). Until the lines are read (a moment after the slice) the print plays as a normal one.
 
 Drawing. Two of the printer family's own heads (the Snapmaker printing module on the J1; the generic head where a family has none), each on its own carriage, and a rail behind them from one parked carriage's outer side to the other's. The idle carriage stands at its end; the shadow follows the printing one. heimdall's collision data (`head-shapes.json`) keeps the J1's two family heads with no changer route, as before.
 
@@ -152,6 +152,7 @@ Drawing. Two of the printer family's own heads (the Snapmaker printing module on
 | Lift by the process z hop (0.4 mm on the J1) | no lift in the change G-code | estimated |
 | Temperature wait: the profile's change time, at least 0.8 s | `M109 ... C3 W1` in the change G-code; the profile gives 0 s | estimated |
 | Other IDEX printers: the old carriage parks before the new one comes in | no source | estimated |
+| Copy modes: `M605 S2` duplicates, `M605 S3` mirrors, `M605 S4` is backup | the J1's start G-code writes all three, with its own comments naming each mode | measured |
 
 Sources: the J1 machine profile and its start and change G-code (`packages/profiles/machine.json`, family `maker_snapmaker_j1` in `packages/profiles/gcode.json`); snapmaker.com/blog/snapmaker-j1-fast-3d-printer; `packages/settings/profiles/printers.json` (kinematics).
 

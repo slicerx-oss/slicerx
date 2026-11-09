@@ -7,6 +7,7 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 ### Added
 
 - IDEX tool changes (`idex-park`): the printing carriage parks at its own end of X while the other one comes in for the next move, at once on the Snapmaker J1, one after the other elsewhere. `toolChangerSpec` takes the catalog's kinematics as a fifth argument (`ChangerHints`) and reads `idex` before it counts nozzles. A pose carries both carriages' X (`carriages`, `active`), and the toolhead draws two of the family's heads on one rail.
+- `ChangerHints.copy`: a print in an IDEX copy mode (duplication or mirror, read by the caller from the start G-code) has no changer, since both carriages print the whole time.
 
 ### Changed
 

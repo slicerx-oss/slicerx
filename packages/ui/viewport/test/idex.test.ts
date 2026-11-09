@@ -50,6 +50,15 @@ describe('which printers park a carriage (kindOf)', () => {
     expect(specOf('sovol-sv04', { nozzle_diameter: ['0.4'] })).toBeNull()
   })
 
+  it('plays nothing in a copy mode, where both carriages print at once, and parks again in a normal print', () => {
+    const cfg = machine['snapmaker-j1']!.machine
+    const bed = { widthMm: 324, depthMm: 200, heightMm: 200 }
+    expect(toolChangerSpec('snapmaker-j1', cfg, bed, 2, { kinematics: 'idex', copy: true })).toBeNull()
+    expect(toolChangerSpec('snapmaker-j1', cfg, bed, 2, { kinematics: 'idex', copy: false })?.kind).toBe('idex-park')
+    // The copy flag is about two carriages; it leaves a one-head printer's changes alone.
+    expect(toolChangerSpec('bambu-h2d', { nozzle_diameter: ['0.4', '0.4'] }, { widthMm: 350, depthMm: 320, heightMm: 325 }, 2, { copy: true })?.kind).toBe('dual-nozzle')
+  })
+
   it('plays nothing on the Snapmaker Artisan until its mechanism is checked', () => {
     expect(machine['snapmaker-artisan']?.machine['nozzle_diameter']).toHaveLength(2)
     expect(specOf('snapmaker-artisan')).toBeNull()
