@@ -130,7 +130,7 @@ describe('the scope rule for parts', () => {
   it('names what is in scope in general terms', () => {
     for (const s of ['outlines of lines, arcs, circles and splines', 'extruded or turned around one axis', 'lofted through sections (straight or smooth) or swept along a path', 'open sections thickened into shells', 'plus holes, fillets, patterns and text on them']) expect(SCOPE_LINE).toContain(s)
     // a sweep that narrows or turns is in scope too
-    expect(SCOPE_LINE).toContain('can also taper and twist along it: a spout, horn, tapering hook arm or duct reducer')
+    expect(SCOPE_LINE).toContain('can also taper, twist and have holes along it: a tube with its bore (it tapers with the outline), horn, tapering hook arm or duct reducer')
   })
 
   it('names the kinds of shape that are out of scope in general terms', () => {
