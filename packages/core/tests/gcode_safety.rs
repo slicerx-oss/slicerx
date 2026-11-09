@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Every start, end, layer change and tool change template the settings package ships
-//! for its 57 printers, rendered with a real print and run through the G-code linter. The
+//! Every start, end, layer change and tool change template in packages/profiles/gcode.json,
+//! one set for each printer family it lists, rendered with a real print and run through the G-code linter. The
 //! makers' own text (families named `maker_*`) is the person's own G-code, so it is linted as
 //! trusted text; the templates written for `SlicerX` are linted as imported text (the strictest
 //! setting). None may carry an error.
