@@ -314,6 +314,12 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<Lin
     } else {
         boolean::boolean_array(std::slice::from_ref(&filled), &once, BoolOp::Difference, opts)?.0
     };
+    // stored corners that drift past the wrap leave slivers of no volume, which the copies would only multiply
+    let rest = if rest.components().iter().all(|c| c.volume().abs() <= MAX_LOSS) {
+        TriMesh::default()
+    } else {
+        rest
+    };
     let bores = inner
         .iter()
         .map(|r| prism(mesh, &local, t, r, facets(r), false))
@@ -890,6 +896,30 @@ mod tests {
             "{} vs {want}",
             u.volume()
         );
+        assert!(boolean::storage_mesh(&u).is_ok());
+        // made on the bed, then stored in the part's own frame: a few corners drift past the wrap
+        #[allow(clippy::cast_possible_truncation, reason = "the stored precision")]
+        let stored = |mut m: TriMesh| {
+            for p in &mut m.positions {
+                *p = p.map(|v| f64::from(v as f32));
+            }
+            m
+        };
+        let at = crate::vec3::Frame {
+            origin: [182.65, 188.25, 0.0],
+            ..crate::vec3::Frame::WORLD
+        };
+        let ring = banded(&cut(
+            &build::cylinder(&at, 35.0, 0.0, 10.0, 188),
+            &build::cylinder(&at, 32.5, -1.0, 11.0, 180),
+        ));
+        let ring = stored(xform::transformed(
+            &stored(ring),
+            &xform::translation([-214.65, -220.25, 0.0]),
+        ));
+        let (u, r, secs) = joined(&ring, &around_z(30, [-32.0, -32.0, 0.0]));
+        assert!(secs < 2.0, "{secs} s");
+        assert!(r.watertight && r.shells == 1, "{r:?}");
         assert!(boolean::storage_mesh(&u).is_ok());
     }
 
