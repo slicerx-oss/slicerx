@@ -3,16 +3,21 @@
 // Model links reach public internet addresses only: the first URL and every redirect hop are checked (http or https,
 // every address the host resolves to), and the connection goes to the checked address. DNS and the transport are
 // scripted here; nothing touches the network.
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { createServer as createTlsServer } from 'node:https'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { resolveModel, type PathPolicy } from '../src/models'
-import { blockedAddress, guardedGet, pinnedGet, type PinnedGet, type ResolvedAddress } from '../src/url-guard'
+import { blockedAddress, guardedGet, pinnedGet, pinnedTransport, type PinnedGet, type ResolvedAddress } from '../src/url-guard'
 
-const PUBLIC = '203.0.113.10'
+// Real public addresses, answered by the scripted resolver; nothing connects to them.
+const PUBLIC = '1.1.1.1'
+const CDN = '9.9.9.9'
 const STL = 'solid x\nendsolid x\n'
 
 /** A resolver from a table of host names, and a transport that answers by URL and records where it connected. */
@@ -71,10 +76,24 @@ describe('blockedAddress', () => {
     ['224.0.0.1', /multicast/],
     ['ff02::1', /multicast/],
     ['255.255.255.255', /reserved/],
+    ['192.0.2.10', /documentation/],
+    ['198.51.100.7', /documentation/],
+    ['203.0.113.10', /documentation/],
+    ['192.88.99.1', /6to4 relay/],
+    ['64:ff9b:1::a9fe:a9fe', /local-use NAT64/],
+    ['64:ff9b:1:ffff::1', /local-use NAT64/],
+    ['100::1', /discard/],
+    ['2001::1', /Teredo/],
+    ['2001:0:4136:e378:8000:63bf:3fff:fdd2', /Teredo/],
+    ['2001:10::1', /ORCHID/],
+    ['2001:20::1', /ORCHIDv2/],
+    ['2001:db8::1', /documentation/],
+    ['3fff::1', /documentation/],
+    ['3fff:fff::1', /documentation/],
   ]
   for (const [ip, why] of blocked) it(`refuses ${ip}`, () => expect(blockedAddress(ip)).toMatch(why))
 
-  for (const ip of ['8.8.8.8', '203.0.113.10', '100.63.255.255', '100.128.0.1', '172.32.0.1', '169.253.0.1', '2606:4700::1111', '64:ff9b::808:808', '2002:0808:0808::1']) {
+  for (const ip of ['8.8.8.8', '1.1.1.1', '100.63.255.255', '100.128.0.1', '172.32.0.1', '169.253.0.1', '2606:4700::1111', '2001:4860:4860::8888', '64:ff9b::808:808', '2002:0808:0808::1']) {
     it(`allows ${ip}`, () => expect(blockedAddress(ip)).toBeUndefined())
   }
 })
@@ -90,13 +109,13 @@ describe('model links', () => {
 
   it('follows a redirect to another public host, checking that host too', async () => {
     const s = scripted(
-      { 'models.example': [PUBLIC], 'cdn.example': ['198.51.100.7'] },
+      { 'models.example': [PUBLIC], 'cdn.example': [CDN] },
       { 'https://models.example/cube.stl': redirect('https://cdn.example/blob/123'), 'https://cdn.example/blob/123': ok() },
     )
     const file = await resolveModel(policy(s), 'https://models.example/cube.stl')
     expect(file.endsWith('cube.stl')).toBe(true)
     expect(s.lookups).toEqual(['models.example', 'cdn.example'])
-    expect(s.connected.map((c) => c.address)).toEqual([PUBLIC, '198.51.100.7'])
+    expect(s.connected.map((c) => c.address)).toEqual([PUBLIC, CDN])
   })
 
   const privateHosts: [string, string][] = [
@@ -209,4 +228,95 @@ describe('pinnedGet', () => {
       await new Promise<void>((done) => server.close(() => done()))
     }
   })
+})
+
+describe('model links with a user name or password', () => {
+  it('are refused on the link and on a redirect, before anything connects there', async () => {
+    const s = scripted({ 'models.example': [PUBLIC] }, { 'https://models.example/a.stl': redirect('https://user:secret@models.example/b.stl') })
+    await expect(resolveModel(policy(s), 'https://user:secret@models.example/a.stl')).rejects.toMatchObject({ code: 'invalid_input' })
+    await expect(resolveModel(policy(s), 'https://token@models.example/a.stl')).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(s.connected).toEqual([])
+    await expect(resolveModel(policy(s), 'https://models.example/a.stl')).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(s.connected.map((c) => c.url)).toEqual(['https://models.example/a.stl'])
+  })
+})
+
+describe('the default resolver and transport', () => {
+  it('refuse localhost before connecting, with nothing injected', async () => {
+    let hits = 0
+    const server = createServer((_req, res) => {
+      hits++
+      res.end(STL)
+    })
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+    try {
+      const port = (server.address() as AddressInfo).port
+      const plain: PathPolicy = { allowDirs: undefined, outDir: mkdtempSync(join(tmpdir(), 'slicerx-url-guard-')), allowUrls: true }
+      for (const link of [`http://localhost:${port}/a.stl`, `http://127.0.0.1:${port}/a.stl`, `http://[::1]:${port}/a.stl`]) {
+        await expect(resolveModel(plain, link), link).rejects.toMatchObject({ code: 'path_not_allowed' })
+      }
+      expect(hits).toBe(0)
+    } finally {
+      await new Promise<void>((done) => server.close(() => done()))
+    }
+  })
+})
+
+/** A self-signed certificate for pinned.test, made with openssl when it is there. */
+function certificate(): { key: string; cert: string } | undefined {
+  if (spawnSync('openssl', ['version']).status !== 0) return undefined
+  const dir = mkdtempSync(join(tmpdir(), 'slicerx-url-guard-tls-'))
+  const conf = join(dir, 'cert.cnf')
+  writeFileSync(conf, '[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=pinned.test\n[ext]\nsubjectAltName=DNS:pinned.test\nbasicConstraints=critical,CA:TRUE\n')
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-days', '2', '-keyout', join(dir, 'key.pem'), '-out', join(dir, 'cert.pem'), '-config', conf], { stdio: 'ignore' })
+  return { key: readFileSync(join(dir, 'key.pem'), 'utf8'), cert: readFileSync(join(dir, 'cert.pem'), 'utf8') }
+}
+
+describe('pinnedGet over https', () => {
+  const tls = certificate()
+  it.skipIf(!tls)('connects to the pinned address and still checks the name against the certificate', async () => {
+    const server = createTlsServer({ key: tls!.key, cert: tls!.cert }, (_req, res) => res.end(STL))
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+    try {
+      const port = (server.address() as AddressInfo).port
+      const get = pinnedTransport({ ca: tls!.cert })
+      const at: ResolvedAddress = { address: '127.0.0.1', family: 4 }
+      // pinned.test never resolves; the socket goes to the pinned address and the certificate names pinned.test.
+      const res = await get(new URL(`https://pinned.test:${port}/cube.stl`), at, AbortSignal.timeout(5000))
+      expect(await res.text()).toBe(STL)
+      // The same address under another name fails the certificate check.
+      await expect(get(new URL(`https://other.test:${port}/cube.stl`), at, AbortSignal.timeout(5000))).rejects.toThrow(/altnames|certificate|Hostname/i)
+    } finally {
+      await new Promise<void>((done) => server.close(() => done()))
+    }
+  })
+})
+
+describe('pinnedGet and a proxy in the environment', () => {
+  it('connects to the pinned address even when NODE_USE_ENV_PROXY sends other requests through a proxy', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'slicerx-url-guard-proxy-'))
+    const script = join(dir, 'run.mts')
+    const guard = pathToFileURL(resolve(__dirname, '../src/url-guard.ts')).href
+    writeFileSync(script, `
+import { createServer } from 'node:http'
+const { pinnedGet } = await import(${JSON.stringify(guard)})
+const server = createServer((req, res) => res.end('direct'))
+const proxy = createServer((req, res) => res.end('proxy'))
+await new Promise((r) => server.listen(0, '127.0.0.1', r))
+await new Promise((r) => proxy.listen(Number(process.env.PROXY_PORT), '127.0.0.1', r))
+const port = server.address().port
+const res = await pinnedGet(new URL('http://pinned.invalid:' + port + '/x'), { address: '127.0.0.1', family: 4 }, AbortSignal.timeout(5000))
+console.log(await res.text())
+server.close(); proxy.close()
+`)
+    const proxyPort = String(40000 + Math.floor(Math.random() * 9000))
+    const out = spawnSync(process.execPath, ['--import', 'tsx', script], {
+      cwd: resolve(__dirname, '..'),
+      env: { ...process.env, NODE_USE_ENV_PROXY: '1', HTTP_PROXY: `http://127.0.0.1:${proxyPort}`, http_proxy: `http://127.0.0.1:${proxyPort}`, PROXY_PORT: proxyPort, NO_PROXY: '', no_proxy: '' },
+      encoding: 'utf8',
+      timeout: 30_000,
+    })
+    expect(out.stderr).toBe('')
+    expect(out.stdout.trim()).toBe('direct')
+  }, 40_000)
 })

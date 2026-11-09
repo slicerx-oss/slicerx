@@ -5,8 +5,8 @@
 // here, every address it resolves to checked, and the connection made to that checked address, so a name that answers
 // differently the second time (DNS rebinding) never gets a say.
 import { lookup as dnsLookup } from 'node:dns/promises'
-import { request as httpRequest, type IncomingMessage } from 'node:http'
-import { request as httpsRequest } from 'node:https'
+import { Agent as HttpAgent, request as httpRequest, type IncomingMessage } from 'node:http'
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https'
 import { BlockList, isIP, type LookupFunction } from 'node:net'
 import { Readable } from 'node:stream'
 import { ToolInputError } from './errors'
@@ -37,13 +37,24 @@ const RANGES: [string, number, 'ipv4' | 'ipv6', string][] = [
   ['169.254.0.0', 16, 'ipv4', 'a link-local address'],
   ['172.16.0.0', 12, 'ipv4', 'a private address'],
   ['192.0.0.0', 24, 'ipv4', 'a reserved address'],
+  ['192.0.2.0', 24, 'ipv4', 'a documentation address'],
+  ['192.88.99.0', 24, 'ipv4', 'a 6to4 relay address'],
   ['192.168.0.0', 16, 'ipv4', 'a private address'],
   ['198.18.0.0', 15, 'ipv4', 'a reserved address'],
+  ['198.51.100.0', 24, 'ipv4', 'a documentation address'],
+  ['203.0.113.0', 24, 'ipv4', 'a documentation address'],
   ['224.0.0.0', 4, 'ipv4', 'a multicast address'],
   ['240.0.0.0', 4, 'ipv4', 'a reserved address'],
   ['::', 128, 'ipv6', 'an unspecified address'],
   ['::1', 128, 'ipv6', 'a loopback address'],
   ['fd00:ec2::254', 128, 'ipv6', 'a cloud metadata address'],
+  ['64:ff9b:1::', 48, 'ipv6', 'a local-use NAT64 address'],
+  ['100::', 64, 'ipv6', 'a discard address'],
+  ['2001::', 32, 'ipv6', 'a Teredo address'],
+  ['2001:10::', 28, 'ipv6', 'a reserved (ORCHID) address'],
+  ['2001:20::', 28, 'ipv6', 'a reserved (ORCHIDv2) address'],
+  ['2001:db8::', 32, 'ipv6', 'a documentation address'],
+  ['3fff::', 20, 'ipv6', 'a documentation address'],
   ['fc00::', 7, 'ipv6', 'a private (unique local) address'],
   ['fe80::', 10, 'ipv6', 'a link-local address'],
   ['fec0::', 10, 'ipv6', 'a site-local address'],
@@ -107,15 +118,22 @@ export function blockedAddress(ip: string): string | undefined {
 export const systemLookup: HostLookup = async (hostname) =>
   (await dnsLookup(hostname, { all: true, verbatim: true })).map((a) => ({ address: a.address, family: a.family === 6 ? 6 : 4 }))
 
-/** A GET over node's http or https, its socket connected to `address` whatever DNS says now; TLS still checks the name. */
-export const pinnedGet: PinnedGet = (url, address, signal) =>
+/**
+ * A GET over node's http or https, its socket connected to `address` whatever DNS says now; TLS still checks the name.
+ * `ca` replaces the trusted roots (tests, with a certificate of their own).
+ */
+export const pinnedTransport = (tls: { ca?: string } = {}): PinnedGet => (url, address, signal) =>
   new Promise<Response>((resolveResponse, reject) => {
     const lookup: LookupFunction = (_host, opts, cb) => {
       if ((opts as { all?: boolean }).all) (cb as unknown as (e: null, a: ResolvedAddress[]) => void)(null, [address])
       else cb(null, address.address, address.family)
     }
-    const send = url.protocol === 'https:' ? httpsRequest : httpRequest
-    const req = send(url, { method: 'GET', lookup, signal, headers: { accept: '*/*' } }, (res: IncomingMessage) => {
+    const https = url.protocol === 'https:'
+    const send = https ? httpsRequest : httpRequest
+    // A fresh agent each time: the shared one may go through a proxy from the environment (NODE_USE_ENV_PROXY), and
+    // its keep-alive pool is keyed by host name, so a socket to an address checked for an earlier hop could be reused.
+    const agent = https ? new HttpsAgent({ keepAlive: false, ...(tls.ca ? { ca: tls.ca } : {}) }) : new HttpAgent({ keepAlive: false })
+    const req = send(url, { method: 'GET', lookup, signal, agent, headers: { accept: '*/*' } }, (res: IncomingMessage) => {
       const headers = new Headers()
       for (const [k, v] of Object.entries(res.headers)) {
         if (Array.isArray(v)) for (const one of v) headers.append(k, one)
@@ -130,8 +148,12 @@ export const pinnedGet: PinnedGet = (url, address, signal) =>
     req.end()
   })
 
+export const pinnedGet: PinnedGet = pinnedTransport()
+
 /** The addresses a hop may connect to, all checked; refused when the scheme is wrong or any address is off limits. */
 async function checkedAddress(url: URL, lookup: HostLookup): Promise<ResolvedAddress> {
+  // http.request would send these as Basic auth on every hop the link leads to; a model link has no business with them.
+  if (url.username || url.password) throw new ToolInputError('Model links with a user name or password are not supported; pass a link without them.', 'invalid_input')
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ToolInputError(`Only http and https links are supported for models; ${url.href} is ${url.protocol.replace(/:$/, '')}.`, 'unsupported_format')
   const host = url.hostname.replace(/^\[|\]$/g, '')
   const literal = isIP(host)
