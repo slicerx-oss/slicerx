@@ -382,7 +382,7 @@
   "tree_support_tip_diameter": "Diameter of the branch tips that touch the part, in mm. Smaller tips leave smaller marks.",
   "tree_support_top_rate": "Density of the branch tips under the part, in percent. Higher holds overhangs better and is harder to remove; interface layers are usually the better choice.",
   "tree_support_wall_count": "Number of walls on tree branches, 0 to 2. 0 picks a count for you.",
-  "tree_support_with_infill": "Fills large hollow areas inside tree supports. SlicerX keeps this for profile exchange and does not use it yet, like Orca 2.4.2.",
+  "tree_support_with_infill": "Fills wide tree trunks and merged branches with the support base pattern so tall trees stand firmer, for some more filament. Branches at their normal size stay hollow.",
   "activate_air_filtration": "Runs the printer's air filtration fan, for printers that have one. Use it with materials that give off fumes, such as ABS and ASA.",
   "activate_air_filtration_during_print": "Uses the exhaust fan speed set here during the print, over the speed in the filament's G-code. SlicerX keeps this for profile exchange and does not use it yet.",
   "activate_air_filtration_on_completion": "Uses the exhaust fan speed set here after the print, over the speed in the filament's G-code. SlicerX keeps this for profile exchange and does not use it yet.",

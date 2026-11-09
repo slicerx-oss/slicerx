@@ -486,11 +486,11 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 **Tree support infill**
 
-Fills large hollow areas inside tree supports with infill.
+Fills wide tree trunks and merged branches with the support base pattern, so tall trees stand firmer. Uses some more filament. Branches at their normal size stay hollow.
 
 - Type: boolean
 - Default: off
-- Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"
+- Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"; and Support base pattern (`support_base_pattern`) is "default"
 - Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)

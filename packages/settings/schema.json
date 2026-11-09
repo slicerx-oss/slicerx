@@ -7493,9 +7493,14 @@
       "tree(auto)",
       "tree(manual)"
      ]
+    },
+    {
+     "key": "support_base_pattern",
+     "op": "eq",
+     "value": "default"
     }
    ],
-   "help": "Fills large hollow areas inside tree supports with infill.",
+   "help": "Fills wide tree trunks and merged branches with the support base pattern, so tall trees stand firmer. Uses some more filament. Branches at their normal size stay hollow.",
    "intent": "supports"
   },
   {
