@@ -15,9 +15,9 @@ export const SEARCHES_PER_LOOKUP = 3
 /** Dollars per hosted web search when the run names no price: $10 per 1,000, as mimir cloud prices them. */
 export const DEFAULT_USD_PER_SEARCH = 0.01
 
-// The worst case mimir cloud reserves before a call (supabase/functions/mimir/shape.ts): a token per body byte, the
-// most an image can cost, the provider's tool use overhead, and with web search one more pass per search, each
-// carrying the reply so far and every search's results.
+// The worst case mimir cloud reserves before a call (supabase/functions/mimir/shape.ts), but for the bytes per token
+// (BYTES_PER_TOKEN): the most an image can cost, the provider's tool use overhead, and with web search one more pass
+// per search, each carrying the reply so far and every search's results.
 const IMAGE_TOKENS = 4784
 const TOOL_OVERHEAD = 1000
 const SEARCH_RESULT_TOKENS = 30_000
@@ -33,6 +33,13 @@ export interface Price {
   usdPerSearch?: number
   long?: { above: number; usdIn: number; usdOut: number }
 }
+
+/**
+ * mimir's default model, Haiku 5.5, at the prices mimir cloud bills it (supabase/migrations/0020_mimir_proxy.sql
+ * mimir_prices): $0.10 and $0.50 per million input and output tokens, $0.50 and $2.50 once a request's input passes
+ * 100K tokens, and $0.01 a hosted web search.
+ */
+export const HAIKU_5_5: Price = { usdIn: 0.1, usdOut: 0.5, usdPerSearch: 0.01, long: { above: 100_000, usdIn: 0.5, usdOut: 2.5 } }
 
 /** Providers whose usage counts cache writes and reads inside `inputTokens`, billed at 1.25x and 0.1x the input rate. */
 const CACHE_BILLED = new Set(['anthropic', 'mimir-cloud'])
@@ -57,10 +64,17 @@ export function usageUsd(provider: string, ev: Extract<LlmEvent, { type: 'usage'
 }
 
 /**
- * The most one request can cost, from the request as it goes out: every input token at the cache write rate, the
- * request's whole output limit, and for a web lookup every search it may run with their results read back in.
+ * Bytes of request per input token the reserve counts until a reply reports its own count. A reserve is made before
+ * the request goes out, and the eval asks the provider nothing extra to count it (a token count is one more request
+ * per step), so it estimates: about 4 bytes a token is the usual rate for English and JSON. A token a byte, the bound
+ * mimir cloud reserves at, made a 145 KB tab request (its tools and system prompt alone) look like 145K tokens, past
+ * the long rate threshold, so a small cap stopped a build after a tenth of it was spent. Once a reply reports its input
+ * tokens, budgetedClient counts at that request's own rate, never under a token per 4 bytes nor over one a byte.
  */
-export function worstUsd(provider: string, http: LlmHttpRequest, lookup: boolean, price: Price): number {
+export const BYTES_PER_TOKEN = 4
+
+/** What a request carries, as the reserve counts it: its body's bytes with each image as a stub, its images, and its output limit. */
+export function requestSize(http: LlmHttpRequest): { bytes: number; images: number; maxOut: number } {
   let images = 0
   let body: Record<string, unknown> = {}
   try {
@@ -77,8 +91,18 @@ export function worstUsd(provider: string, http: LlmHttpRequest, lookup: boolean
   })
   const bytes = new TextEncoder().encode(body && Object.keys(body).length ? text : (http.body ?? '')).length
   const limit = [body['max_tokens'], body['max_output_tokens']].find((n): n is number => typeof n === 'number' && n > 0)
-  const maxOut = limit ?? DEFAULT_MAX_OUTPUT
-  const prompt = bytes + images * IMAGE_TOKENS + TOOL_OVERHEAD
+  return { bytes, images, maxOut: limit ?? DEFAULT_MAX_OUTPUT }
+}
+
+/**
+ * The most one request can cost, from the request as it goes out: its input tokens (its bytes at `tokensPerByte`, a
+ * token per BYTES_PER_TOKEN bytes unless a reply said otherwise, the most each image can cost and the tool use
+ * overhead) at the cache write rate, priced at the long rates only when those tokens pass the threshold, the request's
+ * whole output limit, and for a web lookup every search it may run with their results read back in.
+ */
+export function worstUsd(provider: string, http: LlmHttpRequest, lookup: boolean, price: Price, tokensPerByte = 1 / BYTES_PER_TOKEN): number {
+  const { bytes, images, maxOut } = requestSize(http)
+  const prompt = Math.ceil(bytes * tokensPerByte) + images * IMAGE_TOKENS + TOOL_OVERHEAD
   const searches = lookup ? SEARCHES_PER_LOOKUP : 0
   const input = searches ? (searches + 1) * Math.min(prompt + maxOut + searches * SEARCH_RESULT_TOKENS, CONTEXT_TOKENS) : Math.min(prompt, CONTEXT_TOKENS)
   const { usdIn, usdOut } = rates(price, input)
@@ -105,11 +129,14 @@ export const canStart = (b: Budget): boolean => b.spentUsd < b.capUsd - STOP_MAR
 /**
  * `base` on `model`, keeping `budget`. Before each request the worst case it can cost is reserved: a request whose
  * worst case would take the spend past the cap, or one asked for at or past the cap less the margin, throws instead
- * of reaching the provider. A reply's usage settles the spend at what it cost; a reply that ends with no usage (an
- * abort, the timeout, a reader that stops early) is charged its worst case.
+ * of reaching the provider. A reply's usage settles the spend at what it cost, so the cap holds real money; a reply
+ * that ends with no usage (an abort, the timeout, a reader that stops early) is charged its worst case. The input
+ * tokens a reply reports set the tokens per byte the next reserve counts (see BYTES_PER_TOKEN); a web lookup's do not,
+ * since they hold the searches' results too.
  */
 export function budgetedClient(base: LlmClient, model: string, price: Price, budget: Budget): LlmClient {
   const adapter = adapterFor(base.provider)
+  let tokensPerByte = 1 / BYTES_PER_TOKEN
   return {
     provider: base.provider,
     async *stream(req, signal) {
@@ -119,7 +146,8 @@ export function budgetedClient(base: LlmClient, model: string, price: Price, bud
         throw new Error(`stopped at $${budget.spentUsd.toFixed(2)}, the $${budget.capUsd.toFixed(2)} cap less the $${STOP_MARGIN_USD.toFixed(2)} margin`)
       }
       const lookup = Boolean(req.webSearch)
-      const reserve = worstUsd(base.provider, adapter.build(ask), lookup, price)
+      const http = adapter.build(ask)
+      const reserve = worstUsd(base.provider, http, lookup, price, tokensPerByte)
       if (budget.spentUsd + reserve > budget.capUsd) {
         budget.stopped = true
         throw new Error(`stopped at $${budget.spentUsd.toFixed(2)}: the next request could cost up to $${reserve.toFixed(2)}, past the $${budget.capUsd.toFixed(2)} cap`)
@@ -130,6 +158,9 @@ export function budgetedClient(base: LlmClient, model: string, price: Price, bud
           if (ev.type === 'usage' && !settled) {
             settled = true
             budget.spentUsd += usageUsd(base.provider, ev, price, lookup)
+            const size = requestSize(http)
+            const text = ev.inputTokens - size.images * IMAGE_TOKENS
+            if (!lookup && size.bytes > 0 && text > 0) tokensPerByte = Math.min(1, Math.max(1 / BYTES_PER_TOKEN, text / size.bytes))
           }
           yield ev
         }
