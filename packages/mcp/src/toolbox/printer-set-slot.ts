@@ -60,6 +60,7 @@ export default (d: ServerToolDeps) => {
     source: 'command',
     permission: 'start',
     // Reading the slots is a read; asking for a card is a change to the printer that a person approves.
+    classNote: 'start (Start or resume prints) when setting changes the slot, read when it only reads it',
     permissionFor: (i) => (i.setting ? 'start' : 'read'),
     printerFor: (i) => i.printerId,
     toolset: 'printers',

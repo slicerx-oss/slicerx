@@ -90,4 +90,40 @@ describe('the remove class', () => {
       }
     }
   })
+
+  it("lists project.open's class as it is taken, read over an empty project and remove over one with objects", async () => {
+    const h = await connect()
+    try {
+      const listed = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_project_open')
+      const text = listed?.description ?? ''
+      expect(text).toContain('Permission class: read when the working project is empty or none is open, remove (Remove from the plate) when it has objects')
+      expect(text).not.toMatch(/Permission class: read \(|Permission class: read\./)
+      // The class the gate takes matches the words: read with nothing open, then remove once the project has an object.
+      const tool = serverTools(h.ctx).find((t) => t.name === 'project.open')!
+      expect(tool.permissionFor?.({} as never)).toBe('read')
+      await h.call('slicerx_project_open', { name: 'first' })
+      expect(tool.permissionFor?.({} as never)).toBe('read')
+      await h.call('slicerx_project_add_model', { model: 'sample:cube-20' })
+      expect(tool.permissionFor?.({} as never)).toBe('remove')
+    } finally {
+      await h.client.close()
+    }
+  })
+
+  it('lists every tool whose class depends on the call by its own words, never as one class', async () => {
+    const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: AGENT_CODE, linkWebSocket: scriptedLinkHub((m) => (m === 'list' ? [] : {})).WS, geomEngine: async () => ({}) })
+    try {
+      const listed = new Map((await h.client.listTools()).tools.map((t) => [t.name, t.description ?? '']))
+      const varying = serverTools(h.ctx).filter((t) => t.permissionFor)
+      expect(varying.length).toBeGreaterThan(3)
+      for (const t of varying) {
+        const text = listed.get(`slicerx_${t.name.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`)
+        if (text === undefined) continue
+        expect(t.classNote, t.name).toBeTruthy()
+        expect(text, t.name).toContain(`Permission class: ${t.classNote}.`)
+      }
+    } finally {
+      await h.client.close()
+    }
+  })
 })

@@ -157,10 +157,12 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
   for (const tool of serverTools(ctx, gate)) {
     const read = tool.permission === 'read' && !tool.permissionFor
     const label = PERMISSION_LABELS[tool.permission as keyof typeof PERMISSION_LABELS]
+    // A class that depends on the call is given as the tool words it, never as the one class it starts from.
+    const classText = tool.permissionFor && tool.classNote ? tool.classNote : `${tool.permission}${label ? ` (${label.title})` : ''}`
     const h = tool.hints ?? {}
     const config = {
       title: tool.title ?? tool.name,
-      description: read ? tool.description : `${tool.description} Permission class: ${tool.permission}${label ? ` (${label.title})` : ''}. The user's policy decides whether it runs, asks the user first, or is off.`,
+      description: read ? tool.description : `${tool.description} Permission class: ${classText}. The user's policy decides whether it runs, asks the user first, or is off.`,
       annotations: {
         // Only a tool that says it changes nothing is listed as read-only; the read class alone never implies it.
         readOnlyHint: h.readOnly === true,

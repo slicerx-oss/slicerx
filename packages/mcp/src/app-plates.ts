@@ -114,6 +114,7 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
     // Deleting a plate's objects takes parts off the plate, so it is the remove class, which asks first by default.
     ...(action === 'remove'
       ? {
+          classNote: "remove (Remove from the plate) when deleteObjects deletes the plate's objects, slice (Slice and arrange) otherwise",
           permissionFor: (i: unknown) => ((i as { deleteObjects?: boolean }).deleteObjects ? 'remove' : 'slice'),
           approval: async (i: unknown) => {
             const r = i as { plate?: unknown; deleteObjects?: boolean }

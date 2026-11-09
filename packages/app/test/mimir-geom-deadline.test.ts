@@ -57,7 +57,7 @@ function writeTool(name: string, runs: string[], outcome: 'ok' | 'fail' | 'throw
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
-    ...(permissionFor ? { permissionFor } : {}),
+    ...(permissionFor ? { permissionFor, classNote: 'read or slice, by apply' } : {}),
     description: name,
     input: z.object({ design: z.string().optional(), apply: z.boolean().optional() }),
     run: async (i) => {

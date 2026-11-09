@@ -238,6 +238,11 @@ export interface PilotTool<I = unknown> {
   ungated?: boolean
   /** When the class depends on the input, such as settings.apply to a saved profile. */
   permissionFor?(input: I): PermissionClass
+  /**
+   * With permissionFor: which class a call takes and when, in words, such as "read when the working project is empty,
+   * remove when it has objects". The MCP listing gives this instead of the one class in `permission`.
+   */
+  classNote?: string
   /** Printer the call targets, for per-printer policy overrides. */
   printerFor?(input: I): string | undefined
   /**
@@ -267,6 +272,7 @@ export interface PilotTool<I = unknown> {
 export function defineTool<I>(tool: ToolDefinition<I>): PilotTool<I> {
   if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/.test(tool.name)) throw new Error(`Bad tool name ${tool.name}`)
   if (tool.ungated && tool.permission !== 'read') throw new Error(`${tool.name}: only a read tool can run without the gate`)
+  if (tool.permissionFor && !tool.classNote) throw new Error(`${tool.name}: a tool whose class depends on the call says when it takes each (classNote)`)
   if (tool.permission === 'read' && typeof tool.hints?.readOnly !== 'boolean') throw new Error(`${tool.name}: a read tool says whether it changes anything (hints.readOnly)`)
   return tool
 }
