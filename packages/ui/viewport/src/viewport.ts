@@ -53,7 +53,7 @@ import { alongAxis, arrowDir, ARROW_PX, MoveArrows, rayToSegment, type ArrowAxis
 import { applyToAll } from './group'
 import { RingSet, angleAround, axisRingColors, pickRing, rayPlane, ringAxes, rotateAbout, snapAngle, turnVector, unit, unwrapAngle, type RingAxis, type RotateSpace } from './rings'
 import { CutGizmo, CutPreview, extentAlong, movePlane, tiltAxes, type CutKeep } from './cutplane'
-import { DimensionLayer, EdgePreview, OpPreviewLook, PushPreview, SketchLayer, fromPlane, rayOnPlane, setSketchResolution, type DimensionMark, type FinishedSketch, type SketchCursor, type SketchScene, type V2 } from './cadtools'
+import { DimensionLayer, EdgePreview, OpPreviewLook, PushPreview, SketchLayer, TAG_PX, fromPlane, rayOnPlane, setSketchResolution, type DimensionMark, type FinishedSketch, type SketchCursor, type SketchScene, type V2 } from './cadtools'
 import { clampScale, factorsFor, handleAxis, handleLocal, minFactorFor, nearestOnLine, pivotFor, ratioLine, ratioPivotFor, ratioPlane, ratioPoint, scaleTransform, snapScale, type HandleId, type V3 } from './scaling'
 import type { ModKey } from './gizmobindings'
 import { layerTopsProblems } from './layerheights'
@@ -2900,7 +2900,7 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
-  frameSketches(opts: { coverBottomPx?: number; animate?: boolean } = {}): void {
+  frameSketches(opts: { coverTopPx?: number; coverBottomPx?: number; animate?: boolean } = {}): void {
     if (this.cameraHeld) return
     const box = new Box3()
     const m = this.stage.bedMatrix()
@@ -2910,22 +2910,55 @@ class ViewportImpl implements Viewport {
       for (const p of s.paths) for (const q of p.points) box.expandByPoint(v.set(...fromPlane(s.frame, q)).applyMatrix4(m))
     }
     if (box.isEmpty()) return
-    // framed in the part of the view above what covers its bottom (a phone's tool sheet), then moved up into it
-    const cover = Math.max(0, Math.min(this.height * 0.6, opts.coverBottomPx ?? 0))
+    const W = Math.max(1, this.width)
+    const H = Math.max(1, this.height)
+    // a sketch picked later shows its mark up and to the right of its drawing: room for the widest one there is
+    // ("Profile"), or a wider one already drawn, is kept clear above and to the right of the drawing
+    const tags = this.finishedLayers.flatMap((l) => l.tagBoxes(() => [0, 0]))
+    const markW = Math.max(MARK_ROOM_PX, ...tags.map((t) => t.right - t.left)) + 4
+    const markH = TAG_PX + 4
+    // the clear band: below what floats over the view's top, above what covers its bottom (a phone's tool sheet)
+    const top = Math.max(0, opts.coverTopPx ?? 0) + markH
+    const bottom = Math.max(0, opts.coverBottomPx ?? 0)
+    const bandH = Math.max(H * 0.2, H - top - bottom)
+    const bandW = Math.max(W * 0.4, W - markW)
     const free = this.rig.free
-    this.rig.free = { fw: free.fw, fh: free.fh * ((this.height - cover) / Math.max(1, this.height)) }
+    this.rig.free = { fw: free.fw * (bandW / W), fh: free.fh * (bandH / H) }
     const pose = this.rig.framed(box)
     this.rig.free = free
-    if (cover > 0) {
-      const dist = pose.pos.distanceTo(pose.target)
-      const perPx = (2 * dist * Math.tan((this.camera.fov * Math.PI) / 360)) / Math.max(1, this.height)
-      const up = new Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion).multiplyScalar((cover / 2) * perPx)
-      pose.pos.sub(up)
-      pose.target.sub(up)
-    }
+    // then moved so the drawing sits in the middle of that band: down by half of what the top takes more than the
+    // bottom, and left by half the marks' room
+    const dist = pose.pos.distanceTo(pose.target)
+    const perPx = (2 * dist * Math.tan((this.camera.fov * Math.PI) / 360)) / H
+    const up = new Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion).multiplyScalar(((bottom - top) / 2) * perPx)
+    const right = new Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).multiplyScalar((markW / 2) * perPx)
+    pose.pos.sub(up).add(right)
+    pose.target.sub(up).add(right)
     this.rig.preset = null
     this.rig.go(pose, opts.animate ?? true, performance.now())
     this.invalidate()
+  }
+
+  /**
+   * Where the pickable finished sketches are on screen, in client pixels: each one's drawing, and its mark when it has
+   * one. For checks that they sit clear of what floats over the view.
+   */
+  finishedBoxes(): { id: string; drawing: { left: number; top: number; right: number; bottom: number }; mark: { left: number; top: number; right: number; bottom: number } | null }[] {
+    const r = this.canvas.getBoundingClientRect()
+    const m = this.stage.bedMatrix()
+    const v = new Vector3()
+    const px = (f: SketchScene['frame'], q: V2): [number, number] => {
+      v.set(...fromPlane(f, q)).applyMatrix4(m).project(this.camera)
+      return [r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height]
+    }
+    return this.finishedScenes.flatMap((s, i) => {
+      if (s.id === undefined) return []
+      const pts = s.paths.flatMap((p) => p.points.map((q) => px(s.frame, q)))
+      if (!pts.length) return []
+      const drawing = { left: Math.min(...pts.map((p) => p[0])), top: Math.min(...pts.map((p) => p[1])), right: Math.max(...pts.map((p) => p[0])), bottom: Math.max(...pts.map((p) => p[1])) }
+      const mark = this.finishedLayers[i]?.tagBoxes((q) => px(s.frame, q))[0] ?? null
+      return [{ id: s.id, drawing, mark }]
+    })
   }
 
   /** The pickable finished sketch under a client point: on its lines within a few pixels, or inside its closed shape. */
@@ -5031,6 +5064,9 @@ class ViewportImpl implements Viewport {
     return { width: this.width, height: this.height }
   }
 }
+
+/** Room kept for a picked sketch's mark beside it while framing, in pixels: about "Profile" at the tag size. */
+const MARK_ROOM_PX = 64
 
 /** How near a click must come to a finished sketch's line to pick it, in pixels. */
 const SKETCH_PICK_PX = 8

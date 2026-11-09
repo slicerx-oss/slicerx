@@ -688,10 +688,13 @@ export interface Viewport {
    */
   setSketchPicking(on: boolean): void
   /**
-   * Frames the pickable finished sketches from the current angle. `coverBottomPx` is how much of the view's bottom is
-   * covered (a phone's tool sheet): they are framed in the part above it.
+   * Frames the pickable finished sketches from the current angle, with room for their marks. `coverTopPx` and
+   * `coverBottomPx` are how much of the view's top and bottom is covered (a phone's toolbars and tool sheet): they are
+   * framed in the clear band between.
    */
-  frameSketches(opts?: { coverBottomPx?: number; animate?: boolean }): void
+  frameSketches(opts?: { coverTopPx?: number; coverBottomPx?: number; animate?: boolean }): void
+  /** Where the pickable finished sketches are on screen (client pixels): each one's drawing, and its mark when it has one. */
+  finishedBoxes(): { id: string; drawing: { left: number; top: number; right: number; bottom: number }; mark: { left: number; top: number; right: number; bottom: number } | null }[]
   /** Cuts away the models on the side `normal` points to, through `point` (bed coordinates); null puts them back. */
   setSection(section: { point: [number, number, number]; normal: [number, number, number] } | null): void
   /** Turns the camera to look straight at a plane through `point` along `normal` (bed coordinates), framing `radiusMm`. */
