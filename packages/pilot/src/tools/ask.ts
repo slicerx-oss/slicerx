@@ -55,7 +55,7 @@ export function lookupTool(): PilotTool<never> {
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: 'Show the person something you looked up as a card in the view, with its source link: a title, up to 4 label and value rows and the page it came from. It stays in the conversation too.',
+    description: 'Show the person something you looked up as a card in the view: a title, up to 4 label and value rows and the page it came from, linked. It stays in the conversation too.',
     input: z.object({
       title: z.string().min(2).max(60),
       fields: z.array(z.tuple([z.string().min(1).max(32), z.string().min(1).max(80)])).min(1).max(4),
