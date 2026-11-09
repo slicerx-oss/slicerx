@@ -228,8 +228,6 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
     const r = picked[0]!.el.getBoundingClientRect()
     onPick(picked.flatMap((p) => p.head.ids), { x: r.left, y: r.top - 4 }, picked[0]!.el)
   }
-  // a long press on a pin opens its menu on touch, as a right click does
-  const press = useLongPress((target) => open(heads().filter((h) => h.el === target)))
   const act = (e: MouseEvent<HTMLElement>) => {
     e.preventDefault()
     e.stopPropagation()
@@ -293,10 +291,10 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
             aria-label={label}
             aria-haspopup="menu"
             {...tipAttrs({ title, body })}
-            {...press.bind}
-            onPointerDown={(ev) => ((pointer.current = { type: ev.pointerType, x: ev.clientX, y: ev.clientY }), press.bind.onPointerDown(ev), ev.stopPropagation())}
+            // a tap opens a pin's menu on touch, and a long press shows its tip, so a pin takes no long press of its own
+            onPointerDown={(ev) => ((pointer.current = { type: ev.pointerType, x: ev.clientX, y: ev.clientY }), ev.stopPropagation())}
             onClick={act}
-            onContextMenu={(ev) => (press.cancel(), act(ev))}
+            onContextMenu={act}
           >
             {group.length > 1 ? <span className="layer-mark-count">+{group.length}</span> : color ? null : <Icon name={ICON[m.kind]} size={12} />}
             {/* the foot of the stem: down to the track, stepping back left to the layer when the head sits right of it */}
