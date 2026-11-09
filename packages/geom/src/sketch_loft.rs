@@ -32,8 +32,8 @@ pub const MAX_LANDMARKS: usize = 64;
 const MAX_SPAN_ROWS: usize = 1024;
 
 /// One section of a loft or a sweep: sketch loops on a plane (the bed when `frame` is absent). A closed profile is one
-/// closed loop; an open one (`open`) is one chain with two ends, its `points` a polyline, and makes a surface that
-/// `thicken` turns into a solid.
+/// closed loop, and a sweep's may have holes inside it; an open one (`open`) is one chain with two ends, its `points` a
+/// polyline, and makes a surface that `thicken` turns into a solid.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
@@ -67,6 +67,8 @@ pub(crate) struct Section {
     pub(crate) ring: Vec<V3>,
     /// The ring's points in its own plane, in the same order.
     pub(crate) flat: Vec<V2>,
+    /// How many points each loop of the ring has, the outer loop first and then its holes.
+    pub(crate) lens: Vec<usize>,
     pub(crate) frame: Frame,
     pub(crate) center: V3,
 }
@@ -151,6 +153,7 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
             let center = centroid(&ring);
             Section {
                 ring,
+                lens: vec![flat.len()],
                 flat,
                 frame: *frame,
                 center,
@@ -226,7 +229,7 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
         )
     };
     let caps = (!opts.closed && opts.thicken.is_none()).then(|| (&sections[0], &sections[count - 1]));
-    let surface = build_rows(&rows, &spans, !open, wrap, caps, size)?;
+    let surface = build_rows(&rows, &[rows[0].len()], &spans, !open, wrap, caps, size)?;
     if let Some(t) = &opts.thicken {
         return thicken::thicken(&surface, t);
     }
@@ -763,13 +766,18 @@ pub(crate) fn open_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V
     Ok(pts)
 }
 
-/// The one closed ring of a `verb` ("loft", "sweep") profile, counterclockwise in its plane, or why there is none.
-pub(crate) fn one_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V2>, String> {
+/// The closed regions of a profile's loops, or the first thing wrong with them.
+fn regions(loops: &[Loop]) -> std::result::Result<Vec<Polygon>, String> {
     let c = sketch::check(loops);
     if let Some(i) = c.issues.into_iter().next() {
         return Err(i.message);
     }
-    let mut polys: Vec<Polygon> = c.polygons;
+    Ok(c.polygons)
+}
+
+/// The one closed ring of a `verb` ("loft", "sweep") profile, counterclockwise in its plane, or why there is none.
+pub(crate) fn one_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V2>, String> {
+    let mut polys = regions(loops)?;
     let Some(mut poly) = polys.pop() else {
         return Err(format!("nothing to {verb}"));
     };
@@ -787,6 +795,26 @@ pub(crate) fn one_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V2
         return Err(format!("more than {MAX_RING} points once its arcs are flattened"));
     }
     Ok(poly.outer)
+}
+
+/// The one region of a `verb` profile: its outer loop counterclockwise in its plane and its holes clockwise, or why
+/// there is none.
+pub(crate) fn one_region(loops: &[Loop], verb: &str) -> std::result::Result<Polygon, String> {
+    let mut polys = regions(loops)?;
+    let Some(mut poly) = polys.pop() else {
+        return Err(format!("nothing to {verb}"));
+    };
+    if !polys.is_empty() {
+        return Err(format!(
+            "a {verb} profile is one outer loop with any holes inside it, not {} separate shapes",
+            polys.len() + 1
+        ));
+    }
+    poly.normalize_orientation();
+    if poly.vertices().count() > MAX_RING {
+        return Err(format!("more than {MAX_RING} points once its arcs are flattened"));
+    }
+    Ok(poly)
 }
 
 /// `ring` with `n` points: its own points all kept, and the points it lacks spread over its sides by their length.
@@ -847,9 +875,9 @@ pub(crate) fn centroid(ring: &[V3]) -> V3 {
     vec3::scale(s, 1.0 / ring.len().max(1) as f64)
 }
 
-/// The normal a ring winds counterclockwise about: its plane's, turned the way the ring goes round.
+/// The normal a ring's outer loop winds counterclockwise about: its plane's, turned the way that loop goes round.
 fn winding_normal(s: &Section) -> V3 {
-    let flat_ccw = poly2d::signed_area(&s.flat) >= 0.0;
+    let flat_ccw = poly2d::signed_area(&s.flat[..s.lens[0]]) >= 0.0;
     if flat_ccw {
         s.frame.w
     } else {
@@ -1030,16 +1058,19 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
 }
 
 /// The mesh: one vertex per row point, two triangles per quad between neighboring rows, and with `caps` the first and
-/// last rows (whose sections those are) clipped flat in their planes. Rows are closed rings when `ring_closed`, else
-/// open chains; with `wrap` the last row joins the first, its point `i` to the first's `i + wrap`. A side quad that is
-/// flat is a plane face; the other quads of one span (`spans` gives each row's) are one face with no known surface.
-/// Every row winds counterclockwise about the way the rows go from it, so the triangles face out.
+/// last rows (whose sections those are) clipped flat in their planes. Each row is its loops one after another, `lens`
+/// points each, the outer loop first. Loops are closed rings when `ring_closed`, else open chains; with `wrap` the last
+/// row joins the first, its point `i` to the first's `i + wrap`. A side quad that is flat is a plane face; the other
+/// quads of one span (`spans` gives each row's) are one face with no known surface. Every row's outer loop winds
+/// counterclockwise about the way the rows go from it and its holes clockwise, so the triangles face out of the solid
+/// and the hole walls into their bores.
 #[allow(
     clippy::cast_possible_truncation,
     reason = "ring and row counts are capped far below 2^32"
 )]
 pub(crate) fn build_rows(
     rows: &[Vec<V3>],
+    lens: &[usize],
     spans: &[usize],
     ring_closed: bool,
     wrap: Option<usize>,
@@ -1053,10 +1084,10 @@ pub(crate) fn build_rows(
     for row in rows {
         m.positions.extend_from_slice(row);
     }
-    let at = |k: usize, i: usize| (k * n + i % n) as u32;
+    // point `i` of the loop of `len` points that starts at `from`, in row `k`
+    let at = |k: usize, from: usize, len: usize, i: usize| (k * n + from + i % len) as u32;
     let flat_tol = size * 1e-9;
     let strips = if wrap.is_some() { r } else { r - 1 };
-    let quads = if ring_closed { n } else { n - 1 };
     let mut other: Vec<Option<u32>> = vec![None; spans.iter().max().map_or(1, |s| s + 1)];
     for k in 0..strips {
         let (next, shift) = if k + 1 < r {
@@ -1064,28 +1095,38 @@ pub(crate) fn build_rows(
         } else {
             (0, wrap.unwrap_or(0))
         };
-        for i in 0..quads {
-            let (a0, a1, b0, b1) = (
-                at(k, i),
-                at(k, i + 1),
-                at(next, i + shift),
-                at(next, i + 1 + shift),
-            );
-            let quad = [a0, a1, b1, b0].map(|v| m.positions[v as usize]);
-            let id = match quad_plane(quad, flat_tol) {
-                Some(s) => faces.push(s),
-                None => *other[spans[k]].get_or_insert_with(|| faces.push(Surface::Other)),
-            };
-            m.triangles.push([a0, a1, b1]);
-            m.triangles.push([a0, b1, b0]);
-            faces.ids.extend([id, id]);
+        let mut from = 0;
+        for &len in lens {
+            let quads = if ring_closed { len } else { len - 1 };
+            for i in 0..quads {
+                let (a0, a1, b0, b1) = (
+                    at(k, from, len, i),
+                    at(k, from, len, i + 1),
+                    at(next, from, len, i + shift),
+                    at(next, from, len, i + 1 + shift),
+                );
+                let quad = [a0, a1, b1, b0].map(|v| m.positions[v as usize]);
+                let id = match quad_plane(quad, flat_tol) {
+                    Some(s) => faces.push(s),
+                    None => *other[spans[k]].get_or_insert_with(|| faces.push(Surface::Other)),
+                };
+                m.triangles.push([a0, a1, b1]);
+                m.triangles.push([a0, b1, b0]);
+                faces.ids.extend([id, id]);
+            }
+            from += len;
         }
     }
     if let Some((first, last)) = caps {
         for (k, s, outward) in [(0, first, -1.0), (r - 1, last, 1.0)] {
+            // the holes follow the outer loop in the section, as the triangles' indices count them
+            let mut loops = s.lens.iter().scan(0, |from, &len| {
+                *from += len;
+                Some(s.flat[*from - len..*from].to_vec())
+            });
             let poly = Polygon {
-                outer: s.flat.clone(),
-                holes: Vec::new(),
+                outer: loops.next().unwrap_or_default(),
+                holes: loops.collect(),
             };
             let tris = poly2d::triangulate(&poly)?;
             let normal = vec3::scale(winding_normal(s), outward);
@@ -1096,7 +1137,11 @@ pub(crate) fn build_rows(
             // ear clipping turns every triangle counterclockwise in the plane, so they all face the plane's normal
             let along = vec3::dot(s.frame.w, normal) >= 0.0;
             for t in tris {
-                let (a, b, c) = (at(k, t[0] as usize), at(k, t[1] as usize), at(k, t[2] as usize));
+                let (a, b, c) = (
+                    at(k, 0, n, t[0] as usize),
+                    at(k, 0, n, t[1] as usize),
+                    at(k, 0, n, t[2] as usize),
+                );
                 m.triangles.push(if along { [a, b, c] } else { [a, c, b] });
                 faces.ids.push(id);
             }
