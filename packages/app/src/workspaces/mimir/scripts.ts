@@ -564,6 +564,19 @@ const mountingPlate: ScriptStep[] = [
   },
 ]
 
+/**
+ * The mounting plate built only as far as its plate: the reply ends on a question the plan does not settle (which
+ * screws), so the runtime does not go on, and the plan is left half built. Saved and opened again, "keep going" picks it
+ * up (keepGoing).
+ */
+const mountingPlateHalf: ScriptStep[] = [...mountingPlate.slice(0, 4), { text: 'The plate is built. Which screws will hold it, M4 or M3?' }]
+
+/**
+ * "keep going" with nothing of its own to do: a line, then, only when the runtime goes on with an approved plan the
+ * project holds (its note), the mounting plate's screw holes and its check, on the design the plan's history names.
+ */
+const keepGoing: ScriptStep[] = [{ text: 'Picking up where the project left off.' }, ...mountingPlate.slice(5)]
+
 /** What mimir says once the plate is sliced: the slice card in the chat has the figures. */
 const SLICED = 'Sliced. The card shows the print time and the filament it takes, and Open in Slice shows the layers.'
 
@@ -803,7 +816,11 @@ export const SCRIPTS: MimirScript[] = [
   { id: 'stand', match: /phone|stand/i, steps: stand },
   // a planned part whose reply stops before the plan is done, so mimir goes on with it (the plan_left line); only in the
   // build for the end-to-end tests, which shows that line on screen
+  // first, so "just the plate for now" stops after the plate: the plan is left half built for a save and a reopen
+  { id: 'mounting-plate-half', match: /\bmounting plate\b[\s\S]*\bjust the plate\b/i, steps: mountingPlateHalf, testOnly: true },
   { id: 'mounting-plate', match: /\bmounting plate\b/i, steps: mountingPlate, testOnly: true },
+  // a reopened project's half built plate: mimir goes on with its plan only when the project kept it
+  { id: 'keep-going', match: /^\s*keep going\b/i, steps: keepGoing, testOnly: true },
   // after the parts and before the slice: "print it on my A1" models a clip, slices and sends it
   { id: 'print-run', match: /\bprint (?:it|this)\b.*\bon (?:my|the)\b/i, steps: printRun },
   // after the parts, so a part asked for with a slice in the same message is built first

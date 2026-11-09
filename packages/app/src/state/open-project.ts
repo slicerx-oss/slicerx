@@ -245,6 +245,9 @@ async function addProjectShown(
     mine(() => quietly(() => set({ timeline: joinTimelines(designBefore, ours) })))
     if (ours.marker < ours.items.length) mine((await import('../cad/history/rollback')).settleRollback)
   }
+  // The mimir plans its designs were built from go back to the tab, tied to the objects as they are now, so design.check
+  // finds them and mimir can finish one (workspaces/mimir/plan-state.ts).
+  if (project.plans) (await import('../workspaces/mimir/plan-state')).restorePlans(project.plans, (fileId) => idOf.get(fileId))
   mine(() => switchPlate(startPlate))
   // An Orca or Bambu Studio project (anything but our .sx3mf) opens with its own fixed layers, so
   // sleipnir goes off and the layer count matches the slicer that made it. This is the project's, not the person's
