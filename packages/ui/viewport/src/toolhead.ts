@@ -14,6 +14,7 @@
 //   their vents, two print cores in a cavity between them (the right one on the lift switch), the Bowden
 //   tubes and the head cable on top, the lift switch lever on the right side, and the switch bay on the
 //   right wall it runs into.
+// - IDEX: two of the printer family's own heads (heads.ts) on one X rail behind them; the idle one parked at its end.
 // Poses come from `toolchanger.ts`.
 //
 // Every part is a separate solid in millimeters, nozzle tip at the origin, z up, +y toward the back of the
@@ -27,6 +28,7 @@
 //   toolhead's motor.
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import {
+  Box3,
   BoxGeometry,
   CanvasTexture,
   CircleGeometry,
@@ -320,6 +322,8 @@ export class ToolheadRig {
   private lastKey = ''
   private model: HeadModel = 'generic'
   private carriageOn = false
+  /** IDEX: the two carriages' heads, left then right, and the shadow under the one printing. */
+  private idexHeads: Group[] = []
 
   constructor() {
     this.root.name = 'toolhead'
@@ -361,7 +365,7 @@ export class ToolheadRig {
   setModel(model: HeadModel): void {
     if (model === this.model) return
     this.model = model
-    if (!this.spec || this.spec.kind === 'filament-swap') this.build()
+    if (!this.spec || this.spec.kind === 'filament-swap' || this.spec.kind === 'idex-park') this.build()
   }
 
   setSpec(spec: ToolChangerSpec | null): void {
@@ -402,6 +406,7 @@ export class ToolheadRig {
     this.disposables.length = 0
     this.sleeves = []
     this.left = this.right = this.carried = this.rackGroup = this.lever = this.headShadow = null
+    this.idexHeads = []
     this.bay = null
     this.rackSlots = []
   }
@@ -432,6 +437,8 @@ export class ToolheadRig {
       this.sleeves.push({ mesh: h.chip, tool: () => this.lastTool })
       if (h.rightSleeve) this.sleeves.push({ mesh: h.rightSleeve, tool: () => this.rightTool })
       if (spec.kind === 'hotend-rack' && spec.rack) this.buildRack(spec.rack)
+    } else if (spec.kind === 'idex-park') {
+      this.buildIdex(spec, shadow)
     } else if (spec.kind === 'lift-switch') {
       const k = spec.lift
       const spacing = k?.offsets[1]?.[0] ?? 22
@@ -512,6 +519,31 @@ export class ToolheadRig {
     rack.position.set(r.x, 0, 0)
     this.rackGroup = rack
     this.fixed.add(rack)
+  }
+
+  /**
+   * IDEX: two of the family's heads, each on its own carriage, and the X rail they ride on behind them. The group
+   * moves with the shared y and z; each head moves along x on its own.
+   */
+  private buildIdex(spec: ToolChangerSpec, shadow: Mesh): void {
+    const park = spec.idex?.park ?? [-50, spec.bed.widthMm + 50]
+    const half = (spec.idex?.width ?? 50) / 2
+    const heads = [buildHead(this.model), buildHead(this.model)]
+    const box = new Box3().setFromObject(heads[0]!.group)
+    const back = Number.isFinite(box.max.y) ? box.max.y : 20
+    const top = Number.isFinite(box.max.z) ? box.max.z : 60
+    this.headShadow = shadow
+    this.head.add(shadow)
+    heads.forEach((h, i) => {
+      h.group.name = 'idex carriage'
+      h.group.userData.carriage = i
+      this.idexHeads.push(h.group)
+      this.head.add(h.group)
+      this.sleeves.push({ mesh: h.sleeve, tool: () => this.toolOnSide(i) })
+    })
+    // The rail: from one parked carriage's outer side to the other's, behind the heads at mid height.
+    const z0 = Math.max(12, top * 0.45)
+    this.head.add(slab(graphite, park[0] - half, park[1] + half, back + 1, back + 9, z0, z0 + 14, 'idex rail', 2))
   }
 
   /** The Prusa XL dock along the back frame: a perforated black panel with a pin block behind each parked toolhead. */
@@ -640,6 +672,19 @@ export class ToolheadRig {
     }
     if (spec.kind === 'lift-switch') {
       this.placeUltimaker(spec, x, y, z, tool, pose)
+      return
+    }
+    if (spec.kind === 'idex-park') {
+      // Away from a change the carriage of the tool prints at the move and the other one stands at its end.
+      if (pose) this.lastTool = pose.carried ?? tool
+      const park = spec.idex?.park ?? [0, spec.bed.widthMm]
+      const side = (spec.extruderOf[tool] ?? 0) > 0 ? 1 : 0
+      const xs: [number, number] = pose?.carriages ?? (side === 0 ? [px, park[1]] : [park[0], px])
+      const active = pose?.active ?? side
+      this.head.position.set(0, py, pz)
+      this.idexHeads.forEach((g, i) => (g.position.x = xs[i] ?? 0))
+      if (this.headShadow) this.headShadow.position.x = xs[active] ?? px
+      this.paint()
       return
     }
     const s = spec.nozzles?.spacing ?? 24

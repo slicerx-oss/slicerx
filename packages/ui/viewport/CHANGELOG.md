@@ -4,6 +4,14 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+### Added
+
+- IDEX tool changes (`idex-park`): the printing carriage parks at its own end of X while the other one comes in for the next move, at once on the Snapmaker J1, one after the other elsewhere. `toolChangerSpec` takes the catalog's kinematics as a fifth argument (`ChangerHints`) and reads `idex` before it counts nozzles. A pose carries both carriages' X (`carriages`, `active`), and the toolhead draws two of the family's heads on one rail.
+
+### Changed
+
+- The Snapmaker J1 no longer plays the H2D's purge chute switch, and the Snapmaker Artisan plays no tool change until its mechanism is checked.
+
 ## [0.2.8] - 2026-11-08
 
 ### Added
