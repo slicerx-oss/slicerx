@@ -76,7 +76,7 @@ function keyOf(s: AppState): string {
 
 /** What a layer is made from apart from the tier and the Easy controls: the printer, its nozzle and the filaments. */
 function printerKeyOf(s: AppState): string {
-  const nz = s.printerModel?.id ? `${s.nozzleReported[s.printerModel.id] ?? ''}/${s.printerNozzles[s.printerModel.id] ?? ''}/${JSON.stringify(s.printerExtruders[s.printerModel.id] ?? [])}` : ''
+  const nz = s.printerModel?.id ? `${s.nozzleReported[s.printerModel.id] ?? ''}/${s.printerNozzles[s.printerModel.id] ?? ''}/${JSON.stringify(s.printerExtruders[s.printerModel.id] ?? [])}/${declaredToolchanger(s, s.printerModel.id) ? 'tc' : ''}` : ''
   return `${s.printerModel ? `${s.printerModel.id ?? ''}|${s.printerModel.vendor}|${s.printerModel.model}` : ''}|${nz}|${JSON.stringify(slotsOf(s))}`
 }
 
@@ -85,7 +85,16 @@ export function inputOf(s: AppState, model: NonNullable<AppState['printerModel']
   const reported = model.id ? s.nozzleReported[model.id] : undefined
   const chosen = model.id ? s.printerNozzles[model.id] : undefined
   const extruders = model.id ? s.printerExtruders[model.id] : undefined
-  return { printer: model, tier, slots: slotsOf(s), ...(reported ? { nozzle: reported, nozzleFrom: 'printer' as const } : chosen ? { nozzle: chosen, nozzleFrom: 'choice' as const } : {}), ...(extruders ? { extruders: reportedFirst(extruders, reported) } : {}) }
+  const toolchanger = model.id ? declaredToolchanger(s, model.id) : false
+  return { printer: model, tier, slots: slotsOf(s), ...(reported ? { nozzle: reported, nozzleFrom: 'printer' as const } : chosen ? { nozzle: chosen, nozzleFrom: 'choice' as const } : {}), ...(extruders ? { extruders: reportedFirst(extruders, reported) } : {}), ...(toolchanger ? { toolchanger } : {}) }
+}
+
+/**
+ * A printer declared a tool changer: setup kept docks for it (its Moonraker test found tool sections in the Klipper
+ * config), or its stored hand-added record has filamentSystem toolchanger (setup writes that only from the catalog).
+ */
+export function declaredToolchanger(s: Pick<AppState, 'printerDocks' | 'handPrinters'>, id: string): boolean {
+  return s.printerDocks[id] !== undefined || s.handPrinters.some((h) => h.id === id && h.filamentSystem === 'toolchanger')
 }
 
 /**
@@ -214,7 +223,7 @@ export function startProfileSync(): void {
     }
     // The layer applies only the moved controls, so it follows every change to that list (a copy of the same list
     // changes nothing).
-    if (s.easyTouched !== prev.easyTouched || s.printerModel !== prev.printerModel || s.printerNozzles !== prev.printerNozzles || s.printerExtruders !== prev.printerExtruders || s.nozzleReported !== prev.nozzleReported || s.goal !== prev.goal || s.goalBase !== prev.goalBase || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.plate !== prev.plate || s.plates !== prev.plates) void profileReady()
+    if (s.easyTouched !== prev.easyTouched || s.printerModel !== prev.printerModel || s.printerNozzles !== prev.printerNozzles || s.printerExtruders !== prev.printerExtruders || s.printerDocks !== prev.printerDocks || s.handPrinters !== prev.handPrinters || s.nozzleReported !== prev.nozzleReported || s.goal !== prev.goal || s.goalBase !== prev.goalBase || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.plate !== prev.plate || s.plates !== prev.plates) void profileReady()
   })
   void profileReady()
 }

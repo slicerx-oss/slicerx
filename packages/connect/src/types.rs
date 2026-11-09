@@ -477,6 +477,38 @@ pub struct PrinterHardware {
     /// the same one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub serial: Option<String>,
+    /// A Klipper tool changer's docks, one per `[tool]` section, with what its config says about each
+    /// (StealthChanger-style `params_*`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_docks: Vec<ToolDock>,
+}
+
+/// One tool's dock on a Klipper tool changer, from its `[tool]` section and the `[toolchanger]`
+/// defaults. Every field but the tool is absent when the config does not give it, or gives a value
+/// that does not read as a number.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolDock {
+    pub tool: u8,
+    /// Where the nozzle stands with the tool seated in its dock (`params_park_x`, `_y`, `_z`), mm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub park_mm: Option<[f64; 3]>,
+    /// The Y the head travels along X at in front of the docks (`params_safe_y`), mm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safe_y_mm: Option<f64>,
+    /// The dock path relative to the park point, in drop-off order (`params_sc_path` or
+    /// `params_path`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<DockStep>,
+}
+
+/// One step of a dock path, relative to the park point. `f` scales the path speed.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DockStep {
+    pub y: f64,
+    pub z: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub f: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

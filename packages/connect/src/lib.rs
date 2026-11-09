@@ -75,7 +75,7 @@ pub use types::{
     Adjustment, Capabilities, Capability, DiscoveredPrinter, ExtruderInfo, FanKind, Fans, FilamentSlot,
     FilamentUnit, FileInfo, Image, JobFile, JobKind, JogAxis, LiveUnit, Motion, PrintObject, PrintRecord,
     PrinterConfig, PrinterEvent, PrinterHardware, PrinterIssue, PrinterLive, PrinterState, PrinterStatus,
-    RemoteFile, Secrets, SlotSetting, StartOptions, StoredFile, Temp, UnitClimate,
+    RemoteFile, Secrets, SlotSetting, StartOptions, StoredFile, Temp, ToolDock, UnitClimate,
 };
 
 /// One printer family. `connect` opens a session; nothing here changes a printer.

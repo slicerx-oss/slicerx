@@ -36,7 +36,7 @@ import type { Spool } from '../inventory/spools'
 import type { QueueItem } from '../queue/queue'
 import type { SendOptionId } from '../send/options'
 import type { PrintSheetAsk } from '../send/print-sheet'
-import { EASY_DEFAULTS, type FirstRunState, type LookAndFeelChoice, type SettingIntent } from '@slicerx/contracts'
+import { EASY_DEFAULTS, type FirstRunState, type LookAndFeelChoice, type SettingIntent, type ToolDock } from '@slicerx/contracts'
 import { DEFAULT_THEME_IDS, THEME_FONT_CHOICE, type FontChoice, type ThemeFile, type ThemeIds } from '@slicerx/ui/theme'
 import { setTool, toolStore } from '../plate/tools'
 import { createStore, useStore } from 'zustand'
@@ -449,6 +449,11 @@ export interface AppState {
   printerNozzles: Record<string, number>
   /** Each extruder's nozzle on printers with more than one, by printer id, in the slicer's extruder order (left first on an H2D). */
   printerExtruders: Record<string, import('./prefs').ExtruderNozzle[]>
+  /**
+   * Klipper tool changers by printer id: the docks the printer's `[tool]` sections gave when setup read it over Moonraker
+   * (empty when it gave none it could read). An entry makes Preview play the printer's changes at its docks.
+   */
+  printerDocks: Record<string, ToolDock[]>
   toolheadSkipMatching: Record<string, boolean>
   /** Printers added by hand that no host knows. They join the host's printers (lib/hand-printers). */
   handPrinters: HandPrinter[]
@@ -864,6 +869,7 @@ export const appStore = createStore<AppState>()(() => ({
   namedValues: [],
   printerNozzles: prefs.printerNozzles ?? {},
   printerExtruders: prefs.printerExtruders ?? {},
+  printerDocks: prefs.printerDocks ?? {},
   toolheadSkipMatching: prefs.toolheadSkipMatching ?? {},
   handPrinters: prefs.handPrinters ?? [],
   bays: prefs.bays ?? [],
@@ -981,7 +987,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'legendOpen', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirRememberWithoutAsking', 'mimirMemorySync', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'legendOpen', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'printerDocks', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirRememberWithoutAsking', 'mimirMemorySync', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
 
 // the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
 const setup0 = appStore.getState().setup
@@ -1026,6 +1032,7 @@ appStore.subscribe((s, prev) => {
       units: s.units,
       printerNozzles: s.printerNozzles,
       printerExtruders: s.printerExtruders,
+      printerDocks: s.printerDocks,
       toolheadSkipMatching: s.toolheadSkipMatching,
       handPrinters: s.handPrinters,
       bays: s.bays,
