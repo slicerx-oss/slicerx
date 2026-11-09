@@ -437,6 +437,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     permission: 'slice',
     // Undoing a design's only step takes its body off the plate, so that call is the remove class, which asks first
     // by default. A design this host cannot find counts as that too, so an unknown one never skips the question.
+    classNote: "remove (Remove from the plate) when it undoes the design's only step or the design is not found, slice (Slice and arrange) otherwise",
     permissionFor: (i: { design: string }) => {
       try {
         return designs.get(i.design).history.steps.length > 1 ? 'slice' : 'remove'

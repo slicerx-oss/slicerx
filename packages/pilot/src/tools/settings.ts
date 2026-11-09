@@ -196,6 +196,7 @@ export function settingsTools(planner: SettingsPlanner | undefined): PilotTool<n
       changes: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])),
       reason: z.string().optional(),
     }),
+    classNote: 'profile (Change saved profiles) when target is a saved profile, slice (Slice and arrange) when it is the project',
     permissionFor: (i) => (i.target === 'profile' ? 'profile' : 'slice'),
     async mustAsk(i, ctx) {
       const material = ctx.project?.machine()?.material ?? ctx.context.machine?.material

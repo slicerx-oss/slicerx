@@ -119,6 +119,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     // Replaces this server's working project, never the person's project in the app. Replacing one that has objects
     // takes them off its plates, so that call is the remove class, which asks first by default.
     hints: { readOnly: false, destructive: true, idempotent: false, openWorld: false },
+    classNote: 'read when the working project is empty or none is open, remove (Remove from the plate) when it has objects, since they go with it',
     permissionFor: () => (deps.project.current && deps.project.current.objects().length > 0 ? 'remove' : 'read'),
     async approval() {
       const open = deps.project.current
