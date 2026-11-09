@@ -11,8 +11,10 @@
 // A live run asks the model and records nothing unless told to:
 //   SX_MIMIR_EVAL=live [SX_MIMIR_EVAL_CASES=id,id] [SX_MIMIR_EVAL_CAP=0.50] [SX_MIMIR_EVAL_RECORD=1]
 //   [SX_MIMIR_EVAL_OUT=results.jsonl] [SX_MIMIR_EVAL_LABEL=what changed] vitest run test/mimir-build-evals.test.ts
-// with ANTHROPIC_API_KEY in the environment. It runs on Haiku at its published price; no new request starts once the
-// spend reaches the cap less the stop margin, and no case starts past it.
+// with ANTHROPIC_API_KEY in the environment. It runs on Haiku unless SX_MIMIR_EVAL_MODEL names another model with a
+// price (drive.ts EVAL_PRICES: claude-sonnet-5-5), at mimir cloud's rates; no new request starts once the spend reaches
+// the cap less the stop margin, and no case starts past it. Recording stays on Haiku: recordings are kept one per case,
+// so a run on another model would replace the Haiku one.
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,7 +26,7 @@ import { budgetedClient, canStart, createBudget, HAIKU_5_5, STOP_MARGIN_USD } fr
 import { setGeomProvider } from '../src/geom/client'
 import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
-import { driveCase, EVAL_MODEL, tabConfig, type CaseRun } from './mimir-build-evals/drive'
+import { driveCase, EVAL_MODEL, evalPrice, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, recordLive, refreshScore, summarize } from './mimir-build-evals/recordings'
 import { assemblySizes, checkFromCalls, classifyNoBuild, extraTurns, hookCheck, lastCheckPass, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
@@ -552,16 +554,25 @@ describe('build eval scoring', () => {
     expect(disagree).toEqual(['twisted-vase', 'cable-clip', 'phone-stand-lip'])
   })
 
+  it('prices a live run on Haiku or Sonnet 5.5 and refuses a model with no price', () => {
+    expect(evalPrice(EVAL_MODEL)).toBe(HAIKU_5_5)
+    expect(evalPrice('claude-sonnet-5-5')).toBe(SONNET_5_5)
+    // $2 and $10 per million tokens at every length, as supabase/migrations/0028_mimir_step_up.sql bills it
+    expect(SONNET_5_5).toEqual({ usdIn: 2, usdOut: 10, usdPerSearch: 0.01, long: { above: 1_000_000, usdIn: 2, usdOut: 10 } })
+    expect(() => evalPrice('claude-opus-5-5')).toThrow(/claude-opus-5-5 needs its price added first/)
+    expect(tabConfig('claude-sonnet-5-5')).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-5-5' })
+  })
+
   it('runs the tab on a key for the eval model', () => {
     expect(tabConfig(EVAL_MODEL)).toMatchObject({ provider: 'anthropic', model: EVAL_MODEL })
   })
 })
 
-const line = (id: string, r: CaseRun, usd?: number): string => {
+const line = (id: string, r: CaseRun, usd?: number, model?: string): string => {
   const s = r.score
   const checks = [s.ops, s.watertight, s.bodies, s.minWall, s.bedFit, s.sizes, s.hook].map((c, i) => (c ? `${['ops', 'closed', 'bodies', 'wall', 'bed', 'size', 'hook'][i]} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')).filter(Boolean)
   const said = s.claim.said ? `  says ${s.claim.said} (${s.claim.from === 'check' ? 'last design.check' : 'reply'})` : ''
-  return `${(s.verdict === 'fail' && s.refused ? 'REFUSED' : s.verdict.toUpperCase()).padEnd(8)} ${id.padEnd(16)} turns ${s.turns.pass ? 'ok' : 'FAIL'} (${s.turns.detail})  ${checks.join('  ')}${said}${usd === undefined ? '' : `  $${usd.toFixed(3)}`}${r.error ? `  error: ${r.error}` : ''}`
+  return `${(s.verdict === 'fail' && s.refused ? 'REFUSED' : s.verdict.toUpperCase()).padEnd(8)} ${id.padEnd(16)} turns ${s.turns.pass ? 'ok' : 'FAIL'} (${s.turns.detail})  ${checks.join('  ')}${said}${model ? `  ${model}` : ''}${usd === undefined ? '' : `  $${usd.toFixed(3)}`}${r.error ? `  error: ${r.error}` : ''}`
 }
 
 /**
@@ -603,10 +614,14 @@ describe.runIf(live)('live build evals', () => {
   const ids = process.env['SX_MIMIR_EVAL_CASES']?.split(',').filter(Boolean)
   const cases = ids ? BUILD_CASES.filter((c) => ids.includes(c.id)) : BUILD_CASES
   const budget = createBudget(cap)
+  const record = process.env['SX_MIMIR_EVAL_RECORD'] === '1'
+  // set before any case runs; a model with no price fails the run there
+  let price: ReturnType<typeof evalPrice> | undefined
   const rows: { id: string; run: CaseRun; usd: number }[] = []
   beforeAll(async () => {
+    price = evalPrice(model)
     if (!liveEngine) throw new Error('a live run scores the parts, so it needs the geometry engine: build packages/geom/wasm (scripts/build.sh)')
-    if (model !== EVAL_MODEL) throw new Error(`live runs price ${EVAL_MODEL} only; ${model} needs its price added first`)
+    if (record && model !== EVAL_MODEL) throw new Error(`recordings are kept for ${EVAL_MODEL} only; run ${model} without SX_MIMIR_EVAL_RECORD=1`)
     if (!(cap > STOP_MARGIN_USD)) throw new Error(`SX_MIMIR_EVAL_CAP must be more than the ${STOP_MARGIN_USD} stop margin`)
     if (!(await createNodeTransport().available('anthropic'))) throw new Error('no key: set ANTHROPIC_API_KEY')
     setGeomProvider(await wasmGeom())
@@ -617,11 +632,11 @@ describe.runIf(live)('live build evals', () => {
     const counts = verdictCounts(rows.map((r) => ({ id: r.id, verdict: r.run.score.verdict })))
     const tally = (n: { pass: number; fail: number; disagree: number }) => `${n.pass} pass, ${n.fail} fail, ${n.disagree} disagree`
     const perCase = [...counts.byCase].map(([id, n]) => `${id.padEnd(16)} ${tally(n)}`).join('\n')
-    console.log(`\n${rows.map((r) => line(r.id, r.run, r.usd)).join('\n')}\n\n${perCase}\nlive ${model}: ${rows.length} of ${cases.length} run: ${tally(counts.all)}, spent $${budget.spentUsd.toFixed(3)} of $${cap.toFixed(2)}${budget.stopped ? ' (stopped at the cap)' : ''}`)
+    console.log(`\n${rows.map((r) => line(r.id, r.run, r.usd, model)).join('\n')}\n\n${perCase}\nlive ${model}: ${rows.length} of ${cases.length} run: ${tally(counts.all)}, spent $${budget.spentUsd.toFixed(3)} of $${cap.toFixed(2)}${budget.stopped ? ' (stopped at the cap)' : ''}`)
     const out = process.env['SX_MIMIR_EVAL_OUT']
     if (out) {
       const at = new Date().toISOString()
-      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
+      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
     }
   })
   for (const c of cases) {
@@ -633,12 +648,12 @@ describe.runIf(live)('live build evals', () => {
       }
       const before = budget.spentUsd
       const base = createTransportClient(createNodeTransport(), 'anthropic', { baseUrl: tabConfig(model).baseUrl! })
-      const r = await driveCase(c, { client: budgetedClient(base, model, HAIKU_5_5, budget), model })
+      const r = await driveCase(c, { client: budgetedClient(base, model, price!, budget), model })
       const usd = budget.spentUsd - before
       rows.push({ id: c.id, run: r, usd })
-      console.log(line(c.id, r, usd))
+      console.log(line(c.id, r, usd, model))
       // a run the budget stopped, or one that ended on an error, is not what the model would do: it is never recorded
-      if (process.env['SX_MIMIR_EVAL_RECORD'] === '1') recordLive(c.id, r, { model, provider: 'anthropic', stopped: budget.stopped })
+      if (record) recordLive(c.id, r, { model, provider: 'anthropic', stopped: budget.stopped })
     })
   }
 })

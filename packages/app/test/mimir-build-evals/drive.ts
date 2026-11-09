@@ -15,6 +15,7 @@ import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG
 import printerModels from '@slicerx/settings/printer-models.json' with { type: 'json' }
 import type { ScriptStep, ScriptStepData } from '../../../pilot/src/provider/scripted'
 import type { LlmMessage } from '../../../pilot/src/provider/types'
+import { HAIKU_5_5, type Price } from '../../../mcp/evals/creative/live'
 import type { BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
 import { createReplayCheck, MADE_ID, toolResultsSeen } from '../../../mcp/evals/creative/replay-divergence'
 import { builtinCommands } from '../../src/commands/builtin'
@@ -33,6 +34,25 @@ import { classifyNoBuild, placed, scoreCase, type CaseScore, type UserTurn } fro
 
 /** The model the eval runs on unless told otherwise: the tab's Haiku. */
 export const EVAL_MODEL = 'claude-haiku-5-5'
+
+/**
+ * Sonnet 5.5 at the rates mimir cloud bills it (supabase/migrations/0028_mimir_step_up.sql, the mimir_prices row for
+ * claude-sonnet-5-5): $2 and $10 per million input and output tokens at every prompt length, so the long rates past
+ * its 1M context equal the base ones, and $0.01 a hosted web search ($10 per 1,000). The budget bills cache writes at
+ * 1.25x and reads at 0.1x the input rate as it does for Haiku; Sonnet's own cache reads are 0.05x, so they count high,
+ * never low, as mimir cloud's do.
+ */
+export const SONNET_5_5: Price = { usdIn: 2, usdOut: 10, usdPerSearch: 0.01, long: { above: 1_000_000, usdIn: 2, usdOut: 10 } }
+
+/** The models a live run may use, each with the price its budget counts at. */
+export const EVAL_PRICES: Readonly<Record<string, Price>> = { [EVAL_MODEL]: HAIKU_5_5, 'claude-sonnet-5-5': SONNET_5_5 }
+
+/** The price a live run on `model` counts its spend at; a model with no price here is refused. */
+export function evalPrice(model: string): Price {
+  const price = EVAL_PRICES[model]
+  if (!price) throw new Error(`live runs price ${Object.keys(EVAL_PRICES).join(' and ')} only; ${model} needs its price added first`)
+  return price
+}
 
 /** What the eval says when a turn ends with nothing built, by why. */
 export const NUDGES = {
