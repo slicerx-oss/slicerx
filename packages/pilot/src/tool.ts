@@ -265,8 +265,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * integer with no bounds of its own; `additionalProperties: {}` (any value, as with no keyword); `propertyNames` of
  * plain strings (every JSON key is one); and `additionalProperties: false` on an object whose input form leaves it
  * open, since the tool strips unknown keys there rather than refusing them. A strict object keeps it. The type beside a
- * const goes too, since the const is the one value taken. A tuple of one kind is written as the plain array it equals
- * (sameTuple). Everything else, every other type, bound, enum, default, required list and description, stays as it is.
+ * const goes too, since the const is the one value taken, and so does the string type beside an enum of strings, since
+ * the enum lists every value taken. A tuple of one kind is written as the plain array it equals (sameTuple). Everything
+ * else, every other type, bound, enum, default, required list and description, stays as it is.
  */
 function leanSchema(out: unknown, inp: unknown): unknown {
   if (!isRecord(out)) return out
@@ -278,6 +279,7 @@ function leanSchema(out: unknown, inp: unknown): unknown {
     if (k === 'propertyNames' && isRecord(v) && Object.keys(v).length === 1 && v.type === 'string') continue
     if (k === 'additionalProperties' && v === false && i?.type === 'object' && !('additionalProperties' in i)) continue
     if (k === 'type' && 'const' in out) continue
+    if (k === 'type' && v === 'string' && Array.isArray(out.enum) && out.enum.length > 0 && out.enum.every((e) => typeof e === 'string')) continue
     const iv = i?.[k]
     if (ONE_SCHEMA.has(k)) lean[k] = leanSchema(v, iv)
     else if (SCHEMA_LIST.has(k) && Array.isArray(v)) lean[k] = v.map((s, n) => leanSchema(s, Array.isArray(iv) ? iv[n] : undefined))
