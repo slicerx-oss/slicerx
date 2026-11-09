@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { KbDoc } from '../../src/kb/kb'
 import type { ToolShared } from '../../src/shared'
 import { fmtDuration } from '../../src/shared'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { resolvePrinters } from '../../src/tools/printers'
 import { buildVolume, pickObject } from '../common'
 
@@ -43,7 +43,7 @@ export function createPrinterMatch(shared: ToolShared) {
   return defineSkill({
     name: 'printer_match',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Rank the printers that can print a model in a material right now: fit in the build volume, hotend temperature, nozzle hardness for abrasive filament, enclosure need, material already loaded, wait time and machine cost. All printers by default, or named printers, or a fleet group.',
     input: z.object({

@@ -7,7 +7,7 @@
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrinterEvent, type PrinterHost, type PrinterStatus, type RunJob, type SessionStore } from '@slicerx/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { createPilot, createRunBook, createScriptedClient, DEFAULT_CONFIG, defineTool, runBookFor, watchJob, type RunJobPatch } from '../src/index'
+import { createPilot, createRunBook, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, runBookFor, watchJob, type RunJobPatch } from '../src/index'
 
 const JOB: RunJob = { printerId: 'p1', fileName: 'clip.gcode', startedAt: '2026-10-20T00:00:00.000Z', state: 'printing' }
 const T_END = Date.parse('2026-10-20T01:05:00.000Z')
@@ -252,7 +252,7 @@ describe('the job watch', () => {
       version: '1',
       description: 'Records a started print',
       source: 'skill',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.object({}),
       async run(_i, ctx) {
         ctx.run?.recordJob(JOB)
@@ -303,7 +303,7 @@ describe('the job watch', () => {
       version: '1',
       description: 'Records a started print',
       source: 'skill',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.object({}),
       async run(_i, ctx) {
         ctx.run?.recordJob(JOB)
@@ -394,7 +394,7 @@ describe('the watch follows the printer connection', () => {
       version: '1',
       description: 'Records a started print',
       source: 'skill',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.object({}),
       async run(_i, ctx) {
         ctx.run?.recordJob(JOB)

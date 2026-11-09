@@ -8,11 +8,11 @@
 import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTransport, type PilotMachine, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createPilot, DEFAULT_CONFIG, defineTool, type PilotTool, type Toolset } from '../src/index'
+import { createPilot, DEFAULT_CONFIG, READ_ONLY, defineTool, type PilotTool, type Toolset } from '../src/index'
 import { capTools, LOAD_TOOLS_TOOL, LOADABLE_TOOLSETS, TOOLSET_LABELS, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from '../src/toolsets'
 
 const tool = (name: string, toolset: Toolset): PilotTool<never> =>
-  defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', toolset, input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
+  defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', hints: READ_ONLY, toolset, input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
 
 /** 150 tools: core 10, cad 60, settings 30, printers 20, fleets 15, theme 15. */
 function manyTools(): PilotTool<never>[] {
@@ -487,7 +487,7 @@ describe('pilot.load_tools answers only what it does', () => {
 
   it('a load asked for in a turn canceled before its next step does not carry into the next turn', async () => {
     const stop = new AbortController()
-    const halt = defineTool({ name: 'core.halt', version: '1.0.0', description: 'core.halt stops', source: 'command', permission: 'read', toolset: 'core', input: z.object({}).passthrough(), run: async () => (stop.abort(), { summary: 'stopped' }) }) as PilotTool<never>
+    const halt = defineTool({ name: 'core.halt', version: '1.0.0', description: 'core.halt stops', source: 'command', permission: 'read', hints: READ_ONLY, toolset: 'core', input: z.object({}).passthrough(), run: async () => (stop.abort(), { summary: 'stopped' }) }) as PilotTool<never>
     const { results, say, llm } = setup('mimir-cloud', [{ calls: [{ call: LOAD_TOOLS_TOOL, args: { toolset: 'theme' } }, { call: 'core.halt' }] }, { text: 'Here.' }], [...manyTools(), halt])
     const got = await results('hello', stop.signal)
     expect(got[0]).toMatchObject({ ok: true })

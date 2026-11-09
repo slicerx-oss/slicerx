@@ -4,7 +4,7 @@
 // knowledge entry for that model, and list findings with sources.
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { amsFit, arr, filamentDoc, obj, oneLine, printerDoc, strs } from '../d_common/index'
 
 type Severity = 'info' | 'warn' | 'bad'
@@ -18,7 +18,7 @@ export function createPrinterConfigCheck() {
   return defineSkill({
     name: 'printer_config_check',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Check one printer against the knowledge base entry for its model: input shaping and pressure advance notes, stock nozzle against the loaded filament, hotend limit, AMS compatibility of loaded materials, camera, and the model\'s own notes for mimir. Uses printer status and plugin status output. Firmware versions are only compared when the plugin reports one. Read only.',
     input: z.object({ printerId: z.string().min(1).describe('Printer id, such as "bay-1"') }),

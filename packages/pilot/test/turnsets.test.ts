@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createEvalEnv } from '../evals/harness'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 import { inTurnSet, TURN_SET_TOOL, TURN_SETS, turnSet, turnSetsOf, type TurnSet } from '../src/turnsets'
 
 const MACHINE: PilotMachine = { printer: 'prusa_mk4s', material: 'pla', nozzle: 0.4 }
@@ -20,7 +20,7 @@ const design = ['design.new', 'design.plan', 'geom.extrude', 'geom.fillet', 'geo
       name,
       version: '1.0.0',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       description: `The ${name} step.`,
       input: z.object({}).passthrough(),
       async run() {
@@ -41,7 +41,7 @@ const answering = (name: string, result: { ok?: boolean; output?: unknown }) =>
     name,
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `The ${name} step.`,
     input: z.object({}).passthrough(),
     async run() {

@@ -8,7 +8,7 @@ import type { SettingsDiff, SettingValue } from '@slicerx/contracts'
 import { z } from 'zod'
 import type { KnowledgeBase } from '../kb/kb'
 import type { PlanOptions, PlanResult, SettingsPlanner } from '../planner'
-import { defineTool, type PilotTool } from '../tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../tool'
 
 const machine = z.object({
   printer: z.string().min(1).describe('Knowledge printer id or name, such as prusa_mk4s'),
@@ -111,7 +111,7 @@ export function settingsReadTool(): PilotTool<never> {
     name: 'settings.get',
     version: '1.0.0',
     source: 'settings',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read the print settings the shown plate slices with now, by setting key such as layer_height: effective values and the project overrides. Up to ${SETTINGS_GET_MAX} keys; with none, the most used settings.`,
     input: z.object({ keys: z.array(z.string().min(1).max(100)).min(1).max(SETTINGS_GET_MAX).optional().describe('Setting keys, such as layer_height or wall_loops') }),
     args: (i) => (i.keys ?? []).join(' '),
@@ -143,7 +143,7 @@ export function settingsTools(planner: SettingsPlanner | undefined): PilotTool<n
     name: 'settings.plan',
     version: '1.0.0',
     source: 'settings',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Recompute every setting affected by a change of material, printer or nozzle (temperatures, fan, retraction, speeds, flow, pressure advance, bed). Returns before, after and a reason with sources for each key. Deterministic, no side effects.',
     input: z.object({

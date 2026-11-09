@@ -5,7 +5,7 @@
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
 import type { KbDoc, KnowledgeBase } from '../../src/kb/kb'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { filamentDoc, loadPrinters, num, printerCaps, readSpools, rec, strs } from '../fleet_common/index'
 
 export const NEEDS = ['heat', 'uv', 'flexible', 'chemical', 'food_contact', 'strength', 'cheap'] as const
@@ -139,7 +139,7 @@ export function createMaterialRecommend() {
   return defineSkill({
     name: 'material_recommend',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Recommend materials for a use case, best first, with reasons and cautions from the knowledge base. Needs can combine (uv means sun or outdoors). Prefers spools the user owns (Spoolman) and flags what the user\'s printers need for each material (enclosure, hardened nozzle, hotend temperature). Use it when the user asks what to print something in, before printer_match.',
     input: z.object({

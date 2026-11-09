@@ -5,7 +5,7 @@
 import type { Cell, Tone } from '@slicerx/contracts'
 import { z } from 'zod'
 import { fmtGrams, type ToolShared } from '../../src/shared'
-import { defineSkill, type ToolContext } from '../../src/tool'
+import { READ_ONLY, defineSkill, type ToolContext } from '../../src/tool'
 import { filamentDoc, materialKey, readSpools, slotGrams, spoolLabel } from '../fleet_common/index'
 
 export interface Verdict {
@@ -145,7 +145,7 @@ export function createSpoolFit(shared: ToolShared) {
   return defineSkill({
     name: 'spool_fit',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Check whether the filament loaded on a printer is enough for a sliced plate, with a margin (default 10 percent, at least 10 g). Reads grams from the plate slice and what is left from Spoolman or the slot percent. When it falls short it suggests a backup AMS slot with the same material, the layer to swap at, or a fuller spool. Slice first, or pass gramsNeeded. Use it for "will this spool finish the helmet". Read only.',
     input: z.object({

@@ -17,6 +17,6 @@ export default (d: ServerToolDeps) =>
     // Loose for now: an argument the tool does not take is ignored with a warning (ignored_arguments), not refused.
     input: z.object(sliceInput).loose(),
     outputShape: summaryShape,
-    hints: { openWorld: true },
+    hints: { readOnly: true, openWorld: true },
     run: (args, ctx) => runSlice(d, args as SliceArgs, false, (m, f) => ctx.progress(m, f)),
   })

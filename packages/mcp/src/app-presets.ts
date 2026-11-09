@@ -7,7 +7,7 @@
 // dialog that names the setting and the value. That dialog is the approval: these tools are slice class like the other
 // app link edits and ask nothing here. A client allowed to read only is refused by the hub before any dialog. Nothing
 // creates, renames, deletes or applies a preset.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -49,7 +49,7 @@ export function appPresetTools(link: AppLinkCaller | undefined, appName: string)
     name: 'app.presets',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `List the presets the person saved in the open ${appName} app (Settings, Presets): id, kind (process, filament or printer), name, parent (the maker preset it was made from, when it names one), how many settings it changes, and inUse (the preset of its kind on the plate). Optional kind narrows the list. Reads through the app link.`,
     input: z.object({ kind: z.enum(['process', 'filament', 'printer']).optional().describe('Only presets of this kind') }),
     async run(i) {
@@ -61,7 +61,7 @@ export function appPresetTools(link: AppLinkCaller | undefined, appName: string)
     name: 'app.preset_compare',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Compare a preset the person saved in the open ${appName} app with another saved preset of its kind (with), or with the maker preset it was made from or the stock settings (against: "parent" or "stock"), exactly as Compare presets in the app lists them: each side read over the stock settings of the printer on the plate, the settings that differ (every setting of the kind with all: true, each marked differs), grouped by settings group, each with its label, key, both values and both as the app writes them, and the G-code line diff. Reads only.`,
     input: z.object({ preset, ...second, all: z.boolean().optional().describe('List every setting of the kind, not only those that differ') }),
     async run(i) {

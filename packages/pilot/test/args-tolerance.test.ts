@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createEvalEnv } from '../evals/harness'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 
 const MACHINE: PilotMachine = { printer: 'prusa_mk4s', material: 'pla', nozzle: 0.4 }
 
@@ -29,7 +29,7 @@ describe('arguments local models get wrong', () => {
         name,
         version: '1.0.0',
         source: 'plugin',
-        permission: 'read',
+        permission: 'read', hints: READ_ONLY,
         description: 'test',
         input: input as z.ZodObject,
         async run(i) {

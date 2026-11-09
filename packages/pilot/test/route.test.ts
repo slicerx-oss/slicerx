@@ -9,7 +9,7 @@ import { DEFAULT_CONFIG } from '../src/config'
 import { chatRoute, designRoute, HUGINN, MUNINN, personSizes, SIZES_GIVEN, tabRoute } from '../src/models'
 import { createScriptedClient } from '../src/provider/scripted'
 import { createPilot } from '../src/runtime'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 import { z } from 'zod'
 
 /** Parts described as working with another part, in general words. */
@@ -151,7 +151,7 @@ const NO_APPROVALS = { register: async () => undefined, grant: async () => undef
 const AUTO = { ...DEFAULT_CONFIG, provider: 'anthropic', model: 'claude-haiku-5-5', models: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, billing: 'key' as const, auto: true, webSearch: false }
 
 /** A tool named design.new, which makes the runtime build with the design tools (the mimir tab). */
-const DESIGN_NEW = defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', description: 'design.new for the test', input: z.object({}), async run() { return { summary: 'ok' } } }) as PilotTool<never>
+const DESIGN_NEW = defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'design.new for the test', input: z.object({}), async run() { return { summary: 'ok' } } }) as PilotTool<never>
 
 async function first(message: string, opts: { auto?: boolean; designs?: boolean } = {}): Promise<{ start: PilotEvent | undefined; models: string[] }> {
   const client = createScriptedClient([{ text: 'How thick is it?' }], { chunk: false })
@@ -169,8 +169,8 @@ async function first(message: string, opts: { auto?: boolean; designs?: boolean 
 }
 
 /** A design.check that reports the part against its plan: `pass` false is a miss, though the call itself worked. */
-const checkTool = (pass: boolean) => defineTool({ name: 'design.check', version: '1.0.0', source: 'command', permission: 'read', description: 'design.check for the test', input: z.object({}), async run() { return { summary: pass ? 'all checks pass' : '2 of 9 checks fail', output: { pass } } } }) as PilotTool<never>
-const failingBuild = defineTool({ name: 'design.extrude', version: '1.0.0', source: 'command', permission: 'read', description: 'design.extrude for the test', input: z.object({}), async run() { return { ok: false, summary: 'no profile' } } }) as PilotTool<never>
+const checkTool = (pass: boolean) => defineTool({ name: 'design.check', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'design.check for the test', input: z.object({}), async run() { return { summary: pass ? 'all checks pass' : '2 of 9 checks fail', output: { pass } } } }) as PilotTool<never>
+const failingBuild = defineTool({ name: 'design.extrude', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'design.extrude for the test', input: z.object({}), async run() { return { ok: false, summary: 'no profile' } } }) as PilotTool<never>
 
 async function runWith(message: string, script: Parameters<typeof createScriptedClient>[0], tools: PilotTool<never>[]): Promise<{ models: string[]; switches: string[] }> {
   const client = createScriptedClient(script, { chunk: false })
@@ -197,7 +197,7 @@ describe('a design run that misses its plan', () => {
 })
 
 /** A part generator that builds (or fails to build) a whole part in one call, for a chat without the design tools. */
-const partTool = (name: 'text_to_part' | 'make_model', ok = true) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: `${name} for the test`, input: z.object({}), async run() { return ok ? { summary: 'built the part', output: { objectId: 'p1' } } : { ok: false, summary: 'could not build it' } } }) as PilotTool<never>
+const partTool = (name: 'text_to_part' | 'make_model', ok = true) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: `${name} for the test`, input: z.object({}), async run() { return ok ? { summary: 'built the part', output: { objectId: 'p1' } } : { ok: false, summary: 'could not build it' } } }) as PilotTool<never>
 
 /** A run in a chat without the design tools, where a part comes from text_to_part or make_model. */
 async function runChat(message: string, script: Parameters<typeof createScriptedClient>[0], tools: PilotTool<never>[], config: Partial<typeof AUTO> & { deepDesign?: boolean } = {}): Promise<{ models: string[]; switches: string[] }> {

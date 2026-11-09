@@ -14,7 +14,7 @@ export default (d: ServerToolDeps) =>
     ungated: true,
     description: 'The most recent tool calls and approval decisions this server recorded: tool, permission class, decision, who decided, and the result summary.',
     input: z.object({ limit: z.number().int().min(1).max(200).default(20) }),
-    hints: { idempotent: false },
+    hints: { readOnly: true, idempotent: false },
     async run(args) {
       return { summary: 'Action log', structured: { path: d.gate.log.path, entries: d.gate.log.recent(args.limit) } }
     },

@@ -18,7 +18,7 @@ export default (d: ServerToolDeps) =>
     description:
       'Read a 3MF or .sx3mf project without slicing it: its plates (with names, object counts and, where a plate sets its own, its print sequence and plate type as `bed_type`), the printer, process and filament presets it was saved with, the printer another slicer\'s project was made for (`project_printer`: its name, and the machine: profile and nozzle that slice it on that printer when there is a profile for it; pass that profile to slicerx_slice_file to use it, or another to keep your printer), its filament slots (type and color), its support settings (`support`: enable_support, support_* and tree_support_* as the file sets them), whether it carries print settings, and with settings `project_config`: the settings a slice with project_settings: true and no machine: profile takes from the file (its own values, the engine choices it did not change, and the reading of keys it lacks by the app that wrote it, such as the rib prime tower for a Bambu Studio project), as one object to pass as the config of a slice request. Use the plate numbers with slicerx_slice_file and project_settings: true to slice it as it was set up. Open a locked project (.sxlock) with slicerx_sxlock_open first.',
     input: z.object({ file: z.string().min(1).describe('Absolute path or http(s) URL of a .3mf or .sx3mf file') }),
-    hints: { openWorld: true },
+    hints: { readOnly: true, openWorld: true },
     async run(args) {
       const path = await resolveModel(d.policy, args.file)
       if (!['.3mf', '.sx3mf'].includes(extname(path).toLowerCase())) throw new ToolInputError(`${basename(path)} is not a 3MF or .sx3mf project`, 'unsupported_format')

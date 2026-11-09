@@ -5,7 +5,7 @@
 import type { Cell, Tone } from '@slicerx/contracts'
 import { z } from 'zod'
 import { fmtGrams, type ToolShared } from '../../src/shared'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { colorMatches, loadPrinters, materialKey, readSpools, spoolLabel, type SpoolRec } from '../fleet_common/index'
 
 export interface Demand {
@@ -71,7 +71,7 @@ export function createSpoolInventory(shared: ToolShared) {
   return defineSkill({
     name: 'spool_inventory',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Grams of filament on hand per material and color from Spoolman, checked against planned work: jobs you pass in (material, optional color, grams) and the plates already sliced in the project. Warns before a spool runs out and suggests how many spools to reorder. It never orders anything: ordering is a separate approval class that is off by default. Use it for "do I have enough black PETG for this week". Optional printers or fleet show which spools are loaded where.',
     input: z.object({

@@ -11,7 +11,7 @@ import { createEvalEnv } from '../evals/harness'
 import { fitContext, messageTokens, MIMIR_CONTEXT, REPLY_RESERVE, SHORTENED, toolsTokens, TRIMMED_RESULT, TRIMMED_TURNS } from '../src/context'
 import { createScriptedClient } from '../src/provider/scripted'
 import type { LlmMessage, LlmToolDef } from '../src/provider/types'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 
 const MACHINE: PilotMachine = { printer: 'prusa_mk4s', material: 'pla', nozzle: 0.4 }
 
@@ -106,7 +106,7 @@ describe('the runtime and the context', () => {
     name: 'test.big_read',
     version: '1.0.0',
     source: 'plugin',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Returns a long report.',
     input: z.object({}),
     async run() {

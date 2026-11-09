@@ -35,7 +35,7 @@ export function appValueTools(link: AppLinkCaller | undefined, appName: string):
     ['app.step_bind', 'values.bind', 'Bind a history step\'s main number to an expression in the open project, or pass expression:null to keep the number and stop following it. Give a design on the shown plate and a step index from 1 or step id. Replay the design and return the project values and bindings; read its geometry with slicerx_design_steps. Invalid expressions are refused before editing.'],
   ] as const
   return specs.map(([name, method, description]) => defineTool({
-    name, version: '1.0.0', source: 'command', permission: method === 'values.list' ? 'read' : 'slice',
+    name, version: '1.0.0', source: 'command', permission: method === 'values.list' ? 'read' : 'slice', hints: { readOnly: method === 'values.list' },
     description: `${description} Requires ${appName} open with the app link on; edits require its edit grant.`,
     input: appValueInputs[method] as z.ZodType<Record<string, unknown>>,
     async run(args) {

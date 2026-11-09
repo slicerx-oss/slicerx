@@ -162,9 +162,10 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       title: tool.title ?? tool.name,
       description: read ? tool.description : `${tool.description} Permission class: ${tool.permission}${label ? ` (${label.title})` : ''}. The user's policy decides whether it runs, asks the user first, or is off.`,
       annotations: {
-        readOnlyHint: h.readOnly ?? read,
+        // Only a tool that says it changes nothing is listed as read-only; the read class alone never implies it.
+        readOnlyHint: h.readOnly === true,
         destructiveHint: h.destructive ?? (tool.permission === 'start' || tool.permission === 'queue'),
-        idempotentHint: h.idempotent ?? read,
+        idempotentHint: h.idempotent ?? h.readOnly === true,
         openWorldHint: h.openWorld ?? tool.source === 'plugin',
       },
     }

@@ -5,7 +5,7 @@
 // sends, in that order, through the same tool calls a model makes. A pick on the card goes on to the slice and the send,
 // and is offered once to be remembered at the end. The tools here stand in for the app's, so only the order is tested.
 import type { PilotEvent } from '@slicerx/contracts'
-import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import type { ToolRowModel } from '@slicerx/pilot/ui'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
@@ -19,7 +19,7 @@ function fake(name: string, out: (input: Record<string, unknown>, ctx: ToolConte
     name,
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Stands in for ${name}.`,
     input: z.object({}).passthrough(),
     async run(i, ctx) {

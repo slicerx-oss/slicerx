@@ -9,7 +9,7 @@ import { mimirTools, scriptedMimir, type MimirScript } from '../src/workspaces/m
 import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, PlanInputSchema, planOfChoices, planTool, samePlan, shownPlan, unbuiltPlan, withPlanTies, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
 import { mimirPlans } from '../src/workspaces/mimir/plans'
 import { SCRIPTS } from '../src/workspaces/mimir/scripts'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 
 afterEach(clearPlans)
@@ -222,7 +222,7 @@ describe('design.plan', () => {
 
 describe("the tab's design.plan", () => {
   it("is the card's, and the design toolset's design.put_plan (plans kept for MCP clients) stays out of the tab", () => {
-    const keeper = defineTool({ name: 'design.put_plan', version: '1.0.0', source: 'command', permission: 'read', description: 'keeps a plan', input: z.object({}), run: async () => ({ summary: 'kept' }) }) as PilotTool<never>
+    const keeper = defineTool({ name: 'design.put_plan', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'keeps a plan', input: z.object({}), run: async () => ({ summary: 'kept' }) }) as PilotTool<never>
     const tools = mimirTools([keeper])
     expect(tools.filter((t) => t.name === 'design.plan')).toHaveLength(1)
     expect(tools.some((t) => t.name === 'design.put_plan')).toBe(false)
@@ -234,7 +234,7 @@ describe('design.plan and design.check share one registry', () => {
   const no = { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[1]!.id }) } as never
   /** A stand-in for a design tool: design.new answers with its design id, a geometry step takes one. */
   const fake = (name: string, permission: 'read' | 'slice', output?: unknown): PilotTool<never> =>
-    defineTool({ name, version: '1.0.0', source: 'command', permission, description: `${name} stand-in for the test`, input: z.object({ design: z.string().optional() }), run: async () => ({ summary: name, output }) }) as PilotTool<never>
+    defineTool({ name, version: '1.0.0', source: 'command', permission, hints: { readOnly: permission === 'read' }, description: `${name} stand-in for the test`, input: z.object({ design: z.string().optional() }), run: async () => ({ summary: name, output }) }) as PilotTool<never>
 
   it('a plan made on the card is the one the shared registry holds, edits included', async () => {
     const out = await planTool().run(BOX as never, {

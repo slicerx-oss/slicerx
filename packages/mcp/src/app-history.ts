@@ -15,7 +15,7 @@ export function appHistoryTools(link: AppLinkCaller | undefined, appName: string
     ['app.redo', 'history.redo', 'Redo one project edit from the toolbar history. Pass the revision from app_history or the previous undo result; a stale revision or active edit is refused. Returns the resulting project state and changed:false when nothing can be redone. A new edit clears Redo.'],
   ] as const
   return specs.map(([name, method, description]) => defineTool({
-    name, version: '1.0.0', source: 'command', permission: method === 'history.get' ? 'read' : 'slice',
+    name, version: '1.0.0', source: 'command', permission: method === 'history.get' ? 'read' : 'slice', hints: { readOnly: method === 'history.get' },
     description: `${description} Requires ${appName} open with its app link on; Undo and Redo require an edit grant. Only edits recorded by the toolbar history are affected; this is separate from design_undo, which removes a design's last feature.`,
     input: method === 'history.get' ? z.object({}).strict() : z.object({ revision: z.string().min(1).max(100) }).strict(),
     async run(args) {

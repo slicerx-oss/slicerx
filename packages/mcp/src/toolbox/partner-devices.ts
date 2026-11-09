@@ -26,7 +26,7 @@ export default (d: ServerToolDeps) => {
     ungated: true,
     description: `Read the partner phones the ${productName()} hub answers away from home: phone apps from other companies that the person paired in Settings, Printer bridge, Devices, each under its app's name. Each device has pairingId, partner (the app name), name and platform (the phone), rights (request: may ask to pause or stop a print; approve: may approve cards as the person's own phone does (pause, stop, skip, and a remote start after a plate check), never ones a partner app asked for, and answer mimir's questions; off until the person turns it on), addedAt, online (connected over the relay now), relayBytesToday against limits.relayBytesPerDay, and push (provider expo, apns or fcm, and platform) when it registered for alerts. remoteAccess says whether Remote access is on. Partner phones paired while Remote access was off are listed once it is on. Never a key. Pairing, changing rights and revoking are done by the person in the app; no tool can.`,
     input: z.object({}),
-    hints: { idempotent: false, openWorld: true },
+    hints: { readOnly: true, idempotent: false, openWorld: true },
     async run() {
       const read = printers.kind === 'link' ? readerOf(printers.host) : undefined
       if (!read) throw new ToolInputError(`Partner phones pair with the ${productName()} app through its hub; these printers have none.`, 'not_supported', { reason: 'no_hub' })

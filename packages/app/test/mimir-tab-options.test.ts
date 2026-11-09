@@ -4,7 +4,7 @@
 // same tools, the edition's tool groups, the cad scope where the host does not slice, and the tab's step and tool call
 // limits.
 import type { Host, PrinterHost } from '@slicerx/contracts'
-import { createApprovalBroker, createPilot, DEFAULT_CONFIG, defineTool, tabOptions, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, type PilotTool } from '@slicerx/pilot'
+import { createApprovalBroker, createPilot, DEFAULT_CONFIG, READ_ONLY, defineTool, tabOptions, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, type PilotTool } from '@slicerx/pilot'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { NEUTRAL } from '../src/edition'
@@ -18,7 +18,7 @@ afterEach(() => setHostSlices(true))
 const printers = { list: async () => [], plugins: async () => [], fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
 const noLlm = { available: async () => true, stream: () => { throw new Error('scripted') } }
 const host = { kind: 'web', slicer: {}, printers, approvals: createApprovalBroker(), capabilities: { threads: 1 } } as unknown as Host
-const tool = (name: string) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: name, input: z.object({}), run: async () => ({ summary: 'ok' }) }) as PilotTool<never>
+const tool = (name: string) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: name, input: z.object({}), run: async () => ({ summary: 'ok' }) }) as PilotTool<never>
 const TOOLS = [tool('design.new'), tool('geom.info')]
 const off = { ...NEUTRAL, ai: { ...NEUTRAL.ai, brain: { ...NEUTRAL.ai.brain, tools: { printers: false } } } }
 

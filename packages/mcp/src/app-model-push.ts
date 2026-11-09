@@ -3,7 +3,7 @@
 // Push and pull as the person has it open in the app, through the app link: read its picked face, the distance in its
 // Distance box and the operation that distance makes, or type a distance into that box for the person to apply with
 // Enter. Neither changes the project, so both tools read; geom.push_pull is the way a client pushes a face itself.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { APP_VIEW_CHANGE_HINTS, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -52,7 +52,7 @@ export function appModelPushTools(link: AppLinkCaller | undefined, appName: stri
     name: 'app.model_push',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read Push and pull as the person has it open in ${appName}'s Model: open (false while it is not), the picked face (object, part, a point "at" on it, its outward normal, and how thick the body is behind it), the Distance box as typed and the distance it reads as (mm), and the operation that makes (pull: Pull out adds material; cut: a negative distance cuts; through: the cut opens a hole). Reads through the app link; the app must be open with the link on.`,
     input: z.object({}),
     async run() {

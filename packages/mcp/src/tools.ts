@@ -8,7 +8,7 @@ import { assistantText, productName } from '@slicerx/contracts'
 import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import type { PrinterHost, SideEffectAction } from '@slicerx/contracts'
-import { defineTool, type AgentWork, type PilotTool, type ToolContext } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type AgentWork, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DataStore } from './data'
 import { MODEL_EXTENSIONS, resolveModel, type PathPolicy } from './models'
@@ -207,7 +207,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     name: 'project.show',
     version: '1.3.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides. On a printer whose hotends are its tools (the H3C), hotends gives each filament on its tool (from 1) and hotend (from 0), with the TPU tool and 2.85 mm TPU flagged: the slicer\'s rule with every filament counted as printed, or the project\'s own map (filament_map_mode Manual with filament_nozzle_map, hotends from 0); slicerx_slice reports what the engine used. Each placement gives the copy\'s turnDeg, how far the last arrange turned it about Z after its object\'s rotation. A plate printed by object has byObject, its clearance plan by the footprint rule. With check: true (sx engine), each such plate also gets byObject.engine, heimdall\'s plate check before a slice: clean, collisions as a slice lists them, each with certainty (sure: a slice of the plate is refused for it; slice_decides: only the slice can tell), leftSure (the pairs with a sure strike, a and b with id and name), fixes, unchecked (what only the slice checks: tree_support, tool_change_trips, raft or painted_brim, per object with the objects near it), order and micros. The check slices nothing; it is off by default.',
     input: z.object({ check: z.boolean().optional().describe("Also run heimdall's plate check on each by-object plate (sx engine). Default false.") }),

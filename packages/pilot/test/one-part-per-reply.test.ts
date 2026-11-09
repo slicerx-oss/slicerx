@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, type LlmMessage, type ScriptStep } from '../src/index'
 import { ONE_PART_NOTE, restartOf } from '../src/runtime'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
 
@@ -80,7 +80,7 @@ const info = defineTool({
   name: 'geom.info',
   version: '1.0.0',
   source: 'command',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   description: 'test',
   input: z.object({ design: z.string() }),
   async run(i) {
@@ -98,7 +98,7 @@ const plan = defineTool({
   name: 'design.plan',
   version: '1.0.0',
   source: 'command',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   description: 'test',
   input: z.object({ part: z.string(), features: z.array(z.object({ name: z.string() })) }),
   async run() {

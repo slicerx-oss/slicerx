@@ -5,7 +5,7 @@
 import type { Cell, PrinterStatus, Tone } from '@slicerx/contracts'
 import { z } from 'zod'
 import { fmtDuration } from '../../src/shared'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { loadPrinters, readSpools, slotGrams, type SpoolRec } from '../fleet_common/index'
 
 export interface Attention {
@@ -44,7 +44,7 @@ export function createFleetOverview() {
   return defineSkill({
     name: 'fleet_overview',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Status of every printer in one call: state, current job with progress and time left, loaded filament per slot with what is left, and printer messages. Ends with a list of what needs a person: paused, error, finished with a part still on the bed, filament under 15 percent, or offline. Use it for "what is every printer doing" or before planning work. All printers by default, or named printers, or a fleet group. Read only.',
     input: z.object({

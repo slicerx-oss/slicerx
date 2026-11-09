@@ -18,7 +18,7 @@ export default (d: ServerToolDeps) => {
     ungated: true,
     description: "List every printer this server can reach, with vendor, model and connection plugin. webUi is the address of the printer's own web page (Mainsail, Fluidd, OctoPrint, PrusaLink, Duet Web Control) on the local network, or null when it has none.",
     input: z.object({}),
-    hints: { idempotent: false, openWorld: true },
+    hints: { readOnly: true, idempotent: false, openWorld: true },
     async run() {
       return { summary: 'Printers', structured: { source: printers.kind, ...(printers.kind === 'demo' ? { note: "These are simulated demo printers, not the user's own." } : {}), printers: (await printers.host.list()).map((p) => ({ ...p, webUi: printerWebUi(p) })) } }
     },

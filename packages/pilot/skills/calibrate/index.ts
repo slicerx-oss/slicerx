@@ -7,7 +7,7 @@
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
 import { leftOffWords } from '../../src/project'
-import { defineSkill, type ToolContext } from '../../src/tool'
+import { READ_ONLY, defineSkill, type ToolContext } from '../../src/tool'
 import { arr, geomRun, newObject, num, partFromGeom, rec } from '../geom_common/index'
 
 export const CALIBRATION_TESTS = ['temp-tower', 'flow', 'pressure-advance', 'retraction', 'max-volumetric', 'tolerance', 'shrinkage'] as const
@@ -81,7 +81,7 @@ export function createCalibrate() {
   return defineSkill({
     name: 'calibrate',
     version: '0.9.3',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Plan calibration tests for a filament (temperature tower, flow, pressure advance, retraction, max volumetric speed, tolerance, shrinkage) with ranges from the knowledge base, time and filament. With geometry on the host it also adds the test models to the project, one plate per test, with the per-object and per-height settings to use.',
     input: z.object({

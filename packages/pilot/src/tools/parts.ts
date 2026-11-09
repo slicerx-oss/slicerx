@@ -8,7 +8,7 @@ import type { Citation, ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { matchParts, words, type PartMatch } from '../parts/match'
 import { bundledPartsTable, type PartRecord, type PartSize, type PartsTable } from '../parts/table'
-import { defineTool, type PilotTool, type ToolOutput } from '../tool'
+import { READ_ONLY, defineTool, type PilotTool, type ToolOutput } from '../tool'
 
 /** How many records one answer carries at most (a family such as NEMA 17 can match several models). */
 const MAX_PARTS = 4
@@ -142,7 +142,7 @@ export function partsTool(table?: PartsTable): PilotTool<never> {
     name: 'parts.lookup',
     version: '1.0.0',
     source: 'kb',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Published sizes, with sources, of a standard part or product: 608 bearing, NEMA 17, M3, Pi 4, iPhone 15.',
     input: z.object({
       name: z.string(),

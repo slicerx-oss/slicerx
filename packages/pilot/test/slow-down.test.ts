@@ -8,7 +8,7 @@
 import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, sheetTool, type LlmClient, type ScriptStep } from '../src/index'
+import { createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, sheetTool, type LlmClient, type ScriptStep } from '../src/index'
 import { abortableSleep, SLOW_DOWN_GIVE_UP_MS, SLOW_DOWN_LINE, SLOW_DOWN_NOTICE, SLOW_DOWN_WAIT_MS } from '../src/runtime'
 import { foldEvents } from '../ui/reduce'
 
@@ -44,7 +44,7 @@ function setup(client: LlmClient) {
     version: '1',
     description: 'One feature',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({ name: z.string(), design: z.string().optional() }),
     async run(i) {
       log.push(i.name)

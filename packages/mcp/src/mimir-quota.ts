@@ -4,7 +4,7 @@
 // stays in the app's keychain; this server never sees it and never calls the proxy itself. MCP clients bring their own
 // model, so this is a read for the person's sake: how much free mimir is left today.
 import { assistantText } from '@slicerx/contracts'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError } from './errors'
@@ -46,7 +46,7 @@ export function mimirQuotaTools(link: AppLinkCaller | undefined, appName: string
     name: 'mimir.quota',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: assistantText(`Read today's free mimir use in ${appName} on this computer: what this install and this network have used of their daily caps, in US dollars, and whether mimir cloud is open today. Caps reset at midnight Melbourne time. Reads through the app link; the app must be open with the link on.`),
     input: z.object({}),
     async run() {

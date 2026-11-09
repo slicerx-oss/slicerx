@@ -13,7 +13,7 @@ import { z } from 'zod'
 import { score } from '../evals/score'
 import type { Audit } from '../evals/harness'
 import type { Scenario } from '../evals/types'
-import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type PilotTool } from '../src/index'
+import { createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, type PilotTool } from '../src/index'
 import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planSeed, unsettledQuestion, type StandingPlan } from '../src/plan-left'
 import type { LlmClient, LlmEvent, LlmMessage, LlmRequest } from '../src/provider/types'
 import type { ScriptStepData } from '../src/provider/scripted'
@@ -63,7 +63,7 @@ function designTools(check: () => Record<string, unknown> = () => ({ pass: false
     return s
   }
   const tool = (name: string, run: (a: Args) => { summary: string; output?: unknown }): PilotTool<never> =>
-    defineTool<Args>({ name, version: '1', description: name, source: 'command', permission: 'read', input: z.record(z.string(), z.unknown()), run: async (a) => run(a) }) as PilotTool<never>
+    defineTool<Args>({ name, version: '1', description: name, source: 'command', permission: 'read', hints: READ_ONLY, input: z.record(z.string(), z.unknown()), run: async (a) => run(a) }) as PilotTool<never>
   return [
     tool('design.plan', () => ({ summary: 'Approved as shown', output: { planId: 'plan_1', accepted: true } })),
     tool('design.new', (a) => {
@@ -499,7 +499,7 @@ function plannedTools(answers: readonly { accepted: boolean; planId: string }[],
     version: '1',
     description: 'design.plan',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.record(z.string(), z.unknown()),
     run: async () => {
       const a = answers[Math.min(n++, answers.length - 1)]!

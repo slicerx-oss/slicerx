@@ -5,7 +5,7 @@
 // remember, and how many docs of the edition's own knowledge it has. Metadata only: the voice text and the docs stay
 // in the app, and only the fields below reach a client.
 import { assistantText } from '@slicerx/contracts'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError } from './errors'
@@ -55,7 +55,7 @@ export function mimirBrainTools(link: AppLinkCaller | undefined, appName: string
     name: 'mimir.brain',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: assistantText(`Read the mimir the open ${appName} app runs as its edition sets it up, never the voice text or the docs themselves: the assistant's name, whether the edition gave it a voice, each tool group (design, slicing, printers, watch, paint, web) on or off, the model mimir cloud answers with and the step-up the edition asks for (null for none; the proxy decides), whether it remembers on this computer and whether memories sync, and how many docs of the edition's own knowledge it has.`),
     input: z.object({}),
     async run() {

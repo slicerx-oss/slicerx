@@ -33,7 +33,7 @@ export default (d: ServerToolDeps) => {
     description:
       'Read how a printer reached through an Obico tunnel is doing: tunnel and host (never its user name or password); connected, whether the last status reading came through; problem (no_access, access_removed, data_limit, file_over_data_limit, not_connected or timed_out) with message in plain words; usage, this month\'s tunnel data in bytes (usedBytes, capBytes, leftBytes, unlimited, resetInSeconds); and prediction, Obico\'s failure score for the running print from 0 (looks fine) to 1 (looks failed), null when nothing prints. The camera is off through a tunnel, so slicerx_printer_snapshot refuses with not_supported and reason camera_off_tunnel. A printer on the local network is refused with not_supported and reason no_tunnel. Connecting a printer through Obico is done by the person in the app.',
     input: z.object({ printerId: z.string().min(1).describe('Id from slicerx_printer_list, such as "bay-1"') }),
-    hints: { idempotent: true, openWorld: true },
+    hints: { readOnly: true, idempotent: true, openWorld: true },
     async run(args) {
       const read = printers.host.tunnel
       if (!read) throw new ToolInputError(`${args.printerId} is not reached through a tunnel; these printers are on the local network.`, 'not_supported', NO_TUNNEL)

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, sheetTool, type ScriptStep } from '../src/index'
 import { SHEET_FIRST_NOTE, startsPart } from '../src/runtime'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
 
@@ -18,7 +18,7 @@ function geom(name: string, ran: string[]): PilotTool<never> {
     name,
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'test',
     input: z.object({ operation: z.enum(['new', 'join', 'cut']).optional(), part: z.number().optional() }),
     async run(i) {
@@ -140,7 +140,7 @@ describe('a sheet before the first build', () => {
       name: 'design.plan',
       version: '1.0.0',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       description: 'test',
       input: z.object({}),
       async run(_i, ctx) {

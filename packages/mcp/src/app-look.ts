@@ -4,7 +4,7 @@
 // when it opens or an object is added) and Toolbar size (the Model ribbon's icons). They change how the window behaves,
 // never the project, so both tools read. Each answer is the preferences read back, with the 3D view's look (the preset
 // the theme picked and its values). No other setting is reachable.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -62,7 +62,7 @@ export function appLookTools(link: AppLinkCaller | undefined, appName: string): 
     name: 'app.look',
     version: '1.1.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read two view preferences of ${appName} (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). Also reads theme.scheme, theme.visuals (the active CSS color properties), theme.overrides (shared plus active edition overrides), theme.scene (the studio colors in use: top, bottom, glow, plate, grid, edge, xray) and theme.sceneOverrides (the studio colors the edition config sets); omitted glyph colors follow the studio background. Also reads viewport, the 3D view's look: preset (dark-precision on a dark theme, light-studio on a light one; the theme picks it), themeBackdrop (true when a theme other than Subban keeps its own backdrop colors) and look (backdrop, plate, lighting, materials and geometry values the view draws with) and scene (the colors the view was given: bgTop, bgBottom, bgGlow, plateSide, floorGrid, edgeDark, edgeXray, selection, liveLayer, originPlane, addPreview, and the move, rotate and scale handle colors axisX, axisY, axisZ, axisUniform, handleHot, handlePinned and handleHalo); absent while no 3D view is up. Reads through the app link; the app must be open with the link on.`,
     input: z.object({}),
     async run() {

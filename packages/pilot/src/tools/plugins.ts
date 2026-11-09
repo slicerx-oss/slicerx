@@ -59,6 +59,8 @@ export function pluginToolsFrom(manifests: PluginManifest[]): PilotTool<never>[]
           source: 'plugin',
           plugin: { id: m.id, kind: m.kind },
           permission: t.permission,
+          // A plugin's read tools only read its service; the others change something there.
+          hints: { readOnly: t.permission === 'read' },
           description: `${t.description} (${m.name} plugin)`,
           input,
           printerFor: (i: unknown) => {

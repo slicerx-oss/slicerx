@@ -8,12 +8,12 @@ import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTranspo
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { readFileSync } from 'node:fs'
-import { createPilot, createTransportClient, DEFAULT_CONFIG, defineTool, MIMIR_CLOUD_MAX_TOOLS, type PilotTool, type Toolset } from '../src/index'
+import { createPilot, createTransportClient, DEFAULT_CONFIG, READ_ONLY, defineTool, MIMIR_CLOUD_MAX_TOOLS, type PilotTool, type Toolset } from '../src/index'
 import { OPENAI_MAX_TOOLS } from '../src/provider/openai'
 import { capTools, TOOLSET_PRIORITY, toolsetOf } from '../src/toolsets'
 
 const tool = (name: string, toolset: Toolset): PilotTool<never> =>
-  defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', toolset, input: z.object({}), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
+  defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', hints: READ_ONLY, toolset, input: z.object({}), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
 
 /** 150 tools: core 10, cad 60, settings 30, printers 20, fleets 15, theme 15. */
 function manyTools(): PilotTool<never>[] {

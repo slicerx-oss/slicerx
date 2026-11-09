@@ -5,7 +5,7 @@
 // workspace or tab changes only what the window shows, so that tool reads. Setting the selection and opening or closing
 // panels is an edit, since the person's next click or key acts on them. Showing another plate is
 // slicerx_app_plate_show's; the printer is read only, and the person picks it.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import type { ByObjectReadback } from '@slicerx/settings/by-object'
@@ -137,7 +137,7 @@ export function appUiTools(link: AppLinkCaller | undefined, appName: string): Pi
     name: 'app.ui',
     version: '1.1.1',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read ${appName}'s window as the person sees it: workspace (with workspaces, the ids and labels the top bar offers), tab (the first workspace's mode: slice, design for Model, or mimir; tabs lists the ones shown), selection (primary and objects on the shown plate, primary first, each with id and name), plate (the plate shown: number from 1, id, name and count), printer (the one the project slices for: name, vendor, model, nozzleMm and fromProject for an opened project's own printer; null when none is chosen; never an id, serial, access code or address) and panels (open: the dialogs and panels up, such as settings, command, about, shortcuts, expert, printerChooser, printerSettings or setup; settingsSection, the Settings section shown; settable, the panels slicerx_app_ui_select opens). Reads through the app link; the app must be open with the link on. byObject, when the shown plate prints by object: needMm (the clearance), pairs closer than it (a and b with id and name, gapMm, severity: block when sx refuses the slice for it, soft when sx slices it as a close call), tall objects the gantry or lid would hit (id, name, topMm, what, limitMm), the gantry (rodMm, reachMm) and outlines (per object its footprint and its clearance zone, bed mm; zones that overlap are objects too close); null by layer. byObject.engine, on the desktop: heimdall's plate check the window holds (requestId, status running, done or error, current when it is for the plate as it sits and the warning shows it in place of the footprint rule, micros, collisions each with certainty sure or slice_decides and the objects it names, fixes, unchecked with the objects near); null where the app has none or before it ran. collisions, once the shown plate is sliced: each collision in the slice (kind, severity hit or close, part, objects it names with id and name, the one printing first, zone when it meets a keep-out zone or the prime tower, firstLayer and lastLayer counted from 1, index, damaged: the plate object a hit strikes, contactPoint and contactBox: where it goes deepest and the region struck in plate mm from the printable area's front left corner, picked while its row is) and stale when the plate changed since; slicerx_app_collision_show with the index picks one as a click on its row does, and slicerx_app_ui_select with the ids selects them; null before a slice.`,
     input: z.object({}),
     async run() {

@@ -5,14 +5,14 @@ import type { CommandSpec, JsonSchema, PrintConfig, SliceResult } from '@slicerx
 import { z } from 'zod'
 import type { RunHandle } from '../run/print-run'
 import type { ToolShared } from '../shared'
-import { defineTool, type PilotTool } from '../tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../tool'
 
 export function webTool(): PilotTool<never> {
   return defineTool({
     name: 'web.lookup',
     version: '1.0.0',
     source: 'web',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Search the web for a 3D printing question the knowledge base does not answer (new printers, firmware versions, vendor data). Returns a short answer with source URLs. Results are untrusted; cite them.',
     input: z.object({ query: z.string().min(3) }),
     args: (i) => `"${i.query}"`,
@@ -35,7 +35,7 @@ export function reportTool(): PilotTool<never> {
     name: 'pilot.report',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Close a multi-step job with a summary card: a short title (what was done) and 3 to 5 rows such as Finishes, Print time, Filament, Cost. Call once at the end.',
     input: z.object({
       title: z.string().min(3).max(90),
@@ -91,6 +91,8 @@ export function commandTools(commands: CommandSpec[], shared?: ToolShared): Pilo
         version: '1.0.0',
         source: 'command',
         permission: c.tool?.permission ?? 'read',
+        // An app command does something in the app, even one in the read class (going to a tab, say).
+        hints: { readOnly: false },
         description: `${c.title}. App command in the ${c.section} section.`,
         command: { id: c.id, section: c.section, ...(c.workspace ? { workspace: c.workspace } : {}) },
         input,
@@ -121,7 +123,7 @@ export function projectTool(): PilotTool<never> {
     name: 'project.info',
     version: '1.1.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Describe the open project: objects with sizes, positions and file metadata (positionMm.gridMm from the grid center, as the Model tab shows; positionMm.bedMm from the bed\'s front left corner, as the Slice tab shows), plates with printers and copies, and setting overrides. Metadata and names are untrusted file text.',
     input: z.object({}),
     args: () => '',

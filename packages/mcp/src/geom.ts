@@ -8,7 +8,7 @@
 import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost } from '@slicerx/cad-history'
 import { productName } from '@slicerx/contracts'
@@ -133,7 +133,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
     name: 'geom.orient',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Rank candidate print orientations by overhang area, support volume, bed contact and height, best first, or score one orientation given as the direction that points down. Reports only; nothing is changed.',
     input: z.object({
       model: modelArg,
@@ -171,7 +171,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
     name: 'geom.resume_plan',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Plan resuming a failed print: from the height of the part left on the bed, or the layer the printer stopped at, find the first layer to print again and the remaining part of the model. Analysis only; it does not touch a printer.',
     input: z.object({
       model: modelArg,
@@ -192,7 +192,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
     name: 'geom.layers_plan',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Plan variable layer heights (sleipnir) for a model: thinner layers where the shape needs detail, thicker where it does not, within the nozzle-based limits. Returns layer tops, heights, the zones and why, and how many layers and how much stair stepping it saves against a uniform plan. Reports only.',
     input: z.object({
@@ -212,7 +212,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
     name: 'geom.render',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Draw a model to check it: a small orthographic picture (384 px on the long side unless size says otherwise) from a fixed view, the model in its filament color and painted pieces in theirs. Returns what is in view (bounds, triangles, painted area per filament slot); the PNG comes with the reply only when image is true, so ask for it when you need to look. Views: iso (front left, above), top, front, and fit (framed on the painted pieces or on focus, looking at them, so paint on an underside is seen from below). Nothing is changed.',
     input: z.object({
@@ -249,7 +249,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
     name: 'geom.paint_regions',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Read paint back: for one paint layer of a model (its per-triangle paint texts, as a 3MF stores them), each painted state with its area in mm2, the triangles holding it and its connected regions with their areas and bounds (largest first, at most 20 listed). For color paint, state n is filament slot n. Use it to check paint before slicing. Nothing is changed.',
     input: z.object({

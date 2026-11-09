@@ -3,7 +3,7 @@
 // A dimension sheet in front of the person, through the open app: a client lists the sizes it will build from, each
 // with its source, and the person confirms them (or sets them aside) in the app before the client builds. The ask
 // answers at once with the sheet's id; sheet_get reads the answer back. Offered while the app link is in use.
-import { defineTool, sheetTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, sheetTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -28,7 +28,7 @@ export function appSheetTools(link: AppLinkCaller, appName: string): PilotTool<n
     name: 'app.sheet_ask',
     version: '1.2.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false },
     description: `Before building a part in the open ${appName} app, show the person every size it is built from (width, length, height, wall, holes, clearance and so on), each with its value, unit and source (asked, lookup with its page, photo, or guess), and kind count or angle for a row that is a count or an angle, so they can confirm them. With several sizes, give each its at (where it sits on the part, in mm) and either part (the part as it will be built: extruded outlines, or a revolve, sweep or loft) or design (the id of a design already built that the sheet changes; at is then in that design's coordinates), so the sheet draws the part with a numbered callout per size. Answers at once with a sheet id; read the answer with slicerx_app_sheet_get and build only once it is confirmed, from the values it returns. One sheet waits per client at a time.`,
     input: sheetTool().input as z.ZodType<Record<string, unknown>>,
     async run(i) {
@@ -40,7 +40,7 @@ export function appSheetTools(link: AppLinkCaller, appName: string): PilotTool<n
     name: 'app.sheet_get',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Read back a sheet from slicerx_app_sheet_ask: waiting, confirmed (with the values to build with and the sizes the person changed), or declined (build nothing and ask what to change).',
     input: z.object({ sheet_id: z.string().min(1).max(80) }),
     async run(i) {
