@@ -212,13 +212,14 @@ describe('ToolheadRig geometry', () => {
     }
   })
 
-  it('maps every printer profile to its family head; only the delta falls back to the generic one', () => {
+  it('maps every printer profile to its family head; only the delta and the SV04 fall back to the generic one', () => {
     const file = fileURLToPath(new URL('../../../profiles/machine.json', import.meta.url))
     const ids = Object.keys((JSON.parse(readFileSync(file, 'utf8')) as { models: Record<string, unknown> }).models)
     expect(ids.length).toBeGreaterThan(40)
     // The U1 always draws its tool changer (toolChangerSpec), so its single head is never shown.
     const generic = ids.filter((id) => headFor(id) === 'generic' && id !== 'snapmaker-u1')
-    expect(generic).toEqual(['flsun-v400'])
+    // The Sovol SV04 has no head of its own drawn yet, so both of its carriages use the generic one.
+    expect(generic).toEqual(['flsun-v400', 'sovol-sv04'])
     expect(headFor('bambu-x1-carbon')).toBe('bambu-x1')
     expect(headFor('bambu-p1s')).toBe('bambu-p1')
     expect(headFor('bambu-a1-mini')).toBe('bambu-a1')
