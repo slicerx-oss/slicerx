@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { faceSource, facesMadeBy, movedBy } from '../../cad/history/made-by'
 import { point } from '@slicerx/cad-history'
 import { setPickKind } from '../../plate/sub-pick'
-import { get, set, toast, useApp } from '../../state/store'
+import { get, set, toast, useApp, type PlateEntry } from '../../state/store'
 
 export interface MadeBy {
   objectId: string
@@ -22,11 +22,15 @@ export function useMadeBy(): MadeBy | null {
   const editing = useApp((s) => s.historyEdit)
   const one = picks.length === 1 && picks[0]!.kind === 'face' ? picks[0]! : null
   const entry = one ? plate.find((p) => p.id === one.objectId) : undefined
-  const [made, setMade] = useState<MadeBy | null>(null)
+  const face = one ? `${one.objectId}:${one.partIndex}:${one.triangle}` : null
+  // The answer keeps the object and face it was found for. The effect looks again only after a render, so on the
+  // render where an undo, a deleted step, a rollback or a plate swap lands, the last answer may name a step the object
+  // no longer has; it counts only while the object is the very one it was found on.
+  const [found, setFound] = useState<{ entry: PlateEntry; face: string; made: MadeBy } | null>(null)
   useEffect(() => {
-    setMade(null)
+    setFound(null)
     // a part rolled back to edit a step is not the object's result
-    if (!one || !entry || editing?.objectId === entry.id) return
+    if (!one || !entry || !face || editing?.objectId === entry.id) return
     let live = true
     void faceSource(entry, one.partIndex, one.triangle).then((src) => {
       if (!live || !src) return
@@ -35,13 +39,14 @@ export function useMadeBy(): MadeBy | null {
       const moved = src.made === 'base' ? movedBy(entry.history?.steps ?? [], src.used) : undefined
       const index = moved ? at(moved) : src.made === 'base' ? -1 : at(src.made)
       if (src.made !== 'base' && index < 0) return
-      setMade({ objectId: entry.id, index, used: src.used.map(at).filter((i) => i >= 0) })
+      setFound({ entry, face, made: { objectId: entry.id, index, used: src.used.map(at).filter((i) => i >= 0) } })
     })
     return () => {
       live = false
     }
   }, [one?.objectId, one?.partIndex, one?.triangle, entry, editing?.objectId])
-  return made
+  if (!found || !entry || found.entry !== entry || found.face !== face || editing?.objectId === entry.id) return null
+  return found.made
 }
 
 /** Picks one point on each face step `stepId` made, as faces, so a tool opened next starts from them. */
