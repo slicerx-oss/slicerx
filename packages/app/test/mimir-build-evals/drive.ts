@@ -24,7 +24,7 @@ import { setHostSlices } from '../../src/state/model-mode'
 import { get, set } from '../../src/state/store'
 import { bundledKb } from '../../src/workspaces/mimir/kb'
 import { cardPlans, clearPlans, PLAN_GO } from '../../src/workspaces/mimir/plan-tool'
-import { tabPilotOptions, toolsFor } from '../../src/workspaces/mimir/session'
+import { resetTabMimir, tabPilotOptions, toolsFor } from '../../src/workspaces/mimir/session'
 import type { BuildCase } from './cases'
 import { classifyNoBuild, placed, scoreCase, type CaseScore, type UserTurn } from './score'
 
@@ -117,6 +117,8 @@ export interface CaseRun {
 export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?: EvalStep[]; model?: string; timeoutMs?: number }): Promise<CaseRun> {
   setHostSlices(true)
   clearPlans()
+  // the design host keeps the designs a drive started that built nothing, off the plate; a new host starts with none
+  resetTabMimir()
   set({ plate: [], selection: null, selectedIds: [], historyEdit: null, printerModel: { vendor: 'Bambu Lab', model: 'P1S' }, profile: null, overrides: {} })
   const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? []), { chunk: false })
   const inner = opts.client ?? script!
