@@ -134,6 +134,27 @@ The A1 and A1 mini move the bed in y and the gantry in z. Their chute stands on 
 
 Sources: Bambu Studio 2.8.4 machine profiles and their start and change G-code templates (`Bambu Lab A1 0.4 nozzle template change_filament_gcode.json` and the others, mirrored in `packages/profiles/gcode.json`); the bed models (`bbl-3dp-X1.stl`, `bbl-3dp-A1M.stl`), which the chutes stay clear of.
 
+## IDEX: Snapmaker J1 (two carriages on one X beam)
+
+How it works. Two complete carriages, each with its own hotend and filament, ride one X beam. One prints while the other rests at its own end of X: T0 at the left, T1 at the right. On a change the printing carriage goes to its end and parks, and the other one leaves its end for the next move. The J1 does both at once: the maker's blog says the second head moves in as the first leaves, and the change G-code calls it a quick switch (`M2000 S200 V[travel_speed] A[travel_acceleration]`), then waits for the new nozzle's temperature (`M109 T[next_extruder] ... C3 W1`). Preview plays that as `idex-park` in `toolchanger.ts`: lift by the z hop, one move in which the new carriage comes from its end to the next move while the old one runs to its end, the temperature wait, and down. Both carriages share Y and Z. A printer the catalog lists as IDEX but whose profile has no switch of its own parks the old carriage first and then brings the new one in (estimated). Two filaments on one carriage swap in place. Preview never sends an IDEX head to a purge chute.
+
+Which printers get it. `kindOf` reads the catalog's kinematics (`printers.json`, `idex`) before it counts nozzles, so the J1's two nozzles are two carriages, not the H2D's head. An IDEX printer whose settings have one extruder (the Sovol SV04 today, which has no machine profile and slices with manual swaps) plays no change. The Snapmaker Artisan's dual extrusion module is neither IDEX nor the H2D's head, and plays no change until its mechanism is checked.
+
+Not played. Duplication and mirror modes (the J1's plate names `IDEXDupl`, `IDEXCopy`, `IDEXMirr` and `M605 S2` or `S3`) print with both carriages at once. Preview cannot tell them from a normal print, since the mode comes from the start G-code text, which it does not read before playback; such a print with two filaments would show the swaps of a normal one.
+
+Drawing. Two of the printer family's own heads (the Snapmaker printing module on the J1; the generic head where a family has none), each on its own carriage, and a rail behind them from one parked carriage's outer side to the other's. The idle carriage stands at its end; the shadow follows the printing one. heimdall's collision data (`head-shapes.json`) keeps the J1's two family heads with no changer route, as before.
+
+| Value | Source | Status |
+| --- | --- | --- |
+| Printable X 0 to 324 mm, Y 0 to 200 mm; travel acceleration 10000 mm/s2; no tool change time | J1 machine profile (`packages/profiles/machine.json`) | measured |
+| T0 rests at the left end, T1 at the right; both carriages move at once on a change | start G-code (T0 primes toward X 0, T1 toward X 324, then `G28 X`); change G-code (`M2000`); Snapmaker blog | measured (sides); reported (simultaneous move) |
+| Parked nozzle one carriage width (50 mm) outside the printable X: X -50 and X 374 on the J1 | no source | estimated |
+| Lift by the process z hop (0.4 mm on the J1) | no lift in the change G-code | estimated |
+| Temperature wait: the profile's change time, at least 0.8 s | `M109 ... C3 W1` in the change G-code; the profile gives 0 s | estimated |
+| Other IDEX printers: the old carriage parks before the new one comes in | no source | estimated |
+
+Sources: the J1 machine profile and its start and change G-code (`packages/profiles/machine.json`, family `maker_snapmaker_j1` in `packages/profiles/gcode.json`); snapmaker.com/blog/snapmaker-j1-fast-3d-printer; `packages/settings/profiles/printers.json` (kinematics).
+
 ## Timing model
 
 Playback time comes from the layer times the engine writes into the preview buffer. Those cover the print moves of a layer. The change itself is added by the app's timeline from the same rules the engine uses for the G-code's time estimate (`packages/core/src/gcode.rs`, `tool_change_time`, after Orca 2.4.2 `GCodeProcessor::process_T` and Bambu Studio `process_filament_change`):

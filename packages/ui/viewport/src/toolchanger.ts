@@ -17,6 +17,9 @@
 //   right core, and the head comes back out.
 // - filament-swap (Bambu Lab A1, A1 mini, X1, P1, H2S): one nozzle; the AMS swaps the filament. The head goes to
 //   the cutter, then to the purge chute, flushes, and leaves over the wiper.
+// - idex-park (Snapmaker J1, any printer the catalog lists as IDEX): two carriages on one X beam. The carriage that
+//   printed goes to its own end of X and parks while the other leaves its end for the next move, then the new
+//   nozzle waits for its temperature and comes down.
 //
 // Moves are timed with trapezoidal velocity profiles from the printer's speed and acceleration limits,
 // so the head never jumps. The firmware's own work (cutting, loading, flushing, latching) is a dwell of
@@ -26,7 +29,7 @@ import type { Bed, PreviewBuffers } from '@slicerx/contracts'
 
 export type V3 = [number, number, number]
 
-export type ToolChangerKind = 'dual-nozzle' | 'hotend-rack' | 'tool-rack' | 'xl-dock' | 'lift-switch' | 'filament-swap'
+export type ToolChangerKind = 'dual-nozzle' | 'hotend-rack' | 'tool-rack' | 'xl-dock' | 'lift-switch' | 'filament-swap' | 'idex-park'
 
 export interface MotionLimits {
   /** mm/s */
@@ -120,6 +123,12 @@ export interface ToolChangerSpec {
     /** Where the firmware runs each core's switch from, at the bay: the switching positions, or on the S3 an estimate (see `toolChangerSpec`). */
     bayAt: [number, number][]
   }
+  /**
+   * IDEX: two carriages on one X beam, sharing Y and Z. Carriage i parks its nozzle at `park[i]` (the first at the
+   * left end, the second at the right). `concurrent`: the new carriage comes in while the old one leaves, as one move;
+   * otherwise the old one parks first. `width` is a carriage's width across X, mm.
+   */
+  idex?: { park: [number, number]; concurrent: boolean; width: number }
 }
 
 /** A plain settings record (Orca keys) as the app resolves it. */
@@ -151,7 +160,13 @@ const list = (v: unknown): number[] => {
   return v === undefined ? [] : [num(v, 0)]
 }
 
-function kindOf(printerId: string | undefined, cfg: Settings): ToolChangerKind | null {
+/** What the printer catalog says about the machine beyond its settings (`printers.json`). */
+export interface ChangerHints {
+  /** The catalog's kinematics, such as `idex` or `corexy`. */
+  kinematics?: string
+}
+
+function kindOf(printerId: string | undefined, cfg: Settings, hints: ChangerHints = {}): ToolChangerKind | null {
   const id = printerId ?? ''
   if (id.startsWith('bambu-h2d')) return 'dual-nozzle'
   if (id.startsWith('bambu-h2c')) return 'hotend-rack'
@@ -159,6 +174,11 @@ function kindOf(printerId: string | undefined, cfg: Settings): ToolChangerKind |
   if (id.startsWith('prusa-xl') && list(cfg['nozzle_diameter']).length > 1) return 'xl-dock'
   if (id.startsWith('ultimaker-s')) return 'lift-switch'
   const nozzles = list(cfg['nozzle_diameter']).length
+  // IDEX before the nozzle count: two nozzles there are two carriages, not one head. Settings with one extruder print
+  // with one carriage and swap filament by hand, so there is no change to play.
+  if (hints.kinematics === 'idex') return nozzles >= 2 ? 'idex-park' : null
+  // The Artisan's dual extrusion module is neither the H2D's head nor IDEX: nothing plays until its mechanism is checked.
+  if (id.startsWith('snapmaker-artisan')) return null
   if (nozzles < 2) return swapChute(id, { widthMm: 0, depthMm: 0, heightMm: 0 }) ? 'filament-swap' : null
   if (list(cfg['extruder_max_nozzle_count']).some((n) => n > 1)) return 'hotend-rack'
   return nozzles === 2 ? 'dual-nozzle' : 'tool-rack'
@@ -191,8 +211,8 @@ export function chuteExits(ch: NonNullable<ToolChangerSpec['chute']>): [number, 
  * The tool changer of a printer, or null when it has one nozzle (an AMS swap stays where the head is).
  * `printerId` is the profile id (for example `bambu-h2c`); the settings carry the speeds and times.
  */
-export function toolChangerSpec(printerId: string | undefined, cfg: Settings, bed: Bed, tools: number): ToolChangerSpec | null {
-  const kind = kindOf(printerId, cfg)
+export function toolChangerSpec(printerId: string | undefined, cfg: Settings, bed: Bed, tools: number, hints: ChangerHints = {}): ToolChangerSpec | null {
+  const kind = kindOf(printerId, cfg, hints)
   if (!kind) return null
   const travelSpeed = num(cfg['travel_speed'], 500)
   const travelAccel = num(cfg['machine_max_acceleration_travel'], 0) || num(cfg['travel_acceleration'], 0) || num(cfg['machine_max_acceleration_x'], 5000)
@@ -201,7 +221,7 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
   // A hotend rack whose settings map nothing to the rack's extruder (the profile default puts every
   // filament on the first) is taken to print everything from the rack: that is what the machine is for.
   const rackDefault = kind === 'hotend-rack' && !map.some((e) => e > 0) ? nozzles - 1 : 0
-  const extruderOf = Array.from({ length: Math.max(1, tools) }, (_, t) => Math.min(nozzles - 1, map[t] ?? (kind === 'tool-rack' || kind === 'xl-dock' || kind === 'lift-switch' ? t : rackDefault)))
+  const extruderOf = Array.from({ length: Math.max(1, tools) }, (_, t) => Math.min(nozzles - 1, map[t] ?? (kind === 'tool-rack' || kind === 'xl-dock' || kind === 'lift-switch' || kind === 'idex-park' ? t : rackDefault)))
   const sw = cfg['machine_tool_change_time'] !== undefined ? num(cfg['machine_tool_change_time'], 0) : num(cfg['machine_switch_extruder_time'], 0)
   const base: ToolChangerSpec = {
     kind,
@@ -285,6 +305,20 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
     const zSpeed = num(cfg['travel_speed_z'], 0)
     if (zSpeed > 0) base.z = { speed: zSpeed, accel: base.z.accel }
   }
+  if (kind === 'idex-park') {
+    // Each carriage homes and rests at its own end of X (the J1's start G-code primes T0 toward X 0 and T1 toward the
+    // far end, then homes X; the maker's blog: the idle head goes to a resting position). Estimated: the parked
+    // nozzle stands one carriage width (50 mm) outside the printable X, so a carriage printing at the edge clears it.
+    const xs = points(cfg['printable_area']).map((p) => p[0])
+    const x0 = xs.length ? Math.min(...xs) : 0
+    const x1 = xs.length ? Math.max(...xs) : bed.widthMm
+    const width = 50
+    // The J1 moves both carriages at once (`M2000` "quick switch"; maker blog: the second head moves in as the first
+    // leaves). Estimated for the rest: the old carriage parks, then the new one comes in.
+    base.idex = { park: [x0 - width, x1 + width], concurrent: (printerId ?? '').startsWith('snapmaker-j1'), width }
+    // Estimated: the change lifts by the process's z hop, as a travel would.
+    base.liftMm = Math.max(0.2, num(cfg['z_hop'], 0.4))
+  }
   if (kind === 'tool-rack') {
     // Snapmaker U1 printer.cfg: xy_park_position per extruder, y_idle_position, horizontal_move_x,
     // retract_x_dist, insertion_buffer_dist, fast_move_speed, slow_move_speed, grab_speed, switch_accel.
@@ -363,6 +397,8 @@ export interface Phase {
   state: number
   /** H2C: the rack row at the head's height once this phase ends. */
   row: number
+  /** IDEX: the idle carriage's nozzle X at the start and the end of the phase (the one at the pose is `state`). */
+  idle?: [number, number]
 }
 
 export interface ChangeSequence {
@@ -392,6 +428,9 @@ export interface Pose {
   /** Which tool each rack slot holds right now (-1 empty, `SPARE` a hotend the print does not use). */
   slots: number[]
   phase: string
+  /** IDEX: each carriage's nozzle X, and which carriage is at the pose. */
+  carriages?: [number, number]
+  active?: number
 }
 
 /** Seconds a move of `d` mm takes with a trapezoidal profile from rest to rest. */
@@ -425,21 +464,41 @@ class Builder {
   phases: Phase[] = []
   t = 0
   private rowNow = 0
+  private idleNow: number | null = null
   constructor(public pos: V3, private carried: number | null, private state: number) {}
 
-  moveTo(name: string, to: V3, limits: MotionLimits, dwell = 0): this {
+  /** `idleTo`: where the idle carriage goes in the same move (IDEX); the move lasts as long as the longer of the two. */
+  moveTo(name: string, to: V3, limits: MotionLimits, dwell = 0, idleTo?: number): this {
     const d = dist(this.pos, to)
-    const move = moveTime(d, limits)
-    this.phases.push({ name, from: this.pos, to, move, dwell, limits, t0: this.t, carried: this.carried, state: this.state, row: this.rowNow })
+    const from = this.idleNow
+    const end = idleTo ?? from
+    const idle: [number, number] | null = from !== null && end !== null ? [from, end] : null
+    const move = Math.max(moveTime(d, limits), idle ? moveTime(Math.abs(idle[1] - idle[0]), limits) : 0)
+    this.phases.push({ name, from: this.pos, to, move, dwell, limits, t0: this.t, carried: this.carried, state: this.state, row: this.rowNow, ...(idle ? { idle } : {}) })
     this.t += move + dwell
     this.pos = to
+    this.idleNow = end
     return this
   }
 
   dwell(name: string, seconds: number): this {
     if (seconds <= 0) return this
-    this.phases.push({ name, from: this.pos, to: this.pos, move: 0, dwell: seconds, limits: { speed: 1, accel: 1 }, t0: this.t, carried: this.carried, state: this.state, row: this.rowNow })
+    const x = this.idleNow
+    this.phases.push({ name, from: this.pos, to: this.pos, move: 0, dwell: seconds, limits: { speed: 1, accel: 1 }, t0: this.t, carried: this.carried, state: this.state, row: this.rowNow, ...(x !== null ? { idle: [x, x] as [number, number] } : {}) })
     this.t += seconds
+    return this
+  }
+
+  /** IDEX: the idle carriage's nozzle X from the next phase on. */
+  idle(x: number): this {
+    this.idleNow = x
+    return this
+  }
+
+  /** IDEX: the other carriage takes the pose, standing at `pos`; the one that had it is idle at `idleX`. */
+  hand(pos: V3, idleX: number): this {
+    this.pos = pos
+    this.idleNow = idleX
     return this
   }
 
@@ -657,6 +716,7 @@ export function changeSequence(spec: ToolChangerSpec, from: number, to: number, 
     return { from, to, duration: b.t, phases: b.phases, slotsBefore: slots, slotsAfter: after, rowBefore: 0, rowAfter: 0 }
   }
   if (spec.kind === 'lift-switch') return liftSwitch(spec, from, to, at, resume, firm)
+  if (spec.kind === 'idex-park') return idexPark(spec, from, to, at, resume, firm)
   if (spec.kind === 'filament-swap') {
     // To the cutter (or cut at the chute), then the chute: the firmware unloads, the AMS feeds the next filament,
     // the nozzle flushes; then over the wiper and out.
@@ -747,6 +807,47 @@ function liftSwitch(spec: ToolChangerSpec, from: number, to: number, at: V3, res
   return { from, to, duration: b.t, phases: b.phases, slotsBefore: [], slotsAfter: [], rowBefore: 0, rowAfter: 0 }
 }
 
+/**
+ * IDEX: the nozzle lifts; the carriage that printed runs along X to its own end at the shared Y and parks, while
+ * (concurrent) or before (sequential) the other carriage leaves its end for the next move; the new nozzle waits for
+ * its temperature (the change G-code's `M109`, in the profile's seconds) and comes down. Two filaments on one carriage
+ * swap in place. Pose state is the carriage at the pose.
+ */
+function idexPark(spec: ToolChangerSpec, from: number, to: number, at: V3, resume: V3, firm: number): ChangeSequence {
+  const k = spec.idex!
+  const car = (t: number): 0 | 1 => ((spec.extruderOf[t] ?? 0) > 0 ? 1 : 0)
+  const a = car(from)
+  const c = car(to)
+  const up = Math.max(at[2], resume[2]) + spec.liftMm
+  const b = new Builder(at, from, a).idle(k.park[a === 0 ? 1 : 0])
+  b.moveTo('lift', [at[0], at[1], up], spec.z)
+  if (a === c) b.carry(to).dwell('swap', firm)
+  else {
+    if (k.concurrent) {
+      // One move: the new carriage from its end to the next move, the old one from where it printed to its end.
+      b.carry(to).at(c).hand([k.park[c], at[1], up], at[0])
+      b.moveTo('switch', [resume[0], resume[1], up], spec.travel, 0, k.park[a])
+    } else {
+      b.moveTo('park', [k.park[a], at[1], up], spec.travel)
+      b.carry(to).at(c).hand([k.park[c], at[1], up], k.park[a])
+      b.moveTo('unpark', [resume[0], resume[1], up], spec.travel)
+    }
+    b.dwell('heat', firm)
+  }
+  b.moveTo('lower', resume, spec.z)
+  return { from, to, duration: b.t, phases: b.phases, slotsBefore: [], slotsAfter: [], rowBefore: 0, rowAfter: 0 }
+}
+
+/** IDEX: both carriages' nozzle X, the one at the pose at `x` and the idle one `local` seconds along its own move. */
+function carriagesAt(p: Phase, x: number, local: number): { carriages: [number, number]; active: number } | Record<string, never> {
+  if (!p.idle) return {}
+  const [i0, i1] = p.idle
+  const d = Math.abs(i1 - i0)
+  const xi = i0 + Math.sign(i1 - i0) * moveDistance(d, p.limits, Math.min(Math.max(local, 0), moveTime(d, p.limits)))
+  const active = p.state > 0 ? 1 : 0
+  return { carriages: active === 0 ? [x, xi] : [xi, x], active }
+}
+
 const smooth = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
 
 /** The head's pose `t` seconds into a change. Before 0 it is the start pose, past the end the final one. */
@@ -770,8 +871,8 @@ export function poseAt(seq: ChangeSequence, t: number): Pose {
     return mid
   }
   if (!first || !last) return { x: 0, y: 0, z: 0, carried: null, lift: 0, latch: 1, row: 0, slots: seq.slotsBefore, phase: '' }
-  if (t <= 0) return { x: first.from[0], y: first.from[1], z: first.from[2], carried: first.carried, lift: first.state, latch: 1, row: seq.rowBefore, slots: seq.slotsBefore, phase: first.name }
-  if (t >= seq.duration) return { x: last.to[0], y: last.to[1], z: last.to[2], carried: last.carried, lift: last.state, latch: 1, row: seq.rowAfter, slots: seq.slotsAfter, phase: last.name }
+  if (t <= 0) return { x: first.from[0], y: first.from[1], z: first.from[2], carried: first.carried, lift: first.state, latch: 1, row: seq.rowBefore, slots: seq.slotsBefore, phase: first.name, ...carriagesAt(first, first.from[0], 0) }
+  if (t >= seq.duration) return { x: last.to[0], y: last.to[1], z: last.to[2], carried: last.carried, lift: last.state, latch: 1, row: seq.rowAfter, slots: seq.slotsAfter, phase: last.name, ...carriagesAt(last, last.to[0], Infinity) }
   let lo = 0
   let hi = phases.length - 1
   while (lo < hi) {
@@ -794,5 +895,5 @@ export function poseAt(seq: ChangeSequence, t: number): Pose {
   const lift = prev && prev.state !== p.state ? prev.state + (p.state - prev.state) * u : p.state
   const row = prev && prev.row !== p.row ? prev.row + (p.row - prev.row) * u : p.row
   const latch = p.name === 'unlatch' ? 1 - u : p.name === 'latch' ? u : p.name === 'release' ? 1 - s : p.name === 'grab' ? s : p.carried === null ? 0 : 1
-  return { x, y, z, carried: p.carried, lift, latch, row, slots: slots(p), phase: p.name }
+  return { x, y, z, carried: p.carried, lift, latch, row, slots: slots(p), phase: p.name, ...carriagesAt(p, x, local) }
 }

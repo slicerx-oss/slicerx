@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The selected printer's tool changer for Preview: built from the resolved settings and the profile id,
 // kept while nothing it depends on changes so the playback bar and the viewport share one object.
+import { printerProfile } from '@slicerx/settings'
 import { toolChangerSpec, type ToolChangerSpec } from '@slicerx/viewport'
 import { resolveConfig } from '../adapters/config'
 import type { AppState } from '../state/store'
@@ -18,7 +19,10 @@ export function toolChangerFor(s: Pick<AppState, 'profile' | 'overrides' | 'easy
   const key = [s.profile, s.overrides, s.easy, s.bed, tools, map] as const
   if (last && last.key.every((k, i) => k === key[i])) return last.spec
   const cfg = resolveConfig(s.easy, s.overrides) as Record<string, unknown>
-  const spec = s.profile ? toolChangerSpec(s.profile.printerId, map ? { ...cfg, filament_map: map } : cfg, s.bed, tools) : null
+  // The catalog's kinematics tell an IDEX printer's two carriages from one head with two nozzles.
+  const kinematics = s.profile ? printerProfile(s.profile.printerId)?.kinematics : undefined
+  const hints = kinematics ? { kinematics } : {}
+  const spec = s.profile ? toolChangerSpec(s.profile.printerId, map ? { ...cfg, filament_map: map } : cfg, s.bed, tools, hints) : null
   last = { key, spec }
   return spec
 }

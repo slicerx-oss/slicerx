@@ -1363,7 +1363,7 @@ export class Toolpaths {
     const cur = this.part ? this.part.index : to - 1
     const tool = bytes[cur * SXPV_SEGMENT_BYTES + SXPV_SEGMENT.tool] ?? 0
     // Racks keep what the changes so far left in them.
-    if (this.changer && this.changer.kind !== 'dual-nozzle' && this.changer.kind !== 'filament-swap') {
+    if (this.changer && this.changer.kind !== 'dual-nozzle' && this.changer.kind !== 'filament-swap' && this.changer.kind !== 'idex-park') {
       const k = this.changes.filter((c) => c.segment <= to - 1).length
       const last = k > 0 ? this.changes[k - 1]! : null
       // The rack's contents after a change do not depend on the change's seconds, so 0 serves here.

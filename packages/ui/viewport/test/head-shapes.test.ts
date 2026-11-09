@@ -29,6 +29,10 @@ const OUT = fileURLToPath(new URL('../data/head-shapes.json', import.meta.url))
 /** The same file for @slicerx/settings, whose by-object rules ask which head a printer has and whether it is estimated. */
 const SETTINGS_OUT = fileURLToPath(new URL('../../../settings/head-shapes.json', import.meta.url))
 const profiles = (path: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`../../../profiles/${path}`, import.meta.url)), 'utf8')) as { models: Record<string, { machine: Settings }> }
+/** The catalog's kinematics per printer (an IDEX printer's two nozzles are two carriages). */
+const kinematics = new Map(
+  (JSON.parse(readFileSync(fileURLToPath(new URL('../../../settings/profiles/printers.json', import.meta.url)), 'utf8')) as { printers: { id: string; kinematics: string }[] }).printers.map((p) => [p.id, p.kinematics]),
+)
 
 const up = (v: number) => Math.ceil(v * 10 - 1e-6) / 10
 const down = (v: number) => Math.floor(v * 10 + 1e-6) / 10
@@ -124,10 +128,12 @@ function build() {
     const tools = rack ? 6 : Math.max(2, nozzles)
     // Every extruder prints a tool of its own (the rack's the rest), so each one's head is drawn.
     const s = nozzles > 1 ? { ...m.machine, filament_map: Array.from({ length: tools }, (_, i) => String(Math.min(i, nozzles - 1) + 1)) } : m.machine
-    const spec = toolChangerSpec(id, s, bedOf(s), tools)
-    // Preview draws the H2D's head for every printer with two nozzles; the others (Snapmaker J1 and Artisan) carry two
-    // heads side by side, each the family's own, and park them at the sides rather than at a chute.
-    if (spec?.kind === 'dual-nozzle' && !id.startsWith('bambu-')) {
+    const kin = kinematics.get(id)
+    const spec = toolChangerSpec(id, s, bedOf(s), tools, kin ? { kinematics: kin } : {})
+    // An IDEX printer (Snapmaker J1) carries two heads side by side on their own carriages, each the family's own, and
+    // parks the idle one at its end of X, never at a chute. The Snapmaker Artisan, whose change Preview does not play
+    // yet, carries its two nozzles as two family heads as well.
+    if (spec?.kind === 'idex-park' || (!spec && nozzles > 1) || (spec?.kind === 'dual-nozzle' && !id.startsWith('bambu-'))) {
       printers[id] = { heads: Array.from({ length: nozzles }, () => single(id)) }
       continue
     }
