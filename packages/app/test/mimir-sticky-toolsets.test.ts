@@ -109,6 +109,16 @@ const OFFER = 'Your hook is ready: 40 mm tall, with a 6 mm screw hole. Want me t
 const PRINTING = ['printer__queue', 'printer__list', 'printer__status', 'app__send_p3']
 /** Each printer's send and pause commands: the ones a print offer needs whichever printer it names. */
 const EVERY_PRINTER = FLEET.flatMap((p) => [`app__send_${p.id}`, `app__pause_${p.id}`])
+/** The send and pause of the printer the offer names (Printer 3): after a build, a print yes needs these, not every printer's. */
+const NAMED_PRINTER = ['app__send_p3', 'app__pause_p3']
+/** A build turn as mimir runs one: the sheet, the plan, the design and the geometry tools. */
+const BUILD_TURN = [
+  { call: { name: 'pilot__sheet', input: { title: 'Wall hook', dims: [] } } },
+  { call: { name: 'design__plan', input: {} } },
+  { call: { name: 'design__new', input: { name: 'Hook' } } },
+  { call: { name: 'geom__extrude', input: {} } },
+  { call: { name: 'geom__fillet', input: {} } },
+]
 
 describe('a capped mimir cloud chat keeps its tools across messages', () => {
   const was = { pilot: get().pilot }
@@ -126,9 +136,9 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
   })
 
   for (const yes of ['yes please', 'sure, go ahead'])
-    for (const built of [false, true])
-      it(`"${yes}" after mimir offers to print gets the printer tools${built ? ', after a turn that called the design tools' : ''}`, async () => {
-        const make = built ? [{ call: { name: 'design__new', input: { name: 'Hook' } } }] : []
+    for (const built of ['none', 'new', 'build'] as const)
+      it(`"${yes}" after mimir offers to print gets the printing tools and the named printer's send and pause${built === 'new' ? ', after a turn that started a design' : built === 'build' ? ', after a full build turn' : ''}`, async () => {
+        const make = built === 'new' ? [{ call: { name: 'design__new', input: { name: 'Hook' } } }] : built === 'build' ? BUILD_TURN : []
         const { pilot, say } = await chat([...make, { text: OFFER }, { text: 'Sending it now.' }])
         const first = await say('Make a wall hook for a 6 mm screw')
         expect(pilot.tools().length).toBeGreaterThan(CAP)
@@ -136,9 +146,10 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
         const second = await say(yes)
         const names = toolNames(second[0]!)
         expect(names.length).toBeLessThanOrEqual(CAP)
-        expect(names).toEqual(expect.arrayContaining([...PRINTING, ...EVERY_PRINTER, 'app__slice']))
+        // the printer the offer names is enough (owner, 2026-11-09): every other printer's commands may not fit after a build
+        expect(names).toEqual(expect.arrayContaining([...PRINTING, ...NAMED_PRINTER, 'app__slice']))
         // the design tools the last turn called from stay
-        if (built) expect(names).toEqual(expect.arrayContaining(['design__new', 'design__plan', 'geom__extrude', 'geom__fillet']))
+        if (built !== 'none') expect(names).toEqual(expect.arrayContaining(['design__new', 'design__plan', 'geom__extrude', 'geom__fillet']))
       })
 
   for (const ask of ['Print it on Printer 2 in green PLA', 'Print this on my Printer 6', 'Send it anyway'])
