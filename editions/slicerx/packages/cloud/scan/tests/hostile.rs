@@ -350,6 +350,44 @@ async fn reference_two_color_3mf_is_accepted() {
     assert!(names.contains(&"Metadata/model_settings.config".to_owned()));
 }
 
+/// A Vault upload as the app packs it: written by the app's own upload test
+/// (packages/app/test/vault-upload-content-types.test.ts), which keeps this
+/// fixture current.
+const APP_UPLOAD: &[u8] = include_bytes!("fixtures/app-upload.sx3mf");
+
+#[tokio::test]
+async fn the_apps_vault_upload_is_accepted() {
+    let o = scan("bracket.sx3mf", APP_UPLOAD.to_vec()).await;
+    assert_clean(&o);
+    assert_eq!(o.report.triangle_count, Some(12));
+}
+
+#[tokio::test]
+async fn the_apps_upload_declaring_the_binary_type_is_refused() {
+    // What the app sent before it declared the binary type only for a file
+    // with .bin parts: every upload carried it, and every one was refused.
+    let mut src = ZipArchive::new(Cursor::new(APP_UPLOAD)).unwrap();
+    let mut out = ZipWriter::new(Cursor::new(Vec::new()));
+    let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    for i in 0..src.len() {
+        let mut f = src.by_index(i).unwrap();
+        let name = f.name().unwrap().into_owned();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).unwrap();
+        if name == "[Content_Types].xml" {
+            let t = String::from_utf8(data).unwrap().replace(
+                "</Types>",
+                "<Default Extension=\"bin\" ContentType=\"application/octet-stream\"/></Types>",
+            );
+            data = t.into_bytes();
+        }
+        out.start_file(name, opts).unwrap();
+        out.write_all(&data).unwrap();
+    }
+    let bytes = out.finish().unwrap().into_inner();
+    rejected(&scan("bracket.sx3mf", bytes).await, "zip_content_type");
+}
+
 #[tokio::test]
 async fn output_is_deterministic_and_survives_a_second_upload() {
     let a = scan("cube.stl", cube_stl()).await;

@@ -614,6 +614,11 @@ export interface ProjectInput {
    * left out with them, and so are the named values.
    */
   meshless?: boolean
+  /**
+   * False leaves the design's history out (the timeline and its binary meshes), as a Vault upload does: the objects
+   * keep their meshes and open as plain models.
+   */
+  history?: boolean
 }
 
 /** The input of a print file without the model (`meshless`): the plates' printing objects become names only. */
@@ -676,8 +681,17 @@ export function dimensionsJson(objects: readonly Pick<ObjectInput, 'id' | 'dimen
   return out.length ? JSON.stringify({ version: 1, dimensions: out }, null, 2) : null
 }
 
-/** The content types of every part the writer can add: the model, relationships, settings, G-code, pictures, the CAD history's binary meshes. */
-const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="gcode" ContentType="text/x.gcode"/><Default Extension="config" ContentType="text/xml"/><Default Extension="md5" ContentType="text/plain"/><Default Extension="json" ContentType="application/json"/><Default Extension="bin" ContentType="application/octet-stream"/></Types>`
+/** The content types of the parts the writer adds: the model, relationships, settings, G-code, pictures. */
+const CONTENT_TYPES_HEAD = `<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="gcode" ContentType="text/x.gcode"/><Default Extension="config" ContentType="text/xml"/><Default Extension="md5" ContentType="text/plain"/><Default Extension="json" ContentType="application/json"/>`
+
+/**
+ * [Content_Types].xml for these parts. The CAD history's binary meshes (.bin) are declared only when the file has
+ * one: the Vault's upload check refuses a file that declares a type it does not take.
+ */
+export function contentTypesXml(names: readonly string[]): string {
+  const bin = names.some((n) => n.toLowerCase().endsWith('.bin'))
+  return `${CONTENT_TYPES_HEAD}${bin ? '<Default Extension="bin" ContentType="application/octet-stream"/>' : ''}</Types>`
+}
 
 export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInput[] {
   if (input.meshless) return projectFiles(meshlessInput(input), splitAt)
@@ -806,7 +820,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
       `<Relationship Target="/Metadata/plate_${coverIndex + 1}_small.png" Id="rel-5" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-small"/>`
     : ''
   const files: ZipInput[] = [
-    { name: '[Content_Types].xml', data: CONTENT_TYPES },
+    // filled in last, from the parts the file ends up with
+    { name: '[Content_Types].xml', data: '' },
     { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>${cover}</Relationships>` },
     { name: '3D/3dmodel.model', data: model },
     ...(split
@@ -827,7 +842,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   const facets = facetsJson(painted)
   if (facets) files.push({ name: FACETS_PART, data: facets })
   // the timeline as the objects have it now, so the file always matches what is saved
-  files.push(...timelineFiles(syncTimeline(input.timeline ?? { bodies: [], items: [], marker: 0 }, input.plates.flatMap((p) => p.objects)), fileIds))
+  if (input.history !== false) files.push(...timelineFiles(syncTimeline(input.timeline ?? { bodies: [], items: [], marker: 0 }, input.plates.flatMap((p) => p.objects)), fileIds))
   const values = valuesJson(input.namedValues ?? [])
   if (values) files.push({ name: 'Metadata/slicerx_values.json', data: values })
   const marks = layerMarksXml(input.layerMarks)
@@ -861,6 +876,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
       data: `<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sliced.map(({ index }, k) => `<Relationship Target="/Metadata/plate_${index + 1}.gcode" Id="rel-${k + 1}" Type="http://schemas.bambulab.com/package/2021/gcode"/>`).join('')}</Relationships>`,
     })
   }
+  files[0] = { name: '[Content_Types].xml', data: contentTypesXml(files.map((f) => f.name)) }
   return files
 }
 

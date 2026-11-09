@@ -31,7 +31,8 @@ export async function currentProjectUpload(): Promise<ProjectUpload | null> {
   const objects = plates.flatMap((p) => p.objects)
   if (objects.length === 0) return null
   const { sx3mfBytes } = await import('./actions')
-  const bytes = await sx3mfBytes(plates)
+  // The design's history stays home: the upload check refuses its binary meshes and the library does not keep the history.
+  const bytes = await sx3mfBytes(plates, {}, { withoutHistory: true })
   const s = get()
   let printProfile: UploadPrintProfile | undefined
   if (s.slice.status === 'done' && !s.slice.stale && s.printerModel) {
