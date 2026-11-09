@@ -19,6 +19,7 @@ import { cameraBus, getPaintBus, setTool } from './tools'
 import { appName, editionHasCad, MODELING_COMMANDS } from '../edition'
 import { openTool } from '../workspaces/design/open-tool'
 import { SHELF_TOOLS } from '../workspaces/design/shelf-tools'
+import { shownSketches, sketchesOff } from '../cad/sketch-gates'
 import { fromVault } from '../export/vault'
 import { layerCommands } from '../workspaces/preview/layer-keys'
 
@@ -115,6 +116,8 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
     { id: 'history-stop', title: 'Stop editing the history step', section: 'plate', keywords: ['cancel edit', 'cad history'], workspace: 'prepare', enabled: () => get().historyEdit !== null, run: () => void import('../cad/history/ops').then((o) => o.cancelEdit()) },
     { id: 'object-holefit', title: 'Fit a hole for a screw or insert', section: 'plate', keywords: ['hole', 'resize hole', 'heat-set insert', 'counterbore', 'countersink', 'clearance', 'screw', 'tap'], workspace: 'prepare', run: () => openTool('holefit') },
     { id: 'project-values', title: 'Named values for sizes', section: 'plate', keywords: ['variables', 'parameters', 'named value', 'wall thickness', 'parametric', 'formula', 'expression', 'clearance'], workspace: 'prepare', run: () => openTool('values') },
+    { id: 'object-loft', title: 'Loft: a solid through sketches in order', section: 'plate', keywords: ['loft', 'blend', 'transition', 'vase', 'profiles', 'sections'], workspace: 'prepare', enabled: () => !sketchesOff('loft', shownSketches(get().timeline).length), run: () => openTool('loft') },
+    { id: 'object-sweep', title: 'Sweep: carry a profile along a path', section: 'plate', keywords: ['sweep', 'path', 'pipe', 'tube', 'rail', 'handle', 'hook'], workspace: 'prepare', enabled: () => !sketchesOff('sweep', shownSketches(get().timeline).length), run: () => openTool('sweep') },
     { id: 'object-shell', title: 'Shell: hollow with faces left open', section: 'plate', keywords: ['shell', 'hollow', 'box', 'tray', 'enclosure', 'open top', 'wall thickness', 'cup'], workspace: 'prepare', run: () => openTool('shell') },
     { id: 'object-thread', title: 'Cut a thread in a hole or on a rod', section: 'plate', keywords: ['thread', 'screw thread', 'tap', 'bolt', 'nut', 'cap', 'iso metric', 'internal thread', 'external thread'], workspace: 'prepare', run: () => openTool('thread') },
     { id: 'object-fillet', title: 'Fillet or chamfer edges', section: 'plate', keywords: ['round edge', 'bevel', 'radius', 'edge break', 'soften corners', 'chamfer'], workspace: 'prepare', run: () => openTool('fillet') },

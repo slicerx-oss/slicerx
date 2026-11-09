@@ -16,6 +16,7 @@ import { repairSelected } from '../../plate/geom-ops'
 import { history } from '../../plate/history'
 import { hostSlices } from '../../state/model-mode'
 import { set, toast, useApp, type AppState } from '../../state/store'
+import { shownSketches } from '../../cad/sketch-gates'
 import { SHAPES } from '../prepare/object-actions'
 import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { openTool } from './open-tool'
@@ -25,7 +26,7 @@ import { startFillet } from '../../cad/start-hint'
 import { requestFinish, useCanFinish, useSketchInUse } from '../../cad/sketches'
 import { useSketchMode } from '../../cad/sketch-mode'
 import { modKey } from '../../lib/keys'
-import { availableTools, menuEntryTipAttrs, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, toolTipAttrs, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
+import { availableTools, menuEntryTipAttrs, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, sketchOff, toolTipAttrs, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
 
 /**
  * 'icons' when the labeled shelf does not fit its own width, so every tool stays in view; back to labels once the
@@ -90,6 +91,7 @@ export function Shelf() {
   const fit = useShelfFit(shelfRef)
   const host = useHost()
   const hasSel = useApp((s) => s.selection !== null)
+  const sketchCount = useApp((s) => shownSketches(s.timeline).length)
   const pickKey = useApp((s) => {
     const p = nextPick(s)
     return p ? `${p.kind}:${p.count}` : ''
@@ -115,7 +117,7 @@ export function Shelf() {
     if (t.run === 'repair') return run(() => repairSelected(host.slicer))
     if (t.tool) openTool(t.tool)
   }
-  const off = (t: ShelfTool) => Boolean(t.needsSelection && !hasSel) || (Boolean(t.modeling) && engine === 'loading')
+  const off = (t: ShelfTool) => Boolean(t.needsSelection && !hasSel) || (Boolean(t.modeling) && engine === 'loading') || sketchOff(t, sketchCount) !== null
   const groupName = (id: ShelfGroup) => SHELF_GROUPS.find((g) => g.id === id)?.label ?? ''
   // A tool's tip shows its demo loop when it has one (lib/demos.ts, by the tool's id).
   const tip = (t: ShelfTool) => toolTipAttrs(t, `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}`)

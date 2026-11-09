@@ -38,6 +38,8 @@ const FilletTool = lazy(() => import('./fillet-tool').then((m) => ({ default: m.
 const HoleTool = lazy(() => import('./hole-tool').then((m) => ({ default: m.HoleTool })))
 const ThreadTool = lazy(() => import('./thread-tool').then((m) => ({ default: m.ThreadTool })))
 const ShellTool = lazy(() => import('./shell-tool').then((m) => ({ default: m.ShellTool })))
+const LoftTool = lazy(() => import('./loft-tool').then((m) => ({ default: m.LoftTool })))
+const SweepTool = lazy(() => import('./sweep-tool').then((m) => ({ default: m.SweepTool })))
 const ValuesPanel = lazy(() => import('./values-panel').then((m) => ({ default: m.ValuesPanel })))
 
 // Shape and text on a face
@@ -650,6 +652,8 @@ export function CadPanel({ tool }: { tool: CadTool }) {
   if (tool === 'holefit') return <Suspense fallback={null}><HoleTool /></Suspense>
   if (tool === 'thread') return <Suspense fallback={null}><ThreadTool /></Suspense>
   if (tool === 'shell') return <Suspense fallback={null}><ShellTool /></Suspense>
+  if (tool === 'loft') return <Suspense fallback={null}><LoftTool /></Suspense>
+  if (tool === 'sweep') return <Suspense fallback={null}><SweepTool /></Suspense>
   if (tool === 'values') return <Suspense fallback={null}><ValuesPanel /></Suspense>
   return <ShapeTool textOnly={tool === 'facetext'} svgFirst={tool === 'facesvg'} />
 }

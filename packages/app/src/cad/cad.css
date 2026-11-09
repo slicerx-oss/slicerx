@@ -324,3 +324,24 @@
 :root[data-scheme='light'] .shape-box { border-color: rgba(0, 0, 0, 0.12); }
 :root[data-scheme='light'] .shape-box[data-typed], :root[data-scheme='light'] .shape-box[data-set='driving'], :root[data-scheme='light'] .shape-box:focus-within { border-color: var(--accent); }
 @media (pointer: coarse) { .shape-box { height: var(--h-lg); } .shape-box-input { height: calc(var(--h-lg) - 2 * var(--s-1)); font-size: var(--fs-body); } }
+
+/* Loft and Sweep: the Closed ring checkbox at the right of its label, the numbered profiles list that grows downward,
+   and the Profile and Path slots the next pick fills */
+.tp-row > .tp-check { justify-self: end; width: 16px; height: 16px; margin: 6px; accent-color: var(--accent); }
+.solid-list { display: grid; gap: var(--s-1); min-width: 0; }
+.solid-rows { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--s-1); }
+.solid-row { display: flex; align-items: center; gap: var(--s-2); min-height: var(--h-sm); padding-left: var(--s-1); border-radius: var(--r-sm); min-width: 0; }
+.solid-row:hover { background: var(--ink-2); }
+.solid-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); color: var(--fg); }
+.solid-row[data-kept] .solid-row-name { color: var(--muted); }
+.solid-row-btns { display: flex; flex: none; }
+.solid-row-btns > .sx-btn { width: var(--h-sm); min-width: var(--h-sm); height: var(--h-sm); padding: 0; }
+:root[data-phone] .solid-row { min-height: var(--h-lg); }
+:root[data-phone] .solid-row-btns > .sx-btn { width: var(--h-lg); min-width: var(--h-lg); height: var(--h-lg); }
+.tp-row:has(> .solid-slot) { grid-template-columns: 72px minmax(0, 1fr); }
+.solid-slot { justify-self: stretch; display: flex; align-items: center; min-width: 0; height: var(--h-md); padding: 0 var(--s-2); border: 1px dashed var(--field-line); border-radius: var(--r-sm); background: var(--field-bg); color: var(--muted); font: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer; }
+.solid-slot > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solid-slot[data-filled] { border-style: solid; color: var(--fg); }
+.solid-slot[aria-pressed="true"] { border-color: var(--accent); background: var(--control-selected); }
+.solid-slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:root[data-phone] .solid-slot { height: var(--h-lg); }

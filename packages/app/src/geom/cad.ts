@@ -10,7 +10,7 @@
 // input's local frame, so the object keeps its transform.
 import { geom, usesWorker, type GeomMesh, type TypedGeomMesh } from './client'
 import { fitCall } from './fit-client'
-import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
+import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, LoftProfile, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, SweepPath, ThreadPlace, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
 
 export type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, SketchSegment, ThreadPlace, ThreadSize, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
 
@@ -220,6 +220,32 @@ export interface RevolveRequest {
 /** Revolves a sketch. Replies like extrudeShape. */
 export function revolveSketch(req: RevolveRequest, signal?: AbortSignal) {
   return geom().call<MeshResult & { frame: 'target' | 'world'; tool: GeomMesh; report: ExtrudeReport }>('sketch.revolve', req, signal)
+}
+
+export interface LoftRequest {
+  /** In loft order, each one loop on its own plane (the bed when a profile has no frame). */
+  profiles: LoftProfile[]
+  smooth?: boolean
+  closed?: boolean
+  operation?: 'new' | 'join' | 'cut'
+  target?: MeshItem
+}
+
+/** Lofts a solid through sketch profiles. Replies like revolveSketch. */
+export function loftSketch(req: LoftRequest, signal?: AbortSignal) {
+  return geom().call<MeshResult & { frame: 'target' | 'world'; tool: GeomMesh; report: ExtrudeReport }>('sketch.loft', req, signal)
+}
+
+export interface SweepRequest {
+  profile: LoftProfile
+  path: SweepPath
+  operation?: 'new' | 'join' | 'cut'
+  target?: MeshItem
+}
+
+/** Sweeps a sketch profile along an open path. Replies like revolveSketch. */
+export function sweepSketch(req: SweepRequest, signal?: AbortSignal) {
+  return geom().call<MeshResult & { frame: 'target' | 'world'; tool: GeomMesh; report: ExtrudeReport }>('sketch.sweep', req, signal)
 }
 
 export interface SnapPoint {

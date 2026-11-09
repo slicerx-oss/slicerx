@@ -723,7 +723,14 @@ Ids that tests read for their text:
 | `sketch-ctx-extrude` | In a finished sketch's menu: Extrude, which opens the sketch tool to extrude it |
 | `sketch-ctx-revolve` | In a finished sketch's menu: Revolve |
 | `model-tree-sketches` | The Sketches folder in the Model tree: the design's sketches from the timeline, rolled back ones dimmed |
-| `model-tree-sketch` | A finished sketch's row in the Sketches folder: double-click edits it, right-click opens its menu |
+| `model-tree-sketch` | A finished sketch's row in the Sketches folder: double-click edits it, right-click opens its menu. While Loft or Sweep is open a click picks it there, and a picked row has `data-pick` (its number in the loft, or Profile or Path) |
+| `solid-result-new`, `solid-result-join`, `solid-result-cut`, `solid-result-reason` | Loft and Sweep: the Result options, and the line under them saying why Join and Cut are off |
+| `loft-sides-straight`, `loft-sides-smooth` | Loft: the Sides options |
+| `loft-ring-row`, `loft-ring`, `loft-ring-reason` | Loft: the Closed ring row, its checkbox, and the line saying why it is off (fewer than 3 profiles) |
+| `loft-profiles`, `loft-profile`, `loft-profiles-empty` | Loft: the numbered profiles list, one row per profile in loft order (`data-kept` on a profile the step keeps with no sketch to match), and the note while it is empty |
+| `loft-profile-up`, `loft-profile-down`, `loft-profile-remove` | Loft: a profile row's Up, Down and Remove buttons |
+| `loft-message`, `sweep-message` | Loft and Sweep: a refused pick or the engine's refusal, above the footer |
+| `sweep-profile-row`, `sweep-profile`, `sweep-path-row`, `sweep-path` | Sweep: the Profile and Path rows and their slots; a slot shows what fills it, and the pressed one (`aria-pressed`) takes the next pick |
 | `model-tree-bodies` | The Bodies folder in the Model tree, holding the object rows |
 | `tl-marker` | The design timeline's marker, a slider: drag it or use the arrows, Home and End to roll the design back |
 | `tl-rolled` | The timeline's status while it is rolled back: "Rolled back to N of M" |

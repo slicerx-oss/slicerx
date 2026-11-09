@@ -3,9 +3,9 @@
 // What the modeling tools do to the plate, on the typed geometry calls in geom/cad.ts: extrude a shape
 // from a face or the bed, copy an object in a line, a grid or a circle, and describe a measurement.
 // Each change lands in one store update, so undo takes it back in one step. No React in here.
-import { ADDS_NOTHING_MM3, type History, type Pattern, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
+import { ADDS_NOTHING_MM3, loftParams, sweepParams, type History, type LoftOptions, type Pattern, type SketchConstraint, type StepParams, type SweepOptions } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
-import { arrayCopies, arrayMerged, extrudeShape, revolveSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
+import { arrayCopies, arrayMerged, extrudeShape, loftSketch, revolveSketch, sweepSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
 import { bake } from '../plate/mesh-ops'
 import { bodyHistory, historyField, rememberFont, reserveStepId, withStep } from './history/record'
@@ -88,6 +88,8 @@ export interface Landed {
 export interface LandIn {
   step?: UndoStep | undefined
   sketch?: string | undefined
+  /** The timeline sketches a loft or sweep copied from, kept on its step so they hide while it is live (Step.uses). */
+  uses?: readonly string[] | undefined
 }
 
 /** Runs a landing write in its step, or as an ordinary edit. */
@@ -174,6 +176,40 @@ export async function applyRevolve(host: Loader, given: RevolveInput, o: LandIn 
   return land(host, r, operation, input.target, name, revolveParams(input), o, record, at)
 }
 
+export interface LoftInput extends LoftOptions {
+  target?: { objectId: string; partIndex: number }
+  name: string
+}
+
+/** Lofts through the profiles in order; lands like an extrude. The step keeps its own copy of the loops. */
+export async function applyLoft(host: Loader, input: LoftInput, o: LandIn = {}): Promise<Landed> {
+  const operation = input.operation ?? 'new'
+  const target = targetOf(input.target, operation)
+  const at = target ? [...target.entry.transform] : undefined
+  const params = loftParams(input)
+  if (params.op !== 'sketch.loft') throw new Error('Not a loft.')
+  reserveStepId()
+  const r = await loftSketch({ profiles: params.profiles, ...(params.smooth ? { smooth: true } : {}), ...(params.closed ? { closed: true } : {}), operation, ...(target ? { target: { mesh: toGeom(target.part), transform: target.entry.transform } } : {}) })
+  return land(host, r, operation, input.target, input.name, params, o, onSketch(undefined), at)
+}
+
+export interface SweepInput extends SweepOptions {
+  target?: { objectId: string; partIndex: number }
+  name: string
+}
+
+/** Sweeps the profile along the path; lands like an extrude. The step keeps its own copy of the loops. */
+export async function applySweep(host: Loader, input: SweepInput, o: LandIn = {}): Promise<Landed> {
+  const operation = input.operation ?? 'new'
+  const target = targetOf(input.target, operation)
+  const at = target ? [...target.entry.transform] : undefined
+  const params = sweepParams(input)
+  if (params.op !== 'sketch.sweep') throw new Error('Not a sweep.')
+  reserveStepId()
+  const r = await sweepSketch({ profile: params.profile, path: params.path, operation, ...(target ? { target: { mesh: toGeom(target.part), transform: target.entry.transform } } : {}) })
+  return land(host, r, operation, input.target, input.name, params, o, onSketch(undefined), at)
+}
+
 function targetOf(t: { objectId: string; partIndex: number } | undefined, operation: string): { entry: PlateEntry; part: MeshPart } | null {
   const entry = t ? get().plate.find((p) => p.id === t.objectId) : undefined
   const part = entry?.parts[t?.partIndex ?? 0]
@@ -213,7 +249,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     const handle = await host.loadParts(entry.name, parts)
     // drawn on a finished sketch: kept where the sketch is stored, as the design tools keep their steps
     const kept = record(params, at ?? entry.transform)
-    const history = withStep(entry, t.partIndex, kept.params, kept.transform, false, o.sketch)
+    const history = withStep(entry, t.partIndex, kept.params, kept.transform, false, o.sketch, o.uses)
     // checked before the write, so a step's first change never lands without the solid: the object is there, and did
     // not take an exact history meanwhile that this result would drop (commitMade refuses that)
     const now = get().plate.find((e) => e.id === entry.id)
@@ -234,7 +270,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   const transform = compose({ position: [cx, cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
   // The body's history starts with the step that made it, so its sketch or shape stays editable.
   const kept = record(params, transform)
-  const made: PlateEntry = { id: newId(), name, handle, parts: [local], colors: entry?.colors.length ? entry.colors : [brandAccent()], transform, history: bodyHistory(kept.params, kept.transform, o.sketch) }
+  const made: PlateEntry = { id: newId(), name, handle, parts: [local], colors: entry?.colors.length ? entry.colors : [brandAccent()], transform, history: bodyHistory(kept.params, kept.transform, o.sketch, o.uses) }
   writeIn(o, () => set((s) => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] })))
   markStale()
   return { message: `Added ${name}, ${volume}.`, warn: false }

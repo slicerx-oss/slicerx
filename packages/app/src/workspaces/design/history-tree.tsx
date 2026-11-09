@@ -12,6 +12,7 @@ import type { SketchItem } from '@slicerx/cad-history'
 import { HistorySteps } from '../../cad/history/history-panel'
 import { SketchMenu } from '../../cad/sketch-menu'
 import { openSketch, useSketchInUse } from '../../cad/sketches'
+import { useSketchPicker } from '../../cad/sketch-pick'
 import { selectObject } from '../../plate/edit'
 import { MAX_NAME, onRenameRequest, renameObject } from '../../plate/object-list'
 import { get, useApp, type PlateEntry } from '../../state/store'
@@ -336,6 +337,9 @@ function SketchRow({ k, later }: { k: SketchItem; later: boolean }) {
   const loops = k.loops.length === 1 ? '1 loop' : `${k.loops.length} loops`
   // an Extrude or Revolve from its menu is using it
   const used = useSketchInUse() === k.id
+  // Loft or Sweep is open: a click picks the sketch there, and a picked one shows its mark
+  const picker = useSketchPicker()
+  const mark = picker?.marks.get(k.id)
   return (
     <>
       <button
@@ -344,16 +348,22 @@ function SketchRow({ k, later }: { k: SketchItem; later: boolean }) {
         data-tree-row=""
         tabIndex={-1}
         data-later={later || undefined}
-        data-current={used || undefined}
+        data-current={used || mark !== undefined || undefined}
         data-testid="model-tree-sketch"
+        data-pick={mark}
         aria-haspopup="menu"
+        aria-pressed={picker && !later ? mark !== undefined : undefined}
         data-tip-title={k.name}
-        data-tip-body={later ? 'Rolled back: move the timeline marker past it to use it.' : `${loops}. Double-click to edit it, right-click to extrude or revolve it.`}
+        data-tip-body={later ? 'Rolled back: move the timeline marker past it to use it.' : picker ? (mark !== undefined ? 'Picked. Click again to take it off.' : `${loops}. Click to pick it.`) : `${loops}. Double-click to edit it, right-click to extrude or revolve it.`}
         {...menu.bind}
-        onDoubleClick={() => !later && openSketch({ id: k.id, mode: 'edit' })}
+        onClick={() => {
+          if (picker && !later) picker.pick(k.id)
+        }}
+        onDoubleClick={() => !later && !picker && openSketch({ id: k.id, mode: 'edit' })}
       >
         <Icon name="sketch" size={16} />
         <span className="min0">{k.name}</span>
+        {mark !== undefined ? <span className="dtree-pick" aria-hidden="true">{mark}</span> : null}
       </button>
       <SketchMenu at={menu.at} onClose={menu.close} id={k.id} name={k.name} later={later} />
     </>

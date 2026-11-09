@@ -28,7 +28,7 @@ import { startFillet } from '../../cad/start-hint'
 import { openSketch, requestFinish, useCanFinish, useSketchDraw, useSketchInUse } from '../../cad/sketches'
 import { shownSketches } from './finished-sketches'
 import { DRAW_FAMILY, ribbonGroups, ribbonTabs, TOOLBAR_ICON, type RibbonAction, type RibbonItem, type RibbonMenu, type RibbonTab } from './ribbon-layout'
-import { availableTools, menuEntryTipAttrs, pickOff, toolTipAttrs, type DialogTool, type NextPick, type ShelfTool } from './shelf-tools'
+import { availableTools, menuEntryTipAttrs, pickOff, sketchOff, toolTipAttrs, type DialogTool, type NextPick, type ShelfTool } from './shelf-tools'
 import { nextPick } from './shelf'
 import './ribbon.css'
 
@@ -156,6 +156,7 @@ export function Ribbon() {
   })
   const objectTool = useApp((s) => s.objectTool)
   const sketchToUse = useApp((s) => shownSketches(s.timeline).at(-1)?.id ?? null)
+  const sketchCount = useApp((s) => shownSketches(s.timeline).length)
   const engine = useFullEngine()
   const { undo, redo } = useHistoryCounts()
   const [menu, setMenu] = useState<RibbonMenu | null>(null)
@@ -198,7 +199,7 @@ export function Ribbon() {
   // what is picked, so a tool that takes one at a time is off for more, saying why
   const [kind, countText] = pickKey.split(':')
   const pick: NextPick | null = pickKey ? { kind: kind as NextPick['kind'], count: Number(countText) } : null
-  const toolOff = (t: ShelfTool): string | false => (t.needsSelection && !hasSel ? 'Select an object first.' : t.modeling && engine === 'loading' ? 'The modeling tools are loading.' : (pickOff(t, pick) ?? false))
+  const toolOff = (t: ShelfTool): string | false => (t.needsSelection && !hasSel ? 'Select an object first.' : t.modeling && engine === 'loading' ? 'The modeling tools are loading.' : (sketchOff(t, sketchCount) ?? pickOff(t, pick) ?? false))
 
   const actionOff = (id: RibbonAction): string | false => {
     if (DRAW_FAMILY[id] || id === 'look') return draw ? false : 'Start a sketch first.'

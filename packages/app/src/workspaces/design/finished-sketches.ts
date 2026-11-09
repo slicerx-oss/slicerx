@@ -4,27 +4,35 @@
 // stands now (cad/sketch-place.ts): with the design it was drawn for, or the body of the first feature on it. A sketch
 // a live feature was made from hides, as Fusion hides a consumed sketch; rolled back sketches hide too. While the
 // sketch tool is open, the one sketch it draws is the tool's.
+// While Loft or Sweep is open the sketches are pickable (cad/sketch-pick.ts), and each picked one shows its mark.
 import type { SketchItem, Timeline } from '@slicerx/cad-history'
-import type { SketchScene } from '@slicerx/viewport'
+import { shownSketches } from '../../cad/sketch-gates'
+import type { FinishedSketch } from '@slicerx/viewport'
 import { useEffect } from 'react'
 import { entityPaths, fromLoops, profileRings } from '../../cad/sketch-model'
 import { frameShown } from '../../cad/sketch-place'
 import { cameraBus } from '../../plate/tools'
+import { useSketchPicker } from '../../cad/sketch-pick'
 import { useApp } from '../../state/store'
 
-/** The sketches to draw: live, and not yet made into a live feature. */
-export function shownSketches(t: Timeline): SketchItem[] {
-  const live = t.items.slice(0, t.marker)
-  const used = new Set(live.flatMap((i) => (i.kind === 'feature' && i.sketch !== undefined ? [i.sketch] : [])))
-  return live.filter((i): i is SketchItem => i.kind === 'sketch' && !used.has(i.id))
-}
+export { shownSketches }
 
 /** A finished sketch as the view draws it: its curves on its plane where it stands now. Null for one sketch mode cannot draw. */
-export function sketchScene(k: SketchItem): SketchScene | null {
+export function sketchScene(k: SketchItem): FinishedSketch | null {
   const entities = fromLoops(k.loops)
   if (!entities) return null
   const paths = entities.flatMap((e) => entityPaths(e).map((p) => ({ points: p.points, ...(p.closed ? { closed: true } : {}), ...(e.construction ? { tone: 'construction' as const } : {}) })))
   return { frame: frameShown(k), paths, handles: [], profiles: profileRings(entities) }
+}
+
+/**
+ * The sketches to draw while a tool picks them: the ones shown, each with its id and the mark the tool gives it, and
+ * also a picked one a live feature uses (the sources of the loft or sweep being edited), so every pick shows.
+ */
+export function pickableSketches(t: Timeline, marks: ReadonlyMap<string, string>): SketchItem[] {
+  const shown = shownSketches(t)
+  const extra = t.items.slice(0, t.marker).filter((i): i is SketchItem => i.kind === 'sketch' && marks.has(i.id) && !shown.includes(i))
+  return [...shown, ...extra]
 }
 
 /** Keeps the view's finished sketches current while Model shows, and where they stand as the bodies they move with move. */
@@ -32,10 +40,24 @@ export function useFinishedSketches(): void {
   const t = useApp((s) => s.timeline)
   const plate = useApp((s) => s.plate)
   const sketching = useApp((s) => s.objectTool === 'sketch')
+  const picker = useSketchPicker()
   useEffect(() => {
     const view = cameraBus()?.cad
     if (!view) return
-    view.setFinishedSketches(sketching ? [] : shownSketches(t).map(sketchScene).filter((s): s is SketchScene => s !== null))
-  }, [t, plate, sketching])
-  useEffect(() => () => cameraBus()?.cad?.setFinishedSketches([]), [])
+    if (sketching) return view.setFinishedSketches([])
+    const list = picker ? pickableSketches(t, picker.marks) : shownSketches(t)
+    view.setFinishedSketches(list.flatMap((k): FinishedSketch[] => {
+      const s = sketchScene(k)
+      if (!s) return []
+      const mark = picker?.marks.get(k.id)
+      return [{ ...s, ...(picker ? { id: k.id } : {}), ...(mark !== undefined ? { mark } : {}) }]
+    }))
+  }, [t, plate, sketching, picker])
+  useEffect(() => {
+    cameraBus()?.cad?.setSketchPicking?.(picker !== null && !sketching)
+  }, [picker, sketching])
+  useEffect(() => () => {
+    cameraBus()?.cad?.setFinishedSketches([])
+    cameraBus()?.cad?.setSketchPicking?.(false)
+  }, [])
 }
