@@ -41,6 +41,7 @@ import { appProject, pilotSlicer } from './project'
 import { NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter, scriptsFor } from './scripted'
 import { SCRIPTS } from './scripts'
 import { appTabs } from './tabs'
+import { standingPlan, withPlanState } from './plan-state'
 
 export const mimirLogs = createMemorySessionStore()
 
@@ -265,8 +266,11 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
     },
     // the limits a part needs, the scope, the commands, the brain pack's groups, the knowledge and the tools, made the
     // same way for the creative eval (@slicerx/pilot tab-options.ts)
-    ...tabOptions({ slices, config: parts.config, kb: parts.kb, tools: parts.tools, commands, ...(parts.client ? { client: parts.client } : {}), ...(parts.share ? { share: parts.share } : {}), ...(parts.memory ? { memory: parts.memory } : {}), ...(parts.toolGroups ? { toolGroups: parts.toolGroups } : {}) }),
+    // each design call also tells the plan state what it did, which a save keeps with the project (plan-state.ts)
+    ...tabOptions({ slices, config: parts.config, kb: parts.kb, tools: withPlanState(parts.tools), commands, ...(parts.client ? { client: parts.client } : {}), ...(parts.share ? { share: parts.share } : {}), ...(parts.memory ? { memory: parts.memory } : {}), ...(parts.toolGroups ? { toolGroups: parts.toolGroups } : {}) }),
     project: appProject(host),
+    // the plan the open project holds, for a chat with none of its own: "keep going" after a reopen finishes it
+    standingPlan,
     hasDesign,
     // the card's plans, where a print-in-place plan whose sizes changed after Go waits for a new plan (design.check reads them)
     plans: mimirPlans,
