@@ -449,7 +449,8 @@ type ProjectRequest = { parts: { mesh: { positions: number[] }; transform: numbe
 /**
  * The engine's sketch.project for the flat, axis-aligned faces and edge loops these tests project, used when the engine
  * the replies were recorded with predates the operation: the rectangle around the face, or around the edges, seen
- * along the sketch normal, in the sketch's plane. An engine that has the operation answers it itself.
+ * along the sketch normal, in the sketch's plane, as the start and line segments the engine gives. An engine that has the
+ * operation answers it itself.
  */
 function projectionFallback(): void {
   const inner = geom()
@@ -471,7 +472,8 @@ function projectionFallback(): void {
     const uv = pts.map(world).map((p) => [p[0]! - o[0]!, p[1]! - o[1]!, p[2]! - o[2]!]).map((d) => [dot(d, u), dot(d, v)].map((x) => Math.round(x * 1e6) / 1e6 + 0))
     const [u0, u1] = [Math.min(...uv.map((q) => q[0]!)), Math.max(...uv.map((q) => q[0]!))]
     const [v0, v1] = [Math.min(...uv.map((q) => q[1]!)), Math.max(...uv.map((q) => q[1]!))]
-    return { loops: [{ points: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]] }] }
+    const to = (q: number[]) => ({ type: 'line', to: q })
+    return { loops: [{ start: [u0, v0], segments: [to([u1, v0]), to([u1, v1]), to([u0, v1]), to([u0, v0])] }] }
   }
   setGeomProvider({
     async call<T>(op: string, req: unknown, signal?: AbortSignal): Promise<T> {
@@ -834,7 +836,7 @@ describe('one stored frame per sketch, read where it stands now', () => {
     expect(frames).toHaveLength(1)
     expect(frames[0]).toMatchObject({ origin: shown.origin, u: shown.u, v: shown.v })
     // the projected outline is the block's top as it stands, in the sketch's plane
-    expect(projected(sketchItem(k), 'p1')).toEqual([{ points: [[-10, -10], [10, -10], [10, 10], [-10, 10]], projected: 'p1' }])
+    expect(projected(sketchItem(k), 'p1')).toEqual([{ start: [-10, -10], segments: [[10, -10], [10, 10], [-10, 10], [-10, -10]].map((to) => ({ type: 'line', to })), projected: 'p1' }])
   })
 })
 
