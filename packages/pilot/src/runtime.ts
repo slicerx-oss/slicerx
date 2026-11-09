@@ -57,7 +57,7 @@ import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
 import { chatRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
-import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion } from './plan-left'
+import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
 
 export interface PilotHost extends ToolHost {
   llm: LlmTransport
@@ -299,6 +299,15 @@ export function restartOf<T extends { name: string }>(name: string, started: rea
  * started before the plan is made again: design.check judges the plan's sizes, so the plan takes the sheet's.
  */
 export const PLAN_AGAIN_NOTE = 'The person changed sizes after the plan was approved, and design.check checks the plan. Before building, call design.plan again with the confirmed sizes and the same printInPlace.'
+
+/**
+ * The note in place of ending a reply while the print-in-place plan approved in the run waits to be made again: it starts
+ * as the plan-left note does (so the context fit and a scripted client tell it from the person's words), and asks for
+ * the plan again rather than a build, which would wait for it.
+ */
+function planAgainNote(left: PlanLeft): string {
+  return `${PLAN_LEFT_PREFIX} (plan ${left.planId}, ${left.part}), so keep going now instead of ending or asking whether to go on. ${PLAN_AGAIN_NOTE} Ask the person only about something the plan does not settle.`
+}
 
 /** The answer to a new part started before its sizes were confirmed on a sheet. */
 export const SHEET_FIRST_NOTE = 'Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.'
@@ -1333,11 +1342,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
      * out before a reply is read). It ends as it would have with no approved plan, with design.check's stop in force (the
      * fix round is used, so mimir says what is off), or when the reply's last words ask the person for a decision the
      * plan does not settle (unsettledQuestion): "should I go on?" or "shall I add the clearance the plan has?" go on, a
-     * size the plan lacks or a choice between two options waits for the person.
+     * size the plan lacks or a choice between two options waits for the person. A print-in-place plan whose sizes the
+     * person changed on its sheet after the Go (isStale) goes on to be made again, never built: every body of its part
+     * waits for the new plan (waitsForPlan), so the note asks for design.plan with the confirmed sizes instead.
      */
-    const planGoesOn = (text: string) => {
+    const planGoesOn = (text: string): { left: PlanLeft; again: boolean } | null => {
       const left = planLeft(messages, runStart)
-      return left && unsettledQuestion(text) === undefined ? left : null
+      if (!left || unsettledQuestion(text) !== undefined) return null
+      return { left, again: isStale(sessionId) && planned.get(sessionId)?.planId === left.planId }
     }
     // how long the run has waited on slow_down refusals in a row
     let slowed = 0
@@ -1540,11 +1552,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           continue
         }
         // A reply that would end with the plan approved in this run unfinished goes on once instead (planGoesOn).
-        const left = !planNudged && !stopped && !wrap && spoke && toolCalls.length === 0 && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls ? planGoesOn(text) : null
-        if (left) {
+        const goesOn = !planNudged && !stopped && !wrap && spoke && toolCalls.length === 0 && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls ? planGoesOn(text) : null
+        if (goesOn) {
+          const { left, again } = goesOn
           planNudged = true
-          emit({ type: 'error', message: planLeftNotice(left, ASSISTANT_NAME), retryable: false, code: PLAN_LEFT_CODE, waiting: true })
-          messages.push({ role: 'user', content: planLeftNote(left, { editStep: findTool('design.edit_step') !== undefined, check: findTool('design.check') !== undefined }) })
+          emit({ type: 'error', message: again ? `${ASSISTANT_NAME} went on to plan ${left.part} again with the sizes confirmed on its sheet.` : planLeftNotice(left, ASSISTANT_NAME), retryable: false, code: PLAN_LEFT_CODE, waiting: true })
+          messages.push({ role: 'user', content: again ? planAgainNote(left) : planLeftNote(left, { editStep: findTool('design.edit_step') !== undefined, check: findTool('design.check') !== undefined }) })
           continue
         }
         stopReason = stopped ? 'denied' : step >= maxSteps ? 'max_steps' : 'end'
