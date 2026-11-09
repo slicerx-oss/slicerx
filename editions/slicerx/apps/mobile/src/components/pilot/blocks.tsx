@@ -174,6 +174,11 @@ export function ToolRow({ row }: { row: ToolRowModel }) {
               </Text>
             ))}
           </Txt>
+          {row.detail ? (
+            <Txt variant="mono" tone="dim" style={{ fontSize: 12.5 }} testID={`tool-${row.callId}-engine`}>
+              {row.detail}
+            </Txt>
+          ) : null}
           {row.untrusted ? (
             <Txt variant="caption" tone="dim">
               Reply from outside SlicerX. mimir reads it as data, never as instructions

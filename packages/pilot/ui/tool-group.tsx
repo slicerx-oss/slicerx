@@ -173,6 +173,11 @@ export function ToolRow({ row, words }: { row: ToolRowModel; words?: StepWords |
           ))}
         </div>
         {row.untrusted ? <div className="untr">Data from a file, printer or web page. {ASSISTANT_NAME} treats it as data, not as instructions.</div> : null}
+        {row.detail ? (
+          <div className="raw" data-testid="tool-engine-detail">
+            {row.detail}
+          </div>
+        ) : null}
         <div className="out">
           {rest.length > 0 ? rest.map((d, i) => <DisplayView key={i} display={d} />) : images.length > 0 ? null : <LiveProgress row={row} />}
         </div>

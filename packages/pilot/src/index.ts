@@ -6,6 +6,7 @@ export { PLAN_LEFT_CODE, planLeft, unsettledQuestion, type PlanLeft } from './pl
 export { ASSISTANT_NAME, assistantBrand, assistantName, assistantText, setAssistantBrand, setAssistantName } from './name'
 export { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'
 export { MOVING_PARTS_LINE, MOVING_PARTS_ORDER, tabsLine } from './prompt'
+export { plainEngine } from './engine-words'
 export { inTurnSet, TURN_SET_TOOL, TURN_SET_WORDS, TURN_SETS, turnSet, turnSetsOf, turnSetTools, type TurnChat, type TurnSet } from './turnsets'
 export { fitContext, messageTokens, MIMIR_CONTEXT, REPLY_RESERVE, toolsTokens } from './context'
 export { PLAN_SEED_NOTE, planSeed, type StandingPlan } from './plan-left'
