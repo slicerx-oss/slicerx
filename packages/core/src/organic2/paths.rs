@@ -27,6 +27,9 @@ pub(crate) struct PathsIn {
     pub(crate) center: [f64; 2],
     /// Neighboring fill lines are joined along the edge when the way round is at most this long (mm).
     pub(crate) join: f64,
+    /// Tree support infill: hollow branches get the base lines inside their walls where that inside holds a
+    /// disc of this radius, mm. None leaves them hollow.
+    pub(crate) wide_fill: Option<f64>,
 }
 
 /// Above this print Z (mm) every branch island gets a second wall.
@@ -111,6 +114,16 @@ fn lines(area: &Shapes, f: &Fill) -> Vec<Vec<Point>> {
 
 /// Walls of the hollow branches of `base` (one, or two for big islands and above 100 mm).
 pub(crate) fn branch_walls(base: &Shapes, inp: &PathsIn, print_z: f64) -> Vec<Vec<Point>> {
+    branch_walls_around(base, inp, print_z, None)
+}
+
+/// [`branch_walls`], also adding the center line of each island's innermost wall to `centers`.
+fn branch_walls_around(
+    base: &Shapes,
+    inp: &PathsIn,
+    print_z: f64,
+    mut centers: Option<&mut Shapes>,
+) -> Vec<Vec<Point>> {
     let clip = 0.15 * inp.spacing;
     let mut out = Vec::new();
     for island in ops::islands(base) {
@@ -124,6 +137,9 @@ pub(crate) fn branch_walls(base: &Shapes, inp: &PathsIn, print_z: f64) -> Vec<Ve
         let second = print_z > DOUBLE_WALL_Z || ops::area(&outer) > inp.double_wall_area();
         let reach = ANCHOR_SPACINGS * inp.spacing;
         let inner = ops::grow(&outer, -inp.spacing);
+        if let Some(c) = centers.as_deref_mut() {
+            c.extend(if second { inner.clone() } else { outer.clone() });
+        }
         if second {
             let anchor_ring = ops::grow(&inner, -inp.spacing);
             out.extend(
@@ -227,6 +243,7 @@ pub(crate) fn raft_walls(trees: &Shapes, width: f64, spacing: f64, wall_count: u
         hollow: true,
         center: [0.0, 0.0],
         join: 0.0,
+        wide_fill: None,
     };
     branch_walls(trees, &inp, 0.0)
 }
@@ -258,7 +275,25 @@ pub(crate) fn layer_paths(
             },
         ));
     } else if inp.hollow {
-        support.extend(branch_walls(&l.base, inp, print_z));
+        if let Some(r) = inp.wide_fill {
+            // Tree support infill: the base lines from 0.4 spacing inside the innermost wall's center line (where
+            // the sheath's lines start), in the parts wide enough for them.
+            let mut centers = Vec::new();
+            support.extend(branch_walls_around(&l.base, inp, print_z, Some(&mut centers)));
+            support.extend(lines(
+                &crate::treepaths::wide_inside(&centers, 0.4 * inp.spacing, r),
+                &Fill {
+                    w,
+                    spacing: inp.spacing,
+                    density: inp.support_density,
+                    angle: inp.angle,
+                    center: inp.center,
+                    join: inp.join,
+                },
+            ));
+        } else {
+            support.extend(branch_walls(&l.base, inp, print_z));
+        }
     } else {
         let sheath = ops::grow(&l.base, -w / 2.0);
         support.extend(loops(&sheath, 0.15 * inp.spacing));
@@ -339,11 +374,85 @@ mod tests {
             hollow: true,
             center: [100.0, 100.0],
             join: 0.0,
+            wide_fill: None,
         }
     }
 
     fn disc(r: f64) -> Shapes {
         ops::round_circle(ops::to_p(100.0 * SCALE, 100.0 * SCALE), r)
+    }
+
+    /// The support paths tree support infill adds to `l` at 10 mm, after checking it keeps the walls and the
+    /// interface as they were.
+    fn added(l: &Layer, on: &PathsIn) -> Vec<Vec<Point>> {
+        let off = PathsIn {
+            wide_fill: None,
+            ..on.clone()
+        };
+        let (a, ai) = layer_paths(l, false, 10.0, on);
+        let (b, bi) = layer_paths(l, false, 10.0, &off);
+        assert_eq!(ai, bi, "interface paths changed");
+        assert!(a.len() >= b.len() && a[..b.len()] == b[..], "walls changed");
+        a[b.len()..].to_vec()
+    }
+
+    fn wide(wide_fill: f64) -> PathsIn {
+        PathsIn {
+            wide_fill: Some(wide_fill),
+            ..inp(0)
+        }
+    }
+
+    fn base(shape: Shapes) -> Layer {
+        Layer {
+            base: shape,
+            ..Layer::default()
+        }
+    }
+
+    #[test]
+    fn a_wide_hollow_branch_gets_infill_inside_its_walls() {
+        let fill = added(&base(disc(8.0)), &wide(2.67));
+        assert!(fill.len() > 2, "{}", fill.len());
+        // Two walls, the inner one's center line a width and a spacing in, the lines 0.4 spacing inside it.
+        let inside = 8.0 - 0.2 - 0.4 - 0.4 * 0.4;
+        for q in fill.iter().flatten() {
+            let r = (q.x_mm() - 100.0).m_hypot(q.y_mm() - 100.0);
+            assert!(
+                r <= inside + 0.03,
+                "fill point {r:.3} mm out, inside ends at {inside:.3}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_branch_at_its_own_size_stays_hollow() {
+        assert!(added(&base(disc(2.5)), &wide(2.67)).is_empty());
+    }
+
+    #[test]
+    fn a_thin_neck_between_wide_parts_gets_no_fill() {
+        let other = ops::round_circle(ops::to_p(130.0 * SCALE, 100.0 * SCALE), 8.0);
+        let bar = ops::rect([106.0, 99.0, 124.0, 101.0]);
+        let fill = added(&base(ops::union_many(&[&disc(8.0), &other, &bar])), &wide(2.67));
+        assert!(!fill.is_empty());
+        for q in fill.iter().flatten() {
+            assert!(
+                !(110.0..120.0).contains(&q.x_mm()),
+                "fill in the neck at x {:.2}",
+                q.x_mm()
+            );
+        }
+    }
+
+    #[test]
+    fn the_first_layer_and_filled_patterns_ignore_tree_support_infill() {
+        let l = base(disc(8.0));
+        let on = wide(2.67);
+        let (a, _) = layer_paths(&l, true, 0.2, &on);
+        let (b, _) = layer_paths(&l, true, 0.2, &inp(0));
+        assert_eq!(a, b);
+        assert!(added(&l, &PathsIn { hollow: false, ..on }).is_empty());
     }
 
     #[test]

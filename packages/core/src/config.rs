@@ -288,6 +288,9 @@ pub struct TreeSupportConfig {
     pub angle_slow: f64,
     /// Share of the overhang area that gets tips.
     pub top_rate: f64,
+    /// Fill branches and trunks wide enough for the support base pattern with it, instead of leaving them
+    /// hollow (`tree_support_with_infill`; default base pattern only).
+    pub with_infill: bool,
 }
 
 impl Default for TreeSupportConfig {
@@ -306,6 +309,7 @@ impl Default for TreeSupportConfig {
             brim_width: 3.0,
             angle_slow: 25.0,
             top_rate: 30.0,
+            with_infill: false,
         }
     }
 }
@@ -1114,6 +1118,7 @@ impl PrintConfig {
             }
             for (key, dst) in [
                 ("tree_support_auto_brim", &mut tr.auto_brim),
+                ("tree_support_with_infill", &mut tr.with_infill),
                 ("support_remove_small_overhang", &mut sc.remove_small_overhang),
             ] {
                 if let Some(x) = get(key) {
@@ -2784,6 +2789,7 @@ pub const READ_KEYS: &[&str] = &[
     "tree_support_tip_diameter",
     "tree_support_top_rate",
     "tree_support_wall_count",
+    "tree_support_with_infill",
     "nozzle_diameter",
     "nozzle_temperature",
     "hot_plate_temp",
@@ -3726,7 +3732,7 @@ mod tests {
     fn reads_support_style_and_tree_keys() {
         let c = PrintConfig::from_json(
             br#"{"support_style":"tree_hybrid","tree_support_branch_angle":"35","tree_support_wall_count":2,
-                "tree_support_auto_brim":"0","support_threshold_overlap":"60%"}"#,
+                "tree_support_auto_brim":"0","support_threshold_overlap":"60%","tree_support_with_infill":"1"}"#,
         )
         .unwrap();
         assert_eq!(c.support.style, SupportStyle::TreeHybrid);
@@ -3734,6 +3740,8 @@ mod tests {
         assert_eq!(c.support.tree_settings.wall_count, 2);
         assert!(!c.support.tree_settings.auto_brim);
         assert!((c.support.threshold_overlap - 60.0).abs() < 1e-9);
+        assert!(c.support.tree_settings.with_infill);
+        assert!(!PrintConfig::default().support.tree_settings.with_infill);
         // OrcaSlicer's defaults.
         let d = PrintConfig::default().support.tree_settings;
         assert!((d.branch_diameter - 5.0).abs() < 1e-9 && (d.branch_diameter_organic - 2.0).abs() < 1e-9);

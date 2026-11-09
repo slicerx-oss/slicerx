@@ -121,6 +121,20 @@ fn organic_tree_supports_are_the_same_at_every_thread_count() {
 }
 
 #[test]
+fn tree_support_infill_is_the_same_at_every_thread_count() {
+    for style in ["tree_hybrid", "organic"] {
+        let g = same_at_every_thread_count(
+            &[(Arc::new(common::organic_models::trunk()), [128.0, 128.0])],
+            &json!({
+                "enable_support": true, "support_type": "tree(auto)", "support_style": style,
+                "support_on_build_plate_only": false, "brim_width": 0, "tree_support_with_infill": true,
+            }),
+        );
+        assert!(g.contains(";TYPE:Support"), "{style}: no supports");
+    }
+}
+
+#[test]
 fn hybrid_tree_supports_are_the_same_at_every_thread_count() {
     let g = same_at_every_thread_count(
         &[(mesh("table.stl"), [128.0, 128.0])],

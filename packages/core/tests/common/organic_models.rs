@@ -269,6 +269,19 @@ pub fn tall() -> Mesh {
     )
 }
 
+/// Not one of the 13: a 45 mm tower with a 20 x 4 mm arm at 40 mm, for the tree support infill tests: a trunk
+/// that grows wide enough to fill and is quick to slice. The arm is under 100 mm2, so hybrid trees hold it with
+/// branches rather than their normal-support part.
+pub fn trunk() -> Mesh {
+    mesh(
+        "trunk",
+        vec![
+            cuboid("tower", [-5.0, -5.0, 0.0], [5.0, 5.0, 45.0]),
+            cuboid("arm", [5.0, -2.0, 40.0], [25.0, 2.0, 43.0]),
+        ],
+    )
+}
+
 /// 10: a 45 degree wedge whose overhang splits into two lobes above a single one.
 pub fn fork() -> Mesh {
     let lower = prism_xz(

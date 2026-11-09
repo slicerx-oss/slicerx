@@ -7239,6 +7239,11 @@ impl SliceSession {
             },
             center,
             anchor_max: cfg.anchor_max_mm(),
+            // Tree support infill: inside walls wide enough for two base lines, and wider than a branch at its
+            // own size. Only with the default base pattern; a hollow pattern stays hollow.
+            wide_fill: (s.tree_settings.with_infill && pattern == "default" && p.support_density > 0.0).then(
+                || (p.support_spacing / p.support_density).max(s.tree_settings.branch_diameter_organic / 2.0),
+            ),
         }
     }
 
@@ -7511,6 +7516,9 @@ impl SliceSession {
             hollow: matches!(pattern.as_str(), "default" | "hollow" | "none"),
             join: cfg.anchor_max_mm(),
             center,
+            // Tree support infill, as on the other organic engine.
+            wide_fill: (s.tree_settings.with_infill && pattern == "default" && support_density > 0.0)
+                .then(|| (spacing / support_density).max(s.tree_settings.branch_diameter_organic / 2.0)),
         }
     }
 
@@ -8050,6 +8058,12 @@ impl SliceSession {
             on_bed: layer == 0 && self.raft.is_none(),
             anchor_max: cfg.sparse_infill_anchor_max,
             center,
+            // Tree support infill: inside walls wide enough for two base lines, and wider than a branch at its
+            // own size. Only with the default base pattern; hollow and lightning keep their own insides.
+            wide_fill: (s.tree_settings.with_infill && default_pattern).then(|| {
+                let base_density = (spacing / (s.base_spacing + spacing)).min(1.0);
+                (spacing / base_density).max(s.tree_settings.branch_diameter / 2.0)
+            }),
         };
         let (mut support, interface) = crate::treepaths::layer_paths(t, &inp);
         if lightning && !inp.on_bed {

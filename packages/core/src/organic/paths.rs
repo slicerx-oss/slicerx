@@ -65,6 +65,9 @@ pub(crate) struct PathsIn {
     pub(crate) double_wall_mm2: f64,
     pub(crate) center: [f64; 2],
     pub(crate) anchor_max: f64,
+    /// Tree support infill: hollow branches get the base filler inside their walls where that inside holds a
+    /// disc of this radius, mm. None leaves them hollow.
+    pub(crate) wide_fill: Option<f64>,
 }
 
 fn rect(area: &Shapes, spacing: f64, density: f64, angle: f64, p: &PathsIn) -> Vec<Path> {
@@ -238,7 +241,28 @@ pub(crate) fn layer_paths(ol: &OrganicLayer, layer: u32, z: f64, p: &PathsIn) ->
             ));
         } else if p.hollow {
             let double = if z > 100.0 { 0.1 } else { p.double_wall_mm2 };
-            support.extend(crate::treepaths::branch_walls(&base, p.width, p.spacing, double));
+            if let Some(r) = p.wide_fill {
+                // Tree support infill: the base filler from 0.4 spacing inside the innermost wall's center line
+                // (where the sheath's filler starts), in the parts wide enough for it.
+                let mut centers = Vec::new();
+                support.extend(crate::treepaths::branch_walls_around(
+                    &base,
+                    p.width,
+                    p.spacing,
+                    double,
+                    Some(&mut centers),
+                ));
+                support.extend(base_fill(
+                    &crate::treepaths::wide_inside(&centers, 0.4 * p.spacing, r),
+                    p.spacing,
+                    p.support_density,
+                    p.angle,
+                    p.base_rectilinear,
+                    p,
+                ));
+            } else {
+                support.extend(crate::treepaths::branch_walls(&base, p.width, p.spacing, double));
+            }
         } else {
             support.extend(with_sheath(
                 &base,
@@ -252,4 +276,141 @@ pub(crate) fn layer_paths(ol: &OrganicLayer, layer: u32, z: f64, p: &PathsIn) ->
         }
     }
     (support, interface)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fm::Fm as _;
+
+    fn disc(cx: f64, cy: f64, r: f64) -> Shapes {
+        let ring = (0..96)
+            .map(|k| {
+                let a = std::f64::consts::TAU * f64::from(k) / 96.0;
+                i_overlay::i_float::int::point::IntPoint::new(
+                    ((cx + r * a.m_cos()) * SCALE).round() as i32,
+                    ((cy + r * a.m_sin()) * SCALE).round() as i32,
+                )
+            })
+            .collect();
+        vec![vec![ring]]
+    }
+
+    /// Organic layer inputs with hollow branches (the default base pattern) and automatic walls.
+    fn hollow_in(wide_fill: Option<f64>) -> PathsIn {
+        PathsIn {
+            width: 0.4,
+            spacing: 0.4,
+            interface_width: 0.4,
+            interface_spacing: 0.4,
+            first_width: 0.4,
+            first_spacing: 0.4,
+            first_density: 0.9,
+            support_density: 0.4 / 2.9,
+            top_interface_density: 0.5,
+            bottom_interface_density: 0.5,
+            base_rectilinear: false,
+            contact_fill: ContactFill::SupportBase,
+            angle: 0.0,
+            interface_pattern: InterfacePattern::Auto,
+            top_layers: 2,
+            bottom_layers: 0,
+            hollow: true,
+            double_wall_mm2: 0.25 * std::f64::consts::PI * 25.0,
+            center: [100.0, 100.0],
+            anchor_max: 20.0,
+            wide_fill,
+        }
+    }
+
+    /// The support paths tree support infill adds on layer 5 of `ol`, after checking it keeps the walls and the
+    /// interface as they were.
+    fn added(ol: &OrganicLayer, on: &PathsIn) -> Vec<Path> {
+        let off = PathsIn {
+            wide_fill: None,
+            ..on.clone()
+        };
+        let (a, ai) = layer_paths(ol, 5, 10.0, on);
+        let (b, bi) = layer_paths(ol, 5, 10.0, &off);
+        assert_eq!(ai, bi, "interface paths changed");
+        assert!(a.len() >= b.len() && a[..b.len()] == b[..], "walls changed");
+        a[b.len()..].to_vec()
+    }
+
+    fn base(shape: Shapes) -> OrganicLayer {
+        OrganicLayer {
+            base: shape,
+            ..OrganicLayer::default()
+        }
+    }
+
+    #[test]
+    fn a_wide_hollow_branch_gets_infill_inside_its_walls() {
+        let fill = added(&base(disc(100.0, 100.0, 8.0)), &hollow_in(Some(2.9)));
+        // About the inside's area over the 2.9 mm pitch: some 55 mm of lines.
+        let long: f64 = fill
+            .iter()
+            .flat_map(|pl| pl.windows(2))
+            .map(|w| f64::from(w[1].x - w[0].x).m_hypot(f64::from(w[1].y - w[0].y)) / SCALE)
+            .sum();
+        assert!(long > 35.0, "{long:.1} mm of fill");
+        // Two walls, the inner one's center line 1.5 widths in, the fill 0.4 spacing inside it.
+        let inside = 8.0 - 1.5 * 0.4 - 0.4 * 0.4;
+        for q in fill.iter().flatten() {
+            let r = (q.x_mm() - 100.0).m_hypot(q.y_mm() - 100.0);
+            assert!(
+                r <= inside + 0.03,
+                "fill point {r:.3} mm out, inside ends at {inside:.3}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_branch_at_its_own_size_stays_hollow() {
+        assert!(added(&base(disc(100.0, 100.0, 2.5)), &hollow_in(Some(2.9))).is_empty());
+    }
+
+    #[test]
+    fn a_thin_neck_between_wide_parts_gets_no_fill() {
+        let at = |x: f64, y: f64| {
+            i_overlay::i_float::int::point::IntPoint::new(
+                (x * SCALE).round() as i32,
+                (y * SCALE).round() as i32,
+            )
+        };
+        let bar: Shapes = vec![vec![vec![
+            at(106.0, 99.0),
+            at(124.0, 99.0),
+            at(124.0, 101.0),
+            at(106.0, 101.0),
+        ]]];
+        let shape = perimeters::union_all(&[&disc(100.0, 100.0, 8.0), &disc(130.0, 100.0, 8.0), &bar]);
+        let fill = added(&base(shape), &hollow_in(Some(2.9)));
+        assert!(!fill.is_empty());
+        for q in fill.iter().flatten() {
+            assert!(
+                !(110.0..120.0).contains(&q.x_mm()),
+                "fill in the neck at x {:.2}",
+                q.x_mm()
+            );
+        }
+    }
+
+    #[test]
+    fn the_first_layer_and_filled_patterns_ignore_tree_support_infill() {
+        let ol = base(disc(100.0, 100.0, 8.0));
+        let on = hollow_in(Some(2.9));
+        let (a, _) = layer_paths(&ol, 0, 0.2, &on);
+        let (b, _) = layer_paths(
+            &ol,
+            0,
+            0.2,
+            &PathsIn {
+                wide_fill: None,
+                ..on.clone()
+            },
+        );
+        assert_eq!(a, b);
+        assert!(added(&ol, &PathsIn { hollow: false, ..on }).is_empty());
+    }
 }

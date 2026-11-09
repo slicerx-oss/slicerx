@@ -224,7 +224,21 @@ fn has_support(g: &[u8]) -> bool {
 
 #[test]
 fn tree_supports_slice_the_same_in_any_ranges() {
-    let mesh = table();
+    tree_ranges_match(table(), &json!({}));
+}
+
+/// Tree support infill decides each layer from that layer's branches alone, so ranges still slice the same.
+#[test]
+fn tree_support_infill_slices_the_same_in_any_ranges() {
+    tree_ranges_match(
+        Arc::new(common::organic_models::trunk()),
+        &json!({"tree_support_with_infill": true}),
+    );
+}
+
+/// Each tree style on `mesh`, with `extra` over the tree settings, sliced in many sets of ranges and on one
+/// session, against one range.
+fn tree_ranges_match(mesh: Arc<Mesh>, extra: &Value) {
     let meshes = move |_: &str| Ok(mesh.clone());
     for style in [
         json!({"support_style": "organic"}),
@@ -237,7 +251,12 @@ fn tree_supports_slice_the_same_in_any_ranges() {
             "enable_support": true, "support_type": "tree(auto)", "support_on_build_plate_only": false,
             "brim_width": 0,
         });
-        for (k, v) in style.as_object().unwrap() {
+        for (k, v) in style
+            .as_object()
+            .unwrap()
+            .iter()
+            .chain(extra.as_object().unwrap())
+        {
             config[k] = v.clone();
         }
         let req = request(&[("t", [128.0, 128.0])], &config);
