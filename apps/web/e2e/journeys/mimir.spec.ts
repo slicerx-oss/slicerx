@@ -250,14 +250,22 @@ test.describe('the mimir tab', () => {
     await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
     expect((await state(page))['slice']?.status).toBe('done')
     if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/mimir-sliced.png` })
-    // a new project asks the person first; keeping the open one changes nothing
+    // a new project clears the plate, so it is the remove class: a card first, then the discard question for unsaved
+    // work; keeping the open one changes nothing
+    const approve = async (): Promise<void> => {
+      const card = page.getByRole('group', { name: 'Approval request' }).last()
+      await expect(card).toBeVisible({ timeout: 30_000 })
+      await card.getByRole('button', { name: 'Approve', exact: true }).click()
+    }
     await askTab(page, 'Start a new project')
+    await approve()
     const unsaved = page.getByRole('dialog', { name: 'Save changes first?' })
     await expect(unsaved).toBeVisible({ timeout: 30_000 })
     await unsaved.getByTestId('unsaved-cancel').click()
     await expect(chat).toContainText('You kept the open project, so nothing changed.')
     expect((await state(page))['plate'].length).toBe(1)
     await askTab(page, 'Start a new project')
+    await approve()
     await expect(unsaved).toBeVisible({ timeout: 30_000 })
     await unsaved.getByTestId('unsaved-discard').click()
     await expect(chat).toContainText('The new project is open and empty.')
