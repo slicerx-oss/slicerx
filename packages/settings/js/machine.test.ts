@@ -127,9 +127,12 @@ describe('hand-written G-code families', () => {
   it('keeps each written family and model out of gcode.json and gives it to the printer config', () => {
     const fields: [string, string][] = [['start', 'machine_start_gcode'], ['end', 'machine_end_gcode'], ['beforeLayerChange', 'before_layer_change_gcode'], ['layerChange', 'layer_change_gcode'], ['changeFilament', 'change_filament_gcode']]
     expect(Object.keys(written.models).length).toBeGreaterThan(0)
-    for (const family of Object.keys(written.families)) expect(extracted.families[family], family).toBeUndefined()
+    // No script in the repository writes gcode.json; a stock refresh outside it can bring a written key back. Fail here,
+    // fast and with the fix, rather than only when the profiles load.
+    const owned = (key: string) => `remove ${key} from gcode.json; it is owned by gcode-written.json`
+    for (const family of Object.keys(written.families)) expect(extracted.families[family], owned(family)).toBeUndefined()
     for (const [id, family] of Object.entries(written.models)) {
-      expect(extracted.models[id], id).toBeUndefined()
+      expect(extracted.models[id], owned(id)).toBeUndefined()
       const cfg = printerConfig(id) as unknown as Record<string, unknown>
       for (const [field, key] of fields) expect(cfg[key], `${id} ${key}`).toBe(written.families[family]![field])
     }
@@ -137,7 +140,7 @@ describe('hand-written G-code families', () => {
   it('refuses a family or model that is in both files', () => {
     const file = { families: { stock: { start: 'G28' } }, models: { 'printer-a': 'stock' }, pending: [] }
     expect(() => mergeWrittenGcode(file as never, { families: { stock: { start: 'G90' } } } as never)).toThrow(/family stock is in both gcode.json and gcode-written.json/)
-    expect(() => mergeWrittenGcode(file as never, { models: { 'printer-a': 'ours' } })).toThrow(/printer model printer-a has a G-code family in both/)
+    expect(() => mergeWrittenGcode(file as never, { models: { 'printer-a': 'ours' } })).toThrow('printer model printer-a is in both gcode.json and gcode-written.json: remove printer-a from gcode.json; it is owned by gcode-written.json')
     expect(mergeWrittenGcode(file as never, { families: { ours: { start: 'G90' } }, models: { 'printer-b': 'ours' } } as never).models).toEqual({ 'printer-a': 'stock', 'printer-b': 'ours' })
   })
 })

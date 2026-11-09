@@ -219,7 +219,11 @@ fn written_gcode_merges_and_refuses_a_key_in_both_files() {
     assert!(family.unwrap_err().contains("G-code family stock is in both"));
     let model =
         common::shipped_gcode::merge(base.clone(), &serde_json::json!({"models": {"printer-a": "x"}}));
-    assert!(model.unwrap_err().contains("printer model printer-a is in both"));
+    assert!(
+        model
+            .unwrap_err()
+            .contains("remove printer-a from gcode.json; it is owned by gcode-written.json")
+    );
     let ok =
         common::shipped_gcode::merge(base, &serde_json::json!({"models": {"printer-b": "stock"}})).unwrap();
     assert_eq!(ok["models"]["printer-b"], "stock");

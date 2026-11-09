@@ -18,7 +18,7 @@ pub fn merge(mut doc: Value, written: &Value) -> Result<Value, String> {
         for (k, v) in extra {
             if own.contains_key(k) {
                 return Err(format!(
-                    "{what} {k} is in both gcode.json and gcode-written.json; keep it in one of them"
+                    "{what} {k} is in both gcode.json and gcode-written.json: remove {k} from gcode.json; it is owned by gcode-written.json"
                 ));
             }
             own.insert(k.clone(), v.clone());

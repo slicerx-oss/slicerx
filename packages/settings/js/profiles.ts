@@ -94,11 +94,11 @@ export function mergeWrittenGcode(file: GcodeFile, written: { families?: Record<
   const families = { ...file.families }
   const models = { ...file.models }
   for (const [k, f] of Object.entries(written.families ?? {})) {
-    if (k in families) throw new Error(`G-code family ${k} is in both gcode.json and gcode-written.json; keep it in one of them`)
+    if (k in families) throw new Error(`G-code family ${k} is in both gcode.json and gcode-written.json: remove ${k} from gcode.json; it is owned by gcode-written.json`)
     families[k] = f
   }
   for (const [k, f] of Object.entries(written.models ?? {})) {
-    if (k in models) throw new Error(`printer model ${k} has a G-code family in both gcode.json and gcode-written.json; keep it in one of them`)
+    if (k in models) throw new Error(`printer model ${k} is in both gcode.json and gcode-written.json: remove ${k} from gcode.json; it is owned by gcode-written.json`)
     models[k] = f
   }
   return { ...file, families, models }
