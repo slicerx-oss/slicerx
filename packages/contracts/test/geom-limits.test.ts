@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The geometry time limits (src/geom-limits.ts): each operation's class, the three limits, the exact refusal words,
 // and every operation the engine lists has a class chosen on purpose.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GEOM_CALL_LIMIT_MS, geomCallLimitMs, geomOpClass, geomStepName, geomStuckMessage, isGeomStuck, isGeomStuckFinal, type GeomOpClass } from '../src/geom-limits'
@@ -161,8 +161,11 @@ describe('geometry time limits', () => {
     expect(geomStuckMessage('engine.core', 30_000)).toBe('This step took too long (over its 30 s limit) and was stopped; try it again')
   })
 
-  it('matches the refusal the MCP change file quotes', () => {
-    const note = readFileSync(join(__dirname, '..', '..', 'mcp', 'changes', 'geom-call-deadline.md'), 'utf8')
+  it('matches the refusal the MCP change notes quote', () => {
+    // the change file folds into the MCP changelog at a release, so read whichever holds it
+    const mcp = join(__dirname, '..', '..', 'mcp')
+    const file = join(mcp, 'changes', 'geom-call-deadline.md')
+    const note = readFileSync(existsSync(file) ? file : join(mcp, 'CHANGELOG.md'), 'utf8')
     expect(note).toContain(`sx-geom array: ${geomStuckMessage('array', 180_000)}`)
     expect(note).toContain(`sx-geom repair: ${geomStuckMessage('repair', 300_000)}`)
   })
