@@ -1,0 +1,15 @@
+{
+ "comment": "Start, end, layer change and filament change G-code written for SlicerX by hand, per printer family, and the models that use them. It has the shape of gcode.json and is merged with it when the profiles load; a family or model in both files is refused. Edit this file, not gcode.json.",
+ "families": {
+  "sovol_sv04": {
+   "start": "; Sovol SV04 in its default auto-park mode: on a tool change the firmware parks the idle carriage at its end of X\nG90 ; absolute moves\nM83 ; relative extrusion\nM140 S[bed_temperature_initial_layer_single]\nM104 T0 S150 ; keep the nozzles from oozing while homing\n{if is_extruder_used[1]}M104 T1 S150\n{endif}G28 ; home, both carriages go to their ends\nM190 S[bed_temperature_initial_layer_single]\nM104 T0 S{nozzle_temperature_initial_layer[0]} ; heat both nozzles together\n{if is_extruder_used[1]}M104 T1 S{nozzle_temperature_initial_layer[1]}\n{endif}M109 T0 S{nozzle_temperature_initial_layer[0]}\n{if is_extruder_used[1]}M109 T1 S{nozzle_temperature_initial_layer[1]}\nT1 ; prime the right tool along the right edge\nG1 Z5 F600\nG1 X298 Y10 F3000\nG1 Z0.28 F240\nG92 E0\nG1 Y140 E10 F1500 ; prime line\nG1 X297.6 F5000\nG92 E0\nG1 Y10 E10 F1200 ; prime line back\nG92 E0\nG1 Z5 F600\n{endif}T0 ; prime the left tool along the left edge\nG1 Z5 F600\nG1 X2 Y10 F3000\nG1 Z0.28 F240\nG92 E0\nG1 Y140 E10 F1500 ; prime line\nG1 X2.4 F5000\nG92 E0\nG1 Y10 E10 F1200 ; prime line back\nG92 E0\nG1 Z2 F600\nT[initial_tool] ; the first tool of the print comes out, the other stays parked",
+   "end": "G1 Z{min(max_layer_z + 2, printable_height)} F600 ; lift off the print\nM104 T0 S0\nM104 T1 S0\nM140 S0\nM107\nG1 Y{print_bed_max[1] * 0.8} F{travel_speed * 60} ; present the print\nG1 Z{min(max_layer_z + 70, printable_height - 10)} F600\nM84 X Y E",
+   "beforeLayerChange": ";BEFORE_LAYER_CHANGE\n;[layer_z]\nG92 E0\n",
+   "layerChange": "",
+   "changeFilament": "; The firmware parks the old carriage and brings out the new one on its next move\nT[next_extruder]\nM109 T[next_extruder] S{if layer_num < 1}{nozzle_temperature_initial_layer[next_extruder]}{else}{nozzle_temperature[next_extruder]}{endif} ; wait for the new tool's temperature"
+  }
+ },
+ "models": {
+  "sovol-sv04": "sovol_sv04"
+ }
+}

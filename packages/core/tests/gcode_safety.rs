@@ -6,7 +6,7 @@
 //! trusted text; the templates written for `SlicerX` are linted as imported text (the strictest
 //! setting). None may carry an error.
 
-use serde_json::Value;
+mod common;
 use sx_core::gcode_lint::{Limits, Section, Severity, Trust, lint};
 
 fn section(name: &str) -> Section {
@@ -23,8 +23,7 @@ fn section(name: &str) -> Section {
 
 #[test]
 fn shipped_printer_gcode_passes_the_linter() {
-    let path = format!("{}/../profiles/gcode.json", env!("CARGO_MANIFEST_DIR"));
-    let doc: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let doc = common::shipped_gcode::doc();
     let mesh = sx_core::Mesh::load(
         &std::fs::read(format!("{}/bench/models/x-mark.stl", env!("CARGO_MANIFEST_DIR"))).unwrap(),
         "x-mark.stl",

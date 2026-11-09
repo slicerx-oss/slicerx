@@ -7,6 +7,7 @@
 import type { EasyGoal, EasySettings, PrintConfig, SettingValue } from '@slicerx/contracts/settings'
 import curaJson from '@slicerx/profiles/cura/ultimaker.json'
 import gcodeJson from '@slicerx/profiles/gcode.json'
+import gcodeWrittenJson from '@slicerx/profiles/gcode-written.json'
 import machineJson from '@slicerx/profiles/machine.json'
 import speedsJson from '@slicerx/profiles/process-speeds.json'
 import printersJson from '../profiles/printers.json'
@@ -84,7 +85,25 @@ const GCODE_FIELDS: [keyof GcodeFamily, string][] = [
   ['start', 'machine_start_gcode'], ['end', 'machine_end_gcode'], ['beforeLayerChange', 'before_layer_change_gcode'], ['layerChange', 'layer_change_gcode'], ['changeFilament', 'change_filament_gcode'],
   ['pause', 'machine_pause_gcode'], ['extruderStart', 'extruder_start_gcode'], ['timeLapse', 'time_lapse_gcode'], ['templateCustom', 'template_custom_gcode'], ['toolchange', 'toolchange_gcode'], ['wrappingDetection', 'wrapping_detection_gcode'], ['fileStart', 'file_start_gcode'],
 ]
-const GCODE_FILE = gcodeJson as unknown as { families: Record<string, GcodeFamily>; models: Record<string, string>; pending: string[] }
+interface GcodeFile { families: Record<string, GcodeFamily>; models: Record<string, string>; pending: string[] }
+/**
+ * gcode.json with the families written for SlicerX by hand and the models that use them (gcode-written.json). A family
+ * or model in both files is refused, so neither silently replaces the other. src/profiles.rs merges the same way.
+ */
+export function mergeWrittenGcode(file: GcodeFile, written: { families?: Record<string, GcodeFamily>; models?: Record<string, string> }): GcodeFile {
+  const families = { ...file.families }
+  const models = { ...file.models }
+  for (const [k, f] of Object.entries(written.families ?? {})) {
+    if (k in families) throw new Error(`G-code family ${k} is in both gcode.json and gcode-written.json; keep it in one of them`)
+    families[k] = f
+  }
+  for (const [k, f] of Object.entries(written.models ?? {})) {
+    if (k in models) throw new Error(`printer model ${k} has a G-code family in both gcode.json and gcode-written.json; keep it in one of them`)
+    models[k] = f
+  }
+  return { ...file, families, models }
+}
+const GCODE_FILE = mergeWrittenGcode(gcodeJson as unknown as GcodeFile, gcodeWrittenJson as unknown as { families: Record<string, GcodeFamily>; models: Record<string, string> })
 const GCODE = { ...GCODE_FILE, families: { ...CURA.families, ...GCODE_FILE.families }, models: { ...CURA.gcodeModels, ...GCODE_FILE.models } }
 /** How a model's start, end, layer change and filament change G-code stands: written for SlicerX, or not yet. */
 export function gcodeStatus(id: string): 'written' | 'pending' | undefined {
