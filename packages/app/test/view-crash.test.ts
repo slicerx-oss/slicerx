@@ -84,3 +84,40 @@ describe('after the view stopped and was reloaded', () => {
     }
   })
 })
+
+describe('the offer after a stop, with the command bar open', () => {
+  // The offer is a modal dialog, which would keep an open command bar inert and take its focus: it waits for the bar.
+  it('waits while the bar is open and goes up once when it closes, for an older autosave and for one left to the dialog', async () => {
+    const { closeCommandBar } = await import('../src/shell/command-draft')
+    const { appStore } = await import('../src/state/store')
+    let raised = 0
+    const off = appStore.subscribe((s, prev) => {
+      if (s.projectsDialog === 'recover' && prev.projectsDialog !== 'recover') raised++
+    })
+    try {
+      // An older autosave, offered as at any start when nothing was unsaved at the stop.
+      set({ commandOpen: true })
+      expect((await recoverAfterViewCrash(host, { unsaved: false, at: 1 }, autosave, vi.fn())).kind).toBe('clean')
+      expect(get().projectsDialog).toBeNull()
+      closeCommandBar()
+      expect(raised).toBe(1)
+      for (let i = 0; i < 2; i++) {
+        set({ commandOpen: true })
+        closeCommandBar()
+      }
+      expect(raised).toBe(1)
+      // Unsaved work at the stop that would replace work on the plates: left to the dialog, which still waits for the bar.
+      set({ projectsDialog: null, commandOpen: true })
+      const work = entry('bracket')
+      set({ plate: [work], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [work], settings: { sequence: 'by-layer' } }] })
+      expect((await recoverAfterViewCrash(host, { unsaved: true, at: 1 }, autosave, vi.fn())).kind).toBe('offered')
+      expect(get().projectsDialog).toBeNull()
+      closeCommandBar()
+      expect(get().projectsDialog).toBe('recover')
+      expect(raised).toBe(2)
+    } finally {
+      off()
+      set({ commandOpen: false, projectsDialog: null })
+    }
+  })
+})
