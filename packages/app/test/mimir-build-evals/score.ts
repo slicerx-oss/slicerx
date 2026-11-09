@@ -17,12 +17,13 @@ export interface Check {
 
 /**
  * Something the person did in the run, in order. The first message, one sheet confirm and one Go are free, or one sheet
- * and one Go for each distinct part when the message asks for separate parts.
+ * and one Go for each part when the message asks for separate parts. A Go names the plan it approved, and the design
+ * that plan was built in once a step built it (the drive reads the tie after the run).
  */
 export type UserTurn =
   | { kind: 'message'; text: string }
   | { kind: 'sheet'; title: string }
-  | { kind: 'go'; part: string }
+  | { kind: 'go'; part: string; plan: string; design?: string }
   | { kind: 'answer'; question: string; picked: string }
   | { kind: 'nudge'; text: string; why: NoBuild }
 
@@ -54,28 +55,47 @@ function matches(step: { tool: string; input: unknown }, m: OpMatch): boolean {
   return typeof angle === 'number' && Math.abs(angle) < 360
 }
 
+/** The part a Go is for: the design its plan was built in, or the plan alone when nothing was built from it. */
+const goPart = (t: Extract<UserTurn, { kind: 'go' }>): string => t.design ?? `plan ${t.plan}`
+
 /**
- * Every extra turn: answers to questions, nudges, and any sheet or Go that is not for a new part. When the message asks
- * for `parts` separate parts, a sheet is free once for each title not seen yet (up to `parts` of them) and a Go once for
- * each part not seen yet (up to `parts`), so confirming the same part's sheet or Go a second time counts.
+ * Every extra turn: answers to questions, nudges, and any sheet or Go that is not for a new part. Nothing here reads the
+ * model's words for a part (a sheet's title, a plan's name), which it can change from one card to the next.
+ *
+ * A Go is for the design its plan was built in (goPart): free once for each design, up to `parts`, so a plan renamed
+ * and built in the same design again counts. A sheet is matched to a Go: the sheets asked together (no Go between
+ * them) go in order to the Gos that come after them before the next sheet, one each; a sheet with no such Go goes to
+ * the last Go before it, and stands for a part of its own when there is none. A sheet is free once for each part, up to
+ * `parts`, so two parts whose sheets share a title are both free, and a part sized again after its Go counts.
  */
 export function extraTurns(turns: readonly UserTurn[], parts = 1): UserTurn[] {
-  const sheets = new Set<string>()
+  const extra = new Set<number>()
   const gos = new Set<string>()
-  return turns.filter((t, i) => {
-    if (t.kind === 'message') return i > 0
-    if (t.kind === 'sheet') {
-      const free = !sheets.has(t.title) && sheets.size < parts
-      sheets.add(t.title)
-      return !free
-    }
-    if (t.kind === 'go') {
-      const free = !gos.has(t.part) && gos.size < parts
-      gos.add(t.part)
-      return !free
-    }
-    return true
+  turns.forEach((t, i) => {
+    if (t.kind !== 'go') return
+    const part = goPart(t)
+    if (gos.has(part) || gos.size >= parts) extra.add(i)
+    gos.add(part)
   })
+  const sheeted = new Set<string>()
+  let run = 0
+  turns.forEach((t, i) => {
+    if (t.kind === 'go') run = 0
+    if (t.kind !== 'sheet') return
+    // the Gos after this run of sheets and before the next sheet
+    const ahead: string[] = []
+    for (let k = i + 1; k < turns.length; k++) {
+      const n = turns[k]!
+      if (n.kind === 'go') ahead.push(goPart(n))
+      else if (n.kind === 'sheet' && ahead.length) break
+    }
+    const before = turns.slice(0, i).reverse().find((n): n is Extract<UserTurn, { kind: 'go' }> => n.kind === 'go')
+    const part = ahead[run] ?? (before ? goPart(before) : `sheet ${i}`)
+    run++
+    if (sheeted.has(part) || sheeted.size >= parts) extra.add(i)
+    sheeted.add(part)
+  })
+  return turns.filter((t, i) => (t.kind === 'message' ? i > 0 : t.kind === 'sheet' || t.kind === 'go' ? extra.has(i) : true))
 }
 
 /** `parts` placed on the plate: each one's positions through its 4x4 column-major transform. */

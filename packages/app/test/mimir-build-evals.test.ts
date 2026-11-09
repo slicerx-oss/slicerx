@@ -45,7 +45,7 @@ describe('build eval scoring', () => {
     const turns: UserTurn[] = [
       { kind: 'message', text: 'a stand' },
       { kind: 'sheet', title: 'Sizes' },
-      { kind: 'go', part: 'Build it?' },
+      { kind: 'go', part: 'Build it?', plan: 'p1', design: 'd1' },
     ]
     expect(extraTurns(turns)).toEqual([])
     const more: UserTurn[] = [...turns, { kind: 'sheet', title: 'Sizes' }, { kind: 'answer', question: 'Which base?', picked: 'Round' }, { kind: 'nudge', text: 'go', why: 'asked' }]
@@ -90,9 +90,9 @@ describe('build eval scoring', () => {
     const turns: UserTurn[] = [
       { kind: 'message', text: planter.prompt },
       { kind: 'sheet', title: 'Planter' },
-      { kind: 'go', part: 'Build the planter?' },
+      { kind: 'go', part: 'Build the planter?', plan: 'p1', design: 'd1' },
       { kind: 'sheet', title: 'Saucer' },
-      { kind: 'go', part: 'Build the saucer?' },
+      { kind: 'go', part: 'Build the saucer?', plan: 'p2', design: 'd2' },
     ]
     const run = (c: typeof planter, t: UserTurn[]) => scoreCase(c, { events: [], turns: t, parts: [], firstReply: '', firstBuilt: false, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 })
     const two = run(planter, turns)
@@ -107,25 +107,26 @@ describe('build eval scoring', () => {
     expect(extraTurns(turns).map((t) => t.kind)).toEqual(['sheet', 'go'])
   })
 
-  it('frees a sheet only for a title not seen yet, and a Go only for a part not seen yet', () => {
+  it('frees a sheet only for a part not sized yet, and a Go only for a design not built yet', () => {
     const planter = BUILD_CASES.find((c) => c.id === 'planter-saucer')!
     const run = (t: UserTurn[]) => scoreCase(planter, { events: [], turns: t, parts: [], firstReply: '', firstBuilt: false, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 })
     const message: UserTurn = { kind: 'message', text: planter.prompt }
-    // the same sheet and Go twice with two parts: the person confirmed the planter twice
-    const twice: UserTurn[] = [message, { kind: 'sheet', title: 'Planter' }, { kind: 'go', part: 'Build the planter?' }, { kind: 'sheet', title: 'Planter' }, { kind: 'go', part: 'Build the planter?' }]
+    // the same sheet and Go twice with two parts, both plans built in one design: the person confirmed the planter twice
+    const twice: UserTurn[] = [message, { kind: 'sheet', title: 'Planter' }, { kind: 'go', part: 'Build the planter?', plan: 'p1', design: 'd1' }, { kind: 'sheet', title: 'Planter' }, { kind: 'go', part: 'Build the planter?', plan: 'p2', design: 'd1' }]
     expect(extraTurns(twice, 2).map((t) => t.kind)).toEqual(['sheet', 'go'])
     const scored2 = run(twice)
     expect(scored2.extra).toBe(2)
     expect(scored2.turns.detail).toBe('another sheet, another go')
-    // a new title and a new part are free up to the parts asked for
-    expect(extraTurns([message, { kind: 'sheet', title: 'Planter' }, { kind: 'sheet', title: 'Saucer' }, { kind: 'go', part: 'Build the planter?' }, { kind: 'go', part: 'Build the saucer?' }], 2)).toEqual([])
-    // a third Go, even for a new part, is past the two asked for
-    expect(extraTurns([message, { kind: 'go', part: 'a' }, { kind: 'go', part: 'b' }, { kind: 'go', part: 'c' }], 2).map((t) => t.kind)).toEqual(['go'])
+    // two sheets asked together and two plans built in designs of their own are free up to the parts asked for
+    expect(extraTurns([message, { kind: 'sheet', title: 'Planter' }, { kind: 'sheet', title: 'Saucer' }, { kind: 'go', part: 'Build the planter?', plan: 'p1', design: 'd1' }, { kind: 'go', part: 'Build the saucer?', plan: 'p2', design: 'd2' }], 2)).toEqual([])
+    // a third Go, even for a new design, is past the two asked for
+    const go = (n: string): UserTurn => ({ kind: 'go', part: n, plan: `p${n}`, design: `d${n}` })
+    expect(extraTurns([message, go('a'), go('b'), go('c')], 2).map((t) => t.kind)).toEqual(['go'])
     // the boundary: three parts allow three distinct sheets and Gos, and no more
-    const three: UserTurn[] = [message, ...['a', 'b', 'c'].flatMap((n): UserTurn[] => [{ kind: 'sheet', title: n }, { kind: 'go', part: n }])]
+    const three: UserTurn[] = [message, ...['a', 'b', 'c'].flatMap((n): UserTurn[] => [{ kind: 'sheet', title: n }, go(n)])]
     expect(extraTurns(three, 3)).toEqual([])
     expect(extraTurns([...three, { kind: 'sheet', title: 'd' }], 3).map((t) => t.kind)).toEqual(['sheet'])
-    expect(extraTurns([...three, { kind: 'go', part: 'd' }], 3).map((t) => t.kind)).toEqual(['go'])
+    expect(extraTurns([...three, go('d')], 3).map((t) => t.kind)).toEqual(['go'])
   })
 
   it('stops a drive at its own limit and says so, instead of ending quietly', async () => {
@@ -216,6 +217,32 @@ describe('build eval scoring', () => {
     const used = await driveCase(c, { steps: asks.slice(0, 3), timeoutMs: 20_000 })
     expect(used.error).toBeUndefined()
   }, 30_000)
+
+  // an empty design stays in the design host after the drive clears the plate, so this one has a name no recording uses
+  it('keys a Go on the design its plan built, read from the plan the person approved', async () => {
+    const c = asCase('plan-tie')
+    const plan = { part: 'cable clip', units: 'mm', features: [{ name: 'base', kind: 'extrude', sizes: { width: 20 } }, { name: 'hook', kind: 'extrude', sizes: { width: 10 } }], assumptions: [], questions: [] }
+    const r = await driveCase(c, { steps: [{ calls: [{ name: 'design.plan', args: plan }] }, { calls: [{ name: 'design.new', args: { name: 'Plan tie clip' } }] }, { text: 'Started the clip.' }], timeoutMs: 20_000 })
+    const go = r.turns.find((t) => t.kind === 'go')
+    expect(go, JSON.stringify(r.calls)).toMatchObject({ kind: 'go', part: 'Build cable clip from this plan?', plan: expect.stringMatching(/^plan_/) })
+    expect(go?.kind === 'go' && go.design).toMatch(/^obj_/)
+  }, 30_000)
+
+  it('charges a renamed plan of a part already built, and frees a second part whose sheet has the same title', () => {
+    const planter = BUILD_CASES.find((c) => c.id === 'planter-saucer')!
+    const message: UserTurn = { kind: 'message', text: planter.prompt }
+    // the planter planned, approved and built, then planned again under another name and built in the same design
+    const renamed: UserTurn[] = [message, { kind: 'sheet', title: 'Planter' }, { kind: 'go', part: 'Build planter from this plan?', plan: 'p1', design: 'd1' }, { kind: 'sheet', title: 'Planter sizes' }, { kind: 'go', part: 'Build round planter from this plan?', plan: 'p2', design: 'd1' }]
+    expect(extraTurns(renamed, 2).map((t) => t.kind)).toEqual(['sheet', 'go'])
+    // two parts, each sized on a sheet titled the same and built in a design of its own
+    const shared: UserTurn[] = [message, { kind: 'sheet', title: 'Sizes' }, { kind: 'go', part: 'Build planter from this plan?', plan: 'p1', design: 'd1' }, { kind: 'sheet', title: 'Sizes' }, { kind: 'go', part: 'Build saucer from this plan?', plan: 'p2', design: 'd2' }]
+    expect(extraTurns(shared, 2)).toEqual([])
+    // both sheets asked together before the one plan: the second part's sheet stays free though its part was never planned
+    const together: UserTurn[] = [message, { kind: 'sheet', title: 'Round planter' }, { kind: 'sheet', title: 'Saucer' }, { kind: 'go', part: 'Build Round planter from this plan?', plan: 'p1', design: 'd1' }]
+    expect(extraTurns(together, 2)).toEqual([])
+    // a Go whose plan built nothing stands for its plan alone
+    expect(extraTurns([message, { kind: 'go', part: 'Build planter from this plan?', plan: 'p1' }, { kind: 'go', part: 'Build planter from this plan?', plan: 'p2', design: 'd1' }], 2)).toEqual([])
+  })
 
   it('puts each check in the summary, so a part that fails one check shows which', () => {
     const wide = summarize(scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 130, 110, 4)]))
