@@ -15,6 +15,8 @@
 //   tubes and the head cable on top, the lift switch lever on the right side, and the switch bay on the
 //   right wall it runs into.
 // - IDEX: two of the printer family's own heads (heads.ts) on one X rail behind them; the idle one parked at its end.
+// - Klipper tool changer: the generic head (heads.ts) as each tool, on a shuttle plate behind it that stays with the
+//   gantry, and the docks hanging from a bar on the front top frame with the parked tools in them.
 // Poses come from `toolchanger.ts`.
 //
 // Every part is a separate solid in millimeters, nozzle tip at the origin, z up, +y toward the back of the
@@ -47,7 +49,7 @@ import {
 import { displayHex } from './palette'
 import { amber, black, block, brass, dark, deep, graphite, hotPlate, lightMat, part, post, prusaOrange, ring, silver, slab, sock, steel, white } from './headparts'
 import { buildHead, type HeadModel } from './heads'
-import { rackStateBefore, type Pose, type ToolChangerSpec } from './toolchanger'
+import { DOCK_PITCH, rackStateBefore, type Pose, type ToolChangerSpec } from './toolchanger'
 
 /** Dimensions, mm. */
 export const HOTEND = { collarZ: 30, collarR: 5.5, shaftR: 3.2, top: 58 } as const
@@ -369,7 +371,7 @@ export class ToolheadRig {
   }
 
   setSpec(spec: ToolChangerSpec | null): void {
-    const key = spec ? `${spec.kind}:${spec.tools}:${spec.extruderOf.join(',')}:${spec.bed.widthMm}x${spec.bed.depthMm}` : ''
+    const key = spec ? `${spec.kind}:${spec.tools}:${spec.extruderOf.join(',')}:${spec.bed.widthMm}x${spec.bed.depthMm}:${spec.klipper?.docks.map((d) => `${d.x},${d.y},${d.z}`).join(';') ?? ''}` : ''
     if (key === this.lastKey) return
     this.lastKey = key
     this.spec = spec
@@ -453,6 +455,8 @@ export class ToolheadRig {
       this.head.add(shadow, h.group)
       this.sleeves.push({ mesh: h.tubes[0], tool: () => this.toolOnSide(0) }, { mesh: h.tubes[1], tool: () => this.toolOnSide(1) })
       if (k) this.buildSwitchBay(k)
+    } else if (spec.kind === 'klipper-dock') {
+      this.buildKlipper(spec, shadow)
     } else if (spec.kind === 'xl-dock') {
       // Prusa XL: the toolhead hangs behind the carriage's coupling plate.
       const t = buildXlTool()
@@ -546,6 +550,46 @@ export class ToolheadRig {
     this.head.add(slab(graphite, park[0] - half, park[1] + half, back + 1, back + 9, z0, z0 + 14, 'idex rail', 2))
   }
 
+  /**
+   * Klipper tool changer: the generic head is the tool, carried on a shuttle plate behind it (the shuttle stays with the
+   * gantry). The docks hang from a bar on the front top frame, a bracket in front of each parked tool.
+   */
+  private buildKlipper(spec: ToolChangerSpec, shadow: Mesh): void {
+    const k = spec.klipper
+    const tool = buildHead('generic')
+    tool.group.name = 'klipper tool'
+    const box = new Box3().setFromObject(tool.group)
+    const front = Number.isFinite(box.min.y) ? box.min.y : -20
+    const back = Number.isFinite(box.max.y) ? box.max.y : 20
+    const half = Number.isFinite(box.max.x) ? Math.max(12, box.max.x) : 20
+    const top = Number.isFinite(box.max.z) ? box.max.z : 60
+    this.carried = tool.group
+    const shuttle = slab(steel, -half - 2, half + 2, back + 1, back + 7, top * 0.15, top * 0.95, 'shuttle', 2)
+    this.head.add(shadow, tool.group, shuttle)
+    this.sleeves.push({ mesh: tool.sleeve, tool: () => this.carriedTool })
+    if (!k) return
+    const dock = new Group()
+    dock.name = 'dock'
+    const xs = k.docks.map((d) => d.x)
+    const x0 = Math.min(...xs) - DOCK_PITCH / 2
+    const x1 = Math.max(...xs) + DOCK_PITCH / 2
+    const zTop = Math.max(...k.docks.map((d) => d.z)) + top
+    const yBar = Math.min(...k.docks.map((d) => d.y)) + front - 6
+    // The frame bar the docks hang from: a 20 mm extrusion, its top at the parked tools' top.
+    dock.add(slab(dark, x0, x1, yBar - 20, yBar, zTop - 20, zTop, 'frame bar', 1))
+    k.docks.forEach((d, i) => {
+      const t = buildHead('generic')
+      t.group.name = 'parked tool'
+      t.group.position.set(d.x, d.y, d.z)
+      t.group.userData.slot = i
+      // A hook plate high on the tool's front: the tool hangs from it, its body shows below.
+      dock.add(t.group, slab(graphite, d.x - 10, d.x + 10, d.y + front - 5, d.y + front - 1, d.z + top * 0.7, zTop - 20, 'dock bracket', 1))
+      this.rackSlots.push({ group: t.group })
+      this.sleeves.push({ mesh: t.sleeve, tool: () => this.slotTool(i) })
+    })
+    this.fixed.add(dock)
+  }
+
   /** The Prusa XL dock along the back frame: a perforated black panel with a pin block behind each parked toolhead. */
   private buildXlDock(k: NonNullable<ToolChangerSpec['xl']>): void {
     const dock = new Group()
@@ -634,6 +678,7 @@ export class ToolheadRig {
     if (this.restState) return this.restState
     if (spec.kind === 'tool-rack') return (spec.docks?.x ?? []).map((_, i) => (i === tool ? -1 : i))
     if (spec.kind === 'xl-dock') return (spec.xl?.x ?? []).map((_, i) => (i === tool ? -1 : i))
+    if (spec.kind === 'klipper-dock') return (spec.klipper?.docks ?? []).map((_, i) => (i === tool ? -1 : i))
     if (spec.kind === 'hotend-rack') return rackStateBefore(spec, []).slots
     return []
   }
@@ -655,7 +700,7 @@ export class ToolheadRig {
       this.paint()
       return
     }
-    if (spec.kind === 'tool-rack' || spec.kind === 'xl-dock') {
+    if (spec.kind === 'tool-rack' || spec.kind === 'xl-dock' || spec.kind === 'klipper-dock') {
       this.carriedTool = pose ? (pose.carried ?? -1) : tool
       this.slots = slots ?? (pose ? pose.slots : this.restSlots(tool))
       if (this.carried) {
@@ -665,8 +710,8 @@ export class ToolheadRig {
       }
       for (const [i, s] of this.rackSlots.entries()) s.group.visible = (this.slots[i] ?? -1) >= 0
       this.head.position.set(px, py, pz)
-      // The dock keeps the head's height (the frame carries both).
-      this.fixed.position.z = pz
+      // The U1 and XL docks keep the head's height (the gantry carries both); a Klipper dock stands on the frame.
+      this.fixed.position.z = spec.kind === 'klipper-dock' ? 0 : pz
       this.paint()
       return
     }

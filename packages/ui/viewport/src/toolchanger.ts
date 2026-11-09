@@ -20,16 +20,20 @@
 // - idex-park (Snapmaker J1, any printer the catalog lists as IDEX): two carriages on one X beam. The carriage that
 //   printed goes to its own end of X and parks while the other leaves its end for the next move, then the new
 //   nozzle waits for its temperature and comes down.
+// - klipper-dock (a Klipper printer declared a tool changer, StealthChanger style): docks on the front top frame. The
+//   head backs the tool into its dock along the dock path, drops to unhook, pulls back, runs along X behind the docks
+//   and picks the next tool by the same path in reverse. Positions come from the printer's `[tool]` sections when
+//   Moonraker reported them, else they are estimated from the nozzle count.
 //
 // Moves are timed with trapezoidal velocity profiles from the printer's speed and acceleration limits,
 // so the head never jumps. The firmware's own work (cutting, loading, flushing, latching) is a dwell of
 // the seconds the slicer counts for the change (`fixedSeconds`, from `ChangeClock`), spent where the
 // machine spends it. Positions are bed coordinates in mm, origin at the front left corner, z up.
-import type { Bed, PreviewBuffers } from '@slicerx/contracts'
+import type { Bed, PreviewBuffers, ToolDock } from '@slicerx/contracts'
 
 export type V3 = [number, number, number]
 
-export type ToolChangerKind = 'dual-nozzle' | 'hotend-rack' | 'tool-rack' | 'xl-dock' | 'lift-switch' | 'filament-swap' | 'idex-park'
+export type ToolChangerKind = 'dual-nozzle' | 'hotend-rack' | 'tool-rack' | 'xl-dock' | 'lift-switch' | 'filament-swap' | 'idex-park' | 'klipper-dock'
 
 export interface MotionLimits {
   /** mm/s */
@@ -129,6 +133,18 @@ export interface ToolChangerSpec {
    * otherwise the old one parks first. `width` is a carriage's width across X, mm.
    */
   idex?: { park: [number, number]; concurrent: boolean; width: number }
+  /**
+   * Klipper tool changer: each tool's park point (the nozzle with the tool seated in its dock), the Y the head runs along
+   * X at, and the dock path relative to a park point in drop-off order (`f` scales `pathSpeed`). `measured` says which
+   * values came from the printer's own config; the rest are estimated (docs/toolchanger-sim.md).
+   */
+  klipper?: {
+    docks: { x: number; y: number; z: number; measured: boolean }[]
+    safeY: number
+    path: { y: number; z: number; f: number }[]
+    pathSpeed: MotionLimits
+    measured: { safeY: boolean; path: boolean }
+  }
 }
 
 /** A plain settings record (Orca keys) as the app resolves it. */
@@ -169,7 +185,14 @@ export interface ChangerHints {
    * printer has no change to play. Read from the rendered start G-code, which Preview gets after the slice.
    */
   copy?: boolean
+  /**
+   * The printer is declared a Klipper tool changer (setup's filament system, or the `[tool]` sections Moonraker reported),
+   * with the docks its config gave. Empty docks: the dock is estimated from the nozzle count.
+   */
+  toolchanger?: { docks: readonly ToolDock[] }
 }
+
+const flavor = (cfg: Settings): string => String(Array.isArray(cfg['gcode_flavor']) ? cfg['gcode_flavor'][0] : (cfg['gcode_flavor'] ?? '')).toLowerCase()
 
 function kindOf(printerId: string | undefined, cfg: Settings, hints: ChangerHints = {}): ToolChangerKind | null {
   const id = printerId ?? ''
@@ -179,6 +202,8 @@ function kindOf(printerId: string | undefined, cfg: Settings, hints: ChangerHint
   if (id.startsWith('prusa-xl') && list(cfg['nozzle_diameter']).length > 1) return 'xl-dock'
   if (id.startsWith('ultimaker-s')) return 'lift-switch'
   const nozzles = list(cfg['nozzle_diameter']).length
+  // A Klipper printer declared a tool changer docks its tools on the frame; the U1 and the XL keep their own above.
+  if (hints.toolchanger && flavor(cfg) === 'klipper' && nozzles >= 2) return 'klipper-dock'
   // IDEX before the nozzle count: two nozzles there are two carriages, not one head. Settings with one extruder print
   // with one carriage and swap filament by hand, so there is no change to play.
   // In a copy mode both carriages print the whole time: nothing parks.
@@ -227,7 +252,7 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
   // A hotend rack whose settings map nothing to the rack's extruder (the profile default puts every
   // filament on the first) is taken to print everything from the rack: that is what the machine is for.
   const rackDefault = kind === 'hotend-rack' && !map.some((e) => e > 0) ? nozzles - 1 : 0
-  const extruderOf = Array.from({ length: Math.max(1, tools) }, (_, t) => Math.min(nozzles - 1, map[t] ?? (kind === 'tool-rack' || kind === 'xl-dock' || kind === 'lift-switch' || kind === 'idex-park' ? t : rackDefault)))
+  const extruderOf = Array.from({ length: Math.max(1, tools) }, (_, t) => Math.min(nozzles - 1, map[t] ?? (kind === 'tool-rack' || kind === 'xl-dock' || kind === 'lift-switch' || kind === 'idex-park' || kind === 'klipper-dock' ? t : rackDefault)))
   const sw = cfg['machine_tool_change_time'] !== undefined ? num(cfg['machine_tool_change_time'], 0) : num(cfg['machine_switch_extruder_time'], 0)
   const base: ToolChangerSpec = {
     kind,
@@ -325,6 +350,7 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
     // Estimated: the change lifts by the process's z hop, as a travel would.
     base.liftMm = Math.max(0.2, num(cfg['z_hop'], 0.4))
   }
+  if (kind === 'klipper-dock') base.klipper = klipperDocks(Math.max(2, nozzles), bed, hints.toolchanger?.docks ?? [])
   if (kind === 'tool-rack') {
     // Snapmaker U1 printer.cfg: xy_park_position per extruder, y_idle_position, horizontal_move_x,
     // retract_x_dist, insertion_buffer_dist, fast_move_speed, slow_move_speed, grab_speed, switch_accel.
@@ -336,6 +362,44 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
     base.z = { speed: 10, accel: base.z.accel }
   }
   return base
+}
+
+/** The StealthChanger project's dock path (its example `Toolhead_T0.cfg`, `params_sc_path`), relative to the park point. */
+export const STEALTHCHANGER_PATH: readonly { y: number; z: number; f: number }[] = [
+  { y: 9.5, z: 4, f: 1 },
+  { y: 9.5, z: 2, f: 1 },
+  { y: 5.5, z: 0, f: 1 },
+  { y: 0, z: 0, f: 0.5 },
+  { y: 0, z: -10, f: 1 },
+  { y: 16, z: -10, f: 1 },
+]
+/** Estimated: one Stealthburner tool per 76 mm of frame (the project's Docks page). */
+export const DOCK_PITCH = 76
+
+/**
+ * A Klipper tool changer's docks: the printer's own `[tool]` values where Moonraker reported them, the rest estimated.
+ * Estimated: the docks centered on the bed's width, `DOCK_PITCH` apart; the park point 71 mm in front of the bed and 20
+ * mm over the printable height (the project's example parks at Y -71 on the front top frame); the safe Y 91 mm behind
+ * the park point (the example's 20 against -71); the project's dock path; the path at 100 mm/s.
+ */
+function klipperDocks(n: number, bed: Bed, reported: readonly ToolDock[]): NonNullable<ToolChangerSpec['klipper']> {
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+  const byTool = new Map(reported.map((d) => [d.tool, d]))
+  const docks = Array.from({ length: n }, (_, i) => {
+    const p = byTool.get(i)?.parkMm
+    if (p && p.length === 3 && p.every(ok)) return { x: p[0], y: p[1], z: p[2], measured: true }
+    return { x: bed.widthMm / 2 + (i - (n - 1) / 2) * DOCK_PITCH, y: -71, z: bed.heightMm + 20, measured: false }
+  })
+  const safe = reported.map((d) => d.safeYMm).find(ok)
+  const path = reported.map((d) => d.path).find((p) => p && p.length >= 2 && p.every((q) => ok(q.y) && ok(q.z)))
+  const park0 = docks.find((d) => d.measured) ?? docks[0]!
+  return {
+    docks,
+    safeY: safe ?? park0.y + 91,
+    path: path ? path.map((q) => ({ y: q.y, z: q.z, f: ok(q.f) && q.f > 0 ? q.f : 1 })) : STEALTHCHANGER_PATH.map((q) => ({ ...q })),
+    pathSpeed: { speed: 100, accel: 2000 },
+    measured: { safeY: safe !== undefined, path: path !== undefined },
+  }
 }
 
 /**
@@ -723,6 +787,7 @@ export function changeSequence(spec: ToolChangerSpec, from: number, to: number, 
   }
   if (spec.kind === 'lift-switch') return liftSwitch(spec, from, to, at, resume, firm)
   if (spec.kind === 'idex-park') return idexPark(spec, from, to, at, resume, firm)
+  if (spec.kind === 'klipper-dock') return klipperDock(spec, from, to, at, up, back, resume, firm)
   if (spec.kind === 'filament-swap') {
     // To the cutter (or cut at the chute), then the chute: the firmware unloads, the AMS feeds the next filament,
     // the nozzle flushes; then over the wiper and out.
@@ -842,6 +907,60 @@ function idexPark(spec: ToolChangerSpec, from: number, to: number, at: V3, resum
   }
   b.moveTo('lower', resume, spec.z)
   return { from, to, duration: b.t, phases: b.phases, slotsBefore: [], slotsAfter: [], rowBefore: 0, rowAfter: 0 }
+}
+
+/**
+ * Klipper tool changer (StealthChanger): lift, run to the dock's X at the safe Y, rise to the path's first point and
+ * follow the dock path: in over the dock, down onto it, seated at the park point, then the head drops (unhook) and pulls
+ * back without the tool. Along X behind the docks to the next one, then the same path in reverse: up under the tool,
+ * hook it, lift it out and back to the safe Y. Heat, return, lower. Pose state is the dock of the tool in the head.
+ */
+function klipperDock(spec: ToolChangerSpec, from: number, to: number, at: V3, up: number, back: V3, resume: V3, firm: number): ChangeSequence {
+  const k = spec.klipper!
+  const n = k.docks.length
+  const dock = (t: number) => k.docks[Math.min(n - 1, Math.max(0, t))]!
+  const slots = Array.from({ length: n }, (_, i) => (i === from ? -1 : i))
+  // The step at the park point; the one after it drops the head off the tool.
+  let seat = 0
+  k.path.forEach((q, i) => {
+    const best = k.path[seat]!
+    if (Math.hypot(q.y, q.z) < Math.hypot(best.y, best.z) - 1e-9) seat = i
+  })
+  const at3 = (d: { x: number; y: number; z: number }, q: { y: number; z: number }): V3 => [d.x, d.y + q.y, d.z + q.z]
+  const lim = (f: number): MotionLimits => ({ speed: k.pathSpeed.speed * f, accel: k.pathSpeed.accel })
+  const a = dock(from)
+  const c = dock(to)
+  const first = k.path[0]!
+  const last = k.path[k.path.length - 1]!
+  const b = new Builder(at, from, from)
+  b.moveTo('lift', [at[0], at[1], up], spec.z)
+  b.moveTo('to dock', [a.x, k.safeY, up], spec.travel)
+  b.moveTo('rise', [a.x, k.safeY, a.z + first.z], spec.z)
+  b.moveTo('approach', at3(a, first), spec.travel)
+  k.path.forEach((q, i) => {
+    if (i === 0) return
+    const name = i < seat ? 'dock' : i === seat ? 'seat' : i === seat + 1 ? 'unhook' : 'clear'
+    // The tool stays seated in its dock from the unhook on; the head drops away from it.
+    if (i === seat + 1) b.carry(null).at(-1)
+    b.moveTo(name, at3(a, q), lim(q.f))
+  })
+  b.moveTo('to next', at3(c, last), spec.travel)
+  for (let i = k.path.length - 2; i >= 0; i--) {
+    const q = k.path[i]!
+    // Reversed, each step runs at the speed of the step it undoes.
+    const name = i > seat ? 'under' : i === seat ? 'hook' : 'lift out'
+    // The head rises into the seated tool; from there it carries it.
+    b.moveTo(name, at3(c, q), lim(k.path[i + 1]!.f))
+    if (i === seat) b.carry(to).at(to)
+  }
+  b.moveTo('out', [c.x, k.safeY, c.z + first.z], spec.travel)
+  b.dwell('heat', firm)
+  b.moveTo('return', back, spec.travel)
+  b.moveTo('lower', resume, spec.z)
+  const after = slots.slice()
+  after[from] = from
+  after[to] = -1
+  return { from, to, duration: b.t, phases: b.phases, slotsBefore: slots, slotsAfter: after, rowBefore: 0, rowAfter: 0 }
 }
 
 /** IDEX: both carriages' nozzle X, the one at the pose at `x` and the idle one `local` seconds along its own move. */

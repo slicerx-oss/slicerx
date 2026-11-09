@@ -156,6 +156,32 @@ Drawing. Two of the printer family's own heads (the Snapmaker printing module on
 
 Sources: the J1 machine profile and its start and change G-code (`packages/profiles/machine.json`, family `maker_snapmaker_j1` in `packages/profiles/gcode.json`); snapmaker.com/blog/snapmaker-j1-fast-3d-printer; `packages/settings/profiles/printers.json` (kinematics).
 
+## Klipper tool changer (StealthChanger style, docks on the front top frame)
+
+How it works. Each tool is a whole toolhead that hangs on a shuttle on the carriage. The docks hang from the front top frame. To drop a tool the head runs along X to its dock at the safe Y, rises to the dock height and follows the dock path, relative to the tool's park point: in over the dock (Y +9.5, Z +4), down onto it (Y +9.5, Z +2), forward (Y +5.5), seated at the park point (Y 0, Z 0, slow), then the head drops 10 mm and unhooks from the tool (Z -10), and pulls back clear without it (Y +16). It runs along X behind the docks to the next one and picks that tool by the same path in reverse, then back to the safe Y. Preview plays that as `klipper-dock` in `toolchanger.ts`, then waits for the new tool's temperature (the profile's change time, at least 0.8 s), returns to the next move and comes down. On a Voron 2.4 the gantry rises to the docks; on a Trident the bed drops. Preview shows the head at the same bed coordinates either way.
+
+Which printers get it. A Klipper printer (G-code flavor `klipper`) with two or more nozzles that is declared a tool changer. It is declared only when setup's Moonraker connection test finds `tool <name>` sections in Klipper's config; setup then counts a tool and a nozzle per dock and keeps the docks with the printer (`printerDocks`). Setup has no way yet to mark a hand-added generic Klipper printer as a tool changer. A stored hand-added record with `filamentSystem: 'toolchanger'` also plays it, but setup writes that only from the catalog.
+The Snapmaker U1 and the Prusa XL keep their own kinds. A Klipper printer with two or three nozzles and no declaration plays as before.
+
+Measured or estimated. When the printer's config gives a value Preview uses it as measured: each tool's park point (`params_park_x`, `params_park_y`, `params_park_z`), the safe Y (`params_safe_y`) and the dock path (`params_sc_path`, else `params_path`), each from the tool's section, else from the `[toolchanger]` defaults. A value that does not read as a number, a park point missing one axis, or a path with a step missing a number is dropped, and Preview estimates that value instead. With nothing measured the whole dock is estimated from the nozzle count.
+
+Drawing. The generic head (heads.ts) as each tool, on a graphite shuttle behind it that stays on the head while the tool is parked. The docks are a frame bar on the front top frame with a bracket in front of each parked tool. The dock stands on the frame, so it keeps its height while the head moves. heimdall's collision data (`head-shapes.json`) is unchanged: no profile names a Klipper tool changer.
+
+| Value | Source | Status |
+| --- | --- | --- |
+| Park point of each tool (X, Y, Z) | the printer's `tool <name>` section over Moonraker | measured when given |
+| Park points without a config: docks centered on the bed's width, 76 mm apart; Y -71 (in front of the bed); Z 20 mm over the printable height | dock pitch: StealthChanger Docks page (76 mm per Stealthburner); Y: the project's example `Toolhead_T0.cfg` (`params_park_y` -71.0); Z: no source | estimated |
+| Safe Y | `params_safe_y` over Moonraker | measured when given |
+| Safe Y without a config: 91 mm behind the park point | the project's example (`params_safe_y` 20.0 against `params_park_y` -71.0) | estimated |
+| Dock path, in drop-off order: Y +9.5 Z +4, Y +9.5 Z +2, Y +5.5, Y 0 (half speed), Z -10, Y +16 Z -10; pick-up the reverse | the printer's `params_sc_path` or `params_path` when given; else the project's example `params_sc_path` | measured when given, else from the project's example |
+| Path speed 100 mm/s (half at the seat), acceleration 2000 mm/s2 | no source (the speed parameters are not in the pages read) | estimated |
+| Travel along X and to the docks: the profile's travel speed and acceleration | the printer's profile | as the profile gives |
+| Temperature wait: the profile's change time, at least 0.8 s | no change time in a generic Klipper profile | estimated |
+
+Speeds are always estimated: Moonraker gives the park points and the path, but no speed Preview reads.
+
+Sources: github.com/DraftShift/StealthChanger (its `Klipper/Toolhead_T0.cfg` and `Toolhead_T1.cfg`, and the wiki's Configuration and Docks pages); Moonraker `configfile.settings` through `packages/connect/src/drivers/moonraker/docks.rs`.
+
 ## Timing model
 
 Playback time comes from the layer times the engine writes into the preview buffer. Those cover the print moves of a layer. The change itself is added by the app's timeline from the same rules the engine uses for the G-code's time estimate (`packages/core/src/gcode.rs`, `tool_change_time`, after Orca 2.4.2 `GCodeProcessor::process_T` and Bambu Studio `process_filament_change`):
