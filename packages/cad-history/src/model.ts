@@ -139,6 +139,11 @@ export interface Step {
   feature?: string
   /** The timeline sketch an extrude or revolve draws on, by id; its plane and loops are copied into params. */
   sketch?: string
+  /**
+   * The timeline sketches a loft or sweep copied its profiles and path from, by id. They hide while the step is live,
+   * as a sketch an extrude draws on does; nothing else links them, since the step keeps its own copy of the loops.
+   */
+  uses?: string[]
 }
 
 export interface History {

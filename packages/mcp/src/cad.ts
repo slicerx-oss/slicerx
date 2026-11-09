@@ -8,7 +8,7 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, projectionsOut, stepName, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, loftParams, loopStart, profileOffPathMm, projectionsOut, stepName, sweepParams, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
 import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
@@ -59,39 +59,10 @@ export function frameFor(origin: V3, normal: V3, u?: V3): { origin: V3; normal: 
  * far off the path; swept from there every bend reads as too tight, which tells the client nothing about the cause.
  */
 export function profileOffPath(frame: FaceFrame | undefined, loops: readonly SketchLoop[], start: V3): string | null {
-  const f = frame ?? { origin: [0, 0, 0] as V3, u: [1, 0, 0] as V3, v: [0, 1, 0] as V3 }
-  const uv: [number, number][] = []
-  for (const l of loops) {
-    if ('type' in l && l.type === 'circle') {
-      const r = l.diameterMm / 2
-      uv.push([l.center[0] - r, l.center[1] - r], [l.center[0] + r, l.center[1] + r])
-    } else if ('points' in l) uv.push(...l.points.map((q) => [q[0], q[1]] as [number, number]))
-    else if ('start' in l) {
-      uv.push([l.start[0], l.start[1]])
-      for (const g of l.segments) {
-        if ('to' in g && g.to) uv.push([g.to[0], g.to[1]])
-        if ('points' in g) for (const q of g.points) uv.push([q[0], q[1]])
-      }
-    }
-  }
-  if (!uv.length) return null
-  const lo = [Math.min(...uv.map((q) => q[0])), Math.min(...uv.map((q) => q[1]))]
-  const hi = [Math.max(...uv.map((q) => q[0])), Math.max(...uv.map((q) => q[1]))]
-  const c = [(lo[0]! + hi[0]!) / 2, (lo[1]! + hi[1]!) / 2]
-  const size = Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!) / 2
-  const at = [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * c[0]! + f.v[k]! * c[1]!) as V3
-  const off = Math.hypot(at[0] - start[0], at[1] - start[1], at[2] - start[2])
-  if (off <= Math.max(3 * size, 10)) return null
+  const off = profileOffPathMm(frame, loops, start)
+  if (off === null) return null
   const mm = (n: number) => String(Math.round(n * 100) / 100)
   return `profile: its loop sits ${mm(off)} mm from where the path starts (${start.map(mm).join(', ')}), and the profile is carried as it sits. Loop points are [u, v] from the profile frame's origin, so with the origin on the path's start a loop around it is centered at [0, 0].`
-}
-
-/** Where an open path loop starts, on the bed: its first point mapped through its frame. */
-function pathStartOf(frame: FaceFrame | undefined, l: SketchLoop): V3 | undefined {
-  const q = 'start' in l ? l.start : 'points' in l ? l.points[0] : undefined
-  if (!q) return undefined
-  const f = frame ?? { origin: [0, 0, 0] as V3, u: [1, 0, 0] as V3, v: [0, 1, 0] as V3 }
-  return [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * q[0] + f.v[k]! * q[1]) as V3
 }
 
 /** Distance from a point to a triangle (closest point on the triangle, Ericson 5.1.5). */
@@ -893,7 +864,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
         const profiles = i.sketches ? i.sketches.map((id) => finished(id, d.id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
-        const params: StepParams = plain({ op: 'sketch.loft', profiles, ...loftOpts, operation: i.operation, name: i.name })
+        const params: StepParams = loftParams({ profiles, ...loftOpts, operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
         return stepOut(d, verb)
       }
@@ -943,7 +914,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const pathLoops = pth?.loops as SketchLoop[] | undefined
       const points = pth?.points
       const firstPath = pathLoops?.[0]
-      const pathStart = points?.[0] ?? (firstPath ? pathStartOf(frameOf(qf), firstPath) : undefined)
+      const pathStart = points?.[0] ?? (firstPath ? loopStart(frameOf(qf), firstPath) : undefined)
       const away = profileLoops && pathStart ? profileOffPath(frameOf(pf), profileLoops, pathStart as V3) : null
       if (away) throw new ToolInputError(away)
       if (i.design) {
@@ -953,7 +924,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops!, ...(prof?.open ? { open: true } : {}) }
         const j = i.path_sketch ? finished(i.path_sketch, d.id) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points } : { frame: frameOf(qf), loops: pathLoops! }
-        const params: StepParams = plain({ op: 'sketch.sweep', profile, path, ...(th ? { thicken: th } : {}), operation: i.operation, name: i.name })
+        const params: StepParams = sweepParams({ profile, path, thicken: th, operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
         return stepOut(d, verb)
       }
