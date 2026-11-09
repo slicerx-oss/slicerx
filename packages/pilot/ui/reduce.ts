@@ -37,6 +37,8 @@ export interface ToolRowModel {
   progress: { line: string; fraction: number | undefined }[]
   ms: number | undefined
   untrusted: boolean
+  /** The engine's own words for a step it refused, shown only in the row's details. */
+  detail?: string
 }
 
 export interface ApprovalResolution {
@@ -429,6 +431,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
         ...(event.output !== undefined ? { output: event.output } : {}),
         ms: event.ms,
         untrusted: event.untrusted === true,
+        ...(event.detail ? { detail: event.detail } : {}),
       }))
     case 'settings_diff':
       return append(settleStreams(s), (id) => ({ kind: 'diff', id, diff: event.diff }), true)

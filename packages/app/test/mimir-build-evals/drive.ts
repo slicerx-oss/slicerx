@@ -252,7 +252,7 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
     const r = results.get(e.callId)
     // a check that ran says whether the part passed it, so a run's record shows what its last check said
     const checked = e.tool === 'design.check' && r?.ok !== false ? (r?.output as { pass?: unknown } | undefined)?.pass : undefined
-    return [`${e.tool} ${r ? (r.ok === false ? `FAIL ${r.summary ?? ''}`.slice(0, 160) : typeof checked === 'boolean' ? `ok (part ${checked ? 'passed' : 'failed'})` : 'ok') : 'no result'}`]
+    return [`${e.tool} ${r ? (r.ok === false ? `FAIL ${r.detail ?? r.summary ?? ''}`.slice(0, 160) : typeof checked === 'boolean' ? `ok (part ${checked ? 'passed' : 'failed'})` : 'ok') : 'no result'}`]
   })
   const run: CaseRun = { score, turns, steps, calls, checks: checkCalls(events), reply: firstReply.slice(0, 800) }
   if (error) run.error = error

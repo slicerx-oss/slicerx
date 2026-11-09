@@ -18,7 +18,7 @@ export interface SheetActions {
   confirm(sheetId: string, values: Record<string, number>): Promise<void>
   cancel(sheetId: string): Promise<void>
   /** Edits the steps a built sheet's row is tied to. */
-  drive(bound: { design: string; binds: PilotSheetBind[] }, key: string, value: number): Promise<{ ok: boolean; summary: string }>
+  drive(bound: { design: string; binds: PilotSheetBind[] }, key: string, value: number): Promise<{ ok: boolean; summary: string; detail?: string }>
 }
 
 export interface SheetUiState {

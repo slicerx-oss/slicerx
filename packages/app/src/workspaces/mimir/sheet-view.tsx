@@ -374,6 +374,8 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
     setLive(d.key, v)
     const out = await actions.drive(bound, d.key, v)
     if (!out.ok) setLive(d.key, before)
+    // the engine's own words for a refused edit go to the dev log; the note says it plainly
+    if (!out.ok && out.detail) console.info(`sheet edit refused: ${out.detail}`)
     setNote({ ok: out.ok, text: out.summary })
   }
   const hint = note && mode === 'drive' ? note.text : hintFor(dim, mode, dim ? tied(dim.key) : false)

@@ -410,7 +410,7 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   const builtLine = (d: Design): string => `${plural(d.history.steps.length, 'feature step')}, ${plural(parts.length, 'mesh part')}`
   let parsed: Check
   if (!last) parsed = { pass: false, detail: `no design tool was called: ${noBuild ?? 'none'}${answered ? ', after the default answer' : ''}` }
-  else if (!parts.length || !scored) parsed = { pass: false, detail: failed ? `${failed.c.tool}: ${failed.r?.summary ?? 'no result'}` : `${last.tool}: the design tools built no body` }
+  else if (!parts.length || !scored) parsed = { pass: false, detail: failed ? `${failed.c.tool}: ${failed.r?.detail ?? failed.r?.summary ?? 'no result'}` : `${last.tool}: the design tools built no body` }
   else parsed = { pass: true, detail: built3d.length === 1 ? `1 design, ${builtLine(scored)}` : `${plural(built3d.length, 'design')}, scored the last (${scored.id}): ${builtLine(scored)}` }
   const run: PromptRun = {
     parsed,
