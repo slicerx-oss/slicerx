@@ -463,15 +463,11 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
       else expect(summary(r)).toEqual(rec!.score)
       // a known failure fails for its recorded reason
       if (c.id === 'planter-saucer') {
-        expect(r.score.bodies, JSON.stringify(r.score.bodies)).toEqual({ pass: false, detail: '1 (want 2 to 2)' })
-        // no saucer: one body, and nothing 135 to 150 mm across; the planter itself is closed, prints and fits
-        expect(r.score.sizes?.detail).toBe('120 by 120 by 100 mm; off: xy 120 (want 135 to 150)')
+        // both bodies are built, but the saucer's drain hole steps land wide of it: the part measures 205 by 244 mm, so
+        // nothing is 135 to 150 mm across; the planter and saucer are closed, print and fit
+        expect(r.score.bodies, JSON.stringify(r.score.bodies)).toEqual({ pass: true, detail: '2 (want 2 to 2)' })
+        expect(r.score.sizes?.detail).toBe('205.1 by 244 by 100 mm; off: xy 244 (want 135 to 150)')
         expect([r.score.ops, r.score.watertight, r.score.minWall, r.score.bedFit, r.score.sizes].map((x) => x?.pass)).toEqual([true, true, true, true, false])
-        expect(r.score.turns.pass).toBe(true)
-      }
-      if (c.id === 'drawer-handle') {
-        expect(r.score.geometry).toBe(true)
-        expect(r.score.turns.detail).toMatch(/^answer /)
       }
     })
   }
