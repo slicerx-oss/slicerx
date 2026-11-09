@@ -59,7 +59,7 @@ rustc-hash = "=2.1.3"
 # constrained delaunay triangulation with refinement, for flat faces filled again (src/remesh.rs); MIT OR Apache-2.0.
 spade = { version = "=2.15.1", default-features = false, features = ["std"] }
 # exact solids (the SMLib kernel), for the brep feature
-sx-brep = { path = "../brep", version = "=0.2.8", optional = true }
+sx-brep = { path = "../brep", version = "=0.2.9", optional = true }
 read-fonts = { version = "=0.44.0", default-features = false, features = ["std"], optional = true }
 # PNG and JPEG images, for color paint from a model's texture (the texture feature) and for tracing an image
 # into a sketch (the trace feature); both already in the lockfile through sx-watch and the link. MIT OR

@@ -4,6 +4,13 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-11-09
+
+### Fixed
+
+- `check_plate_until`: the first stop holds for the rest of the check. A `stop` that said so once and then took it back let the walk skip moves and still return, so part of a check could read as a clear plate. The caller's `stop` is still read every time, and a check that is never stopped answers as before.
+- A slice whose settings name no plate type (`curr_bed_type`) takes it from the printer's `default_bed_type` (a name in any letter case, or 1 to 4) for the bed temperatures, the preflight and the `curr_bed_type` placeholder, and a plate's first layer temperature that is missing or 0 is its other layer temperature. Before, such a slice could start with `M140 S0` and `M190 S0`.
+
 ## [0.2.8] - 2026-11-08
 
 ### Added
