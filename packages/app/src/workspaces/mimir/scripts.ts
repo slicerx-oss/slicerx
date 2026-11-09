@@ -25,11 +25,15 @@ export function lastPick(messages: readonly LlmMessage[]): string | null {
   return typeof picked === 'string' ? picked : null
 }
 
-/** Whether the last pilot.ask was turned down, and what the person wrote instead; null when it was answered or not asked. */
+/**
+ * Whether the last pilot.ask was turned down or answered in words instead of a pick, and those words; null when a
+ * choice was picked or nothing was asked.
+ */
 export function lastDismissed(messages: readonly LlmMessage[]): { said: string | null } | null {
   const r = lastResult(messages)
-  if (r?.['dismissed'] !== true) return null
-  return { said: typeof r['said'] === 'string' ? r['said'] : null }
+  const said = typeof r?.['said'] === 'string' ? r['said'] : null
+  if (r?.['dismissed'] !== true && said === null) return null
+  return { said }
 }
 
 /** The values the last confirmed sheet gave, from the tool messages so far. */
