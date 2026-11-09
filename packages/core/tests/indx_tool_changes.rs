@@ -186,8 +186,27 @@ fn the_indx_gcode_never_moves_the_head_to_a_dock_or_the_purge_collector() {
         );
     }
     assert_eq!(blocks, run.report.stats.tool_changes as usize);
+    // Every tool reaches the whole bed (its printable area is the bed's), so the bed bounds are every tool's reach.
+    let machine: Value = serde_json::from_str(
+        &std::fs::read_to_string(format!("{}/../profiles/machine.json", env!("CARGO_MANIFEST_DIR"))).unwrap(),
+    )
+    .unwrap();
+    let m = &machine["models"]["prusa-core-one-indx"]["machine"];
+    let bed = m["printable_area"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join(",");
+    let areas = m["extruder_printable_area"].as_array().unwrap();
+    assert_eq!(areas.len(), 8);
+    assert!(
+        areas.iter().all(|a| a.as_str() == Some(bed.as_str())),
+        "{areas:?} against {bed}"
+    );
     // Nowhere in the file a move in front of the bed (the dock row, Y below 0) or past its right edge (the purge
-    // collector beside it): every X and Y we write stays on the 248 x 205 mm bed.
+    // collector beside it): every X and Y we write stays on the 248 x 205 mm bed. The mesh probing areas too.
     for l in &lines {
         if let Some((x, y)) = move_xy(l) {
             assert!(
@@ -199,7 +218,36 @@ fn the_indx_gcode_never_moves_the_head_to_a_dock_or_the_purge_collector() {
                 "off the bed in Y: {l}"
             );
         }
+        let code = l.split(';').next().unwrap_or("").trim();
+        if code.starts_with("G29 ") {
+            let word = |k: char| {
+                code.split_ascii_whitespace()
+                    .find_map(|w| w.strip_prefix(k)?.parse::<f64>().ok())
+            };
+            if let (Some(x), Some(y), Some(w), Some(h)) = (word('X'), word('Y'), word('W'), word('H')) {
+                assert!(
+                    x >= 0.0 && y >= 0.0 && x + w <= 248.0 && y + h <= 205.0,
+                    "probing off the bed: {l}"
+                );
+            }
+        }
     }
+    // The end lifts the head off the print before it parks it.
+    let park = lines
+        .iter()
+        .position(|l| l.contains("; park (INDX"))
+        .expect("the end park");
+    let last_print = lines[..park]
+        .iter()
+        .rposition(|l| l.contains("G1") && l.contains(" E") && !l.contains("E-"))
+        .unwrap();
+    assert!(
+        lines[last_print..park]
+            .iter()
+            .any(|l| l.starts_with("G1 Z") && l.contains("move print head up")),
+        "no lift before the park: {:?}",
+        &lines[last_print..=park]
+    );
 }
 
 #[test]
