@@ -160,6 +160,9 @@ describe('the scope rule for parts', () => {
     expect(DISMISSED_LINE).toContain('all its choices are declined')
     expect(DISMISSED_LINE).toContain('Do not list them or put the same question in words, and do not ask it again')
     expect(DISMISSED_LINE).toContain('ask one different, narrower question')
+    // words written in place of a pick answer the card: a person who takes the defaults is not turning it down
+    expect(DISMISSED_LINE).toContain('Words written in place of a pick (said) answer the card and turn no choice down')
+    expect(DISMISSED_LINE).toContain('when they leave it to you, take the choice that gives what the request asked for and go on without asking again')
     for (const scope of ['full', 'cad'] as const) expect(systemPrompt(scope)).toContain(DISMISSED_LINE)
     const noAsk = (name: string): boolean => name !== 'pilot.ask'
     expect(systemPrompt('cad', noAsk)).not.toContain(DISMISSED_LINE)
