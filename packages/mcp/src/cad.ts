@@ -885,19 +885,24 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   // against the full schemas below, so the step and the app get the parsed loops, and a bad field is named by its path.
   const sweepProfile = z.object({ frame: frameSchema.optional(), loops, open: z.literal(false).optional() })
   const openSweepProfile = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1), open: z.literal(true) })
-  const sweepPath = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1).optional(), points: z.array(vec3).min(2).max(4096).optional() })
+  const sweepPath = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1).optional(), points: z.array(vec3).min(2).max(4096).optional(), smooth: z.boolean().optional() })
+  const scaleShape = z.union([z.number().min(0.05).max(20), z.tuple([z.number().min(0.05).max(20), z.number().min(0.05).max(20)])])
+  const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
-    description: 'Sweep a sketch profile along an open path (a hook, a handle, a bent rod or pipe), as a new body, joined or cut; a join or cut must overlap the part. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
+    description: 'Sweep a sketch profile along an open path (a hook, a handle, a bent rod or pipe), as a new body, joined or cut; a join or cut must overlap the part. scale and twist_deg taper and turn it along the path (a spout, a horn). A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
     input: z.object({
       profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()), open: z.boolean().optional() }).optional().describe("One loop and its frame, as revolve takes them; its plane crosses the path's start and it is carried as it sits there; open: an open chain"),
-      path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional() }).optional().describe('One open chain of lines, arcs and splines (frame, loops), or points [[x,y,z],...]'),
+      path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional(), smooth: z.boolean().optional() }).optional().describe('One open chain of lines, arcs and splines (frame, loops), or points [[x,y,z],...]; smooth: curve through points'),
       profile_sketch: z.string().optional(),
       path_sketch: z.string().optional(),
       thicken: thicken.optional(),
+      scale: z.unknown().optional().describe('End size vs start: n or [u,v]'),
+      twist_deg: z.number().optional().describe('Turn by the end'),
+      ease: z.enum(['linear', 'smooth']).optional(),
       operation: z.enum(['new', 'join', 'cut']).default('new'),
       target: z.string().optional().describe('STL to join or cut'),
       design: z.string().optional(),
@@ -912,8 +917,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.path?.loops && i.path.points) throw new ToolInputError('path: give loops or points, not both')
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Swept'
       const th = i.thicken === undefined ? undefined : parsedAt(thickenShape, i.thicken, 'thicken')
+      const scale = i.scale === undefined ? undefined : parsedAt(scaleShape, i.scale, 'scale')
+      const twist = i.twist_deg === undefined ? undefined : parsedAt(twistShape, i.twist_deg, 'twist_deg')
+      // the engine's names, so a step replays with the taper and twist it was made with
+      const law = { ...(scale !== undefined && scale !== 1 ? { scaleEnd: scale } : {}), ...(twist ? { twistDeg: twist } : {}), ...(i.ease === 'smooth' ? { ease: i.ease } : {}) }
       const prof = i.profile ? parsedAt(i.profile.open === true ? openSweepProfile : sweepProfile, i.profile, 'profile') : undefined
       const pth = i.path ? parsedAt(sweepPath, i.path, 'path') : undefined
+      if (pth?.smooth && !pth.points) throw new ToolInputError('path.smooth: smooth is for a path of points; draw a spline for a smooth path on a plane')
+      const smooth = pth?.smooth ? { smooth: true } : {}
       const pf = prof?.frame
       const qf = pth?.frame
       const profileLoops = prof?.loops as SketchLoop[] | undefined
@@ -929,14 +940,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const k = i.profile_sketch ? finished(i.profile_sketch, d.id) : null
         const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops!, ...(prof?.open ? { open: true } : {}) }
         const j = i.path_sketch ? finished(i.path_sketch, d.id) : null
-        const path = j ? { frame: j.frame, loops: j.loops } : points ? { points } : { frame: frameOf(qf), loops: pathLoops! }
-        const params: StepParams = sweepParams({ profile, path, thicken: th, operation: i.operation, name: i.name })
+        const path = j ? { frame: j.frame, loops: j.loops } : points ? { points, ...smooth } : { frame: frameOf(qf), loops: pathLoops! }
+        const params: StepParams = sweepParams({ profile, path, thicken: th, ...law, operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
         return stepOut(d, verb)
       }
       if (i.profile_sketch || i.path_sketch) throw new ToolInputError(`${i.profile_sketch ? 'profile_sketch' : 'path_sketch'}: finished sketches sweep on a design; give its id as design`)
-      const path = points ? { points } : { ...plane(qf), loops: pathLoops }
-      const out = await call('sketch.sweep', { profile: { ...plane(pf), loops: profileLoops, ...(prof?.open ? { open: true } : {}) }, path, ...(th ? { thicken: th } : {}), operation: i.operation, ...(await target(i.target, i.operation)) })
+      const path = points ? { points, ...smooth } : { ...plane(qf), loops: pathLoops }
+      const out = await call('sketch.sweep', { profile: { ...plane(pf), loops: profileLoops, ...(prof?.open ? { open: true } : {}) }, path, ...(th ? { thicken: th } : {}), ...law, operation: i.operation, ...(await target(i.target, i.operation)) })
       return { summary: `${verb} the profile along the path`, output: out }
     },
   })
