@@ -94,6 +94,8 @@ export async function accounts(s, { account, waitSignin }) {
 
   // 2. Sign out from the account menu; the form starts over.
   await s.feed()
+  // A run that starts signed in gets here before the Vault bar has the session, so wait for the menu.
+  if (!(await s.waitFor('account-menu', 'visible', 15_000))) s.stop('the Vault bar shows the account menu', `no account-menu in 15 s; user: ${JSON.stringify(await s.user())}`)
   await s.click('account-menu')
   if (!(await s.waitFor('account-sign-out', 'visible', 10_000))) s.stop('the account menu offers Sign out', 'no account-sign-out')
   const items = (await s.ids())
