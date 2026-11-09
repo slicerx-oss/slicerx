@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
-import { compileCacheDir, ORPHAN_AGE_MS, removeOrphans } from '../src/compile-cache'
+import { compileCacheDir, editionCacheName, ORPHAN_AGE_MS, removeOrphans } from '../src/compile-cache'
 
 const pkg = resolve(__dirname, '..')
 const entry = resolve(pkg, 'src/launch.ts')
@@ -38,7 +38,13 @@ const temporary = () => {
 
 /** The user cache folder of a test's home on every platform: macOS's own, and XDG_CACHE_HOME and LOCALAPPDATA here. */
 const cacheRoot = (dir: string) => join(dir, 'home', 'Library', 'Caches')
-const cacheDir = (dir: string) => join(cacheRoot(dir), 'slicerx', 'node-compile-cache')
+const cacheDir = (dir: string, name = 'slicerx') => join(cacheRoot(dir), name, 'node-compile-cache')
+/** A resolved edition config with only an id, as SLICERX_CONFIG names. */
+const editionConfig = (dir: string, id: unknown) => {
+  const file = join(dir, 'edition.json')
+  writeFileSync(file, JSON.stringify({ id, brand: { name: 'Acme Slicer' } }))
+  return file
+}
 
 function environment(dir: string, extra: Record<string, string> = {}): Record<string, string> {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v !== undefined && !k.startsWith('SLICERX_') && !k.startsWith('NODE_') && k !== 'SX_TEST_HUB_PORT')) as Record<string, string>
@@ -107,6 +113,21 @@ describe('compile cache folder', () => {
   })
 })
 
+describe('compile cache folder name', () => {
+  it('is the edition id of the config, and slicerx without one or with an id that is not valid', () => {
+    const dir = temporary()
+    expect(editionCacheName({})).toBe('slicerx')
+    expect(editionCacheName({ SLICERX_CONFIG: editionConfig(dir, 'acme-slicer') })).toBe('acme-slicer')
+    expect(editionCacheName({ SLICERX_CONFIG: editionConfig(dir, 'slicerx') })).toBe('slicerx')
+    for (const bad of ['../evil', 'A b', '', 7, null]) expect(editionCacheName({ SLICERX_CONFIG: editionConfig(dir, bad) })).toBe('slicerx')
+    expect(editionCacheName({ SLICERX_CONFIG: join(dir, 'missing.json') })).toBe('slicerx')
+    writeFileSync(join(dir, 'broken.json'), '{')
+    expect(editionCacheName({ SLICERX_CONFIG: join(dir, 'broken.json') })).toBe('slicerx')
+    expect(compileCacheDir({}, 'darwin', '/Users/a', 'acme-slicer')).toBe('/Users/a/Library/Caches/acme-slicer/node-compile-cache')
+    expect(compileCacheDir({ LOCALAPPDATA: 'C:\\L' }, 'win32', 'C:\\Users\\a', 'acme-slicer')).toBe('C:\\L\\acme-slicer\\node-compile-cache')
+  })
+})
+
 describe('temporary files Node leaves in the cache', () => {
   it('are removed once they are old enough, and nothing else is', () => {
     const dir = temporary()
@@ -166,6 +187,28 @@ describe('the entry with the compile cache', () => {
     expect(files(cacheRoot(dir))).toEqual([])
     const chosen = join(dir, 'chosen')
     expectClean(await start(dir, environment(dir, { NODE_COMPILE_CACHE: chosen })))
+    expect(files(cacheRoot(dir))).toEqual([])
+    expect(files(chosen).length).toBeGreaterThan(0)
+  })
+
+  it('names the cache folder after the edition id, and keeps the stock name without one', async () => {
+    const dir = temporary()
+    expectClean(await start(dir, environment(dir, { SLICERX_CONFIG: editionConfig(dir, 'acme-slicer') })))
+    expect(files(cacheDir(dir, 'acme-slicer')).length).toBeGreaterThan(0)
+    expect(files(cacheDir(dir))).toEqual([])
+    const stock = temporary()
+    expectClean(await start(stock, environment(stock)))
+    expect(files(cacheDir(stock)).length).toBeGreaterThan(0)
+    expect(files(cacheDir(stock, 'acme-slicer'))).toEqual([])
+  })
+
+  it('keeps both overrides with an edition id set', async () => {
+    const dir = temporary()
+    const config = editionConfig(dir, 'acme-slicer')
+    expectClean(await start(dir, environment(dir, { SLICERX_CONFIG: config, NODE_DISABLE_COMPILE_CACHE: '1' })))
+    expect(files(cacheRoot(dir))).toEqual([])
+    const chosen = join(dir, 'chosen')
+    expectClean(await start(dir, environment(dir, { SLICERX_CONFIG: config, NODE_COMPILE_CACHE: chosen })))
     expect(files(cacheRoot(dir))).toEqual([])
     expect(files(chosen).length).toBeGreaterThan(0)
   })
