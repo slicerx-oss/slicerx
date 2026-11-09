@@ -204,6 +204,48 @@ describe('a long recorded build on a small cap', () => {
   })
 })
 
+describe('the first request of a run', () => {
+  it('never takes the spend past the cap, even when it is denser than a token per 4 bytes', async () => {
+    const capUsd = 1
+    const budget = createBudget(capUsd)
+    // earlier spend leaves $0.15 under the cap, and the stop margin is not yet reached
+    budget.spentUsd = 0.85
+    // a dense request: 400 KB of text. At a token per 4 bytes it looks like about $0.13, which fits under the cap
+    const dense: LlmRequest = { model: 'x', messages: [{ role: 'user', content: 'x'.repeat(400_000) }], tools: [], maxOutputTokens: 1 }
+    const price: Price = { usdIn: 1, usdOut: 0 }
+    const bytes = enc.encode(createAnthropicAdapter().build({ ...dense, model: 'x' }).body ?? '').length
+    // the reply reports a token every 2 bytes, so the request really bills about $0.2
+    const { transport, started } = fakeTransport(() => budget.spentUsd, () => reply({ input_tokens: Math.ceil(bytes / 2), output_tokens: 1 }))
+    const client = budgetedClient(createTransportClient(transport, 'anthropic'), 'x', price, budget)
+    let refused = ''
+    try {
+      await drain(client.stream(dense))
+    } catch (e) {
+      refused = e instanceof Error ? e.message : String(e)
+    }
+    expect(budget.spentUsd).toBeLessThanOrEqual(capUsd)
+    expect(started).toHaveLength(0)
+    expect(refused).toMatch(/past the \$1\.00 cap/)
+    expect(budget.stopped).toBe(true)
+  })
+
+  it('is reserved at a token per byte, the most a body can hold, until a reply reports its own count', async () => {
+    const budget = createBudget(1.5)
+    const http = createAnthropicAdapter().build({ ...ASK, model: 'test-model' })
+    const bytes = enc.encode(JSON.stringify(JSON.parse(http.body ?? '{}'))).length
+    const transport: LlmTransport = {
+      available: async () => true,
+      async *stream() {
+        yield enc.encode(reply({ input_tokens: Math.ceil(bytes / 3), output_tokens: 10 }))
+      },
+    }
+    // cut off after its first text, so the request is charged its reserve
+    for await (const ev of budgetedClient(createTransportClient(transport, 'anthropic'), 'test-model', PRICE, budget).stream(ASK)) if (ev.type === 'text') break
+    expect(budget.cutOff).toBe(1)
+    expect(budget.spentUsd).toBeCloseTo(worstUsd('anthropic', http, false, PRICE, 1), 12)
+  })
+})
+
 describe('the live budget', () => {
   it('a live run stops starting requests at the cap less the margin, partway through the prompt set', async () => {
     const capUsd = 1
@@ -297,7 +339,7 @@ describe('the live budget', () => {
       }
     })()
     await expect(read).rejects.toThrow()
-    const reserve = worstUsd('anthropic', createAnthropicAdapter().build({ ...ASK, model: 'test-model' }), false, price)
+    const reserve = worstUsd('anthropic', createAnthropicAdapter().build({ ...ASK, model: 'test-model' }), false, price, 1)
     expect(seen.some((e) => e.type === 'usage')).toBe(false)
     expect(budget.spentUsd).toBeCloseTo(reserve, 12)
     expect(budget.estimatedUsd).toBeCloseTo(reserve, 12)
@@ -311,7 +353,7 @@ describe('the live budget', () => {
     for await (const ev of client.stream(LOOKUP)) if (ev.type === 'text') break
     expect(started).toEqual([0])
     expect(budget.cutOff).toBe(1)
-    expect(budget.spentUsd).toBeCloseTo(worstUsd('anthropic', createAnthropicAdapter().build({ ...LOOKUP, model: 'test-model' }), true, PRICE), 12)
+    expect(budget.spentUsd).toBeCloseTo(worstUsd('anthropic', createAnthropicAdapter().build({ ...LOOKUP, model: 'test-model' }), true, PRICE, 1), 12)
   })
 
   it('a lookup whose reply reports no search count is charged the most it may run', async () => {
