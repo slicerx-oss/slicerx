@@ -32,6 +32,11 @@ export interface StockLayerInput {
   nozzle?: number | undefined
   /** Each extruder's nozzle on a printer with more than one, in the slicer's extruder order (left first on an H2D). */
   extruders?: readonly { mm: number; type?: string }[] | undefined
+  /**
+   * The printer is declared a tool changer (a Klipper printer whose config setup's Moonraker test found tool sections
+   * in): a profile with one nozzle takes a tool per extruder, each with its own nozzle (`applyExtruders`).
+   */
+  toolchanger?: boolean | undefined
 }
 
 export interface StockLayer {
@@ -63,8 +68,16 @@ export interface StockLayer {
 const ORCA_NOZZLE_TYPE: Record<string, string> = { brass: 'brass', 'hardened-steel': 'hardened_steel', 'stainless-steel': 'stainless_steel', 'tungsten-carbide': 'tungsten_carbide' }
 
 /** Writes each extruder's own nozzle diameter and type over the machine's, where the machine lists one per extruder. */
-export function applyExtruders(machine: Record<string, SettingValue>, extruders: readonly { mm: number; type?: string }[] | undefined): void {
+export function applyExtruders(machine: Record<string, SettingValue>, extruders: readonly { mm: number; type?: string }[] | undefined, opts: { toolchanger?: boolean | undefined } = {}): void {
   if (!extruders || extruders.length < 2) return
+  // A tool changer on a one nozzle profile (a generic Klipper printer): a tool per extruder, each with its own nozzle,
+  // and no shared nozzle, as the tool changers' own profiles say (`single_extruder_multi_material` 0).
+  const one = machine['nozzle_diameter']
+  if (opts.toolchanger && (!Array.isArray(one) || one.length === 1)) {
+    const sample = Array.isArray(one) ? one[0] : one
+    machine['nozzle_diameter'] = typeof sample === 'number' ? extruders.map((e) => e.mm) : extruders.map((e) => String(e.mm))
+    machine['single_extruder_multi_material'] = typeof machine['single_extruder_multi_material'] === 'string' ? '0' : 0
+  }
   const d = machine['nozzle_diameter']
   if (Array.isArray(d) && d.length === extruders.length) {
     machine['nozzle_diameter'] = typeof d[0] === 'number' ? extruders.map((e) => e.mm) : extruders.map((e) => String(e.mm))
@@ -254,7 +267,7 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
   const nozzle = layerNozzle(profile, input.extruders?.[0]?.mm ?? input.nozzle)
   const { exact, resolved, base, machine } = await layerMachine(printerId, input.tier, nozzle)
   const process = await tierProcess(printerId, input.tier, nozzle, exact)
-  applyExtruders(machine, input.extruders)
+  applyExtruders(machine, input.extruders, { toolchanger: input.toolchanger })
   const nozzleValues = await nozzleSizeValues(printerId, input.tier, input.extruders?.map((e) => layerNozzle(profile, e.mm)), process, machine)
   // Filament: the maker's default for the printer where the slot's material matches it, else the slot's own product or the generic one of its type.
   // The filament type is stored only when it is not the schema default (PLA).

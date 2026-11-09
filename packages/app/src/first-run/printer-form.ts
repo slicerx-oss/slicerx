@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Printer setup form state and validation. Pure data: secrets never enter this state; the form
 // only records whether a secret field holds something and how long it is.
-import type { Bed, PrinterHardware } from '@slicerx/contracts'
+import type { Bed, PrinterHardware, ToolDock } from '@slicerx/contracts'
 import { brandById, CONNECTION_METHODS, connectionMethod, modelById, modelsForBrand, type ConnectionId, type ConnectionMethod, type FieldKey, type Kinematics, type PrinterModel } from '@slicerx/printer-catalog'
 import { appHostPort, offeredConnections } from '../connected-apps/gate'
 import { tunnelPasteError, type TunnelPaste } from './tunnel-paste'
@@ -155,6 +155,8 @@ export interface PrinterForm {
   via?: 'obico'
   /** What the Obico paste box holds, when something is pasted. */
   tunnel?: TunnelPaste
+  /** A Klipper tool changer's docks as the connection test read them from its config: saved with the printer for Preview. */
+  toolDocks?: ToolDock[]
 }
 
 export const EMPTY_FORM: PrinterForm = {
@@ -456,6 +458,13 @@ export function withHardware(form: PrinterForm, hw: PrinterHardware): PrinterFor
       return e ? nozzleSpec(e.nozzleDiameterMm, e.nozzleType, prev, e.highFlow) : prev
     })
     next = { ...next, nozzleUnsure: false, nozzles }
+  }
+  const docks = hw.toolDocks ?? []
+  if (docks.length) {
+    // A tool changer: one tool, and so one nozzle, per dock. Nozzles the printer did not describe take the first one's size.
+    const count = Math.max(docks.length, next.nozzles.length)
+    const first = next.nozzles[0] ?? EMPTY_FORM.nozzles[0]!
+    next = { ...next, toolDocks: docks, nozzles: Array.from({ length: count }, (_, i) => next.nozzles[i] ?? { ...first }), filament: { kind: 'single', units: 1, slots: count } }
   }
   const units = (hw.filamentUnits ?? []).filter((u) => u.kind !== 'external')
   if (units.some((u) => u.kind === 'mmu')) {

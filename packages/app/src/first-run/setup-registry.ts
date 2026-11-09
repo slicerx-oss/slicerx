@@ -123,7 +123,9 @@ export function fromLinkResult(r: { ok: boolean; state?: PrinterState; cause?: s
   const hw = r.ok ? r.hardware : undefined
   const nozzle = hw?.extruders?.find((e) => e.nozzleDiameterMm)?.nozzleDiameterMm
   const units = (hw?.filamentUnits ?? []).filter((u) => u.kind !== 'external')
-  const system: 'ams' | 'mmu' | undefined = units.length === 0 ? undefined : units.some((u) => u.kind === 'mmu') ? 'mmu' : 'ams'
+  const docks = hw?.toolDocks ?? []
+  // A Klipper tool changer's [tool] sections say it has a tool per dock.
+  const system: 'ams' | 'mmu' | 'toolchanger' | undefined = units.length ? (units.some((u) => u.kind === 'mmu') ? 'mmu' : 'ams') : docks.length ? 'toolchanger' : undefined
   const tunnel = r.ok ? null : tunnelProblemOf(r.tunnelProblem)
   return {
     ...(tunnel ? { tunnelProblem: tunnel } : {}),
@@ -142,6 +144,6 @@ export function fromLinkResult(r: { ok: boolean; state?: PrinterState; cause?: s
     ...(hw?.model ? { reportedModel: hw.model } : {}),
     ...(hw?.firmware ? { firmware: hw.firmware } : {}),
     ...(nozzle ? { nozzleMm: nozzle } : {}),
-    ...(system ? { filamentSystem: system, slotCount: units.reduce((n, u) => n + u.slots.length, 0) } : {}),
+    ...(system ? { filamentSystem: system, slotCount: system === 'toolchanger' ? docks.length : units.reduce((n, u) => n + u.slots.length, 0) } : {}),
   }
 }

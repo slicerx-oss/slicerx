@@ -295,7 +295,9 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
       // The slice follows this size: it picks the presets that match the nozzle. A printer with more than one
       // nozzle keeps each, so every extruder slices with its own.
       const extruders = extruderNozzles(f)
-      set((s) => ({ printerNozzles: { ...s.printerNozzles, [printerId]: nozzle }, ...(extruders ? { printerExtruders: { ...s.printerExtruders, [printerId]: extruders } } : {}) }))
+      // A Klipper tool changer keeps the docks its config gave, so Preview plays its changes there.
+      const docks = f.toolDocks
+      set((s) => ({ printerNozzles: { ...s.printerNozzles, [printerId]: nozzle }, ...(extruders ? { printerExtruders: { ...s.printerExtruders, [printerId]: extruders } } : {}), ...(docks?.length ? { printerDocks: { ...s.printerDocks, [printerId]: docks } } : {}) }))
       secrets.current.clear()
       if (credentialKept === 'session') toast(`${appName()} could not store the access code in your system keychain, so it is kept only until ${appName()} closes. You will be asked for it again next time.`, 'warn')
       return { printerId, brand, model, nozzle: nozzleText(f), connection: m ? (throughObico(f) ? `${m.name} through Obico` : m.name) : 'Save G-code', state: !connected ? 'none' : verified ? 'verified' : 'unverified', filamentSystem: filamentText(f) }

@@ -424,6 +424,11 @@ describe('both nozzles of a two nozzle printer', () => {
     const one: Record<string, import('@slicerx/contracts').SettingValue> = { nozzle_diameter: [0.4] }
     applyExtruders(one, [{ mm: 0.6 }, { mm: 0.4 }])
     expect(one['nozzle_diameter']).toEqual([0.4])
+    // Unless the printer is declared a tool changer: then a tool per extruder, and no shared nozzle.
+    const tc: Record<string, import('@slicerx/contracts').SettingValue> = { nozzle_diameter: ['0.4'] }
+    applyExtruders(tc, [{ mm: 0.6 }, { mm: 0.4 }], { toolchanger: true })
+    expect(tc['nozzle_diameter']).toEqual(['0.6', '0.4'])
+    expect(tc['single_extruder_multi_material']).toBe(0)
   })
 
   it('survive a restart', async () => {

@@ -490,6 +490,22 @@ export interface PrinterHardware {
   hostname?: string
   /** The serial number or board id the printer reports, so a printer whose address changed is still the same one. */
   serial?: string
+  /** A Klipper tool changer's docks, one per `[tool]` section, with what its config says about each (StealthChanger-style `params_*`). */
+  toolDocks?: ToolDock[]
+}
+
+/**
+ * One tool's dock on a Klipper tool changer, from its `[tool]` section and the `[toolchanger]` defaults. Every field but
+ * the tool is absent when the config does not give it or gives a value that does not read as a number.
+ */
+export interface ToolDock {
+  tool: number
+  /** Where the nozzle stands with the tool seated in its dock (`params_park_x`, `_y`, `_z`), mm in printer coordinates. */
+  parkMm?: [number, number, number]
+  /** The Y the head travels along X at in front of the docks (`params_safe_y`), mm. */
+  safeYMm?: number
+  /** The dock path relative to the park point, in drop-off order (`params_sc_path` or `params_path`); `f` scales the path speed. */
+  path?: { y: number; z: number; f?: number }[]
 }
 
 export interface ExtruderInfo {

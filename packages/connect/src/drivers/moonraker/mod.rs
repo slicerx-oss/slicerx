@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! Moonraker (Klipper) over its HTTP API. Also the transport for Klipper based Creality and
 //! Snapmaker models, which pass their own plugin id.
+mod docks;
 mod filament;
 mod toolhead;
 
@@ -857,6 +858,7 @@ fn moonraker_hardware_with(
             .and_then(|r| r.get("hostname"))
             .and_then(Value::as_str)
             .map(str::to_owned),
+        tool_docks: settings.map(docks::tool_docks).unwrap_or_default(),
         ..PrinterHardware::default()
     }
 }

@@ -4,7 +4,7 @@
 // or corrupt, so every field is checked by hand and a bad one falls back to its default on its
 // own. No schema library: this runs before first paint and stays out of the shell budget.
 import { readUnits, type UnitPrefs } from '../cad/units'
-import { LOOK_IDS, type LookAndFeelChoice, type FirstRunState } from '@slicerx/contracts'
+import { LOOK_IDS, type LookAndFeelChoice, type FirstRunState, type ToolDock } from '@slicerx/contracts'
 
 /** A model file with several separate bodies opens as one object with parts or as separate objects (state/multi-body.ts). */
 export type MultiBodyPref = 'ask' | 'parts' | 'objects'
@@ -89,6 +89,7 @@ export interface Prefs {
   presetSync?: { deleted: { id: string; at: number }[]; changes: { at: number; id: string; name: string; kind: 'printer' | 'filament' | 'process'; action: 'added' | 'updated' | 'removed'; keys?: string[]; conflict?: boolean }[]; lastAt: number } | undefined
   printerNozzles?: Record<string, number> | undefined
   printerExtruders?: Record<string, ExtruderNozzle[]> | undefined
+  printerDocks?: Record<string, ToolDock[]> | undefined
   toolheadSkipMatching?: Record<string, boolean> | undefined
   handPrinters?: HandPrinter[] | undefined
   /** Bays printers stand in (a rack, a desk), in the order Printers lists them. */
@@ -353,6 +354,7 @@ export function normalizePrefs(v: unknown): Prefs {
     presetSync: or(presetSync(r['presetSync']), { deleted: [], changes: [], lastAt: 0 }),
     printerNozzles: or(record(r['printerNozzles'], (k) => k.length <= 80, (x) => num(x, 0.1, 2)), {}),
     printerExtruders: or(record(r['printerExtruders'], (k) => k.length <= 80, (x) => list(x, 8, extruderNozzle)), {}),
+    printerDocks: or(record(r['printerDocks'], (k) => k.length <= 80, (x) => list(x, 16, toolDock)), {}),
     toolheadSkipMatching: or(record(r['toolheadSkipMatching'], (k) => k.length <= 80, bool), {}),
     handPrinters: or(list(r['handPrinters'], 100, handPrinter), []),
     bays: or(list(r['bays'], 100, printerBay), []),
@@ -487,6 +489,27 @@ export interface ExtruderNozzle {
   /** `brass`, `hardened-steel`, `stainless-steel` or `tungsten-carbide`. */
   type?: string
   highFlow?: boolean
+}
+
+/** A dock as setup saved it: the tool, and each value the printer gave that reads as a number in range. */
+function toolDock(x: unknown): ToolDock | undefined {
+  if (!isRec(x)) return undefined
+  const tool = num(x['tool'], 0, 15)
+  if (tool === undefined || !Number.isInteger(tool)) return undefined
+  const p = x['parkMm']
+  const park = Array.isArray(p) && p.length === 3 ? p.map((v) => num(v, -2000, 2000)) : []
+  const safe = num(x['safeYMm'], -2000, 2000)
+  const path = list(x['path'], 32, (q) => {
+    if (!isRec(q)) return undefined
+    const y = num(q['y'], -500, 500), z = num(q['z'], -500, 500), f = num(q['f'], 0.01, 10)
+    return y === undefined || z === undefined ? undefined : { y, z, ...(f !== undefined ? { f } : {}) }
+  })
+  return {
+    tool,
+    ...(park.length === 3 && park.every((v) => v !== undefined) ? { parkMm: park as [number, number, number] } : {}),
+    ...(safe !== undefined ? { safeYMm: safe } : {}),
+    ...(path && path.length >= 2 ? { path } : {}),
+  }
 }
 
 function extruderNozzle(x: unknown): ExtruderNozzle | undefined {

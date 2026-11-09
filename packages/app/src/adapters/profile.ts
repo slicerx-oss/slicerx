@@ -23,6 +23,8 @@ export interface ProfileInput {
   nozzleFrom?: 'printer' | 'choice' | 'default'
   /** Each extruder's nozzle on a printer with more than one, in the slicer's extruder order (left first on an H2D). */
   extruders?: readonly { mm: number; type?: string }[]
+  /** The printer is declared a tool changer: a one nozzle profile takes a tool per extruder. */
+  toolchanger?: boolean
 }
 
 export interface ProfileLayer {
@@ -67,7 +69,7 @@ export function bedOf(values: Record<string, SettingValue>): Bed {
 export async function buildProfileLayer(input: ProfileInput): Promise<ProfileLayer | null> {
   const printerId = profileIdFor(input.printer)
   if (!printerId) return null
-  const layer = await stockLayer({ printerId, tier: input.tier, slots: input.slots, nozzle: input.nozzle, extruders: input.extruders })
+  const layer = await stockLayer({ printerId, tier: input.tier, slots: input.slots, nozzle: input.nozzle, extruders: input.extruders, toolchanger: input.toolchanger })
   if (!layer) return null
   return { ...layer, nozzleFrom: input.nozzleFrom ?? 'default', bed: bedOf(layer.values) }
 }
