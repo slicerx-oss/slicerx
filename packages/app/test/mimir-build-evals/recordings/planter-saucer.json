@@ -1321,8 +1321,8 @@
   }
  ],
  "score": {
-  "pass": false,
-  "geometry": false,
+  "pass": true,
+  "geometry": true,
   "built": true,
   "refused": false,
   "extra": 0,
@@ -1332,7 +1332,7 @@
    "bodies": true,
    "minWall": true,
    "bedFit": true,
-   "sizes": false
+   "sizes": true
   }
  }
 }
