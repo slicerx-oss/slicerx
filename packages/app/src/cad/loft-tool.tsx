@@ -49,6 +49,9 @@ export function LoftTool() {
   const [sides, setSides] = useDraft<Sides>('sides', edit?.params.smooth ? 'smooth' : 'straight')
   const [ring, setRing] = useDraft('ring', Boolean(edit?.params.closed))
   const [chosen, setChosen] = useDraft<Result | null>('operation', null)
+  // a refused pick (a sketch with several loops) is known before the press and keeps Loft off until the list changes;
+  // `note` is what the engine said after one
+  const [pickNote, setPickNote] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -64,15 +67,27 @@ export function LoftTool() {
     const k = byId.get(id)
     if (!k) return
     setNote(null)
+    setPickNote(null)
     if (live.some((r) => 'id' in r && r.id === id)) return setRows(live.filter((r) => !('id' in r) || r.id !== id))
     const p = profileOf(k, frameShown(k), 'loft')
-    if ('why' in p) return setNote(p.why)
+    // a second click on the refused sketch only takes the refusal away
+    if ('why' in p) return setPickNote(pickNote === p.why ? null : p.why)
     setRows([...live, { id }])
   })
 
   const ringOff = ringReason(n)
   const closed = ring && ringOff === null
-  const reason = loftReason(n)
+  // a picked sketch that changed since (drawn over to several loops) is a problem known before the press too
+  const listProblem = useMemo(() => {
+    for (const r of live) {
+      const k = 'id' in r ? byId.get(r.id) : undefined
+      const p = k ? profileOf(k, frameShown(k), 'loft') : null
+      if (p && 'why' in p) return p.why
+    }
+    return null
+  }, [live, byId])
+  const shown = pickNote ?? listProblem
+  const reason = loftReason(n) ?? shown
 
   const apply = async () => {
     if (reason !== null || busy) return
@@ -120,9 +135,16 @@ export function LoftTool() {
           {ringOff}
         </p>
       ) : null}
-      <ProfileList rows={live} nameOf={nameOf} onChange={setRows} />
-      {note ? <Message text={note} testId="loft-message" /> : null}
-      <ToolFooter verb="Loft" onApply={apply} busy={busy} disabled={reason !== null} reason={reason} />
+      <ProfileList
+        rows={live}
+        nameOf={nameOf}
+        onChange={(r) => {
+          setPickNote(null)
+          setRows(r)
+        }}
+      />
+      {shown ?? note ? <Message id="loft-message" text={(shown ?? note)!} testId="loft-message" /> : null}
+      <ToolFooter verb="Loft" onApply={apply} busy={busy} disabled={reason !== null} reason={reason} reasonShownAt={shown && reason === shown ? 'loft-message' : undefined} />
     </Shell>
   )
 }

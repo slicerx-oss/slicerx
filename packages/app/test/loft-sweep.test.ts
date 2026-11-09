@@ -163,6 +163,9 @@ describe('the loft panel', () => {
     act(() => void pickSketch('k4'))
     act(() => void pickSketch('k2'))
     expect(rowNames()).toEqual(['Sketch 1', 'Sketch 4', 'Sketch 2'])
+    // the first row has nowhere up to go and the last nowhere down: those arrows are off
+    const arrows = (name: string) => [screen.getByRole('button', { name: `Move ${name} up` }), screen.getByRole('button', { name: `Move ${name} down` })].map(off)
+    expect([arrows('Sketch 1'), arrows('Sketch 4'), arrows('Sketch 2')]).toEqual([[true, false], [false, false], [false, true]])
     expect([...sketchPicker()!.marks]).toEqual([['k1', '1'], ['k4', '2'], ['k2', '3']])
     fireEvent.click(screen.getByRole('button', { name: 'Move Sketch 2 up' }))
     expect(rowNames()).toEqual(['Sketch 1', 'Sketch 2', 'Sketch 4'])
@@ -193,6 +196,18 @@ describe('the loft panel', () => {
     act(() => void pickSketch('k3'))
     expect(rowNames()).toEqual(['Sketch 1'])
     expect(screen.getByTestId('loft-message').textContent?.trim()).toBe('Sketch 3 has 2 loops; a loft profile is one closed loop.')
+    // known before the press: Loft stays off with the refusal as its reason, until the list changes
+    act(() => void pickSketch('k2'))
+    expect(off(screen.getByTestId('model-tool-apply'))).toBe(false)
+    act(() => void pickSketch('k3'))
+    const apply = screen.getByTestId('model-tool-apply')
+    expect(off(apply)).toBe(true)
+    expect(apply.getAttribute('aria-describedby')).toBe('loft-message')
+    expect(screen.queryByTestId('model-tool-reason')).toBeNull()
+    // a second click on the refused sketch takes the refusal away
+    act(() => void pickSketch('k3'))
+    expect(screen.queryByTestId('loft-message')).toBeNull()
+    expect(off(screen.getByTestId('model-tool-apply'))).toBe(false)
   })
 
   it('offers Join and Cut only with a body to work on', () => {
@@ -235,6 +250,17 @@ describe('the sweep panel', () => {
     expect(off(screen.getByTestId('model-tool-apply'))).toBe(false)
     fireEvent.click(screen.getByTestId('sweep-profile'))
     expect(screen.getByTestId('sweep-profile').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('keeps Sweep off before the press when the profile sits away from the path start, saying how far', () => {
+    set({ timeline: timeline([sketch(1, [circle(4)], { origin: [42, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }), sketch(2, [{ start: [0, 0], segments: [{ type: 'line', to: [0, 40] }] }], { origin: [0, 0, 0], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] })]) })
+    mount(SweepTool)
+    act(() => void pickSketch('k1'))
+    act(() => void pickSketch('k2'))
+    const apply = screen.getByTestId('model-tool-apply')
+    expect(off(apply)).toBe(true)
+    expect(screen.getByTestId('sweep-message').textContent?.trim()).toBe("The profile sits 42 mm from where the path starts. Move it onto the path's start.")
+    expect(apply.getAttribute('aria-describedby')).toBe('sweep-message')
   })
 
   it('refuses a closed sketch as the path and a two-loop sketch as the profile', () => {

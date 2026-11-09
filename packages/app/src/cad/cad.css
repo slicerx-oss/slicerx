@@ -345,3 +345,5 @@
 .solid-slot[aria-pressed="true"] { border-color: var(--accent); background: var(--control-selected); }
 .solid-slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :root[data-phone] .solid-slot { height: var(--h-lg); }
+/* an arrow with nowhere to go (Up on the first profile, Down on the last) reads as off at a glance */
+.solid-row-btns > .sx-btn:disabled { opacity: 0.3; }

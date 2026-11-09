@@ -71,9 +71,9 @@ export function Note({ children, testId, status = false }: { children: ReactNode
 }
 
 /** A warning or an error in the panel's message style: a sentence, with no tool name in front of it. */
-export function Message({ text, tone = 'warn', testId }: { text: string; tone?: 'warn' | 'error'; testId?: string }) {
+export function Message({ text, tone = 'warn', testId, id }: { text: string; tone?: 'warn' | 'error'; testId?: string; id?: string }) {
   return (
-    <p className="cad-note tp-msg" role="status" data-tone={tone} data-testid={testId}>
+    <p id={id} className="cad-note tp-msg" role="status" data-tone={tone} data-testid={testId}>
       <Icon name="alert" size={14} /> <span>{sentence(text)}</span>
     </p>
   )
@@ -357,6 +357,11 @@ export interface ToolFooterProps {
   extra?: ReactNode
   /** Why Apply is off, shown over the buttons while it is (a disabled action always says why). */
   reason?: string | null
+  /**
+   * The id of a message already on the panel that says why Apply is off (a refused pick shown above the footer): Apply
+   * points at it instead of repeating it over the buttons.
+   */
+  reasonShownAt?: string | undefined
   /** Apply is the panel's primary action; false while another control is (the sketch's Finish sketch). */
   primary?: boolean
   /** Enter in the panel and Esc close or apply the tool; false for a tool that steps its own keys (the sketch). */
@@ -371,14 +376,14 @@ const ownsEnter = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagN
  * tools made for runs of the same feature, Apply and repeat (in the menu on Apply) runs it and stays open for the next
  * pick.
  */
-export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy = false, repeat = false, extra, reason = null, primary = true, keys = true }: ToolFooterProps) {
+export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy = false, repeat = false, extra, reason = null, reasonShownAt, primary = true, keys = true }: ToolFooterProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [running, setRunning] = useState(false)
   const [menu, setMenu] = useState(false)
   const working = busy || running
   // the reason the primary is off describes it, so a screen reader reads why along with the button
   const reasonId = useId()
-  const why = disabled && !working && reason ? reasonId : undefined
+  const why = disabled && !working ? (reasonShownAt ?? (reason ? reasonId : undefined)) : undefined
   const go = async (stay: boolean) => {
     if (disabled || working) return
     setRunning(true)
@@ -447,7 +452,7 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
   return (
     <div ref={ref} className="cad-actions cad-footer tp-actions" {...(more ? { 'data-more': '' } : {})}>
       {extra ? <div className="tp-actions-extra">{extra}</div> : null}
-      {disabled && !working && reason ? (
+      {disabled && !working && reason && !reasonShownAt ? (
         <p id={reasonId} className="tp-card-reason" role="status" data-testid="model-tool-reason">
           {reason}
         </p>
