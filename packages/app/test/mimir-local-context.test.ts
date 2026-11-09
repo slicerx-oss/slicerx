@@ -63,6 +63,9 @@ function cost(req: LlmHttpRequest): { system: number; messages: number; tools: n
 /** The tabs line for the tabs registered below: the plate's modes, then Slice, My models and Printers. */
 const TABS = 'The app has these tabs: mimir (this chat), Model, Slice, My models and Printers. Name no other tab.'
 
+/** The spelling rule every mimir prompt carries (packages/pilot prompt.ts). */
+const AMERICAN = 'Write American spelling in replies, sheet rows and plan names (center, color, aluminum, gray, meter).'
+
 /** Room a local model keeps for the conversation after the system prompt, the tools, the request and the reply. */
 const CONVERSATION_ROOM = 1500
 
@@ -184,6 +187,9 @@ describe('the mimir tab on a local model', () => {
     const sent = read(local)
     expect(sent.messages[0]!.role).toBe('system')
     expect(sent.messages[0]!.content).toContain(TABS)
+    // both prompts ask for American spelling, the local one in full
+    expect(sent.messages[0]!.content).toContain(AMERICAN)
+    expect(cloud.messages[0]!.content).toContain(AMERICAN)
     expect(cloud.messages[0]!.content).not.toContain(TABS)
     expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content)
   })
