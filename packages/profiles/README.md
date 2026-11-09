@@ -18,6 +18,8 @@ The stock printer, filament and process profile data that SlicerX ships, kept ap
 | `printer-images/` | One picture per catalog printer model, named by the catalog id (`bambu-h2d.webp`): the makers' `*_cover.png` from OrcaSlicer's profile resources (commit 97700c5a), re-encoded as 240 px webp. The setup's model grid shows them; a model without one gets a drawn placeholder |
 | `cura/ultimaker.json` | The UltiMaker S3, S5, S7, S6 and S8: machine settings, print cores per nozzle size, the quality presets' speeds and the G-code families, resolved from UltiMaker Cura 5.13's definitions, variants, materials and quality profiles by `packages/settings/scripts/gen-ultimaker.py` |
 
+Two entries were added by hand. The Sovol SV04's machine settings in `machine.json` are written from Sovol's firmware source, which its `makerDocs` names, and its `sovol_sv04` family in `gcode.json` was written for SlicerX. `packages/settings/docs/printer-profiles.md` says which of its values are estimated. No script in this repository writes `gcode.json`, so a refresh from outside it has to keep that family and its model entry.
+
 ## License
 
 The data files in this folder come from the profile resources of OrcaSlicer and Bambu Studio and are licensed under the GNU Affero General Public License, version 3 or later (`LICENSE`), like the profiles they come from. `REUSE.toml` at the repository root records this per path.

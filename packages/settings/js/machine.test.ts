@@ -31,16 +31,23 @@ const table = (): Record<string, string> => ({
 
 describe('machine settings', () => {
   it('covers the models Orca has a profile for and records what was checked', () => {
-    expect(Object.keys(models)).toHaveLength(61)
+    expect(Object.keys(models)).toHaveLength(62)
     expect(MACHINE_CHECKED_COMMIT).toMatch(/^[0-9a-f]{7,}$/)
     for (const [id, e] of Object.entries(models)) {
+      // A model no slicer has a profile for is written from the maker's own documents, which it names.
+      if (e.makerDocs) {
+        expect(e.orca, id).toBeUndefined()
+        expect(e.makerDocs.checked, id).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+        expect(e.makerDocs.sources.length, id).toBeGreaterThan(0)
+        continue
+      }
       // A model Orca has no profile for yet carries the Bambu Studio release its values come from.
       expect(e.orca?.checked, id).toBe(e.bambuStudio ? `bambu-studio-${e.bambuStudio}` : MACHINE_CHECKED_COMMIT)
       expect(e.orca?.profile, id).toMatch(/nozzle/)
     }
     const missing = listPrinterProfiles().map((p) => p.id).filter((id) => !models[id])
     // The UltiMaker S series comes from Cura's definitions (cura/ultimaker.json), not Orca.
-    expect(missing).toEqual(['prusa-mk3.9', 'snapmaker-a150', 'ultimaker-s3', 'ultimaker-s5', 'ultimaker-s7', 'ultimaker-s6', 'ultimaker-s8', 'sovol-sv04', 'generic-klipper-delta', 'generic-klipper', 'generic-octoprint', 'generic-duet', 'generic-export'])
+    expect(missing).toEqual(['prusa-mk3.9', 'snapmaker-a150', 'ultimaker-s3', 'ultimaker-s5', 'ultimaker-s7', 'ultimaker-s6', 'ultimaker-s8', 'generic-klipper-delta', 'generic-klipper', 'generic-octoprint', 'generic-duet', 'generic-export'])
   })
   it('holds only keys the schema knows, none of them templates', () => {
     for (const [id, e] of Object.entries(models)) {
@@ -115,7 +122,7 @@ describe('dual and multi nozzle printers', () => {
   it('carry an extruder printable area for every nozzle', () => {
     // The maker's nozzle list decides.
     const multi = listPrinterProfiles().filter((p) => ((printerConfig(p.id) as Record<string, unknown>)['nozzle_diameter'] as unknown[]).length > 1 && models[p.id])
-    expect(multi.map((p) => p.id)).toEqual(['bambu-h2d', 'bambu-h2d-pro', 'bambu-h2c', 'bambu-x2d', 'prusa-xl-5-toolhead', 'snapmaker-u1', 'snapmaker-j1', 'snapmaker-artisan'])
+    expect(multi.map((p) => p.id)).toEqual(['bambu-h2d', 'bambu-h2d-pro', 'bambu-h2c', 'bambu-x2d', 'prusa-xl-5-toolhead', 'snapmaker-u1', 'snapmaker-j1', 'snapmaker-artisan', 'sovol-sv04'])
     for (const p of multi) {
       const cfg = printerConfig(p.id) as Record<string, unknown>
       expect((cfg['extruder_printable_area'] as unknown[]).length, p.id).toBe((cfg['nozzle_diameter'] as unknown[]).length)
@@ -133,6 +140,27 @@ describe('dual and multi nozzle printers', () => {
     }
     // A single nozzle printer keeps whatever the maker sets (the H2S sets none).
     expect(area('bambu-h2s')).toEqual([])
+  })
+  it('has the Sovol SV04 as two extruders from the maker\'s firmware, with tool changes and no manual swaps', () => {
+    const e = machineEntry('sovol-sv04')
+    expect(e?.orca).toBeUndefined()
+    expect(e?.makerDocs?.sources.every((s) => s.startsWith('https://github.com/Sovol3d/SV04-IDEX-3D-Printer-Mainboard-Source-code/'))).toBe(true)
+    const c = printerConfig('sovol-sv04') as unknown as Record<string, unknown>
+    expect(c['nozzle_diameter']).toEqual([0.4, 0.4])
+    expect(c['single_extruder_multi_material']).toBe(false)
+    // Auto-park mode: the firmware applies the carriage offset itself, so the slicer's is zero for both.
+    expect(c['extruder_offset']).toEqual([[0, 0], [0, 0]])
+    expect(c['printable_area']).toEqual([[0, 0], [300, 0], [300, 300], [0, 300]])
+    expect(c['extruder_printable_area']).toEqual([c['printable_area'], c['printable_area']])
+    expect(c['printable_height']).toBe(400)
+    expect(c['gcode_flavor']).toBe('marlin2')
+    expect(gcode.models['sovol-sv04']).toBe('sovol_sv04')
+    const change = c['change_filament_gcode'] as string
+    expect(change).not.toMatch(/M600/)
+    expect(change).toMatch(/^T\[next_extruder\]$/m)
+    expect(change).toMatch(/^M109 T\[next_extruder\] S/m)
+    const start = c['machine_start_gcode'] as string
+    for (const heat of ['M104 T0 S{nozzle_temperature_initial_layer[0]}', 'M104 T1 S{nozzle_temperature_initial_layer[1]}', 'M109 T0 S', 'M109 T1 S']) expect(start).toContain(heat)
   })
   it('has the H3C from Bambu Studio 2.9.1\'s presets: one extruder that holds nine nozzles', () => {
     const e = machineEntry('bambu-h3c')

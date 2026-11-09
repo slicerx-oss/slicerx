@@ -54,6 +54,7 @@
   "snapmaker-artisan": "2176ef99",
   "snapmaker-j1": "e30c61fb",
   "snapmaker-u1": "231db1e9",
+  "sovol-sv04": "fcf6a523",
   "sovol-sv08": "8f70610f",
   "voron-0.1": "63350679",
   "voron-2.4-250": "4b8a911b",
@@ -69,6 +70,7 @@
   "gcode creality_v3": "3c9efc3d",
   "gcode marlin_generic": "c4128f4e",
   "gcode flsun_delta": "846763c4",
+  "gcode sovol_sv04": "245d4d6d",
   "gcode maker_bambu_a1": "75353393",
   "gcode maker_bambu_a1_mini": "7e1d99cf",
   "gcode maker_bambu_h2d": "b6bcd22f",
@@ -112,6 +114,6 @@
   "gcode maker_bambu_h2d_pro": "e0fb481b",
   "gcode maker_bambu_x2d": "03bfa8c5",
   "gcode maker_prusa_core_one_l": "d9a309ef",
-  "gcodeModels": "755863c6"
+  "gcodeModels": "6a2b4022"
  }
 }
