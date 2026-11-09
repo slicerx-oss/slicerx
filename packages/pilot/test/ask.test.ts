@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // pilot.ask waits for the person's pick and hands it back to the run; a dismissed question hands back that it was turned
-// down, with the person's words when they wrote some, and the run carries on. lookup.show puts a record in the run as a
+// down, and words written in place of a pick hand back the person's answer (no choice turned down); the run carries on. lookup.show puts a record in the run as a
 // lookup event. A pilot made without built-ins exposes only the tools it was given.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
@@ -42,8 +42,17 @@ describe('pilot.ask', () => {
     expect(d).toContain('every choice on it is turned down')
     expect(d).toContain('do not list its choices or repeat its question in your reply, in any wording')
     expect(d).toContain('ask a different, narrower question')
-    expect(d).toContain('treat it as their answer')
     expect(d).not.toContain('or reply in text')
+  })
+
+  it('tells the model words written in place of a pick are the answer: go on from them, never ask the same thing again', () => {
+    for (const d of [askTool().description, askTool().localDescription ?? '']) {
+      expect(d).toContain('said')
+      expect(d).toContain('their words are the answer')
+      expect(d).toContain('turn no choice down')
+      expect(d).toContain('never ask the same thing again')
+      expect(d).toContain('pick the choice that gives what the request asked for')
+    }
   })
 
   it('waits for the pick and gives it to the next step', async () => {
@@ -81,7 +90,7 @@ describe('pilot.ask', () => {
     expect(wasDismissed((events.find((e) => e.type === 'ask_answered') as { choiceId: string }).choiceId)).toBe(true)
   })
 
-  it("a dismiss with words gives the model the person's words, trimmed and kept to the limit", async () => {
+  it("words written in place of a pick reach the model as the person's answer, trimmed and kept to the limit, never as a turn-down", async () => {
     const cases: [string, string | undefined][] = [
       ['  it is a different model \n', 'it is a different model'],
       ['x'.repeat(ASK_SAID_MAX + 50), 'x'.repeat(ASK_SAID_MAX)],
@@ -96,9 +105,10 @@ describe('pilot.ask', () => {
         expect(seen[0]).toEqual({ ok: true, result: { picked: null, dismissed: true } })
         expect(answered).not.toHaveProperty('said')
       } else {
-        expect(seen[0]).toEqual({ ok: true, result: { picked: null, dismissed: true, said: kept } })
+        // the card closes as set aside, but the model reads an answer in words: no choice on it is turned down
+        expect(seen[0]).toEqual({ ok: true, result: { picked: null, said: kept } })
         expect(answered).toMatchObject({ choiceId: '', dismissed: true, said: kept })
-        expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true, summary: `Dismissed, wrote: "${kept}"` })
+        expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true, summary: `Answered in words: "${kept}"` })
       }
     }
   })
