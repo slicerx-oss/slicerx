@@ -3,7 +3,7 @@
 // Live plate navigation and edits, with the resulting objects and settings read back through the app link.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { appClientSetupMessage, type AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 import { appPlateInputs, type appPlateSettings } from './app-plate-inputs'
 
@@ -88,6 +88,7 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
     version: '1.1.0',
     source: 'command',
     permission: 'read',
+    hints: { ...APP_VIEW_CHANGE_HINTS, idempotent: false },
     description: `Show one plate of the project open in ${appName}, as its plate picker does: plate (a number from 1, or an id from slicerx_app_plates), or step: next or previous (stepping stops at the first and last plate). It changes only what the window shows, never the project, and answers busy while the person is in Model or using a paint, brim or face tool. Returns the plates read back, with the one now shown.`,
     input: z
       .object({

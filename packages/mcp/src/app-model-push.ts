@@ -5,7 +5,7 @@
 // Enter. Neither changes the project, so both tools read; geom.push_pull is the way a client pushes a face itself.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 /** The open Push and pull as the app reads it back (packages/app app-link/model-push.ts, model.push). */
@@ -65,6 +65,7 @@ export function appModelPushTools(link: AppLinkCaller | undefined, appName: stri
     version: '1.0.0',
     source: 'command',
     permission: 'read',
+    hints: APP_VIEW_CHANGE_HINTS,
     description: `Type a distance into the Distance box of the Push and pull the person has open in ${appName}'s Model, as the person would: positive pulls the face out, negative cuts. The arrow and the preview follow it; nothing changes in the project until the person applies it with Enter. To push a face yourself, use slicerx_geom_push_pull. Returns the tool read back.`,
     input: z.object({ distanceMm: z.number().finite().min(-10_000).max(10_000).describe('Millimeters along the face normal: positive pulls out, negative cuts') }),
     async run(i) {

@@ -57,6 +57,12 @@ export const APP_DESIGN_TOOLS = new Set([
 /** Object placement and project print settings, routed to the app when the server does not own the target. */
 export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale', 'project.object_nozzle', 'project.set_overrides'])
 
+/**
+ * MCP hints for a read class tool that changes what the open app shows (a view, a pick, a display preference) and
+ * never the project: its permission class stays read, but a client must not take it for a call that changes nothing.
+ */
+export const APP_VIEW_CHANGE_HINTS = { readOnly: false, destructive: false, idempotent: true, openWorld: false } as const
+
 /** The agent side of the app link (link-client `appLink.call`). */
 export interface AppLinkCaller {
   /** `timeoutMs` lets a call wait longer for the app (the hub allows up to 120 s), such as one the person answers. */

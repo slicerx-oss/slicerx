@@ -6,7 +6,7 @@
 // tools read. Each answer carries the list again, and a pick carries the selection read back.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 /** One thing under the spot, as the app answers (packages/app plate/select-other-pick.ts). */
@@ -85,6 +85,7 @@ export function appSelectTools(link: AppLinkCaller | undefined, appName: string)
     version: '1.0.0',
     source: 'command',
     permission: 'read',
+    hints: APP_VIEW_CHANGE_HINTS,
     description: `Select one of the things under a spot of ${appName}'s Model view by its index from slicerx_app_select_under, as a person picks it from the Select Other list: a face or an edge becomes the pick on its object, a body selects the whole object. Changes only what is selected, never the project. Returns the candidate picked, the list at the spot again, and the selection read back (the selection pill's words, the selected objects and the face or edge picks).`,
     input: z.object({ ...spot, index: z.number().int().min(0).describe('The candidate to pick, from slicerx_app_select_under') }).refine(oneSpot, { message: SPOT_MESSAGE }),
     async run(i) {
