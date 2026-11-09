@@ -264,9 +264,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * against `inp`, the same schema as zod writes it for the tool's input. Dropped: the safe integer range zod gives an
  * integer with no bounds of its own; `additionalProperties: {}` (any value, as with no keyword); `propertyNames` of
  * plain strings (every JSON key is one); and `additionalProperties: false` on an object whose input form leaves it
- * open, since the tool strips unknown keys there rather than refusing them. A strict object keeps it. A tuple of one
- * kind is written as the plain array it equals (sameTuple). Everything else, every type, bound, enum, default,
- * required list and description, stays as it is.
+ * open, since the tool strips unknown keys there rather than refusing them. A strict object keeps it. The type beside a
+ * const goes too, since the const is the one value taken. A tuple of one kind is written as the plain array it equals
+ * (sameTuple). Everything else, every other type, bound, enum, default, required list and description, stays as it is.
  */
 function leanSchema(out: unknown, inp: unknown): unknown {
   if (!isRecord(out)) return out
@@ -277,6 +277,7 @@ function leanSchema(out: unknown, inp: unknown): unknown {
     if (k === 'additionalProperties' && isRecord(v) && Object.keys(v).length === 0) continue
     if (k === 'propertyNames' && isRecord(v) && Object.keys(v).length === 1 && v.type === 'string') continue
     if (k === 'additionalProperties' && v === false && i?.type === 'object' && !('additionalProperties' in i)) continue
+    if (k === 'type' && 'const' in out) continue
     const iv = i?.[k]
     if (ONE_SCHEMA.has(k)) lean[k] = leanSchema(v, iv)
     else if (SCHEMA_LIST.has(k) && Array.isArray(v)) lean[k] = v.map((s, n) => leanSchema(s, Array.isArray(iv) ? iv[n] : undefined))

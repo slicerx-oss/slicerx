@@ -94,7 +94,7 @@ describe('the local form of every tool', () => {
       source: 'plugin',
       permission: 'read',
       description: 'Probe.',
-      input: z.object({ n: z.number().int().optional(), open: z.object({ a: z.string() }), shut: z.strictObject({ b: z.boolean().optional() }), any: z.looseObject({}), map: z.record(z.string(), z.number()), list: z.array(z.string()).default([]), point: z.tuple([z.number(), z.number()]), pair: z.tuple([z.string(), z.number()]) }),
+      input: z.object({ n: z.number().int().optional(), open: z.object({ a: z.string() }), shut: z.strictObject({ b: z.boolean().optional() }), any: z.looseObject({}), map: z.record(z.string(), z.number()), list: z.array(z.string()).default([]), point: z.tuple([z.number(), z.number()]), pair: z.tuple([z.string(), z.number()]), kind: z.literal('box') }),
       async run() {
         return { summary: 'ok' }
       },
@@ -111,8 +111,10 @@ describe('the local form of every tool', () => {
         // a point takes the same two numbers written as a plain array; a tuple of mixed places stays a tuple
         point: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 },
         pair: { type: 'array', prefixItems: [{ type: 'string' }, { type: 'number' }], items: false, minItems: 2, maxItems: 2 },
+        // a const is the one value taken, so the type beside it says nothing
+        kind: { const: 'box' },
       },
-      required: ['open', 'shut', 'any', 'map', 'list', 'point', 'pair'],
+      required: ['open', 'shut', 'any', 'map', 'list', 'point', 'pair', 'kind'],
     })
     // the published schema is as it was: closed objects and the safe integer range
     expect(toolSpec(probe).inputSchema).toMatchObject({ additionalProperties: false, properties: { n: { maximum: Number.MAX_SAFE_INTEGER }, open: { additionalProperties: false } } })
