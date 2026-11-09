@@ -116,6 +116,8 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'read',
+    // Replaces this server's working project, never the person's project in the app.
+    hints: { readOnly: false, destructive: true, idempotent: false, openWorld: false },
     description:
       assistantText('Start a new project for mimir skills to work on (replaces the current one). Name the printer and filament by knowledge id or name, and optionally extra profiles such as "intent:strong" or "process:fine". Then add models with slicerx_project_add_model.'),
     input: z.object({
@@ -148,6 +150,8 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     version: '1.2.0',
     source: 'command',
     permission: 'read',
+    // Adds to this server's working project, and may download the model from a URL.
+    hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
     description:
       'Load an STL, STEP or IGES model (absolute path or http(s) URL) into the open project, with a number of copies. New objects go on plate 1. A file that holds several separate bodies loads as one object by default; bodies "parts" keeps them as one object with a part per body, "objects" loads an object per body. The answer lists each new object with its part count. A STEP or IGES file (.step, .stp, .igs or .iges, read with the optional STEP reader as slicerx_step_read reads it) loads an object per object of the file with a part per body; with body_colors apply (the default) each colored body prints with the filament slicerx_step_read plans for its color against the project\'s filaments, and the filaments it needs are added; the answer lists each part\'s filament and the filaments added, and slicerx_project_show reads them back.',
     input: z.object({

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { appClientSetupMessage, type AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 interface PickFilter {
@@ -33,7 +33,7 @@ export function appPickFilterTools(link: AppLinkCaller | undefined, appName: str
     description: `Read ${appName}'s Model pick filter and selected bodies, faces and edges. pickFilter uses object (the Body button), face and edge. available says whether the filter can change now. Includes primary, objects, picks and edgeWinsPx when Face mode lets nearby edges win. Point coordinates are rounded to two decimals; triangle and part are transient mesh indices, not stable CAD references. Uses the existing app read grant.`,
     run: () => call('select.filter', {}),
   }), defineTool({
-    name: 'app.pick_filter_set', version: '1.0.0', source: 'command', permission: 'read',
+    name: 'app.pick_filter_set', version: '1.0.0', source: 'command', permission: 'read', hints: APP_VIEW_CHANGE_HINTS,
     input: z.object({ kind: z.enum(['object', 'face', 'edge']).describe('object is the Body button; face and edge are Face and Edge only.'), mode: z.enum(['only', 'toggle']).optional().describe('only (default) picks just this kind. toggle adds or drops it, keeping at least one kind.') }).strict(),
     description: `Change ${appName}'s Model pick filter through the same command as its Body, Face and Edge only buttons. Returns the filter and selection read back. Requires Model or the modeling view in mimir with no active object or viewport tool. Drops picked faces or edges excluded by the new filter while retaining the body selection. Does not pick geometry, open a tool, edit the project or move the camera. Uses the existing app read grant.`,
     run: (i) => call('select.filter_set', i),

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 export interface AppPreview {
@@ -55,7 +55,7 @@ export function appPreviewTools(link: AppLinkCaller | undefined, appName: string
     description: `Read the slice preview in ${appName}: whether a slice is loaded and toolpaths are shown, layer count and visible range, top height in mm, colors, camera, toolhead and gantry switches, and visible panes. Layer fields are absent before a slice is loaded. Reads the live window through the app link.`,
     run: () => call('preview.get', {}),
   }), defineTool({
-    name: 'app.preview_set', version: '1.0.0', source: 'command', permission: 'read', input: previewInput,
+    name: 'app.preview_set', version: '1.0.0', source: 'command', permission: 'read', input: previewInput, hints: APP_VIEW_CHANGE_HINTS,
     description: `Change ${appName}'s visible slice layers, toolpath colors, camera, toolhead or gantry display and read the resulting state back. The app must be on Slice with no paint, brim or face tool active. Layer and color changes need a loaded slice. When combined, range is applied first, then layer, then oneLayer. Active playback is not paused, so visible layers may continue changing. These are view changes, not project edits or slicing; the existing read grant is sufficient.`,
     run: (i) => call('preview.set', i),
   })] as PilotTool<never>[]

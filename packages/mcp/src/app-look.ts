@@ -6,7 +6,7 @@
 // the theme picked and its values). No other setting is reachable.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { appClientSetupMessage, type AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 /** The view preferences as the app reads them back (packages/app app-link/methods.ts, look.get). */
@@ -75,6 +75,7 @@ export function appLookTools(link: AppLinkCaller | undefined, appName: string): 
     version: '1.0.0',
     source: 'command',
     permission: 'read',
+    hints: APP_VIEW_CHANGE_HINTS,
     description: `Set ${appName}'s Frame the view (modelFraming: selection or open) or Toolbar size (toolbarSize: large, medium or small), or both, the way the person does in Settings, Look and feel. These change how the window behaves, never the project; no other setting can be changed here. Returns the preferences read back.`,
     input: z
       .object({
