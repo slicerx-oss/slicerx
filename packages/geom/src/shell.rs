@@ -83,7 +83,7 @@ pub fn shell(
             (out, r, None)
         }
         Err(why) => {
-            let (out, r, voxel) = voxel_shell(&w, &faces, &opened, wall_mm, *opts)?;
+            let (out, r, voxel, _) = voxel_shell(&w, &faces, &opened, wall_mm, *opts)?;
             let note = match why {
                 Inexact::Curved => format!(
                     "The body has curved faces, so the wall follows them to within a {voxel:.2} mm voxel."
@@ -296,32 +296,70 @@ fn solve3(a: [[f64; 3]; 3], b: [f64; 3]) -> Option<V3> {
     Some(x)
 }
 
+/// Why the hollow's inner wall, turned over, does not stand for the cavity; the cavity then comes from cutting the
+/// hollowed body out of the body, as it always did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unusable {
+    /// open or non-manifold edges
+    Open,
+    /// it encloses no volume
+    Empty,
+    /// cutting the open faces through with it fails or leaves the result open
+    Cut,
+}
+
 /// The voxel hollow with each open face cut through: the cavity, moved out through the face by the wall and a
-/// little more, removes the wall under it. Returns the result and the voxel size.
+/// little more, removes the wall under it. Returns the result, the voxel size, and why the cavity came from a boolean
+/// if it did.
 fn voxel_shell(
     w: &TriMesh,
     faces: &Faces,
     opened: &[u32],
     wall: f64,
     opts: BooleanOptions,
-) -> Result<(TriMesh, BooleanReport, f64)> {
-    let mut faces_w = w.clone();
-    faces_w.faces = None;
-    let (hollowed, rep) = hollow::hollow(
-        &faces_w,
+) -> Result<(TriMesh, BooleanReport, f64, Option<Unusable>)> {
+    let (inner, voxel) = hollow::inner_wall(
+        w,
         &HollowOptions {
             wall_mm: wall,
             ..HollowOptions::default()
         },
     )
     .map_err(|_| too_thick())?;
-    if rep.inner_triangles == 0 {
+    if inner.triangles.is_empty() {
         return Err(too_thick());
     }
+    let (out, r, why) = open_through(w, faces, opened, wall, voxel, &inner, opts)?;
+    Ok((out, r, voxel, why))
+}
+
+/// The body with the inner wall `inner` (as the hollow makes it, facing into the cavity) and each open face cut
+/// through, and why the cavity came from a boolean if it did.
+fn open_through(
+    w: &TriMesh,
+    faces: &Faces,
+    opened: &[u32],
+    wall: f64,
+    voxel: f64,
+    inner: &TriMesh,
+    opts: BooleanOptions,
+) -> Result<(TriMesh, BooleanReport, Option<Unusable>)> {
+    let mut faces_w = w.clone();
+    faces_w.faces = None;
+    let mut hollowed = faces_w.clone();
+    hollowed.append(inner);
     if opened.is_empty() {
         let (out, r) = boolean::boolean(&[hollowed], &[], BoolOp::Union, &opts)?;
-        return Ok((out, r, rep.voxel_mm));
+        return Ok((out, r, None));
     }
+    // The inner wall turned over is the cavity, the same surface a boolean would cut out at many times the cost.
+    let why = match turned_over(inner) {
+        Ok(cavity) => match cut_open(w, faces, opened, wall, voxel, hollowed.clone(), &cavity, opts) {
+            Ok((out, r)) if r.watertight && !r.empty => return Ok((out, r, None)),
+            _ => Unusable::Cut,
+        },
+        Err(why) => why,
+    };
     let cavity = boolean::boolean(
         &[faces_w],
         std::slice::from_ref(&hollowed),
@@ -329,23 +367,54 @@ fn voxel_shell(
         &opts,
     )?
     .0;
-    let mut body = hollowed;
+    let (out, r) = cut_open(w, faces, opened, wall, voxel, hollowed, &cavity, opts)?;
+    Ok((out, r, Some(why)))
+}
+
+/// The inner wall turned over into the cavity's own closed surface. Faces that cross are left to the cut: the kernel
+/// checks every input for them anyway and takes the robust engine when it finds some.
+fn turned_over(inner: &TriMesh) -> std::result::Result<TriMesh, Unusable> {
+    let mut cavity = inner.clone();
+    cavity.flip();
+    if !cavity.edge_report().is_watertight() {
+        return Err(Unusable::Open);
+    }
+    if cavity.volume() <= 0.0 {
+        return Err(Unusable::Empty);
+    }
+    Ok(cavity)
+}
+
+/// `body` with the wall under each open face removed by `cavity`, moved out through the face.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the shell's inputs, passed through from one caller"
+)]
+fn cut_open(
+    w: &TriMesh,
+    faces: &Faces,
+    opened: &[u32],
+    wall: f64,
+    voxel: f64,
+    mut body: TriMesh,
+    cavity: &TriMesh,
+    opts: BooleanOptions,
+) -> Result<(TriMesh, BooleanReport)> {
     let mut last = None;
     for &f in opened {
         let Some(&Surface::Plane { normal, .. }) = faces.table.get(f as usize) else {
             return Err(Error::invalid("open", "pick flat faces to open"));
         };
-        let reach = wall + 2.0 * rep.voxel_mm + 0.5;
+        let reach = wall + 2.0 * voxel + 0.5;
         let mut moved = cavity.clone();
         moved.translate(vec3::scale(normal, reach));
-        let slab = prism(w, faces, f, normal, 1.0, reach + rep.voxel_mm);
+        let slab = prism(w, faces, f, normal, 1.0, reach + voxel);
         let cutter = boolean::boolean(&[moved], &[slab], BoolOp::Intersection, &opts)?.0;
         let (out, r) = boolean::boolean(&[body], &[cutter], BoolOp::Difference, &opts)?;
         body = out;
         last = Some(r);
     }
-    let r = last.ok_or_else(too_thick)?;
-    Ok((body, r, rep.voxel_mm))
+    last.map(|r| (body, r)).ok_or_else(too_thick)
 }
 
 /// The prism over face `f`: its triangles moved `out` along the normal and `inward` against it, closed along the
@@ -466,6 +535,117 @@ mod tests {
             (out.volume() - want).abs() / want < 0.12,
             "{} vs {want}",
             out.volume()
+        );
+    }
+
+    /// The body, its faces and the faces at `open`, as `shell` finds them.
+    fn prepared(m: &TriMesh, open: &[OpenFace]) -> (TriMesh, Faces, Vec<u32>) {
+        let w = m.weld(mesh::weld_tolerance(m.bounds()));
+        let f = faces::recognize(&w);
+        let (opened, _) = open_faces(&w, &f, open).unwrap();
+        (w, f, opened)
+    }
+
+    /// The open shell as it was made before the inner wall stood for the cavity: the hollowed body cut out of the
+    /// body, then each open face cut through with that.
+    fn by_boolean(
+        w: &TriMesh,
+        f: &Faces,
+        opened: &[u32],
+        wall: f64,
+        voxel: f64,
+        inner: &TriMesh,
+    ) -> (TriMesh, BooleanReport) {
+        let mut body = w.clone();
+        body.faces = None;
+        let mut hollowed = body.clone();
+        hollowed.append(inner);
+        let cavity = boolean::boolean(&[body], std::slice::from_ref(&hollowed), BoolOp::Difference, &o())
+            .unwrap()
+            .0;
+        cut_open(w, f, opened, wall, voxel, hollowed, &cavity, o()).unwrap()
+    }
+
+    /// The wall at the result's inner points (those off the outer surface, below the top 2 mm): min, mean, max.
+    fn wall_at(out: &TriMesh, outer: &TriMesh, top: f64) -> (f64, f64, f64) {
+        let to_outer = |p: V3| {
+            outer
+                .triangles
+                .iter()
+                .map(|&t| {
+                    let [a, b, c] = outer.corners(t);
+                    vec3::len(vec3::sub(p, hollow::closest_point_on_triangle(p, a, b, c)))
+                })
+                .fold(f64::MAX, f64::min)
+        };
+        let ds: Vec<f64> = out
+            .positions
+            .iter()
+            .filter(|p| p[2] < top - 2.0)
+            .map(|&p| to_outer(p))
+            .filter(|&d| d > 1e-3)
+            .collect();
+        let lo = ds.iter().copied().fold(f64::MAX, f64::min);
+        let hi = ds.iter().copied().fold(0.0, f64::max);
+        (lo, ds.iter().sum::<f64>() / ds.len() as f64, hi)
+    }
+
+    #[test]
+    fn the_inner_wall_turned_over_is_the_cavity() {
+        let m = build::cylinder(&Frame::WORLD, 15.0, 0.0, 20.0, 64);
+        let (w, f, opened) = prepared(&m, &[top(20.0)]);
+        let (out, r, voxel, why) = voxel_shell(&w, &f, &opened, 2.0, o()).unwrap();
+        assert_eq!(why, None);
+        assert!(r.watertight && r.shells == 1, "{r:?}");
+        assert!(out.welded().edge_report().is_watertight());
+        // The same cup as the boolean made, to well under a voxel, with the same wall.
+        let inner = hollow::inner_wall(&w, &HollowOptions::default()).unwrap().0;
+        let (old, old_r) = by_boolean(&w, &f, &opened, 2.0, voxel, &inner);
+        assert!(old_r.watertight && old_r.shells == 1, "{old_r:?}");
+        assert!(
+            (out.volume() - old.volume()).abs() < 1e-3 * old.volume(),
+            "{} vs {}",
+            out.volume(),
+            old.volume()
+        );
+        let (now, then) = (wall_at(&out, &w, 20.0), wall_at(&old, &w, 20.0));
+        for (a, b) in [(now.0, then.0), (now.1, then.1), (now.2, then.2)] {
+            assert!((a - b).abs() < 0.05 * voxel, "wall {now:?} vs {then:?}");
+        }
+        assert!(now.0 > 1.0 && (now.1 - 2.0).abs() < 0.5 && now.2 < 3.0, "{now:?}");
+    }
+
+    #[test]
+    fn an_unusable_inner_wall_makes_the_cavity_by_a_boolean_as_before() {
+        // An inner wall facing out of the cavity encloses no cavity, so the boolean makes it, as it always did.
+        let m = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
+        let (w, f, opened) = prepared(&m, &[top(20.0)]);
+        let ball = |x: f64| build::uv_sphere([x, 15.0, 12.0], 6.0, 16, 32);
+        let outward = ball(15.0);
+        assert_eq!(turned_over(&outward).unwrap_err(), Unusable::Empty);
+        let (out, r, why) = open_through(&w, &f, &opened, 2.0, 0.7, &outward, o()).unwrap();
+        assert_eq!(why, Some(Unusable::Empty));
+        let (old, old_r) = by_boolean(&w, &f, &opened, 2.0, 0.7, &outward);
+        assert_eq!((&out.positions, &out.triangles), (&old.positions, &old.triangles));
+        assert_eq!(r, old_r);
+        // One with a hole is no cavity either.
+        let mut open = ball(15.0);
+        open.flip();
+        open.triangles.pop();
+        assert_eq!(turned_over(&open).unwrap_err(), Unusable::Open);
+        // Two cavities that run into each other: their faces cross, and the cut takes the robust engine for them.
+        let mut inner = ball(15.0);
+        inner.append(&ball(22.0));
+        inner.flip();
+        let (out, r, why) = open_through(&w, &f, &opened, 2.0, 0.7, &inner, o()).unwrap();
+        assert_eq!(why, None);
+        assert!(r.watertight && r.shells == 1, "{r:?}");
+        let (old, _) = by_boolean(&w, &f, &opened, 2.0, 0.7, &inner);
+        assert!(
+            (out.volume() - old.volume()).abs() < 1e-6 * old.volume(),
+            "{} vs {}",
+            out.volume(),
+            old.volume()
         );
     }
 
