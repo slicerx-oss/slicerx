@@ -31,7 +31,7 @@ import { productName } from '@slicerx/contracts'
 import { isGeomStuckFinal } from '@slicerx/contracts/geom-limits'
 import { conversationFileBytes, modelFiles } from './attach'
 import { Channel } from './channel'
-import { plainRefusal } from './engine-words'
+import { plainEngine } from './engine-words'
 import { ASSISTANT_NAME } from './name'
 import { decide, normalizePolicy, policyMayGrant } from './gate'
 import { EMPTY_KB_INDEX, createKnowledgeBase, type KbSkill, type KnowledgeBase } from './kb/kb'
@@ -1014,9 +1014,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (out.ok === false && isGeomStuckFinal(out.summary)) stops.timedOut.set(stopKey, (stops.timedOut.get(stopKey) ?? new Set()).add(again))
     else if (out.ok !== false && geometry && stopKey !== MODEL_KEY) for (const key of keysOf(stopKey, stops.seen)) stops.timedOut.delete(key)
     if (out.ok !== false) noteDesigns(out.output, stops)
-    // an engine refusal shows in plain words; the model reads the engine's text with how to try again
-    const plain = out.ok === false ? plainRefusal(out.summary) : undefined
+    // an engine refusal shows in plain words, with the engine's text only in the row's details; the model reads the
+    // engine's text with how to try again
+    const plain = out.ok === false ? plainEngine(out.summary, tool.name) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
+    if (plain) result.detail = plain.raw
     if (out.output !== undefined) result.output = out.output
     // a part started with no design argument lands in a design the result names: the sheet holds for that one
     const landed = (out.output as { design?: unknown } | undefined)?.design

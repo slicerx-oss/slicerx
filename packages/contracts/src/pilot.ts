@@ -442,6 +442,8 @@ export type PilotEvent =
       display?: ToolDisplay[]
       untrusted?: boolean
       ms?: number
+      /** The engine's own words for a step it refused, when `summary` says it plainly: for the row's details only. */
+      detail?: string
     }
   | { type: 'settings_diff'; diff: SettingsDiff }
   | { type: 'citations'; items: Citation[] }

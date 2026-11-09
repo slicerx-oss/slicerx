@@ -228,7 +228,7 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   const calls = events.flatMap((e) => {
     if (e.type !== 'tool_call' || !(e.tool.startsWith('geom.') || e.tool.startsWith('design.') || e.tool.startsWith('pilot.'))) return []
     const r = results.get(e.callId)
-    return [`${e.tool} ${r ? (r.ok === false ? `FAIL ${r.summary ?? ''}`.slice(0, 160) : 'ok') : 'no result'}`]
+    return [`${e.tool} ${r ? (r.ok === false ? `FAIL ${r.detail ?? r.summary ?? ''}`.slice(0, 160) : 'ok') : 'no result'}`]
   })
   const run: CaseRun = { score, turns, steps, calls, reply: firstReply.slice(0, 800) }
   if (error) run.error = error
