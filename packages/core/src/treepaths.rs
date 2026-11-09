@@ -141,6 +141,10 @@ pub(crate) fn branch_walls_around(
     out
 }
 
+/// How far [`wide_inside`] lets its outlines move before the disc test, 0.02 mm in internal units: under a
+/// line width, and far under the base pitch the test measures (2.88 mm at default spacing).
+const WIDE_TEST_TOL: i64 = 200;
+
 /// What tree support infill fills inside hollow branches: `centers` (the center lines of their innermost walls)
 /// pulled in by `inset_mm`, where that holds a disc of radius `r_mm`. Thin necks and slivers drop out, and a wide
 /// part keeps its own outline.
@@ -159,7 +163,23 @@ pub(crate) fn wide_inside(centers: &Shapes, inset_mm: f64, r_mm: f64) -> Shapes 
     if wide.is_empty() {
         return Vec::new();
     }
-    let core = perimeters::offset(&wide, -u(reach));
+    // The shrink reads simplified outlines: the dense center lines of merged branches miss the quick offset when
+    // shrunk by a few millimeters, and the full union cost about 3 ms per island. Only the disc test moves, by at
+    // most WIDE_TEST_TOL, and inward; the fill never leaves the inset of the outlines as drawn.
+    let coarse: Shapes = wide
+        .iter()
+        .filter_map(|sh| {
+            let rings: Vec<_> = sh
+                .iter()
+                .map(|r| perimeters::simplify_ring(r, WIDE_TEST_TOL))
+                .collect();
+            rings
+                .first()
+                .is_some_and(|r| r.len() >= 3)
+                .then(|| rings.into_iter().filter(|r| r.len() >= 3).collect())
+        })
+        .collect();
+    let core = perimeters::offset(&coarse, -u(reach));
     if core.is_empty() {
         return Vec::new();
     }
@@ -607,5 +627,40 @@ mod tests {
     fn a_pitch_wider_than_the_branch_adds_nothing() {
         let t = base_of(circle(100.0, 100.0, 8.0));
         assert!(added(&t, &hollow_in(Some(50.0))).is_empty());
+    }
+
+    /// A finely cut circle of radius `r`, as merged branch outlines come out of the wall offsets.
+    fn dense_circle(r: f64) -> Shapes {
+        let ring: Vec<IntPoint<i32>> = (0..4096)
+            .map(|k| {
+                let a = std::f64::consts::TAU * f64::from(k) / 4096.0;
+                IntPoint::new(u(100.0 + r * a.m_cos()), u(100.0 + r * a.m_sin()))
+            })
+            .collect();
+        vec![vec![ring]]
+    }
+
+    #[test]
+    fn the_wide_test_on_dense_outlines_moves_by_at_most_its_tolerance() {
+        let (inset, r) = (0.19, 2.88);
+        // The disc test reads simplified outlines: 0.05 mm past the threshold still qualifies, 0.05 mm short of it
+        // still does not.
+        assert!(!wide_inside(&dense_circle(inset + r + 0.05), inset, r).is_empty());
+        assert!(wide_inside(&dense_circle(inset + r - 0.05), inset, r).is_empty());
+        // The fill stays inside the inset of the outline as drawn, and comes in by no more than the tolerance.
+        let fill = wide_inside(&dense_circle(8.0), inset, r);
+        let radii: Vec<f64> = fill
+            .iter()
+            .flatten()
+            .flatten()
+            .map(|q| (f64::from(q.x) / SCALE - 100.0).m_hypot(f64::from(q.y) / SCALE - 100.0))
+            .collect();
+        let edge = 8.0 - inset;
+        let tol = 0.02;
+        assert!(radii.iter().all(|&d| d <= edge + 0.003), "fill past the inset");
+        assert!(
+            radii.iter().all(|&d| d >= edge - tol - 0.003),
+            "fill edge pulled in by more than the tolerance"
+        );
     }
 }
