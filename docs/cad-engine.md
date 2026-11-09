@@ -75,6 +75,8 @@ A request may carry `keySalt` (a history step's, up to 2^52): the faces the oper
 
 Errors come back as a message the UI can show as is, for example "the cut removes the whole body".
 
+A merged circular array of a part with a round on the array's axis (a hub with teeth, for example) covers the round once with a prism whose side count suits the copies, then joins the copies to it. A tooth, boss or lug joined on the round's wall keeps it a round; a groove or step cut into the wall does not, and that part takes the plain join. Known tolerance: each copy's corners on the prism move 0.001 mm into it, along the copy's own faces, so the copies cut into the prism instead of only touching it, which would leave faces that cross once the result is stored in f32. The move stays inside the part, so the shape and volume outside do not change. Copies whose roots overlap on the prism are not moved.
+
 Bundle size: the worker's wasm is under 3 MB (under 1 MB gzip). manifold-rust and its exact arithmetic add about 880 KB of code, and the font reader (read-fonts) about 96 KB plus the 24.5 KB font. The main app bundle does not include it.
 
 ### Engine features

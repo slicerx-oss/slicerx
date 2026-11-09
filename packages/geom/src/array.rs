@@ -315,16 +315,171 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<Lin
         boolean::boolean_array(std::slice::from_ref(&filled), &once, BoolOp::Difference, opts)?.0
     };
     // stored corners that drift past the wrap leave slivers of no volume, which the copies would only multiply
-    let rest = if rest.components().iter().all(|c| c.volume().abs() <= MAX_LOSS) {
-        TriMesh::default()
-    } else {
+    let rest = solid(&rest);
+    let rest = if rest.triangles.is_empty() {
         rest
+    } else {
+        let wraps: Vec<(&Round, usize)> = misaligned.iter().map(|r| (*r, facets(r))).collect();
+        sunk(rest, t, &wraps)
     };
     let bores = inner
         .iter()
         .map(|r| prism(mesh, &local, t, r, facets(r), false))
         .collect();
     Ok(Some(Lined { once, rest, bores }))
+}
+
+/// how far the corners a copy has on a wrap are moved into it, in mm
+const SINK: f64 = 1e-3;
+
+/// corners on a wrap moved `SINK` into it along the copy's own faces; a copy only touching it crosses it once stored
+#[allow(clippy::cast_precision_loss, reason = "facet counts are small")]
+fn sunk(mut m: TriMesh, t: &Turn, wraps: &[(&Round, usize)]) -> TriMesh {
+    let local = in_turn(&m, t);
+    // the outward normal of the wrap's face a point lies on; the faces sit at the round's radius
+    let wrap = |q: V3| {
+        wraps.iter().find_map(|&(r, facets)| {
+            if q[2] < r.h.0 - ROUND_TOL || q[2] > r.h.1 + ROUND_TOL {
+                return None;
+            }
+            let pitch = TAU / facets as f64;
+            let k = ((q[1].m_atan2(q[0]) - r.phase) / pitch).floor() + 0.5;
+            let (s, c) = (r.phase + k * pitch).m_sin_cos();
+            ((q[0] * c + q[1] * s - r.radius).abs() <= ROUND_TOL)
+                .then(|| vec3::add(vec3::scale(t.frame.u, c), vec3::scale(t.frame.v, s)))
+        })
+    };
+    let on: Vec<Option<V3>> = local.iter().map(|&q| wrap(q)).collect();
+    // the planes of the copy's faces at those corners, but not of its faces lying on the wrap
+    let mut planes: Vec<Vec<V3>> = vec![Vec::new(); local.len()];
+    for tri in &m.triangles {
+        let [a, b, c] = m.corners(*tri);
+        let Some(n) = vec3::normalize(vec3::tri_normal(a, b, c)) else {
+            continue;
+        };
+        let mid = tri
+            .iter()
+            .filter_map(|&i| local.get(i as usize))
+            .fold([0.0; 3], |s, &q| vec3::add(s, vec3::scale(q, 1.0 / 3.0)));
+        if wrap(mid).is_some_and(|w| vec3::dot(w, n).abs() > 1.0 - 1e-6) {
+            continue;
+        }
+        for &i in tri {
+            if let (Some(Some(_)), Some(ps)) = (on.get(i as usize), planes.get_mut(i as usize))
+                && !ps.iter().any(|p| vec3::dot(*p, n).abs() > 1.0 - 1e-6)
+            {
+                ps.push(n);
+            }
+        }
+    }
+    // a piece whose copies meet on the wrap stays put: sunk the same depth, their faces there would meet again
+    let piece = pieces(&m);
+    let mut angles: HashMap<usize, Vec<f64>> = HashMap::new();
+    for ((q, w), &k) in local.iter().zip(&on).zip(&piece) {
+        if w.is_some() {
+            angles.entry(k).or_default().push(q[1].m_atan2(q[0]));
+        }
+    }
+    let wide: HashSet<usize> = angles
+        .into_iter()
+        .filter(|(_, a)| span(a) >= TAU / t.steps as f64 - 1e-9)
+        .map(|(k, _)| k)
+        .collect();
+    for (((p, w), ps), k) in m.positions.iter_mut().zip(&on).zip(&planes).zip(&piece) {
+        let Some(w) = *w else {
+            continue;
+        };
+        if wide.contains(k) {
+            continue;
+        }
+        // along both planes at a corner of the copy, in its one plane on an edge, straight in on a face
+        let d = match ps.as_slice() {
+            [] => vec3::scale(w, -1.0),
+            [a] => vec3::sub(vec3::scale(*a, vec3::dot(w, *a)), w),
+            [a, b] => {
+                let d = vec3::cross(*a, *b);
+                if vec3::dot(d, w) > 0.0 {
+                    vec3::scale(d, -1.0)
+                } else {
+                    d
+                }
+            }
+            _ => continue,
+        };
+        // a direction mostly along the wrap would move the corner far for little depth
+        let depth = -vec3::dot(d, w);
+        if depth > 0.5 * vec3::len(d) {
+            *p = vec3::add(*p, vec3::scale(d, SINK / depth));
+        }
+    }
+    m
+}
+
+/// the mesh without its pieces of no more than `MAX_LOSS` volume
+fn solid(m: &TriMesh) -> TriMesh {
+    let piece = pieces(m);
+    let of = |tri: &[u32; 3]| piece.get(tri[0] as usize).copied().unwrap_or(0);
+    let mut volume: HashMap<usize, f64> = HashMap::new();
+    for tri in &m.triangles {
+        let [a, b, c] = m.corners(*tri);
+        *volume.entry(of(tri)).or_default() += vec3::dot(a, vec3::cross(b, c)) / 6.0;
+    }
+    let keep: Vec<usize> = (0..m.triangles.len())
+        .filter(|&k| {
+            m.triangles
+                .get(k)
+                .and_then(|tri| volume.get(&of(tri)))
+                .is_some_and(|v| v.abs() > MAX_LOSS)
+        })
+        .collect();
+    if keep.is_empty() {
+        TriMesh::default()
+    } else if keep.len() == m.triangles.len() {
+        m.clone()
+    } else {
+        m.subset_of(&keep)
+    }
+}
+
+/// the connected piece each corner is in
+fn pieces(m: &TriMesh) -> Vec<usize> {
+    fn root(up: &mut [usize], mut x: usize) -> usize {
+        while let Some(&p) = up.get(x)
+            && p != x
+        {
+            let pp = up.get(p).copied().unwrap_or(p);
+            if let Some(u) = up.get_mut(x) {
+                *u = pp;
+            }
+            x = pp;
+        }
+        x
+    }
+    let mut up: Vec<usize> = (0..m.positions.len()).collect();
+    for tri in &m.triangles {
+        let a = root(&mut up, tri[0] as usize);
+        for &i in &tri[1..] {
+            let b = root(&mut up, i as usize);
+            if let Some(u) = up.get_mut(b) {
+                *u = a;
+            }
+        }
+    }
+    (0..up.len()).map(|i| root(&mut up, i)).collect()
+}
+
+/// how far round the axis the angles reach, the largest gap between them left out
+fn span(angles: &[f64]) -> f64 {
+    let mut a = angles.to_vec();
+    a.sort_by(f64::total_cmp);
+    let (Some(first), Some(last)) = (a.first(), a.last()) else {
+        return 0.0;
+    };
+    let gap = a
+        .windows(2)
+        .filter_map(|w| Some(w.get(1)? - w.first()?))
+        .fold(first + TAU - last, f64::max);
+    TAU - gap
 }
 
 #[cfg(test)]
@@ -446,16 +601,18 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
             .collect();
     sides.sort_by(|a, b| a.2.cmp(&b.2).then(a.0.total_cmp(&b.0)));
     let wall: HashSet<usize> = sides.iter().map(|s| s.1).collect();
-    // corners on a flat face across the axis, and corners on any face that is no wall
+    // corners on a flat face across the axis, and the faces that are no wall at each corner
     let mut flat = vec![false; local.len()];
-    let mut other = vec![false; local.len()];
+    let mut other: Vec<Vec<usize>> = vec![Vec::new(); local.len()];
     for (k, tri) in mesh.triangles.iter().enumerate() {
         let [a, b, c] = tri.map(at);
         let across = vec3::normalize(vec3::tri_normal(a, b, c)).is_some_and(|n| n[2].abs() > 1.0 - 1e-6);
         for &i in tri {
             if let (Some(f), Some(o)) = (flat.get_mut(i as usize), other.get_mut(i as usize)) {
                 *f |= across;
-                *o |= !wall.contains(&k);
+                if !wall.contains(&k) {
+                    o.push(k);
+                }
             }
         }
     }
@@ -463,6 +620,7 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
         .chunk_by(|a, b| a.2 == b.2 && b.0 - a.0 < ROUND_TOL)
         .filter_map(|group| {
             let radius = group.iter().map(|g| g.0).sum::<f64>() / group.len() as f64;
+            let inner = group.first().is_some_and(|g| g.2);
             let ids: Vec<u32> = group
                 .iter()
                 .filter_map(|g| mesh.triangles.get(g.1))
@@ -474,17 +632,11 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
             let h1 = corners.iter().map(|p| p[2]).fold(f64::NEG_INFINITY, f64::max);
             let to_end = |z: f64| (z - h0).abs().min((z - h1).abs());
             let end = |z: f64| to_end(z) <= ROUND_TOL;
-            // ends on flat faces across the axis, so a sphere's middle band is no cylinder; corners between them
-            // only on walls, so a wall split into bands counts but a groove or a step does not
+            // ends on flat faces across the axis, so a sphere's middle band is no cylinder
             if h1 - h0 < ROUND_TOL
-                || !ids.iter().all(|&i| {
-                    let k = i as usize;
-                    if end(at(i)[2]) {
-                        flat.get(k) == Some(&true)
-                    } else {
-                        other.get(k) == Some(&false)
-                    }
-                })
+                || !ids
+                    .iter()
+                    .all(|&i| !end(at(i)[2]) || flat.get(i as usize) == Some(&true))
             {
                 return None;
             }
@@ -524,14 +676,35 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
             // a tessellated round, not a polygon; the wrap moves it out at most 0.01 mm
             let half = (PI / facets).m_cos();
             let fine = radius * (1.0 - half) <= 0.05 && radius * (1.0 / half - 1.0) <= 0.01;
-            (regular && fine && 2 * angles.len() >= facets as usize).then(|| Round {
+            if !(regular && fine && 2 * angles.len() >= facets as usize) {
+                return None;
+            }
+            // corners between the ends only on walls, so a wall split into bands counts but a groove or a step does
+            // not; an outer round also takes faces wholly outside it, such as a tooth or a lug joined on the wall
+            let outside = |p: V3| {
+                let k = ((p[1].m_atan2(p[0]) - phase) / pitch).floor() + 0.5;
+                let (s, c) = (phase + k * pitch).m_sin_cos();
+                p[0] * c + p[1] * s >= radius * half - ROUND_TOL
+            };
+            let clear = |k: &usize| {
+                mesh.triangles
+                    .get(*k)
+                    .is_some_and(|tri| tri.iter().all(|&j| outside(at(j))))
+            };
+            let between = ids.iter().all(|&i| {
+                end(at(i)[2])
+                    || other
+                        .get(i as usize)
+                        .is_some_and(|o| o.is_empty() || (!inner && o.iter().all(clear)))
+            });
+            between.then(|| Round {
                 radius,
                 h: (h0, h1),
                 facets: facets as usize,
                 phase,
                 sides: group.iter().map(|g| g.1).collect(),
                 bands: hs.len() - 1,
-                inner: group.first().is_some_and(|g| g.2),
+                inner,
                 dev,
             })
         })
@@ -1180,8 +1353,9 @@ mod tests {
 
     #[test]
     fn the_end_cleanup_keeps_the_geometry() {
-        // the hub's join crosses itself on the exact engine; the robust pass cleans it and keeps its shape
-        let spec = around_z(12, [0.0; 3]);
+        // in 15 copies the hub's teeth meet on its wrap, and the join crosses itself on the exact engine; the robust
+        // pass cleans it and keeps its shape
+        let spec = around_z(15, [0.0; 3]);
         let (a, r) = merged(&hub_tooth(), &spec, &BooleanOptions::default()).unwrap();
         let exact = BooleanOptions {
             engine: boolean::Engine::Exact,
@@ -1434,5 +1608,127 @@ mod tests {
         assert!(!clear([[0.0, -5.0, 1.0], [0.0, 5.0, 1.0], [0.0, 5.0, 9.0]], &[]));
         // left out on purpose
         assert!(clear([[0.0, 0.0, 5.0], [1.0, 0.0, 5.0], [0.0, 1.0, 5.0]], &[0]));
+    }
+
+    /// a hub, banded as an extrude leaves it or not, with a box tooth joined on its wall, both stored in f32
+    #[cfg(feature = "cad")]
+    #[allow(clippy::cast_possible_truncation, reason = "the stored precision")]
+    fn toothed(r: f64, sides: usize, banded: bool, z: (f64, f64), root: f64) -> TriMesh {
+        let in_f32 = |mut m: TriMesh| {
+            for p in &mut m.positions {
+                *p = p.map(|v| f64::from(v as f32));
+            }
+            m
+        };
+        let mut hub = cylinder_at(r, 0.0, 10.0, sides);
+        if banded {
+            hub = crate::remesh::tidy_flat(&hub, &crate::remesh::RemeshOptions::default());
+        }
+        let tooth = build::box_mesh([r - root, -2.0, z.0], [r + 5.0, 2.0, z.1]);
+        in_f32(
+            crate::face::apply(tooth, crate::face::Operation::Join, Some(&in_f32(hub)))
+                .unwrap()
+                .mesh,
+        )
+    }
+
+    /// the merged array checked against the union of its wrap and the copies laid on it, which is right in f64
+    #[cfg(feature = "cad")]
+    fn stores_as_the_union(part: &TriMesh, count: usize) -> f64 {
+        let spec = around_z(count, [0.0; 3]);
+        let l = lined_up(part, &turn(&spec).unwrap(), BooleanOptions::default())
+            .unwrap()
+            .unwrap();
+        let wrap = &l.once[0];
+        let rest = cut(part, wrap);
+        let mut all = vec![wrap.clone()];
+        all.extend(
+            transforms(&spec)
+                .unwrap()
+                .iter()
+                .map(|t| xform::transformed(&rest, t)),
+        );
+        let (want, _) = boolean::boolean_array(&all, &[], BoolOp::Union, BooleanOptions::default()).unwrap();
+        let (u, r, secs) = joined(part, &spec);
+        assert!(r.watertight && r.shells == 1, "{r:?}");
+        assert!(
+            (u.volume() - want.volume()).abs() < 1e-6 * want.volume(),
+            "{} vs {}",
+            u.volume(),
+            want.volume()
+        );
+        let s = boolean::storage_mesh(&u).unwrap();
+        assert!(s.edge_report().is_watertight() && s.components().len() == 1);
+        secs
+    }
+
+    #[cfg(feature = "cad")]
+    #[test]
+    fn a_banded_hub_with_a_tooth_arrayed_about_it_stores() {
+        // an extruded 70 or 100 mm hub with a tooth joined on its wall, the tooth full height or within one band
+        for (r, sides) in [(35.0, 188), (50.0, 224)] {
+            for z in [(0.0, 10.0), (3.2, 3.8)] {
+                let part = toothed(r, sides, true, z, 0.5);
+                for count in [12, 30] {
+                    let secs = stores_as_the_union(&part, count);
+                    assert!(secs < 2.0, "r {r} {z:?} x{count}: {secs} s");
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "cad")]
+    #[test]
+    fn a_hub_with_a_box_tooth_in_twelve_copies_stores() {
+        // the copies used to touch the hub's wrap without joining it, and crossed it once stored
+        for root in [0.5, 3.0] {
+            let part = toothed(9.5, 100, false, (0.0, 10.0), root);
+            let secs = stores_as_the_union(&part, 12);
+            assert!(secs < 2.0, "{secs} s");
+        }
+        // a tooth within one band of the wall
+        let part = toothed(9.5, 100, true, (3.2, 3.8), 0.5);
+        assert!(stores_as_the_union(&part, 12) < 2.0);
+        // 7 copies put a wrap face on the hub's corners, which leave slivers once stored; 30 overlap their teeth
+        let part = toothed(9.5, 100, false, (0.0, 10.0), 0.5);
+        for count in [7, 30] {
+            assert!(stores_as_the_union(&part, count) < 2.0, "x{count}");
+        }
+    }
+
+    #[cfg(feature = "cad")]
+    #[test]
+    fn a_lug_beside_the_tooth_keeps_the_hub_lined_up() {
+        let tooth = toothed(35.0, 188, true, (0.0, 10.0), 0.5);
+        // halfway between two teeth, so no copy of the tooth lands on it
+        let lug = xform::transformed(
+            &build::box_mesh([34.0, -1.5, 4.0], [38.0, 1.5, 8.0]),
+            &xform::rotation_about([0.0; 3], [0.0, 0.0, 1.0], (15.0_f64).to_radians()),
+        );
+        let part = crate::face::apply(lug, crate::face::Operation::Join, Some(&tooth))
+            .unwrap()
+            .mesh;
+        assert!(stores_as_the_union(&part, 12) < 2.0);
+    }
+
+    #[test]
+    fn a_groove_or_a_step_in_a_banded_wall_takes_the_plain_join() {
+        let disc = crate::remesh::tidy_flat(
+            &cylinder_at(35.0, 0.0, 10.0, 188),
+            &crate::remesh::RemeshOptions::default(),
+        );
+        let t = turn(&around_z(12, [0.0; 3])).unwrap();
+        // a keyway in the middle of the wall, and a step cut down from the top
+        let groove = cut(&disc, &build::box_mesh([33.5, -1.0, 3.0], [36.0, 1.0, 7.0]));
+        let step = cut(&disc, &build::box_mesh([33.0, -3.0, 6.0], [36.0, 3.0, 11.0]));
+        for part in [groove, step] {
+            assert!(
+                rounds(&part, &part.positions)
+                    .iter()
+                    .all(|r| r.inner || (r.radius - 35.0).abs() > 1e-3)
+            );
+            assert!(lined_up(&part, &t, BooleanOptions::default()).unwrap().is_none());
+        }
+        assert!(lined_up(&disc, &t, BooleanOptions::default()).unwrap().is_some());
     }
 }

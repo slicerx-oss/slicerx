@@ -964,8 +964,9 @@ mod tests {
         )]
         let idx: Vec<u32> = nums("indices").iter().map(|&i| i as u32).collect();
         let hub = TriMesh::from_flat(&nums("positions"), &idx).unwrap();
+        // in 15 copies the teeth meet on the hub's wrap, and the exact join crosses itself
         let spec = crate::array::ArraySpec::Circular {
-            count: 12,
+            count: 15,
             center: [0.0; 3],
             axis: None,
             angle_deg: None,
