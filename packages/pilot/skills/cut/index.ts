@@ -80,6 +80,7 @@ export function createCut() {
     async approval(i) {
       return { title: `Replace the model in this project with ${i.planeZ ? '2 cut parts' : 'the cut parts'}?`, lines: ['The original stays in Library as version 1'], actions: [] }
     },
+    classNote: 'slice (Slice and arrange) when mode split cuts the model, read when it only compares',
     permissionFor: (i) => (i.mode === 'split' ? 'slice' : 'read'),
     async run(i, ctx) {
       const obj = pickObject(ctx, i.objectId)

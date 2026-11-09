@@ -91,6 +91,7 @@ export function createCalibrate() {
       vendorMax: z.number().optional().describe('Vendor nozzle range high end in C'),
       addModels: z.boolean().default(true).describe('Generate the test models and add them to the project (needs geometry on the host)'),
     }),
+    classNote: 'slice (Slice and arrange) when addModels puts the test models in the project, read when it only plans',
     permissionFor: (i) => (i.addModels ? 'slice' : 'read'),
     args: (i) => `--plan ${i.tests.join(',')} --material ${i.material}${i.addModels ? ' --add-models' : ''}`,
     async run(i, ctx) {
