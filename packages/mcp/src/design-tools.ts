@@ -432,9 +432,18 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const undo = defineTool({
     name: 'design.undo',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
+    // Undoing a design's only step takes its body off the plate, so that call is the remove class, which asks first
+    // by default. A design this host cannot find counts as that too, so an unknown one never skips the question.
+    permissionFor: (i: { design: string }) => {
+      try {
+        return designs.get(i.design).history.steps.length > 1 ? 'slice' : 'remove'
+      } catch {
+        return 'remove'
+      }
+    },
     description: 'Remove the last step of a design and replay it, back to how it was before that step.',
     input: z.object({ design: designArg }),
     async run(i) {

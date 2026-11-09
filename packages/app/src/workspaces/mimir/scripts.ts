@@ -721,7 +721,7 @@ const printRun: ScriptStep[] = [
   ...Array.from({ length: 9 }, () => printNext),
 ]
 
-/** A new, empty project: the app asks the person before anything unsaved goes. */
+/** A new, empty project: a card first, since it clears the plate, then the app asks before anything unsaved goes. */
 const fresh: ScriptStep[] = [
   { text: 'Starting a new project.', calls: [{ name: 'app.project_new', args: {} }] },
   (messages) => (lastResult(messages)?.['started'] === true ? { text: 'The new project is open and empty. Describe the first part.' } : { text: 'You kept the open project, so nothing changed.' }),

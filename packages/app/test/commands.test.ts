@@ -3,6 +3,7 @@
 import type { CommandSpec, Host } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { builtinCommands } from '../src/commands/builtin'
+import { plateCommands } from '../src/plate/commands'
 import { fuzzyScore } from '../src/commands/fuzzy'
 import { commandIdForTool, commandTools, registerCommands, runCommand, searchCommands } from '../src/commands/registry'
 
@@ -113,5 +114,16 @@ describe('the Goal commands', () => {
     expect(goalSubtitle('standard', goalShows('standard', layer.goalValues))).toBe('0.20 mm')
     expect(layer.goalValues.standard['wall_loops']).toBe(2)
     set({ profile: null })
+  })
+})
+
+describe('commands that take objects off the plate', () => {
+  it('are the remove class, which asks first by default', () => {
+    const specs = [...builtinCommands(host, workspaces), ...plateCommands(() => ({ id: 'slicerx' }), undefined)]
+    const tool = new Map(specs.filter((c) => c.tool).map((c) => [c.id, c.tool!.permission]))
+    // Cut takes the selection off; New project and Start over clear the plate, saved or not.
+    for (const id of ['cut', 'project-new', 'plate-default']) expect(tool.get(id), id).toBe('remove')
+    const sounding = [...tool.keys()].filter((id) => /(^|-)(cut|delete|remove|clear|new|default|reset|undo|redo)(-|$)/.test(id))
+    expect(sounding.filter((id) => tool.get(id) !== 'remove')).toEqual([])
   })
 })

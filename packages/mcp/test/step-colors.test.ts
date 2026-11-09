@@ -27,7 +27,8 @@ const call = async <T,>(name: string, args: Record<string, unknown> = {}) => dat
 const picks = (r: Read) => r.objects.flatMap((o) => o.bodies.map((b) => [b.name, b.filament, b.filament_match]))
 
 beforeAll(async () => {
-  h = await connect()
+  // Each case opens a fresh project over the last one's objects, which the remove class would ask about.
+  h = await connect({ policy: { classes: { slice: 'allow', remove: 'allow', queue: 'ask', start: 'ask', profile: 'ask' } } })
   for (const f of ['assembly.step', 'assembly-colors.step', 'assembly.igs']) copyFileSync(join(fixtures, f), join(h.dir, f))
 })
 afterAll(async () => {

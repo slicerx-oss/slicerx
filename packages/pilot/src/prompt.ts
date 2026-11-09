@@ -106,7 +106,7 @@ export const PARTS_LINE = `- For a named part or product (608 bearing, NEMA 17),
 export const NEW_PROJECT_TOOL = 'app.project_new'
 
 const newProjectLine = (has: HasTool): string =>
-  has(NEW_PROJECT_TOOL) ? `\n- When the person asks to start over or for a new, empty project, call ${NEW_PROJECT_TOOL}. The app asks them before anything unsaved is discarded; if they keep it, say so and go on with the open project.` : ''
+  has(NEW_PROJECT_TOOL) ? `\n- When the person asks to start over or for a new, empty project, call ${NEW_PROJECT_TOOL}. It clears the plate, so the person is asked first (and again before anything unsaved is discarded); if they keep the open project, say so and go on with it.` : ''
 
 /** One line for every reply, sheet row, plan feature and size name: American spelling. */
 export const AMERICAN_LINE = 'Write American spelling in replies, sheet rows and plan names (center, color, aluminum, gray, meter).'
