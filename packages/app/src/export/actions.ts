@@ -109,14 +109,16 @@ async function printMarks(plates: readonly PlateMeta[]): Promise<Pick<ProjectInp
 
 /**
  * Builds the .sx3mf bytes for plates. `offPage` writes them in the project worker, so a big project no longer holds
- * the page for seconds; without a worker, or when it fails, the page writes them.
+ * the page for seconds; without a worker, or when it fails, the page writes them. `withoutHistory` writes the plates as
+ * they show with no design history (a Vault upload): the upload check refuses the history's binary meshes and the
+ * library does not keep the history, so the bodies held past a rolled back marker are left out with it.
  */
-export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pick<ProjectInput, 'settings' | 'gcode'>> = {}, opts: { offPage?: boolean } = {}): Promise<Uint8Array> {
+export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pick<ProjectInput, 'settings' | 'gcode'>> = {}, opts: { offPage?: boolean; withoutHistory?: boolean } = {}): Promise<Uint8Array> {
   const s = get()
   const api = extra.settings ? null : await loadSettings()
   const settings = extra.settings ?? orcaSettings(api!, {}, await railFilaments(api!))
   // a project saved rolled back keeps the bodies made after the marker
-  const held = extra.gcode ? [] : heldBodies(s)
+  const held = extra.gcode || opts.withoutHistory ? [] : heldBodies(s)
   const input: ProjectInput = {
     plates: held.length ? plates.map((p) => ({ ...p, objects: [...p.objects, ...held.filter((h) => h.plate === p.id).map((h) => h.entry)] })) : plates,
     bed: s.bed,
@@ -126,6 +128,7 @@ export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pi
     sx: { ...sharedSource(plates), exportedBy: await exportingUserId() },
     namedValues: s.namedValues,
     timeline: s.timeline,
+    ...(opts.withoutHistory ? { history: false } : {}),
     // Named here: the worker does not know the edition the page runs as.
     application: appName(),
   }
