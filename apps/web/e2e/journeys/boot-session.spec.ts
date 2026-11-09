@@ -211,6 +211,71 @@ cold.describe('the example plate and the autosave', () => {
     expect(await restoreShown(page)).toBe(false)
   })
 
+  // Right after a reload the command bar's code may still be downloading, and the check for unsaved work may finish
+  // while the bar is open. The offer is a modal dialog, which would keep the bar inert: the bar that takes over from its
+  // stand-in could not take the focus, and once the offer had gone the typing went nowhere. So the offer waits until the
+  // bar closes. Both downloads are held here, so the order is the same every run.
+  cold('an offer of unsaved work that comes while the command bar is open waits for it to close, and the bar keeps the focus', async ({ page }) => {
+    await openStudio(page)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const req = indexedDB.open('slicerx-projects', 1)
+          req.onupgradeneeded = () => req.result.createObjectStore('snapshots', { keyPath: 'id' })
+          req.onsuccess = () => {
+            const tx = req.result.transaction('snapshots', 'readwrite')
+            tx.objectStore('snapshots').put({ id: 'autosave', name: 'bracket.sx3mf', savedAt: Date.now(), objects: 2, data: new Uint8Array([1]), v: 2 })
+            tx.oncomplete = () => resolve()
+            tx.onerror = () => reject(tx.error)
+          }
+          req.onerror = () => reject(req.error)
+        }),
+    )
+    const gate = () => {
+      let open = () => {}
+      const opened = new Promise<void>((r) => (open = r))
+      return { open, opened }
+    }
+    const check = gate()
+    const bar = gate()
+    await page.route(/\/static\/autosave-[^/]+\.js$/, async (route) => {
+      await check.opened
+      await route.continue()
+    })
+    await page.route(/\/static\/command-bar-(?!id-)[^/]+\.js$/, async (route) => {
+      await bar.opened
+      await route.continue()
+    })
+    // The fixtures answer the offer wherever it shows; this test looks at it itself.
+    const offer = page.getByRole('dialog', { name: 'Restore unsaved work?' })
+    await page.removeLocatorHandler(offer)
+    await page.reload()
+    await page.keyboard.press('ControlOrMeta+k')
+    const palette = page.getByRole('dialog', { name: 'Commands' })
+    const input = palette.getByRole('combobox')
+    await expect(palette).toContainText('Loading commands')
+    await expect(input).toBeFocused()
+    // The check finds the work while the bar is open: no offer yet.
+    const checked = page.waitForResponse(/\/static\/autosave-[^/]+\.js$/)
+    check.open()
+    await checked
+    await expect(page.locator('dialog[open]')).toHaveCount(0)
+    // The real bar takes over with the focus, and takes typing.
+    bar.open()
+    await expect(palette).toContainText(/of \d+ commands/)
+    await expect(input).toBeFocused()
+    await input.pressSequentially('zz')
+    await expect(input).toHaveValue('zz')
+    await expect(offer).toHaveCount(0)
+    // Closing the bar puts the offer up, once.
+    await page.keyboard.press('Escape')
+    await expect(palette).toHaveCount(0)
+    await expect(offer).toBeVisible()
+    await expect(offer).toContainText('bracket.sx3mf')
+    await offer.getByTestId('danger-recover-discard').click()
+    await expect(offer).toHaveCount(0)
+  })
+
   // A start after the page ended with nothing answered (a crash, a killed tab, a shutdown) still offers the work back,
   // and Discard there drops it.
   cold('work left by a page that ended unanswered is offered back, and Discard drops it', async ({ page, context }) => {
