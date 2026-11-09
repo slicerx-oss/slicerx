@@ -5,7 +5,7 @@
 // keys until they arrive and the real bar picks up the same draft.
 import { useSyncExternalStore } from 'react'
 import { hostSlices } from '../state/model-mode'
-import { set } from '../state/store'
+import { get, set } from '../state/store'
 
 let query = ''
 let submit = false
@@ -64,7 +64,9 @@ export function commandPlaceholder(): string {
 /**
  * Whether the bar may open now. A modal dialog sits in the top layer over the bar and keeps everything behind it inert, so
  * a bar opened under one would be unseen and could not take the focus; the key does nothing until the dialog has gone.
+ * The projects dialog (the restore offer among them) counts from the moment it is asked for: its code downloads first, so
+ * for a moment it is wanted but not yet open, and a bar opened in that moment would lose the focus to it when it shows.
  */
 export function commandBarMayOpen(doc: Document = document): boolean {
-  return doc.querySelector('dialog[open]') === null
+  return get().projectsDialog === null && doc.querySelector('dialog[open]') === null
 }
