@@ -81,7 +81,9 @@ describe('mimir.dismiss over the app link', () => {
     const out = await runCall('mimir.dismiss', { askId, said: '  it is a different model  ' })
     expect(out).toEqual({ sessionId: 's_dismiss', askId, dismissed: true, said: 'it is a different model' })
     await Promise.all(c.runs)
-    expect(c.seen[0]).toMatchObject({ ok: true, result: { picked: null, dismissed: true, said: 'it is a different model' } })
+    // the words are mimir's answer, so it reads them with no turn-down mark
+    expect(c.seen[0]).toMatchObject({ ok: true, result: { picked: null, said: 'it is a different model' } })
+    expect(c.seen[0]!.result).not.toHaveProperty('dismissed')
 
     const after = (await runCall('mimir.session', { id: 's_dismiss' })) as Session
     expect(after.waiting).toBeNull()

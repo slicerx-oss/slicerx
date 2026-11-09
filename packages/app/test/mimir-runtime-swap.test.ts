@@ -169,6 +169,6 @@ describe('a question across a runtime made again', () => {
     expect(events.find((e) => e.type === 'ask_answered')).toMatchObject(said ? { dismissed: true, said } : { dismissed: true })
     const read = JSON.parse(seen[0]!) as { ok: boolean; result: unknown }
     expect(read.ok).toBe(true)
-    expect(read.result).toEqual(said ? { picked: null, dismissed: true, said } : { picked: null, dismissed: true })
+    expect(read.result).toEqual(said ? { picked: null, said } : { picked: null, dismissed: true })
   })
 })

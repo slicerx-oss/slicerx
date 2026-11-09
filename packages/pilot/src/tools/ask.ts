@@ -21,13 +21,13 @@ const question = { title: z.string().min(2).max(40), question: z.string().min(3)
 export function askTool(opts: { sizesOnSheet?: boolean } = {}): PilotTool<never> {
   return defineTool<{ title: string; question: string; choices: { id: string; label: string }[]; sizes?: boolean | undefined }>({
     name: 'pilot.ask',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
-      'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id, or dismissed when the person turned the question down. If dismissed, every choice on it is turned down: do not ask it again, and do not list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows, and if you truly need something, ask a different, narrower question. If they wrote something, treat it as their answer.',
+      'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id; said, when the person wrote instead of picking: their words are the answer and turn no choice down, so go on from them and never ask the same thing again (when they leave it to you, as with "sensible defaults", pick the choice that gives what the request asked for); or dismissed when the person turned the question down. If dismissed, every choice on it is turned down: do not ask it again, and do not list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows, and if you truly need something, ask a different, narrower question.',
     localDescription:
-      'Ask the person a short question (title, question) with two to four fixed choices and wait for the pick, to confirm something before building on it (such as which model a photo shows). Returns the picked choice id, or dismissed when the person turned it down; then every choice on it is turned down: never ask it again, list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows; if you truly need something, ask a different, narrower question. Anything they wrote is their answer.',
+      'Ask the person a short question (title, question) with two to four fixed choices and wait for the pick, to confirm something before building on it (such as which model a photo shows). Returns the picked choice id; said when they wrote instead: their words are the answer and turn no choice down, so go on and never ask the same thing again (left to you, pick the choice that gives what the request asked for); or dismissed when they turned it down: then every choice on it is turned down: never ask it again, list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows; if you truly need something, ask a different, narrower question.',
     input: opts.sizesOnSheet ? z.object({ ...question, sizes: z.boolean().optional().describe("true: it asks for the part's sizes") }) : z.object(question),
     args: (i) => `"${i.question}"`,
     async run(i, ctx) {
@@ -35,9 +35,11 @@ export function askTool(opts: { sizesOnSheet?: boolean } = {}): PilotTool<never>
       // a redirect, not a failure: it never counts toward moving the run to the larger model
       if (opts.sizesOnSheet && i.sizes === true) return { summary: SIZES_ON_SHEET, output: { shown: false, use: 'pilot.sheet' } }
       const answer = await ctx.ask({ title: i.title, question: i.question, choices: i.choices })
-      // turning a question down is an answer, not a failure: the run carries on from it
+      // turning a question down is an answer, not a failure: the run carries on from it. Words written in place of a pick
+      // close the card the same way, but they are the person's answer and turn no choice down, so the model reads them
+      // as said with no dismissed mark: one that read a turn-down asked again after "use sensible defaults, then build it".
       if (wasDismissed(answer.id)) {
-        if (answer.said) return { summary: `Dismissed, wrote: "${answer.said}"`, output: { picked: null, dismissed: true, said: answer.said } }
+        if (answer.said) return { summary: `Answered in words: "${answer.said}"`, output: { picked: null, said: answer.said } }
         return { summary: 'Dismissed', output: { picked: null, dismissed: true } }
       }
       const picked = answer.id
