@@ -5,20 +5,41 @@
 // cache folder, never a shared temporary folder another account could write to. It is best effort: no cache folder,
 // a read-only home or an older Node only skip it, and nothing here ever throws or writes to stdout or stderr, since
 // stdout carries the MCP protocol.
-import { readdirSync, statSync, unlinkSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import module from 'node:module'
 import { homedir } from 'node:os'
 import { join as joinPath, posix, win32 } from 'node:path'
 
+/** The folder name of the stock build; a white-label edition uses its own id (the edition config's `id`). */
+const STOCK_NAME = 'slicerx'
+/** What the edition config allows for `id`: it is safe as a folder name on every platform. */
+const EDITION_ID = /^[a-z][a-z0-9-]{1,31}$/
+
+/**
+ * The id of the edition this server runs for, read from the resolved edition config SLICERX_CONFIG names, the same
+ * file the server reads for the edition's name. No config, an unreadable one or an id that is not a valid edition id
+ * gives the stock name. A stock start has no config, so it reads nothing before the cache is on.
+ */
+export function editionCacheName(env: NodeJS.ProcessEnv): string {
+  const path = env['SLICERX_CONFIG']
+  if (!path) return STOCK_NAME
+  try {
+    const id = (JSON.parse(readFileSync(path, 'utf8')) as { id?: unknown }).id
+    return typeof id === 'string' && EDITION_ID.test(id) ? id : STOCK_NAME
+  } catch {
+    return STOCK_NAME
+  }
+}
+
 /** The folder the cache goes in by default, or undefined when this platform's cache folder can't be told. */
-export function compileCacheDir(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, home: string | undefined): string | undefined {
+export function compileCacheDir(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, home: string | undefined, name = STOCK_NAME): string | undefined {
   const { isAbsolute, join } = platform === 'win32' ? win32 : posix
   const usable = (dir: string | undefined): dir is string => !!dir && isAbsolute(dir)
   let root: string | undefined
   if (platform === 'win32') root = usable(env['LOCALAPPDATA']) ? env['LOCALAPPDATA'] : undefined
   else if (platform === 'darwin') root = usable(home) ? join(home, 'Library', 'Caches') : undefined
   else root = usable(env['XDG_CACHE_HOME']) ? env['XDG_CACHE_HOME'] : usable(home) ? join(home, '.cache') : undefined
-  return root === undefined ? undefined : join(root, 'slicerx', 'node-compile-cache')
+  return root === undefined ? undefined : join(root, name, 'node-compile-cache')
 }
 
 /**
@@ -29,7 +50,7 @@ export function startCompileCache(env: NodeJS.ProcessEnv = process.env): void {
   try {
     if (env['NODE_DISABLE_COMPILE_CACHE'] || env['NODE_COMPILE_CACHE']) return
     if (typeof module.enableCompileCache !== 'function') return
-    const dir = compileCacheDir(env, process.platform, safeHome())
+    const dir = compileCacheDir(env, process.platform, safeHome(), editionCacheName(env))
     if (dir === undefined) return
     // A folder that can't be made or written comes back as a failed status, not an error.
     module.enableCompileCache(dir)
