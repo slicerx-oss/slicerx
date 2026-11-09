@@ -367,3 +367,44 @@ export function unsettledQuestion(text: string): string | undefined {
     return /\bor\b/i.test(q.replace(OR_STOP, ''))
   })
 }
+
+/** An approved plan the open project holds (the project file keeps it), for a chat whose history holds no plan. */
+export interface StandingPlan {
+  planId: string
+  /** The plan as the person approved it, with their edits, without its id: what design.plan showed on the card. */
+  plan: { part: string; features: readonly { name: string }[] } & Record<string, unknown>
+  /** The design its part is built in, as it is now: its steps in order with their plan feature tags, and its parts. Absent while nothing is built. */
+  design?: { id: string; name: string; steps: readonly { id: string; name?: string; feature?: string }[]; parts: readonly string[] }
+}
+
+/** The line the seed opens with, as the person's turn: a request has to start with one. Never shown, never logged. */
+export const PLAN_SEED_NOTE = 'This project was opened with a plan approved earlier, read back from the project file.'
+
+/**
+ * The history a chat gets for an approved plan the open project holds, so planLeft and carriedPlanFrom read it as they
+ * read a plan approved earlier in the chat: the design.plan call with the plan as approved and its answer (Go), then,
+ * when its part was started, the design.new that started it (empty) and a design.steps read of the design as it is
+ * now (its steps with their plan feature tags, and its parts). The design.new is what tells them the part has a body
+ * and is the plan's first design, so a run that starts another design leaves the plan alone. Pure: the host decides
+ * whether there is such a plan (the plan open, not passed or stopped, and its design unchanged since mimir's last run).
+ */
+export function planSeed(s: StandingPlan): LlmMessage[] {
+  const call = (id: string, name: string, args: unknown): LlmMessage => ({ role: 'assistant', content: '', toolCalls: [{ id, name, arguments: JSON.stringify(args) }] })
+  const answer = (id: string, summary: string, result: unknown): LlmMessage => ({ role: 'tool', callId: id, content: JSON.stringify({ ok: true, summary, result }) })
+  const out: LlmMessage[] = [
+    { role: 'user', content: PLAN_SEED_NOTE },
+    call('standing_plan_1', 'design.plan', s.plan),
+    answer('standing_plan_1', 'Approved', { planId: s.planId, accepted: true }),
+  ]
+  const d = s.design
+  if (!d) return out
+  const parts = d.parts.map((name, index) => ({ index, name }))
+  const rows = d.steps.map((st, i) => ({ index: i + 1, id: st.id, ...(st.name ? { name: st.name } : {}), ...(st.feature ? { feature: st.feature } : {}) }))
+  out.push(
+    call('standing_plan_2', 'design.new', { name: d.name }),
+    answer('standing_plan_2', `Started ${d.name} (${d.id})`, { design: d.id, name: d.name, steps: 0, parts: [] }),
+    call('standing_plan_3', 'design.steps', { design: d.id }),
+    answer('standing_plan_3', `${rows.length} step${rows.length === 1 ? '' : 's'}`, { design: d.id, name: d.name, steps: rows, parts }),
+  )
+  return out
+}

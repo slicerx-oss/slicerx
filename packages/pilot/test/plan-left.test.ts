@@ -14,7 +14,7 @@ import { score } from '../evals/score'
 import type { Audit } from '../evals/harness'
 import type { Scenario } from '../evals/types'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type PilotTool } from '../src/index'
-import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, unsettledQuestion } from '../src/plan-left'
+import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planSeed, unsettledQuestion, type StandingPlan } from '../src/plan-left'
 import type { LlmClient, LlmEvent, LlmMessage, LlmRequest } from '../src/provider/types'
 import type { ScriptStepData } from '../src/provider/scripted'
 import { SLOW_DOWN_LINE } from '../src/slow-down-lines'
@@ -376,8 +376,8 @@ describe("a local model's context", () => {
 
 // The same chat over several runs: the person's later message (the eval's default answer, "keep going") starts a new
 // run on the history the earlier runs left, as the app and the creative eval send it.
-async function chat(client: LlmClient, said: readonly string[], opts: { tools?: PilotTool<never>[]; signals?: (AbortSignal | undefined)[]; resume?: { user: string; reply: string }[] } = {}) {
-  const pilot = createPilot({ host: HOST, config: { ...DEFAULT_CONFIG, maxSteps: 40, maxToolCalls: 80 }, policy: DEFAULT_POLICY, client, builtins: false, tools: opts.tools ?? designTools() })
+async function chat(client: LlmClient, said: readonly string[], opts: { tools?: PilotTool<never>[]; signals?: (AbortSignal | undefined)[]; resume?: { user: string; reply: string }[]; standing?: () => readonly LlmMessage[] | undefined } = {}) {
+  const pilot = createPilot({ host: HOST, config: { ...DEFAULT_CONFIG, maxSteps: 40, maxToolCalls: 80 }, policy: DEFAULT_POLICY, client, builtins: false, tools: opts.tools ?? designTools(), ...(opts.standing ? { standingPlan: opts.standing } : {}) })
   if (opts.resume) pilot.resume?.('s', opts.resume)
   const runs: PilotEvent[][] = []
   for (const [i, message] of said.entries()) {
@@ -517,5 +517,112 @@ describe('a plan from an earlier run that the person moved away from gets no not
     const [one] = await chat(client, ['keep going'], { resume: [{ user: 'Make a gear pair on a base plate', reply: ASKED }] })
     expect(notices(one!)).toEqual([])
     expect(client.remaining()).toBe(1)
+  })
+})
+
+// A project saved with the gear pair half built and opened again (the app's project file keeps the plan): its plan as
+// approved, and the design as it is now, with the plate and both pins built and tagged, and the gears still to build.
+const SAVED: StandingPlan = {
+  planId: 'plan_7',
+  plan: { part: 'Meshing spur gear pair on base plate', units: 'mm', features: GEAR_PAIR_FEATURES.map((name) => ({ name, kind: 'extrude', sizes: {} })), assumptions: [], questions: [] },
+  design: {
+    id: 'obj_k2',
+    name: 'Meshing spur gear pair on base plate',
+    steps: [
+      { id: 'sx01', name: 'Sketch extrude 4 mm', feature: 'Base plate' },
+      { id: 'sx02', name: 'Sketch extrude 10 mm', feature: 'Pin 20T' },
+      { id: 'sx03', name: 'Sketch extrude 10 mm', feature: 'Pin 40T' },
+    ],
+    parts: ['Base plate'],
+  },
+}
+/** A request as the runtime sends the person's words. */
+const request = (words: string): LlmMessage => ({ role: 'user', content: `Today is 2026-11-09.\n\nUser request:\n${words}` })
+/** Every design.plan call a request carried. */
+const planCalls = (messages: readonly LlmMessage[]) => messages.flatMap((m) => (m.role === 'assistant' ? (m.toolCalls ?? []).filter((c) => c.name === 'design.plan') : []))
+
+describe('a plan the reopened project holds (planSeed)', () => {
+  it('reads as a plan approved earlier: "keep going" leaves the two gears no step built, and the part has a body', () => {
+    const messages: LlmMessage[] = [{ role: 'system', content: 'system' }, ...planSeed(SAVED), request('keep going')]
+    expect(planLeft(messages, messages.length)).toEqual({ planId: 'plan_7', part: 'Meshing spur gear pair on base plate', design: 'obj_k2', noBody: false, build: ['Gear 20T', 'Gear 40T'], tag: [] })
+  })
+
+  it('a plan whose part was never started leaves the part to build', () => {
+    const { design: _d, ...unbuilt } = SAVED
+    const messages: LlmMessage[] = [{ role: 'system', content: 'system' }, ...planSeed(unbuilt), request('continue')]
+    expect(planLeft(messages, messages.length)).toMatchObject({ planId: 'plan_7', noBody: true, build: [] })
+  })
+
+  it('opens with a turn of the person, as a request has to, and carries no words of theirs', () => {
+    const seed = planSeed(SAVED)
+    expect(seed[0]).toMatchObject({ role: 'user' })
+    expect(seed.filter((m) => m.role === 'user' && m.content.includes('User request:'))).toEqual([])
+  })
+})
+
+describe('a chat on a reopened project with a plan half built', () => {
+  const standing = () => planSeed(SAVED)
+
+  it('a new chat\'s "keep going" goes on to the features no step built, without showing the plan again', async () => {
+    const client = createScriptedClient([{ text: 'Picking up where the project left off.' }, { text: 'The gears are built.' }], { chunk: false })
+    const [one] = await chat(client, ['keep going'], { standing })
+    const sent = notes(client.requests.at(-1)!.messages)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toContain('Still to build: Gear 20T, Gear 40T.')
+    expect(notices(one!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Gear 20T and Gear 40T.' })])
+    // the plan is the seed's alone: mimir never called design.plan
+    expect(planCalls(client.requests.at(-1)!.messages)).toHaveLength(1)
+    expect(client.remaining()).toBe(0)
+  })
+
+  it('a chat rebuilt from its saved words (resume) gets the plan after those words, and "continue" goes on with it', async () => {
+    const client = createScriptedClient([{ text: 'Continuing with the gears.' }, { text: 'The gears are built.' }], { chunk: false })
+    const [one] = await chat(client, ['continue'], { standing, resume: [{ user: 'Make a gear pair on a base plate', reply: ASKED }] })
+    expect(notices(one!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Gear 20T and Gear 40T.' })])
+    const first = client.requests[0]!.messages
+    // the restored turn, then the plan, then the new request
+    expect(first.findIndex((m) => m.role === 'assistant' && m.content === ASKED)).toBeLessThan(first.findIndex((m) => m.role === 'assistant' && m.toolCalls?.[0]?.name === 'design.plan'))
+    expect(client.remaining()).toBe(0)
+  })
+
+  it('a new chat\'s first message still carries the person\'s notes and counts as the chat\'s first', async () => {
+    const client = createScriptedClient([{ text: 'Picking up.' }, { text: 'Done.' }], { chunk: false })
+    await chat(client, ['keep going'], { standing })
+    const users = client.requests[0]!.messages.filter((m) => m.role === 'user')
+    expect(users.map((m) => m.content.includes('User request:'))).toEqual([false, true])
+  })
+})
+
+describe('a reopened project\'s plan gets no push', () => {
+  const standing = () => planSeed(SAVED)
+
+  it('when the first message asks for something else', async () => {
+    const client = createScriptedClient([{ text: 'Starting the bracket.', calls: [call('design.new', { name: 'Bracket' })] }, { calls: [call('geom.extrude', { design: 'd1', operation: 'new', name: 'Bracket' })] }, { text: 'The bracket is built. Should I add holes?' }, { text: 'never sent' }], { chunk: false })
+    const [one] = await chat(client, ['Make a bracket instead'], { standing })
+    expect(notices(one!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('when the run starts another design, even on words that would go on', async () => {
+    const client = createScriptedClient([{ text: 'Starting the cube.', calls: [call('design.new', { name: 'Cube' })] }, { calls: [call('geom.extrude', { design: 'd1', operation: 'new', name: 'Cube' })] }, { text: 'The cube is built. Should I go on?' }, { text: 'never sent' }], { chunk: false })
+    const [one] = await chat(client, ['Sure, make a 20 mm cube and build it'], { standing })
+    expect(notices(one!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('when the host has no plan, or its hook throws: the chat starts as before', async () => {
+    for (const hook of [() => undefined, () => { throw new Error('no project') }]) {
+      const client = createScriptedClient([{ text: 'What should I keep going with?' }, { text: 'never sent' }], { chunk: false })
+      const [one] = await chat(client, ['keep going'], { standing: hook })
+      expect(notices(one!)).toEqual([])
+      expect(client.requests[0]!.messages.map((m) => m.role)).toEqual(['system', 'user'])
+    }
+  })
+
+  it('when the chat already holds a plan of its own: the project\'s is not added again', async () => {
+    const client = createScriptedClient([...RUN1_ASKS, { text: 'Should I go on with the gears?' }, { text: 'never sent' }], { chunk: false })
+    await chat(client, ['Make a gear pair on a base plate', "Don't build the gears, stop there"], { standing })
+    // the seed went into the new chat once, before its first message; the second run adds none
+    expect(planCalls(client.requests.at(-1)!.messages).map((c) => c.id)).toEqual(['standing_plan_1', expect.any(String)])
   })
 })

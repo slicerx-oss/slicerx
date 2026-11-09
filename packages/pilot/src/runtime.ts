@@ -55,6 +55,8 @@ import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
 import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
+// the opening turn of a plan the open project holds (planSeed), which is no message of the person's
+import { PLAN_SEED_NOTE } from './plan-left'
 import { chatRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
 import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
@@ -141,6 +143,14 @@ export interface CreatePilotOptions {
   share?: () => CloudShare
   kb?: KnowledgeBase
   project?: () => PilotProject | undefined
+  /**
+   * An approved plan the open project holds that no chat carries, as history (plan-left.ts planSeed): the app's
+   * project file keeps it, so it outlives the chat that approved it. Asked when a chat's history holds no design.plan:
+   * on a new chat's first message, and when resume() rebuilds a chat from its words. The messages go in after the
+   * system prompt (a new chat) or after the restored turns, so the push to finish the plan (planLeft) reads them as a
+   * plan approved earlier in the chat, under the same rules. Unset, undefined or throwing: no plan, as before.
+   */
+  standingPlan?: () => readonly LlmMessage[] | undefined
   /**
    * Whether the open project holds a design to shape: a body with a history on the plate (the app: an object on the
    * plate with a history). Asked when a turn starts, so a new chat, a reloaded one and a mimir rebuilt for another model
@@ -603,6 +613,15 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   let policy = normalizePolicy(opts.policy ?? DEFAULT_POLICY)
   const client: LlmClient = opts.client ?? createTransportClient(opts.host.llm, opts.config.provider, { ...(opts.config.baseUrl === undefined ? {} : { baseUrl: opts.config.baseUrl }), ...(opts.share ? { share: opts.share } : {}) })
   const history = new Map<string, LlmMessage[]>()
+  /** The plan the open project holds (opts.standingPlan), for a chat whose history has no design.plan; none on a throw. */
+  const standing = (messages: readonly LlmMessage[]): LlmMessage[] => {
+    if (messages.some((m) => m.role === 'assistant' && m.toolCalls?.some((c) => c.name === 'design.plan'))) return []
+    try {
+      return [...(opts.standingPlan?.() ?? [])]
+    } catch {
+      return []
+    }
+  }
   const pending = new Map<string, Pending>()
   // Questions waiting for the person's pick, by ask id, with the ids of their choices.
   const asks = new Map<string, { ids: Set<string>; resolve: (choiceId: string, said?: string) => void }>()
@@ -1716,6 +1735,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         messages.push({ role: 'user', content: `User request:\n${t.user}` })
         messages.push({ role: 'assistant', content: t.reply || '(No reply.)' })
       }
+      // saved words carry no tool calls: a plan the open project holds goes after them
+      messages.push(...standing(messages))
       history.set(sessionId, messages)
     },
     async answer(askId: string, choiceId: string | null, said?: string): Promise<void> {
@@ -1788,6 +1809,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         let messages = history.get(sessionId)
         if (!messages) {
           messages = [{ role: 'system', content: systemPrompt() }]
+          // a new chat starts with the plan the open project holds, when there is one
+          messages.push(...standing(messages))
           history.set(sessionId, messages)
         }
         const today = new Date(now()).toISOString().slice(0, 10)
@@ -1802,7 +1825,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         const attached = files?.names.length ? `\n\nAttached: ${files.names.join(', ')}` : ''
         // the person's notes ride on a chat's first message, the ones about what it asks first; the host syncs them
         // first (briefly: a slow network never holds the chat up)
-        const first = !messages.some((m) => m.role === 'user')
+        const first = !messages.some((m) => m.role === 'user' && m.content !== PLAN_SEED_NOTE)
         if (memory && first && opts.memory?.chatStarted) await within(opts.memory.chatStarted(), CHAT_START_WAIT_MS)
         const notes = memory && first ? pickFacts(await memory.list().catch(() => []), message).map(factLine) : []
         messages.push({
