@@ -785,6 +785,7 @@
  ],
  "score": {
   "pass": true,
+  "verdict": "disagree",
   "geometry": true,
   "built": true,
   "refused": false,

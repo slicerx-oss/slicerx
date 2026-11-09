@@ -5,7 +5,8 @@
 // body or assembly rather than on the plate, since parts are laid out apart to print. Turns: the
 // person sends one message, confirms the dimension sheet once and presses Go on the plan once (once for each part
 // when the message asks for separate parts); any other answer, question card or nudge is an extra turn, and one extra
-// turn fails the run however good the part is.
+// turn fails the run however good the part is. The run's verdict is pass or fail from those checks alone, or disagree
+// when what the run says of its own part (its last design.check result, else its reply) contradicts them.
 import type { MeshPart, PilotEvent } from '@slicerx/contracts'
 import { bedFit, bodyBoxes, bodyCount, closure, minWall, type BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
 import type { BuildCase, HookSpec, OpMatch, SizeCheck } from './cases'
@@ -313,6 +314,95 @@ export function hookCheck(spec: HookSpec, parts: readonly MeshPart[]): Check {
   return { pass: side && lip, detail: `${shape}; ${side ? 'leaves the stem side below its top' : 'meets the stem only at its top'}; tip ${lip ? 'rises' : 'rises only'} ${round1(rise)} mm above the hook's lowest point near the end (want 3 mm or more)` }
 }
 
+/**
+ * The pass of the last design.check in the run that returned one, read from its result (`pass` on the check's output;
+ * a check repeated after its fix round carries the same result). Null when no check returned a result.
+ */
+export function lastCheckPass(events: readonly PilotEvent[]): boolean | null {
+  const checks = new Set(events.flatMap((e) => (e.type === 'tool_call' && e.tool === 'design.check' ? [e.callId] : [])))
+  let last: boolean | null = null
+  for (const e of events) {
+    if (e.type !== 'tool_result' || !checks.has(e.callId) || e.ok === false) continue
+    const pass = (e.output as { pass?: unknown } | undefined)?.pass
+    if (typeof pass === 'boolean') last = pass
+  }
+  return last
+}
+
+// What a reply says of its own check, read only when the run has no check result to read. A failed check: the check
+// as the subject of failed or stopped ("the design check failed twice", "the plan check failed on one item", "the
+// design check stopped it"), or the part failing or not passing a check ("it fails the plan's size check", "it doesn't
+// pass the print-in-place check yet", "it has not passed the check"). A passed check: the part passing a check
+// ("passes the plan check", "passes all three plan checks"). Words of a check that may come later (a sentence with
+// if, unless or whether) say nothing.
+const WORD = "[\\w'’-]+"
+const SAYS_FAILED = new RegExp(
+  `\\bchecks? (?:${WORD} ){0,2}?(?:failed|stopped)\\b|\\bfail(?:s|ed)? (?:${WORD} ){0,3}?checks?\\b|\\b(?:do(?:es)?n['’]?t|didn['’]t|hasn['’]t|not) pass(?:ed)? (?:${WORD} ){0,3}?checks?\\b`,
+  'i',
+)
+const SAYS_PASSED = new RegExp(`\\bpass(?:es|ed)? (?:${WORD} ){0,3}?checks?\\b`, 'i')
+const CONDITIONAL = /\b(?:if|unless|whether)\b/i
+
+/** Whether a reply says its part failed or passed its check, or says neither. A failed check anywhere wins. */
+export function replyClaim(reply: string): 'pass' | 'fail' | null {
+  const sentences = reply.split(/(?<=[.!?:])\s+|\n+/).filter((s) => !CONDITIONAL.test(s))
+  if (sentences.some((s) => SAYS_FAILED.test(s))) return 'fail'
+  if (sentences.some((s) => SAYS_PASSED.test(s))) return 'pass'
+  return null
+}
+
+/**
+ * The last design.check verdict in a run's call list (drive.ts calls, as a results line keeps them): true or false
+ * from "design.check ok (part passed)" or "(part failed)", null when no check in the list says. Lists recorded before
+ * checks said so read as null.
+ */
+export function checkFromCalls(calls: readonly string[]): boolean | null {
+  let last: boolean | null = null
+  for (const c of calls) {
+    const m = /^design\.check ok \(part (passed|failed)\)$/.exec(c)
+    if (m) last = m[1] === 'passed'
+  }
+  return last
+}
+
+/** What the run says of its own part: the last design.check result when there is one, else the reply's words. */
+export interface Claim {
+  said: 'pass' | 'fail' | null
+  from: 'check' | 'reply' | null
+}
+
+export function runClaim(run: { check: boolean | null; reply: string }): Claim {
+  if (run.check !== null) return { said: run.check ? 'pass' : 'fail', from: 'check' }
+  const said = replyClaim(run.reply)
+  return { said, from: said ? 'reply' : null }
+}
+
+/**
+ * pass, fail, or disagree: the run says its part failed its check while the scorer passes it, or says it passed while
+ * the scorer fails the part. Only the scorer's checks make a pass; a disagree is counted on its own, never as a pass.
+ * A part the scorer passes that fails on turns alone does not disagree with a run that says its part passed.
+ */
+export type Verdict = 'pass' | 'fail' | 'disagree'
+
+export function verdictOf(score: { pass: boolean; geometry: boolean }, claim: Claim): Verdict {
+  if (claim.said === 'fail' && score.pass) return 'disagree'
+  if (claim.said === 'pass' && !score.geometry) return 'disagree'
+  return score.pass ? 'pass' : 'fail'
+}
+
+/** pass, fail and disagree counts over runs, per case id in the order first seen and overall. */
+export function verdictCounts(rows: readonly { id: string; verdict: Verdict }[]): { byCase: Map<string, Record<Verdict, number>>; all: Record<Verdict, number> } {
+  const byCase = new Map<string, Record<Verdict, number>>()
+  const all: Record<Verdict, number> = { pass: 0, fail: 0, disagree: 0 }
+  for (const r of rows) {
+    const n = byCase.get(r.id) ?? { pass: 0, fail: 0, disagree: 0 }
+    n[r.verdict]++
+    all[r.verdict]++
+    byCase.set(r.id, n)
+  }
+  return { byCase, all }
+}
+
 export interface CaseScore {
   built: boolean
   /** The first reply turned the part down. */
@@ -327,11 +417,18 @@ export interface CaseScore {
   geometry: boolean
   extra: number
   turns: Check
+  /** The scorer's own result: the part's checks and the turns. Only this makes a pass. */
   pass: boolean
+  /** What the run said of its own part (the last design.check result, else the final reply's words). */
+  claim: Claim
+  verdict: Verdict
 }
 
-/** Scores a run: `parts` already placed (see placed), `firstReply` the text of the reply to the person's message. */
-export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; turns: readonly UserTurn[]; parts: MeshPart[]; firstReply: string; firstBuilt: boolean; bed: BuildVolume; wallMm: number }): CaseScore {
+/**
+ * Scores a run: `parts` already placed (see placed), `firstReply` the text of the reply to the person's message and
+ * `reply` the last reply of the run (the first when not given), which the claim reads when no check returned a result.
+ */
+export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; turns: readonly UserTurn[]; parts: MeshPart[]; firstReply: string; reply?: string; firstBuilt: boolean; bed: BuildVolume; wallMm: number }): CaseScore {
   const steps = okSteps(run.events)
   const used = [...new Set(steps.filter((s) => s.tool.startsWith('geom.')).map((s) => s.tool))]
   const hit = c.ops.filter((m) => steps.some((s) => matches(s, m)))
@@ -341,8 +438,12 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   const turns: Check = { pass: extra.length === 0, detail: extra.length ? extra.map((t) => (t.kind === 'nudge' ? `nudge (${t.why})` : t.kind === 'answer' ? `answer "${t.question.slice(0, 40)}"` : `another ${t.kind}`)).join(', ') : parts > 1 ? `one message, and a sheet and Go for each of ${parts} parts only` : 'one message, sheet and Go only' }
   const refused = !run.firstBuilt && classifyNoBuild(run.firstReply) === 'declined'
   const built = run.parts.length > 0
-  const out: CaseScore = { built, refused, ops, geometry: false, extra: extra.length, turns, pass: false }
-  if (!built) return out
+  const claim = runClaim({ check: lastCheckPass(run.events), reply: run.reply ?? run.firstReply })
+  const out: CaseScore = { built, refused, ops, geometry: false, extra: extra.length, turns, pass: false, claim, verdict: 'fail' }
+  if (!built) {
+    out.verdict = verdictOf(out, claim)
+    return out
+  }
   const cl = closure(run.parts)
   out.watertight = { pass: cl.watertight, detail: cl.watertight ? 'closed' : `open ${cl.openEdges}, non-manifold ${cl.nonManifoldEdges}, flipped ${cl.flippedEdges}` }
   const n = bodyCount(run.parts)
@@ -363,5 +464,6 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   if (c.hook) out.hook = hookCheck(c.hook, run.parts)
   out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : [])].every((x) => x.pass)
   out.pass = out.geometry && turns.pass
+  out.verdict = verdictOf(out, claim)
   return out
 }
