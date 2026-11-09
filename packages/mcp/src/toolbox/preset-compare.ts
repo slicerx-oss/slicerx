@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Two presets of one kind side by side, as the app's Compare presets lists them (@slicerx/settings compareConfigs): the
 // settings that differ, by settings group, with labels, both values as the app writes them, and each key.
+import { READ_ONLY } from '@slicerx/pilot'
 import { productName, type PrintConfig, type SettingSection } from '@slicerx/contracts'
 import { compareConfigs, defaultConfig, vendorParent } from '@slicerx/settings'
 import { z } from 'zod'
@@ -46,7 +47,7 @@ export default (d: ServerToolDeps) => {
     title: 'Compare presets',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'settings',
     ungated: true,
     description:

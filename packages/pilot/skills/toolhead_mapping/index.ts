@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { z } from 'zod'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import type { ToolShared } from '../../src/shared'
 import { exportPlate } from '../../src/tools/printers'
 
@@ -9,7 +9,7 @@ export function createToolheadMapping(shared: ToolShared) {
   return defineSkill({
     name: 'toolhead_mapping',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Read the Snapmaker U1 loaded toolheads and match each job filament by exact color (Delta E at most 2), then nearest color, with material breaking ties and unused spools preferred. Return choices and color, material or empty-head warnings. Without spool data, offer four manual heads for multi-filament jobs. Pass selected to check the person\'s choices. With preparePlate, rewrite a send copy, report changedLines and retain it for a separately approved printer.queue. All tool indices are zero based. Never uploads or starts a print.',
     input: z.object({
       printerId: z.string().min(1).describe('Connected U1 printer id'),

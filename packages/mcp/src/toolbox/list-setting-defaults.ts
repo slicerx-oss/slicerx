@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { READ_ONLY } from '@slicerx/pilot'
 import { z } from 'zod'
 import { ToolInputError } from '../models'
 import { findSettings } from '../settings'
@@ -11,7 +12,7 @@ export default (d: ServerToolDeps) =>
     title: 'List setting defaults',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'settings',
     ungated: true,
     description:

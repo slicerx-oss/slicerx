@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { READ_ONLY } from '@slicerx/pilot'
 import { basename } from 'node:path'
 import { z } from 'zod'
 import { KIND_LABEL, markOut, plateInput, projectInput, projectPath, readPlateMarks } from '../layer-marks-file'
@@ -11,7 +12,7 @@ export default (d: ServerToolDeps) =>
     title: 'List layer marks in a project',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'core',
     ungated: true,
     description:

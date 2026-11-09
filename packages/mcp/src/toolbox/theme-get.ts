@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { READ_ONLY } from '@slicerx/pilot'
 import { themeToCss, themeToVars, type Theme } from '@slicerx/ui/theme'
 import { z } from 'zod'
 import { builtInNames, builtInThemes, checkTheme } from '../theming'
@@ -11,7 +12,7 @@ export default () =>
     title: 'Get a built-in theme',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'theme',
     ungated: true,
     description:

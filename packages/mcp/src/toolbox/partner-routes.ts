@@ -33,7 +33,7 @@ export default (d: ServerToolDeps) => {
     ungated: true,
     description: `Read the partner routes open on the ${productName()} hub: each partner app's sealed byte stream between its desktop app and its own paired phone over the relay. Each route has its routeId, the partner app's name (app), the phone it reaches (pairingId and phone), state (opening or open), openedAt and lastAt (Unix milliseconds), bytesIn (from the phone) and bytesOut (to it), and refused, the frames on the route that were not its sealed bytes and were dropped. caps has the hub's maxRoutes and maxChunkBytes and, once the hub has heard the relay's quota, the relay's caps: maxRoutes per account, routeCapPerDay and capPerDay in bytes per UTC day, idleSeconds, and this account's routes and usedToday. A route carries bytes only, never a hub method, a printer command or a card. A partner key sees only its own routes. Opening a route takes the partner app's key (relay.partnerRoute.open); closing one is done by the person in Settings, Devices or by that partner, never by this tool. Simulated printers have no hub and are refused with not_supported.`,
     input: z.object({ app: z.string().min(1).max(64).optional().describe('Only the routes of this partner app, by the name its partner key was made with, such as "LayerMate".') }),
-    hints: { idempotent: true, openWorld: true },
+    hints: { readOnly: true, idempotent: true, openWorld: true },
     async run(args) {
       const reads = printers.kind === 'link' ? readsOf(printers.host) : undefined
       if (!reads) throw new ToolInputError(`Partner routes run through the ${productName()} hub. These printers have none.`, 'not_supported', { reason: 'no_hub' })

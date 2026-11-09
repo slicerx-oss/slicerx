@@ -12,7 +12,7 @@ import { basename, extname } from 'node:path'
 import { promisify } from 'node:util'
 import { gzip } from 'node:zlib'
 import { MAX_CLOUD_PLATE_NUMBER } from '@slicerx/contracts'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { reportCollisions } from './collide'
 import { resolveSliceConfig } from './config'
@@ -318,7 +318,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     name: 'cloud.jobs',
     version: '1.2.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Cloud slicing jobs: with job_id, that job\'s status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. A job that named plates of a 3MF also gives the plate it is slicing while it runs, and plates: each plate\'s status, error, time, filament and its own links. A result with collisions lists them in collisions (for the job\'s own result) and in each plate\'s, as slicerx_slice_file does: the object printing by its id and name, what it meets, the part struck, layers from 1, and the place and region struck in plate mm. A job sliced before the cloud kept that plate has no collisions list: its collisions stay as the engine wrote them, in result.collisions and each plate\'s engineCollisions, in machine coordinates with objects by id, and collisionsNote says so. Answers that cloud slicing is not configured when this server has no cloud API.',
     input: z.object({ job_id: jobId.optional(), limit: z.number().int().min(1).max(100).default(20) }),
@@ -337,7 +337,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     name: 'cloud.access',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       "Read back what the cloud token this server holds may do, before slicing: whether the account is invited to cloud slicing, its cloud slices per rolling 24 hours, how many it used and has left, the largest upload, and, for a partner app token, the app's name the person issued it to. A partner app token slices on the person's own account and limits, sees only the jobs it queued, and cannot send a job to a printer. Sends nothing but the read. Answers that cloud slicing is not configured when this server has no cloud API.",
     input: z.object({}),

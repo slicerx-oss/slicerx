@@ -11,7 +11,7 @@
 // as session.ts makes it, on scripted turns, with the engine a stand-in in a real thread that spins forever in `array`
 // and `face.pick`.
 import type { Host, PermissionClass, PilotEvent } from '@slicerx/contracts'
-import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, STOPPED_AGAIN_LINE, type PilotTool } from '@slicerx/pilot'
+import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, STOPPED_AGAIN_LINE, type PilotTool } from '@slicerx/pilot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { endIdleGeomWorker, setGeomCallLimit, setGeomProvider } from '../src/geom/client'
@@ -39,6 +39,7 @@ function geomTool(name: string, op: string, runs: string[], permission: Permissi
     version: '1.0.0',
     source: 'command',
     permission,
+    hints: { readOnly: permission === 'read' },
     description: name,
     input: INPUT,
     run: async (i, ctx) => {
@@ -91,7 +92,7 @@ function designReads(runs: string[]) {
     name: 'design.steps',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'design.steps',
     input: z.object({ design: z.string() }),
     run: async (i) => {
@@ -103,7 +104,7 @@ function designReads(runs: string[]) {
     name: 'design.list',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'design.list',
     input: z.object({ second: z.string() }),
     run: async (i) => {

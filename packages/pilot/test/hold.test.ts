@@ -7,7 +7,7 @@
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '../src/index'
+import { createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, type ScriptStep } from '../src/index'
 
 /** A printer host that records every call, so a test can see that a hold sends none. */
 function printerSpy() {
@@ -38,7 +38,7 @@ function gatedTool(name: string) {
     version: '1',
     description: `Test tool ${name}`,
     source: 'skill',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({}),
     async run() {
       started.push(name)
@@ -56,7 +56,7 @@ const quick = (name: string, log: string[]) =>
     version: '1',
     description: `Test tool ${name}`,
     source: 'skill',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({}),
     async run() {
       log.push(name)

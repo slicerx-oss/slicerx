@@ -5,7 +5,7 @@
 import type { Cell, Tone } from '@slicerx/contracts'
 import { z } from 'zod'
 import { fmtDuration, fmtMoney, type ToolShared } from '../../src/shared'
-import { defineSkill, type ToolContext } from '../../src/tool'
+import { READ_ONLY, defineSkill, type ToolContext } from '../../src/tool'
 import { fitGrid } from '../arrange/index'
 import { buildVolume, pickObject } from '../common'
 import { fmtWhen, loadPrinters, materialKey, nowMs, parseDue, perCopy, filamentDoc, printerCaps, readSpools, slotGrams, type PerCopy } from '../fleet_common/index'
@@ -297,7 +297,7 @@ export function createSchedule(shared: ToolShared) {
   return defineSkill({
     name: 'schedule',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Plan jobs across printers: for each job (object, copies, material, optional due date) it estimates time per copy by slicing one copy, splits copies into plates, and assigns each plate to a printer that has the material loaded (else notes a spool swap), idle printers first, lowest machine cost, meeting due dates. Returns a schedule table with start and finish times and the on-time status of each job. Skips paused, error and offline printers. It queues nothing: once the user accepts the plan, arrange and slice the plates, then call printer.queue once per plate.',
     localDescription:

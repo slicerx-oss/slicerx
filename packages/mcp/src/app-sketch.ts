@@ -4,7 +4,7 @@
 // rectangle's width and height, a line's length and angle, a circle's diameter). Reading lists every shape with its
 // boxes and the sketch's dimensions; setting one drives the shape through the sketch's solver, as typing in the box
 // does, and answers with the sketch read back.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -45,7 +45,7 @@ export function appSketchTools(link: AppLinkCaller | undefined, appName: string)
     name: 'app.sketch_boxes',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read the dimension boxes of the sketch open in ${appName}: every rectangle (width, height), line (length, angle from the sketch's X axis) and circle (diameter) with its value now and whether a dimension sets it (driving moves the shape, driven only reports it), plus the sketch's dimensions and the degrees of freedom left. Values are mm, angles degrees. Loops and segments are numbered as slicerx_design_sketch takes them. Needs a sketch open in Model.`,
     input: z.object({}),
     async run() {

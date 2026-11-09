@@ -4,7 +4,7 @@
 import type { Cell, Tone } from '@slicerx/contracts'
 import { z } from 'zod'
 import { fmtDuration, fmtGrams, type ToolShared } from '../../src/shared'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { filamentDoc, printerCaps, printerDoc, rec, strs } from '../fleet_common/index'
 import { checkSpoolFit } from '../spool_fit/index'
 
@@ -27,7 +27,7 @@ export function createOvernightReadiness(shared: ToolShared) {
   return defineSkill({
     name: 'overnight_readiness',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Pre-flight for a long unattended print on one printer. Checks the printer is idle, the spool has enough filament with a bigger margin, a camera is available, a filament runout sensor and failure detection exist (from the printer knowledge), and the material is safe for the printer unattended (enclosure, hotend temperature, nozzle, fumes, drying). Returns pass, warn or fail per item and overall. Slice first or pass gramsNeeded and hours. Use it for "is Bay 2 safe to run this overnight". Read only.',
     input: z.object({

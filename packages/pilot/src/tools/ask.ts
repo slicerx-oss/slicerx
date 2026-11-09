@@ -23,7 +23,7 @@ export function askTool(opts: { sizesOnSheet?: boolean } = {}): PilotTool<never>
     name: 'pilot.ask',
     version: '1.2.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false },
     description:
       'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id; said, when the person wrote instead of picking: their words are the answer and turn no choice down, so go on from them and never ask the same thing again (when they leave it to you, as with "sensible defaults", pick the choice that gives what the request asked for); or dismissed when the person turned the question down. If dismissed, every choice on it is turned down: do not ask it again, and do not list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows, and if you truly need something, ask a different, narrower question.',
     localDescription:
@@ -54,7 +54,7 @@ export function lookupTool(): PilotTool<never> {
     name: 'lookup.show',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false },
     description: 'Show the person something you looked up as a card in the view: a title, up to 4 label and value rows and the page it came from, linked. It stays in the conversation too.',
     input: z.object({
       title: z.string().min(2).max(60),
@@ -245,7 +245,7 @@ export function sheetTool(): PilotTool<never> {
     name: 'pilot.sheet',
     version: '1.2.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false },
     description:
       'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess, and kind count or angle for a row that is a count or an angle. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
     localDescription:
@@ -298,7 +298,7 @@ export function sheetBindTool(): PilotTool<never> {
     name: 'pilot.sheet_bind',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false },
     description:
       'After building from a sheet, never before, tie its rows to the steps they set, so editing a row later edits that step: for each row its key, the step (from 1) in the design, and how the step number follows the row (scale and offset; a symmetric extrude is half a width). Rows that shape a sketch rather than one number stay unbound; editing those asks you to build again. With no row to tie, skip it.',
     input: z.object({

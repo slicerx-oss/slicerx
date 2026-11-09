@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { READ_ONLY } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { serverTool, type ServerToolDeps } from './deps'
@@ -10,7 +11,7 @@ export default (d: ServerToolDeps) =>
     title: 'List profiles',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'settings',
     ungated: true,
     description:

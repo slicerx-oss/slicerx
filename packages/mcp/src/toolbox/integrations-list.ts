@@ -20,7 +20,7 @@ export default (d: ServerToolDeps) => {
     description:
       assistantText('List the integrations mimir can use, as Settings > mimir shows them: each one with its state (connected or off) and the printers (bays) assigned to it. A printer integration with no printers assigned is off.'),
     input: z.object({}),
-    hints: { idempotent: true, openWorld: true },
+    hints: { readOnly: true, idempotent: true, openWorld: true },
     async run() {
       const [manifests, list] = await Promise.all([printers.host.plugins(), printers.host.list()])
       const integrations = pluginLoads(manifests, list).map((l) => ({ id: l.id, name: l.name, state: l.state === 'ready' ? 'connected' : l.state, bays: l.bays ?? [] }))

@@ -12,7 +12,7 @@ import { BRANDS, brandsWithModels, connectionMethod, directConnections, modelByI
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import type { SetupAddInput, SetupConnection } from '../../src/hosts'
-import { defineSkill, type ToolContext } from '../../src/tool'
+import { READ_ONLY, defineSkill, type ToolContext } from '../../src/tool'
 import { arr, obj, oneLine, strs } from '../d_common/index'
 
 // ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ export function createSetupTools() {
   const skill = defineSkill({
     name: 'printer_setup',
     version: '0.2.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Guides a new user through printer setup, one question at a time: optional look and feel, brand, model, nozzle, connection method, test connection, add the printer, first calibration suggestion. Call it with everything the user has said so far. It returns the current stage, the question to ask with its options, and what it resolved from the printer catalog, with where to find each value on the printer. It changes nothing: setup.look, printer_test and printer_add (profileId is resolved.model.id) make the changes, each after asking the user. The where-to-find wording comes from vendor documentation and is unchecked on a printer; say so if the user cannot find a screen. ' +
       SECRET_RULE,
@@ -255,7 +255,7 @@ export function createSetupTools() {
   const discover = defineSkill({
     name: 'printer_discover',
     version: '0.1.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Lists printers found on the local network or over USB. Passive: no credentials are sent and nothing on a printer changes.',
     input: z.object({ timeoutMs: z.number().int().min(500).max(30000).optional().describe('How long to listen, in ms (default 5000)') }),
     args: () => '--scan',
@@ -275,7 +275,7 @@ export function createSetupTools() {
   const search = defineSkill({
     name: 'printer_profile_search',
     version: '0.1.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Searches the printer profile library by vendor or model text and returns profile ids with the nozzle sizes each profile has. printer_setup already resolves catalog models to a profile id; use this for a printer it does not list.',
     input: z.object({ query: z.string().min(1).max(80).describe('Vendor or model text, such as "Bambu Lab P1S"') }),
     args: (i) => `"${i.query}"`,

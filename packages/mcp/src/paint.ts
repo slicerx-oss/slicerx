@@ -5,7 +5,7 @@
 // in words a person uses (sx-geom paint.select): the part, faces facing a direction, a height band, a point grown
 // into a region, or one state for another. Read-back gives each painted state's area and regions.
 import { stepName, type DesignHost, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { designArg, designSummary, faceAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
@@ -93,7 +93,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
     name: 'paint.preview',
     version: '1.2.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false },
     description:
       'See what painting a design would do, without changing it: the triangles and area a target paints on each part, its connected regions, and a picture framed on them (the PNG only with image: true). Targets in words: the whole part, faces facing a direction ("the bottom" is direction bottom; "the top cap" is direction top with pick largest), a height band, a point grown into a region (smart fill or bucket), or one state for another. Show the person the preview, then apply it with slicerx_paint_apply and its preview id.',
     input: z.object({
@@ -187,7 +187,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
     name: 'paint.regions',
     version: '1.1.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Read a design\'s paint back: for one layer, each part\'s painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. Optionally a picture (PNG only with image: true).',
     input: z.object({ design: designArg, layer: layerArg, image: z.boolean().default(false), view: z.enum(['fit', 'iso', 'top', 'front']).default('fit'), size: z.number().int().min(64).max(2048).optional() }),
     async run(i) {

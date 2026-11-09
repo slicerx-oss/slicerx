@@ -31,7 +31,7 @@ const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', refus
 export function appUnitTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   return (['get', 'set'] as const).map((action) => defineTool({
     name: action === 'get' ? 'app.units' : 'app.units_set', version: '1.0.0', source: 'command', permission: 'read',
-    ...(action === 'set' ? { hints: APP_VIEW_CHANGE_HINTS } : {}),
+    hints: action === 'set' ? APP_VIEW_CHANGE_HINTS : { readOnly: true },
     input: appUnitInputs[action] as z.ZodType<Record<string, unknown>>,
     description: `${action === 'get' ? 'Read Model display units and precision from Settings, including the remembered precision of each unit.' : 'Set Model display units (mm or in) and precision as in Settings. Precision is {decimals:n}: mm accepts 0-3 and inches 2-4, or {fraction:n} for inches to the nearest 1/16, 1/32 or 1/64. A unit switch preserves its remembered precision; a precision applies to the new unit or the current one. Invalid combinations refuse without changing anything. Returns the preferences read back.'} Needs ${appName}'s app link and the existing read grant. Changes only display and bare-number input interpretation; geometry, files, history, print settings and tool coordinates stay in mm. Adds no Undo step. The normal preference store remembers the choice.`,
     async run(input) {

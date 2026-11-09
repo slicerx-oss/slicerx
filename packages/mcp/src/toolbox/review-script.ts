@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { READ_ONLY } from '@slicerx/pilot'
 import { z } from 'zod'
 import { ToolInputError } from '../models'
 import { serverTool, type ServerToolDeps } from './deps'
@@ -11,7 +12,7 @@ export default (d: ServerToolDeps) => serverTool({
   title: 'Review a printer script',
   version: '1.0.0',
   source: 'command',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   toolset: 'core',
   ungated: true,
   description: 'Compare a printer script with versioned stock for the selected printer and firmware. Returns the shared native review decision, reason, stock version, fingerprint and ignored cosmetic differences. Does not change a project, export G-code or start a print.',

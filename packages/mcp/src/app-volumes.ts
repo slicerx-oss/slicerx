@@ -82,7 +82,7 @@ export function appVolumeTools(link: AppLinkCaller | undefined, appName: string)
     ['remove', 'app.volume_remove', 'volumes.remove', 'Remove one volume by id from an open object. Returns the removed id and the remaining volumes. One toolbar Undo restores it.'],
   ] as const
   return commands.map(([input, name, method, description]) => defineTool({
-    name, version: '1.0.0', source: 'command', permission: input === 'list' ? 'read' : 'slice',
+    name, version: '1.0.0', source: 'command', permission: input === 'list' ? 'read' : 'slice', hints: { readOnly: input === 'list' },
     description: `${description} Needs the app link${input === 'list' ? '.' : ' and an edit grant.'}`,
     input: appVolumeInputs[input] as z.ZodType<Record<string, unknown>>,
     ...(input === 'list' ? {} : { approval: async (i: Record<string, unknown>) => ({ title: `Change volumes of ${i['object']}?`, lines: [], actions: [] }) }),

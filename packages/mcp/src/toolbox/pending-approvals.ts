@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { READ_ONLY } from '@slicerx/pilot'
 import { developerModeRemedies, developerModeSure, NEEDS_DEVELOPER_MODE, PRINTER_STORAGE_FULL, productName, STORAGE_FULL_REMEDY } from '@slicerx/contracts'
 import { z } from 'zod'
 import { mcpName } from '../gate'
@@ -11,7 +12,7 @@ export default (d: ServerToolDeps) =>
     title: 'Pending approvals',
     version: '1.1.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'core',
     ungated: true,
     description: `List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in ${productName()} or on the phone, and how those went once the hub ran them. A print handed to the hub carries \`options\`, its print options as sent (bedLeveling, timelapse and the rest, true or false). A failed one carries the hub's error code; \`needs_developer_mode\` (a Bambu Lab printer that takes no print from other apps; \`sure\` false when that is a guess from a failed upload or an unanswered start) lists the two remedies to tell the user, and \`printer_storage_full\` (no room on the printer's card) lists the one remedy.`,

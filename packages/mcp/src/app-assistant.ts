@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError } from './errors'
@@ -18,7 +18,7 @@ export function appAssistantTools(link: AppLinkCaller | undefined, appName: stri
     name: 'app.assistant',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read the assistant identity of the edition open in ${appName}: its display name, icon image or builtin:mimir, optional accent (one color or light/dark colors), and whether the edition enables the assistant. Reads the app link; changes nothing. An absent accent follows the app theme.`,
     input: z.object({}),
     async run() {

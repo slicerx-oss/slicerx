@@ -5,7 +5,7 @@
 // printer.queue, which waits for the person in the app. Only the fields below reach a client, never the file, its
 // SHA-256, a card's token or request id, a printer id, an access code or a serial.
 import { assistantText } from '@slicerx/contracts'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -124,7 +124,7 @@ export function mimirRunTools(link: AppLinkCaller | undefined, appName: string):
     name: 'mimir.run',
     version: '1.0.1',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: assistantText(`Read back mimir's print run in the open ${appName} app for one chat (the chat the mimir tab has open, else the newest mimir session, unless sessionId names another), never the file, its SHA-256, a card's token or request id, an access code or a serial: each step (design, plate, target, slice, send, print) as done, now, todo or off; the last slice's time, grams, cost, warnings and whether the plate, printer or slots changed after it (stale); what was sent (the printer's name, the file name and which slot feeds each filament); and the print as the printer last reported it (state, layer, time left, progress and how it ended). Null before the tab first opens. Starting a print stays with slicerx_printer_queue, which waits for the person in the app.`),
     input: z.object({ sessionId: z.string().min(1).max(200).optional().describe('A session id, the sessionId slicerx_mimir_ask returns or the id slicerx_mimir_session takes; the chat the mimir tab has open when left out, else the newest mimir session') }),
     async run(i) {

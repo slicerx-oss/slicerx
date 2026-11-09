@@ -5,7 +5,7 @@
 // hides secrets before a fact leaves it and refuses to keep one; this server keeps no copy. Adding a fact is an edit on
 // the link, so a client the person allowed to read only is refused there.
 import { assistantText } from '@slicerx/contracts'
-import { defineTool, MEMORY_KINDS, noteProblem, type MemoryFact, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, MEMORY_KINDS, noteProblem, type MemoryFact, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -48,7 +48,7 @@ export function mimirMemoryTools(link: AppLinkCaller | undefined, appName: strin
     name: 'mimir.memory',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: assistantText(`Read what mimir remembers about the person in ${appName}: their printers, filaments, preferences, outcomes (what worked) and sizes, newest first, each with its kind, text, optional data and when it changed. Access codes, serial numbers and keys are hidden before a fact leaves the app; hidden counts the facts that had one. Reads through the app link; the app must be open with the link on.`),
     input: z.object({ kind: z.enum(MEMORY_KINDS).optional().describe('Only facts of this kind; all of them when left out') }),
     async run(i) {

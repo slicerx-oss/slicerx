@@ -9,7 +9,7 @@ import { DEFAULT_CONFIG } from '../src/config'
 import { HUGINN, MUNINN } from '../src/models'
 import { cloudHeaders, cloudModel, createTransportClient } from '../src/provider/client'
 import { createPilot } from '../src/runtime'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 import { z } from 'zod'
 
 const BASE = 'https://abcdefghijklmnop.supabase.co/functions/v1/mimir'
@@ -76,7 +76,7 @@ async function run(t: LlmTransport, message: string, opts: { design?: boolean; a
   return ev
 }
 
-const designNew = defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', description: 'design.new for the test', input: z.object({}).passthrough(), run: async () => ({ summary: 'new design' }) }) as PilotTool<never>
+const designNew = defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'design.new for the test', input: z.object({}).passthrough(), run: async () => ({ summary: 'new design' }) }) as PilotTool<never>
 
 const tiers = (sent: LlmHttpRequest[]): (string | undefined)[] => sent.map((r) => r.headers['x-sx-tier'])
 const switches = (ev: PilotEvent[]): string[] => ev.flatMap((e) => (e.type === 'model_switch' ? [e.model] : []))

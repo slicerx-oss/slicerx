@@ -44,7 +44,7 @@ export function appDimensionTools(link: AppLinkCaller | undefined, appName: stri
   ] as const
   return commands.map(([input, name, method, description]) => defineTool({
     name, version: '1.0.0', source: 'command', permission: input === 'keep' || input === 'remove' ? 'slice' : 'read',
-    ...(input === 'show' ? { hints: APP_VIEW_CHANGE_HINTS } : {}),
+    hints: input === 'show' ? APP_VIEW_CHANGE_HINTS : { readOnly: input === 'list' },
     input: appDimensionInputs[input] as z.ZodType<Record<string, unknown>>,
     description: `${description} Needs ${appName}'s app link${input === 'keep' || input === 'remove' ? ' and an edit grant. Refuses locked objects and unfinished edits; validates before changing the project.' : ' and the existing read grant.'} Refuses stale results if the plate changes while measuring.`,
     ...(input === 'keep' || input === 'remove' ? { approval: async () => ({ title: input === 'keep' ? 'Keep this dimension?' : 'Remove this dimension?', lines: [], actions: [] }) } : {}),

@@ -12,7 +12,7 @@
 import type { PilotAttachment } from '@slicerx/contracts'
 import { z } from 'zod'
 import { toolGroupOf, type GroupedTool } from './surfaces'
-import { defineTool, type PilotTool } from './tool'
+import { READ_ONLY, defineTool, type PilotTool } from './tool'
 
 /** The sets a local model's turn in the mimir tab picks from. */
 export const TURN_SETS = ['build', 'shape', 'edit', 'app', 'print'] as const
@@ -256,7 +256,7 @@ export function turnSetTool(pick: (sessionId: string, set: TurnSet) => void): Pi
     name: TURN_SET_TOOL,
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Load another set of tools when the ones you have do not cover the next step. You get its tools from your next step on, in place of the current set. ${TURN_SETS.map((s) => `${s}: ${TURN_SET_WORDS[s]}.`).join(' ')}`,
     localDescription: `Load another tool set (set) when yours does not cover the next step; it replaces yours from your next step on. ${TURN_SETS.map((s) => `${s}: ${TURN_SET_SHORT[s]}.`).join(' ')}`,
     input: z.object({ set: z.enum(TURN_SETS) }),

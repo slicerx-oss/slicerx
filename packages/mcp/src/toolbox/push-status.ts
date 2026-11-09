@@ -26,7 +26,7 @@ export default (d: ServerToolDeps) => {
     ungated: true,
     description: `Read the phone alerts the ${productName()} hub sends while the app is closed (a print finished, stopped or needs the person, or a card waits). sending says whether the hub posts pushes at all. Each registration has tokenEnd (the token's last six characters, never the token), platform, prefs (printDone, printFailed, attention, approvals), createdAt and provider: expo for ${productName()}'s own phones and for a partner phone's own Expo token, apns or fcm for a partner token sent through that partner's gateway (gatewayHost). Partner registrations also carry partner (the app name) and sentThisHour against limits.partnerPushesPerHour. A partner phone without the approve right never gets approval alerts. Every push is fixed text that names no file, model or printer. Phones register themselves through their pairing; no tool can.`,
     input: z.object({}),
-    hints: { idempotent: false, openWorld: true },
+    hints: { readOnly: true, idempotent: false, openWorld: true },
     async run() {
       const read = printers.kind === 'link' ? readerOf(printers.host) : undefined
       if (!read) throw new ToolInputError(`Phone alerts come from the ${productName()} hub; these printers have none.`, 'not_supported', { reason: 'no_hub' })

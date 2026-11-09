@@ -4,7 +4,7 @@
 // store client and the person's session, so a client sees what the person would: the catalog signed in or out, and the
 // person's Saved list and own uploads only while they are signed in. This server holds no account key or session of
 // its own, and nothing here downloads, likes, saves or changes a design.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -75,7 +75,7 @@ export function appVaultTools(link: AppLinkCaller | undefined, appName: string):
     name: 'vault.list',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `List Vault designs in ${appName} as its Vault shows them, read by the open app with its own store and the person's session: list is all (the approved catalog, signed in or out), saved (the person's Saved list) or mine (the person's own uploads in every status, with their review status); saved and mine answer signed_out while nobody is signed in. Each design has id, slug, title, creator (handle and displayName), license, tags, status, publishedAt, version (version, format, colors with hex and name, sizeMm as x, y and z in mm from the upload scan or null when the scan could not vouch for one, and print: the creator's first tested printer with timeS and grams), stats (downloads, makes, likes) and, signed in, liked and saved. query and tag filter as the Vault's search and category do, sort (new or popular) orders the catalog, and limit (1 to 50, default 24) with cursor (the next value of an earlier page) pages through. Never a file, a download link or a token, and nothing here downloads, likes or saves a design. Reads through the app link; the app must be open with the link on.`,
     input: z
       .object({

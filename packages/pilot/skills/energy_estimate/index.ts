@@ -7,7 +7,7 @@ import type { Cell, Tone } from '@slicerx/contracts'
 import { z } from 'zod'
 import type { KbDoc } from '../../src/kb/kb'
 import { fmtDuration, fmtMoney, type ToolShared } from '../../src/shared'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { filamentDoc, num, printerDoc, rec } from '../fleet_common/index'
 
 /** Electricity price when the user gives none, per kWh. Stated in the output. */
@@ -85,7 +85,7 @@ export function createEnergyEstimate(shared: ToolShared) {
   return defineSkill({
     name: 'energy_estimate',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Estimate electricity use and cost for sliced plates or a given print time: kWh and cost per plate from print time and heat-up. Uses the typical printing wattage in the printer knowledge when it has a figure for the material, and otherwise a stated assumption for the printer class; the output labels which is which. The electricity price is an input (assumed $0.15 per kWh when omitted). Use it for "how much electricity does this 14 hour ABS print use". Read only.',
     input: z.object({

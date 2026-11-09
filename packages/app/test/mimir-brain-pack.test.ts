@@ -4,7 +4,7 @@
 // in the desktop app or in the browser build (cad); web off turns web search off too; and its routing names the models
 // for the person's own key.
 import type { Host, PrinterHost } from '@slicerx/contracts'
-import { createApprovalBroker, createPilot, DEFAULT_CONFIG, defineTool, toolGroupOf, type PilotTool } from '@slicerx/pilot'
+import { createApprovalBroker, createPilot, DEFAULT_CONFIG, READ_ONLY, defineTool, toolGroupOf, type PilotTool } from '@slicerx/pilot'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { NEUTRAL } from '../src/edition'
@@ -20,7 +20,7 @@ const noLlm = { available: async () => true, stream: () => { throw new Error('sc
 const host = { kind: 'web', slicer: {}, printers, approvals: createApprovalBroker(), capabilities: { threads: 1 } } as unknown as Host
 const withTools = (tools: Partial<Record<'design' | 'slicing' | 'printers' | 'watch' | 'paint' | 'web', boolean>>, routing?: typeof NEUTRAL.ai.brain.routing) => ({ ...NEUTRAL, ai: { ...NEUTRAL.ai, brain: { ...NEUTRAL.ai.brain, tools, ...(routing ? { routing } : {}) } } })
 
-const tool = (name: string) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: name, input: z.object({}), run: async () => ({ summary: 'ok' }) }) as PilotTool<never>
+const tool = (name: string) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: name, input: z.object({}), run: async () => ({ summary: 'ok' }) }) as PilotTool<never>
 const DESIGN_TOOLS = [tool('design.new'), tool('geom.info')]
 
 /** The tab's runtime as session.ts makes it, with the edition's switches. */

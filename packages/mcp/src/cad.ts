@@ -9,7 +9,7 @@
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
 import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, loftParams, loopStart, profileOffPathMm, projectionsOut, stepName, sweepParams, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
-import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { notClosedWords, partClosure, type Closure } from './closure'
@@ -646,7 +646,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.faces',
     version: '1.3.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'List the flat faces of a model or a design, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center; for a design also its part, its face key and the step that made it. Use a face\'s "at" and "normal" with slicerx_geom_face_pick, slicerx_geom_edge_pick or slicerx_geom_push_pull. Curved surfaces show up as many small faces.',
     localDescription:
@@ -684,7 +684,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.face_pick',
     version: '1.3.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Pick a flat face of a model or a design: returns its sketch frame (origin, normal, u, v in mm), its outline in that frame, area and bounds. Pass the frame to slicerx_geom_extrude or slicerx_geom_revolve to sketch on the face; outline points are [u, v] in it.',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), face: faceRef }),
@@ -712,7 +712,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.edge_pick',
     version: '1.5.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face\'s normal. Returns the edge (pass it to slicerx_geom_fillet or slicerx_geom_chamfer as is), its length, whether it is convex, whether it can be filleted and why not, the largest radius and bevel that fit this edge (maxRadiusMm, maxDistanceMm) and every edge of its chain (chainMaxRadiusMm) and of its loop (loopMaxRadiusMm), the limits the fillet and chamfer enforce on that set, the tangent chain it belongs to, and the loop of every edge around that face.',
     localDescription:
@@ -738,7 +738,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.sketch_check',
     version: '1.2.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which are holes, the filled area, and each problem with its loop and segment.',
     input: z.object({ loops: loopsRef }),
     async run(i) {
@@ -751,7 +751,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.sketch_solve',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Solve a constrained 2D sketch, as the sketch tool does: points, lines, circles and arcs held by constraints (coincident, horizontal, parallel, tangent, distance, angle and the rest). Returns where every point lands, each circle and arc radius, the degrees of freedom left (0 is fully defined), which points can still move, and the constraints that conflict or repeat. Lines, circles and arcs refer to points by index; constraints refer to points and entities by index. Values are mm, angles degrees.',
     input: z.object({
@@ -773,7 +773,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.sketch_edit',
     version: '1.2.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Edit sketch loops and get them back (loops and segments from 0, `from` naming each result\'s source loops): intersect lists crossings, trim takes off the piece around a point, extend runs an open end on to the next curve, mirror and pattern add copies; intersect, trim and extend refuse splines and ellipses.',
     input: z.object({
@@ -1520,7 +1520,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.info',
     version: '1.3.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step; a part is closed when, with corners at the same point taken as one, every edge has exactly two faces, as the slicer reads it, and the summary says what keeps a part open. With --app, read the body in the open project without changing its history.',
     localDescription:
       'Read a model or design back: bounds, volume, surface area, triangle count, watertight and shells; a design per part, now or right after a given step. More: kb.search "modeling tools".',
@@ -1568,7 +1568,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.measure',
     version: '1.3.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Measure a model or a design as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. Pick a face by a point on it and its outward normal, as slicerx_geom_faces lists them; snap_mm snaps the pick to an edge or a corner that close, to measure from an edge. With --app, measure a design in the open project, in world coordinates. With "section" in place of "a", cut a design\'s part at a plane (a point on it and its normal) for the cross section: its area in mm2, outline length in mm and outline loops in world mm, to check a wall, bore or lip before calling a part done. Round faces are flat facets, so a circle\'s area reads up to about 0.1 percent under the true circle. A part that is not closed, or a plane that misses it, is refused.',
     input: z.object({

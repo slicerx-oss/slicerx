@@ -4,7 +4,7 @@
 // next step, its label follows the hold, and Resume lets the same run go on. New conversation while the run is held
 // cancels that run, so it never waits on behind the new chat. The tests wait on the run's own state, never a fixed time.
 import { DEFAULT_POLICY, type ApprovalHost, type Host, type LlmTransport, type Pilot, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
-import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '@slicerx/pilot'
+import { createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, type ScriptStep } from '@slicerx/pilot'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
@@ -46,7 +46,7 @@ function gatedTool(name: string) {
     version: '1',
     description: `Test tool ${name}`,
     source: 'skill',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({}),
     async run() {
       started.push(name)
@@ -64,7 +64,7 @@ const quick = (name: string, log: string[]) =>
     version: '1',
     description: `Test tool ${name}`,
     source: 'skill',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({}),
     async run() {
       log.push(name)

@@ -13,7 +13,7 @@ import { estimateTokens } from '../src/context'
 import type { MemoryStore } from '../src/memory/facts'
 import { createScriptedClient } from '../src/provider/scripted'
 import { surfaceTools } from '../src/surfaces'
-import { defineTool, localToolDef, toolSpec, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, localToolDef, toolSpec, type PilotTool } from '../src/tool'
 import { askTool, lookupTool, sheetBindTool, sheetTool } from '../src/tools/ask'
 import { memoryTools } from '../src/tools/memory'
 import { turnSetTool } from '../src/turnsets'
@@ -92,7 +92,7 @@ describe('the local form of every tool', () => {
       name: 'test.probe',
       version: '1.0.0',
       source: 'plugin',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       description: 'Probe.',
       input: z.object({ n: z.number().int().optional(), open: z.object({ a: z.string() }), id: z.string().min(1).optional(), title: z.string().min(2).max(60).optional(), shut: z.strictObject({ b: z.boolean().optional() }), any: z.looseObject({}), map: z.record(z.string(), z.number()), list: z.array(z.string()).default([]), point: z.tuple([z.number(), z.number()]), pair: z.tuple([z.string(), z.number()]), kind: z.literal('box'), side: z.enum(['left', 'right']) }),
       async run() {

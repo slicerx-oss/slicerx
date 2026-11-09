@@ -8,7 +8,7 @@
 import type { Cell, MeshPart, SliceResult } from '@slicerx/contracts'
 import { z } from 'zod'
 import { fmtDuration } from '../../src/shared'
-import { defineSkill, type ToolContext } from '../../src/tool'
+import { READ_ONLY, defineSkill, type ToolContext } from '../../src/tool'
 import { pickObject } from '../common'
 import { plateOf } from '../orientation_search/geometry'
 import { NO_MESH_NOTE, arr, geomRun, needsGeometry, num, objectGeometry, partFromGeom, printNumbers, round } from '../geom_common/index'
@@ -63,7 +63,7 @@ export function createResumeFromLayer() {
   return defineSkill({
     name: 'resume_from_layer',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Plan a restart after a failed print with the part still on the bed. Give the part height, the stopped layer or the printer id. Returns the layer and nozzle height to resume from and the time and grams of what is left. Plan only: it sends nothing to a printer, and the resume G-code needs the core start-layer option, which is not there yet.',
     input: z.object({

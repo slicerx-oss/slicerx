@@ -2,14 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // kb.sources: title, publisher and link for source ids the knowledge base cites.
 import { z } from 'zod'
-import { defineTool } from '../../src/tool'
+import { READ_ONLY, defineTool } from '../../src/tool'
 
 export function createKbSources() {
   return defineTool({
     name: 'kb.sources',
     version: '1.0.0',
     source: 'kb',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Look up the title, publisher and link of knowledge base sources by id (for example "bambu_wiki_ams_function") or by prefixed path (for example "orca:BBL/machine/..."). Use it when the user asks where a fact came from. Unknown ids are listed as missing.',
     input: z.object({ ids: z.array(z.string().min(1)).min(1).max(30).describe('Source ids or prefixed paths, as returned in the sources field of kb results') }),

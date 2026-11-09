@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { READ_ONLY } from '@slicerx/pilot'
 import { z } from 'zod'
 import { describePolicy } from '../policy'
 import { serverTool, type ServerToolDeps } from './deps'
@@ -10,7 +11,7 @@ export default (d: ServerToolDeps) =>
     title: 'Permission policy',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'core',
     ungated: true,
     description: 'Show the permission policy the user set for this server: Allow, Ask first or Off for each action class, and per-printer exceptions. Read only; no tool can change it.',

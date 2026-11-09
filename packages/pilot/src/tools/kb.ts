@@ -6,7 +6,7 @@ import type { ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { parseIntent } from '../intent'
 import type { KbDoc, KbKind } from '../kb/kb'
-import { defineTool, type PilotTool, type ToolContext, type ToolOutput } from '../tool'
+import { READ_ONLY, defineTool, type PilotTool, type ToolContext, type ToolOutput } from '../tool'
 
 /** Drops provenance fields the model does not need, to keep tool results small. */
 export function slim(v: unknown, depth = 0): unknown {
@@ -71,7 +71,7 @@ export function kbTools(): PilotTool<never>[] {
     name: 'kb.filament',
     version: '1.0.0',
     source: 'kb',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Look up a filament in the knowledge base: temperatures, cooling, plates, drying, nozzle needs, flow, retraction, pressure advance, failure modes, with sources.',
     input: z.object({ material: z.string().min(1).describe('Filament id, name or alias, such as "PETG", "petg_cf", "Bambu PLA Matte"') }),
     args: (i) => i.material,
@@ -97,7 +97,7 @@ export function kbTools(): PilotTool<never>[] {
     name: 'kb.printer',
     version: '1.0.0',
     source: 'kb',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Look up a printer model in the knowledge base: build volume, hotend, bed, enclosure, motion limits, supported materials, profile baseline and notes, with sources.',
     input: z.object({ printer: z.string().min(1).describe('Printer id or name, such as "prusa_mk4s", "Voron 2.4", "X1 Carbon"') }),
     args: (i) => i.printer,
@@ -120,7 +120,7 @@ export function kbTools(): PilotTool<never>[] {
     name: 'kb.troubleshoot',
     version: '1.0.0',
     source: 'kb',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Find the troubleshooting guide for a print problem (layer shift, stringing, warping, under extrusion and so on): the diagnosis questions, causes ranked by likelihood with checks and fixes (setting keys where they apply), with sources.',
     input: z.object({
       symptom: z.string().min(2).describe('What went wrong, in the user\'s words'),
@@ -151,7 +151,7 @@ export function kbTools(): PilotTool<never>[] {
     name: 'kb.workflow',
     version: '1.0.0',
     source: 'kb',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Find a how-to workflow: Bambu AMS, calibration (flow, pressure advance, input shaping), supports, seams, ironing, plate types, Prusa MMU, Klipper, PrusaLink, and similar, with sources.',
     input: z.object({ topic: z.string().min(2) }),
     args: (i) => `"${i.topic}"`,
@@ -166,7 +166,7 @@ export function kbTools(): PilotTool<never>[] {
     name: 'kb.search',
     version: '1.0.0',
     source: 'kb',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Search the whole knowledge base (filaments, printers, workflows, troubleshooting, settings catalog) when the right entry is not obvious. Returns the best matches.',
     input: z.object({ query: z.string().min(2), limit: z.number().int().min(1).max(8).optional() }),
     args: (i) => `"${i.query}"`,
@@ -194,7 +194,7 @@ export function kbTools(): PilotTool<never>[] {
     name: 'kb.intent',
     version: '1.0.0',
     source: 'kb',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Turn a job request in plain words ("12 strong PETG brackets by Friday") into structured goals (count, part, material, strength, speed, detail, deadline, printers) and setting targets by setting key with reasons. Call it first for any job request.',
     input: z.object({ text: z.string().min(2).describe('The user\'s request, verbatim') }),
     args: (i) => `"${i.text}"`,

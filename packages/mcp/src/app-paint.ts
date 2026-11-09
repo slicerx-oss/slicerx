@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { APP_VIEW_CHANGE_HINTS, type AppLinkCaller } from './app-route'
 import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput } from './app-paint-input'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -17,7 +17,7 @@ export function appPaintTools(link: AppLinkCaller | undefined, appName: string):
     }
   }
   return [defineTool({
-    name: 'app.paint', version: '1.0.0', source: 'command', permission: 'read', input: appPaintReadInput,
+    name: 'app.paint', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, input: appPaintReadInput,
     description: `Read an object's color, seam, support or fuzzy paint in ${appName}'s shown plate. Returns per-part states, areas in mm2, connected regions in bed coordinates, available color slot count and a revision. Use an object id from app_history. Reads the live project, including viewport brush strokes.`,
     run: (i) => call('paint.get', i),
   }), defineTool({

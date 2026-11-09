@@ -70,7 +70,7 @@ export function appPartTools(link: AppLinkCaller | undefined, appName: string): 
     ['order', 'app.parts_order', 'parts.order', 'Put the parts of an open object in a new order, by a full order of old indices or by moving one part to an index. Order is the list order only and does not change the print. Paint, filaments and print settings stay with their parts. With a CAD history it is a step. One toolbar Undo. Returns the parts read back.'],
   ] as const
   return commands.map(([input, name, method, description]) => defineTool({
-    name, version: '1.0.0', source: 'command', permission: input === 'list' ? 'read' : 'slice',
+    name, version: '1.0.0', source: 'command', permission: input === 'list' ? 'read' : 'slice', hints: { readOnly: input === 'list' },
     description: `${description} Needs the app link${input === 'list' ? '.' : ' and an edit grant.'}`,
     input: appPartInputs[input] as z.ZodType<Record<string, unknown>>,
     ...(input === 'list' ? {} : { approval: async (i: Record<string, unknown>) => ({ title: `Change the parts of ${i['object']}?`, lines: [], actions: [] }) }),

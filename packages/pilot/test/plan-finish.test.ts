@@ -6,7 +6,7 @@
 import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '../src/index'
+import { createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, type ScriptStep } from '../src/index'
 import { planLimits } from '../src/runtime'
 import type { ScriptStepData } from '../src/provider/scripted'
 
@@ -19,7 +19,7 @@ function tools(accepted: boolean) {
     version: '1',
     description: 'Show the plan and wait for Go',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({ part: z.string(), features: z.array(z.object({ name: z.string() })) }),
     async run() {
       return accepted ? { summary: 'Approved as shown', output: { planId: 'plan_1', accepted: true } } : { ok: false, summary: 'Not approved', output: { planId: 'plan_1', accepted: false } }
@@ -30,7 +30,7 @@ function tools(accepted: boolean) {
     version: '1',
     description: 'One feature',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({ name: z.string() }),
     async run(i) {
       built.push(i.name)
@@ -82,7 +82,7 @@ describe('"keep going" after a run cut off at its step limit', () => {
       version: '1',
       description: 'One feature',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.object({ name: z.string(), operation: z.string().optional() }),
       async run(i) {
         log.push(i.name)
@@ -141,7 +141,7 @@ describe('a sheet kept after a cut-off run', () => {
       version: '1',
       description: 'One feature',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.object({ name: z.string(), operation: z.string().optional(), design: z.string().optional() }),
       async run(i) {
         log.push(i.name)
@@ -247,7 +247,7 @@ describe('a sheet kept after a cut-off run', () => {
       version: '1',
       description: 'One feature',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.object({ name: z.string(), operation: z.string().optional(), design: z.string().optional() }),
       async run(i) {
         log.push(i.name)

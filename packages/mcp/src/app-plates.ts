@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Live plate navigation and edits, with the resulting objects and settings read back through the app link.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -75,7 +75,7 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
     name: 'app.plates',
     version: '1.1.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `List the plates of the project open in ${appName}, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), which plate the window shows, and which plate its view draws (drawn; the same as shown once the view has caught up). Includes plate settings and entries with concrete object ids, copy relationships, transforms, bounds in mm, locked/printable flags and object/part settings. Reads through the app link without changing the shown plate; the app must be open with the link on.`,
     input: z.object({}),
     async run() {

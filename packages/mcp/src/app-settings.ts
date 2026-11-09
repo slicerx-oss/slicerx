@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 import { projectSettingsReadInput } from './project-settings-input'
@@ -12,7 +12,7 @@ export function appSettingsTools(link: AppLinkCaller | undefined, appName: strin
     name: 'app.settings',
     version: '1.0.0',
     source: 'settings',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read project print settings in ${appName}: explicit overrides and effective values for the shown plate, including filament calibration and plate choices. shadowed lists overrides superseded by those choices. supported lists editable numeric, switch and choice process and filament keys, plus checked infill rotation templates and extra solid layers. readOnly lists plate type, filament mapping, print order and flush keys supplied by their own controls. Scripts, free text and printer settings other than z_hop_types are omitted. A filament's own lift (filament_z_hop, filament_z_hop_types, filament_travel_slope) reads as one entry per filament, slot 1 first, "nil" where it uses the printer's value. Optional keys narrows the values. Change or clear overrides with project.set_overrides and --app. Requires the open app with its link on.`,
     input: projectSettingsReadInput,
     async run(i) {
