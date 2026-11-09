@@ -524,12 +524,17 @@ fn sketch_sweep_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<V
     let profile: sketch_loft::Profile = field(req, "profile")?;
     let path: sketch_sweep::Path = field(req, "path")?;
     let thicken: Option<crate::thicken::Thicken> = field_or_default(req, "thicken")?;
+    let law = sketch_sweep::Law {
+        scale_end: field_or_default(req, "scaleEnd")?,
+        twist_deg: field_or(req, "twistDeg", 0.0)?,
+        ease: field_or_default(req, "ease")?,
+    };
     let op: face::Operation = field_or_default(req, "operation")?;
     let target = match req.get("target") {
         None | Some(Value::Null) => None,
         Some(v) => Some(item(v, "target", files)?),
     };
-    let tool = sketch_sweep::sweep_with(&profile, &path, thicken.as_ref())?;
+    let tool = sketch_sweep::sweep_with(&profile, &path, thicken.as_ref(), &law)?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
     tool_reply(r, target.as_ref(), op, enc)
