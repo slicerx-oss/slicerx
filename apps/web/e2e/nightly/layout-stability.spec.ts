@@ -380,7 +380,7 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
     await page.locator('.sx-tab[data-mode="design"]').click()
     await expect(page.getByTestId('model-tree')).toBeVisible()
     // each tool with what it needs picked first, so its fields and choices are on screen
-    const tools: { title: string; top?: boolean }[] = [
+    const tools: { title: string; top?: boolean; sketches?: string[] }[] = [
       { title: 'Fit a hole for a screw or insert', top: true },
       { title: 'Push or pull a face', top: true },
       { title: 'Fillet or chamfer edges' },
@@ -391,16 +391,27 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
       { title: 'Measure distance, angle and radius' },
       { title: 'Shape on a face: rectangle, circle, slot or polygon', top: true },
       { title: 'Sketch on the bed or a face, then extrude or revolve', top: true },
+      // Loft and Sweep with finished sketches picked, so the profiles list and both slots are filled
+      { title: 'Loft: a solid through sketches in order', sketches: ['k1', 'k2', 'k3'] },
+      { title: 'Sweep: carry a profile along a path', sketches: ['k1', 'k4'] },
+    ]
+    const level = (z: number) => ({ origin: [100, 100, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] })
+    const finished = [
+      { kind: 'sketch', id: 'k1', name: 'Sketch 1', frame: level(0), loops: [{ type: 'circle', center: [0, 0], diameterMm: 20 }] },
+      { kind: 'sketch', id: 'k2', name: 'Sketch 2', frame: level(15), loops: [{ type: 'circle', center: [0, 0], diameterMm: 14 }] },
+      { kind: 'sketch', id: 'k3', name: 'Sketch 3', frame: level(30), loops: [{ type: 'circle', center: [0, 0], diameterMm: 20 }] },
+      { kind: 'sketch', id: 'k4', name: 'Sketch 4', frame: { origin: [100, 100, 0], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, loops: [{ start: [0, 0], segments: [{ type: 'line', to: [0, 40] }] }] },
     ]
     const moved: Moved[] = []
     const past: string[] = []
     for (const t of tools) {
       const id = await freshBox(page)
-      await sx(page, { selection: id, selectedIds: [id] })
+      await sx(page, { selection: id, selectedIds: [id], timeline: t.sketches ? { bodies: [], items: finished, marker: finished.length } : { bodies: [], items: [], marker: 0 } })
       await command(page, t.title)
       const panel = page.locator('[data-section="cad-tool"], [data-section="cut-tool"]').first()
       await expect(panel).toBeVisible()
       if (t.top) await pick(page, await facePick(page, id, [0, 0, 1]))
+      for (const k of t.sketches ?? []) await pick(page, { objectId: null, partIndex: null, triangle: null, point: null, sketch: k })
       await page.waitForTimeout(400)
       // nothing in the panel runs past its content box: no segment, select or button cut at the right or the left
       past.push(

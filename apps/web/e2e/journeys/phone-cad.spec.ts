@@ -465,3 +465,29 @@ cold('a phone with the keyboard up and safe-area insets: every solid field scrol
   expect(lb.y + lb.height).toBeLessThanOrEqual(fb.y + 1)
   await shot(page, test.info(), 'phone-keyboard.png')
 })
+
+// ---- Loft from the Tools menu, with a finger
+test('Loft and Sweep sit under Create in the Tools menu, and Loft takes sketches tapped in order', async ({ page }) => {
+  test.slow()
+  await phoneStudio(page)
+  const level = (z: number) => ({ origin: [100, 100, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] })
+  await page.evaluate((frames) => {
+    const items = frames.map((frame, i) => ({ kind: 'sketch', id: `k${i + 1}`, name: `Sketch ${i + 1}`, frame, loops: [{ type: 'circle', center: [0, 0], diameterMm: 20 - i * 4 }] }))
+    ;(window as unknown as { __sx: Sx }).__sx.setState({ timeline: { bodies: [], items, marker: items.length } })
+  }, [level(0), level(15)])
+  await page.getByTestId('phone-tools').tap()
+  const menu = page.getByTestId('phone-tools-menu')
+  const create = menu.getByRole('group', { name: 'Create' })
+  await expect(create.locator('[data-tool="loft"]')).toBeEnabled()
+  await expect(create.locator('[data-tool="sweep"]')).toBeEnabled()
+  await create.locator('[data-tool="loft"]').tap()
+  const panel = page.locator('[data-section="cad-tool"]')
+  await expect(panel).toContainText('Tap sketches')
+  for (const k of ['k1', 'k2']) await emit(page, 'pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, sketch: k })
+  await expect(panel.getByTestId('loft-profile')).toHaveCount(2)
+  // each row's buttons are finger sized
+  for (const b of await panel.getByTestId('loft-profile').first().getByRole('button').all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  await expect(panel.getByTestId('model-tool-apply')).toBeEnabled()
+  await panel.getByTestId('model-tool-apply').tap()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: unknown[] } } }).__sx.getState().plate.length), { timeout: 30_000 }).toBe(1)
+})
