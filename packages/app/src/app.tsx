@@ -247,8 +247,14 @@ function Shell() {
         // After the desktop shell reloaded a window whose view stopped, the work comes back without asking.
         const crash = (await nativeCrashHost()?.recovery?.().catch(() => null)) ?? null
         if (gone) return
-        if (crash) void import('./project/view-crash').then((v) => v.recoverAfterViewCrash(host, crash, r))
-        else if (r && m.nothingToLose()) stopOffer = m.offerRecovery()
+        if (crash) {
+          void import('./project/view-crash').then((v) =>
+            v.recoverAfterViewCrash(host, crash, r, undefined, (s) => {
+              if (gone) s()
+              else stopOffer = s
+            }),
+          )
+        } else if (r && m.nothingToLose()) stopOffer = m.offerRecovery()
       })
     })
     return () => {

@@ -267,12 +267,12 @@ export function nothingToLose(s: Pick<AppState, 'plate' | 'plates' | 'activePlat
  * Puts the offer to restore unsaved work up, once. While the command bar is open the offer waits until the bar closes,
  * however it closes: the offer is a modal dialog, which would keep the open bar inert, and the bar that takes over from
  * its stand-in right after a reload could then never take the focus. The offer goes up only while nothing on the plate
- * would be lost, the rule at the start, so a command that opened other work in the meantime leaves it unasked. Returns
- * a stop, for a start that has gone before the bar closed.
+ * would be lost (`when`, the rule at the start), so a command that opened other work in the meantime leaves it unasked.
+ * Returns a stop, for a start that has gone before the bar closed.
  */
-export function offerRecovery(): () => void {
+export function offerRecovery(when: () => boolean = nothingToLose): () => void {
   const raise = (): void => {
-    if (nothingToLose()) set({ projectsDialog: 'recover' })
+    if (when()) set({ projectsDialog: 'recover' })
   }
   if (!get().commandOpen) {
     raise()
