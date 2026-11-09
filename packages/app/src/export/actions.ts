@@ -12,6 +12,7 @@ import { usedSlots } from '../filament/slots'
 import { activeMeta, allPlates, projectBase, switchPlate } from '../plate/plates'
 import { printBlock } from '../plate/heimdall'
 import { heldBodies } from '../plate/timeline'
+import { projectPlans } from '../project/plans-source'
 import { markClean } from '../project/unsaved'
 import { slicePlate, STALE_SLICE } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
@@ -119,8 +120,11 @@ export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pi
   const settings = extra.settings ?? orcaSettings(api!, {}, await railFilaments(api!))
   // a project saved rolled back keeps the bodies made after the marker
   const held = extra.gcode || opts.withoutHistory ? [] : heldBodies(s)
+  const written = held.length ? plates.map((p) => ({ ...p, objects: [...p.objects, ...held.filter((h) => h.plate === p.id).map((h) => h.entry)] })) : plates
+  // the mimir plans its designs were built from, when a plan is open; none adds no part, and an upload carries none
+  const plans = extra.gcode || opts.withoutHistory ? undefined : projectPlans(written.flatMap((p) => p.objects))
   const input: ProjectInput = {
-    plates: held.length ? plates.map((p) => ({ ...p, objects: [...p.objects, ...held.filter((h) => h.plate === p.id).map((h) => h.entry)] })) : plates,
+    plates: written,
     bed: s.bed,
     settings,
     objectSettings: s.objectSettings,
@@ -129,6 +133,7 @@ export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pi
     namedValues: s.namedValues,
     timeline: s.timeline,
     ...(opts.withoutHistory ? { history: false } : {}),
+    ...(plans ? { plans } : {}),
     // Named here: the worker does not know the edition the page runs as.
     application: appName(),
   }

@@ -601,6 +601,11 @@ export interface ProjectInput {
   sx?: { modelId?: string; creatorId?: string; exportedBy: string }
   /** The project's named values, written as Metadata/slicerx_values.json. */
   namedValues?: readonly { name: string; expr: string }[]
+  /**
+   * The mimir plans the project's designs were built from, written as Metadata/slicerx_plans.json (plansJson): plan
+   * state only, never chat text. None, or none left once the designs not written are dropped, adds no part.
+   */
+  plans?: PlansInput
   /** The design timeline (docs/cad-history.md); without one, the objects' histories are merged by when steps were made. */
   timeline?: Timeline
   /** The model's Title metadata; the first object's name when absent. */
@@ -623,7 +628,7 @@ export interface ProjectInput {
 
 /** The input of a print file without the model (`meshless`): the plates' printing objects become names only. */
 function meshlessInput(input: ProjectInput): ProjectInput {
-  const { meshless: _meshless, objectSettings: _settings, timeline: _timeline, namedValues: _values, ...rest } = input
+  const { meshless: _meshless, objectSettings: _settings, timeline: _timeline, namedValues: _values, plans: _plans, ...rest } = input
   const title = input.title ?? input.plates[0]?.objects[0]?.name
   return {
     ...rest,
@@ -637,6 +642,62 @@ const SX_NS = 'https://slicerx.app/schemas/sx3mf/2026'
 /** Metadata/slicerx_values.json: `{ "version": 1, "values": [{ "name", "expr" }] }`, or null when the table is empty so nothing is added. */
 export function valuesJson(values: readonly { name: string; expr: string }[]): string | null {
   return values.length ? JSON.stringify({ version: 1, values: values.map(({ name, expr }) => ({ name, expr })) }, null, 2) : null
+}
+
+/** Where a project keeps its mimir plans. Other slicers, and SlicerX versions before it, leave it alone. */
+export const PLANS_PART = 'Metadata/slicerx_plans.json'
+/** The largest plans part written or read: a bigger one is dropped whole by the reader. */
+export const PLANS_PART_MAX = 256 * 1024
+
+/** One plan as the project keeps it: the plan as approved and edited, and what its checks and builds left. */
+export interface PlanRecordInput {
+  /** The plan (its planId, part, units, features, sizes, assumptions and questions), as the person last edited it. */
+  plan: unknown
+  /** The plate object its part is built in, by the object's id; absent for a plan whose part is not started. */
+  design?: string
+  failedChecks?: number
+  /** The check that used up its fix round. */
+  closed?: unknown
+  /** Its last check passed. */
+  passed?: boolean
+  /** Its design's step ids when mimir last worked on it, in order. */
+  steps?: readonly string[]
+}
+
+export interface PlansInput {
+  /** The planId of the plan the person approved last. */
+  last?: string
+  /** Oldest first. */
+  entries: readonly PlanRecordInput[]
+}
+
+/**
+ * Metadata/slicerx_plans.json: `{ "version": 1, "last", "plans": [{ "plan", "design", "failedChecks", "closed",
+ * "passed", "steps" }] }`, each `design` the 3MF object id of the object its part is built in. A plan tied to an
+ * object that is not written is left out. Past PLANS_PART_MAX the oldest plans go first. Null when no plan is left, so
+ * a project with none has no part.
+ */
+export function plansJson(plans: PlansInput | undefined, fileIds: ReadonlyMap<string, number>): string | null {
+  const rows: Record<string, unknown>[] = []
+  for (const e of plans?.entries ?? []) {
+    const id = e.design === undefined ? undefined : fileIds.get(e.design)
+    if (e.design !== undefined && id === undefined) continue
+    rows.push({
+      plan: e.plan,
+      ...(id !== undefined ? { design: String(id) } : {}),
+      ...(e.failedChecks ? { failedChecks: e.failedChecks } : {}),
+      ...(e.closed !== undefined ? { closed: e.closed } : {}),
+      ...(e.passed ? { passed: true } : {}),
+      ...(e.steps ? { steps: [...e.steps] } : {}),
+    })
+  }
+  const text = () => JSON.stringify({ version: 1, ...(plans?.last ? { last: plans.last } : {}), plans: rows })
+  let out = text()
+  while (rows.length && new TextEncoder().encode(out).length > PLANS_PART_MAX) {
+    rows.shift()
+    out = text()
+  }
+  return rows.length ? out : null
 }
 
 /** Plates sit side by side in the project's build space, as in Bambu Studio and OrcaSlicer. */
@@ -845,6 +906,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   if (input.history !== false) files.push(...timelineFiles(syncTimeline(input.timeline ?? { bodies: [], items: [], marker: 0 }, input.plates.flatMap((p) => p.objects)), fileIds))
   const values = valuesJson(input.namedValues ?? [])
   if (values) files.push({ name: 'Metadata/slicerx_values.json', data: values })
+  const plans = plansJson(input.plans, fileIds)
+  if (plans) files.push({ name: PLANS_PART, data: plans })
   const marks = layerMarksXml(input.layerMarks)
   if (marks) files.push({ name: MARKS_PART, data: marks })
   const sliced = Object.entries(input.gcode ?? {}).map(([i, gcode]) => {
