@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ScriptStepData } from '@slicerx/pilot/evals'
+import type { RecordedStep } from './replay-divergence'
 
 export const RECORDINGS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'recordings')
 
@@ -21,8 +21,12 @@ export interface CapturedRecording {
   provider: string
   /** When the live run captured it, ISO time. */
   capturedAt: string
-  /** One step per provider request: the reply text and the tool calls with their arguments. */
-  steps: ScriptStepData[]
+  /**
+   * One step per provider request: the reply text and the tool calls with their arguments, and `seen`, the tool results
+   * the model had just read, which a replay compares with the ones it gets (replay-divergence.ts). Recordings from before
+   * `seen` was kept leave it out and are not checked.
+   */
+  steps: RecordedStep[]
   /**
    * Captured with the default answer on (run.ts DEFAULT_ANSWER): when the model asked a question, the steps after it
    * answer the default answer, so a replay sends it too. Recordings from before the default answer leave it out.
@@ -58,11 +62,15 @@ export function parseRecording(text: string, where = 'recording'): Recording {
   if (v['status'] !== 'recorded') throw new Error(`${where}: status must be "to-capture" or "recorded"`)
   for (const k of ['model', 'provider', 'capturedAt'] as const) if (typeof v[k] !== 'string' || !v[k]) throw new Error(`${where}: a recorded reply needs ${k}`)
   if (!Array.isArray(v['steps']) || !v['steps'].length) throw new Error(`${where}: a recorded reply needs at least one step`)
-  const steps: ScriptStepData[] = v['steps'].map((s, i) => {
+  const steps: RecordedStep[] = v['steps'].map((s, i) => {
     if (!isObj(s)) throw new Error(`${where}: step ${i + 1} is not an object`)
-    const step: ScriptStepData = {}
+    const step: RecordedStep = {}
     if (typeof s['text'] === 'string') step.text = s['text']
     if (typeof s['reasoning'] === 'string') step.reasoning = s['reasoning']
+    if (s['seen'] !== undefined) {
+      if (!Array.isArray(s['seen']) || s['seen'].some((r) => typeof r !== 'string')) throw new Error(`${where}: step ${i + 1} seen must be a list of tool results`)
+      step.seen = s['seen'] as string[]
+    }
     if (s['calls'] !== undefined) {
       if (!Array.isArray(s['calls'])) throw new Error(`${where}: step ${i + 1} calls must be a list`)
       step.calls = s['calls'].map((c, k) => {
