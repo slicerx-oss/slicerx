@@ -4,9 +4,11 @@
 // reply, and the stop at the cap less the margin, all on fake priced transports with no network.
 import type { LlmHttpRequest, LlmTransport } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { budgetedClient, canStart, createBudget, DEFAULT_USD_PER_SEARCH, runLive, SEARCHES_PER_LOOKUP, STOP_MARGIN_USD, usageUsd, worstUsd, type Price } from '../evals/creative/live'
+import { budgetedClient, canStart, createBudget, DEFAULT_USD_PER_SEARCH, HAIKU_5_5, runLive, SEARCHES_PER_LOOKUP, STOP_MARGIN_USD, usageUsd, worstUsd, type Price } from '../evals/creative/live'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
-import { createAnthropicAdapter, createTransportClient, type LlmEvent, type LlmRequest } from '@slicerx/pilot'
+import { loadRecording } from '../evals/creative/recordings'
+import { runPrompt } from '../evals/creative/run'
+import { createAnthropicAdapter, createScriptedClient, createTransportClient, type LlmEvent, type LlmRequest } from '@slicerx/pilot'
 
 const PRICE: Price = { usdIn: 1, usdOut: 5 }
 const enc = new TextEncoder()
@@ -94,14 +96,111 @@ describe('reply prices', () => {
     expect((await drain(createTransportClient(none, 'anthropic').stream(LOOKUP))).find((e) => e.type === 'usage')).not.toHaveProperty('webSearches')
   })
 
-  it('the worst case is every body byte as a cache write token plus the whole output limit, and a lookup adds its searches', () => {
+  it('the worst case is a token per 4 body bytes as cache writes plus the whole output limit, and a lookup adds its searches', () => {
     const http = createAnthropicAdapter().build({ ...ASK, maxOutputTokens: 4000 })
-    const prompt = enc.encode(JSON.stringify(JSON.parse(http.body ?? '{}'))).length + 1000
+    const prompt = Math.ceil(enc.encode(JSON.stringify(JSON.parse(http.body ?? '{}'))).length / 4) + 1000
     expect(worstUsd('anthropic', http, false, PRICE)).toBeCloseTo((prompt * 1.25 + 4000 * 5) / 1e6, 12)
     expect(worstUsd('openai', http, false, PRICE)).toBeCloseTo((prompt + 4000 * 5) / 1e6, 12)
     const look = createAnthropicAdapter().build(LOOKUP)
-    const lp = enc.encode(JSON.stringify(JSON.parse(look.body ?? '{}'))).length + 1000
+    const lp = Math.ceil(enc.encode(JSON.stringify(JSON.parse(look.body ?? '{}'))).length / 4) + 1000
     expect(worstUsd('anthropic', look, true, PRICE)).toBeCloseTo((4 * (lp + 1200 + 3 * 30_000) * 1.25 + 1200 * 5) / 1e6 + 3 * DEFAULT_USD_PER_SEARCH, 12)
+    // a reply's own count of its input tokens, as tokens per byte, takes the place of the 4 bytes
+    expect(worstUsd('anthropic', http, false, PRICE, 0.5)).toBeCloseTo(((Math.ceil(enc.encode(JSON.stringify(JSON.parse(http.body ?? '{}'))).length / 2) + 1000) * 1.25 + 4000 * 5) / 1e6, 12)
+  })
+
+  it('prices a request at the long rates only once its estimated input tokens pass the threshold, not its bytes', () => {
+    const sized = (bytes: number) => createAnthropicAdapter().build({ ...ASK, maxOutputTokens: 1000, messages: [{ role: 'user', content: 'x'.repeat(bytes) }] })
+    const tokens = (http: LlmHttpRequest) => Math.ceil(enc.encode(JSON.stringify(JSON.parse(http.body ?? '{}'))).length / 4) + 1000
+    // 300 KB is about 75K tokens: under Haiku 5.5's 100K, so the short rates
+    const mid = sized(300_000)
+    expect(worstUsd('anthropic', mid, false, HAIKU_5_5)).toBeCloseTo((tokens(mid) * 0.1 * 1.25 + 1000 * 0.5) / 1e6, 12)
+    // 500 KB is about 125K tokens: the long rates
+    const big = sized(500_000)
+    expect(worstUsd('anthropic', big, false, HAIKU_5_5)).toBeCloseTo((tokens(big) * 0.5 * 1.25 + 1000 * 2.5) / 1e6, 12)
+  })
+})
+
+/** The requests mimir sends for a creative prompt's recorded replies, as the tab makes them; the engine is left out. */
+async function recordedRequests(id: string): Promise<LlmRequest[]> {
+  const rec = loadRecording(id)
+  if (rec.status !== 'recorded') throw new Error(`${id} has no recording`)
+  const inner = createScriptedClient(rec.steps, { chunk: false })
+  const sent: LlmRequest[] = []
+  const client = {
+    provider: 'anthropic',
+    async *stream(req: LlmRequest, signal?: AbortSignal) {
+      sent.push(req)
+      yield* inner.stream(req, signal)
+    },
+  }
+  const p = CREATIVE_PROMPTS.find((x) => x.id === id)!
+  await runPrompt(p, { geom: undefined, client, defaultAnswer: false })
+  return sent
+}
+
+describe('a long recorded build on a small cap', () => {
+  it('reserves a long tab request at its estimated tokens and the short rates, a cent and not a dime', async () => {
+    const sent = await recordedRequests('flexi-fish')
+    const http = createAnthropicAdapter().build({ ...sent.at(-1)!, model: 'claude-haiku-5-5' })
+    const bytes = enc.encode(JSON.stringify(JSON.parse(http.body ?? '{}'))).length
+    // the tab's tools and system prompt alone are well over 100 KB, so a token a byte would price it long
+    expect(bytes).toBeGreaterThan(150_000)
+    const maxOut = (JSON.parse(http.body ?? '{}') as { max_tokens: number }).max_tokens
+    const reserve = worstUsd('anthropic', http, false, HAIKU_5_5)
+    expect(reserve).toBeCloseTo(((Math.ceil(bytes / 4) + 1000) * 0.1 * 1.25 + maxOut * 0.5) / 1e6, 12)
+    expect(reserve).toBeLessThan(0.02)
+  })
+
+  it('carries a build on a $0.20 cap until its real spend nears the cap, then stops at the margin', async () => {
+    const sent = await recordedRequests('flexi-fish')
+    const req = sent.at(-1)!
+    const budget = createBudget(0.2)
+    // each reply bills what the request really holds: a token per 4 bytes, mostly read from the cache, and 2,000 out
+    const { transport, started } = fakeTransport(
+      () => budget.spentUsd,
+      (http) => {
+        const input = Math.ceil(enc.encode(JSON.stringify(JSON.parse(http.body ?? '{}'))).length / 4)
+        return reply({ input_tokens: 2_000, cache_read_input_tokens: input - 2_000, output_tokens: 2_000 })
+      },
+    )
+    const client = budgetedClient(createTransportClient(transport, 'anthropic'), 'claude-haiku-5-5', HAIKU_5_5, budget)
+    let refused = ''
+    for (let i = 0; i < 200 && !refused; i++) {
+      try {
+        await drain(client.stream(req))
+      } catch (e) {
+        refused = e instanceof Error ? e.message : String(e)
+      }
+    }
+    // a token a byte at the long rates reserved about $0.12 a request, so the run stopped near $0.08 of real spend
+    expect(started.length).toBeGreaterThan(20)
+    expect(budget.spentUsd).toBeGreaterThan(0.2 - STOP_MARGIN_USD - 0.01)
+    expect(budget.spentUsd).toBeLessThanOrEqual(0.2)
+    expect(refused).toMatch(/cap less the \$0\.10 margin|past the \$0\.20 cap/)
+    expect(budget.cutOff).toBe(0)
+  })
+
+  it('reserves at the density the last reply reported, when that is more than a token per 4 bytes', async () => {
+    const budget = createBudget(1.5)
+    const http = createAnthropicAdapter().build({ ...ASK, model: 'test-model' })
+    const bytes = enc.encode(JSON.stringify(JSON.parse(http.body ?? '{}'))).length
+    let calls = 0
+    // the first reply says the request was a token every 2 bytes; the second is read only to its first text, so it is
+    // charged its reserve
+    const transport: LlmTransport = {
+      available: async () => true,
+      async *stream() {
+        calls++
+        yield enc.encode(calls === 1 ? reply({ input_tokens: Math.ceil(bytes / 2), output_tokens: 10 }) : reply(QUARTER))
+      },
+    }
+    const client = budgetedClient(createTransportClient(transport, 'anthropic'), 'test-model', PRICE, budget)
+    await drain(client.stream(ASK))
+    const before = budget.spentUsd
+    for await (const ev of client.stream(ASK)) if (ev.type === 'text') break
+    expect(budget.cutOff).toBe(1)
+    expect(budget.spentUsd - before).toBeCloseTo(worstUsd('anthropic', http, false, PRICE, Math.ceil(bytes / 2) / bytes), 12)
+    expect(budget.spentUsd - before).toBeGreaterThan(worstUsd('anthropic', http, false, PRICE))
   })
 })
 
