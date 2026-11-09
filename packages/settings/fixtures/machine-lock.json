@@ -70,7 +70,6 @@
   "gcode creality_v3": "3c9efc3d",
   "gcode marlin_generic": "c4128f4e",
   "gcode flsun_delta": "846763c4",
-  "gcode sovol_sv04": "245d4d6d",
   "gcode maker_bambu_a1": "75353393",
   "gcode maker_bambu_a1_mini": "7e1d99cf",
   "gcode maker_bambu_h2d": "b6bcd22f",
@@ -114,6 +113,7 @@
   "gcode maker_bambu_h2d_pro": "e0fb481b",
   "gcode maker_bambu_x2d": "03bfa8c5",
   "gcode maker_prusa_core_one_l": "d9a309ef",
+  "gcode sovol_sv04": "8f5352bb",
   "gcodeModels": "6a2b4022"
  }
 }

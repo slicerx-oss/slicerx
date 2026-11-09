@@ -15,6 +15,10 @@ pub const MACHINE: &str = include_str!("../machine.json");
 /// `gcode.json`: start, end, layer change, filament change, pause and time lapse G-code per printer family.
 pub const GCODE: &str = include_str!("../gcode.json");
 
+/// `gcode-written.json`: the G-code families written for `SlicerX` by hand and the models that use them, in the shape
+/// of `gcode.json`. Readers merge the two and refuse a family or model that is in both.
+pub const GCODE_WRITTEN: &str = include_str!("../gcode-written.json");
+
 /// `process-speeds.json`: speeds, accelerations and jerk of the makers' process presets per model and tier.
 pub const PROCESS_SPEEDS: &str = include_str!("../process-speeds.json");
 

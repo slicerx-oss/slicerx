@@ -23,12 +23,13 @@ use crate::value::{PrintConfig, Value};
 /// profiles carry only the values written for `SlicerX`.
 #[cfg(feature = "stock-profiles")]
 mod stock {
-    pub(super) use sx_profiles::{CURA_ULTIMAKER, GCODE, MACHINE, PROCESS_SPEEDS};
+    pub(super) use sx_profiles::{CURA_ULTIMAKER, GCODE, GCODE_WRITTEN, MACHINE, PROCESS_SPEEDS};
 }
 #[cfg(not(feature = "stock-profiles"))]
 mod stock {
     pub(super) const MACHINE: &str = "";
     pub(super) const GCODE: &str = "";
+    pub(super) const GCODE_WRITTEN: &str = "";
     pub(super) const PROCESS_SPEEDS: &str = "";
     pub(super) const CURA_ULTIMAKER: &str = "";
 }
@@ -204,6 +205,40 @@ struct GcodeFile {
     pending: Vec<String>,
 }
 
+/// `gcode-written.json`: the families written for `SlicerX` by hand and the models that use them.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct WrittenFile {
+    families: BTreeMap<String, GcodeFamily>,
+    models: BTreeMap<String, String>,
+}
+
+/// Adds the hand-written families and models (`written`, the text of `gcode-written.json`) to those of
+/// `gcode.json`. A family or model in both files is refused: neither may silently replace the other.
+fn merge_written(g: &mut GcodeFile, written: &str) -> Result<(), String> {
+    if written.is_empty() {
+        return Ok(());
+    }
+    let w: WrittenFile = serde_json::from_str(written).map_err(|e| format!("gcode-written.json: {e}"))?;
+    for (k, f) in w.families {
+        if g.families.contains_key(&k) {
+            return Err(format!(
+                "G-code family {k} is in both gcode.json and gcode-written.json; keep it in one of them"
+            ));
+        }
+        g.families.insert(k, f);
+    }
+    for (k, f) in w.models {
+        if g.models.contains_key(&k) {
+            return Err(format!(
+                "printer model {k} has a G-code family in both gcode.json and gcode-written.json; keep it in one of them"
+            ));
+        }
+        g.models.insert(k, f);
+    }
+    Ok(())
+}
+
 fn gcode() -> &'static GcodeFile {
     static G: OnceLock<GcodeFile> = OnceLock::new();
     G.get_or_init(|| {
@@ -212,6 +247,9 @@ fn gcode() -> &'static GcodeFile {
             models: BTreeMap::new(),
             pending: Vec::new(),
         });
+        if let Err(e) = merge_written(&mut g, stock::GCODE_WRITTEN) {
+            panic!("{e}");
+        }
         for (k, f) in &cura().families {
             g.families.entry(k.clone()).or_insert_with(|| f.clone());
         }
@@ -632,4 +670,46 @@ pub fn profile_config(
     parts.push(printer_config(printer, Some(n)));
     let refs: Vec<&PrintConfig> = parts.iter().flatten().collect();
     Some(PrintConfig::merged(&refs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base() -> GcodeFile {
+        serde_json::from_str(
+            r#"{"families": {"stock": {"start": "G28"}}, "models": {"printer-a": "stock"}, "pending": []}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn written_families_and_models_join_the_extracted_ones() {
+        let mut g = base();
+        merge_written(
+            &mut g,
+            r#"{"families": {"ours": {"start": "G90"}}, "models": {"printer-b": "ours"}}"#,
+        )
+        .unwrap();
+        assert_eq!(g.models.get("printer-b").map(String::as_str), Some("ours"));
+        assert!(g.families.contains_key("ours") && g.families.contains_key("stock"));
+    }
+
+    #[test]
+    fn a_family_or_model_in_both_files_is_refused() {
+        let family = merge_written(&mut base(), r#"{"families": {"stock": {"start": "G90"}}}"#).unwrap_err();
+        assert!(family.contains("family stock is in both"), "{family}");
+        let model = merge_written(&mut base(), r#"{"models": {"printer-a": "ours"}}"#).unwrap_err();
+        assert!(model.contains("printer model printer-a"), "{model}");
+    }
+
+    #[test]
+    fn the_shipped_files_merge() {
+        let mut g: GcodeFile = serde_json::from_str(stock::GCODE).unwrap_or(GcodeFile {
+            families: BTreeMap::new(),
+            models: BTreeMap::new(),
+            pending: Vec::new(),
+        });
+        merge_written(&mut g, stock::GCODE_WRITTEN).unwrap();
+    }
 }

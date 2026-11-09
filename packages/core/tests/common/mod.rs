@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 pub mod organic_models;
+pub mod shipped_gcode;
 
 use serde_json::Value;
 use std::sync::Arc;
