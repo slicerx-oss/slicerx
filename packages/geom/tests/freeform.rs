@@ -917,3 +917,40 @@ fn a_lone_end_landmark_sets_the_shell_side() {
         "{p:?} {e:?}"
     );
 }
+
+#[test]
+fn a_smooth_loft_shells_open_at_the_top_to_the_voxel_wall() {
+    // eight points a profile, each wider and turned on from the last: curved sides, so the wall is the voxel one
+    let ring = |r: f64, turn: f64| {
+        let points: Vec<[f64; 2]> = (0..8)
+            .map(|i| {
+                let a = turn + PI / 4.0 * f64::from(i);
+                [r * a.m_cos(), r * a.m_sin()]
+            })
+            .collect();
+        json!({ "points": points })
+    };
+    let profiles = json!([
+        { "frame": level(0.0), "loops": [ring(15.0, 0.0)] },
+        { "frame": level(15.0), "loops": [ring(19.0, 0.26)] },
+        { "frame": level(30.0), "loops": [ring(24.0, 0.52)] },
+    ]);
+    let loft = run("sketch.loft", &json!({ "profiles": profiles, "smooth": true }));
+    let open = json!([{ "at": [0, 0, 30], "normal": [0, 0, 1] }]);
+    let m = run(
+        "shell",
+        &json!({ "mesh": loft["mesh"], "open": open, "wallMm": 3 }),
+    );
+    solid(&m);
+    let r = &m["report"];
+    assert_eq!(r["exact"], false);
+    assert!(r["note"].as_str().unwrap().contains("curved"), "{r}");
+    // what cutting the hollowed loft out of the loft for the cavity made, before the inner wall stood for it
+    assert!(
+        (volume(&m) - 12_270.26).abs() < 12_270.26 * 1e-4,
+        "{}",
+        volume(&m)
+    );
+    let tris = m["mesh"]["indices"].as_array().unwrap().len() / 3;
+    assert!(tris.abs_diff(31_312) < 313, "{tris}");
+}

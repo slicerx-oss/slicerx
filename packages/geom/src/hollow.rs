@@ -123,32 +123,8 @@ fn cells_along(size: f64, h: f64) -> usize {
     reason = "vertex counts are checked below 2^32"
 )]
 pub fn hollow(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, HollowReport)> {
-    mesh.validate("hollow")?;
-    if !(opts.wall_mm.is_finite() && opts.wall_mm > 0.0) {
-        return Err(Error::invalid("wallMm", "must be a positive number"));
-    }
-    if let Some(v) = opts.voxel_mm
-        && !(v.is_finite() && v > 0.0)
-    {
-        return Err(Error::invalid("voxelMm", "must be a positive number"));
-    }
-    for hole in &opts.drain_holes {
-        if !(hole.diameter_mm.is_finite() && hole.diameter_mm > 0.0) {
-            return Err(Error::invalid("diameterMm", "must be a positive number"));
-        }
-    }
-    let bounds = mesh
-        .bounds()
-        .ok_or_else(|| Error::mesh("hollow", "the mesh is empty"))?;
-    let grid = choose_grid(bounds, opts)?;
+    let (inner, grid) = wall_surface(mesh, opts)?;
     let volume_before = mesh.volume();
-
-    let inside = voxelize(mesh, &grid);
-    let field = depth_field(&inside, &grid, opts.wall_mm);
-    let mut inner = extract_surface(&field, &grid);
-    smooth(&mut inner, opts.smooth_iterations);
-    drop_small_components(&mut inner, 64.0 * grid.h.m_powi(3));
-
     let mut out = mesh.clone();
     let mut holes = 0;
     if !inner.triangles.is_empty() {
@@ -174,6 +150,45 @@ pub fn hollow(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, HollowRe
         drain_holes: holes,
     };
     Ok((out, report))
+}
+
+/// the inner wall alone, as `hollow` adds it to the body (facing into the cavity), and the voxel size it follows the
+/// faces to; empty when the wall leaves no cavity. Drain holes are not cut.
+///
+/// # Errors
+/// As `hollow`.
+#[cfg(feature = "shell")]
+pub(crate) fn inner_wall(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, f64)> {
+    let (inner, grid) = wall_surface(mesh, opts)?;
+    Ok((inner, grid.h))
+}
+
+fn wall_surface(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, Grid)> {
+    mesh.validate("hollow")?;
+    if !(opts.wall_mm.is_finite() && opts.wall_mm > 0.0) {
+        return Err(Error::invalid("wallMm", "must be a positive number"));
+    }
+    if let Some(v) = opts.voxel_mm
+        && !(v.is_finite() && v > 0.0)
+    {
+        return Err(Error::invalid("voxelMm", "must be a positive number"));
+    }
+    for hole in &opts.drain_holes {
+        if !(hole.diameter_mm.is_finite() && hole.diameter_mm > 0.0) {
+            return Err(Error::invalid("diameterMm", "must be a positive number"));
+        }
+    }
+    let bounds = mesh
+        .bounds()
+        .ok_or_else(|| Error::mesh("hollow", "the mesh is empty"))?;
+    let grid = choose_grid(bounds, opts)?;
+
+    let inside = voxelize(mesh, &grid);
+    let field = depth_field(&inside, &grid, opts.wall_mm);
+    let mut inner = extract_surface(&field, &grid);
+    smooth(&mut inner, opts.smooth_iterations);
+    drop_small_components(&mut inner, 64.0 * grid.h.m_powi(3));
+    Ok((inner, grid))
 }
 
 fn choose_grid(bounds: Aabb, opts: &HollowOptions) -> Result<Grid> {
@@ -522,7 +537,7 @@ fn drop_small_components(m: &mut TriMesh, min_volume: f64) {
     *m = out;
 }
 
-fn closest_point_on_triangle(p: V3, a: V3, b: V3, c: V3) -> V3 {
+pub(crate) fn closest_point_on_triangle(p: V3, a: V3, b: V3, c: V3) -> V3 {
     let (ab, ac, ap) = (vec3::sub(b, a), vec3::sub(c, a), vec3::sub(p, a));
     let (d1, d2) = (vec3::dot(ab, ap), vec3::dot(ac, ap));
     if d1 <= 0.0 && d2 <= 0.0 {
