@@ -3,8 +3,8 @@
 // After the desktop shell reloaded a window whose web view stopped (apps/desktop/src-tauri/src/recover.rs): the work
 // autosave kept is put back on the plates without asking, and a short notice says what came back and what did not.
 import type { Host } from '@slicerx/contracts'
-import { set, toast } from '../state/store'
-import { findRecovery, nothingToLose, openSnapshot, type Snapshot } from './autosave'
+import { toast } from '../state/store'
+import { findRecovery, nothingToLose, offerRecovery, openSnapshot, type Snapshot } from './autosave'
 
 /** What the shell says about the stop this page load follows. */
 export interface ViewCrash {
@@ -45,14 +45,15 @@ export function viewCrashNote(o: ViewCrashOutcome): string {
 
 /**
  * Puts the autosave back after a stop and says so. `found` is the autosave the page found at start, if any. `open` is
- * openSnapshot, replaced in tests.
+ * openSnapshot, replaced in tests. A restore dialog waits while the command bar is open (offerRecovery); `keep` gets the
+ * stop for that wait, for a start that goes before the bar closes.
  */
-export async function recoverAfterViewCrash(host: Host, crash: ViewCrash, found?: Snapshot | null, open: typeof openSnapshot = openSnapshot): Promise<ViewCrashOutcome> {
+export async function recoverAfterViewCrash(host: Host, crash: ViewCrash, found?: Snapshot | null, open: typeof openSnapshot = openSnapshot, keep: (stop: () => void) => void = () => {}): Promise<ViewCrashOutcome> {
   const snap = found === undefined ? await findRecovery() : found
   let outcome: ViewCrashOutcome
   if (!crash.unsaved) {
     // Any autosave is from an earlier session, not the work that just stopped: offered as at any start.
-    if (snap && nothingToLose()) set({ projectsDialog: 'recover' })
+    if (snap && nothingToLose()) keep(offerRecovery())
     outcome = { kind: 'clean' }
   } else if (!snap) outcome = { kind: 'lost' }
   else if (snap.locked || !nothingToLose()) outcome = { kind: 'offered' }
@@ -65,7 +66,8 @@ export async function recoverAfterViewCrash(host: Host, crash: ViewCrash, found?
       outcome = { kind: 'offered' }
     }
   }
-  if (outcome.kind === 'offered') set({ projectsDialog: 'recover' })
+  // Left to the dialog because it is locked or would replace work: it asks whatever is on the plates.
+  if (outcome.kind === 'offered') keep(offerRecovery(() => true))
   toast(viewCrashNote(outcome), outcome.kind === 'restored' || outcome.kind === 'clean' ? 'info' : 'warn', undefined, {})
   return outcome
 }
