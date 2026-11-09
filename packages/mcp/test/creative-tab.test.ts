@@ -11,6 +11,8 @@ import { loadRecording, parseRecording } from '../evals/creative/recordings'
 import { CREATIVE_TAB, classifyNoBuild, creativeEnv, DEFAULT_ANSWER, runPrompt } from '../evals/creative/run'
 import { createPilot, createScriptedClient, editionToolGroups, isRuntimeNote, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain } from '@slicerx/pilot'
 import { CAD_TOOLS } from '@slicerx/pilot/evals'
+import type { PilotTool } from '@slicerx/pilot'
+import { mimirTabTools } from '../src/toolset'
 
 const P = CREATIVE_PROMPTS.find((x) => x.id === 'cable-organizer')!
 const stub = () => createScriptedClient([{ text: 'ok' }], { chunk: false })
@@ -57,6 +59,19 @@ describe('the tab options the app and the creative eval share', () => {
     const names = creativeEnv(P, stub()).pilot.tools().map((t) => t.name)
     for (const n of ['pilot.ask', 'lookup.show', 'pilot.sheet', 'pilot.sheet_bind', 'design.plan', 'design.new', 'design.check', 'geom.extrude']) expect(names).toContain(n)
     for (const n of ['text_to_part', 'make_model', 'design.put_plan']) expect(names).not.toContain(n)
+  })
+
+  it('leave out the file tools, since a design in the tab stays on the plate and saving it is the person\'s', () => {
+    // with no files in the tab, design.save and design.open only refuse, and a reply called save to finish a part
+    const names = creativeEnv(P, stub()).pilot.tools().map((t) => t.name)
+    for (const n of ['design.save', 'design.open']) expect(names).not.toContain(n)
+    for (const n of ['design.new', 'design.undo', 'design.steps', 'design.check']) expect(names).toContain(n)
+    const tool = (name: string) => ({ name }) as PilotTool<never>
+    const plan = tool('design.plan')
+    const own = mimirTabTools(plan, [tool('design.save'), tool('design.open'), tool('design.new')]).map((t) => t.name)
+    expect(own).not.toContain('design.save')
+    expect(own).not.toContain('design.open')
+    expect(own).toContain('design.new')
   })
 })
 
