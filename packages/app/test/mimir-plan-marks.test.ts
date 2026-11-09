@@ -194,19 +194,20 @@ describe("the mimir tab's plan marks in the registry design.check reads", () => 
   })
 
   it('refuses the plan in design.check when the part is built in the next message under a wholly different name', async () => {
-    // a known limit: the plan is approved in one message and the part started in the next under a name that shares no
-    // word with the plan's part, so its build is not held; design.check still refuses the plan whose sizes changed
+    // a known limit: the plan is approved in one message, which ends on a question the plan does not settle, and the part
+    // started in the next under a name that shares no word with the plan's part, so its build is not held; design.check
+    // still refuses the plan whose sizes changed
     const { built, results, planIds } = await tab(
       (ids) => [
         { calls: [{ name: 'design.plan', args: HINGE }] },
-        { text: 'Shall I start?' },
+        { text: 'Should it be 3 mm or 4 mm thick?' },
         { calls: [{ name: 'pilot.sheet', args: SHEET }] },
         { calls: [{ name: 'design.new', args: { name: 'Door leaf' } }] },
         { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] },
         (() => ({ calls: [{ name: 'design.check', args: { planId: ids[0]! } }] })) as ScriptStep,
         { text: 'Done.' },
       ],
-      { answer: { width: 60 }, messages: ['A print-in-place hinge', 'yes'] },
+      { answer: { width: 60 }, messages: ['A print-in-place hinge', '3 mm'] },
     )
     expect(planIds).toHaveLength(1)
     expect(built).toEqual(['Leaf@d1'])

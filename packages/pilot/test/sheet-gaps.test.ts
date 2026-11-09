@@ -179,7 +179,7 @@ describe('the gaps on a print-in-place sheet', () => {
   it('are not added to the next run\'s sheet after the planned part\'s sheet was confirmed and the part never built', async () => {
     // the hinge's sheet is confirmed, then the person asks for a spacer instead: a one-feature part skips the plan
     const spacer = { name: 'pilot.sheet', args: { title: 'Spacer', dims: [{ key: 'height', label: 'Height', value: 20, unit: 'mm', source: 'asked' }] } }
-    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [{ name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [SHEET] }, { text: 'Shall I build it?' }, { calls: [spacer] }, { text: 'Done.' }], { chunk: false }), builtins: false, tools: [sheetTool(), plan, stub('design.new'), stub('geom.extrude')] })
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [{ name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [SHEET] }, { text: 'Should it be 3 mm or 4 mm thick?' }, { calls: [spacer] }, { text: 'Done.' }], { chunk: false }), builtins: false, tools: [sheetTool(), plan, stub('design.new'), stub('geom.extrude')] })
     const shown: string[][] = []
     for (const message of ['A print-in-place hinge', 'Skip that, make a 20 mm spacer instead'])
       for await (const e of p.run('s', message) as AsyncIterable<PilotEvent>)
@@ -314,15 +314,31 @@ describe('the gaps on a print-in-place sheet', () => {
   }
 
   it('stop asking for the plan again in a later run that drops the print-in-place part', async () => {
-    // run 1 changes the hinge's width on its sheet and ends before a new plan; run 2 asks for a spacer instead
+    // run 1 changes the hinge's width on its sheet and ends on a question the plan does not settle, before a new plan;
+    // run 2 asks for a spacer instead
     const { summaries, built } = await chat(
-      [{ calls: [HINGE] }, { calls: [SHEET] }, { text: 'I will plan it again.' }, { calls: [SPACER] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { text: 'Should it be 3 mm or 4 mm thick?' }, { calls: [SPACER] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
       ['A print-in-place hinge', 'Forget it, make me a 20 mm spacer'],
       [{ width: 60 }, {}],
     )
     expect(summaries[0]).toContain(PLAN_AGAIN_NOTE)
     expect(summaries.slice(1).join(' ')).not.toContain(PLAN_AGAIN_NOTE)
     expect(built).toEqual(['Spacer'])
+  })
+
+  it('go on to make the plan again, not to build, when a reply would end after a size changed on the sheet', async () => {
+    // main goes on with an approved plan that has no body; with its sizes changed after the Go, the next step is the plan
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { text: 'I will plan it again.' }, { calls: [HINGE] }, { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Done.' }],
+      ['A print-in-place hinge'],
+      [{ width: 60 }],
+      { plan: counted() },
+    )
+    expect(seen[2]).toContain('The approved plan is not finished (plan p1, Hinge)')
+    expect(seen[2]).toContain(PLAN_AGAIN_NOTE)
+    expect(seen[2]).not.toContain('build it')
+    expect(seen.slice(3).join(' ')).not.toContain('Nothing was built')
+    expect(ran).toEqual(['new Hinge', 'Leaf@d1'])
   })
 
   it('stop asking for the plan again when the person declines the new plan: the part is built from the sheet', async () => {
@@ -580,10 +596,10 @@ describe('the gaps on a print-in-place sheet', () => {
   }
 
   it('build a spacer asked for in the next message at once: a plan approved in an earlier message holds no design started for another part', async () => {
-    // run 1 approves the hinge's plan and ends before any sheet; run 2 drops the hinge for a spacer whose height the
+    // run 1 approves the hinge's plan and ends on a question the plan does not settle, before any sheet; run 2 drops the hinge for a spacer whose height the
     // person changes on its sheet
     const { ran, seen } = await talk(
-      [{ calls: [HINGE] }, { text: 'Shall I start on the hinge?' }, { calls: [SPACER] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
+      [{ calls: [HINGE] }, { text: 'Should it be 3 mm or 4 mm thick?' }, { calls: [SPACER] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
       ['A print-in-place hinge', 'Forget the hinge, make me a 20 mm spacer'],
       [{ height: 25 }],
     )
@@ -643,12 +659,12 @@ describe('the gaps on a print-in-place sheet', () => {
   })
 
   it('hold a design started in the next message under a name that shares a word with the planned part', async () => {
-    // run 1 approves the plan and ends before any sheet; run 2 is the person saying yes, the width changes on the sheet,
+    // run 1 approves the plan and ends on a question the plan does not settle, before any sheet; run 2 is the answer, the width changes on the sheet,
     // and the part is started under another form of its name
     for (const name of ['Hinge v2', 'Hinge 2', 'New hinge', 'hinge (fixed)', 'Hinge, print-in-place']) {
       const { ran, seen } = await talk(
-        [{ calls: [{ name: 'design.plan', args: { part: 'Print-in-place hinge', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Shall I start?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Waiting for the plan.' }],
-        ['A print-in-place hinge', 'yes'],
+        [{ calls: [{ name: 'design.plan', args: { part: 'Print-in-place hinge', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Should it be 3 mm or 4 mm thick?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Waiting for the plan.' }],
+        ['A print-in-place hinge', '3 mm'],
         [{ width: 60 }],
       )
       expect(seen[3], name).not.toContain('Nothing was built')
@@ -657,7 +673,7 @@ describe('the gaps on a print-in-place sheet', () => {
     }
     // words such as my, for and the are no part's name: a box for the same door is built at once
     const { ran, seen } = await talk(
-      [{ calls: [{ name: 'design.plan', args: { part: 'Hinge for my door', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Shall I start?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'My box for the shelf' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Box', design: 'd1' } }] }, { text: 'Done.' }],
+      [{ calls: [{ name: 'design.plan', args: { part: 'Hinge for my door', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Should it be 3 mm or 4 mm thick?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'My box for the shelf' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Box', design: 'd1' } }] }, { text: 'Done.' }],
       ['A print-in-place hinge', 'Actually make me a box first'],
       [{ width: 60 }],
     )
@@ -668,7 +684,7 @@ describe('the gaps on a print-in-place sheet', () => {
   it('build at once a design whose name shares only a number with the planned part', async () => {
     // a bare number is an ordinal, never the part's name: Spacer 3 is not the third link of the chain
     const { ran, seen } = await talk(
-      [{ calls: [{ name: 'design.plan', args: { part: 'Chain link 3', printInPlace: ['Link 1', 'Link 2'] } }] }, { text: 'Shall I start?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Spacer 3' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
+      [{ calls: [{ name: 'design.plan', args: { part: 'Chain link 3', printInPlace: ['Link 1', 'Link 2'] } }] }, { text: 'Should it be 3 mm or 4 mm thick?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Spacer 3' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
       ['A print-in-place chain', 'Actually make me a spacer first'],
       [{ width: 60 }],
     )
@@ -680,7 +696,7 @@ describe('the gaps on a print-in-place sheet', () => {
     // "print-in-place" and "fit" say how a part prints, not which part it is
     for (const name of ['Print-in-place box', 'Fit test spacer']) {
       const { ran, seen } = await talk(
-        [{ calls: [{ name: 'design.plan', args: { part: 'Print-in-place hinge with a snug fit', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Shall I start?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Box', design: 'd1' } }] }, { text: 'Done.' }],
+        [{ calls: [{ name: 'design.plan', args: { part: 'Print-in-place hinge with a snug fit', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Should it be 3 mm or 4 mm thick?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Box', design: 'd1' } }] }, { text: 'Done.' }],
         ['A print-in-place hinge', 'Actually make me something else first'],
         [{ width: 60 }],
       )
@@ -706,11 +722,11 @@ describe('the gaps on a print-in-place sheet', () => {
   })
 
   it('show the gap rows on the sheet of a part asked for in the next message, and mark the plan stale when its size changes', async () => {
-    // known behavior: run 1 approves the hinge's plan and ends before any sheet; run 2 asks for a spacer, whose sheet still
+    // known behavior: run 1 approves the hinge's plan and ends on a question the plan does not settle, before any sheet; run 2 asks for a spacer, whose sheet still
     // gets the fit rule's gaps, and a size changed there marks the hinge's plan stale. The spacer itself is built at once.
     const { marks, plans } = markedPlans()
     const { ran, seen, shown, summaries } = await talk(
-      [{ calls: [HINGE] }, { text: 'Shall I start on the hinge?' }, { calls: [SPACER] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
+      [{ calls: [HINGE] }, { text: 'Should it be 3 mm or 4 mm thick?' }, { calls: [SPACER] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
       ['A print-in-place hinge', 'Forget the hinge, make me a 20 mm spacer'],
       [{ height: 25 }],
       { plans },
