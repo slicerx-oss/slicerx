@@ -20,17 +20,15 @@ import type { MeshPart, PilotEvent } from '@slicerx/contracts'
 import { createTransportClient } from '@slicerx/pilot'
 import { createNodeTransport } from '@slicerx/pilot/node'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { budgetedClient, canStart, createBudget, STOP_MARGIN_USD, type Price } from '../../mcp/evals/creative/live'
+import { budgetedClient, canStart, createBudget, HAIKU_5_5, STOP_MARGIN_USD } from '../../mcp/evals/creative/live'
 import { setGeomProvider } from '../src/geom/client'
 import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, tabConfig, type CaseRun } from './mimir-build-evals/drive'
-import { loadRecording, refreshScore, saveRecording, summarize } from './mimir-build-evals/recordings'
+import { loadRecording, recordLive, refreshScore, summarize } from './mimir-build-evals/recordings'
 import { assemblySizes, classifyNoBuild, extraTurns, hookCheck, okSteps, scoreCase, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
-/** Haiku 5.5's published price per million tokens, and per hosted web search. */
-const HAIKU: Price = { usdIn: 0.1, usdOut: 0.5, usdPerSearch: 0.01, long: { above: 100_000, usdIn: 0.5, usdOut: 2.5 } }
 
 const summary = (r: CaseRun) => summarize(r.score)
 /** A replay's own limit on the drive, just under the 180 s the test is given, so a stalled replay fails with its error and not as a vitest timeout. */
@@ -142,6 +140,81 @@ describe('build eval scoring', () => {
     const r = await driveCase(c, { client: stalled as never, timeoutMs: 300 })
     expect(r.error).toMatch(/stopped after 0\.3 s/)
     expect(r.score.built).toBe(false)
+  }, 30_000)
+
+  // the cable clip under an id of its own, so these runs' chats stay apart from its replay
+  const asCase = (id: string) => ({ ...BUILD_CASES.find((x) => x.id === 'cable-clip')!, id })
+
+  it('says why a run ended when the model fails: the provider\'s error, not a quiet end', async () => {
+    const c = asCase('provider-down')
+    const down = {
+      provider: 'anthropic',
+      // eslint-disable-next-line require-yield
+      async *stream() {
+        throw new Error('the provider is down')
+      },
+    }
+    const r = await driveCase(c, { client: down as never, timeoutMs: 20_000 })
+    expect(r.error).toMatch(/ended on an error: .*the provider is down/)
+    expect(r.score.built).toBe(false)
+  }, 30_000)
+
+  it('says the run reached the step cap when the model calls tools until it runs out of steps', async () => {
+    const c = asCase('step-cap')
+    let n = 0
+    // reads the designs on every step and never answers, so only the step cap ends the turn
+    const busy = {
+      provider: 'anthropic',
+      async *stream(req: { toolChoice?: string }) {
+        if (req.toolChoice === 'none') yield { type: 'text', delta: 'Still looking.' }
+        else yield { type: 'tool_call', call: { id: `c${++n}`, name: 'design.list', arguments: '{}' } }
+        yield { type: 'done', stop: req.toolChoice === 'none' ? 'end' : 'tool_calls' }
+      },
+    }
+    const r = await driveCase(c, { client: busy as never, timeoutMs: 20_000 })
+    expect(r.error).toMatch(/step cap/)
+    expect(n).toBeGreaterThan(10)
+  }, 30_000)
+
+  it('says the budget stopped a run, and a stopped run is not saved as a recording', async () => {
+    const c = asCase('budget-stop')
+    const budget = createBudget(0.5)
+    budget.spentUsd = 0.5 - STOP_MARGIN_USD
+    let sent = 0
+    const base = {
+      provider: 'anthropic',
+      async *stream() {
+        sent++
+        yield { type: 'done', stop: 'end' }
+      },
+    }
+    const r = await driveCase(c, { client: budgetedClient(base as never, EVAL_MODEL, HAIKU_5_5, budget), timeoutMs: 20_000 })
+    expect(sent).toBe(0)
+    expect(budget.stopped).toBe(true)
+    expect(r.error).toMatch(/ended on an error: stopped at \$0\.40/)
+    const dir = mkdtempSync(join(tmpdir(), 'rec-'))
+    try {
+      // the run as a live record run sees it: steps, but the budget stopped it (and with no error, the stop alone holds it back)
+      const stopped = { ...r, steps: [{ text: 'half a reply' }] }
+      delete stopped.error
+      expect(recordLive(c.id, stopped, { model: EVAL_MODEL, provider: 'anthropic', stopped: true }, dir)).toBe(false)
+      expect(loadRecording(c.id, dir)).toBeNull()
+      expect(recordLive(c.id, stopped, { model: EVAL_MODEL, provider: 'anthropic', stopped: false }, dir)).toBe(true)
+      expect(loadRecording(c.id, dir)?.steps).toEqual([{ text: 'half a reply' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('fails a replay that leaves recorded replies unused', async () => {
+    const c = asCase('leftover-replies')
+    // four questions: the message and the two nudges take three, and the fourth is never asked for
+    const asks = Array.from({ length: 4 }, (_, i) => ({ text: `Which size, ${i + 1}?` }))
+    const r = await driveCase(c, { steps: asks, timeoutMs: 20_000 })
+    expect(r.turns.filter((t) => t.kind === 'nudge')).toHaveLength(2)
+    expect(r.error).toBe('the replay left 1 recorded reply unused')
+    const used = await driveCase(c, { steps: asks.slice(0, 3), timeoutMs: 20_000 })
+    expect(used.error).toBeUndefined()
   }, 30_000)
 
   it('puts each check in the summary, so a part that fails one check shows which', () => {
@@ -375,11 +448,12 @@ describe.runIf(live)('live build evals', () => {
       }
       const before = budget.spentUsd
       const base = createTransportClient(createNodeTransport(), 'anthropic', { baseUrl: tabConfig(model).baseUrl! })
-      const r = await driveCase(c, { client: budgetedClient(base, model, HAIKU, budget), model })
+      const r = await driveCase(c, { client: budgetedClient(base, model, HAIKU_5_5, budget), model })
       const usd = budget.spentUsd - before
       rows.push({ id: c.id, run: r, usd })
       console.log(line(c.id, r, usd))
-      if (process.env['SX_MIMIR_EVAL_RECORD'] === '1' && r.steps.length && !r.error) saveRecording(c.id, { model, provider: 'anthropic', capturedAt: new Date().toISOString(), steps: r.steps, score: summary(r) })
+      // a run the budget stopped, or one that ended on an error, is not what the model would do: it is never recorded
+      if (process.env['SX_MIMIR_EVAL_RECORD'] === '1') recordLive(c.id, r, { model, provider: 'anthropic', stopped: budget.stopped })
     })
   }
 })

@@ -59,6 +59,17 @@ export function saveRecording(id: string, rec: BuildRecording, dir = RECORDINGS_
 }
 
 /**
+ * Saves a live run as the case's recording; returns whether it did. A run with no replies, one that ended on an error
+ * (the drive says why a run stopped early) and any run once the budget stopped (`stopped`) are not what the model would
+ * do, so none of them is saved: a replay of one would pin a failure the model never made.
+ */
+export function recordLive(id: string, run: { steps: EvalStep[]; score: CaseScore; error?: string }, from: { model: string; provider: string; stopped: boolean }, dir = RECORDINGS_DIR): boolean {
+  if (!run.steps.length || run.error || from.stopped) return false
+  saveRecording(id, { model: from.model, provider: from.provider, capturedAt: new Date().toISOString(), steps: run.steps, score: summarize(run.score) }, dir)
+  return true
+}
+
+/**
  * Writes `next` as a recording's score and touches nothing else (model, steps and capture time stay as captured). It
  * refuses when a field the recording already has differs from `next`, so a replay that no longer scores as it did live
  * is not written over.
