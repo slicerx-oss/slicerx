@@ -70,6 +70,20 @@ function scene(page: Page) {
   })
 }
 
+/** The playback bar's change words: shown whole, not cut at the bar's edge. */
+async function changeLabelWhole(page: Page): Promise<string> {
+  const label = page.getByTestId('pv-change')
+  await expect(label).toBeVisible()
+  const fit = await label.evaluate((el) => {
+    const read = el.closest('.dock-read') as HTMLElement
+    return { text: el.textContent ?? '', cut: el.scrollWidth - el.clientWidth, readCut: read.scrollWidth - read.clientWidth, right: el.getBoundingClientRect().right, bar: el.closest('.dock')?.getBoundingClientRect().right ?? 0 }
+  })
+  expect(fit.cut, `"${fit.text}" fits its box`).toBeLessThanOrEqual(0)
+  expect(fit.readCut, `the readout with "${fit.text}" is not cut`).toBeLessThanOrEqual(0)
+  expect(fit.right, `"${fit.text}" ends inside the bar`).toBeLessThanOrEqual(fit.bar)
+  return fit.text
+}
+
 async function resize(page: Page, size: { width: number; height: number }): Promise<void> {
   await page.setViewportSize(size)
   if (size.width <= 900) await expect(page.locator('.sheet-tab[data-panel="slice-sidebar"]')).toBeAttached()
@@ -130,9 +144,11 @@ test('an IDEX tool change parks the printing carriage at its end of X while the 
   }
 
   await at(0.45)
+  expect(await changeLabelWhole(page)).toMatch(/change \d+ of \d+/i)
   await shots(page, 'j1-midswap')
   await resize(page, PHONE)
   await at(0.45)
+  expect(await changeLabelWhole(page)).toMatch(/^Change \d+ of \d+$/)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
   // The phone's view fits the bed; one wheel step out brings the parked carriage's end of the rail into the picture too.
   const box = await page.locator('canvas').first().boundingBox()
@@ -141,5 +157,53 @@ test('an IDEX tool change parks the printing carriage at its end of X while the 
     await page.mouse.wheel(0, 300)
   }
   await shots(page, 'j1-midswap')
+  await resize(page, DESKTOP)
+})
+
+test('a J1 print in duplication mode plays no tool change, since both carriages print at once', async ({ page }) => {
+  test.slow()
+  await resize(page, DESKTOP)
+  await calm(page, 'advanced', { keepPrinter: true })
+  await expect.poll(async () => (await page.evaluate(() => (window as unknown as Win).__sx.getState().profile?.printerId)), { timeout: 60_000 }).toBe('snapmaker-j1')
+  await twoBoxes(page)
+  // Both boxes on the left half of the bed, so the copy 162 mm to the right lands on the bed too. The J1's start G-code
+  // writes M605 S2 X162 R0 for a plate named IDEXDupl.
+  await page.evaluate(() => {
+    const w = window as unknown as Win
+    const s = w.__sx.getState() as unknown as { plate: { transform: number[] }[]; overrides: Record<string, unknown> }
+    const plate = s.plate.map((p, i) => {
+      const t = [...p.transform]
+      t[12] = 50 + 60 * i
+      t[13] = 100
+      return { ...p, transform: t }
+    })
+    w.__sx.setState({ plate, overrides: { ...s.overrides, plate_name: 'IDEXDupl' } })
+  })
+  await patch(page, { showToolhead: true })
+  await startSlice(page)
+  await toTop(page)
+
+  await expect.poll(() => page.evaluate(() => ((window as unknown as Win).__sx.getState() as unknown as { copyMode: { mode: string } | null }).copyMode?.mode ?? null), { timeout: 30_000 }).toBe('duplicate')
+  await expect.poll(async () => (await scene(page)).kind).toBeNull()
+  const info = await page.evaluate(() => {
+    const tl = (window as unknown as Win).__pv.timeline as unknown as { total: number; changes: unknown[] } | null
+    return { total: tl?.total ?? 0, changes: tl?.changes.length ?? -1 }
+  })
+  expect(info.changes).toBe(0)
+  // Anywhere in the print: no change words in the bar, no rail of parked carriages, no chute.
+  for (const f of [0.3, 0.5, 0.7]) {
+    await page.evaluate((t) => (window as unknown as Win).__pv.seek(t), info.total * f)
+    await expect(page.getByTestId('pv-change')).toHaveCount(0)
+    const s = await scene(page)
+    expect(s.names, `at ${f}`).not.toContain('idex rail')
+    expect(s.chuteShown, `at ${f}`).toBe(false)
+  }
+
+  await page.evaluate((t) => (window as unknown as Win).__pv.seek(t), info.total * 0.5)
+  await shots(page, 'j1-copy-noswap')
+  await resize(page, PHONE)
+  await page.evaluate((t) => (window as unknown as Win).__pv.seek(t), info.total * 0.5)
+  await expect(page.getByTestId('pv-change')).toHaveCount(0)
+  await shots(page, 'j1-copy-noswap')
   await resize(page, DESKTOP)
 })

@@ -11,17 +11,20 @@ let last: { key: readonly unknown[]; spec: ToolChangerSpec | null } | null = nul
 
 /**
  * Null for a printer with one nozzle. The same object comes back until the printer, its settings, the bed or the slice
- * changes. On a printer with a filament map (H2D, H2C) the extruders are the ones the slice printed with.
+ * changes. On a printer with a filament map (H2D, H2C) the extruders are the ones the slice printed with. An IDEX
+ * print in a copy mode (`copyMode`, for the preview shown) has none.
  */
-export function toolChangerFor(s: Pick<AppState, 'profile' | 'overrides' | 'easy' | 'bed' | 'preview'> & Partial<Pick<AppState, 'slice'>>): ToolChangerSpec | null {
+export function toolChangerFor(s: Pick<AppState, 'profile' | 'overrides' | 'easy' | 'bed' | 'preview'> & Partial<Pick<AppState, 'slice' | 'copyMode'>>): ToolChangerSpec | null {
   const tools = s.preview?.toolCount ?? 1
   const map = s.slice?.status === 'done' ? s.slice.result.filamentMap?.extruders : undefined
-  const key = [s.profile, s.overrides, s.easy, s.bed, tools, map] as const
+  // A copy mode read from this preview's start G-code: both IDEX carriages print, nothing parks.
+  const copy = !!s.copyMode && s.copyMode.preview === s.preview
+  const key = [s.profile, s.overrides, s.easy, s.bed, tools, map, copy] as const
   if (last && last.key.every((k, i) => k === key[i])) return last.spec
   const cfg = resolveConfig(s.easy, s.overrides) as Record<string, unknown>
   // The catalog's kinematics tell an IDEX printer's two carriages from one head with two nozzles.
   const kinematics = s.profile ? printerProfile(s.profile.printerId)?.kinematics : undefined
-  const hints = kinematics ? { kinematics } : {}
+  const hints = { ...(kinematics ? { kinematics } : {}), ...(copy ? { copy } : {}) }
   const spec = s.profile ? toolChangerSpec(s.profile.printerId, map ? { ...cfg, filament_map: map } : cfg, s.bed, tools, hints) : null
   last = { key, spec }
   return spec

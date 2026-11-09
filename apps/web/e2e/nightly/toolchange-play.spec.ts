@@ -217,7 +217,7 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   // Scrubbing the time slider onto the change places the head away from the paths, and back.
   const mid = info.first!.start + info.first!.duration / 2
   await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), mid)
-  await expect(page.getByTestId('pv-change')).toContainText('Tool change 1')
+  await expect(page.getByTestId('pv-change')).toContainText(/Change 1 of/i)
   // Half way through, the head is at the chute behind the bed or at the rack beside it, not over the paths.
   const head = await page.evaluate(() => {
     const w = window as unknown as { __vp: { toolpaths: { head: { head: { position: { x: number; y: number } } } } } }

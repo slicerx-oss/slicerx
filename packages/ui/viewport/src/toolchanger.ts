@@ -164,6 +164,11 @@ const list = (v: unknown): number[] => {
 export interface ChangerHints {
   /** The catalog's kinematics, such as `idex` or `corexy`. */
   kinematics?: string
+  /**
+   * The print runs in a copy mode (duplication or mirror): both carriages print at once, each its own copy, so an IDEX
+   * printer has no change to play. Read from the rendered start G-code, which Preview gets after the slice.
+   */
+  copy?: boolean
 }
 
 function kindOf(printerId: string | undefined, cfg: Settings, hints: ChangerHints = {}): ToolChangerKind | null {
@@ -176,7 +181,8 @@ function kindOf(printerId: string | undefined, cfg: Settings, hints: ChangerHint
   const nozzles = list(cfg['nozzle_diameter']).length
   // IDEX before the nozzle count: two nozzles there are two carriages, not one head. Settings with one extruder print
   // with one carriage and swap filament by hand, so there is no change to play.
-  if (hints.kinematics === 'idex') return nozzles >= 2 ? 'idex-park' : null
+  // In a copy mode both carriages print the whole time: nothing parks.
+  if (hints.kinematics === 'idex') return nozzles >= 2 && !hints.copy ? 'idex-park' : null
   // The Artisan's dual extrusion module is neither the H2D's head nor IDEX: nothing plays until its mechanism is checked.
   if (id.startsWith('snapmaker-artisan')) return null
   if (nozzles < 2) return swapChute(id, { widthMm: 0, depthMm: 0, heightMm: 0 }) ? 'filament-swap' : null

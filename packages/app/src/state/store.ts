@@ -372,6 +372,11 @@ export interface AppState {
   moveCut: number
   /** Playback is inside the tool change before `segment`, `seconds` into it (`fixed`: the firmware's seconds of it). */
   toolChange: { segment: number; seconds: number; fixed: number } | null
+  /**
+   * The preview's print runs in an IDEX copy mode (duplication or mirror), read from its start G-code after the slice:
+   * both carriages print at once, so Preview plays no tool change. Holds the preview it was read from.
+   */
+  copyMode: { preview: PreviewBuffers; mode: 'duplicate' | 'mirror' } | null
   /** heimdall: the collision the list has selected (index into the slice's collisions). */
   strikePick: number | null
   /** heimdall: playback runs up to this print time and stops on it; `seq` tells two jumps to one moment apart. */
@@ -822,6 +827,7 @@ export const appStore = createStore<AppState>()(() => ({
   layerLo: 1,
   moveCut: 1,
   toolChange: null,
+  copyMode: null,
   strikePick: null,
   strikeJump: null,
   strikeHover: null,

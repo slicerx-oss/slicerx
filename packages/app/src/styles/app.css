@@ -370,6 +370,10 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .dock-check:hover { color: var(--fg); }
 .dock-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .dock-read { margin-left: auto; display: flex; gap: 16px; }
+/* A tool change's words give way last: the other readouts keep their width and the change ends in an ellipsis rather
+   than being cut mid-word when the bar is too short even for its short form. */
+.dock-read > :not(.dock-change) { flex-shrink: 0; }
+.dock-change { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The layer number is a button that opens the jump field over itself; the field sits on top, so the line keeps its place. */
 .dock-jump-at { position: relative; display: inline-block; }
 .dock-jump-num { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: var(--fw-bold); text-align: right; cursor: text; border-radius: 2px; }
