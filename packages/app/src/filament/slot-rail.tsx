@@ -7,6 +7,7 @@
 // Shift+F10); Alt-click selects the objects on it. Hovering or focusing a spool picks its filament out in the viewport.
 // Under the spools: what the target prints with, and why (picked by hand, by color, the spool used last), or that
 // it is another material than the profile's. Every line keeps its height, so nothing moves when one changes.
+import { rightClickWords, useCoarsePointer } from '../lib/phone-layout'
 import { Button, LinkButton, Menu, MenuItem, Seg, Select, SwatchRing, tipAttrs, useLongPress } from '@slicerx/ui'
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { useStore } from 'zustand'
@@ -92,6 +93,7 @@ export function pickNote(o: { spool: Pick<ResolvedSlot, 'label' | 'type'> | unde
 }
 
 export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
+  const gesture = rightClickWords(useCoarsePointer())
   const hover = useApp((s) => s.hoverSlot)
   const printerSlots = useApp((s) => s.printerSlots)
   const plate = useApp((s) => s.plate)
@@ -192,7 +194,7 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
                     data-parts={n}
                     data-mismatch={m ? 'true' : undefined}
                     data-empty={none ? 'true' : undefined}
-                    {...tipAttrs(none ? { title: `${s.label} is empty`, body: 'Load a spool on the printer, or click to set what this project prints with here.' } : { title: `${s.label} ${slotWords(s)}${lefts ? `, ${lefts}` : ''}`, body: m ? mismatchText(m) : `${n ? '' : 'Not used. '}Click to print ${what} with it. Right-click to change what it holds.` })}
+                    {...tipAttrs(none ? { title: `${s.label} is empty`, body: 'Load a spool on the printer, or click to set what this project prints with here.' } : { title: `${s.label} ${slotWords(s)}${lefts ? `, ${lefts}` : ''}`, body: m ? mismatchText(m) : `${n ? '' : 'Not used. '}Click to print ${what} with it. ${gesture} to change what it holds.` })}
                     onPointerEnter={() => set({ hoverSlot: s.index })}
                     onFocus={() => set({ hoverSlot: s.index })}
                     onBlur={() => set({ hoverSlot: null })}
@@ -336,6 +338,7 @@ export interface RailFootProps {
  * slot was changed here. The spools above it never change height, so adding a filament never moves this line.
  */
 export function RailFoot({ fromPrinter, system, edited }: RailFootProps) {
+  const gesture = rightClickWords(useCoarsePointer())
   const notes = useSetupNotes()
   if (fromPrinter) {
     const reset = edited ? (
@@ -349,7 +352,7 @@ export function RailFoot({ fromPrinter, system, edited }: RailFootProps) {
           <SetupNoteLine notes={notes} after={reset} />
         ) : (
           <p className="rail-foot-text" {...tipAttrs({ title: `Filled in from ${unitWords(system)}`, body: 'A change here is for this project only. To add a filament, load it on the printer.' })}>
-            <span className="rail-foot-line">From {unitWords(system)}. Right-click a spool to change it.</span>
+            <span className="rail-foot-line">From {unitWords(system)}. {gesture} a spool to change it.</span>
             {reset}
           </p>
         )}
@@ -358,7 +361,7 @@ export function RailFoot({ fromPrinter, system, edited }: RailFootProps) {
   }
   return (
     <div className="rail-foot" data-testid="slice-filament-foot">
-      {notes ? <SetupNoteLine notes={notes} /> : <p className="rail-foot-text"><span className="rail-foot-line">Right-click a filament to change it.</span></p>}
+      {notes ? <SetupNoteLine notes={notes} /> : <p className="rail-foot-text"><span className="rail-foot-line">{gesture} a filament to change it.</span></p>}
     </div>
   )
 }

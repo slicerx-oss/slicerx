@@ -6,6 +6,7 @@
 // three lanes they share a "+N" pin that lists them. A click on a pin jumps there and offers to edit or remove it. A
 // color change can note the filament slot to load; the note is saved with the project and does not change the G-code.
 // The marks go into the next slice as layer G-code.
+import { rightClickWords, useCoarsePointer } from '../../lib/phone-layout'
 import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator, Range, Textarea, tipAttrs, useLongPress, type IconName } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
 import { resolveSlots } from '../../filament/slots'
@@ -309,6 +310,7 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
 
 /** The + button beside the layer slider, the marks menu, and the custom G-code dialog. */
 function LayerMarksMenu({ top, layerZ, menu, setMenu, onJump }: { top: number; layerZ: ArrayLike<number>; menu: MarksMenu; setMenu: (m: MarksMenu) => void; onJump: (layer: number) => void }) {
+  const coarse = useCoarsePointer()
   const plateId = useApp((s) => s.activePlate)
   const marks = useApp((s) => s.layerMarks[plateId]) ?? EMPTY
   const [custom, setCustom] = useState<{ text: string; z: number; layer: number } | null>(null)
@@ -356,7 +358,7 @@ function LayerMarksMenu({ top, layerZ, menu, setMenu, onJump }: { top: number; l
   return (
     <div className="lmarks-add">
       <MenuAnchor>
-        <Button variant="ghost" size="sm" icon="plus" aria-haspopup="menu" aria-expanded={menu !== null && menu.at === null} aria-label="Add layer action" tip={{ title: 'Add layer action', body: 'Pause, change the filament or insert G-code at the top layer.', key: 'Right-click', demo: 'rec-layer-add' }} onClick={(e) => (menu ? close() : setMenu({ at: null, layer: top, ids: marksOn(marks, top, layerZ), from: e.currentTarget }))} />
+        <Button variant="ghost" size="sm" icon="plus" aria-haspopup="menu" aria-expanded={menu !== null && menu.at === null} aria-label="Add layer action" tip={{ title: 'Add layer action', body: 'Pause, change the filament or insert G-code at the top layer.', key: rightClickWords(coarse), demo: 'rec-layer-add' }} onClick={(e) => (menu ? close() : setMenu({ at: null, layer: top, ids: marksOn(marks, top, layerZ), from: e.currentTarget }))} />
         <Menu key={`${picking ? 'pick' : 'main'} ${(menu?.ids ?? []).join(' ')}`} open={menu !== null} onClose={() => close()} label={label} align="end" at={menu?.at ?? undefined}>
           {picking ? (
             <>

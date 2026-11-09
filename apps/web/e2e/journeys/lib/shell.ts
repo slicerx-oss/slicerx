@@ -582,7 +582,7 @@ export async function addFilamentMovesNothing(page: Page, settingsMode: 'simple'
     // The line under the rail reads its hint, or a setup note in the hint's place once the settings plan has one.
     await expect(async () => {
       const note = await foot.getByRole('status', { name: 'Setup notes' }).count()
-      expect(note > 0 || /^Right-click a filament to change it\.$/.test(await foot.locator('.rail-foot-text').innerText())).toBe(true)
+      expect(note > 0 || /^(Right-click|Press and hold) a filament to change it\.$/.test(await foot.locator('.rail-foot-text').innerText())).toBe(true)
     }).toPass()
     const add = page.getByTestId('slice-filament-add')
     await expect(add).toHaveText('Add filament')

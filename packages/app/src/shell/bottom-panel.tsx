@@ -4,6 +4,7 @@
 // is a real button: Tab reaches it, Enter or Space toggles it, as does Mod+J, focus moving into the panel opens it and
 // Escape closes it and returns focus to the tab. Its context menu pins it open; the pin is remembered per panel with
 // the pane sizes.
+import { rightClickWords, useCoarsePointer } from '../lib/phone-layout'
 import { EdgeTab, keymapFor, Menu, MenuAnchor, MenuItem, useLongPress } from '@slicerx/ui'
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useLookChoice } from '../first-run/look'
@@ -28,6 +29,7 @@ export function BottomPanel({ label, memory, panel, attention = 0, children }: {
   const pinned = useApp((s) => s.paneSizes[pinKey] === 1)
   const [open, setOpen] = useState(pinned)
   const [menu, setMenu] = useState(false)
+  const gesture = rightClickWords(useCoarsePointer())
   const ctl = useRef<AutoPanel | null>(null)
   ctl.current ??= new AutoPanel(setOpen, { pinned })
   const root = useRef<HTMLDivElement>(null)
@@ -97,7 +99,7 @@ export function BottomPanel({ label, memory, panel, attention = 0, children }: {
           panel={panel}
           controls={id}
           {...(chord ? { shortcut: chord } : {})}
-          tip={pinned ? 'Kept open. Right-click to let it open and close by itself.' : 'Opens when the pointer reaches the bottom of the view. Right-click to keep it open.'}
+          tip={pinned ? `Kept open. ${gesture} to let it open and close by itself.` : `Opens when the pointer reaches the bottom of the view. ${gesture} to keep it open.`}
           onToggle={() => ctl.current?.toggle()}
           longPress={press.bind}
           onContextMenu={(e) => {

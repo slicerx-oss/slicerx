@@ -748,7 +748,7 @@ test.describe('the Filament rail', () => {
   test("with the printer's slots, the rail says where they come from, has no add, and resets to the printer", async ({ page }) => {
     await sidebarAs(page, { mode: 'simple' })
     await expect(foot(page)).toHaveAttribute('data-from', 'printer')
-    await lineReads(page, /^From the printer('s \w+)?\. Right-click a spool to change it\.$/)
+    await lineReads(page, /^From the printer('s \w+)?\. (Right-click|Press and hold) a spool to change it\.$/)
     await expect(page.getByTestId('slice-filament-add')).toHaveCount(0)
     await expect(page.getByTestId('slice-filament-foot-reset')).toHaveCount(0)
     // A slot changed here offers the way back, in place.
