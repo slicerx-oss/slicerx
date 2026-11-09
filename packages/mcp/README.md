@@ -27,7 +27,7 @@ Reading is always allowed. The permission class of the other tools decides what 
 | `slicerx_app_presets`, `slicerx_app_preset_compare` | The presets the person saved in the open app, and one compared with another saved preset, its parent or the stock settings, as Compare presets lists them. | read |
 | `slicerx_app_preset_copy`, `slicerx_app_preset_undo` | Copy one setting's value into a saved preset from the second side of a compare, and put that one setting back by its undo id. The person approves each in the app, in a dialog naming the setting and the value; needs the app link's edit grant. | slice |
 | `slicerx_project_add_filament`, `slicerx_project_set_filament` | Add a filament after the last one, or change one's material type or color, as on the app's filament rail. Both answer with the project; `slicerx_project_show` lists its `filaments` (number, type, color, and whether a client set it). The slice gets them as `filament_type` and `filament_colour`. | slice |
-| `slicerx_project_move`, `slicerx_project_rotate`, `slicerx_project_scale`, `slicerx_project_plate_add`, `slicerx_project_plate_remove`, `slicerx_project_move_to_plate`, `slicerx_project_remove_object` | Place an object by the center of its footprint in bed coordinates (or back in the automatic rows), rotate and scale it, add and remove plates, move an object to a plate, and take one out. Every object sits on the bed. Each answers with the project, whose plates list where every copy sits (`placements`). | slice |
+| `slicerx_project_move`, `slicerx_project_rotate`, `slicerx_project_scale`, `slicerx_project_plate_add`, `slicerx_project_plate_remove`, `slicerx_project_move_to_plate`, `slicerx_project_remove_object` | Place an object by the center of its footprint in bed coordinates (or back in the automatic rows), rotate and scale it, add and remove plates, move an object to a plate, and take one out. Every object sits on the bed. Each answers with the project, whose plates list where every copy sits (`placements`). | slice (`slicerx_project_remove_object`: remove) |
 | `slicerx_project_duplicate`, `slicerx_project_rename`, `slicerx_project_lay_on_face` | The model ring's object and face verbs: duplicate an object as new objects of their own, rename one, and lay one on a face given by its outward normal (from `slicerx_geom_faces`). Each answers with the project. | slice |
 | `slicerx_project_lock`, `slicerx_project_printable`, `slicerx_project_center`, `slicerx_project_split_objects`, `slicerx_project_split_parts` | The rest of the ring's object verbs: lock an object (the tools that would move it refuse until it is unlocked, and an arrange leaves it on its plate), leave it out of the print where it sits, center it on the bed, and split its separate bodies to objects or to parts. Each answers with the project, whose objects say `locked` and `printable`. | slice |
 | `slicerx_project_mirror`, `slicerx_project_fill_bed` | Mirror objects along X, Y or Z in place, as Mirror does in the app (the mirror shows as a negative scale on that axis), and fill the free room on a plate with copies of an object, as Fill bed does, around what is already there. Each answers with the project. | slice |
@@ -173,6 +173,7 @@ The policy file gives each class of action one of three modes:
 | Class | Covers | Default |
 | --- | --- | --- |
 | `slice` | Orient, arrange, cut, slice and change settings inside the project | Allow |
+| `remove` | Take objects off the plate: remove an object, or delete a plate with the objects on it | Ask first |
 | `queue` | Upload a plate to a printer and start it | Ask first (ask or off only) |
 | `start` | Heat or move a printer: start, pause, resume, cancel, temperatures, filament, G-code | Ask first (allow per printer, for pause and cancel only) |
 | `profile` | Write a saved printer, filament or process profile, or update Spoolman inventory | Ask first |
@@ -181,7 +182,7 @@ Write it as JSON at `~/.config/slicerx/mcp-policy.json`, or pass `--policy <file
 
 ```json
 {
-  "classes": { "slice": "allow", "queue": "ask", "start": "ask", "profile": "ask" },
+  "classes": { "slice": "allow", "remove": "ask", "queue": "ask", "start": "ask", "profile": "ask" },
   "printers": { "bay-2": { "start": "allow" }, "bay-3": { "queue": "off", "start": "off" } }
 }
 ```
@@ -335,7 +336,7 @@ slicerx-mcp --printers link call app_plate_add '{"name":"Spare"}' app_plates
 slicerx-mcp --printers link call app_plate_settings '{"plate":1,"settings":{"sequence":"by-object"}}' app_plates
 ```
 
-`app_plate_duplicate`, `app_plate_rename`, `app_plate_remove` and `app_plate_move` use the same plate numbers or stable ids returned by `app_plates`. Each edit returns all plates, their settings, and `entries` with concrete object ids, copy relationships, transforms and bounds in mm. `app_plate_move` takes `objects`, a list of ids on the shown plate; copies not named stay put. Removal of a populated plate needs `deleteObjects: true`. The last plate and locked objects cannot be removed. Each edit is one toolbar Undo step and refuses while the person is using a tool, loading, slicing, or editing history. These commands always require the open app; the `project_plate_*` commands still operate on the server's project.
+`app_plate_duplicate`, `app_plate_rename`, `app_plate_remove` and `app_plate_move` use the same plate numbers or stable ids returned by `app_plates`. Each edit returns all plates, their settings, and `entries` with concrete object ids, copy relationships, transforms and bounds in mm. `app_plate_move` takes `objects`, a list of ids on the shown plate; copies not named stay put. Removal of a populated plate needs `deleteObjects: true`, which takes the `remove` permission class and so asks first by default. The last plate and locked objects cannot be removed. Each edit is one toolbar Undo step and refuses while the person is using a tool, loading, slicing, or editing history. These commands always require the open app; the `project_plate_*` commands still operate on the server's project.
 
 `slicerx-mcp call` runs tools without a client, in order and in one process, so a project the first calls build is there for the next. It prints one JSON line per call (`tool`, `ok`, `text`, `output`) and stops with exit code 1 at the first call that fails. Tool names may leave out the `slicerx_` prefix; the JSON after a name is its arguments.
 

@@ -43,7 +43,7 @@ const PLUGIN_STATE: Record<PluginLoad['state'], { state: PillState; word: string
   error: { state: 'bad', word: 'Error' },
 }
 
-const CLASSES: PolicyClass[] = ['slice', 'queue', 'start', 'profile', 'printer_config', 'share']
+const CLASSES: PolicyClass[] = ['slice', 'remove', 'queue', 'start', 'profile', 'printer_config', 'share']
 
 const MODE_OPTIONS: SegOption<PermissionMode>[] = [
   { value: 'allow', label: <span className="v-allow">Allow</span> },

@@ -122,6 +122,16 @@ describe('permission gate', () => {
     expect(decide(p, 'profile')).toBe('off')
   })
 
+  it('asks before removing from the plate by default, even with slice on Allow, and keeps a remove mode the person set', () => {
+    expect(decide(normalizePolicy(undefined), 'slice')).toBe('allow')
+    expect(decide(normalizePolicy(undefined), 'remove')).toBe('ask')
+    // An older policy that never named remove asks for it too.
+    expect(decide(normalizePolicy({ classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'ask' } }), 'remove')).toBe('ask')
+    expect(decide({ classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'ask' } }, 'remove')).toBe('ask')
+    expect(decide(normalizePolicy({ classes: { remove: 'allow' } }), 'remove')).toBe('allow')
+    expect(decide(normalizePolicy({ classes: { remove: 'off' } }), 'remove')).toBe('off')
+  })
+
   it('never lets start be allowed at class level', () => {
     const p = normalizePolicy({ classes: { start: 'allow' } })
     expect(p.classes.start).toBe('ask')

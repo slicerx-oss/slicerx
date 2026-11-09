@@ -92,12 +92,12 @@ export function downRotation(normal: [number, number, number], scale: [number, n
 
 export function placementTools(deps: LocalToolDeps, need: () => McpProject): PilotTool<never>[] {
   const done = (summary: string, project: McpProject, extra: Record<string, unknown> = {}) => ({ summary, output: { ...extra, project: project.describe() } })
-  const tool = <I>(spec: { name: string; version?: string; description: string; input: z.ZodType<I>; title(i: I): string; run(i: I, project: McpProject): Promise<{ summary: string; output: unknown }> | { summary: string; output: unknown } }): PilotTool<I> =>
+  const tool = <I>(spec: { name: string; version?: string; permission?: 'slice' | 'remove'; description: string; input: z.ZodType<I>; title(i: I): string; run(i: I, project: McpProject): Promise<{ summary: string; output: unknown }> | { summary: string; output: unknown } }): PilotTool<I> =>
     defineTool<I>({
       name: spec.name,
       version: spec.version ?? '1.0.0',
       source: 'command',
-      permission: 'slice',
+      permission: spec.permission ?? 'slice',
       description: spec.description,
       input: spec.input,
       async approval(i) {
@@ -357,6 +357,9 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
 
   const removeObject = tool({
     name: 'project.remove_object',
+    version: '1.1.0',
+    // Taking parts off the plate asks first by default, whatever slice is set to.
+    permission: 'remove',
     description: 'Take an object, with all its copies, out of the project.',
     input: z.object({ object: objectArg }),
     title: (i) => `Remove ${i.object}?`,
