@@ -259,9 +259,18 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...(typeof s['label'] === 'string' && s['label'].trim() ? { label: s['label'].trim().slice(0, 100) } : {}),
       // the plan feature mimir tagged the step with (design.check matches features by it)
       ...(typeof s['feature'] === 'string' && s['feature'].trim() ? { feature: s['feature'].trim().slice(0, 60) } : {}),
+      // the sketches a loft or sweep was made from, which hide while it is live
+      ...usesOf(s['uses']),
     })
   }
   return { version: 1, base, steps, ...(v['exact'] === true ? { exact: true } : {}), ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}), ...placedOf(v['placed']) }
+}
+
+/** A loft's or sweep's source sketch ids (Step.uses): up to 64 short strings, else none. */
+function usesOf(v: unknown): Pick<Step, 'uses'> {
+  if (!Array.isArray(v)) return {}
+  const ids = v.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 80).slice(0, 64)
+  return ids.length ? { uses: ids } : {}
 }
 
 /** A body's landing moves (History.placed): two finite numbers within a bed's reach, else none. */
