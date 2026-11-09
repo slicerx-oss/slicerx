@@ -22,7 +22,7 @@ Security reports follow SECURITY.md and are handled privately until a fix is rel
 
 ## Funding
 
-Money the project receives (grants, sponsorships, donations) is listed in funding.json, along with what it pays for. Funding does not buy control over the roadmap or the license.
+Funding does not buy control over the roadmap or the license.
 
 ## Code of conduct
 
