@@ -1127,3 +1127,190 @@ fn a_smooth_path_of_points_is_a_bent_tube() {
         assert!(off < 2.0 + 0.2, "{p:?} is {off} from the arc");
     }
 }
+
+/// A 20 mm round with a 12 mm bore, on the profile's own plane.
+fn ring_loops() -> Value {
+    json!([circle([0.0, 0.0], 20.0), circle([0.0, 0.0], 12.0)])
+}
+
+/// The flattened 20 and 12 mm circles' area: the annulus within the arc tolerance.
+const RING_AREA: f64 = PI * (100.0 - 36.0);
+
+fn triangles(m: &Value) -> Vec<[usize; 3]> {
+    m["mesh"]["indices"]
+        .as_array()
+        .unwrap()
+        .chunks(3)
+        .map(|c| [0, 1, 2].map(|k| usize::try_from(c[k].as_u64().unwrap()).unwrap()))
+        .collect()
+}
+
+/// Checks the sweep is one closed, outward solid and that every side triangle within `wall` of the bore's radius
+/// (6 mm from `axis`, the point on the path nearest a vertex) faces into the bore, and every one on the outside faces
+/// out.
+fn bored(m: &Value, axis: impl Fn([f64; 3]) -> [f64; 3]) {
+    solid(m);
+    assert_eq!(m["edges"]["nonManifoldEdges"], 0, "{}", m["edges"]);
+    assert!(volume(m) > 0.0, "{}", volume(m));
+    let pts = points(m);
+    let (mut inner, mut outer) = (0, 0);
+    for t in triangles(m) {
+        let [a, b, c] = t.map(|i| pts[i]);
+        let mid = [0, 1, 2].map(|k| (a[k] + b[k] + c[k]) / 3.0);
+        let on = axis(mid);
+        let out = [0, 1, 2].map(|k| mid[k] - on[k]);
+        let r = (out[0] * out[0] + out[1] * out[1] + out[2] * out[2]).sqrt();
+        let (e, f) = ([0, 1, 2].map(|k| b[k] - a[k]), [0, 1, 2].map(|k| c[k] - a[k]));
+        let n = [
+            e[1] * f[2] - e[2] * f[1],
+            e[2] * f[0] - e[0] * f[2],
+            e[0] * f[1] - e[1] * f[0],
+        ];
+        let away = (n[0] * out[0] + n[1] * out[1] + n[2] * out[2]) / r.max(1e-12);
+        let size = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+        // side triangles only: a cap's normal runs along the path
+        if away.abs() < size * 0.5 {
+            continue;
+        }
+        if r < 7.0 {
+            assert!(away < 0.0, "a bore triangle at {mid:?} faces out of the bore");
+            inner += 1;
+        } else {
+            assert!(away > 0.0, "an outside triangle at {mid:?} faces in");
+            outer += 1;
+        }
+    }
+    assert!(inner > 0 && outer > 0, "{inner} {outer}");
+}
+
+#[test]
+fn a_ring_swept_straight_is_the_annulus_times_the_length() {
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "loops": ring_loops() }, "path": up(30.0) }),
+    );
+    bored(&m, |p| [0.0, 0.0, p[2]]);
+    let want = RING_AREA * 30.0;
+    assert!((volume(&m) / want - 1.0).abs() < 5e-3, "{} vs {want}", volume(&m));
+}
+
+/// A quarter arc of `r` mm on the bed from (r, 0) around the origin, and the ring standing across its start.
+fn quarter(r: f64) -> (Value, Value) {
+    (
+        json!({ "loops": [{ "start": [r, 0], "segments": [{ "type": "arc", "center": [0, 0], "sweepDeg": 90 }] }] }),
+        json!({ "origin": [r, 0, 0], "normal": [0, 1, 0], "u": [-1, 0, 0], "v": [0, 0, 1] }),
+    )
+}
+
+/// The point on the bed's circle of `r` about the origin nearest `p`.
+fn on_circle(r: f64) -> impl Fn([f64; 3]) -> [f64; 3] {
+    move |p: [f64; 3]| {
+        let d = p[0].m_hypot(p[1]);
+        [r * p[0] / d, r * p[1] / d, 0.0]
+    }
+}
+
+#[test]
+fn a_ring_swept_round_a_quarter_arc_is_the_annulus_times_its_centerline() {
+    let (path, frame) = quarter(30.0);
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "frame": frame, "loops": ring_loops() }, "path": path }),
+    );
+    bored(&m, on_circle(30.0));
+    // Pappus: the annulus's middle runs along the arc
+    let want = RING_AREA * 30.0 * PI / 2.0;
+    assert!((volume(&m) / want - 1.0).abs() < 5e-3, "{} vs {want}", volume(&m));
+}
+
+#[test]
+fn a_ring_with_an_end_scale_is_the_frustum_shell() {
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "loops": ring_loops() }, "path": up(30.0), "scaleEnd": 0.5 }),
+    );
+    solid(&m);
+    assert_eq!(m["edges"]["nonManifoldEdges"], 0, "{}", m["edges"]);
+    let frustum = |r0: f64| PI * 30.0 / 3.0 * (r0 * r0 + r0 * r0 / 2.0 + r0 * r0 / 4.0);
+    let want = frustum(10.0) - frustum(6.0);
+    assert!((volume(&m) / want - 1.0).abs() < 5e-3, "{} vs {want}", volume(&m));
+    // the bore stays open and narrows from 6 to 3 mm with the outside (a flat end may have points inside its ring)
+    for (z, k) in [(0.0, 1.0), (30.0, 0.5)] {
+        let r: Vec<f64> = points(&m)
+            .into_iter()
+            .filter(|p| (p[2] - z).abs() < 1e-6)
+            .map(|p| p[0].m_hypot(p[1]))
+            .collect();
+        let (lo, hi) = r
+            .iter()
+            .fold((f64::MAX, 0.0f64), |(lo, hi), &r| (lo.min(r), hi.max(r)));
+        assert!(
+            (lo - 6.0 * k).abs() < 1e-3 && (hi - 10.0 * k).abs() < 1e-3,
+            "{z}: {lo} {hi}"
+        );
+    }
+}
+
+#[test]
+fn a_bore_wall_thinner_than_a_bend_still_closes() {
+    // a 20 mm round with a 0.8 mm wall, bent round a path of 10.5 mm: the inside of the bend runs half a millimeter
+    // from the bend's middle
+    let (path, frame) = quarter(10.5);
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "frame": frame, "loops": [circle([0.0, 0.0], 20.0), circle([0.0, 0.0], 18.4)] }, "path": path }),
+    );
+    solid(&m);
+    assert_eq!(m["edges"]["nonManifoldEdges"], 0, "{}", m["edges"]);
+    let want = PI * (100.0 - 84.64) * 10.5 * PI / 2.0;
+    assert!((volume(&m) / want - 1.0).abs() < 5e-3, "{} vs {want}", volume(&m));
+}
+
+#[test]
+fn an_off_center_bore_twisted_and_squashed_stays_inside() {
+    let (path, frame) = quarter(30.0);
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "frame": frame, "loops": [circle([0.0, 0.0], 20.0), circle([3.0, 1.0], 6.0)] }, "path": path, "scaleEnd": [1, 0.6], "twistDeg": 90 }),
+    );
+    solid(&m);
+    assert_eq!(m["edges"]["nonManifoldEdges"], 0, "{}", m["edges"]);
+    // between the start's and the end's area along the arc, less the bore
+    let len = 30.0 * PI / 2.0;
+    let (start, end) = (PI * (100.0 - 9.0), PI * (100.0 - 9.0) * 0.6);
+    assert!(
+        volume(&m) > end * len && volume(&m) < start * len,
+        "{} between {} and {}",
+        volume(&m),
+        end * len,
+        start * len
+    );
+}
+
+#[test]
+fn a_holed_sweep_says_what_is_wrong() {
+    // a hole that touches the outer loop
+    let touching = json!([rect(20.0, 20.0), { "points": [[0, -10], [5, -5], [-5, -5]] }]);
+    let e = fails(
+        "sketch.sweep",
+        &json!({ "profile": { "loops": touching }, "path": up(10.0) }),
+    );
+    assert!(e.starts_with("profile: Loop 2 crosses loop 1"), "{e}");
+    // thickened, a holed profile would be walls inside walls
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": { "loops": ring_loops() }, "path": up(10.0), "thicken": { "thicknessMm": 1 } })
+        ),
+        "thicken: a profile with holes already has its walls; leave thicken out, or thicken a profile without holes"
+    );
+    // a second shape beside the first is not a hole
+    let apart = json!([circle([0.0, 0.0], 10.0), circle([30.0, 0.0], 10.0)]);
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": { "loops": apart }, "path": up(10.0) })
+        ),
+        "profile: a sweep profile is one outer loop with any holes inside it, not 2 separate shapes"
+    );
+}

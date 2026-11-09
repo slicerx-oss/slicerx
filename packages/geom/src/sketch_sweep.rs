@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! a solid swept from one sketch profile along an open path: a closed profile, or an open one thickened into a shell
+//! a solid swept from one sketch profile along an open path: a closed profile and its holes, or an open one thickened
+//! into a shell
 // ring and path indices come from the rings and paths built here
 #![allow(clippy::indexing_slicing)]
 
@@ -257,7 +258,7 @@ fn fractions(pts: &[V3]) -> Vec<f64> {
 /// to itself each turn. Any other path carries it in a rotation minimizing frame, so it does not twist about the path,
 /// and at each corner the sides meet on the plane halfway between the two directions: a path of straight lines sweeps
 /// exact prisms and a flattened arc follows the arc. The profile does not need to touch the path; it is carried as it
-/// sits relative to the path's start.
+/// sits relative to the path's start. A hole in the profile runs the length of the sweep as a bore.
 pub fn sweep(profile: &Profile, path: &Path) -> Result<TriMesh> {
     sweep_with(profile, path, None, &Law::default())
 }
@@ -287,16 +288,30 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>, law
         .frame
         .unwrap_or_else(|| FaceFrame::bed([0.0, 0.0]))
         .checked()?;
-    let mut flat = if profile.open {
+    // every loop's points one after another, the outer loop first, and how many each has
+    let (mut flat, mut lens) = if profile.open {
         let mut c =
             sketch_loft::open_ring(&profile.loops, "sweep").map_err(|why| Error::invalid("profile", why))?;
         // an open chain winds the way it and the line across its ends go around, as a closed ring does
         if poly2d::signed_area(&c) < 0.0 {
             c.reverse();
         }
-        c
+        let n = c.len();
+        (c, vec![n])
     } else {
-        sketch_loft::one_ring(&profile.loops, "sweep").map_err(|why| Error::invalid("profile", why))?
+        let region =
+            sketch_loft::one_region(&profile.loops, "sweep").map_err(|why| Error::invalid("profile", why))?;
+        if thicken.is_some() && !region.holes.is_empty() {
+            return Err(Error::invalid(
+                "thicken",
+                "a profile with holes already has its walls; leave thicken out, or thicken a profile without holes",
+            ));
+        }
+        let lens = std::iter::once(&region.outer)
+            .chain(&region.holes)
+            .map(Vec::len)
+            .collect();
+        (region.vertices().collect(), lens)
     };
     let reach = flat.iter().fold(0.0f64, |r, p| r.max(p[0].m_hypot(p[1])));
     let off = {
@@ -320,9 +335,13 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>, law
     let facing = across(t_start, frame.w, 0.0)?;
     // the side lines leave along the first chord, which a flattened arc turns from its own start
     across(tangents[0], frame.w, facing)?;
-    // every ring winds counterclockwise about the way the sweep goes
+    // every ring's outer loop winds counterclockwise about the way the sweep goes, and its holes clockwise
     if facing < 0.0 {
-        flat.reverse();
+        let mut from = 0;
+        for &len in &lens {
+            flat[from..from + len].reverse();
+            from += len;
+        }
     }
     let [su, sv] = law.scale_end.uv();
     let size = flat
@@ -392,16 +411,16 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>, law
     };
     let (mut rings, mut end) = carry(&flat)?;
     if !law.plain()
-        && let Some(finer) = split_bowed(&flat, &rings, !profile.open, MAX_POINTS / m)?
+        && let Some((finer, counts)) = split_bowed(&flat, &lens, &rings, !profile.open, MAX_POINTS / m)?
     {
-        flat = finer;
+        (flat, lens) = (finer, counts);
         (rings, end) = carry(&flat)?;
     }
 
     sides_forward(&rings, &pts, &tangents, eps, law.scale_end != Scale::default())?;
 
     if let Some(t) = thicken {
-        let surface = sketch_loft::build_rows(&rings, &of, !profile.open, None, None, size)?;
+        let surface = sketch_loft::build_rows(&rings, &lens, &of, !profile.open, None, None, size)?;
         return thicken::thicken(&surface, t);
     }
     // the end cap is the section as the law leaves it, in its own plane
@@ -420,15 +439,17 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>, law
         center: sketch_loft::centroid(&rings[0]),
         ring: rings[0].clone(),
         flat,
+        lens: lens.clone(),
         frame,
     };
     let finish = Section {
         center: sketch_loft::centroid(&rings[m - 1]),
         ring: rings[m - 1].clone(),
         flat: end_flat,
+        lens: lens.clone(),
         frame: end,
     };
-    let mesh = sketch_loft::build_rows(&rings, &of, true, None, Some((&start, &finish)), size)?;
+    let mesh = sketch_loft::build_rows(&rings, &lens, &of, true, None, Some((&start, &finish)), size)?;
     if boolean::Solid::new(&mesh).is_ok_and(|s| s.self_intersects()) {
         return Err(Error::geometry(
             "sweep",
@@ -771,35 +792,50 @@ fn eigen<const N: usize>(mut a: [[f64; N]; N]) -> ([f64; N], [[f64; N]; N]) {
 }
 
 /// The profile with points added along each edge whose side quads bow out of their plane by more than the arc
-/// tolerance (a turned or unevenly scaled side does), or None when none do. A quad bows by a quarter of the skew of its
-/// corners across its plane, which grows with the edge's length.
+/// tolerance (a turned or unevenly scaled side does), and each loop's new point count, or None when none bow. A quad
+/// bows by a quarter of the skew of its corners across its plane, which grows with the edge's length. The loops are
+/// `lens` points each, one after another.
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "cut counts are capped far below 2^52"
 )]
-fn split_bowed(flat: &[V2], rings: &[Vec<V3>], closed: bool, most: usize) -> Result<Option<Vec<V2>>> {
-    let n = flat.len();
-    let edges = if closed { n } else { n - 1 };
-    let mut cuts = vec![1usize; edges];
-    for (j, c) in cuts.iter_mut().enumerate() {
-        let i = (j + 1) % n;
-        let bow = rings
-            .windows(2)
-            .map(|w| {
-                let (a0, a1, b0, b1) = (w[0][j], w[0][i], w[1][j], w[1][i]);
-                let skew = vec3::sub(vec3::add(a0, b1), vec3::add(a1, b0));
-                vec3::normalize(vec3::cross(vec3::sub(b1, a0), vec3::sub(b0, a1)))
-                    .map_or(0.0, |nn| vec3::dot(skew, nn).abs() / 4.0)
-            })
-            .fold(0.0f64, f64::max);
-        *c = (bow / sketch_loft::SMOOTH_TOL_MM).ceil().clamp(1.0, most as f64) as usize;
+fn split_bowed(
+    flat: &[V2],
+    lens: &[usize],
+    rings: &[Vec<V3>],
+    closed: bool,
+    most: usize,
+) -> Result<Option<(Vec<V2>, Vec<usize>)>> {
+    // each loop's cuts per edge, its last point joined back to its first when closed
+    let mut cuts: Vec<Vec<usize>> = Vec::with_capacity(lens.len());
+    let mut from = 0;
+    for &len in lens {
+        let edges = if closed { len } else { len - 1 };
+        cuts.push(
+            (0..edges)
+                .map(|e| {
+                    let (j, i) = (from + e, from + (e + 1) % len);
+                    let bow = rings
+                        .windows(2)
+                        .map(|w| {
+                            let (a0, a1, b0, b1) = (w[0][j], w[0][i], w[1][j], w[1][i]);
+                            let skew = vec3::sub(vec3::add(a0, b1), vec3::add(a1, b0));
+                            vec3::normalize(vec3::cross(vec3::sub(b1, a0), vec3::sub(b0, a1)))
+                                .map_or(0.0, |nn| vec3::dot(skew, nn).abs() / 4.0)
+                        })
+                        .fold(0.0f64, f64::max);
+                    (bow / sketch_loft::SMOOTH_TOL_MM).ceil().clamp(1.0, most as f64) as usize
+                })
+                .collect(),
+        );
+        from += len;
     }
-    if cuts.iter().all(|&c| c == 1) {
+    if cuts.iter().flatten().all(|&c| c == 1) {
         return Ok(None);
     }
-    let total = n + cuts.iter().map(|c| c - 1).sum::<usize>();
+    let total = flat.len() + cuts.iter().flatten().map(|c| c - 1).sum::<usize>();
     if total > most {
         return Err(Error::invalid(
             "twistDeg",
@@ -809,17 +845,25 @@ fn split_bowed(flat: &[V2], rings: &[Vec<V3>], closed: bool, most: usize) -> Res
         ));
     }
     let mut out = Vec::with_capacity(total);
-    for (j, &p) in flat.iter().enumerate() {
-        out.push(p);
-        if let Some(&c) = cuts.get(j) {
-            let q = flat[(j + 1) % n];
-            out.extend((1..c).map(|s| {
-                let t = s as f64 / c as f64;
-                [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]
-            }));
+    let mut counts = Vec::with_capacity(lens.len());
+    let mut from = 0;
+    for (&len, cut) in lens.iter().zip(&cuts) {
+        let start = out.len();
+        let pts = &flat[from..from + len];
+        for (j, &p) in pts.iter().enumerate() {
+            out.push(p);
+            if let Some(&c) = cut.get(j) {
+                let q = pts[(j + 1) % len];
+                out.extend((1..c).map(|s| {
+                    let t = s as f64 / c as f64;
+                    [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]
+                }));
+            }
         }
+        counts.push(out.len() - start);
+        from += len;
     }
-    Ok(Some(out))
+    Ok(Some((out, counts)))
 }
 
 /// Fails when a side line runs back along its piece of the path between two rings: the sides would cross there.
@@ -1549,6 +1593,88 @@ mod tests {
         );
     }
 
+    /// The rings of a sweep's sides and each ring's loop lengths, read back from the order `build_rows` lays them out:
+    /// row after row of loops, two triangles per side quad, and each loop's last quad joining back to its first point.
+    fn rows_of(m: &TriMesh) -> (Vec<Vec<V3>>, Vec<usize>) {
+        // the first quad's third corner is the second point of the second row
+        let n = m.triangles[0][2] as usize - 1;
+        let mut lens = Vec::new();
+        let mut from = 0;
+        for t in m.triangles.iter().step_by(2) {
+            let (a0, a1) = (t[0] as usize, t[1] as usize);
+            if a0 >= n {
+                break;
+            }
+            if a1 < a0 {
+                lens.push(a0 + 1 - from);
+                from = a0 + 1;
+            }
+        }
+        (m.positions.chunks(n).map(<[V3]>::to_vec).collect(), lens)
+    }
+
+    #[test]
+    fn an_off_center_hole_stays_inside_every_twisted_squashed_ring() {
+        // a 20 mm round with a 6 mm hole off its middle, a quarter turn and squashed to 0.6 along v round a quarter arc
+        let path = chain([30.0, 0.0], vec![arc([0.0, 0.0], 90.0)]);
+        let side = FaceFrame {
+            origin: [30.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u: [-1.0, 0.0, 0.0],
+            v: [0.0, 0.0, 1.0],
+        };
+        let profile = Profile {
+            frame: Some(side),
+            loops: vec![circle([0.0, 0.0], 20.0), circle([3.0, 1.0], 6.0)],
+            open: false,
+            landmarks: Vec::new(),
+        };
+        let law = Law {
+            scale_end: Scale::Each([1.0, 0.6]),
+            twist_deg: 90.0,
+            ease: Ease::Linear,
+        };
+        let m = sweep_with(&profile, &path, None, &law).unwrap();
+        closed(&m);
+        let (rows, lens) = rows_of(&m);
+        assert_eq!(lens.len(), 2, "{lens:?}");
+        assert_eq!(lens.iter().sum::<usize>(), rows[0].len());
+        assert!(rows.len() > 2, "{}", rows.len());
+        for (k, row) in rows.iter().enumerate() {
+            let (outer, hole) = row.split_at(lens[0]);
+            // each ring is flat: take it into its own plane through three of its outer points
+            let (a, b, c) = (outer[0], outer[outer.len() / 3], outer[2 * outer.len() / 3]);
+            let w = vec3::normalize(vec3::cross(vec3::sub(b, a), vec3::sub(c, a))).unwrap();
+            let u = vec3::normalize(vec3::sub(b, a)).unwrap();
+            let v = vec3::cross(w, u);
+            let flat = |p: &V3| {
+                let d = vec3::sub(*p, a);
+                assert!(vec3::dot(d, w).abs() < 1e-6, "ring {k} is not flat");
+                [vec3::dot(d, u), vec3::dot(d, v)]
+            };
+            let ring: Vec<V2> = outer.iter().map(flat).collect();
+            let bore: Vec<V2> = hole.iter().map(flat).collect();
+            // the hole winds against the outer loop, and every hole point is inside it, clear of its edges
+            assert!(
+                poly2d::signed_area(&ring) * poly2d::signed_area(&bore) < 0.0,
+                "ring {k}"
+            );
+            for &p in &bore {
+                assert!(poly2d::point_in_ring(p, &ring), "ring {k}: {p:?} is outside");
+                let clear = (0..ring.len())
+                    .map(|i| {
+                        let (s, e) = (ring[i], ring[(i + 1) % ring.len()]);
+                        let d = [e[0] - s[0], e[1] - s[1]];
+                        let t = (((p[0] - s[0]) * d[0] + (p[1] - s[1]) * d[1]) / (d[0] * d[0] + d[1] * d[1]))
+                            .clamp(0.0, 1.0);
+                        (p[0] - s[0] - d[0] * t).m_hypot(p[1] - s[1] - d[1] * t)
+                    })
+                    .fold(f64::INFINITY, f64::min);
+                assert!(clear > 0.5, "ring {k}: {p:?} is {clear} mm from the outside");
+            }
+        }
+    }
+
     #[test]
     fn says_what_is_wrong_with_the_profile() {
         let err = |p: &Profile, path: &Path| sweep(p, path).unwrap_err().to_string();
@@ -1569,7 +1695,10 @@ mod tests {
             open: false,
             landmarks: Vec::new(),
         };
-        assert_eq!(err(&holed, &up), "profile: a sweep profile has no holes yet");
+        // a hole runs through as a bore: the 10 mm square less the 4 mm one, 10 mm long
+        let bore = sweep(&holed, &up).unwrap();
+        closed(&bore);
+        assert!((bore.volume() - 840.0).abs() < 1e-9, "{}", bore.volume());
         let two = Profile {
             frame: None,
             loops: vec![square([0.0, 0.0], 10.0), square([30.0, 0.0], 10.0)],
@@ -1578,7 +1707,7 @@ mod tests {
         };
         assert_eq!(
             err(&two, &up),
-            "profile: a sweep profile is one closed loop, not 2"
+            "profile: a sweep profile is one outer loop with any holes inside it, not 2 separate shapes"
         );
         let flat = points(&[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]);
         assert_eq!(
@@ -1966,6 +2095,41 @@ mod tests {
                 .map(|&p| vec3::len(vec3::sub(p, want)))
                 .fold(f64::MAX, f64::min);
             assert!(near < 1e-6, "{want:?} is {near} mm off");
+        }
+    }
+
+    #[test]
+    fn a_bore_swept_along_a_helix_comes_back_to_itself_each_turn() {
+        // a 3 mm round with a 1.5 mm hole on the axial plane, 3 turns of a 6 mm pitch at 48 points a turn
+        let pts = helix(35.0, 6.0, 3, 48);
+        let f = FaceFrame::for_normal([35.0, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap();
+        let profile = Profile {
+            frame: Some(f),
+            loops: vec![circle([0.0, 0.0], 3.0), circle([0.0, 0.0], 1.5)],
+            open: false,
+            landmarks: Vec::new(),
+        };
+        let m = sweep(&profile, &points(&pts)).unwrap();
+        closed(&m);
+        // one bore through it: a closed surface of genus one has no Euler characteristic
+        let w = m.welded();
+        assert_eq!(
+            2 * w.positions.len(),
+            w.triangles.len(),
+            "V - E + F = V - F / 2 is 0"
+        );
+        let (rows, lens) = rows_of(&m);
+        assert_eq!(lens.len(), 2, "{lens:?}");
+        assert_eq!(rows.len(), pts.len());
+        // every turn, outer loop and bore alike, is the first ring lifted by the pitch
+        for turn in 1..=3 {
+            for (p, q) in rows[0].iter().zip(&rows[turn * 48]) {
+                let lifted = [p[0], p[1], p[2] + 6.0 * turn as f64];
+                assert!(
+                    vec3::len(vec3::sub(lifted, *q)) < 1e-9,
+                    "turn {turn}: {q:?} vs {lifted:?}"
+                );
+            }
         }
     }
 }
