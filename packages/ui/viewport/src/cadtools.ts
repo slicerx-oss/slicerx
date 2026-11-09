@@ -293,7 +293,7 @@ export class PushPreview {
 }
 
 /** normal is free geometry; defined is fully defined by its constraints, fixed is held by Fix. */
-export type SketchTone = 'normal' | 'defined' | 'fixed' | 'selected' | 'issue' | 'soft' | 'axis' | 'grid' | 'construction'
+export type SketchTone = 'normal' | 'defined' | 'fixed' | 'selected' | 'hover' | 'issue' | 'soft' | 'axis' | 'grid' | 'construction'
 
 /** What the sketch layer shows, all in plane coordinates (mm). */
 export interface SketchScene {
@@ -325,7 +325,16 @@ export interface SketchScene {
   glyphs?: readonly { at: V2; kind: SketchGlyphKind; slot: number; picked?: boolean }[]
   /** In a drawing tool, a point a press can drag from (the open end of the line being drawn); the drag goes out as handle -1. */
   dragFrom?: V2
+  /** Short marks beside the drawing, such as a picked sketch's number in a loft: a filled pill with its bottom left at `at`. */
+  tags?: readonly { at: V2; text: string }[]
 }
+
+/**
+ * A finished sketch in Model. While a tool takes sketch picks (setSketchPicking), `id` makes it pickable: the one under
+ * the pointer draws in the hover tone, a click on it comes back as the pick event's `sketch`, and a picked one (`mark`
+ * set) draws in the selected tone with its mark beside it.
+ */
+export type FinishedSketch = SketchScene & { id?: string; mark?: string }
 
 /** A dimension's value or a constraint glyph on screen, by its index in the scene's dims or glyphs. */
 export type SketchMark = { dim: number } | { glyph: number }
@@ -350,6 +359,7 @@ const TONE: Record<SketchTone, { color: string; opacity: number }> = {
   defined: { color: '#f8f8f2', opacity: 1 },
   fixed: { color: '#50fa7b', opacity: 1 },
   selected: { color: '#f1fa8c', opacity: 1 },
+  hover: { color: '#ff79c6', opacity: 1 },
   issue: { color: '#ff5555', opacity: 1 },
   soft: { color: '#bd93f9', opacity: 0.55 },
   axis: { color: '#ffb86c', opacity: 1 },
@@ -364,6 +374,7 @@ const LIGHT_TONE: Partial<Record<SketchTone, string>> = {
   defined: '#282a36',
   fixed: '#1e9e4a',
   selected: '#b8860b',
+  hover: '#c2185b',
   issue: '#d32f2f',
   axis: '#d9731c',
   construction: '#e07b12',
@@ -530,7 +541,7 @@ export class SketchLayer {
       if (p.closed && pts.length > 2) push(p.tone ?? 'normal', pts[pts.length - 1]!, pts[0]!)
     }
     // Draw order: grid, soft, normal, axis, selected, issue on top.
-    const order: SketchTone[] = ['grid', 'soft', 'construction', 'normal', 'defined', 'fixed', 'axis', 'selected', 'issue']
+    const order: SketchTone[] = ['grid', 'soft', 'construction', 'normal', 'defined', 'fixed', 'axis', 'hover', 'selected', 'issue']
     order.forEach((tone, k) => {
       const pos = byTone.get(tone)
       if (!pos?.length) return
@@ -608,6 +619,16 @@ export class SketchLayer {
         this.drawn.push(label.sprite)
         this.labels.push({ ...label, mark: { dim: i }, at })
       })
+    }
+    for (const t of scene.tags ?? []) {
+      const label = makeLabel(t.text, true)
+      if (!label) continue
+      // its bottom left corner on the spot, so it sits beside the drawing rather than on it
+      label.sprite.center.set(0, 0)
+      label.sprite.position.set(t.at[0], t.at[1], lift)
+      this.group.add(label.sprite)
+      this.drawn.push(label.sprite)
+      this.labels.push({ ...label, at: t.at })
     }
     for (const [i, g] of (scene.glyphs ?? []).entries()) {
       const sprite = makeGlyph(g.kind, g.picked, this.light, this.glyphColors)

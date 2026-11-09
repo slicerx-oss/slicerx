@@ -53,7 +53,7 @@ import { alongAxis, arrowDir, ARROW_PX, MoveArrows, rayToSegment, type ArrowAxis
 import { applyToAll } from './group'
 import { RingSet, angleAround, axisRingColors, pickRing, rayPlane, ringAxes, rotateAbout, snapAngle, turnVector, unit, unwrapAngle, type RingAxis, type RotateSpace } from './rings'
 import { CutGizmo, CutPreview, extentAlong, movePlane, tiltAxes, type CutKeep } from './cutplane'
-import { DimensionLayer, EdgePreview, OpPreviewLook, PushPreview, SketchLayer, fromPlane, rayOnPlane, setSketchResolution, type DimensionMark, type SketchCursor, type SketchScene, type V2 } from './cadtools'
+import { DimensionLayer, EdgePreview, OpPreviewLook, PushPreview, SketchLayer, fromPlane, rayOnPlane, setSketchResolution, type DimensionMark, type FinishedSketch, type SketchCursor, type SketchScene, type V2 } from './cadtools'
 import { clampScale, factorsFor, handleAxis, handleLocal, minFactorFor, nearestOnLine, pivotFor, ratioLine, ratioPivotFor, ratioPlane, ratioPoint, scaleTransform, snapScale, type HandleId, type V3 } from './scaling'
 import type { ModKey } from './gizmobindings'
 import { layerTopsProblems } from './layerheights'
@@ -487,6 +487,10 @@ class ViewportImpl implements Viewport {
   private readonly sketchLayer = new SketchLayer()
   private readonly finished = new Group()
   private finishedLayers: SketchLayer[] = []
+  private finishedScenes: readonly FinishedSketch[] = []
+  /** A tool takes finished sketch picks (Loft, Sweep): hover highlights one, a click reports it. */
+  private sketchPicking = false
+  private sketchHover: string | null = null
   // sketch tones for a light studio
   private sketchLight = false
   private section: Plane | null = null
@@ -1062,6 +1066,7 @@ class ViewportImpl implements Viewport {
     if (this.cut || this.cutGizmo.group.visible) this.updateCutGizmo()
     this.dims.fit(this.camera.fov, this.height)
     this.sketchLayer.fit(this.camera.fov, this.height)
+    for (const l of this.finishedLayers) l.fit(this.camera.fov, this.height)
     const ao = this.aoOn && aoMix > 0 && this.display !== 'wireframe' && !(this.mode === 'prepare' && this.renderMode === 'xray')
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
@@ -2859,20 +2864,77 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
-  setFinishedSketches(scenes: readonly SketchScene[]): void {
+  setFinishedSketches(scenes: readonly FinishedSketch[]): void {
     if (!scenes.length && !this.finishedLayers.length) return
+    this.finishedScenes = scenes
+    if (this.sketchHover !== null && !scenes.some((s) => s.id === this.sketchHover)) this.sketchHover = null
+    this.drawFinished()
+  }
+
+  setSketchPicking(on: boolean): void {
+    if (on === this.sketchPicking) return
+    this.sketchPicking = on
+    if (!on && this.sketchHover !== null) {
+      this.sketchHover = null
+      this.canvas.style.cursor = ''
+      this.drawFinished()
+    }
+  }
+
+  /** The finished sketches as layers: a picked one in the selected tone with its mark, the hovered one in the hover tone. */
+  private drawFinished(): void {
     for (const l of this.finishedLayers) {
       l.group.removeFromParent()
       l.dispose()
     }
-    this.finishedLayers = scenes.map((s) => {
+    this.finishedLayers = this.finishedScenes.map((s) => {
       const l = new SketchLayer()
       l.setLight(this.sketchLight, this.theme.glyphs)
-      l.set({ frame: s.frame, paths: s.paths, handles: [], ...(s.profiles ? { profiles: s.profiles } : {}) })
+      const tone = s.mark !== undefined ? ('selected' as const) : s.id !== undefined && s.id === this.sketchHover ? ('hover' as const) : null
+      const paths = tone ? s.paths.map((p) => ({ ...p, tone })) : s.paths
+      const tags = s.mark !== undefined ? [{ at: tagSpot(s), text: s.mark }] : []
+      l.set({ frame: s.frame, paths, handles: [], ...(s.profiles ? { profiles: s.profiles } : {}), ...(tags.length ? { tags } : {}) })
       this.finished.add(l.group)
       return l
     })
     this.invalidate()
+  }
+
+  /** The pickable finished sketch under a client point: on its lines within a few pixels, or inside its closed shape. */
+  private finishedAt(e: { clientX: number; clientY: number }): string | null {
+    if (!this.sketchPicking || !this.finishedScenes.length) return null
+    const r = this.canvas.getBoundingClientRect()
+    const m = this.stage.bedMatrix()
+    const v = new Vector3()
+    const px = (f: SketchScene['frame'], q: V2): [number, number] => {
+      v.set(...fromPlane(f, q)).applyMatrix4(m).project(this.camera)
+      return [r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height]
+    }
+    const x = e.clientX
+    const y = e.clientY
+    let best: { id: string; d: number } | null = null
+    for (const s of this.finishedScenes) {
+      if (s.id === undefined) continue
+      let d = Infinity
+      for (const p of s.paths) {
+        const pts = p.points.map((q) => px(s.frame, q))
+        const n = pts.length
+        for (let i = 0; i + 1 < n + (p.closed ? 1 : 0); i++) d = Math.min(d, segDistance(x, y, pts[i]!, pts[(i + 1) % n]!))
+      }
+      // a click inside a closed shape picks it too, a little behind a click on a line
+      for (const ring of s.profiles ?? []) if (ring.length > 2 && inside(x, y, ring.map((q) => px(s.frame, q)))) d = Math.min(d, SKETCH_PICK_PX * 0.75)
+      if (d <= SKETCH_PICK_PX && (!best || d < best.d)) best = { id: s.id, d }
+    }
+    return best?.id ?? null
+  }
+
+  /** Hover over finished sketches while a tool picks them: the one under the pointer takes the hover tone. */
+  private hoverFinished(e: { clientX: number; clientY: number } | null): void {
+    const id = e ? this.finishedAt(e) : null
+    if (id === this.sketchHover) return
+    this.sketchHover = id
+    this.canvas.style.cursor = id ? 'pointer' : ''
+    this.drawFinished()
   }
 
   setSection(section: { point: V3; normal: V3 } | null): void {
@@ -3787,6 +3849,18 @@ class ViewportImpl implements Viewport {
       solidPending = { clientX: e.clientX, clientY: e.clientY }
       if (first) requestAnimationFrame(flushSolid)
     }
+    // Finished sketch hovers while a tool picks them, at most once per frame.
+    let finishedPending: { clientX: number; clientY: number } | null = null
+    const queueSketchHover = (e: PointerEvent): void => {
+      const first = finishedPending === null
+      finishedPending = { clientX: e.clientX, clientY: e.clientY }
+      if (first)
+        requestAnimationFrame(() => {
+          const p = finishedPending
+          finishedPending = null
+          if (p && this.sketchPicking && this.tool === 'probe') this.hoverFinished(p)
+        })
+    }
     const queueProbe = (e: PointerEvent): void => {
       const first = probePending === null
       probePending = { clientX: e.clientX, clientY: e.clientY }
@@ -4081,6 +4155,7 @@ class ViewportImpl implements Viewport {
           }
         }
         if (this.tool === 'probe' && this.probeHover && this.mode === 'prepare' && e.buttons === 0) queueProbe(e)
+        if (this.tool === 'probe' && this.sketchPicking && this.mode === 'prepare' && e.buttons === 0) queueSketchHover(e)
         if (this.tool === 'paint' && this.mode === 'prepare') this.paintMove(e, pick)
         if (this.tool === 'brim' && this.mode === 'prepare' && e.buttons === 0) {
           const h = pick(e)
@@ -4267,7 +4342,9 @@ class ViewportImpl implements Viewport {
       setRay(e)
       const op = this.originPlanes.at(ray)
       const onPlane = op && (!p || op.distance < p.point.distanceTo(ray.ray.origin)) ? op.plane : null
-      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(onPlane ? { originPlane: onPlane } : {}), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}), screen: [e.clientX, e.clientY], ...(near ? { near } : {}) })
+      // a finished sketch under the click, while a tool picks them
+      const sketch = this.tool === 'probe' ? this.finishedAt(e) : null
+      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(onPlane ? { originPlane: onPlane } : {}), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}), screen: [e.clientX, e.clientY], ...(near ? { near } : {}), ...(sketch ? { sketch } : {}) })
       if (this.pathsShown() && !p) {
         // A click on a toolpath: which path it is, so the app can show the setting that made it.
         setRay(e)
@@ -4927,3 +5004,36 @@ class ViewportImpl implements Viewport {
   }
 }
 
+/** How near a click must come to a finished sketch's line to pick it, in pixels. */
+const SKETCH_PICK_PX = 8
+
+/** Distance in pixels from a point to a segment on screen. */
+function segDistance(x: number, y: number, a: readonly [number, number], b: readonly [number, number]): number {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const l2 = dx * dx + dy * dy
+  const t = l2 > 0 ? Math.min(1, Math.max(0, ((x - a[0]) * dx + (y - a[1]) * dy) / l2)) : 0
+  return Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t))
+}
+
+/** Is the point inside the ring (even-odd)? */
+function inside(x: number, y: number, ring: readonly (readonly [number, number])[]): boolean {
+  let in_ = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]!
+    const [xj, yj] = ring[j]!
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) in_ = !in_
+  }
+  return in_
+}
+
+/** Where a picked sketch's mark goes: just past the top right of its drawing, in its plane. */
+function tagSpot(s: SketchScene): V2 {
+  let x = -Infinity
+  let y = -Infinity
+  for (const p of s.paths) for (const q of p.points) {
+    x = Math.max(x, q[0])
+    y = Math.max(y, q[1])
+  }
+  return Number.isFinite(x) && Number.isFinite(y) ? [x + 1, y + 1] : [0, 0]
+}
