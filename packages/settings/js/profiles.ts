@@ -44,6 +44,8 @@ export interface MachineEntry {
   bambuStudio?: string
   /** The Cura definition and print cores the values were resolved from (the UltiMaker S series). */
   cura?: { definition: string; printCores: string[] }
+  /** The maker's own published documents the values were written from, for a model with no slicer profile to read (the Sovol SV04: its firmware source). */
+  makerDocs?: { checked: string; firmware?: string; sources: string[] }
   machine: Record<string, unknown>
   /** Other nozzles: the keys that differ from the default nozzle's settings. */
   nozzles: Record<string, { orcaProfile: string; differs: Record<string, unknown> }>

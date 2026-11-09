@@ -67,10 +67,10 @@ pub use plan::{
 };
 pub use printer_models::{mapped_models, models_for_printer, printer_for_model, setup_for_model};
 pub use profiles::{
-    BuildVolume, MachineEntry, MachineOrigin, NozzleOverride, PrinterLimits, PrinterProfile, ProcessPreset,
-    filament_config, filament_sources, gcode_status, list_printer_profiles, list_process_presets,
-    machine_checked_commit, machine_entry, printer_config, printer_profile, process_config,
-    process_speed_source, process_speed_sources, profile_config,
+    BuildVolume, MachineEntry, MachineOrigin, MakerDocs, NozzleOverride, PrinterLimits, PrinterProfile,
+    ProcessPreset, filament_config, filament_sources, gcode_status, list_printer_profiles,
+    list_process_presets, machine_checked_commit, machine_entry, printer_config, printer_profile,
+    process_config, process_speed_source, process_speed_sources, profile_config,
 };
 pub use project::{
     LayerRange, ProjectImport, ProjectNames, ProjectObject, ProjectPart, ProjectPlate, import_project,

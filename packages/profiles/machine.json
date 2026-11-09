@@ -17898,6 +17898,85 @@
     "vendor": "Snapmaker"
    }
   },
+  "sovol-sv04": {
+   "machine": {
+    "extruder_offset": [
+     "0x0",
+     "0x0"
+    ],
+    "extruder_printable_area": [
+     "0x0,300x0,300x300,0x300",
+     "0x0,300x0,300x300,0x300"
+    ],
+    "gcode_flavor": "marlin2",
+    "machine_max_acceleration_e": [
+     "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+     "500"
+    ],
+    "machine_max_acceleration_retracting": [
+     "500"
+    ],
+    "machine_max_acceleration_travel": [
+     "500"
+    ],
+    "machine_max_acceleration_x": [
+     "500"
+    ],
+    "machine_max_acceleration_y": [
+     "500"
+    ],
+    "machine_max_acceleration_z": [
+     "100"
+    ],
+    "machine_max_jerk_e": [
+     "5"
+    ],
+    "machine_max_jerk_x": [
+     "10"
+    ],
+    "machine_max_jerk_y": [
+     "10"
+    ],
+    "machine_max_jerk_z": [
+     "0.3"
+    ],
+    "machine_max_speed_e": [
+     "25"
+    ],
+    "machine_max_speed_x": [
+     "500"
+    ],
+    "machine_max_speed_y": [
+     "500"
+    ],
+    "machine_max_speed_z": [
+     "5"
+    ],
+    "nozzle_diameter": [
+     "0.4",
+     "0.4"
+    ],
+    "printable_area": [
+     "0x0",
+     "300x0",
+     "300x300",
+     "0x300"
+    ],
+    "printable_height": "400",
+    "single_extruder_multi_material": "0"
+   },
+   "makerDocs": {
+    "checked": "2026-11-09",
+    "firmware": "Sovol3d/SV04-IDEX-3D-Printer-Mainboard-Source-code@1867fcba",
+    "sources": [
+     "https://github.com/Sovol3d/SV04-IDEX-3D-Printer-Mainboard-Source-code/blob/1867fcba75354a5c65e0631d6972dd19f1bd6cbe/Marlin/Configuration.h",
+     "https://github.com/Sovol3d/SV04-IDEX-3D-Printer-Mainboard-Source-code/blob/1867fcba75354a5c65e0631d6972dd19f1bd6cbe/Marlin/Configuration_adv.h"
+    ]
+   },
+   "nozzles": {}
+  },
   "sovol-sv08": {
    "machine": {
     "deretraction_speed": [

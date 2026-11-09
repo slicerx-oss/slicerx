@@ -4,6 +4,8 @@ Each printer profile carries the machine settings of the maker's own profile for
 
 Where the printer catalog and the maker's profile disagree, the profile's value is the one in the printer config (`printerConfig`). Start, end, layer change, filament change, pause and time lapse G-code (and the file start G-code where the maker has one) is the maker's own text as OrcaSlicer 2.4.2 resolves it for the printer's default filament (the owner reported the makers' permission on 2026-09-30), and written for SlicerX for printers Orca has no preset for. The shipped text is compared with Orca 2.4.2's resolved text for every printer that has a dump.
 
+The Sovol SV04 has no maker profile to read, so its machine settings are written from Sovol's published firmware source (Marlin 2.0.9.2, `Marlin/Configuration.h` and `Marlin/Configuration_adv.h` of https://github.com/Sovol3d/SV04-IDEX-3D-Printer-Mainboard-Source-code at commit 1867fcba, read 2026-11-09; `machine.json` names them under `makerDocs`): two extruders with 0.4 mm nozzles, the 300 x 300 x 400 mm volume Sovol states for it, extruder offsets of zero (the firmware runs in its auto-park mode and applies the carriage offset itself), and the firmware's speed, acceleration and jerk limits. Its G-code family `sovol_sv04` was written for SlicerX: the start heats both nozzles together when the plate uses both and primes each along its own edge of the bed, and a tool change is a `T` command followed by a wait for the new tool's temperature, with no manual swap. Estimated, not from Sovol: the prime line positions, the 150 °C nozzle temperature while homing and where the end G-code presents the print. The limits are the firmware's compiled defaults, so a printer whose settings were changed from its screen or saved with `M500` may differ. Duplication and mirror modes are not covered.
+
 | Model | Machine settings | G-code | Bed and height |
 | --- | --- | --- | --- |
 | Bambu Lab X1 Carbon | checked at 97700c5 | maker template | catalog 256x256x256 mm, profile 256x256x250 mm |
@@ -58,7 +60,7 @@ Where the printer catalog and the maker's profile disagree, the profile's value 
 | Voron Design Voron Trident 350 | checked at 97700c5 | maker template | same bed and height |
 | Voron Design Voron Switchwire 250 | checked at 97700c5 | maker template | same bed and height |
 | Sovol SV08 | checked at 97700c5 | maker template | same bed and height |
-| Sovol SV04 | no maker profile to check against | written | catalog values only |
+| Sovol SV04 | written from the maker's firmware source, read 2026-11-09 | written | same bed and height |
 | FLSUN V400 | checked at 97700c5 | written | same bed and height |
 | Other printer Klipper delta | no maker profile to check against | written | catalog values only |
 | Other printer Klipper printer | no maker profile to check against | written | catalog values only |

@@ -87,6 +87,10 @@ pub struct MachineEntry {
     /// The Cura definition the values were resolved from (the `UltiMaker` S series).
     #[serde(default)]
     pub cura: Option<CuraOrigin>,
+    /// The maker's own published documents the values were written from, for a model with no slicer profile to read
+    /// (the Sovol SV04: its firmware source).
+    #[serde(default, rename = "makerDocs")]
+    pub maker_docs: Option<MakerDocs>,
     pub machine: serde_json::Map<String, Json>,
     /// Other nozzles: the keys that differ from the default nozzle's settings.
     #[serde(default)]
@@ -98,6 +102,15 @@ pub struct MachineOrigin {
     pub vendor: String,
     pub profile: String,
     pub checked: String,
+}
+
+/// The maker's published documents a model's values were written from, and the day they were read.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MakerDocs {
+    pub checked: String,
+    #[serde(default)]
+    pub firmware: Option<String>,
+    pub sources: Vec<String>,
 }
 
 /// The Cura machine definition, print cores, materials and quality a model's values were resolved with.
