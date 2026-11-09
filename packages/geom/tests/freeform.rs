@@ -954,3 +954,176 @@ fn a_smooth_loft_shells_open_at_the_top_to_the_voxel_wall() {
     let tris = m["mesh"]["indices"].as_array().unwrap().len() / 3;
     assert!(tris.abs_diff(31_312) < 313, "{tris}");
 }
+
+fn rect(w: f64, h: f64) -> Value {
+    json!({ "points": [[-w / 2.0, -h / 2.0], [w / 2.0, -h / 2.0], [w / 2.0, h / 2.0], [-w / 2.0, h / 2.0]] })
+}
+
+fn up(h: f64) -> Value {
+    json!({ "points": [[0, 0, 0], [0, 0, h]] })
+}
+
+#[test]
+fn a_straight_taper_is_the_frustum() {
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "loops": [circle([0.0, 0.0], 20.0)] }, "path": up(30.0), "scaleEnd": 0.5 }),
+    );
+    solid(&m);
+    let want = PI * 30.0 / 3.0 * (100.0 + 50.0 + 25.0);
+    assert!((volume(&m) / want - 1.0).abs() < 5e-3, "{} vs {want}", volume(&m));
+    // the top is the 10 mm circle (its flat face may have points inside)
+    let top: Vec<f64> = points(&m)
+        .into_iter()
+        .filter(|p| (p[2] - 30.0).abs() < 1e-9)
+        .map(|p| p[0].m_hypot(p[1]))
+        .collect();
+    let most = top.iter().copied().fold(0.0f64, f64::max);
+    assert!((most - 5.0).abs() < 1e-4, "{most}");
+    // eased, the same ends and a fuller middle
+    let eased = run(
+        "sketch.sweep",
+        &json!({ "profile": { "loops": [circle([0.0, 0.0], 20.0)] }, "path": up(30.0), "scaleEnd": [0.5, 0.5], "ease": "smooth" }),
+    );
+    solid(&eased);
+    assert!(volume(&eased) > volume(&m), "{} {}", volume(&eased), volume(&m));
+}
+
+#[test]
+fn a_twisted_square_keeps_the_prism_volume_and_height() {
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "loops": [rect(10.0, 10.0)] }, "path": up(30.0), "twistDeg": 90 }),
+    );
+    solid(&m);
+    // within the arc tolerance over the four sides
+    assert!(
+        (volume(&m) - 3000.0).abs() < 40.0 * 30.0 * 0.005,
+        "{}",
+        volume(&m)
+    );
+    let pts = points(&m);
+    let (lo, hi) = pts
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(lo, hi), p| (lo.min(p[2]), hi.max(p[2])));
+    assert!(lo.abs() < 1e-9 && (hi - 30.0).abs() < 1e-9, "{lo} {hi}");
+    // every side point is on the square turned by its share of the quarter turn
+    for p in pts.iter().filter(|p| p[2] > 1e-6 && p[2] < 30.0 - 1e-6) {
+        let (s, c) = (-p[2] / 30.0 * PI / 2.0).m_sin_cos();
+        let (x, y) = (p[0] * c - p[1] * s, p[0] * s + p[1] * c);
+        let edge = x.abs().max(y.abs());
+        assert!((edge - 5.0).abs() < 1e-4, "{p:?} turns back to ({x}, {y})");
+    }
+    let top: Vec<&[f64; 3]> = pts.iter().filter(|p| (p[2] - 30.0).abs() < 1e-9).collect();
+    assert!(
+        top.iter()
+            .all(|p| p[0].abs() <= 5.0 + 1e-4 && p[1].abs() <= 5.0 + 1e-4)
+    );
+    // a quarter turn on its own corners would pinch; the steps in between keep the sides close
+    assert!(pts.len() > 40, "{}", pts.len());
+}
+
+#[test]
+fn an_arc_with_twist_and_scale_is_one_closed_shell() {
+    let path = json!({ "loops": [{ "start": [30, 0], "segments": [{ "type": "arc", "center": [0, 0], "sweepDeg": 90 }] }] });
+    let profile = json!({ "frame": { "origin": [30, 0, 0], "normal": [0, 1, 0], "u": [-1, 0, 0], "v": [0, 0, 1] }, "loops": [rect(6.0, 3.0)] });
+    for ease in ["linear", "smooth"] {
+        let m = run(
+            "sketch.sweep",
+            &json!({ "profile": profile, "path": path, "twistDeg": 60, "scaleEnd": [1.5, 0.8], "ease": ease }),
+        );
+        solid(&m);
+        assert_eq!(m["edges"]["nonManifoldEdges"], 0, "{}", m["edges"]);
+        // between the start's area and the end's along the quarter arc
+        let len = 30.0 * PI / 2.0;
+        let v = volume(&m);
+        assert!(v > 18.0 * len * 0.99 && v < 18.0 * 1.2 * len, "{ease}: {v}");
+    }
+}
+
+#[test]
+fn a_taper_says_what_is_wrong() {
+    let profile = json!({ "loops": [circle([0.0, 0.0], 10.0)] });
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": profile, "path": up(10.0), "scaleEnd": 0 })
+        ),
+        "scaleEnd: the end scale must be 0.05 or more of the start, not 0"
+    );
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": profile, "path": up(10.0), "scaleEnd": [1, 0.01] })
+        ),
+        "scaleEnd: the end scale must be 0.05 or more of the start, not 0.01"
+    );
+    // a 10 mm circle round an 8 mm bend fits, but grown to three times its size it crosses on the inside
+    let bend = json!({ "loops": [{ "start": [8, 0], "segments": [{ "type": "arc", "center": [0, 0], "sweepDeg": 90 }] }] });
+    let side = json!({ "frame": { "origin": [8, 0, 0], "normal": [0, 1, 0], "u": [-1, 0, 0], "v": [0, 0, 1] }, "loops": [circle([0.0, 0.0], 10.0)] });
+    solid(&run("sketch.sweep", &json!({ "profile": side, "path": bend })));
+    let e = fails(
+        "sketch.sweep",
+        &json!({ "profile": side, "path": bend, "scaleEnd": 3 }),
+    );
+    assert!(
+        e.starts_with("sweep: the path bends too tightly for the profile near (")
+            && e.ends_with("use a wider bend or a smaller profile or end scale"),
+        "{e}"
+    );
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": profile, "path": { "loops": [{ "points": [[0, 0], [0, 10]] }], "smooth": true } })
+        ),
+        "path: smooth is for a path of points; draw a spline for a smooth path on a plane"
+    );
+}
+
+#[test]
+fn a_thickened_open_profile_tapers() {
+    let u = half_circle(5.0, 48);
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "open": true, "loops": [{ "points": u }] }, "path": up(20.0), "thicken": { "thicknessMm": 1 }, "scaleEnd": 0.5 }),
+    );
+    solid(&m);
+    // half rings 1 mm thick on a radius running from 5 to 2.5 mm
+    let want = PI / 2.0 * (2.0 * 3.75 + 1.0) * 20.0;
+    assert!((volume(&m) / want - 1.0).abs() < 0.02, "{} vs {want}", volume(&m));
+}
+
+#[test]
+fn a_smooth_path_of_points_is_a_bent_tube() {
+    // seven points on a quarter circle of 30 mm, rising from the bed and leaning over to run along x
+    let given: Vec<[f64; 3]> = (0..7)
+        .map(|k| {
+            let a = (f64::from(k) * 15.0).to_radians();
+            [30.0 - 30.0 * a.m_cos(), 0.0, 30.0 * a.m_sin()]
+        })
+        .collect();
+    // the profile square to the curve where it starts, along its first chord
+    let a = 7.5f64.to_radians();
+    let (s, c) = (a.m_sin(), a.m_cos());
+    let frame = json!({ "origin": [0, 0, 0], "normal": [s, 0, c], "u": [c, 0, -s], "v": [0, 1, 0] });
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "frame": frame, "loops": [circle([0.0, 0.0], 4.0)] }, "path": { "points": given, "smooth": true } }),
+    );
+    solid(&m);
+    // the curve through them is longer than the chords and close to the arc, so the tube is close to the torus piece
+    let area = PI * 4.0;
+    let (chords, arc) = (6.0 * 60.0 * (7.5f64.to_radians()).m_sin(), 15.0 * PI);
+    let along = volume(&m) / area;
+    assert!(
+        along > chords * 0.999 && along < arc * 1.005,
+        "{along} between {chords} and {arc}"
+    );
+    // and its sides stay near the arc all the way (the curve's ends straighten a little against their mirrored neighbors)
+    for p in points(&m) {
+        let r = (p[0] - 30.0).m_hypot(p[2]);
+        let y = p[1];
+        let off = (r - 30.0).m_hypot(y);
+        assert!(off < 2.0 + 0.2, "{p:?} is {off} from the arc");
+    }
+}
