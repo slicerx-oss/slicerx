@@ -73,6 +73,13 @@ export function usageUsd(provider: string, ev: Extract<LlmEvent, { type: 'usage'
  */
 export const BYTES_PER_TOKEN = 4
 
+/**
+ * The first request of a run is reserved at a token per byte, the most a body can hold, since no reply has said how
+ * dense its text is: a denser request than a token per BYTES_PER_TOKEN bytes would bill more than its reserve and could
+ * take the spend past the cap. Only that one request pays for the bound; the count its reply reports sets every later one.
+ */
+const FIRST_TOKENS_PER_BYTE = 1
+
 /** What a request carries, as the reserve counts it: its body's bytes with each image as a stub, its images, and its output limit. */
 export function requestSize(http: LlmHttpRequest): { bytes: number; images: number; maxOut: number } {
   let images = 0
@@ -132,11 +139,11 @@ export const canStart = (b: Budget): boolean => b.spentUsd < b.capUsd - STOP_MAR
  * of reaching the provider. A reply's usage settles the spend at what it cost, so the cap holds real money; a reply
  * that ends with no usage (an abort, the timeout, a reader that stops early) is charged its worst case. The input
  * tokens a reply reports set the tokens per byte the next reserve counts (see BYTES_PER_TOKEN); a web lookup's do not,
- * since they hold the searches' results too.
+ * since they hold the searches' results too. Until one has, requests are reserved at FIRST_TOKENS_PER_BYTE.
  */
 export function budgetedClient(base: LlmClient, model: string, price: Price, budget: Budget): LlmClient {
   const adapter = adapterFor(base.provider)
-  let tokensPerByte = 1 / BYTES_PER_TOKEN
+  let tokensPerByte = FIRST_TOKENS_PER_BYTE
   return {
     provider: base.provider,
     async *stream(req, signal) {
