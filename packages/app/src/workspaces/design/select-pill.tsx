@@ -44,6 +44,7 @@ export function SelectPill() {
   // faces or edges all on one object
   const subOn = [...new Set(picks.map((p) => p.objectId))]
   const on1 = subOn.length === 1 && names[subOn[0]!] !== undefined ? { id: subOn[0]!, name: names[subOn[0]!]! } : null
+  // undefined for a step the object no longer has (undone, deleted, rolled back): the pill then names no step
   const madeStep = made && made.index >= 0 ? plate.find((p) => p.id === made.objectId)?.history?.steps[made.index] : undefined
   const openStep = (objectId: string, index: number) => {
     const step = get().plate.find((p) => p.id === objectId)?.history?.steps[index]
@@ -92,11 +93,11 @@ export function SelectPill() {
           <span className="select-pill-made" data-testid="model-select-made-by" data-step="base">
             from the original mesh
           </span>
-        ) : (
+        ) : madeStep ? (
           <button type="button" className="select-pill-made select-pill-crumb" data-testid="model-select-made-by" data-step={made.index} {...tipAttrs({ title: 'Open the step that made this face' })} onClick={() => openStep(made.objectId, made.index)}>
-            made by {stepName(madeStep!, words)}
+            made by {stepName(madeStep, words)}
           </button>
-        )
+        ) : null
       ) : null}
       {anything && !sketching ? (
         <button type="button" className="select-pill-clear" data-testid="model-select-clear" aria-label="Clear selection" {...tipAttrs({ title: 'Clear selection', key: 'Esc' })} onClick={() => set({ subPicks: [], selection: null, selectedIds: [] })}>
