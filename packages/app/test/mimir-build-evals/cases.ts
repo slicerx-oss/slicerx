@@ -233,4 +233,31 @@ export const BUILD_CASES: BuildCase[] = [
       { axis: 'z', minMm: 25, maxMm: 100 },
     ],
   },
+  // a sweep that narrows along its path: a hollow spout and a hook arm thinner at the tip than at the wall
+  {
+    id: 'watering-spout',
+    title: 'Watering can spout',
+    prompt: 'A watering can spout: a tube 22 mm round at the base that tapers to 9 mm at the tip as it curves up 70 mm, with a 1.6 mm wall, open at both ends.',
+    machine: P1S,
+    ops: ['geom.sweep'],
+    bodies: [1, 1],
+    sizes: [
+      // it rises 70 mm, plus up to the base's radius where the base meets the bed at an angle
+      { axis: 'z', minMm: 60, maxMm: 95 },
+      { axis: 'xy', minMm: 20, maxMm: 90 },
+    ],
+  },
+  {
+    id: 'tapered-hook',
+    title: 'Coat hook with a tapered arm',
+    prompt: 'A wall coat hook: a 30 by 80 mm back plate, 5 mm thick, with two countersunk screw holes, and a round arm 16 mm thick at the wall that tapers to 8 mm at the tip, comes out 60 mm and curves up at the end.',
+    machine: P1S,
+    ops: ['geom.sweep'],
+    bodies: [1, 1],
+    sizes: [
+      // the plate's 80 mm, whichever way the hook lies on the bed
+      { axis: 'xy', minMm: 30, maxMm: 110 },
+      { axis: 'z', minMm: 30, maxMm: 110 },
+    ],
+  },
 ]
