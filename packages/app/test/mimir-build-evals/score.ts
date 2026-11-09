@@ -131,7 +131,7 @@ export function sizeOf(parts: readonly MeshPart[]): [number, number, number] {
 
 const sideOf = (size: [number, number, number], axis: SizeCheck['axis']): number => (axis === 'x' ? size[0] : axis === 'y' ? size[1] : axis === 'z' ? size[2] : Math.max(size[0], size[1]))
 
-type Box = { min: [number, number, number]; max: [number, number, number] }
+type Box = { min: [number, number, number]; max: [number, number, number]; hull?: [number, number][] }
 /**
  * Bodies whose boxes come this close count as one assembly (a lid sitting on its box, a hook on its stem), mm; parts
  * laid out to print sit further apart.
@@ -139,14 +139,37 @@ type Box = { min: [number, number, number]; max: [number, number, number] }
 const TOUCH_MM = 0.1
 
 /**
- * The size of each assembly on the plate: bodies whose boxes touch or overlap go together, as a lid sitting on its box
- * or a hook joined onto a stem do, while a part laid flat apart for printing (a lid beside its box) is its own.
+ * How far apart two outlines seen from above stand at least, mm, as the widest gap along a side's outward normal of
+ * either (0 or less when they overlap). It never reads more than the true gap, so outlines it puts apart are apart.
+ */
+function hullGap(a: readonly [number, number][], b: readonly [number, number][]): number {
+  let gap = -Infinity
+  for (const [p, q] of [[a, b], [b, a]] as const)
+    for (let i = 0; i < p.length; i++) {
+      const [x0, y0] = p[i]!
+      const [x1, y1] = p[(i + 1) % p.length]!
+      const len = Math.hypot(x1 - x0, y1 - y0)
+      if (len === 0) continue
+      // the outward normal of a counterclockwise side
+      const [nx, ny] = [(y1 - y0) / len, -(x1 - x0) / len]
+      gap = Math.max(gap, Math.min(...q.map(([x, y]) => (x - x0) * nx + (y - y0) * ny)))
+    }
+  return gap
+}
+
+/**
+ * The size of each assembly on the plate: bodies whose boxes touch or overlap and whose outlines seen from above touch
+ * or overlap go together, as a lid sitting on its box, a planter standing in its saucer or a hook joined onto a stem
+ * do, while a part laid out apart for printing (a lid beside its box, a round saucer corner to corner with its round
+ * planter, whose square boxes overlap) is its own.
  */
 export function assemblySizes(parts: readonly MeshPart[]): [number, number, number][] {
-  const boxes = bodyBoxes([...parts]) as Box[]
+  const boxes: Box[] = bodyBoxes([...parts])
   const parent = boxes.map((_, i) => i)
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)))
-  const near = (a: Box, b: Box) => [0, 1, 2].every((k) => a.min[k]! <= b.max[k]! + TOUCH_MM && b.min[k]! <= a.max[k]! + TOUCH_MM)
+  const near = (a: Box, b: Box) =>
+    [0, 1, 2].every((k) => a.min[k]! <= b.max[k]! + TOUCH_MM && b.min[k]! <= a.max[k]! + TOUCH_MM) &&
+    (!a.hull || !b.hull || a.hull.length < 3 || b.hull.length < 3 || hullGap(a.hull, b.hull) <= TOUCH_MM)
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) if (near(boxes[i]!, boxes[j]!)) parent[find(i)] = find(j)
   const groups = new Map<number, Box>()
   for (const [i, b] of boxes.entries()) {

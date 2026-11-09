@@ -182,9 +182,34 @@ export function bodyCount(parts: MeshPart[]): number {
   return split(parts).bodies.length
 }
 
-/** The bounding box of each separate solid body across all parts, mm. */
-export function bodyBoxes(parts: MeshPart[]): { min: V3; max: V3 }[] {
-  return split(parts).bodies.map((b) => ({ min: b.min, max: b.max }))
+/**
+ * Each separate solid body across all parts: its bounding box and its outline seen from above, as the convex hull of
+ * its corners in xy (counterclockwise), mm.
+ */
+export function bodyBoxes(parts: MeshPart[]): { min: V3; max: V3; hull: [number, number][] }[] {
+  const { welded, bodies } = split(parts)
+  return bodies.map((b) => {
+    const w = welded[b.part]!
+    const pts: [number, number][] = []
+    for (const t of b.tris) for (const p of corners(w, t)) pts.push([p[0], p[1]])
+    return { min: b.min, max: b.max, hull: hull2(pts) }
+  })
+}
+
+/** The convex hull of points in a plane, counterclockwise (monotone chain). */
+function hull2(pts: [number, number][]): [number, number][] {
+  const s = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const turn = (o: [number, number], a: [number, number], b: [number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  const half = (list: [number, number][]) => {
+    const h: [number, number][] = []
+    for (const p of list) {
+      while (h.length >= 2 && turn(h[h.length - 2]!, h[h.length - 1]!, p) <= 0) h.pop()
+      h.push(p)
+    }
+    h.pop()
+    return h
+  }
+  return s.length < 3 ? s : [...half(s), ...half([...s].reverse())]
 }
 
 // ---------------------------------------------------------------------------

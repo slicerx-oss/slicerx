@@ -316,6 +316,33 @@ describe('build eval scoring', () => {
     ])
   })
 
+  // a round body `d` mm across standing `h` mm tall on (cx, cy), as a closed 64-sided prism facing out
+  const disc = (cx: number, cy: number, d: number, h: number): MeshPart => {
+    const n = 64
+    const ring = (z: number) => Array.from({ length: n }, (_, i) => [cx + (d / 2) * Math.cos((2 * Math.PI * i) / n), cy + (d / 2) * Math.sin((2 * Math.PI * i) / n), z])
+    const v = [[cx, cy, 0], [cx, cy, h], ...ring(0), ...ring(h)].flat()
+    const b = (i: number) => 2 + (i % n)
+    const t = (i: number) => 2 + n + (i % n)
+    const f = Array.from({ length: n }, (_, i) => [0, b(i + 1), b(i), 1, t(i), t(i + 1), b(i), b(i + 1), t(i + 1), b(i), t(i + 1), t(i)]).flat()
+    return { name: 'disc', slot: 1, positions: new Float32Array(v), indices: new Uint32Array(f) }
+  }
+
+  it('sizes a round planter and its saucer laid out corner to corner as two parts, though their boxes overlap', () => {
+    // where the recorded planter-saucer run left them: the saucer 140 mm across at (95.43, 76), the planter 120 mm
+    // across at (170.57, 190), 6.5 mm apart at their nearest, while their square boxes overlap by 55 by 16 mm
+    const parts = [disc(95.43, 76, 140, 15), disc(170.57, 190, 120, 100)]
+    expect(assemblySizes(parts)).toEqual([
+      [140, 140, 15],
+      [120, 120, 100],
+    ])
+    const apart = scored('planter-saucer', parts)
+    expect(apart.sizes, JSON.stringify(apart.sizes)).toMatchObject({ pass: true })
+    // standing in its saucer, the planter is one assembly with it
+    expect(assemblySizes([disc(0, 0, 140, 15), disc(0, 0, 120, 100)])).toEqual([[140, 140, 100]])
+    // and a planter whose side meets the saucer's rim is too
+    expect(assemblySizes([disc(0, 0, 140, 15), disc(130, 0, 120, 100)])).toEqual([[260, 140, 100]])
+  })
+
   it('still fails a part when one body is past the size, or none reaches it', () => {
     const wide = scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 130, 110, 4)])
     expect(wide.sizes, JSON.stringify(wide.sizes)).toMatchObject({ pass: false })
@@ -461,17 +488,11 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
       // SX_MIMIR_EVAL_UPDATE_SCORES=1 fills the score fields a recording lacks from this replay; it refuses if the fields it has differ
       if (process.env['SX_MIMIR_EVAL_UPDATE_SCORES'] === '1') refreshScore(c.id, summary(r))
       else expect(summary(r)).toEqual(rec!.score)
-      // a known failure fails for its recorded reason
       if (c.id === 'planter-saucer') {
-        expect(r.score.bodies, JSON.stringify(r.score.bodies)).toEqual({ pass: false, detail: '1 (want 2 to 2)' })
-        // no saucer: one body, and nothing 135 to 150 mm across; the planter itself is closed, prints and fits
-        expect(r.score.sizes?.detail).toBe('120 by 120 by 100 mm; off: xy 120 (want 135 to 150)')
-        expect([r.score.ops, r.score.watertight, r.score.minWall, r.score.bedFit, r.score.sizes].map((x) => x?.pass)).toEqual([true, true, true, true, false])
-        expect(r.score.turns.pass).toBe(true)
-      }
-      if (c.id === 'drawer-handle') {
-        expect(r.score.geometry).toBe(true)
-        expect(r.score.turns.detail).toMatch(/^answer /)
+        // the five drain holes are in the planter's floor, and the saucer and planter stand 6.5 mm apart corner to
+        // corner on the plate: each is sized on its own, though their square boxes overlap
+        expect(r.score.bodies, JSON.stringify(r.score.bodies)).toEqual({ pass: true, detail: '2 (want 2 to 2)' })
+        expect(r.score.sizes?.detail).toBe('140 by 140 by 15, 120 by 120 by 100 mm')
       }
     })
   }
