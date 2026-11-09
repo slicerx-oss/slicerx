@@ -14,6 +14,7 @@ import { createCardPlans, createPlanRegistry, tabToolset } from '../../src/tools
 import { headlessDesignHost, plainBed } from './design-host'
 import { bedFit, bodyCount, closure, minWall, movingGaps, type BuildVolume, type GapReport } from './mesh-checks'
 import type { CreativePrompt } from './prompts'
+import { createReplayCheck, replayRequests, toolResultsSeen, type RecordedStep } from './replay-divergence'
 
 /** The tab's design tools (design.* and geom.*), the one way it builds a part. */
 export const isDesignTool = (name: string): boolean => name.startsWith('design.') || name.startsWith('geom.')
@@ -201,7 +202,7 @@ export interface PromptRun {
   calls: string[]
   reply: string
   /** What the model sent back, one step per provider request (for --record). */
-  steps: ScriptStepData[]
+  steps: RecordedStep[]
   /** Why nothing was built, when no call added or changed geometry. */
   noBuild?: NoBuild
   /** For a mechanism with parts and an engine: the gaps between its bodies, as the engine's fit check measures them. */
@@ -269,6 +270,9 @@ function restartRefused(messages: readonly LlmMessage[]): boolean {
 export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; planGoesOn?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
   const inner = opts.client ?? createScriptedClient(opts.steps ?? [], { chunk: false })
   const steps: ScriptStepData[] = []
+  // a replay compares the tool results it gets with the ones its recording saw (recordings made before they were kept skip it)
+  const replayCheck = createReplayCheck()
+  const replayed = replayRequests(opts.steps ?? [], replayCheck)
   // a replay that met the refusal of a restarted part: the recording's later steps no longer stand for a live run
   let restarted = false
   // Records each request's reply as a step, the shape the scripted client replays.
@@ -277,7 +281,15 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     async *stream(req, signal) {
       // a recording captured since the refusal (samePart) saw it live, so meeting it again is the recorded reply
       if (!opts.client && opts.samePart !== true && restartRefused(req.messages)) restarted = true
-      const step: ScriptStepData = {}
+      // a replay that no longer gets the results its recording saw ends here, saying where
+      const diverged = opts.client ? undefined : replayed(req)
+      if (diverged) {
+        yield { type: 'text', delta: diverged }
+        yield { type: 'done', stop: 'end' }
+        return
+      }
+      const seen = toolResultsSeen(req.messages)
+      const step: RecordedStep = seen.length ? { seen } : {}
       try {
         for await (const ev of inner.stream(req, signal)) {
           if (ev.type === 'text') step.text = (step.text ?? '') + ev.delta
@@ -409,6 +421,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     if (!opts.client && opts.planGoesOn !== true) stale ??= STALE_PLAN_GOES_ON
   }
   if (stale) run.stale = stale
+  // a replay whose tool results stopped matching the recording's says where, ahead of whatever that led to
+  if (replayCheck.diverged) error = replayCheck.diverged
   if (error) run.error = error
   return run
 }
