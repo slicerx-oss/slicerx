@@ -14108,6 +14108,166 @@
     "vendor": "Prusa"
    }
   },
+  "prusa-core-one-indx": {
+   "derived": [
+    "extruder_printable_area"
+   ],
+   "machine": {
+    "deretraction_speed": "25",
+    "emit_machine_limits_to_gcode": "1",
+    "extruder_clearance_height_to_lid": "50",
+    "extruder_clearance_height_to_rod": "33",
+    "extruder_clearance_radius": "75",
+    "extruder_offset": [
+     "0x0",
+     "0x0",
+     "0x0",
+     "0x0",
+     "0x0",
+     "0x0",
+     "0x0",
+     "0x0"
+    ],
+    "extruder_printable_area": [
+     "0x0,248x0,248x205,0x205",
+     "0x0,248x0,248x205,0x205",
+     "0x0,248x0,248x205,0x205",
+     "0x0,248x0,248x205,0x205",
+     "0x0,248x0,248x205,0x205",
+     "0x0,248x0,248x205,0x205",
+     "0x0,248x0,248x205,0x205",
+     "0x0,248x0,248x205,0x205"
+    ],
+    "gcode_flavor": "marlin2",
+    "host_type": "prusalink",
+    "machine_max_acceleration_e": [
+     "5000",
+     "2500"
+    ],
+    "machine_max_acceleration_extruding": [
+     "7000",
+     "2500"
+    ],
+    "machine_max_acceleration_retracting": [
+     "2500",
+     "1200"
+    ],
+    "machine_max_acceleration_travel": [
+     "7000",
+     "2500"
+    ],
+    "machine_max_acceleration_x": [
+     "10000",
+     "2500"
+    ],
+    "machine_max_acceleration_y": [
+     "10000",
+     "2500"
+    ],
+    "machine_max_acceleration_z": [
+     "400",
+     "200"
+    ],
+    "machine_max_jerk_e": [
+     "10",
+     "10"
+    ],
+    "machine_max_jerk_x": [
+     "10",
+     "8"
+    ],
+    "machine_max_jerk_y": [
+     "10",
+     "8"
+    ],
+    "machine_max_jerk_z": [
+     "2",
+     "2"
+    ],
+    "machine_max_speed_e": [
+     "100",
+     "100"
+    ],
+    "machine_max_speed_x": [
+     "350",
+     "160"
+    ],
+    "machine_max_speed_y": [
+     "350",
+     "160"
+    ],
+    "machine_max_speed_z": [
+     "12",
+     "12"
+    ],
+    "machine_min_extruding_rate": [
+     "0",
+     "0"
+    ],
+    "machine_min_travel_rate": [
+     "0",
+     "0"
+    ],
+    "machine_tool_change_time": "12",
+    "max_layer_height": "0.30",
+    "min_layer_height": "0.07",
+    "nozzle_diameter": [
+     "0.4",
+     "0.4",
+     "0.4",
+     "0.4",
+     "0.4",
+     "0.4",
+     "0.4",
+     "0.4"
+    ],
+    "printable_area": [
+     "0x0",
+     "248x0",
+     "248x205",
+     "0x205"
+    ],
+    "printable_height": "270",
+    "printer_structure": "corexy",
+    "printer_technology": "FFF",
+    "retract_before_wipe": "80",
+    "retract_length_toolchange": "0",
+    "retract_lift_above": "0",
+    "retract_lift_below": "269",
+    "retract_restart_extra": [
+     "0"
+    ],
+    "retract_restart_extra_toolchange": [
+     "0"
+    ],
+    "retract_when_changing_layer": "1",
+    "retraction_length": "0.7",
+    "retraction_minimum_travel": "1.5",
+    "retraction_speed": "45",
+    "single_extruder_multi_material": "0",
+    "thumbnails": [
+     "16x16/QOI",
+     "313x173/QOI",
+     "440x240/QOI",
+     "480x240/QOI",
+     "640x480/PNG"
+    ],
+    "travel_slope": "1",
+    "use_firmware_retraction": "0",
+    "use_relative_e_distances": "1",
+    "wipe": "0",
+    "z_hop": "0.2",
+    "z_hop_types": "Slope Lift"
+   },
+   "makerDocs": {
+    "checked": "2026-11-09",
+    "sources": [
+     "https://www.prusa3d.com/product/indx-4-tool-conversion-kit-for-core-one-gen2/",
+     "https://github.com/BondtechAB/INDX"
+    ]
+   },
+   "nozzles": {}
+  },
   "prusa-core-one-l": {
    "machine": {
     "deretraction_speed": "25",

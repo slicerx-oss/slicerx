@@ -24,6 +24,9 @@
 //   head backs the tool into its dock along the dock path, drops to unhook, pulls back, runs along X behind the docks
 //   and picks the next tool by the same path in reverse. Positions come from the printer's `[tool]` sections when
 //   Moonraker reported them, else they are estimated from the nozzle count.
+// - front-dock (Prusa Core One with INDX): one Smart Head and passive nozzle tools parked in docks along the front.
+//   The head backs the tool it carries into its dock and releases it, runs along X in front of the bed to the next
+//   dock, latches that tool and pulls it out, heats it, blobs and wipes at the purge collector and returns.
 //
 // Moves are timed with trapezoidal velocity profiles from the printer's speed and acceleration limits,
 // so the head never jumps. The firmware's own work (cutting, loading, flushing, latching) is a dwell of
@@ -33,7 +36,7 @@ import type { Bed, PreviewBuffers, ToolDock } from '@slicerx/contracts'
 
 export type V3 = [number, number, number]
 
-export type ToolChangerKind = 'dual-nozzle' | 'hotend-rack' | 'tool-rack' | 'xl-dock' | 'lift-switch' | 'filament-swap' | 'idex-park' | 'klipper-dock'
+export type ToolChangerKind = 'dual-nozzle' | 'hotend-rack' | 'tool-rack' | 'xl-dock' | 'lift-switch' | 'filament-swap' | 'idex-park' | 'klipper-dock' | 'front-dock'
 
 export interface MotionLimits {
   /** mm/s */
@@ -145,6 +148,23 @@ export interface ToolChangerSpec {
     pathSpeed: MotionLimits
     measured: { safeY: boolean; path: boolean }
   }
+  /**
+   * Prusa Core One with INDX: the docks in one row along the front, the nozzle X of each, the Y where a tool sits fully
+   * seated (`dockY`) and the Y the head runs along X at (`clearY`, at least a tool's depth behind the docks). A parked
+   * tool stands `seatRise` higher than the head holds it. The purge collector with its wiper; the change's own moves
+   * (`move`) and the slow moves into and out of a dock. `heatMin` is the shortest heat dwell. Which values are sourced
+   * and which estimated: docs/toolchanger-sim.md.
+   */
+  frontDock?: {
+    x: number[]
+    dockY: number
+    clearY: number
+    seatRise: number
+    purge: { x: number; y: number; wipe: [number, number][] }
+    move: MotionLimits
+    slow: MotionLimits
+    heatMin: number
+  }
 }
 
 /** A plain settings record (Orca keys) as the app resolves it. */
@@ -202,6 +222,8 @@ function kindOf(printerId: string | undefined, cfg: Settings, hints: ChangerHint
   if (id.startsWith('prusa-xl') && list(cfg['nozzle_diameter']).length > 1) return 'xl-dock'
   if (id.startsWith('ultimaker-s')) return 'lift-switch'
   const nozzles = list(cfg['nozzle_diameter']).length
+  // The Core One with INDX: passive nozzle tools in docks along the front.
+  if (id.startsWith('prusa-core-one-indx')) return nozzles >= 2 ? 'front-dock' : null
   // A Klipper printer declared a tool changer docks its tools on the frame; the U1 and the XL keep their own above.
   if (hints.toolchanger && flavor(cfg) === 'klipper' && nozzles >= 2) return 'klipper-dock'
   // IDEX before the nozzle count: two nozzles there are two carriages, not one head. Settings with one extruder print
@@ -252,7 +274,7 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
   // A hotend rack whose settings map nothing to the rack's extruder (the profile default puts every
   // filament on the first) is taken to print everything from the rack: that is what the machine is for.
   const rackDefault = kind === 'hotend-rack' && !map.some((e) => e > 0) ? nozzles - 1 : 0
-  const extruderOf = Array.from({ length: Math.max(1, tools) }, (_, t) => Math.min(nozzles - 1, map[t] ?? (kind === 'tool-rack' || kind === 'xl-dock' || kind === 'lift-switch' || kind === 'idex-park' || kind === 'klipper-dock' ? t : rackDefault)))
+  const extruderOf = Array.from({ length: Math.max(1, tools) }, (_, t) => Math.min(nozzles - 1, map[t] ?? (kind === 'tool-rack' || kind === 'xl-dock' || kind === 'lift-switch' || kind === 'idex-park' || kind === 'klipper-dock' || kind === 'front-dock' ? t : rackDefault)))
   const sw = cfg['machine_tool_change_time'] !== undefined ? num(cfg['machine_tool_change_time'], 0) : num(cfg['machine_switch_extruder_time'], 0)
   const base: ToolChangerSpec = {
     kind,
@@ -351,6 +373,11 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
     base.liftMm = Math.max(0.2, num(cfg['z_hop'], 0.4))
   }
   if (kind === 'klipper-dock') base.klipper = klipperDocks(Math.max(2, nozzles), bed, hints.toolchanger?.docks ?? [])
+  if (kind === 'front-dock') {
+    base.frontDock = frontDocks(Math.max(2, nozzles), bed, base.travel)
+    // Estimated: the bed drops 2 mm for the change.
+    base.liftMm = 2
+  }
   if (kind === 'tool-rack') {
     // Snapmaker U1 printer.cfg: xy_park_position per extruder, y_idle_position, horizontal_move_x,
     // retract_x_dist, insertion_buffer_dist, fast_move_speed, slow_move_speed, grab_speed, switch_accel.
@@ -399,6 +426,35 @@ function klipperDocks(n: number, bed: Bed, reported: readonly ToolDock[]): NonNu
     path: path ? path.map((q) => ({ y: q.y, z: q.z, f: ok(q.f) && q.f > 0 ? q.f : 1 })) : STEALTHCHANGER_PATH.map((q) => ({ ...q })),
     pathSpeed: { speed: 100, accel: 2000 },
     measured: { safeY: safe !== undefined, path: path !== undefined },
+  }
+}
+
+/** The tool pitch of the INDX docks: at least 34 mm center to center (Bondtech's INDX documentation). */
+export const INDX_PITCH = 34
+/** An INDX dock is about 28.5 mm wide (X), 25 mm deep (Y) and 70 mm tall (Bondtech's INDX documentation). */
+export const INDX_DOCK = { width: 28.5, depth: 25, height: 70 } as const
+
+/**
+ * The Core One INDX docks and purge collector. Sourced: the pitch, the dock size, the docks along X at the front
+ * (`variable_dock_dir` -1), the clearance Y at least 26 mm behind the docks, the parked tool 2 mm higher than held
+ * (Bondtech's INDX documentation), the 4 s shortest heat (Bondtech: about 4 s to heat). Estimated: the docks centered on
+ * the bed's width; the seat 26 mm in front of the bed and the clearance Y at the bed's front edge (Bondtech's default
+ * dock config, `t0_dock_y` -26 with clearance 0; the Core One's own values are not published); the change moves at 70
+ * percent of the travel limits (Bondtech's default toolchange speed mode); the moves into and out of a dock at 50 mm/s;
+ * the release and latch times; the purge collector and wiper beside the bed's front right corner.
+ */
+function frontDocks(n: number, bed: Bed, travel: MotionLimits): NonNullable<ToolChangerSpec['frontDock']> {
+  const x = Array.from({ length: n }, (_, i) => bed.widthMm / 2 + (i - (n - 1) / 2) * INDX_PITCH)
+  const px = bed.widthMm + 10
+  return {
+    x,
+    dockY: -26,
+    clearY: 0,
+    seatRise: 2,
+    purge: { x: px, y: 15, wipe: [[px, 40], [px, 22]] },
+    move: { speed: travel.speed * 0.7, accel: travel.accel * 0.7 },
+    slow: { speed: 50, accel: 1000 },
+    heatMin: 4,
   }
 }
 
@@ -788,6 +844,7 @@ export function changeSequence(spec: ToolChangerSpec, from: number, to: number, 
   if (spec.kind === 'lift-switch') return liftSwitch(spec, from, to, at, resume, firm)
   if (spec.kind === 'idex-park') return idexPark(spec, from, to, at, resume, firm)
   if (spec.kind === 'klipper-dock') return klipperDock(spec, from, to, at, up, back, resume, firm)
+  if (spec.kind === 'front-dock') return frontDock(spec, from, to, at, up, back, resume, firm)
   if (spec.kind === 'filament-swap') {
     // To the cutter (or cut at the chute), then the chute: the firmware unloads, the AMS feeds the next filament,
     // the nozzle flushes; then over the wiper and out.
@@ -963,6 +1020,46 @@ function klipperDock(spec: ToolChangerSpec, from: number, to: number, at: V3, up
   return { from, to, duration: b.t, phases: b.phases, slotsBefore: slots, slotsAfter: after, rowBefore: 0, rowAfter: 0 }
 }
 
+/**
+ * Prusa Core One with INDX: lift (the bed drops), run to the clearance Y in front of the bed at the dock of the tool in the
+ * head, into the dock until the tool is seated, release it, back out to the clearance Y; along X to the next tool's
+ * dock, in, latch it (the head checks the coupling on its load cell), out. The induction coil heats the new nozzle, the
+ * head blobs a few milligrams into the purge collector and wipes over the wiper, returns and the bed comes back up. The
+ * heat dwell takes what the profile's change time leaves after the moves, at least `heatMin`. Pose state is the dock of
+ * the tool in the head; docks past the print's tools hold spares.
+ */
+function frontDock(spec: ToolChangerSpec, from: number, to: number, at: V3, up: number, back: V3, resume: V3, firm: number): ChangeSequence {
+  const k = spec.frontDock!
+  const n = k.x.length
+  const xOf = (t: number) => k.x[Math.min(n - 1, Math.max(0, t))]!
+  const slots = Array.from({ length: n }, (_, i) => (i === from ? -1 : i < spec.tools ? i : SPARE))
+  const build = (heat: number): Builder => {
+    const b = new Builder(at, from, from)
+    b.moveTo('lift', [at[0], at[1], up], spec.z)
+    b.moveTo('to dock', [xOf(from), k.clearY, up], k.move)
+    b.moveTo('insert', [xOf(from), k.dockY, up], k.slow)
+    b.carry(null).at(-1).dwell('release', 0.3)
+    b.moveTo('back out', [xOf(from), k.clearY, up], k.slow)
+    b.moveTo('to next', [xOf(to), k.clearY, up], k.move)
+    b.moveTo('insert', [xOf(to), k.dockY, up], k.slow)
+    b.carry(to).at(to).dwell('latch', 0.4)
+    b.moveTo('extract', [xOf(to), k.clearY, up], k.slow)
+    b.dwell('heat', heat)
+    b.moveTo('to purge', [k.purge.x, k.purge.y, up], k.move)
+    b.dwell('blob', 0.6)
+    k.purge.wipe.forEach((w) => b.moveTo('wipe', [w[0], w[1], up], k.slow))
+    b.moveTo('return', back, spec.travel)
+    b.moveTo('lower', resume, spec.z)
+    return b
+  }
+  // The maker's change time covers the whole change; the heat takes what the moves leave of it.
+  const b = build(Math.max(k.heatMin, firm - build(0).t))
+  const after = slots.slice()
+  after[from] = from
+  after[to] = -1
+  return { from, to, duration: b.t, phases: b.phases, slotsBefore: slots, slotsAfter: after, rowBefore: 0, rowAfter: 0 }
+}
+
 /** IDEX: both carriages' nozzle X, the one at the pose at `x` and the idle one `local` seconds along its own move. */
 function carriagesAt(p: Phase, x: number, local: number): { carriages: [number, number]; active: number } | Record<string, never> {
   if (!p.idle) return {}
@@ -1019,6 +1116,6 @@ export function poseAt(seq: ChangeSequence, t: number): Pose {
   // The rack row is its own state, so a row change never moves the nozzle the head prints with.
   const lift = prev && prev.state !== p.state ? prev.state + (p.state - prev.state) * u : p.state
   const row = prev && prev.row !== p.row ? prev.row + (p.row - prev.row) * u : p.row
-  const latch = p.name === 'unlatch' ? 1 - u : p.name === 'latch' ? u : p.name === 'release' ? 1 - s : p.name === 'grab' ? s : p.carried === null ? 0 : 1
+  const latch = p.name === 'unlatch' || (p.name === 'release' && p.move === 0) ? 1 - u : p.name === 'latch' || p.name === 'blob' ? u : p.name === 'release' ? 1 - s : p.name === 'grab' ? s : p.carried === null ? 0 : 1
   return { x, y, z, carried: p.carried, lift, latch, row, slots: slots(p), phase: p.name, ...carriagesAt(p, x, local) }
 }

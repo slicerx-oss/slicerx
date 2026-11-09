@@ -36,7 +36,7 @@ const table = (): Record<string, string> => ({
 
 describe('machine settings', () => {
   it('covers the models Orca has a profile for and records what was checked', () => {
-    expect(Object.keys(models)).toHaveLength(62)
+    expect(Object.keys(models)).toHaveLength(63)
     expect(MACHINE_CHECKED_COMMIT).toMatch(/^[0-9a-f]{7,}$/)
     for (const [id, e] of Object.entries(models)) {
       // A model no slicer has a profile for is written from the maker's own documents, which it names.
@@ -149,7 +149,7 @@ describe('dual and multi nozzle printers', () => {
   it('carry an extruder printable area for every nozzle', () => {
     // The maker's nozzle list decides.
     const multi = listPrinterProfiles().filter((p) => ((printerConfig(p.id) as Record<string, unknown>)['nozzle_diameter'] as unknown[]).length > 1 && models[p.id])
-    expect(multi.map((p) => p.id)).toEqual(['bambu-h2d', 'bambu-h2d-pro', 'bambu-h2c', 'bambu-x2d', 'prusa-xl-5-toolhead', 'snapmaker-u1', 'snapmaker-j1', 'snapmaker-artisan', 'sovol-sv04'])
+    expect(multi.map((p) => p.id)).toEqual(['bambu-h2d', 'bambu-h2d-pro', 'bambu-h2c', 'bambu-x2d', 'prusa-core-one-indx', 'prusa-xl-5-toolhead', 'snapmaker-u1', 'snapmaker-j1', 'snapmaker-artisan', 'sovol-sv04'])
     for (const p of multi) {
       const cfg = printerConfig(p.id) as Record<string, unknown>
       expect((cfg['extruder_printable_area'] as unknown[]).length, p.id).toBe((cfg['nozzle_diameter'] as unknown[]).length)
@@ -160,7 +160,7 @@ describe('dual and multi nozzle printers', () => {
     expect(area('bambu-h2c')).toEqual([[[0, 0], [325, 0], [325, 320], [0, 320]], [[25, 0], [330, 0], [330, 320], [25, 320]]])
     expect(area('bambu-h2d')).toEqual([[[0, 0], [325, 0], [325, 320], [0, 320]], [[25, 0], [350, 0], [350, 320], [25, 320]]])
     expect(models['bambu-h2d']?.derived).toBeUndefined()
-    for (const id of ['prusa-xl-5-toolhead', 'snapmaker-u1', 'snapmaker-j1', 'snapmaker-artisan']) {
+    for (const id of ['prusa-core-one-indx', 'prusa-xl-5-toolhead', 'snapmaker-u1', 'snapmaker-j1', 'snapmaker-artisan']) {
       expect(models[id]?.derived, id).toEqual(['extruder_printable_area'])
       const bed = (printerConfig(id) as Record<string, unknown>)['printable_area']
       for (const a of area(id) as unknown[]) expect(a, id).toEqual(bed)
@@ -188,6 +188,31 @@ describe('dual and multi nozzle printers', () => {
     expect(change).toMatch(/^M109 T\[next_extruder\] S/m)
     const start = c['machine_start_gcode'] as string
     for (const heat of ['M104 T0 S{nozzle_temperature_initial_layer[0]}', 'M104 T1 S{nozzle_temperature_initial_layer[1]}', 'M109 T0 S', 'M109 T1 S']) expect(start).toContain(heat)
+  })
+  it('has the Core One INDX from the public INDX pages: eight tools, our own tool change and no manual swaps', () => {
+    const e = machineEntry('prusa-core-one-indx')
+    expect(e?.orca).toBeUndefined()
+    expect(e?.makerDocs?.sources).toEqual(['https://www.prusa3d.com/product/indx-4-tool-conversion-kit-for-core-one-gen2/', 'https://github.com/BondtechAB/INDX'])
+    const c = printerConfig('prusa-core-one-indx') as unknown as Record<string, unknown>
+    expect(c['nozzle_diameter']).toEqual(Array.from({ length: 8 }, () => 0.4))
+    expect(c['single_extruder_multi_material']).toBe(false)
+    // The firmware keeps each tool's offset (Bondtech: t{n}_offset_x and _y), so the slicer's are zero.
+    expect(c['extruder_offset']).toEqual(Array.from({ length: 8 }, () => [0, 0]))
+    expect(c['printable_area']).toEqual([[0, 0], [248, 0], [248, 205], [0, 205]])
+    expect(c['printable_height']).toBe(270)
+    expect(c['machine_tool_change_time']).toBe(12)
+    expect(c['gcode_flavor']).toBe('marlin2')
+    expect(gcode.models['prusa-core-one-indx']).toBe('prusa_core_one_indx')
+    const change = c['change_filament_gcode'] as string
+    expect(change).not.toMatch(/M600/)
+    expect(change).toMatch(/^T\[next_extruder\]$/m)
+    expect(change).toMatch(/^M109 T\[next_extruder\] S/m)
+    // Everything else is the plain Core One's: the kit changes the head, not the motion system.
+    const core = printerConfig('prusa-core-one') as unknown as Record<string, unknown>
+    for (const k of ['machine_max_speed_x', 'machine_max_acceleration_x', 'retraction_length', 'z_hop', 'extruder_clearance_radius']) expect(c[k], k).toEqual(core[k])
+    // The plain Core One keeps one nozzle and the maker's own G-code.
+    expect(core['nozzle_diameter']).toEqual([0.4])
+    expect(gcode.models['prusa-core-one']).toBe('maker_prusa_core_one')
   })
   it('has the H3C from Bambu Studio 2.9.1\'s presets: one extruder that holds nine nozzles', () => {
     const e = machineEntry('bambu-h3c')

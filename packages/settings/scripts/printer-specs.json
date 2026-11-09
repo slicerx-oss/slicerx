@@ -125,6 +125,13 @@
     "https://www.prusa3d.com/product/prusa-core-one/"
    ]
   },
+  "prusa-core-one-indx": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://www.prusa3d.com/product/indx-4-tool-conversion-kit-for-core-one-gen2/",
+    "https://github.com/BondtechAB/INDX"
+   ]
+  },
   "prusa-core-one-l": {
    "flavor": "marlin2",
    "sources": [

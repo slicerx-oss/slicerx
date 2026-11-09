@@ -182,6 +182,41 @@ Speeds are always estimated: Moonraker gives the park points and the path, but n
 
 Sources: github.com/DraftShift/StealthChanger (its `Klipper/Toolhead_T0.cfg` and `Toolhead_T1.cfg`, and the wiki's Configuration and Docks pages); Moonraker `configfile.settings` through `packages/connect/src/drivers/moonraker/docks.rs`.
 
+## Prusa Core One with INDX (passive nozzle tools in docks along the front)
+
+How it works. INDX turns the Core One into a nozzle changer. The head is one Smart Head with an induction coil; the tools are passive (a nozzle on a coupling block, its own filament path, no electronics) and park in docks along the front of the machine, the door side. The head backs the tool it carries into its dock until it is seated and releases it, backs out to the clearance line, runs along X to the next tool's dock, goes in, latches that tool (the head checks the coupling on its load cell) and pulls it out. The coil heats the new nozzle in seconds; the head then deposits a small blob (about 13 mg) into the purge collector, wipes over the nozzle wiper, returns to the next move and the bed comes back up. Prusa gives about 12 s per change for PLA, from the last extrusion of one material to the first of the next. Preview plays that as `front-dock` in `toolchanger.ts`. The heat dwell takes what the 12 s leave after the moves, and at least 4 s, so a change across the whole dock row runs a little longer than 12 s. On the Core One the bed moves in z, so the docks and the purge collector keep the head's height in Preview.
+
+Which printers get it. The `prusa-core-one-indx` profile (two or more nozzles). The plain Core One keeps one nozzle and no tool change playback.
+
+The profile. No Prusa printer profile for INDX exists yet, so the profile is written from the public pages: eight tools of 0.4 mm (the kits have 4 or 8 tools; a print uses one tool per filament, so a two color plate uses T0 and T1), the 248 x 205 x 270 mm volume with INDX fitted, `machine_tool_change_time` 12, and extruder offsets of zero (the firmware keeps each tool's offset). The motion limits, retraction, z hop, clearances and thumbnails are the plain Core One's, taken as unchanged by the kit. The G-code family `prusa_core_one_indx` is our own: a change is `T[next_extruder]` and `M109` for the new tool, never `M600`. It is replaced when Prusa publishes its own INDX profile.
+
+Drawing. The Smart Head (black body with the orange front and the coil strip low on the front, the extruder on top) is part of the gantry and always drawn; the passive tool hangs under it, a band on its coupling block in the filament's color. The docks stand in a row along the front, each two side plates and a front plate around its tool, with a frame bar in front; a parked tool stands 2 mm higher than the head holds it, and the dock lifts it those 2 mm as it is released. Docks past the print's tools hold spare tools drawn in steel. The purge collector with its wiper stands beside the bed's front right corner, and a blob in the new filament's color grows under the nozzle there. Shapes are estimated from product photos. heimdall's collision data (`head-shapes.json`) gets the Smart Head with its tool and every dock to dock route.
+
+| Value | Source | Status |
+| --- | --- | --- |
+| Build volume 248 x 205 x 270 mm with INDX fitted | Prusa's INDX conversion kit page | sourced |
+| 4 or 8 tools, at most 8 on the Core One; the profile lists 8 | Prusa's INDX conversion kit page | sourced |
+| About 12 s per change for PLA (`machine_tool_change_time` 12) | Prusa's INDX conversion kit page | sourced |
+| Purge of about 13 mg into the purge collector, then the nozzle wiper | Prusa's INDX conversion kit page | sourced |
+| Default tools: 0.4 mm high flow nozzles; max nozzle temperature 300 C | Prusa's INDX conversion kit page | sourced |
+| Tool offsets kept by the firmware (`t{n}_offset_x`, `t{n}_offset_y`), so the slicer's are zero | Bondtech's INDX documentation | sourced for the dev kit, taken for the Core One |
+| Dock about 28.5 mm wide, 25 mm deep, 70 mm tall | Bondtech's INDX documentation | sourced for the dev kit, taken for the Core One |
+| Tool pitch 34 mm (the bare minimum center to center) | Bondtech's INDX documentation | sourced minimum, used as the pitch |
+| Docks along X at the front (`variable_dock_dir` -1) | Bondtech's INDX documentation; Prusa forum thread (docks on the door side); the 15 mm Y loss | sourced for the dev kit, consistent for the Core One |
+| Clearance Y at least 26 mm behind the docks (a 25 mm tool plus 1 mm) | Bondtech's INDX documentation | sourced |
+| A parked tool sits 2 mm higher than the head holds it | Bondtech's INDX documentation | sourced for the dev kit, taken for the Core One |
+| Heat of about 4 s at least (4 to 8 s) | Bondtech's INDX documentation | sourced for the dev kit, taken for the Core One |
+| Docks centered on the bed's width | no source | estimated |
+| Seat at Y -26 and clearance at Y 0 (the bed's front edge) | Bondtech's default dock config (`t0_dock_y` -26, clearance 0); the Core One's own values are not published | estimated |
+| Change moves at 70 percent of the travel limits | Bondtech's default toolchange speed mode (Normal, 70 percent of the printer's limits) | estimated for the Core One |
+| Moves into and out of a dock at 50 mm/s, 1000 mm/s2; release 0.3 s, latch 0.4 s, blob 0.6 s | no source | estimated |
+| Purge collector and wiper beside the bed's front right corner (X 258, Y 15, wipe to Y 40 and back to 22) | no source; Prusa names the collector and wiper but not where they are | estimated |
+| The bed drops 2 mm for the change | no source | estimated |
+| Motion limits, retraction, z hop, clearances: the plain Core One's | `machine.json` `prusa-core-one` (the maker's profile) | estimated unchanged by the kit |
+| Start, end and change G-code | written for SlicerX | estimated |
+
+Sources: prusa3d.com/product/indx-4-tool-conversion-kit-for-core-one-gen2/, github.com/BondtechAB/INDX (its README and `indx.cfg` description), and the Prusa forum thread "Tools mounted on the front impacting access" in the INDX general discussion.
+
 ## Timing model
 
 Playback time comes from the layer times the engine writes into the preview buffer. Those cover the print moves of a layer. The change itself is added by the app's timeline from the same rules the engine uses for the G-code's time estimate (`packages/core/src/gcode.rs`, `tool_change_time`, after Orca 2.4.2 `GCodeProcessor::process_T` and Bambu Studio `process_filament_change`):

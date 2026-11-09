@@ -23,7 +23,7 @@ describe('searchProfiles', () => {
     expect((await names('x1 carb'))[0]).toBe('Bambu Lab X1 Carbon')
     expect((await names('h3c'))[0]).toBe('Bambu Lab H3C')
     expect(await names('2.4 3')).toContain('Voron Design Voron 2.4 300')
-    expect(await names('core')).toEqual(['Prusa Research Core One', 'Prusa Research Core One L'])
+    expect(await names('core')).toEqual(['Prusa Research Core One', 'Prusa Research Core One INDX', 'Prusa Research Core One L'])
     expect((await names('mk3.5'))[0]).toBe('Prusa Research MK3.5')
     expect((await names('prusa mk3'))).toEqual(expect.arrayContaining(['Prusa Research MK3.5', 'Prusa Research MK3.9']))
   })
@@ -34,7 +34,7 @@ describe('searchProfiles', () => {
   })
   it('finds nothing for nonsense and lists everything for an empty query', async () => {
     expect(await names('zzzzqqqq')).toEqual([])
-    expect((await searchProfiles('')).length).toBe(74)
+    expect((await searchProfiles('')).length).toBe(75)
   })
   it('uses an installed provider, and returns an empty list when it throws', async () => {
     setProfileProvider(() => [{ id: 'mine', vendor: 'Acme', model: 'Rocket 3000', nozzles: [0.4] }])
