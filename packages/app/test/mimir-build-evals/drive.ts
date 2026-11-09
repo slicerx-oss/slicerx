@@ -23,7 +23,7 @@ import { chatNotesGo, pilotMemory } from '../../src/pilot-connect/memory'
 import { setHostSlices } from '../../src/state/model-mode'
 import { get, set } from '../../src/state/store'
 import { bundledKb } from '../../src/workspaces/mimir/kb'
-import { clearPlans, PLAN_GO } from '../../src/workspaces/mimir/plan-tool'
+import { cardPlans, clearPlans, PLAN_GO } from '../../src/workspaces/mimir/plan-tool'
 import { tabPilotOptions, toolsFor } from '../../src/workspaces/mimir/session'
 import type { BuildCase } from './cases'
 import { classifyNoBuild, placed, scoreCase, type CaseScore, type UserTurn } from './score'
@@ -181,7 +181,7 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
       if (ev.type === 'ask') {
         const go = ev.choices.find((ch) => ch.id.startsWith(`${PLAN_GO}:`))
         if (go) {
-          turns.push({ kind: 'go', part: ev.question })
+          turns.push({ kind: 'go', part: ev.question, plan: go.id.slice(PLAN_GO.length + 1) })
           void pilot.answer!(ev.askId, go.id)
         } else {
           const pick = ev.choices.find((ch) => !/\bnothing\b/i.test(ch.label)) ?? ev.choices[0]
@@ -217,6 +217,11 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   // a replay that ends before its recorded replies do no longer follows what the model did live
   const left = script?.remaining() ?? 0
   if (left > 0) error ??= `the replay left ${left} recorded repl${left === 1 ? 'y' : 'ies'} unused`
+  // each Go stands for the design its plan was built in (the tie the plan card makes), not the model's words for the part
+  for (const t of turns) if (t.kind === 'go') {
+    const design = cardPlans.plans.get(t.plan)?.design
+    if (design) t.design = design
+  }
   const parts = placed(get().plate)
   const score = scoreCase(c, { events, turns, parts, firstReply, firstBuilt, bed: buildVolume(c.machine.printer), wallMm: Math.round(2 * c.machine.nozzle * 1000) / 1000 })
   const results = new Map(events.flatMap((e) => (e.type === 'tool_result' ? [[e.callId, e] as const] : [])))
