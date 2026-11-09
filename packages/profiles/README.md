@@ -38,3 +38,5 @@ See `docs/licensing.md` for the whole picture.
 The files are written by the settings package's scripts (`packages/settings/scripts/gen-resolved.ts` and others, then `apply-overlay.ts`) and locked by its tests. Do not edit them by hand.
 
 After a refresh of these files, `packages/settings/fixtures/stock-tiers.json` (a hash of every stock printer's quality tiers) fails until it is written again from the repository root: `SX_STOCK_TIERS_UPDATE=1 pnpm --filter @slicerx/settings exec vitest run js/stock-layer-strong.test.ts`.
+
+One exception was added by hand: the Prusa Core One with INDX (`prusa-core-one-indx` in `machine.json`, and the `prusa_core_one_indx` family and its model line in `gcode.json`), written from Prusa's and Bondtech's public INDX pages because no maker profile exists yet (`packages/settings/docs/printer-profiles.md` says which values are estimated). No script in this repository writes `gcode.json`, and none has a place for hand-written entries, so a refresh that rewrites either file from the makers' profiles drops them. Keep them until Prusa publishes its own INDX printer profile, then replace them with it.

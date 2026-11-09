@@ -1,0 +1,3 @@
+### Added
+
+- `machine:prusa-core-one-indx`, the Prusa Core One with the INDX nozzle changer, written from Prusa's and Bondtech's public INDX pages until Prusa publishes its own profile: eight tools with 0.4 mm nozzles, a 248 x 205 x 270 mm volume, a 12 s tool change and extruder offsets of zero, with the plain Core One's motion limits and retraction. The printer profile search finds it, and `slicerx_slice_file` and `slicerx_estimate_file` slice a plate on it with one tool per filament: each color change is a `T` command and an `M109` wait for the new tool's temperature, never an `M600` manual swap, and the estimate counts 12 s per change. No tool's input or answer shape changes, so no tool version moves.

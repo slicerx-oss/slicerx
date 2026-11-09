@@ -625,6 +625,37 @@
    ]
   },
   {
+   "id": "prusa-core-one-indx",
+   "brand": "prusa",
+   "vendor": "Prusa Research",
+   "model": "Core One INDX",
+   "kinematics": "toolchanger",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 248,
+    "y": 205,
+    "z": 270
+   },
+   "nozzles": [
+    0.4
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 8,
+   "flavor": "marlin2",
+   "directDrive": true,
+   "limits": {
+    "maxSpeed": 350,
+    "maxAccel": 7000,
+    "hotendMaxTemp": 290,
+    "bedMaxTemp": 120
+   },
+   "sources": [
+    "https://www.prusa3d.com/product/indx-4-tool-conversion-kit-for-core-one-gen2/",
+    "https://github.com/BondtechAB/INDX"
+   ]
+  },
+  {
    "id": "prusa-core-one-l",
    "brand": "prusa",
    "vendor": "Prusa Research",

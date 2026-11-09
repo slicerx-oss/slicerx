@@ -35,6 +35,7 @@
   "elegoo-neptune-4-pro": "e837a279",
   "flsun-v400": "adac6db8",
   "prusa-core-one": "be7b317e",
+  "prusa-core-one-indx": "64d1c864",
   "prusa-core-one-l": "cf1c4337",
   "prusa-mini-plus": "78112748",
   "prusa-mk3.5": "9df3d428",
@@ -114,6 +115,7 @@
   "gcode maker_bambu_x2d": "03bfa8c5",
   "gcode maker_prusa_core_one_l": "d9a309ef",
   "gcode sovol_sv04": "8f5352bb",
-  "gcodeModels": "6a2b4022"
+  "gcode prusa_core_one_indx": "ca73306b",
+  "gcodeModels": "30d30cde"
  }
 }

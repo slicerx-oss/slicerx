@@ -17,6 +17,9 @@
 // - IDEX: two of the printer family's own heads (heads.ts) on one X rail behind them; the idle one parked at its end.
 // - Klipper tool changer: the generic head (heads.ts) as each tool, on a shuttle plate behind it that stays with the
 //   gantry, and the docks hanging from a bar on the front top frame with the parked tools in them.
+// - Prusa Core One with INDX: the Smart Head (black body, orange front, the induction coil low on its front) carrying a
+//   passive nozzle tool under it; the docks in a row along the front with the parked tools standing in them, and the
+//   purge collector with its wiper beside the bed's front right corner.
 // Poses come from `toolchanger.ts`.
 //
 // Every part is a separate solid in millimeters, nozzle tip at the origin, z up, +y toward the back of the
@@ -49,7 +52,7 @@ import {
 import { displayHex } from './palette'
 import { amber, black, block, brass, dark, deep, graphite, hotPlate, lightMat, part, post, prusaOrange, ring, silver, slab, sock, steel, white } from './headparts'
 import { buildHead, type HeadModel } from './heads'
-import { DOCK_PITCH, rackStateBefore, type Pose, type ToolChangerSpec } from './toolchanger'
+import { DOCK_PITCH, INDX_DOCK, rackStateBefore, SPARE, type Pose, type ToolChangerSpec } from './toolchanger'
 
 /** Dimensions, mm. */
 export const HOTEND = { collarZ: 30, collarR: 5.5, shaftR: 3.2, top: 58 } as const
@@ -174,6 +177,48 @@ function buildXlTool(): { group: Group; band: Mesh } {
     part(post(2.2, 6, 16), steel, 0, 18, XL.tool.top + 3, 'inlet'),
   )
   return { group: g, band }
+}
+
+/**
+ * The INDX Smart Head and a passive tool, mm, tip at the origin. A tool is a nozzle on a coupling block, 24 mm square
+ * (it fits the 28.5 by 25 mm dock), with its filament tube on top. The head is 50 mm wide and 44 mm deep (Bondtech's
+ * gantry clearance), its front flush with the tool's front, its top about 150 mm over the tip (Bondtech: about 152 mm);
+ * the narrow coupling plate under it clears the neighbor docks' tools at the 34 mm pitch. Shapes are estimated from
+ * product photos.
+ */
+export const INDX = { tool: { half: 12, top: 40 }, head: { half: 25, front: -12, back: 32, plateHalf: 14, plateTop: 52, top: 146 } } as const
+
+/** A passive INDX tool, tip at the origin: brass nozzle, steel nozzle tube, the coupling block with a band in the filament color, the filament tube. */
+function buildIndxTool(): { group: Group; band: Mesh } {
+  const g = new Group()
+  g.name = 'tool'
+  const h = INDX.tool.half
+  const band = slab(steel, -9, 9, -h - 0.4, -h, 24, 34, 'band')
+  g.add(
+    part(new ConeGeometry(1.6, 3, 24).rotateX(-Math.PI / 2), brass, 0, 0, 1.5, 'nozzle'),
+    part(post(3, 13, 24), steel, 0, 0, 9.5, 'nozzle tube'),
+    slab(graphite, -h, h, -h, h, 16, INDX.tool.top, 'coupling block', 2),
+    band,
+    part(post(2, 18, 16), white, 0, 0, INDX.tool.top + 9, 'filament tube'),
+  )
+  return { group: g, band }
+}
+
+/** The Smart Head over the tool it carries: coupling plate, body with the orange front and the coil strip, the extruder on top. */
+function buildSmartHead(): Group {
+  const g = new Group()
+  g.name = 'carriage'
+  const k = INDX.head
+  g.add(
+    slab(black, -k.plateHalf, k.plateHalf, k.front, 14, INDX.tool.top, k.plateTop, 'coupling plate', 2),
+    slab(amber, -10, 10, k.front - 0.4, k.front, 44, 49, 'coil'),
+    slab(black, -k.half, k.half, k.front, k.back, k.plateTop, 120, 'body', 4),
+    slab(prusaOrange, -20, 20, k.front - 0.4, k.front, 64, 112, 'front'),
+    slab(deep, -12, 12, k.front - 0.8, k.front - 0.4, 72, 96, 'fan'),
+    slab(graphite, -18, 18, -6, 26, 120, k.top, 'extruder', 3),
+    part(post(2.2, 6, 16), steel, 0, 10, k.top + 3, 'inlet'),
+  )
+  return g
 }
 
 /** A U1 toolhead, tip at the origin: black body, nozzle under its sock, the orange lever, the extruder motor at the back, the coupling face at the front. */
@@ -371,7 +416,7 @@ export class ToolheadRig {
   }
 
   setSpec(spec: ToolChangerSpec | null): void {
-    const key = spec ? `${spec.kind}:${spec.tools}:${spec.extruderOf.join(',')}:${spec.bed.widthMm}x${spec.bed.depthMm}:${spec.klipper?.docks.map((d) => `${d.x},${d.y},${d.z}`).join(';') ?? ''}` : ''
+    const key = spec ? `${spec.kind}:${spec.tools}:${spec.extruderOf.join(',')}:${spec.bed.widthMm}x${spec.bed.depthMm}:${spec.klipper?.docks.map((d) => `${d.x},${d.y},${d.z}`).join(';') ?? ''}:${spec.frontDock?.x.join(',') ?? ''}` : ''
     if (key === this.lastKey) return
     this.lastKey = key
     this.spec = spec
@@ -401,6 +446,7 @@ export class ToolheadRig {
   }
 
   private clear(): void {
+    this.indxBlob = null
     this.head.clear()
     this.fixed.clear()
     this.fixed.position.set(0, 0, 0)
@@ -457,6 +503,8 @@ export class ToolheadRig {
       if (k) this.buildSwitchBay(k)
     } else if (spec.kind === 'klipper-dock') {
       this.buildKlipper(spec, shadow)
+    } else if (spec.kind === 'front-dock') {
+      this.buildIndx(spec, shadow)
     } else if (spec.kind === 'xl-dock') {
       // Prusa XL: the toolhead hangs behind the carriage's coupling plate.
       const t = buildXlTool()
@@ -590,6 +638,55 @@ export class ToolheadRig {
     this.fixed.add(dock)
   }
 
+  /**
+   * Core One INDX: the Smart Head is part of the gantry and always drawn; the passive tool hangs under it. The docks stand
+   * in a row along the front with a frame bar in front of them, each two side plates and a front plate around its tool,
+   * which stands `seatRise` higher than the head holds it. The purge collector with its wiper stands beside the bed's
+   * front right corner. Docks and collector keep the head's height: the bed moves in z.
+   */
+  private indxBlob: Mesh | null = null
+  private buildIndx(spec: ToolChangerSpec, shadow: Mesh): void {
+    const k = spec.frontDock
+    const t = buildIndxTool()
+    this.carried = t.group
+    const head = buildSmartHead()
+    // The head is part of the gantry: drawn with or without the carriage switch.
+    head.name = 'smart head'
+    const blob = part(new SphereGeometry(1.4, 16, 12), steel, 0, 0, -1.4, 'blob')
+    blob.visible = false
+    this.indxBlob = blob
+    this.head.add(shadow, t.group, head, blob)
+    this.sleeves.push({ mesh: t.band, tool: () => this.carriedTool }, { mesh: blob, tool: () => this.carriedTool })
+    if (!k) return
+    const dock = new Group()
+    dock.name = 'dock'
+    const w = INDX_DOCK.width / 2
+    const d = INDX_DOCK.depth / 2
+    const y0 = k.dockY - d
+    const x0 = Math.min(...k.x) - INDX_DOCK.width
+    const x1 = Math.max(...k.x) + INDX_DOCK.width
+    dock.add(slab(dark, x0, x1, y0 - 22, y0 - 2, 50, INDX_DOCK.height, 'frame bar', 1))
+    k.x.forEach((x, i) => {
+      const tool = buildIndxTool()
+      tool.group.position.set(x, k.dockY, k.seatRise)
+      tool.group.userData.slot = i
+      dock.add(
+        tool.group,
+        slab(graphite, x - w, x + w, y0 - 2, y0, 4, INDX_DOCK.height, 'dock front', 1),
+        slab(graphite, x - w, x - w + 1.6, y0, k.dockY + d, 6, 38, 'dock side', 0.5),
+        slab(graphite, x + w - 1.6, x + w, y0, k.dockY + d, 6, 38, 'dock side', 0.5),
+      )
+      this.rackSlots.push({ group: tool.group })
+      this.sleeves.push({ mesh: tool.band, tool: () => this.slotTool(i) })
+    })
+    const p = k.purge
+    dock.add(
+      slab(dark, p.x - 8, p.x + 8, p.y - 10, p.y + 10, -22, -3, 'purge collector', 1.5),
+      slab(sock, p.x - 7, p.x + 7, p.y + 12, p.y + 15, -6, -0.5, 'wiper', 0.5),
+    )
+    this.fixed.add(dock)
+  }
+
   /** The Prusa XL dock along the back frame: a perforated black panel with a pin block behind each parked toolhead. */
   private buildXlDock(k: NonNullable<ToolChangerSpec['xl']>): void {
     const dock = new Group()
@@ -679,6 +776,7 @@ export class ToolheadRig {
     if (spec.kind === 'tool-rack') return (spec.docks?.x ?? []).map((_, i) => (i === tool ? -1 : i))
     if (spec.kind === 'xl-dock') return (spec.xl?.x ?? []).map((_, i) => (i === tool ? -1 : i))
     if (spec.kind === 'klipper-dock') return (spec.klipper?.docks ?? []).map((_, i) => (i === tool ? -1 : i))
+    if (spec.kind === 'front-dock') return (spec.frontDock?.x ?? []).map((_, i) => (i === tool ? -1 : i < spec.tools ? i : SPARE))
     if (spec.kind === 'hotend-rack') return rackStateBefore(spec, []).slots
     return []
   }
@@ -698,6 +796,10 @@ export class ToolheadRig {
       if (pose) this.lastTool = pose.carried ?? tool
       this.head.position.set(px, py, pz)
       this.paint()
+      return
+    }
+    if (spec.kind === 'front-dock') {
+      this.placeIndx(spec, px, py, pz, tool, pose, slots)
       return
     }
     if (spec.kind === 'tool-rack' || spec.kind === 'xl-dock' || spec.kind === 'klipper-dock') {
@@ -755,6 +857,35 @@ export class ToolheadRig {
     } else {
       this.rightTool = this.toolOnSide(1)
     }
+    this.paint()
+  }
+
+  /**
+   * Core One INDX: the head at the pose with the tool it carries; parked tools stand in their docks, spares included. As a
+   * tool is released the dock lifts it the seat rise off the head, and as one is latched the head takes it back down;
+   * at the purge collector a blob of the new filament grows under the nozzle.
+   */
+  private placeIndx(spec: ToolChangerSpec, px: number, py: number, pz: number, tool: number, pose: Pose | null, slots: number[] | null): void {
+    const k = spec.frontDock
+    this.carriedTool = pose ? (pose.carried ?? -1) : tool
+    this.slots = slots ?? (pose ? pose.slots : this.restSlots(tool))
+    const rise = k?.seatRise ?? 0
+    const latching = pose?.phase === 'latch' || pose?.phase === 'release'
+    const at = k ? k.x.reduce((best, x, i) => (Math.abs(x - px) < Math.abs((k.x[best] ?? 0) - px) ? i : best), 0) : -1
+    if (this.carried) {
+      this.carried.visible = this.carriedTool >= 0
+      this.carried.position.z = latching && pose ? rise * (1 - pose.latch) : 0
+    }
+    for (const [i, s] of this.rackSlots.entries()) {
+      s.group.visible = (this.slots[i] ?? -1) !== -1
+      s.group.position.z = latching && pose && i === at ? rise * (1 - pose.latch) : rise
+    }
+    if (this.indxBlob) {
+      this.indxBlob.visible = pose?.phase === 'blob'
+      this.indxBlob.scale.setScalar(Math.max(0.05, pose?.phase === 'blob' ? pose.latch : 0))
+    }
+    this.head.position.set(px, py, pz)
+    this.fixed.position.z = pz
     this.paint()
   }
 

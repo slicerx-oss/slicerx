@@ -50,7 +50,7 @@ export interface MachineEntry {
   machine: Record<string, unknown>
   /** Other nozzles: the keys that differ from the default nozzle's settings. */
   nozzles: Record<string, { orcaProfile: string; differs: Record<string, unknown> }>
-  noGcodeInOrca: string[]
+  noGcodeInOrca?: string[]
 }
 /** The UltiMaker S series from Cura's definitions (cura/ultimaker.json, LGPL-3.0-or-later), in the shapes of the files below. */
 const CURA = curaJson as unknown as {

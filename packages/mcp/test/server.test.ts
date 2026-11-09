@@ -400,6 +400,21 @@ describe('the Prusa MK3.5', () => {
   })
 })
 
+describe('the Prusa Core One with INDX', () => {
+  it('is found by a client and reads back as eight tools with a 12 s change and our own tool change G-code', async () => {
+    const h = await connect()
+    const hits = data<{ output: { id: string }[] }>(await h.call('slicerx_printer_profile_search', { query: 'prusa core one indx' }))
+    expect(hits.output.map((x) => x.id)).toContain('prusa-core-one-indx')
+    const p = data<{ config: Record<string, unknown> }>(await h.call('slicerx_get_profile', { profile: 'machine:prusa-core-one-indx' }))
+    expect(p.config['printable_area']).toEqual([[0, 0], [248, 0], [248, 205], [0, 205]])
+    expect(p.config['printable_height']).toBe(270)
+    expect(p.config['nozzle_diameter']).toHaveLength(8)
+    expect(p.config['machine_tool_change_time']).toBe(12)
+    expect(String(p.config['change_filament_gcode'])).toMatch(/^T\[next_extruder\]$/m)
+    expect(String(p.config['change_filament_gcode'])).not.toMatch(/M600/)
+  })
+})
+
 describe('theming', () => {
   it('returns a built-in theme with a stylesheet and passing contrast', async () => {
     const h = await connect()
