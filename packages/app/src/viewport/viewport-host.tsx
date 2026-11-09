@@ -558,7 +558,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (first || s.moveCut !== prev.moveCut || s.layerHi !== prev.layerHi || s.preview !== prev.preview) vp.setMoveCut(moveCount(s.preview, s.layerHi, s.moveCut))
         // The printer's own toolhead, its tool changer and, during playback, where the head is in a change.
         if (vp.setHeadModel && (first || s.profile !== prev.profile)) vp.setHeadModel(headFor(s.profile?.printerId))
-        if (vp.setToolChanger && (first || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy || s.bed !== prev.bed || s.preview !== prev.preview || s.slice !== prev.slice || s.copyMode !== prev.copyMode)) {
+        if (vp.setToolChanger && (first || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy || s.bed !== prev.bed || s.preview !== prev.preview || s.slice !== prev.slice || s.copyMode !== prev.copyMode || s.printerDocks !== prev.printerDocks)) {
           syncCopyMode(s)
           const spec = toolChangerFor(s)
           if (spec !== changerSent) {

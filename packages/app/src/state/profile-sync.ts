@@ -89,10 +89,7 @@ export function inputOf(s: AppState, model: NonNullable<AppState['printerModel']
   return { printer: model, tier, slots: slotsOf(s), ...(reported ? { nozzle: reported, nozzleFrom: 'printer' as const } : chosen ? { nozzle: chosen, nozzleFrom: 'choice' as const } : {}), ...(extruders ? { extruders: reportedFirst(extruders, reported) } : {}), ...(toolchanger ? { toolchanger } : {}) }
 }
 
-/**
- * A printer declared a tool changer: setup kept docks for it (its Moonraker test found tool sections in the Klipper
- * config), or its stored hand-added record has filamentSystem toolchanger (setup writes that only from the catalog).
- */
+/** A printer declared a tool changer: setup kept docks for it (a Klipper config with tool sections), or it was added as one. */
 export function declaredToolchanger(s: Pick<AppState, 'printerDocks' | 'handPrinters'>, id: string): boolean {
   return s.printerDocks[id] !== undefined || s.handPrinters.some((h) => h.id === id && h.filamentSystem === 'toolchanger')
 }

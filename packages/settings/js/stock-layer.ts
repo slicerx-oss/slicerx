@@ -33,8 +33,8 @@ export interface StockLayerInput {
   /** Each extruder's nozzle on a printer with more than one, in the slicer's extruder order (left first on an H2D). */
   extruders?: readonly { mm: number; type?: string }[] | undefined
   /**
-   * The printer is declared a tool changer (a Klipper printer whose config setup's Moonraker test found tool sections
-   * in): a profile with one nozzle takes a tool per extruder, each with its own nozzle (`applyExtruders`).
+   * The printer is declared a tool changer (a Klipper printer whose config has tool sections, or one added as a tool
+   * changer): a profile with one nozzle takes a tool per extruder, each with its own nozzle (`applyExtruders`).
    */
   toolchanger?: boolean | undefined
 }
