@@ -370,7 +370,7 @@ Use the design and step ids from `design_list` and `design_steps`. A null bindin
 | `--allowed-host <name>` | `SLICERX_MCP_ALLOWED_HOST` (comma list) | loopback names only |
 | `--allow-dir <dir>` (repeat) | `SLICERX_MCP_ALLOW_DIR` (colon list) | stdio: any readable path; HTTP: none |
 | `--out-dir <dir>` | `SLICERX_MCP_OUT_DIR` | `<tmp>/slicerx-mcp` |
-| `--no-urls` | `SLICERX_MCP_NO_URLS=1` | URLs allowed, 256 MB limit |
+| `--no-urls` | `SLICERX_MCP_NO_URLS=1` | URLs allowed (http and https to public addresses only, each redirect checked), 256 MB limit |
 | `--engine auto\|sx\|stub` | `SLICERX_MCP_ENGINE` | `auto` |
 | `--sx-geom-bin <path>` | `SLICERX_MCP_SX_GEOM_BIN` or `SLICERX_SX_GEOM_BIN` | next to `sx`, then `PATH` |
 | `--cloud-api <url>` | `SLICERX_MCP_CLOUD_API`, `SLICERX_CLOUD_API_URL`, or `SLICERX_CONFIG`; token from the keychain item `slicerx-cloud` or `SLICERX_MCP_CLOUD_TOKEN` | off |
