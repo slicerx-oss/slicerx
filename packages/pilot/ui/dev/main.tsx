@@ -32,6 +32,7 @@ if (root) {
   createRoot(root).render(
     <PilotWorkspace
       pilot={env.pilot}
+      demoFleet
       sessionId={`dev-${scenario.id}`}
       context={{ project: 'dev', machine: scenario.machine }}
       skills={SKILL_INFO}

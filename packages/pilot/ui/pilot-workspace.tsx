@@ -41,9 +41,16 @@ export interface PilotWorkspaceProps {
   initialPrompt?: string
   /** Called after `initialPrompt` has started a run, so the caller can clear it. */
   onPromptConsumed?(): void
+  /** True while the printers are a demo fleet: only then are the example prompts that name its bays offered. */
+  demoFleet?: boolean
 }
 
-const PROMPTS = ['Plan 12 strong PETG brackets by Friday', 'Diagnose the Bay 4 failure', 'Fit this model on an A1 mini', 'Tune the new PETG spool']
+/** Example prompts about the demo fleet's bays; they mean nothing on a person's own printers. */
+export const DEMO_FLEET_PROMPTS = ['Plan 12 strong PETG brackets by Friday', 'Diagnose the Bay 4 failure']
+const PROMPTS = ['Fit this model on an A1 mini', 'Tune the new PETG spool']
+
+/** The empty-state example prompts: the demo fleet's two first, only while it is the demo fleet. */
+export const examplePrompts = (demoFleet: boolean | undefined): string[] => (demoFleet ? [...DEMO_FLEET_PROMPTS, ...PROMPTS] : PROMPTS)
 
 const MODE_WORD: Record<PermissionMode, string> = { allow: 'Allow', ask: 'Ask first', off: 'Off' }
 
@@ -152,7 +159,7 @@ export function PilotWorkspace(props: PilotWorkspaceProps) {
     onPromptConsumed?.()
   }, [initialPrompt, onPromptConsumed, run, where])
 
-  const suggestions: Suggestion[] = PROMPTS.map((label, i) => ({ id: `p${i}`, label, onSelect: () => startRun(label) }))
+  const suggestions: Suggestion[] = examplePrompts(props.demoFleet).map((label, i) => ({ id: `p${i}`, label, onSelect: () => startRun(label) }))
   const machine = context?.machine
   if (machine) {
     suggestions.push({

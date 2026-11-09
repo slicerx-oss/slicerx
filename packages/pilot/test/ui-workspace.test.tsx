@@ -137,9 +137,20 @@ const SKILLS = [{ name: 'slice', version: '2.3.1', description: 'Slices with a n
 afterEach(() => cleanup())
 
 describe('PilotWorkspace', () => {
+  it('offers the example prompts about the demo fleet only on the demo fleet', () => {
+    const real = render(<PilotWorkspace pilot={new FakePilot()} sessionId="s" skills={SKILLS} />)
+    expect(screen.queryByRole('button', { name: 'Plan 12 strong PETG brackets by Friday' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Diagnose the Bay 4 failure' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Tune the new PETG spool' })).toBeTruthy()
+    real.unmount()
+    render(<PilotWorkspace pilot={new FakePilot()} sessionId="s" skills={SKILLS} demoFleet />)
+    expect(screen.getByRole('button', { name: 'Plan 12 strong PETG brackets by Friday' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Diagnose the Bay 4 failure' })).toBeTruthy()
+  })
+
   it('renders a live run from Pilot events and answers the approval', async () => {
     const pilot = new FakePilot()
-    const { container } = render(<PilotWorkspace pilot={pilot} sessionId="bay-planning" skills={SKILLS} context={{ project: 'brackets' }} />)
+    const { container } = render(<PilotWorkspace pilot={pilot} sessionId="bay-planning" skills={SKILLS} context={{ project: 'brackets' }} demoFleet />)
 
     expect(container.querySelector('.term-title')?.textContent).toBe('mimir - new-run - zsh')
     fireEvent.click(screen.getByRole('button', { name: 'Plan 12 strong PETG brackets by Friday' }))

@@ -14,6 +14,19 @@ export function useCompactLayout(): boolean {
   return useMediaQuery(COMPACT_QUERY)
 }
 
+/** A touch screen as the main pointer, at any width: a long press stands in for a right click. */
+export const COARSE_QUERY = '(pointer: coarse)'
+
+/** True while the main pointer is a finger. */
+export function useCoarsePointer(): boolean {
+  return useMediaQuery(COARSE_QUERY)
+}
+
+/** The right-click gesture in words for the pointer: a long press on touch. */
+export function rightClickWords(coarse: boolean, capital = true): string {
+  return coarse ? (capital ? 'Press and hold' : 'press and hold') : capital ? 'Right-click' : 'right-click'
+}
+
 /** True on a phone: a touch screen 900 px wide or less. */
 export function usePhoneLayout(): boolean {
   return useMediaQuery(PHONE_QUERY)
