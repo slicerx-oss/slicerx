@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The step that made a picked face, through the store as a person reaches it: a face picked on a step's result, then
-// that step undone. Model's selection pill keeps working and names the step that made the face now.
+// that step undone, deleted, rolled back or the plate swapped. useMadeBy never hands back a step the object's history
+// no longer has, not even for the one render before it looks again, and Model's selection pill keeps working.
 // The face lookup itself replays the history on the geometry engine and has its own tests (face-provenance); here it
 // answers from the history it is given, so these tests run without the engine.
 import { act, cleanup, render, screen } from '@testing-library/react'
@@ -25,6 +26,7 @@ vi.mock('../src/cad/history/made-by', async (actual) => ({
 }))
 
 const { SelectPill } = await import('../src/workspaces/design/select-pill')
+const { useMadeBy } = await import('../src/workspaces/design/use-made-by')
 
 const HOST = { kind: 'web', capabilities: { secureStorage: false }, files: { save: async () => undefined } } as unknown as Host
 const wrap = (el: ReturnType<typeof createElement>) => createElement(HostContext.Provider, { value: HOST }, createElement(EditionContext.Provider, { value: NEUTRAL }, el))
@@ -39,7 +41,19 @@ const box = (steps: Step[], id = 'box'): PlateEntry => {
 }
 const face = { kind: 'face' as const, objectId: 'box', partIndex: 0, triangle: 3, point: [100, 100, 5] as [number, number, number] }
 
+/** What useMadeBy handed back on each render, beside how many steps the object had on that render. */
+let seen: { index: number | null; steps: number | null }[] = []
+function Probe() {
+  const made = useMadeBy()
+  const entry = get().plate.find((p) => p.id === made?.objectId)
+  seen.push({ index: made?.index ?? null, steps: made ? (entry?.history?.steps.length ?? null) : null })
+  return null
+}
+/** Every answer named a step its object had when it was read. */
+const allLive = () => seen.filter((s) => s.index !== null && s.index >= 0 && (s.steps === null || s.index >= s.steps))
+
 beforeEach(() => {
+  seen = []
   set({ plate: [box([step('s1', 5)])], plateLoading: false, selection: 'box', selectedIds: ['box'], subPicks: [], historyEdit: null })
   history().clear()
   // a second step, as a tool commits it: one undo step
@@ -60,5 +74,41 @@ describe('the step that made a picked face, after the history changes', () => {
     expect(screen.getByTestId('model-select-pill')).toBeTruthy()
     // looked again on the object as it is now
     expect((await screen.findByText('made by Pull 5 mm')).getAttribute('data-step')).toBe('0')
+  })
+
+  it('never names a step past the history after an undo', async () => {
+    render(createElement(Probe))
+    await vi.waitFor(() => expect(seen.at(-1)?.index).toBe(1))
+    act(() => {
+      history().undo()
+    })
+    await vi.waitFor(() => expect(seen.at(-1)?.index).toBe(0))
+    expect(allLive()).toEqual([])
+  })
+
+  it('never names a step past the history after the step is deleted', async () => {
+    render(createElement(Probe))
+    await vi.waitFor(() => expect(seen.at(-1)?.index).toBe(1))
+    act(() => set({ plate: [box([step('s1', 5)])] }))
+    await vi.waitFor(() => expect(seen.at(-1)?.index).toBe(0))
+    expect(allLive()).toEqual([])
+  })
+
+  it('never names a step past the history when the timeline rolls back before it', async () => {
+    render(createElement(Probe))
+    await vi.waitFor(() => expect(seen.at(-1)?.index).toBe(1))
+    // a rolled back body shows itself as its history up to the marker
+    act(() => set({ plate: [box([step('s1', 5)])] }))
+    await vi.waitFor(() => expect(seen.at(-1)?.index).toBe(0))
+    expect(allLive()).toEqual([])
+  })
+
+  it('names nothing once the object is off the plate, as after a plate swap', async () => {
+    render(createElement(Probe))
+    await vi.waitFor(() => expect(seen.at(-1)?.index).toBe(1))
+    seen = []
+    act(() => set({ plate: [box([step('t1', 2)], 'other')] }))
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((s) => s.index === null)).toBe(true)
   })
 })
