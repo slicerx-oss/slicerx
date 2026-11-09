@@ -912,6 +912,15 @@ pub(crate) fn ray_distance(o: V3, d: V3, a: V3, b: V3, c: V3) -> Option<f64> {
 /// corner moves, so the surface is the same; after rounding to f32 such a needle would turn over and cross its
 /// neighbors, and a later boolean on the part would need the robust engine, which loses the faces.
 pub(crate) fn flip_needles(mesh: &mut TriMesh) {
+    flip(mesh, false);
+}
+
+/// `flip_needles`, turning a needle only with a neighbor of its own face, so the faces and their keys hold
+pub(crate) fn flip_needles_in_faces(mesh: &mut TriMesh) {
+    flip(mesh, true);
+}
+
+fn flip(mesh: &mut TriMesh, in_faces: bool) {
     let scale = mesh
         .positions
         .iter()
@@ -956,7 +965,7 @@ pub(crate) fn flip_needles(mesh: &mut TriMesh) {
             let Some(&u) = sides.get(&(b, a)) else {
                 continue;
             };
-            if done[u] || u == t {
+            if done[u] || u == t || (in_faces && mesh.faces.as_ref().is_some_and(|f| f.ids[t] != f.ids[u])) {
                 continue;
             }
             let Some(&d) = mesh.triangles[u].iter().find(|&&v| v != a && v != b) else {
@@ -1072,6 +1081,42 @@ mod tests {
         assert!((m.volume() - (2000.0 - hex.area() * 5.0)).abs() < 1e-6);
         let e = m.triangles.len() * 3 / 2;
         assert_eq!(m.positions.len() + m.triangles.len(), e);
+    }
+
+    #[test]
+    fn a_needle_turns_only_with_a_neighbor_of_its_own_face() {
+        // a needle on a to b, its corner c a hair off that side, and the triangle across it
+        let pos = vec![
+            [0.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [5.0, 1e-9, 0.0],
+            [5.0, -5.0, 0.0],
+        ];
+        let plane = crate::faces::Surface::Plane {
+            normal: [0.0, 0.0, 1.0],
+            offset: 0.0,
+        };
+        let mesh = |ids: Vec<u32>| TriMesh {
+            faces: Some(crate::faces::Faces {
+                ids,
+                table: vec![plane, plane],
+                keys: vec![11, 22],
+            }),
+            ..TriMesh::new(pos.clone(), vec![[0, 1, 2], [1, 0, 3]])
+        };
+        let mut one = mesh(vec![0, 0]);
+        flip_needles_in_faces(&mut one);
+        assert_eq!(one.triangles, vec![[0, 3, 2], [3, 1, 2]]);
+        assert_eq!(one.faces.as_ref().map(|f| f.ids.clone()), Some(vec![0, 0]));
+        // across a face's edge the keyed face keeps its own triangle
+        let mut two = mesh(vec![0, 1]);
+        flip_needles_in_faces(&mut two);
+        assert_eq!(two.triangles, vec![[0, 1, 2], [1, 0, 3]]);
+        assert_eq!(two.faces, mesh(vec![0, 1]).faces);
+        // the plain turn takes no notice of faces
+        let mut any = mesh(vec![0, 1]);
+        flip_needles(&mut any);
+        assert_eq!(any.triangles, vec![[0, 3, 2], [3, 1, 2]]);
     }
 
     #[test]
