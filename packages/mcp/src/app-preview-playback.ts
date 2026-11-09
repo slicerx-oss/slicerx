@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { appClientSetupMessage, type AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 const input = z.object({
@@ -36,7 +36,7 @@ export function appPreviewPlaybackTools(link: AppLinkCaller | undefined, appName
     description: `Read ${appName}'s live slice playback: availability, playing, timeS, durationS, speed, followNozzle, layer, moveShare and current toolChange. Time includes startup and tool changes; unavailable time is null, not zero. Reads the same clock as the playback bar. Time advances while playing. Uses the existing app read grant.`,
     run: () => call('preview.playback', {}),
   }), defineTool({
-    name: 'app.preview_playback_set', version: '1.0.0', source: 'command', permission: 'read', input,
+    name: 'app.preview_playback_set', version: '1.0.0', source: 'command', permission: 'read', input, hints: APP_VIEW_CHANGE_HINTS,
     description: `Play, pause or seek ${appName}'s slice preview and set playback speed or nozzle following. Returns live read-back. Requires the sliced toolpath playback bar on Slice and no active paint, brim or face tool. Validates all fields before changing anything. Applies pause, preferences, seek, then play; playing at the end restarts. Seek alone preserves playing. Replacing or closing the bar pauses playback. View state only, with the existing read grant, no project edits or printer action.`,
     run: (i) => call('preview.playback_set', i),
   })] as PilotTool<never>[]

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { defineTool, type PilotTool } from '@slicerx/pilot'
-import type { AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, type AppLinkCaller } from './app-route'
 import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput } from './app-paint-input'
 import { ToolInputError, type ErrorCode } from './errors'
 
@@ -21,11 +21,11 @@ export function appPaintTools(link: AppLinkCaller | undefined, appName: string):
     description: `Read an object's color, seam, support or fuzzy paint in ${appName}'s shown plate. Returns per-part states, areas in mm2, connected regions in bed coordinates, available color slot count and a revision. Use an object id from app_history. Reads the live project, including viewport brush strokes.`,
     run: (i) => call('paint.get', i),
   }), defineTool({
-    name: 'app.paint_preview', version: '1.1.0', source: 'command', permission: 'read', input: appPaintPreviewInput,
+    name: 'app.paint_preview', version: '1.1.0', source: 'command', permission: 'read', input: appPaintPreviewInput, hints: { ...APP_VIEW_CHANGE_HINTS, idempotent: false },
     description: `Preview paint on an object in ${appName}'s shown plate without changing it. Target a whole part, direction, height band, seeded smart fill or bucket, or replace a state. Coordinates are bed coordinates in mm. A seed on a multipart object requires part. Returns a preview id, affected area and resulting paint regions. A height band with no max_depth splits triangles deep enough that its edges land within 0.04 mm of the heights given. Color states are existing filament slots; seam/support use 1 or 2; fuzzy uses 1; 0 clears. Apply through app_paint_apply with the same client. Copies keep independent paint, as with the brush.`,
     run: (i) => call('paint.preview', i),
   }), defineTool({
-    name: 'app.paint_from_texture', version: '1.0.0', source: 'command', permission: 'read', input: appPaintFromTextureInput,
+    name: 'app.paint_from_texture', version: '1.0.0', source: 'command', permission: 'read', input: appPaintFromTextureInput, hints: { ...APP_VIEW_CHANGE_HINTS, idempotent: false },
     description: `Preview color paint from an object's texture in ${appName}'s shown plate without changing it: the texture the object was opened with (an OBJ opened together with its MTL and images, or a 3MF with textures). Each bit of surface gets the filament nearest the texture's color there (mode nearest), or filament colors are picked from the texture (mode palette, only when no filament color is set by hand or by the printer); the filament with the most area becomes each part's own. Returns a preview id, the filaments used with their areas in mm2, the paint regions and notes. Apply it with app_paint_apply (one toolbar Undo step) and read it back with app_paint.`,
     run: (i) => call('paint.from_texture', i),
   }), defineTool({

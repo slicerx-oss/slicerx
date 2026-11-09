@@ -7,7 +7,7 @@
 // slicerx_app_plate_show's; the printer is read only, and the person picks it.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { appClientSetupMessage, type AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import type { ByObjectReadback } from '@slicerx/settings/by-object'
 import { ToolInputError, type ErrorCode } from './errors'
 
@@ -150,6 +150,7 @@ export function appUiTools(link: AppLinkCaller | undefined, appName: string): Pi
     version: '1.0.0',
     source: 'command',
     permission: 'read',
+    hints: APP_VIEW_CHANGE_HINTS,
     description: `Switch ${appName}'s window the way the person does: workspace (an id from slicerx_app_ui) or tab (slice, design or mimir, in the first workspace). It changes only what the window shows, never the project; set the selection and panels with slicerx_app_ui_select. It answers busy and changes nothing while the person has a tool open, a file is opening, the print sheet or a question about an opened project is up, a phone is being paired, or first-run setup is up. Returns the window read back.`,
     input: z
       .object({

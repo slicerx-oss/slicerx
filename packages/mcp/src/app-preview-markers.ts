@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { appClientSetupMessage, type AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 const input = z.object({
@@ -34,7 +34,7 @@ export function appPreviewMarkerTools(link: AppLinkCaller | undefined, appName: 
     description: `Read ${appName}'s preview legend marker switches: retractions, seams, lifts (Z hops), wipes, toolChanges and pauses. Reports each switch's shown preference and availability in the loaded slice. Counts are omitted until known; absent is not zero. G-code counts load asynchronously when a G-code marker is enabled. Reads live UI state through the app link.`,
     run: () => call('preview.markers', {}),
   }), defineTool({
-    name: 'app.preview_markers_set', version: '1.0.0', source: 'command', permission: 'read', input,
+    name: 'app.preview_markers_set', version: '1.0.0', source: 'command', permission: 'read', input, hints: APP_VIEW_CHANGE_HINTS,
     description: `Show or hide ${appName}'s preview legend markers and read the resulting switches back. Requires a loaded slice on Slice and no paint, brim or face tool. All switches validate before any change; unavailable markers cannot be enabled. Uses the legend's existing shared state. Counts may arrive later, so read app_preview_markers again. View preferences only, with the existing read grant and no project or print changes.`,
     run: (i) => call('preview.markers_set', i),
   })] as PilotTool<never>[]

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { appClientSetupMessage, type AppLinkCaller } from './app-route'
+import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 const vec3 = z.tuple([z.number(), z.number(), z.number()])
@@ -44,6 +44,7 @@ export function appDimensionTools(link: AppLinkCaller | undefined, appName: stri
   ] as const
   return commands.map(([input, name, method, description]) => defineTool({
     name, version: '1.0.0', source: 'command', permission: input === 'keep' || input === 'remove' ? 'slice' : 'read',
+    ...(input === 'show' ? { hints: APP_VIEW_CHANGE_HINTS } : {}),
     input: appDimensionInputs[input] as z.ZodType<Record<string, unknown>>,
     description: `${description} Needs ${appName}'s app link${input === 'keep' || input === 'remove' ? ' and an edit grant. Refuses locked objects and unfinished edits; validates before changing the project.' : ' and the existing read grant.'} Refuses stale results if the plate changes while measuring.`,
     ...(input === 'keep' || input === 'remove' ? { approval: async () => ({ title: input === 'keep' ? 'Keep this dimension?' : 'Remove this dimension?', lines: [], actions: [] }) } : {}),

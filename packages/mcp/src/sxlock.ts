@@ -123,6 +123,8 @@ export function sxlockTools(deps: SxlockToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'read',
+    // Asks the account service to unlock the file, and writes the project to the output folder.
+    hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
     description:
       `Open a locked ${productName()} project (.sxlock) for the account whose API token this server holds (scope sxlock_open) and write the project as an .sx3mf to the server's output folder, readable only by this user. Needs the network: the account service unlocks each file, and only for its owner. Answers that locked projects are not configured when this server has no account service.`,
     input: z.object({ file: file.describe('Absolute path to a .sxlock file') }),
