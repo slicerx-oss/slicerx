@@ -373,3 +373,149 @@ describe("a local model's context", () => {
     expect(fit.messages.some((m) => m.role === 'user' && m.content === 'Make a gear pair')).toBe(true)
   })
 })
+
+// The same chat over several runs: the person's later message (the eval's default answer, "keep going") starts a new
+// run on the history the earlier runs left, as the app and the creative eval send it.
+async function chat(client: LlmClient, said: readonly string[], opts: { tools?: PilotTool<never>[]; signals?: (AbortSignal | undefined)[]; resume?: { user: string; reply: string }[] } = {}) {
+  const pilot = createPilot({ host: HOST, config: { ...DEFAULT_CONFIG, maxSteps: 40, maxToolCalls: 80 }, policy: DEFAULT_POLICY, client, builtins: false, tools: opts.tools ?? designTools() })
+  if (opts.resume) pilot.resume?.('s', opts.resume)
+  const runs: PilotEvent[][] = []
+  for (const [i, message] of said.entries()) {
+    const signal = opts.signals?.[i]
+    const events: PilotEvent[] = []
+    for await (const e of pilot.run('s', message, signal ? { signal } : {})) events.push(e)
+    runs.push(events)
+  }
+  return runs
+}
+
+/** The design tools with design.plan answering each call in turn: Go (accepted, with its plan id) or Not yet. */
+function plannedTools(answers: readonly { accepted: boolean; planId: string }[], check?: () => Record<string, unknown>): PilotTool<never>[] {
+  let n = 0
+  const plan = defineTool<Args>({
+    name: 'design.plan',
+    version: '1',
+    description: 'design.plan',
+    source: 'command',
+    permission: 'read',
+    input: z.record(z.string(), z.unknown()),
+    run: async () => {
+      const a = answers[Math.min(n++, answers.length - 1)]!
+      return a.accepted ? { summary: 'Approved as shown', output: { planId: a.planId, accepted: true } } : { ok: false, summary: 'Not approved; build nothing until the plan is agreed', output: { planId: a.planId, accepted: false } }
+    },
+  }) as PilotTool<never>
+  return [plan, ...designTools(check).filter((t) => t.name !== 'design.plan')]
+}
+
+const DEFAULT_ANSWER = 'Use common sizes and sensible defaults, then build it'
+// run 1: the plan, the plate and both pins, then a question the plan does not settle, so the run ends with no note
+const ASKED = 'The plate and both pins are built. Which do you want for the gears: 20 and 40 teeth, or 15 and 30?'
+const RUN1_ASKS: ScriptStepData[] = [...GEAR_PAIR.slice(0, -1), { text: ASKED }]
+const GEAR_20 = { calls: [call('geom.extrude', { design: 'd1', operation: 'new', name: 'Gear 20T', feature: 'Gear 20T' })] }
+
+describe('a plan approved in an earlier run of the chat', () => {
+  it('the next run, answered with the eval default "then build it", still gets the note when mimir stops with the plan unfinished', async () => {
+    const client = createScriptedClient([...RUN1_ASKS, { text: 'Building the 20 tooth gear.', ...GEAR_20 }, { text: 'The 20 tooth gear is built. Should I add the 40 tooth gear next?' }, { text: 'The 40 tooth gear is built.' }], { chunk: false })
+    const [one, two] = await chat(client, ['Make a gear pair on a base plate', DEFAULT_ANSWER])
+    // run 1 ended on its own question, with no note
+    expect(notices(one!)).toEqual([])
+    expect(notes(client.requests[RUN1_ASKS.length - 1]!.messages)).toEqual([])
+    // run 2 went on once, to the gear no step built
+    const sent = notes(client.requests.at(-1)!.messages)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toContain('Still to build: Gear 40T.')
+    expect(notices(two!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Gear 40T.' })])
+    expect(client.remaining()).toBe(0)
+    expect(done(two!)).toMatchObject({ stopReason: 'end' })
+  })
+
+  it('"keep going" after a run that already had its one note and stopped again gets one more', async () => {
+    const client = createScriptedClient([...GEAR_PAIR, { text: 'I will wait for you before the gears.' }, { text: 'On it.', ...GEAR_20 }, { text: 'Want me to do the 40 tooth gear now?' }, { text: 'Both gears are built.' }], { chunk: false })
+    const [one, two] = await chat(client, ['Make a gear pair on a base plate', 'keep going'])
+    expect(notices(one!)).toHaveLength(1)
+    expect(notices(two!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Gear 40T.' })])
+    expect(client.remaining()).toBe(0)
+  })
+
+  it('"continue" after a run the person canceled part way through the plan gets the note', async () => {
+    const ac = new AbortController()
+    const inner = createScriptedClient([...GEAR_PAIR.slice(0, 4), { text: 'Picking up at the pins.', calls: [call('geom.extrude', { design: 'd1', operation: 'join', part: 0, name: 'Pin 20T', feature: 'Pin 20T' })] }, { text: 'The 20T pin is in. Shall I carry on with the rest?' }, { text: 'The rest is built.' }], { chunk: false })
+    let n = 0
+    const client: LlmClient = {
+      provider: 'scripted',
+      async *stream(req, signal) {
+        // the person cancels as the fourth request goes out
+        if (++n === 4) ac.abort()
+        yield* inner.stream(req, signal)
+      },
+    }
+    const [one, two] = await chat(client, ['Make a gear pair on a base plate', 'continue'], { signals: [ac.signal, undefined] })
+    expect(done(one!)).toMatchObject({ stopReason: 'canceled' })
+    expect(notices(two!)).toHaveLength(1)
+    expect(notes(inner.requests.at(-1)!.messages)[0]).toContain('Still to build: Pin 40T, Gear 20T, Gear 40T.')
+    expect(inner.remaining()).toBe(0)
+  })
+})
+
+describe('a plan from an earlier run that the person moved away from gets no note', () => {
+  it('when the next message asks for something else', async () => {
+    const client = createScriptedClient([...RUN1_ASKS, { text: 'Starting the phone stand.', calls: [call('design.new', { name: 'Phone stand' })] }, { calls: [call('geom.extrude', { design: 'd2', operation: 'new', name: 'Stand' })] }, { text: 'The phone stand is built. Should I add a cable slot?' }, { text: 'never sent' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a gear pair on a base plate', 'Make me a phone stand instead'])
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('when a run in between asked for something else, even if the person then says keep going', async () => {
+    const client = createScriptedClient([...RUN1_ASKS, { text: 'Built a 20 mm cube.', calls: [call('design.new', { name: 'Cube' })] }, { text: 'The cube is built.' }, { text: 'The cube is done. Should I go on?' }, { text: 'never sent' }], { chunk: false })
+    const [, two, three] = await chat(client, ['Make a gear pair on a base plate', 'Make a 20 mm cube', 'keep going'])
+    expect(notices(two!)).toEqual([])
+    expect(notices(three!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('when the next run starts another design, even on words that would go on', async () => {
+    const client = createScriptedClient([...RUN1_ASKS, { text: 'Starting the cube.', calls: [call('design.new', { name: 'Cube' })] }, { calls: [call('geom.extrude', { design: 'd2', operation: 'new', name: 'Cube' })] }, { text: 'The cube is built. Should I go on?' }, { text: 'never sent' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a gear pair on a base plate', 'Sure, make a 20 mm cube and build it'])
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('when the next message says to stop', async () => {
+    const client = createScriptedClient([...RUN1_ASKS, { text: 'Stopped. The plate and pins stay as they are. Should I go on later?' }, { text: 'never sent' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a gear pair on a base plate', "Don't build the gears, stop there"])
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('when the person declines a new plan in the next run', async () => {
+    const replan = { text: 'Here is a new plan for the gears.', calls: [call('design.plan', { part: 'Gears only', units: 'mm', features: [{ name: 'Gear 20T', kind: 'extrude', sizes: {} }, { name: 'Gear 40T', kind: 'extrude', sizes: {} }] })] }
+    const client = createScriptedClient([...RUN1_ASKS, replan, { text: 'The plan was not approved. Should I go on with the old one?' }, { text: 'never sent' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a gear pair on a base plate', 'keep going'], { tools: plannedTools([{ accepted: true, planId: 'plan_1' }, { accepted: false, planId: 'plan_2' }]) })
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('when the person approves a new plan in the next run: only that one counts', async () => {
+    const replan = { text: 'A new plan with one gear.', calls: [call('design.plan', { part: 'Single gear', units: 'mm', features: [{ name: 'Gear', kind: 'extrude', sizes: {} }] })] }
+    const build = [{ calls: [call('design.new', { name: 'Single gear' })] }, { calls: [call('geom.extrude', { design: 'd2', operation: 'new', name: 'Gear', feature: 'Gear' })] }]
+    const client = createScriptedClient([...RUN1_ASKS, replan, ...build, { text: 'The gear is built. Should I go on?' }, { text: 'never sent' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a gear pair on a base plate', 'keep going'], { tools: plannedTools([{ accepted: true, planId: 'plan_1' }, { accepted: true, planId: 'plan_2' }]) })
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('when design.check passed on the plan in its own run', async () => {
+    const tagged: ScriptStepData[] = [GEAR_PAIR[0]!, GEAR_PAIR[1]!, ...GEAR_PAIR_FEATURES.map((name, i) => ({ calls: [call('geom.extrude', { design: 'd1', operation: i ? 'join' : 'new', part: 0, name, feature: name })] })), { calls: [call('design.check', { planId: 'plan_1', design: 'd1' })] }, { text: 'All checks pass. Which printer do you want?' }]
+    const client = createScriptedClient([...tagged, { text: 'Everything in the plan is built. Should I slice it?' }, { text: 'never sent' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a gear pair on a base plate', 'keep going'], { tools: designTools(() => ({ pass: true })) })
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('in a chat restored from its saved words, which carry no tool calls to read a plan from', async () => {
+    const client = createScriptedClient([{ text: 'The plate is built. Should I go on with the gears?' }, { text: 'never sent' }], { chunk: false })
+    const [one] = await chat(client, ['keep going'], { resume: [{ user: 'Make a gear pair on a base plate', reply: ASKED }] })
+    expect(notices(one!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+})

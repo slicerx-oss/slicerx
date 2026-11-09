@@ -1048,7 +1048,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
 
   async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet): Promise<PilotEvent & { type: 'done'; capped?: true }> {
     runPart.delete(sessionId)
-    // this run's messages start here: an approved plan is read from them (plan-left.ts)
+    // this run's messages start here: an approved plan is read from them, or from the earlier run that approved it
+    // when the person asks to go on with it (plan-left.ts)
     const runStart = messages.length
     const t0 = now()
     const citations: Citation[] = []
@@ -1136,7 +1137,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let callLimited = false
     /**
      * Whether a reply that would end here goes on once, and what the plan approved in this run still needs: features
-     * with no tagged step, or a part with no body (planLeft). It goes on only when the run has steps and tool calls left,
+     * with no tagged step, or a part with no body (planLeft). A plan approved in an earlier run of the chat counts too
+     * while the person's messages since only ask to go on with it ("keep going", "then build it"; carriedPlanFrom). It
+     * goes on only when the run has steps and tool calls left,
      * was not canceled, declined or stopped at its limit, and did not end on the slow_down line or an error (those break
      * out before a reply is read). It ends as it would have with no approved plan, with design.check's stop in force (the
      * fix round is used, so mimir says what is off), or when the reply's last words ask the person for a decision the
