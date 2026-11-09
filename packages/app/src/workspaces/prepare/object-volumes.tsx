@@ -30,7 +30,8 @@ const SHAPES: { value: PrimitiveShape; label: string }[] = [
 ]
 const DOT: Record<VolumeRole, string> = { negative: 'var(--red)', support_blocker: 'var(--orange)', support_enforcer: 'var(--green)', modifier: 'var(--cyan)' }
 
-function ModifierSettings({ objectId, v }: { objectId: string; v: PlateVolumeEntry }) {
+/** The settings a modifier overrides. The search matches a setting's internal key too, but a result shows only its label. */
+export function ModifierSettings({ objectId, v }: { objectId: string; v: PlateVolumeEntry }) {
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
   const layout = useLayout()
@@ -72,7 +73,7 @@ function ModifierSettings({ objectId, v }: { objectId: string; v: PlateVolumeEnt
             {hits.map((d) => (
               <li key={d.key}>
                 <button type="button" onClick={() => { setModifierSetting(objectId, v.id, d.key, config[d.key] ?? d.default); setQuery(''); setAdding(false) }}>
-                  {d.label} <span className="sx-mono sx-dim">{d.key}</span>
+                  {d.label}
                 </button>
               </li>
             ))}
