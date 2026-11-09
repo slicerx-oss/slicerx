@@ -84,6 +84,14 @@ impl Item {
         }
     }
 
+    /// `to_local`, borrowing `m` when the part's frame is the bed's
+    pub(crate) fn as_local<'a>(&self, m: &'a TriMesh) -> Result<std::borrow::Cow<'a, TriMesh>> {
+        if self.transform == IDENTITY {
+            return Ok(std::borrow::Cow::Borrowed(m));
+        }
+        self.to_local(m).map(std::borrow::Cow::Owned)
+    }
+
     pub(crate) fn to_local(&self, m: &TriMesh) -> Result<TriMesh> {
         if self.transform == IDENTITY {
             return Ok(m.clone());
@@ -321,7 +329,12 @@ fn boolean_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value>
     let wb: Vec<TriMesh> = b.iter().map(Item::world).collect();
     let (m, mut r) = boolean::boolean(&wa, &wb, op, &opts)?;
     let m = boolean::tidy(m, &mut r);
-    let m = boolean::storage_mesh(&first.to_local(&m)?)?;
+    let mut local = first.to_local(&m)?;
+    // a needle along a seam (a swept bar's end crossing a face) can lie flat once stored: turn it away and look again
+    let m = boolean::storage_mesh(&local).or_else(|e| {
+        crate::convex::flip_needles_in_faces(&mut local);
+        boolean::storage_mesh(&local).map_err(|_| e)
+    })?;
     let mut v = mesh_report(&m, enc);
     insert(&mut v, "report", to_value(&r)?);
     Ok(v)

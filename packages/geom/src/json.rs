@@ -690,7 +690,7 @@ fn cut_out(it: &crate::json_cad::Item, solids: &[SolidSpec]) -> Result<TriMesh> 
     if out.triangles.is_empty() {
         return Ok(out);
     }
-    let local = it.to_local(&out)?;
+    let local = it.as_local(&out)?;
     if !suspect(&local) || crate::boolean::stores_clean(&local) || !crate::boolean::stores_clean(it.mesh()) {
         return Ok(out);
     }
@@ -704,7 +704,12 @@ fn cut_out(it: &crate::json_cad::Item, solids: &[SolidSpec]) -> Result<TriMesh> 
         crate::boolean::BoolOp::Difference,
         &opts,
     ) {
-        let r = settle(it.to_local(&crate::boolean::tidy(r, &mut report))?);
+        // settled only when it does not store as it is: the weld can close corners the boolean kept apart
+        let r = it.to_local(&crate::boolean::tidy(r, &mut report))?;
+        if crate::boolean::stores_clean(&r) {
+            return Ok(it.to_world(&r));
+        }
+        let r = settle(r);
         if crate::boolean::stores_clean(&r) {
             return Ok(it.to_world(&r));
         }
@@ -712,17 +717,18 @@ fn cut_out(it: &crate::json_cad::Item, solids: &[SolidSpec]) -> Result<TriMesh> 
     Ok(out)
 }
 
-/// true when a cut's result, in the frame it is stored in, is open or has a triangle within a hair of flat at f32
+/// true when a cut's result, as stored, is open, pinched where corners meet at f32, or has a triangle a hair from flat
 #[allow(
     clippy::cast_possible_truncation,
     reason = "rounding to the f32 the result is stored in"
 )]
 fn suspect(m: &TriMesh) -> bool {
-    if !m.edge_report().is_watertight() {
+    if !m.edge_report().is_watertight() || !closed_at_f32(m) {
         return true;
     }
-    // one float step: cuts that fail to store measured from 0 to 0.03 of one, while plate holes, loft channels and stem
-    // bores that store measured 1.5 and more; a crossing is not always this thin, so this only skips the clear cases
+    // one float step, measured, not proven: cuts that fail to store measured from 0 to 0.03 of one, while plate holes,
+    // loft channels and stem bores that store measured 1.5 and more. a crossing with no triangle this thin is not
+    // caught here and is returned as the convex cut left it
     let tol = f32_step(m);
     m.triangles.iter().any(|&t| {
         let [a, b, c] = m.corners(t).map(|p| p.map(|v| f64::from(v as f32)));
@@ -732,6 +738,43 @@ fn suspect(m: &TriMesh) -> bool {
             .fold(0.0, f64::max);
         vec3::len(vec3::tri_normal(a, b, c)) <= tol * long
     })
+}
+
+/// true when the mesh stays closed once corners at the same f32 point are one, as storage welds them
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "rounding to the f32 the result is stored in"
+)]
+fn closed_at_f32(m: &TriMesh) -> bool {
+    let mut ids: std::collections::HashMap<[u32; 3], u32> =
+        std::collections::HashMap::with_capacity(m.positions.len());
+    // + 0.0 keys -0 with 0
+    let v: Vec<u32> = m
+        .positions
+        .iter()
+        .map(|p| {
+            let n = ids.len() as u32;
+            *ids.entry(p.map(|c| (c as f32 + 0.0).to_bits())).or_insert(n)
+        })
+        .collect();
+    // no two corners meet: the mesh is as closed as its indices say
+    if ids.len() == m.positions.len() {
+        return true;
+    }
+    let mut sides: std::collections::HashMap<(u32, u32), u32> =
+        std::collections::HashMap::with_capacity(m.triangles.len() * 3);
+    for t in &m.triangles {
+        let [a, b, c] = t.map(|i| v.get(i as usize).copied().unwrap_or(u32::MAX));
+        if a == b || b == c || a == c {
+            return false;
+        }
+        for side in [(a, b), (b, c), (c, a)] {
+            *sides.entry(side).or_insert(0) += 1;
+        }
+    }
+    sides
+        .iter()
+        .all(|(&(a, b), &n)| n == 1 && sides.get(&(b, a)) == Some(&1))
 }
 
 /// an f32 step at the mesh's largest coordinate
@@ -2075,6 +2118,164 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_pinch_where_corners_meet_at_f32_is_suspect() {
+        // two boxes closed by their indices whose touching faces meet only once rounded to f32: fat triangles only
+        let a = build::box_mesh([120.0, 0.0, 0.0], [130.0, 10.0, 10.0]);
+        assert!(!suspect(&a));
+        let b = build::box_mesh([130.000_002, 0.0, 0.0], [140.0, 10.0, 10.0]);
+        let mut m = a.clone();
+        m.append(&b);
+        assert!(m.edge_report().is_watertight());
+        assert!(suspect(&m));
+        assert!(!crate::boolean::stores_clean(&m));
+    }
+
+    /// the curved drawer handle a build eval made: two posts, a bar swept from one to the other and joined, then a
+    /// screw hole up each post, all in plate millimeters on a part that landed by `off`
+    #[cfg(feature = "cad")]
+    mod landed {
+        use super::*;
+        use crate::fm::Fm as _;
+
+        fn mesh(v: &Value) -> TriMesh {
+            let p: Vec<f64> = serde_json::from_value(v["positions"].clone()).unwrap();
+            let i: Vec<u32> = serde_json::from_value(v["indices"].clone()).unwrap();
+            TriMesh::from_flat(&p, &i).unwrap()
+        }
+
+        /// closed once corners at the same f32 point are one, as the slicer welds the part
+        fn closed(v: &Value) -> bool {
+            let m = mesh(v);
+            m.edge_report().is_watertight() && closed_at_f32(&m)
+        }
+
+        fn frame(off: [f64; 2]) -> Value {
+            json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, off[0], off[1], 0, 1])
+        }
+
+        /// the swept post A and post B in the part's own frame, as the app keeps them
+        fn posts(off: [f64; 2]) -> (Value, Value) {
+            let post = |x: f64| {
+                let mut m = run(
+                    "build",
+                    &json!({ "solids": [{ "type": "cylinder", "origin": [x, 0, 8], "axis": [0, 1, 0],
+                    "diameterMm": 16, "heightMm": 10 }], "withFaces": true }),
+                )["mesh"]
+                    .clone();
+                let p: Vec<f64> = serde_json::from_value(m["positions"].clone()).unwrap();
+                let p: Vec<f64> = p
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| v - [off[0], off[1], 0.0][i % 3])
+                    .collect();
+                m["positions"] = json!(p);
+                m
+            };
+            let n = 0.822_f64.m_hypot(0.569);
+            let swept = run(
+                "sketch.sweep",
+                &json!({ "profile": { "frame": { "origin": [8, 10, 8], "normal": [0.822 / n, 0.569 / n, 0], "u": [0, 0, 1],
+                        "v": [0.569 / n, -0.822 / n, 0] }, "loops": [{ "type": "circle", "center": [0, 0], "diameterMm": 12 }] },
+                    "path": { "frame": { "origin": [0, 0, 0], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] },
+                        "loops": [{ "start": [8, 10], "segments": [{ "type": "arc", "to": [136, 10], "through": [72, 30] }] }] },
+                    "operation": "join", "target": { "mesh": post(8.0), "transform": frame(off) }, "withFaces": true }),
+            );
+            (swept["mesh"].clone(), post(136.0))
+        }
+
+        fn joined(off: [f64; 2]) -> std::result::Result<Value, String> {
+            let (a, b) = posts(off);
+            call(
+                "boolean",
+                &json!({ "op": "union", "a": [{ "mesh": a, "transform": frame(off) }, { "mesh": b, "transform": frame(off) }],
+                    "withFaces": true, "keySalt": 5 })
+                .to_string(),
+            )
+            .map(|s| serde_json::from_str(&s).unwrap())
+            .map_err(|e| e.to_string())
+        }
+
+        fn drilled(body: &Value, off: [f64; 2], xs: &[f64]) -> Value {
+            let solids: Vec<Value> = xs
+                .iter()
+                .map(|x| json!({ "type": "cylinder", "origin": [x, -1, 8], "axis": [0, 1, 0], "diameterMm": 4.5, "heightMm": 9 }))
+                .collect();
+            run(
+                "subtract",
+                &json!({ "mesh": { "mesh": body, "transform": frame(off) }, "solids": solids, "withFaces": true }),
+            )
+        }
+
+        #[test]
+        fn the_drawer_handle_s_screw_holes_leave_it_closed_where_it_landed() {
+            // landed by (128, 123), the bar's end face corners sit near y -113, where a float step is 7.6e-6: cuts
+            // that left two corners 2.75e-6 apart there stored them as one, and five edges took four triangles each
+            let off = [128.0, 123.0];
+            let body = joined(off).unwrap();
+            let a = drilled(&body["mesh"], off, &[8.0]);
+            let b = drilled(&a["mesh"], off, &[136.0]);
+            assert!(closed(&b["mesh"]));
+            assert!(closed(&drilled(&body["mesh"], off, &[8.0, 136.0])["mesh"]));
+        }
+
+        #[test]
+        fn the_drawer_handle_s_bar_joins_its_post_wherever_it_landed() {
+            // the bar ends square on post B's end face, at its center: the join leaves needles along that seam, and
+            // at these landings one lay flat once stored, so the join was refused for collapsed triangles
+            let keys = |u: &Value| {
+                let mut k: Vec<u64> = serde_json::from_value(u["mesh"]["faces"]["keys"].clone()).unwrap();
+                k.sort_unstable();
+                k.dedup();
+                k
+            };
+            // the needle is turned only within its face, so every keyed face is there as where nothing needed turning
+            let kept = keys(&joined([128.0, 123.0]).unwrap());
+            assert!(kept.len() > 3, "{kept:?}");
+            for off in [
+                [64.0, 128.0],
+                [9.599, 111.013],
+                [31.693, 57.149],
+                [219.768, 74.14],
+            ] {
+                let u = joined(off).unwrap_or_else(|e| panic!("landed at {off:?}: {e}"));
+                assert!(closed(&u["mesh"]), "landed at {off:?}");
+                assert_eq!(keys(&u), kept, "landed at {off:?}");
+            }
+        }
+
+        #[test]
+        fn drain_holes_up_a_planter_s_floor_and_axis_leave_it_closed_where_it_landed() {
+            let body = run(
+                "sketch.revolve",
+                &json!({ "frame": { "origin": [0, 0, 0], "normal": [0, -1, 0], "u": [1, 0, 0], "v": [0, 0, 1] },
+                    "loops": [{ "points": [[0, 0], [60, 0], [60, 100], [57, 100], [57, 3], [0, 3]] }],
+                    "axis": { "point": [0, 0], "direction": [0, 1] }, "angleDeg": 360, "operation": "new" }),
+            );
+            for off in [[128.0, 128.0], [0.0, 0.0]] {
+                // five d6 holes through the 3 mm floor, one along the axis the planter was turned about
+                let solids: Vec<Value> = [[0.0, 0.0], [30.0, 0.0], [-30.0, 0.0], [0.0, 30.0], [0.0, -30.0]]
+                    .iter()
+                    .map(|c| json!({ "type": "cylinder", "origin": [c[0] + off[0], c[1] + off[1], -1], "axis": [0, 0, 1],
+                        "diameterMm": 6, "heightMm": 6 }))
+                    .collect();
+                let cut = run(
+                    "subtract",
+                    &json!({ "mesh": { "mesh": body["mesh"], "transform": frame(off) }, "solids": solids, "withFaces": true }),
+                );
+                assert!(closed(&cut["mesh"]), "landed at {off:?}");
+                // 110038 with four edges of four triangles before the bore fallback, 3260 landed now
+                let n = cut["triangles"].as_u64().unwrap();
+                assert!(
+                    n <= 5400 && (off[0] == 0.0 || n <= 3400),
+                    "landed at {off:?}: {n}"
+                );
+                let removed = cut["removedVolumeMm3"].as_f64().unwrap();
+                assert!((removed - 420.5646).abs() < 1e-3, "landed at {off:?}: {removed}");
+            }
+        }
+    }
+
     /// a bore or channel cut by the subtract tool into a turned or lofted part, then a rod joined after it
     #[cfg(feature = "cad")]
     mod turned {
@@ -2159,8 +2360,8 @@ mod tests {
                 stem["triangles"].as_u64().unwrap(),
                 b["triangles"].as_u64().unwrap(),
             );
-            // 15854 now
-            assert!(after * 10 < before * 11, "{before} became {after}");
+            // 15898 now, kept as the boolean left it when that already stores
+            assert!(after < 16_000, "{before} became {after}");
             assert_eq!(b["watertight"], true);
             // through the outer wall into the bore, and from inside the wall
             rods_join(&b, 124.0, 20.0);

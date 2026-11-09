@@ -340,7 +340,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const subtract = defineTool({
     name: 'geom.subtract',
-    version: '1.2.0',
+    version: '1.2.1',
     source: 'command',
     permission: 'slice',
     description: `Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. Writes an STL and returns the removed volume. ${solidsHelp}`,
