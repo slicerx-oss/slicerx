@@ -220,6 +220,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-settings-section` | A section header in the open tab, with `data-section` (`tab/section`) and `aria-expanded`; it folds the section to a summary line |
 | `slice-settings-changed` | The changed chip over the tabs: lists only changed settings, from every tab |
 | `slice-settings-pins` | Pinned settings, above the tabs |
+| `slice-settings-printer-fixes` | Under a settings search: Printer settings that help with the searched problem; each row opens that setting in Printer settings |
 | `slice-tower-atlas` | Under the Prime tower switch in the Color tab: where atlas puts the tower; `data-auto` is `true` while atlas places it, `false` once set by hand (with Place automatically) |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong`; the picked tile's tooltip gives about how long and how much from the last slice, or "Updating the estimate." |
 | `slice-estimate` | The Slice sidebar footer: the estimate line over the main action; `data-stale` while it updates |
