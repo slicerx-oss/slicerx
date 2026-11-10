@@ -8,6 +8,6 @@ Downloads:
 
 `SHA256SUMS.txt` has the checksums, and `downloads.json` lists the same files for the site.
 
-Print watch (failure detection from your printer's camera) is included and runs locally with the SigLIP2 model from the watch-model-v1 release. On Macs it runs on Apple Silicon only, since ONNX Runtime has no Intel Mac build.
+Print watch (failure detection from your printer's camera) is included and runs locally with the SigLIP2 model from the watch-model-v2 release. On Macs it runs on Apple Silicon only, since ONNX Runtime has no Intel Mac build.
 
 Built from public main at {{commit}}.
