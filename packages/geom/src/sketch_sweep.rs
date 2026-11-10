@@ -24,6 +24,10 @@ const MAX_POINTS: usize = 1_000_000;
 const MIN_START_DEG: f64 = 1.0;
 /// The shortest step between two path points, mm.
 const MIN_STEP_MM: f64 = 1e-6;
+/// How near a path's points must be to one cylinder or cone for it to wind about that axis, mm.
+const AXIS_TOL_MM: f64 = 0.01;
+/// The fewest points that pin a path to an axis: one more than a quadric takes.
+const AXIS_MIN_POINTS: usize = 10;
 
 /// The path of a sweep: one open chain of lines, arcs and splines drawn on a plane (the bed when `frame` is absent), or an
 /// open polyline of points in space, taken as a smooth curve through them when `smooth`.
@@ -247,11 +251,13 @@ fn fractions(pts: &[V3]) -> Vec<f64> {
     at
 }
 
-/// The solid swept from `profile` along `path`: the profile keeps its place and turn relative to the path (a rotation
-/// minimizing frame, so it does not twist about the path), with ruled sides between path points and flat caps. At each
-/// corner of the path the sides meet on the plane halfway between the two directions, so a path of straight lines
-/// sweeps exact prisms and a flattened arc follows the arc. The profile does not need to touch the path; it is carried
-/// as it sits relative to the path's start.
+/// The solid swept from `profile` along `path`: the profile keeps its place and turn relative to the path, with ruled
+/// sides between path points and flat caps. A path of points that winds one way about a fixed axis (a helix, or any
+/// path on one cylinder or cone about it) turns the profile about that axis with the path, so a helix sweep comes back
+/// to itself each turn. Any other path carries it in a rotation minimizing frame, so it does not twist about the path,
+/// and at each corner the sides meet on the plane halfway between the two directions: a path of straight lines sweeps
+/// exact prisms and a flattened arc follows the arc. The profile does not need to touch the path; it is carried as it
+/// sits relative to the path's start.
 pub fn sweep(profile: &Profile, path: &Path) -> Result<TriMesh> {
     sweep_with(profile, path, None, &Law::default())
 }
@@ -271,6 +277,12 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>, law
     }
     law.check()?;
     let (pts, t_start, t_end) = path_points(path)?;
+    // only a path of points leaves its plane; the given points, before smoothing or steps cut them
+    let axis = if path.points.is_empty() {
+        None
+    } else {
+        axis_of(&path.points)
+    };
     let frame = profile
         .frame
         .unwrap_or_else(|| FaceFrame::bed([0.0, 0.0]))
@@ -327,6 +339,9 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>, law
     // profile's plane in a copy of it stretched by at most the arc's own flattening tolerance. Each ring takes the law
     // on the carried points before they go onto its plane.
     let carry = |flat: &[V2]| -> Result<(Vec<Vec<V3>>, Frame)> {
+        if let Some((on, dir)) = axis {
+            return about_axis(flat, &frame, &pts, &at, law, (on, dir), facing, tangents[m - 2]);
+        }
         let lead = |v: V3| turned(v, t_start, tangents[0]);
         let mut offs: Vec<V3> = flat
             .iter()
@@ -421,6 +436,338 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>, law
         ));
     }
     Ok(mesh)
+}
+
+/// The rings and end frame of a sweep about the axis through `on` along `dir`: each ring is the profile, with the law
+/// taken as at the start, turned about the axis as far as its path point and carried to it. Nothing is transported,
+/// so a helix comes back to itself each turn.
+#[allow(clippy::too_many_arguments, reason = "the sweep's own pieces")]
+fn about_axis(
+    flat: &[V2],
+    frame: &Frame,
+    pts: &[V3],
+    at: &[f64],
+    law: &Law,
+    (on, dir): (V3, V3),
+    facing: f64,
+    last: V3,
+) -> Result<(Vec<Vec<V3>>, Frame)> {
+    let offs: Vec<V3> = flat
+        .iter()
+        .map(|&p| vec3::sub(frame.at(p, 0.0), pts[0]))
+        .collect();
+    let fo = vec3::sub(frame.origin, pts[0]);
+    // the twist turns the profile in its own plane, about its normal the way the path goes
+    let along = vec3::scale(frame.w, facing.signum());
+    let mut rings = Vec::with_capacity(pts.len());
+    let (mut angle, mut was) = (0.0, vec3::sub(pts[0], on));
+    let mut turn = |k: usize| {
+        let r = vec3::sub(pts[k], on);
+        angle += vec3::dot(vec3::cross(was, r), dir)
+            .m_atan2(vec3::dot(was, r) - vec3::dot(was, dir) * vec3::dot(r, dir));
+        was = r;
+        angle
+    };
+    for k in 0..pts.len() {
+        let a = turn(k);
+        rings.push(
+            law.shape(&offs, at[k], fo, (frame.u, frame.v), along)
+                .into_iter()
+                .map(|o| vec3::add(pts[k], spun(o, dir, a)))
+                .collect(),
+        );
+    }
+    let a = angle;
+    let end = Frame {
+        origin: vec3::add(pts[pts.len() - 1], spun(fo, dir, a)),
+        u: spun(frame.u, dir, a),
+        v: spun(frame.v, dir, a),
+        w: spun(frame.w, dir, a),
+    };
+    across(last, end.w, facing)?;
+    Ok((rings, end))
+}
+
+/// `v` turned by `a` radians about the unit direction `k`.
+fn spun(v: V3, k: V3, a: f64) -> V3 {
+    let (s, c) = a.m_sin_cos();
+    vec3::add(
+        vec3::add(vec3::scale(v, c), vec3::scale(vec3::cross(k, v), s)),
+        vec3::scale(k, vec3::dot(k, v) * (1.0 - c)),
+    )
+}
+
+/// The axis (a point on it and its unit direction) that a path of points winds about, or None when it does not: its
+/// points lie within `AXIS_TOL_MM` of one cylinder or cone, go one way round the axis and do not lie on one plane.
+/// The axis is the best fit of a cylinder, else a cone, from two guesses; the points are then checked against it.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    reason = "point counts are capped far below 2^52; one fit and its check"
+)]
+fn axis_of(given: &[V3]) -> Option<(V3, V3)> {
+    let n = given.len();
+    if n < AXIS_MIN_POINTS {
+        return None;
+    }
+    // centered and scaled to about 1, so the quadric's terms weigh alike
+    let mid = vec3::scale(
+        given.iter().fold([0.0; 3], |s, &p| vec3::add(s, p)),
+        1.0 / n as f64,
+    );
+    let size = given
+        .iter()
+        .fold(0.0f64, |s, &p| s.max(vec3::len(vec3::sub(p, mid))));
+    if size <= AXIS_TOL_MM {
+        return None;
+    }
+    let q: Vec<V3> = given
+        .iter()
+        .map(|&p| vec3::scale(vec3::sub(p, mid), 1.0 / size))
+        .collect();
+    // a flat path keeps the rotation minimizing frame, which does not turn on a plane
+    let mut cov = [[0.0; 3]; 3];
+    for p in &q {
+        for (i, row) in cov.iter_mut().enumerate() {
+            for (j, c) in row.iter_mut().enumerate() {
+                *c += p[i] * p[j];
+            }
+        }
+    }
+    let (val, vec) = eigen(cov);
+    let low = (0..3).fold(0, |b, i| if val[i] < val[b] { i } else { b });
+    let normal = [vec[0][low], vec[1][low], vec[2][low]];
+    if q.iter()
+        .all(|&p| vec3::dot(p, normal).abs() * size <= AXIS_TOL_MM)
+    {
+        return None;
+    }
+    // a first guess at the axis from the quadric through the points; a short arc leaves it loose, so it is refined
+    let mut big = [[0.0; 10]; 10];
+    for p in &q {
+        let [x, y, z] = *p;
+        let row = [x * x, y * y, z * z, x * y, y * z, z * x, x, y, z, 1.0];
+        for (i, line) in big.iter_mut().enumerate() {
+            for (j, c) in line.iter_mut().enumerate() {
+                *c += row[i] * row[j];
+            }
+        }
+    }
+    let (val, vec) = eigen(big);
+    let low = (0..10).fold(0, |b, i| if val[i] < val[b] { i } else { b });
+    let c: [f64; 10] = std::array::from_fn(|i| vec[i][low]);
+    let quad = [
+        [c[0], c[3] / 2.0, c[5] / 2.0],
+        [c[3] / 2.0, c[1], c[4] / 2.0],
+        [c[5] / 2.0, c[4] / 2.0, c[2]],
+    ];
+    // a quadric of revolution has two equal eigenvalues; the axis is the third's vector
+    let (val, vec) = eigen(quad);
+    let mut order = [0, 1, 2];
+    order.sort_by(|&i, &j| val[i].total_cmp(&val[j]));
+    let [l0, l1, l2] = order.map(|i| val[i]);
+    let one = if l1 - l0 < l2 - l1 { order[2] } else { order[0] };
+    // and a second from the way the path bends, which leans to the axis as it winds round it
+    let bend = q.windows(3).fold([0.0; 3], |s, w| {
+        vec3::add(s, vec3::cross(vec3::sub(w[1], w[0]), vec3::sub(w[2], w[1])))
+    });
+    // the fit runs on at most 256 of the points; the check below takes them all
+    let every = n.div_ceil(256);
+    let few: Vec<V3> = q
+        .iter()
+        .step_by(every)
+        .copied()
+        .chain(q.last().copied())
+        .collect();
+    let starts = [
+        Some([vec[0][one], vec[1][one], vec[2][one]]),
+        vec3::normalize(bend),
+    ];
+    // a cylinder first, since a cone can lean to fit a short arc of one; then a cone
+    [false, true].into_iter().find_map(|cone| {
+        let (_, dir, at) = starts
+            .into_iter()
+            .flatten()
+            .filter_map(|d| refined(&few, d, cone))
+            .min_by(|a, b| a.0.total_cmp(&b.0))?;
+        winds_about(given, vec3::add(mid, vec3::scale(at, size)), dir)
+    })
+}
+
+/// The axis through `on` along `dir` when the points wind about it: their distance from it runs straight with the
+/// height along it within `AXIS_TOL_MM`, none is on it, and they go one way round.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "point counts are capped far below 2^52"
+)]
+fn winds_about(given: &[V3], on: V3, dir: V3) -> Option<(V3, V3)> {
+    let n = given.len();
+    let polar: Vec<(f64, f64, V3)> = given
+        .iter()
+        .map(|&p| {
+            let d = vec3::sub(p, on);
+            let h = vec3::dot(d, dir);
+            let r = vec3::sub(d, vec3::scale(dir, h));
+            (h, vec3::len(r), r)
+        })
+        .collect();
+    let (sh, sr) = polar.iter().fold((0.0, 0.0), |(a, b), &(h, r, _)| (a + h, b + r));
+    let (hm, rm) = (sh / n as f64, sr / n as f64);
+    let (shh, shr) = polar.iter().fold((0.0, 0.0), |(a, b), &(h, r, _)| {
+        (a + (h - hm) * (h - hm), b + (h - hm) * (r - rm))
+    });
+    let slope = if shh > 0.0 { shr / shh } else { 0.0 };
+    let off = polar
+        .iter()
+        .fold(0.0f64, |w, &(h, r, _)| w.max((r - rm - slope * (h - hm)).abs()));
+    if off > AXIS_TOL_MM || polar.iter().any(|&(_, r, _)| r <= 10.0 * AXIS_TOL_MM) {
+        return None;
+    }
+    let way: Vec<f64> = polar
+        .windows(2)
+        .map(|w| vec3::dot(vec3::cross(w[0].2, w[1].2), dir))
+        .collect();
+    let one_way = way.iter().all(|&s| s > 0.0) || way.iter().all(|&s| s < 0.0);
+    one_way.then_some((on, dir))
+}
+
+/// The axis direction near `start` that the points `q` lie round most nearly, by a pattern search over directions: the
+/// fit's squared residual, the direction and a point on the axis.
+fn refined(q: &[V3], start: V3, cone: bool) -> Option<(f64, V3, V3)> {
+    let (mut best, mut at) = round_about(q, start, cone)?;
+    let (mut dir, mut step) = (start, 0.05);
+    for _ in 0..4000 {
+        if step < 1e-10 {
+            break;
+        }
+        let e1 = vec3::any_perpendicular(dir);
+        let e2 = vec3::cross(dir, e1);
+        let tried = [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)]
+            .into_iter()
+            .find_map(|(a, b)| {
+                let d = vec3::normalize(vec3::add(
+                    dir,
+                    vec3::add(vec3::scale(e1, a * step), vec3::scale(e2, b * step)),
+                ))?;
+                let (r, c) = round_about(q, d, cone)?;
+                (r < best).then_some((r, d, c))
+            });
+        match tried {
+            Some((r, d, c)) => (best, dir, at) = (r, d, c),
+            None => step /= 2.0,
+        }
+    }
+    Some((best, dir, at))
+}
+
+/// The cylinder (or with `cone`, the cone) about direction `dir` nearest the points `q`, by least squares across the
+/// axis (x^2 + y^2 = 2 cx x + 2 cy y + k0, plus k1 z + k2 z^2 for a cone): its squared residual and the point where the
+/// axis crosses the plane through the origin.
+#[allow(clippy::many_single_char_names, reason = "the fit's own terms")]
+fn round_about(q: &[V3], dir: V3, cone: bool) -> Option<(f64, V3)> {
+    let used = if cone { 5 } else { 3 };
+    let u = vec3::any_perpendicular(dir);
+    let v = vec3::cross(dir, u);
+    let terms = |p: V3| {
+        let (x, y, z) = (vec3::dot(p, u), vec3::dot(p, v), vec3::dot(p, dir));
+        ([2.0 * x, 2.0 * y, 1.0, z, z * z], x * x + y * y)
+    };
+    let mut m = [[0.0; 6]; 5];
+    for &p in q {
+        let (row, t) = terms(p);
+        for (i, line) in m.iter_mut().enumerate().take(used) {
+            for (j, c) in line.iter_mut().take(used).enumerate() {
+                *c += row[i] * row[j];
+            }
+            line[5] += row[i] * t;
+        }
+    }
+    // the terms a cylinder leaves out solve to 0
+    for (i, line) in m.iter_mut().enumerate().skip(used) {
+        line[i] = 1.0;
+    }
+    let k = solved(m)?;
+    let r = q
+        .iter()
+        .map(|&p| {
+            let (row, t) = terms(p);
+            (t - (0..5).map(|i| row[i] * k[i]).sum::<f64>()).m_powi(2)
+        })
+        .sum();
+    Some((r, vec3::add(vec3::scale(u, k[0]), vec3::scale(v, k[1]))))
+}
+
+/// The solution of a 5 by 5 system given as rows with the right hand side last, by elimination with the largest
+/// pivot, or None when it is singular.
+#[allow(clippy::needless_range_loop, reason = "elimination reads two rows at once")]
+fn solved(mut m: [[f64; 6]; 5]) -> Option<[f64; 5]> {
+    let scale = m
+        .iter()
+        .fold(0.0f64, |s, r| r.iter().take(5).fold(s, |s, c| s.max(c.abs())));
+    for col in 0..5 {
+        let piv = (col..5).max_by(|&a, &b| m[a][col].abs().total_cmp(&m[b][col].abs()))?;
+        if m[piv][col].abs() <= 1e-14 * scale {
+            return None;
+        }
+        m.swap(col, piv);
+        for r in col + 1..5 {
+            let f = m[r][col] / m[col][col];
+            for c in col..6 {
+                m[r][c] -= f * m[col][c];
+            }
+        }
+    }
+    let mut x = [0.0; 5];
+    for r in (0..5).rev() {
+        let s: f64 = (r + 1..5).map(|c| m[r][c] * x[c]).sum();
+        x[r] = (m[r][5] - s) / m[r][r];
+    }
+    Some(x)
+}
+
+/// The eigenvalues and unit eigenvectors (as columns) of a symmetric matrix, by cyclic Jacobi.
+#[allow(
+    clippy::needless_range_loop,
+    reason = "a rotation reads two rows or columns at once"
+)]
+fn eigen<const N: usize>(mut a: [[f64; N]; N]) -> ([f64; N], [[f64; N]; N]) {
+    let mut v = [[0.0; N]; N];
+    for (i, row) in v.iter_mut().enumerate() {
+        row[i] = 1.0;
+    }
+    for _ in 0..64 {
+        let off: f64 = (0..N)
+            .map(|i| (i + 1..N).map(|j| a[i][j] * a[i][j]).sum::<f64>())
+            .sum();
+        let diag: f64 = (0..N).map(|i| a[i][i] * a[i][i]).sum();
+        if off <= 1e-30 * diag.max(f64::MIN_POSITIVE) {
+            break;
+        }
+        for p in 0..N {
+            for q in p + 1..N {
+                if a[p][q].abs() < f64::MIN_POSITIVE {
+                    continue;
+                }
+                let theta = (a[q][q] - a[p][p]) / (2.0 * a[p][q]);
+                let t = theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt());
+                let c = 1.0 / (t * t + 1.0).sqrt();
+                let s = t * c;
+                for k in 0..N {
+                    let (x, y) = (a[k][p], a[k][q]);
+                    (a[k][p], a[k][q]) = (c * x - s * y, s * x + c * y);
+                }
+                for k in 0..N {
+                    let (x, y) = (a[p][k], a[q][k]);
+                    (a[p][k], a[q][k]) = (c * x - s * y, s * x + c * y);
+                }
+                for row in &mut v {
+                    let (x, y) = (row[p], row[q]);
+                    (row[p], row[q]) = (c * x - s * y, s * x + c * y);
+                }
+            }
+        }
+    }
+    (std::array::from_fn(|i| a[i][i]), v)
 }
 
 /// The profile with points added along each edge whose side quads bow out of their plane by more than the arc
@@ -1346,5 +1693,279 @@ mod tests {
             err(&sq, &near),
             "sweep: the swept body runs into itself where the path comes back near itself; move those parts of the path further apart or use a smaller profile"
         );
+    }
+
+    /// `turns` turns of a right hand helix about z through the origin, `per` points a turn.
+    #[allow(clippy::cast_precision_loss, reason = "a few hundred points")]
+    fn helix(r: f64, pitch: f64, turns: usize, per: usize) -> Vec<V3> {
+        (0..=turns * per)
+            .map(|i| {
+                let t = 2.0 * PI * i as f64 / per as f64;
+                let (s, c) = t.m_sin_cos();
+                [r * c, r * s, pitch * t / (2.0 * PI)]
+            })
+            .collect()
+    }
+
+    /// A thread tooth on the axial plane at radius `r`: 3.5 wide at the root, 2.1 tall, 60 degree flanks.
+    fn tooth(r: f64) -> Profile {
+        let f = FaceFrame::for_normal([r, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap();
+        on(
+            f,
+            Loop {
+                points: vec![[0.0, -1.75], [2.1, -0.5375], [2.1, 0.5375], [0.0, 1.75]],
+                ..Loop::default()
+            },
+        )
+    }
+
+    /// The roll of ring `k` (root to crest against the radial way, in degrees) and the tilt of its plane out of the
+    /// axial plane, read from the mesh. Rings are `n` points; the two nearest the axis are the root.
+    fn roll_and_tilt(m: &TriMesh, n: usize, k: usize, at: V3) -> (f64, f64) {
+        let ring = &m.positions[k * n..(k + 1) * n];
+        let radial = |p: V3| p[0].m_hypot(p[1]);
+        let mut by: Vec<V3> = ring.to_vec();
+        by.sort_by(|a, b| radial(*a).total_cmp(&radial(*b)));
+        let mid = |a: V3, b: V3| vec3::scale(vec3::add(a, b), 0.5);
+        let d = vec3::sub(mid(by[2], by[3]), mid(by[0], by[1]));
+        let er = vec3::normalize([at[0], at[1], 0.0]).unwrap();
+        let roll = vec3::dot(d, [0.0, 0.0, 1.0])
+            .m_atan2(vec3::dot(d, er))
+            .to_degrees();
+        let mut nn = [0.0; 3];
+        for i in 0..n {
+            nn = vec3::add(nn, vec3::cross(ring[i], ring[(i + 1) % n]));
+        }
+        let et = [-er[1], er[0], 0.0];
+        let tilt = vec3::dot(vec3::normalize(nn).unwrap(), et)
+            .abs()
+            .min(1.0)
+            .m_acos()
+            .to_degrees();
+        (roll, tilt)
+    }
+
+    #[test]
+    fn a_helix_sweep_comes_back_to_itself_each_turn() {
+        // the profile keeps its angle to the helix's axis: no roll about the path, no tilt out of the axial plane
+        for (pitch, turns, per) in [(4.0, 5, 48), (4.0, 5, 400), (20.0, 3, 48), (20.0, 3, 72)] {
+            let pts = helix(35.0, pitch, turns, per);
+            let m = sweep(&tooth(35.0), &points(&pts)).unwrap();
+            closed(&m);
+            for turn in 1..=turns {
+                let (roll, tilt) = roll_and_tilt(&m, 4, turn * per, pts[turn * per]);
+                assert!(
+                    roll.abs() < 0.05,
+                    "pitch {pitch} at {per} a turn: roll {roll} at turn {turn}"
+                );
+                assert!(
+                    tilt < 0.05,
+                    "pitch {pitch} at {per} a turn: tilt {tilt} at turn {turn}"
+                );
+            }
+        }
+    }
+
+    /// The mesh's size and sums over its corners, to pin a sweep to what it was.
+    #[allow(clippy::cast_precision_loss, reason = "counts are small")]
+    fn print_of(m: &TriMesh) -> [f64; 6] {
+        let mut f = [
+            m.positions.len() as f64,
+            m.triangles.len() as f64,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        for p in &m.positions {
+            f[2] += p[0];
+            f[3] += p[1];
+            f[4] += p[2];
+            f[5] += p[0] * p[1] + p[1] * p[2] + p[2] * p[0];
+        }
+        f
+    }
+
+    #[test]
+    #[allow(clippy::unreadable_literal, reason = "the sums as the sweep printed them")]
+    fn other_paths_keep_the_frame_they_had() {
+        // a flat arc, a flat s bend, a smooth curve in space and a polyline in space sweep as they did before
+        let r = 3.0;
+        let flat = FaceFrame::for_normal([20.0, 0.0, 0.0], [0.0, 1.0, 0.0]).unwrap();
+        let arc_path = chain([20.0, 0.0], vec![arc([0.0, 0.0], 120.0)]);
+        let s_path = chain([20.0, 0.0], vec![arc([0.0, 0.0], 90.0), arc([0.0, 40.0], -90.0)]);
+        let space = [
+            [0.0, 0.0, 0.0],
+            [10.0, 6.0, 12.0],
+            [22.0, -6.0, 20.0],
+            [30.0, 4.0, 34.0],
+            [44.0, 0.0, 40.0],
+        ];
+        let leaves = vec3::normalize(vec3::sub(space[1], space[0])).unwrap();
+        let tilted = FaceFrame::for_normal([0.0, 0.0, 0.0], leaves).unwrap();
+        let curve = Path {
+            points: space.to_vec(),
+            smooth: true,
+            ..Path::default()
+        };
+        let cases = [
+            sweep(&on(flat, circle([0.0, 0.0], 2.0 * r)), &arc_path).unwrap(),
+            sweep(&on(flat, square([0.0, 0.0], 4.0)), &s_path).unwrap(),
+            sweep(&on(tilted, circle([0.0, 0.0], 2.0 * r)), &curve).unwrap(),
+            sweep(&on(tilted, square([0.0, 0.0], 4.0)), &points(&space)).unwrap(),
+        ];
+        // from the sweep before the helix frame
+        let was = [
+            [
+                2744.0,
+                5484.0,
+                22506.054119394597,
+                38981.62921268628,
+                6.997049181565228e-13,
+                189652.73912062356,
+            ],
+            [
+                292.0,
+                580.0,
+                3.979039320256561e-13,
+                5840.000000000002,
+                0.0,
+                -37913.953320301625,
+            ],
+            [
+                7896.0,
+                15788.0,
+                163471.62326801222,
+                6909.8089869642145,
+                168735.32569914495,
+                4699384.602534944,
+            ],
+            [20.0, 36.0, 424.0, 16.000000000000004, 424.0, 13867.968212479322],
+        ];
+        for (k, (m, w)) in cases.iter().zip(was).enumerate() {
+            closed(m);
+            let f = print_of(m);
+            for (a, b) in f.iter().zip(w) {
+                assert!(
+                    (a - b).abs() <= 1e-9 * b.abs().max(1.0),
+                    "case {k}: {f:?} vs {w:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "timing, run with --release --ignored"]
+    fn timing_of_a_helix_sweep() {
+        for per in [48, 400] {
+            let pts = helix(35.0, 4.0, 5, per);
+            let mut best = f64::MAX;
+            for _ in 0..7 {
+                let t0 = std::time::Instant::now();
+                let m = sweep(&tooth(35.0), &points(&pts)).unwrap();
+                best = best.min(t0.elapsed().as_secs_f64());
+                assert!(!m.triangles.is_empty());
+            }
+            let t0 = std::time::Instant::now();
+            assert!(axis_of(&pts).is_some());
+            println!(
+                "helix 5 turns at {per} a turn: {:.1} ms, finding its axis {:.2} ms",
+                best * 1e3,
+                t0.elapsed().as_secs_f64() * 1e3
+            );
+        }
+    }
+
+    #[test]
+    fn a_helix_or_cone_winds_about_its_axis_and_other_paths_do_not() {
+        let near = |got: Option<(V3, V3)>, at: V3, dir: V3| {
+            let (on, d) = got.expect("an axis");
+            assert!(vec3::len(vec3::cross(d, dir)) < 1e-9, "{d:?}");
+            assert!(vec3::len(vec3::cross(vec3::sub(on, at), dir)) < 1e-6, "{on:?}");
+        };
+        near(axis_of(&helix(35.0, 4.0, 5, 48)), [0.0; 3], [0.0, 0.0, 1.0]);
+        near(axis_of(&helix(35.0, 20.0, 1, 12)), [0.0; 3], [0.0, 0.0, 1.0]);
+        // a conical spring, and a helix moved and laid along x
+        let cone: Vec<V3> = helix(20.0, 5.0, 4, 36)
+            .into_iter()
+            .map(|p| {
+                let k = 1.0 - p[2] / 40.0;
+                [p[0] * k, p[1] * k, p[2]]
+            })
+            .collect();
+        near(axis_of(&cone), [0.0; 3], [0.0, 0.0, 1.0]);
+        let laid: Vec<V3> = helix(8.0, 3.0, 3, 24)
+            .into_iter()
+            .map(|p| [p[2] + 5.0, p[0] - 2.0, p[1] + 7.0])
+            .collect();
+        near(axis_of(&laid), [5.0, -2.0, 7.0], [1.0, 0.0, 0.0]);
+        // points typed to two places still wind about it
+        let typed: Vec<V3> = helix(35.0, 4.0, 2, 24)
+            .into_iter()
+            .map(|p| p.map(|c| (c * 100.0).round() / 100.0))
+            .collect();
+        assert!(axis_of(&typed).is_some());
+        // a flat spiral, a flat arc, a curve in space and too few points keep the transported frame
+        let flat: Vec<V3> = helix(10.0, 1.0, 2, 24)
+            .into_iter()
+            .map(|p| [p[0] * (1.0 + p[2]), p[1] * (1.0 + p[2]), 0.0])
+            .collect();
+        assert!(axis_of(&flat).is_none());
+        let arc: Vec<V3> = helix(10.0, 0.0, 1, 24).into_iter().take(20).collect();
+        assert!(axis_of(&arc).is_none());
+        let space: Vec<V3> = (0..30)
+            .map(|i| {
+                let t = f64::from(i) / 3.0;
+                [t * 4.0, 6.0 * t.m_sin(), 2.0 * t + 0.3 * t * t]
+            })
+            .collect();
+        assert!(axis_of(&space).is_none());
+        assert!(axis_of(&helix(35.0, 4.0, 1, 8)).is_none());
+    }
+
+    #[test]
+    fn twist_and_taper_ride_on_the_helix_frame() {
+        let pts = helix(35.0, 4.0, 5, 48);
+        let law = Law {
+            scale_end: Scale::Even(0.5),
+            twist_deg: 90.0,
+            ease: Ease::Linear,
+        };
+        let m = sweep_with(&tooth(35.0), &points(&pts), None, &law).unwrap();
+        closed(&m);
+        // the tooth halved about its origin and turned a quarter in its own plane, on the axial plane after 5 turns
+        for [x, z] in [[0.0, -1.75], [2.1, -0.5375], [2.1, 0.5375], [0.0, 1.75]] {
+            let want = [35.0 + 0.5 * z, 0.0, 20.0 - 0.5 * x];
+            assert!(
+                m.positions.iter().any(|&p| vec3::len(vec3::sub(p, want)) < 1e-9),
+                "{want:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_partial_helix_turns_the_profile_about_its_axis() {
+        // a quarter turn rising 5 mm in 12 points, as a handle might: it winds about z, so the end ring is the start
+        // ring turned a quarter about z and lifted, not rolled about the path as a transported frame leaves it
+        let pts: Vec<V3> = (0..12)
+            .map(|i| {
+                let t = PI / 2.0 * f64::from(i) / 11.0;
+                let (s, c) = t.m_sin_cos();
+                [35.0 * c, 35.0 * s, 20.0 * t / (2.0 * PI)]
+            })
+            .collect();
+        let (on, dir) = axis_of(&pts).unwrap();
+        assert!(vec3::len(vec3::cross(dir, [0.0, 0.0, 1.0])) < 1e-6, "{dir:?}");
+        assert!(on[0].m_hypot(on[1]) < 1e-4, "{on:?}");
+        let m = sweep(&tooth(35.0), &points(&pts)).unwrap();
+        closed(&m);
+        for [x, z] in [[0.0, -1.75], [2.1, -0.5375], [2.1, 0.5375], [0.0, 1.75]] {
+            let want = [0.0, 35.0 + x, 5.0 + z];
+            let near = m.positions[11 * 4..]
+                .iter()
+                .map(|&p| vec3::len(vec3::sub(p, want)))
+                .fold(f64::MAX, f64::min);
+            assert!(near < 1e-6, "{want:?} is {near} mm off");
+        }
     }
 }
