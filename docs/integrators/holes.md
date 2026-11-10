@@ -19,7 +19,7 @@ The entry has to be a flat face square to the axis, and the hole's whole circle 
 - a circle that runs off the face, or onto a step or a round face
 - an axis more than 1 degree off square to the face
 - an axis line that meets no part
-- a hole already on that axis line: the refusal names it, and `slicerx_geom_hole_edit` changes it
+- a hole already on that axis line where the new one would start: the refusal names it, and `slicerx_geom_hole_edit` changes it. A wider hole round the line, such as a cup's bore over a drain hole in its floor, is not in the way
 
 ### What it makes
 
@@ -44,7 +44,7 @@ The answer has `hole`, the hole as made and measured on the new body:
 | `kind` | `through` or `blind` |
 | `head` | `none`, `counterbore` or `countersink`, with its sizes |
 
-On a design the cut is a `shape.extrude` step, a circle on the entry face cut into it, the step Extrude with Cut makes, so it replays when an earlier step changes and its depth edits with `slicerx_design_edit_step`. A counterbore or a countersink is a second cut on the same face after it, named `Counterbore <diameter> mm` or `Countersink <diameter> mm`: a wider circle as deep as the counterbore, or a circle narrowing to the hole with its sides drafted by half the cone's angle. When the head cannot go on, the cut is taken back off and the call is refused. Both steps carry `feature` when it is given. On an STL the answer also has the new `mesh` with its volume and whether it is closed.
+On a design the cut is a `shape.extrude` step, a circle on the entry face cut into it, the step Extrude with Cut makes, so it replays when an earlier step changes and its depth edits with `slicerx_design_edit_step`. A counterbore or a countersink is a second cut on the same face after it, named `Counterbore <diameter> mm` or `Countersink <diameter> mm`: a wider circle as deep as the counterbore, or a circle narrowing to the hole with its sides drafted by half the cone's angle. When the head cannot go on, the cut is taken back off and the call is refused. A hole the engine cannot read back as one, such as one that runs out through a round face, keeps its steps, and `hole` is `null` with a note in the summary. Both steps carry `feature` when it is given. On an STL the answer also has the new `mesh` with its volume and whether it is closed.
 
 ### Example
 
