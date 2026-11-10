@@ -14,7 +14,7 @@ export interface ShellBridge {
 }
 
 export async function tauriBridge(): Promise<ShellBridge> {
-  const [{ invoke }, { listen }] = await Promise.all([import('@tauri-apps/api/core'), import('@tauri-apps/api/event')])
+  const [{ invoke }, { listen }] = await Promise.all([import('./invoke'), import('@tauri-apps/api/event')])
   return { invoke, listen: (event, cb) => listen(event, () => cb()) }
 }
 

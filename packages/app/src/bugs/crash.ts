@@ -28,6 +28,12 @@ export interface NativeCrashes {
   os: string
 }
 
+/**
+ * Where the app runs from, as a crash report says it: a coarse label, never a path. A report of a rejection with no
+ * stack carries it, so an app moved or ejected while it ran is told apart from a code bug.
+ */
+export type RunsFrom = 'Applications folder' | 'disk image' | 'elsewhere' | 'elsewhere (moved by macOS on first open)' | 'its resources are missing (moved or ejected while it ran)'
+
 /** The desktop shell's side of crash reporting (apps/desktop/src/host/crash.ts). */
 export interface CrashHost {
   /**
@@ -43,6 +49,10 @@ export interface CrashHost {
    * it clears it, so it is read once (project/view-crash.ts).
    */
   recovery?(): Promise<ViewCrash | null>
+  /** The name of the last shell command that failed, never its arguments; null when none has. */
+  lastFailedCommand?(): string | null
+  /** Where the app runs from, read when a report needs it. */
+  runsFrom?(): Promise<RunsFrom>
 }
 
 let crashHost: CrashHost | null = null

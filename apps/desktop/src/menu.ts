@@ -5,7 +5,7 @@
 // replacing it would show a bar with menus missing, or none, for a frame. The shell patches the menus that
 // differ, greys items in and out, and hands picks of command items back here as `sx-menu` events.
 import type { CommandEntry, MenuEntry, MenuSection, NativeMenu } from '@slicerx/app'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './host/invoke'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import shellMenus from '../src-tauri/menu.json'

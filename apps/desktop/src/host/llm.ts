@@ -4,7 +4,8 @@
 // credential; Rust adds the ChatGPT plan's token or the API key. Only response bytes come back, plus the
 // model mimir cloud names in its reply.
 import type { LlmHttpRequest, LlmTransport } from '@slicerx/contracts'
-import { Channel, invoke } from '@tauri-apps/api/core'
+import { Channel } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 type Chunk = { kind: 'model'; model: string } | { kind: 'data'; b64: string } | { kind: 'error'; status: number; message: string; code?: string } | { kind: 'end' }
 

@@ -6,7 +6,7 @@ import type { Host, PrintConfig } from '@slicerx/contracts'
 import { EASY_DEFAULTS, readPreview } from '@slicerx/contracts'
 import { applyEasy, defaultConfig } from '@slicerx/settings'
 import { DEFAULT_MODEL, DEMO_MODELS } from '@slicerx/app'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './host/invoke'
 
 export async function runProbe(host: Host): Promise<void> {
   if (!(await invoke<boolean>('probe_enabled'))) return

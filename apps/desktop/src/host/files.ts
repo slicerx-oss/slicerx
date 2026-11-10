@@ -4,7 +4,7 @@
 // and bytes. Drag and drop onto the window uses the same code as the browser.
 import type { FileHost, FileRef } from '@slicerx/contracts'
 import { createWebFiles } from '@slicerx/web/host/files'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 import { listen } from '@tauri-apps/api/event'
 
 /** `startEngine` starts the geometry engine for a file handed over at launch, as soon as the shell names it. */

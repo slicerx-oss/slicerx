@@ -12,7 +12,7 @@ import { logTail, note, previousLogTail, startLogCapture, unloadedCleanly } from
 import { enqueue, flush, supabaseSender, type FlushResult, type SendResult, type Sender } from './outbox'
 import { browserFromUserAgent, finishReport, LIMITS, osFromUserAgent, type BugReport, type RawReport } from './report'
 
-export { nativeCrashHost, registerCrashHost, type CrashHost, type NativeCrash, type NativeCrashes } from './crash'
+export { nativeCrashHost, registerCrashHost, type CrashHost, type NativeCrash, type NativeCrashes, type RunsFrom } from './crash'
 
 const MAX_CRASHES_PER_SESSION = 5
 /** Errors browsers raise that are not crashes of ours. */
@@ -171,12 +171,57 @@ async function queueCrash(raw: Omit<RawReport, 'appVersion' | 'commit' | 'os' | 
  * an error boundary.
  */
 export function reportCrash(error: unknown, o: CrashInfo = {}): void {
-  if (o.rejection && !(error instanceof Error)) error = messageOf(error).title.replace(/^Non-error thrown: /, 'Unhandled rejection: ')
+  // a rejection whose reason is no Error has no stack: the report carries what is known about it instead
+  const bare = o.rejection && !(error instanceof Error)
+  const reason = error
+  if (bare) error = messageOf(error).title.replace(/^Non-error thrown: /, 'Unhandled rejection: ')
   const { title, stack } = messageOf(error)
   if (NOISE.test(title.replace(/^Error: /, ''))) return
   const fullStack = [stack, o.componentStack ? `Component stack:${o.componentStack}` : null].filter(Boolean).join('\n\n') || null
   note(`Crash${o.where ? ` (${o.where})` : ''}: ${title}`)
-  void queueCrash({ kind: 'crash', title, body: crashBody(o.where ? `Automatic crash report: ${o.where}.` : 'Automatic crash report.'), stack: fullStack, logTail: logTail() }).catch(() => undefined)
+  const what = o.where ? `Automatic crash report: ${o.where}.` : 'Automatic crash report.'
+  const log = logTail()
+  void (async () => queueCrash({ kind: 'crash', title, body: crashBody(what, bare ? await rejectionFacts(reason) : []), stack: fullStack, logTail: log }))().catch(() => undefined)
+}
+
+/** A reason's type in words: "string", "null", "array", "object (Object)", "object (DOMException)". */
+function typeOfReason(v: unknown): string {
+  if (v === null) return 'null'
+  if (Array.isArray(v)) return 'array'
+  if (typeof v !== 'object') return typeof v
+  const name = (Object.getPrototypeOf(v) as { constructor?: { name?: unknown } } | null)?.constructor?.name
+  return `object (${typeof name === 'string' && name ? name : 'no prototype'})`
+}
+
+/** How long a report waits for where the app runs from before it says unknown. */
+const RUNS_FROM_MS = 1000
+
+/**
+ * What a report of a rejection with no stack carries: the reason and its type, the shell command that failed last (by
+ * name; the shell never hands over its arguments), and where the app runs from (a coarse label). The command is read
+ * before the place, whose own lookup may fail.
+ */
+async function rejectionFacts(reason: unknown): Promise<string[]> {
+  const host = nativeCrashHost()
+  const lines = [`Reason: ${messageOf(reason).title.replace(/^Non-error thrown: /, '')}`, `Reason type: ${typeOfReason(reason)}`]
+  if (!host) return ['', ...lines]
+  let command: string | null = null
+  try {
+    command = host.lastFailedCommand?.() ?? null
+  } catch {
+    command = null
+  }
+  lines.push(`Last failed shell command: ${command ?? 'none recorded'}`)
+  let place = 'unknown'
+  if (host.runsFrom) {
+    try {
+      place = await Promise.race([host.runsFrom(), new Promise<string>((ok) => setTimeout(() => ok('unknown'), RUNS_FROM_MS))])
+    } catch {
+      place = 'unknown'
+    }
+  }
+  lines.push(`Runs from: ${place}`)
+  return ['', ...lines]
 }
 
 /** Queues what the shell recorded since the last launch, and a report when the web view reloaded by itself. */

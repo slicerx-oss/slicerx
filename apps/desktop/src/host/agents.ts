@@ -4,7 +4,7 @@
 // agent credential in the keychain, and running the client's install step. Tauri commands in
 // src-tauri/src/agents.rs; the credential itself never reaches this side.
 import { appName, type AgentInstallHost } from '@slicerx/app'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 /** The hub's key and address, for the install steps the Rust side builds itself. */
 async function hubInfo(): Promise<{ hubKey: string; linkUrl: string }> {

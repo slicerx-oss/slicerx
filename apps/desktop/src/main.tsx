@@ -70,7 +70,7 @@ if (__SX_FEATURE_CONNECT__) {
     return hasOfficialMark(maker) ? <OfficialMark slug={maker} size={size} on={on} title={vendor} /> : <MakerTile maker={maker} size={size} />
   })
   // A printer's own web page opens in the system browser; the shell checks it is on the local network.
-  const [{ registerPrinterPageOpener }, { invoke }] = await Promise.all([import('@slicerx/app'), import('@tauri-apps/api/core')])
+  const [{ registerPrinterPageOpener }, { invoke }] = await Promise.all([import('@slicerx/app'), import('./host/invoke')])
   registerPrinterPageOpener((url) => invoke('printer_page_open', { url }))
 }
 
@@ -89,7 +89,7 @@ if (__SX_FEATURE_PILOT__) {
 
 // The desktop app starts its own bridge and connects to it.
 if (__SX_FEATURE_CONNECT__) {
-  const [{ setBridgeConnector }, { shellBridge }, { invoke }] = await Promise.all([import('@slicerx/app'), import('@slicerx/web/host/link'), import('@tauri-apps/api/core')])
+  const [{ setBridgeConnector }, { shellBridge }, { invoke }] = await Promise.all([import('@slicerx/app'), import('@slicerx/web/host/link'), import('./host/invoke')])
   setBridgeConnector(shellBridge(() => invoke<{ url: string; code: string; hubKey: string }>('link_start'), editionFromBuild().backend.relay))
   // Phone access keeps its identity and pairings sealed by the shell, with a key in the system keychain.
   const [{ setPairStorage, sealedPairStores }, { tauriDocStore }] = await Promise.all([import('@slicerx/app'), import('./host/pair-doc')])
@@ -131,7 +131,7 @@ if (__SX_FEATURE_PILOT__) {
 
 // On Linux the shell reads the real GL renderer, which WebKit hides from the page (gl_renderer is null elsewhere).
 {
-  const [{ registerShellGpu }, { invoke }] = await Promise.all([import('@slicerx/app'), import('@tauri-apps/api/core')])
+  const [{ registerShellGpu }, { invoke }] = await Promise.all([import('@slicerx/app'), import('./host/invoke')])
   registerShellGpu(() => invoke<string | null>('gl_renderer'))
 }
 
@@ -209,7 +209,7 @@ createRoot(el).render(
 // while this page says there is something to lose; any other close exits without waiting on the page.
 void (async () => {
   try {
-    const [{ listen }, { invoke }, { confirmDiscard, onDirtyChange }] = await Promise.all([import('@tauri-apps/api/event'), import('@tauri-apps/api/core'), import('@slicerx/app')])
+    const [{ listen }, { invoke }, { confirmDiscard, onDirtyChange }] = await Promise.all([import('@tauri-apps/api/event'), import('./host/invoke'), import('@slicerx/app')])
     onDirtyChange((unsaved) => void invoke('unsaved_set', { unsaved }))
     await listen('sx-close-requested', async () => {
       if (await confirmDiscard('quit')) await invoke('quit_app')
@@ -220,6 +220,6 @@ void (async () => {
 })()
 
 // SX_PROBE=1 runs only: the probe and the settings data it imports stay out of the startup chunk.
-void import('@tauri-apps/api/core')
+void import('./host/invoke')
   .then(({ invoke }) => invoke<boolean>('probe_enabled'))
   .then((on) => (on ? import('./probe').then(({ runProbe }) => runProbe(host)) : undefined))
