@@ -213,7 +213,7 @@ Drawing. The Smart Head (black body with the orange front and the coil strip low
 | Purge collector and wiper beside the bed's front right corner (X 258, Y 15, wipe to Y 40 and back to 22) | no source; Prusa names the collector and wiper but not where they are | estimated |
 | The bed drops 2 mm for the change | no source | estimated |
 | Motion limits, retraction, z hop, clearances: copied from the plain Core One | `machine.json` `prusa-core-one` (the maker's profile) | copied, assumed unchanged by the kit |
-| Start and end G-code: the plain Core One's, except the first tool pick after homing, the first tool's values instead of the first slot's, the chamber heating spot X 242 Y 10, the limited mesh area at Y 2, the purge start X 247 Y 2 and the end park X 242 Y 200 | `gcode.json` `maker_prusa_core_one`; the changes are ours | changes estimated |
+| Start and end G-code: the plain Core One's, except the first tool pick after homing, the first tool's values instead of the first slot's, the chamber heating spot X 242 Y 10, the limited mesh area at Y 2, the purge start X 247 Y 2, the probe area by the purge line at X 148 to 248 and the end park X 242 Y 200 | `gcode.json` `maker_prusa_core_one`; the changes are ours | changes estimated |
 | `M555` print area line | kept from the Core One, declares Y -4 | estimated |
 | `M862.3 P "COREONE"` model check | kept from the Core One; the INDX model string is unknown, and a wrong string fails safe with a firmware prompt | estimated |
 | Change G-code: a comment, `T` and `M109` for the new tool, no move | written for SlicerX | the firmware's behavior on `T` assumed |
