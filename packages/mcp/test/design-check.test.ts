@@ -10,7 +10,7 @@ import { designNamed, type Design as HostDesign, type DesignHost } from '@slicer
 import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
-import { createPlanRegistry, designCheck, FIX_ROUNDS, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
+import { createPlanRegistry, designCheck, FIX_ROUNDS, hasHookLip, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
 import { createCardPlans } from '../src/tab-tools'
 import { designToolset, NO_ENGINE_HOST } from '../src/toolset'
 import { connect, data, text } from './helpers'
@@ -885,6 +885,74 @@ describe('the tool list says when the design tools refuse', () => {
     expect(d).toContain('is checked only after slicerx_geom_fit_check has run on the design as it is now')
     expect(d).toContain('whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer')
     expect(tool('geom.fit_check').description).toContain('slicerx_design_check of a plan with printInPlace waits for this check')
+  })
+})
+
+// a headphone stand's plan, as the build eval's runs make it: a hook among the features and a lip in their names
+const stand: PartPlan = {
+  planId: 'stand-1',
+  part: 'Headphone stand',
+  units: 'mm',
+  features: [
+    { name: 'Base', kind: 'extrude', sizes: { diameter: 110, thickness: 12 } },
+    { name: 'Stem', kind: 'loft', sizes: { height: 150, wall: 2.5 } },
+    { name: 'Curved hook', kind: 'sweep', sizes: { reach: 60, lip_height: 15 } },
+  ],
+  assumptions: [],
+  questions: [],
+}
+
+/** A closed round column from z0 to z1 around (cx, cy), r0 in radius at the bottom and r1 at the top, 48 sides. */
+function columnTris(cx: number, cy: number, z0: number, z1: number, r0: number, r1: number): Tri[] {
+  const n = 48
+  const at = (k: number, z: number, r: number): number[] => [cx + r * Math.cos((2 * Math.PI * k) / n), cy + r * Math.sin((2 * Math.PI * k) / n), z]
+  const tris: Tri[] = []
+  for (let k = 0; k < n; k++) {
+    const [b0, b1, t0, t1] = [at(k, z0, r0), at(k + 1, z0, r0), at(k, z1, r1), at(k + 1, z1, r1)]
+    tris.push([b0, b1, t1], [b0, t1, t0], [[cx, cy, z0], b1, b0], [[cx, cy, z1], t0, t1])
+  }
+  return tris
+}
+
+/**
+ * A stand of one part: a base 110 mm across, a stem tapering from 30 to 22 mm up to 162 mm, an arm out of its side
+ * 10 mm below its top reaching 60 mm, and with `lip`, a lip 15 mm up at the arm's end.
+ */
+const standDesign = (lip: boolean): HostDesign => {
+  const tris = [...columnTris(128, 128, 0, 12, 55, 55), ...columnTris(128, 128, 12, 162, 15, 11), ...boxTris([137, 122, 146], [196, 134, 158]), ...(lip ? boxTris([186, 122, 158], [196, 134, 173]) : [])]
+  return { id: 'd1', name: 'Headphone stand', history: { version: 1, base: [], steps: [] }, transform: IDENTITY, parts: [{ name: 'Headphone stand', slot: 0, ...meshOf(tris) }], status: [], madeBy: {}, redo: [] } as unknown as HostDesign
+}
+
+describe('design.check holds a planned hook with a lip to a tip that rises', () => {
+  const body: BodyFacts = { size: { x: 110, y: 110, z: 173 }, holes: [], features: 3, steps: ['Base', 'Stem', 'Curved hook'], tags: ['Base', 'Stem', 'Curved hook'], watertight: true, minWallMm: 2.5 }
+
+  it('reads a hook with a lip from the names, kinds and sizes of the plan', () => {
+    expect(hasHookLip(stand)).toBe(true)
+    // a lip as a feature of its own, or the hook in a kind
+    expect(hasHookLip({ ...stand, features: [{ name: 'Arm', kind: 'hook sweep', sizes: { reach: 60 } }, { name: 'Soft lips', sizes: { height: 15 } }] })).toBe(true)
+    // a hook with no lip (a cable hook's J), or a lip with no hook (a phone stand's), is not one
+    expect(hasHookLip({ ...stand, features: [{ name: 'J hook', kind: 'sweep', sizes: { radius: 20 } }] })).toBe(false)
+    expect(hasHookLip({ ...stand, features: [{ name: 'Front lip', kind: 'extrude', sizes: { height: 10 } }] })).toBe(false)
+  })
+
+  it('fails a tip that does not rise, and passes one that rises 3 mm or more', () => {
+    const flat = designCheck(stand, { ...body, hookTipRiseMm: 0 }, 0.4)
+    expect(failed(flat)).toEqual(['hook lip'])
+    expect(flat.items.at(-1)).toEqual({ name: 'hook lip', want: "the hook's tip rises at least 3 mm above the hook's lowest point toward its end", got: 'rises 0 mm', pass: false })
+    expect(designCheck(stand, { ...body, hookTipRiseMm: 2.9 }, 0.4).pass).toBe(false)
+    expect(designCheck(stand, { ...body, hookTipRiseMm: 15 }, 0.4).pass).toBe(true)
+    // no hook out past the stem fails too
+    expect(designCheck(stand, { ...body, hookTipRiseMm: null }, 0.4).items.at(-1)).toMatchObject({ got: 'no hook reaches out past the stem', pass: false })
+    // a part with no upright stem to read, or a plan with no lip, has no such item
+    expect(designCheck(stand, body, 0.4).items.map((i) => i.name)).not.toContain('hook lip')
+    const bare = { ...stand, features: stand.features.map((f) => ({ ...f, sizes: { reach: 60 } })) }
+    expect(designCheck(bare, { ...body, hookTipRiseMm: 0 }, 0.4).items.map((i) => i.name)).not.toContain('hook lip')
+  })
+
+  it("reads the hook off the built stand's stem: a tip with no lip fails, one with its lip passes", async () => {
+    const check = async (lip: boolean) => (await checkOn([standDesign(lip)], (p) => p.put(stand), { planId: 'stand-1' })).out as unknown as { items: { name: string; got: string; pass: boolean }[] }
+    expect((await check(false)).items.find((i) => i.name === 'hook lip')).toMatchObject({ got: 'rises 0 mm', pass: false })
+    expect((await check(true)).items.find((i) => i.name === 'hook lip')).toMatchObject({ got: 'rises 15 mm', pass: true })
   })
 })
 
