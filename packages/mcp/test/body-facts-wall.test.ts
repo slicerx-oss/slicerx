@@ -5,7 +5,13 @@
 // stand 0 mm from such facets, so both failed "minimum wall" though their walls were 1.1 mm and more, and mimir could
 // not call either finished. A planter with 3 mm walls read 0.025 mm the same way, from a needle at a drain hole rim,
 // and a swept spout with a 1.6 mm wall read 0.067 mm from the rays beside its slanted tip, which leave along the bore.
+// It also skips a flat patch narrower than 0.01 mm across: a toy rocket's nose cone joined flush onto its body, both
+// on one 25 mm circle with 256 and 160 sides, left strips under the cone microns wide that read a 0.004 mm wall.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
+import { minWall as creativeWall } from '../evals/creative/mesh-checks'
 import { minWall } from '../src/body-facts'
 
 type V = [number, number, number]
@@ -66,6 +72,56 @@ describe('the thinnest wall', () => {
     expect(minWall([box(20, 2, 0.4)]).mm).toBeCloseTo(0.4, 3)
   })
 
+  it('a closed strip 2 mm wide and 0.3 mm thick still reads 0.3 mm', () => {
+    expect(minWall([box(20, 2, 0.3)]).mm).toBeCloseTo(0.3, 3)
+  })
+
+  it('a toy rocket whose cone was joined flush onto its body reads its 5 mm fins, not the seam ledge under the cone', () => {
+    // the body as the engine stored it: a 160-sided body and a 256-sided cone base on one 25 mm circle at z = 100. Where
+    // the cone runs outside the body, the join leaves strips facing down under it, up to 0.0048 mm wide and 0.32 mm2 in
+    // all; their rays meet the cone's slope 0.004 mm up. The thinnest wall after them is the fins.
+    const rocket = JSON.parse(gunzipSync(readFileSync(join(__dirname, 'fixtures', 'toy-rocket-seam-ledge.json.gz'))).toString('utf8')) as { positions: number[]; indices: number[] }
+    expect(minWall([rocket]).mm).toBeCloseTo(5, 3)
+    // the creative eval reads the same wall with its stricter leaving cosine
+    expect(creativeWall([part(rocket)])).toMatchObject({ minWallMm: 5, how: 'every facet' })
+  })
+
+  it('a ledge strip 0.004 mm wide reads no wall, and the same 0.004 mm gap under a 5 mm wide face does', () => {
+    // a flat strip facing down 5 mm long in ten pieces (each too stubby to be a needle), under a facet 0.004 mm over
+    // it that its rays leave through
+    const ledge = (wide: number): V[][] => {
+      const strip: V[][] = []
+      for (let i = 0; i < 10; i++) {
+        const a: V = [i * 0.5, 0, 0]
+        const b: V = [i * 0.5 + 0.5, 0, 0]
+        const c: V = [i * 0.5 + 0.5, wide, 0]
+        const d: V = [i * 0.5, wide, 0]
+        strip.push([a, c, b], [a, d, c])
+      }
+      const over: V[] = [[-1, -1, 0.004], [7, -1, 0.004], [3, 7, 0.004]]
+      return [...strip, over]
+    }
+    // the face over the strip reads the 3.004 mm down to the far side
+    expect(minWall([mesh([...ledge(0.004), FAR])]).mm).toBeCloseTo(3.004, 4)
+    expect(minWall([mesh([...ledge(5), FAR])]).mm).toBeCloseTo(0.004, 4)
+  })
+
+  it('a plate 0.004 mm thick and 5 mm wide reads 0.004 mm, also when its top is cut in slivers each under 0.01 mm wide', () => {
+    expect(minWall([box(5, 20, 0.004)]).mm).toBeCloseTo(0.004, 4)
+    // 500 strips 0.01 mm wide across the top, two facets each, so no facet is wide on its own: together they are one
+    // flat patch 5 mm by 2 mm, and its 0.004 mm wall still counts
+    const top: V[][] = []
+    for (let i = 0; i < 500; i++) {
+      const x0 = i * 0.01
+      const x1 = (i + 1) * 0.01
+      top.push([[x0, 0, 0.004], [x1, 0, 0.004], [x1, 2, 0.004]], [[x0, 0, 0.004], [x1, 2, 0.004], [x0, 2, 0.004]])
+    }
+    const bottom: V[][] = [[[0, 0, 0], [5, 2, 0], [5, 0, 0]], [[0, 0, 0], [0, 2, 0], [5, 2, 0]]]
+    const r = minWall([mesh([...top, ...bottom])])
+    expect(r.mm).toBeCloseTo(0.004, 4)
+    expect(creativeWall([part(mesh([...top, ...bottom]))]).minWallMm).toBeCloseTo(0.004, 4)
+  })
+
   it('a wedge tapering to a knife edge, whose top and bottom share that edge, reads its thin wall', () => {
     // 10 mm long, 20 mm wide, 0.4 mm tall at x = 0 down to nothing at x = 10
     const p: V[] = [[0, 0, 0], [10, 0, 0], [0, 20, 0], [10, 20, 0], [0, 0, 0.4], [0, 20, 0.4]]
@@ -107,6 +163,9 @@ describe('the thinnest wall', () => {
     expect(minWall([mesh([top, slant(0.35, 0.41), beside, FAR])]).mm).toBeCloseTo(0.41, 3)
   })
 })
+
+/** A mesh as the creative eval takes a part. */
+const part = (m: { positions: number[]; indices: number[] }) => ({ name: 'Part', slot: 1, positions: new Float32Array(m.positions), indices: new Uint32Array(m.indices) })
 
 /** A closed box from the origin, outward facing, two facets a side. */
 function box(x: number, y: number, z: number) {

@@ -4,8 +4,8 @@
 // them), whether each part is closed (welded by position, as geom.info and the slicer read it), its round holes (the
 // inner loops of its flat faces, as geom.faces finds them, each measured with the engine's hole finder as geom.measure
 // and geom.hole do), its feature steps with the planned feature each was tagged with, and its thinnest wall (a ray
-// from each facet inward to the far side, through a grid of the facets, within a budget) and, when asked, the hook on
-// its upright stem (hook-lip.ts).
+// from each facet inward to the far side, through a grid of the facets, within a budget, skipping slivers and ledges
+// a join leaves) and, when asked, the hook on its upright stem (hook-lip.ts).
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import type { BodyFacts, FitLimits } from './design-check'
@@ -262,7 +262,8 @@ const MAX_ENTRIES = 4_000_000
  * the same part it meets on the far side. The shortest such distance over every part. Each part's facets sit in a
  * uniform grid, so a ray only tests the facets of the cells it passes through. Over the budget (too many facets, or too
  * long) the reading is null with why "part too dense". A far facet counts when the ray leaves through it at a cosine
- * over `leaving` to its normal (GRAZE unless given).
+ * over `leaving` to its normal (GRAZE unless given). Needles, specks and flat patches narrower than LEDGE_MM across
+ * measure no wall.
  */
 export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now(), leaving = GRAZE): WallReading {
   const facets = meshes.reduce((n, m) => n + Math.floor(m.indices.length / 3), 0)
@@ -283,6 +284,16 @@ export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGE
 const NEEDLE = 1e-3
 /** A facet whose longest edge is under this, in mm, is a speck no nozzle prints: it measures no wall. */
 const SPECK_MM = 0.01
+/**
+ * A flat patch narrower than this, in mm, across its narrow way measures no wall: a ledge a flush join leaves where two
+ * rims of different facet counts meet on one circle, a strip microns wide but as long as the rim. Its width, not its
+ * thickness, is what makes it no wall: a real wall 0.004 mm thick and millimeters wide still reads 0.004 mm.
+ */
+const LEDGE_MM = 0.01
+/** Facets edge to edge whose normals are within about 2 degrees of the reading facet's are one flat patch with it. */
+const FLAT_COS = Math.cos((2 * Math.PI) / 180)
+/** A patch of more facets than this is wide enough to be a wall, without measuring it. */
+const PATCH_MAX = 2048
 
 /** Whether facets `a` and `b` (offsets into `tri`) share an edge: two corners at the same place. */
 function shareEdge(tri: Float64Array, a: number, b: number): boolean {
@@ -377,6 +388,8 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, leaving: numb
   }
   // the ray each facet was last tested against, so a facet in several cells is tested once per ray
   const tested = new Int32Array(tris).fill(-1)
+  // whether each facet's flat patch is narrower than LEDGE_MM: 0 not measured yet, 1 narrow, 2 wide
+  const flat = new Int8Array(tris)
   let best = bestSoFar
   for (let t = 0; t < tris; t++) {
     if ((t & 255) === 0 && late()) return null
@@ -454,10 +467,129 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, leaving: numb
     // A ray that meets a facet from outside has crossed air, not material: the gap between two bodies, or a facet whose
     // normal points out. A ray that grazes the facet runs along a face: from a sliver at its edge, or from beside an edge
     // where two faces meet near a right angle, such as the rim of a tube cut at a slant, where it reads how near it
-    // starts to that edge. Neither is a wall.
-    if (leaves && hit < best) best = hit
+    // starts to that edge. Neither is a wall. Nor is a reading from a flat patch narrower than LEDGE_MM across (asked
+    // only of a reading that would win).
+    if (leaves && hit < best && !narrow(t)) best = hit
   }
   return best
+
+  /**
+   * Whether facet `seed` lies in a flat patch narrower than LEDGE_MM across. The patch is the facets reached edge to edge
+   * from it whose normals are within FLAT_COS of its own (against the seed's, not chained, so a curved surface never
+   * joins up). Its width is twice the farthest any of its corners, edge middles and facet centers lies from its
+   * boundary (the edges no other facet of the patch shares): a strip reads its width however long or curved it is, and
+   * a face millimeters wide has points far inside it. A patch whose area is over its boundary length times LEDGE_MM is
+   * wide without that measure (every point of a narrow one is within LEDGE_MM / 2 of the boundary). The answer holds
+   * for every facet of the patch, so each patch is measured once.
+   */
+  function narrow(seed: number): boolean {
+    const known = flat[seed]!
+    if (known !== 0) return known === 1
+    // a facet whose own center is half the width inside its own edges is in a wide patch: the patch's boundary is
+    // those edges or lies past them
+    if (deepInside(tri, seed)) {
+      flat[seed] = 2
+      return false
+    }
+    const n = unitNormal(tri, seed * 9)
+    const members = [seed]
+    const inPatch = new Set(members)
+    for (let k = 0; k < members.length && members.length <= PATCH_MAX; k++) {
+      const u = members[k]!
+      const [a0, z0] = range(u, 0, cs0, n0)
+      const [a1, z1] = range(u, 1, cs1, n1)
+      const [a2, z2] = range(u, 2, cs2, n2)
+      for (let c2 = a2; c2 <= z2; c2++)
+        for (let c1 = a1; c1 <= z1; c1++)
+          for (let c0 = a0; c0 <= z0; c0++) {
+            const c = (c2 * n1 + c1) * n0 + c0
+            for (let q = start[c]!; q < start[c + 1]!; q++) {
+              const f = items[q]!
+              if (inPatch.has(f)) continue
+              const nf = unitNormal(tri, f * 9)
+              if (nf[0] * n[0] + nf[1] * n[1] + nf[2] * n[2] > FLAT_COS && shareEdge(tri, u * 9, f * 9)) {
+                inPatch.add(f)
+                members.push(f)
+              }
+            }
+          }
+    }
+    const thin = members.length <= PATCH_MAX && patchNarrow(tri, members)
+    for (const f of members) flat[f] = thin ? 1 : 2
+    return thin
+  }
+}
+
+/** The unit normal of the facet at `tri[at]`, or zeros for a facet with no area. */
+function unitNormal(tri: Float64Array, at: number): V3 {
+  const e10 = tri[at + 3]! - tri[at]!
+  const e11 = tri[at + 4]! - tri[at + 1]!
+  const e12 = tri[at + 5]! - tri[at + 2]!
+  const e20 = tri[at + 6]! - tri[at]!
+  const e21 = tri[at + 7]! - tri[at + 1]!
+  const e22 = tri[at + 8]! - tri[at + 2]!
+  const nx = e11 * e22 - e12 * e21
+  const ny = e12 * e20 - e10 * e22
+  const nz = e10 * e21 - e11 * e20
+  const l = Math.hypot(nx, ny, nz)
+  return l > 1e-30 ? [nx / l, ny / l, nz / l] : [0, 0, 0]
+}
+
+/** Whether the flat patch of facets `members` is narrower than LEDGE_MM across (see partWall's narrow). */
+function patchNarrow(tri: Float64Array, members: readonly number[]): boolean {
+  const at = (f: number, j: number): V3 => [tri[f * 9 + j * 3]!, tri[f * 9 + j * 3 + 1]!, tri[f * 9 + j * 3 + 2]!]
+  const key = (p: V3, q: V3): string => {
+    const a = `${p[0]},${p[1]},${p[2]}`
+    const b = `${q[0]},${q[1]},${q[2]}`
+    return a < b ? `${a}|${b}` : `${b}|${a}`
+  }
+  // each edge of the patch with how many of its facets have it
+  const edges = new Map<string, { p: V3; q: V3; n: number }>()
+  let area = 0
+  for (const f of members) {
+    const c = [at(f, 0), at(f, 1), at(f, 2)] as const
+    area += len(cross(sub(c[1], c[0]), sub(c[2], c[0]))) / 2
+    for (let j = 0; j < 3; j++) {
+      const p = c[j]!
+      const q = c[(j + 1) % 3]!
+      const k = key(p, q)
+      const e = edges.get(k)
+      if (e) e.n++
+      else edges.set(k, { p, q, n: 1 })
+    }
+  }
+  const rim = [...edges.values()].filter((e) => e.n === 1)
+  const perimeter = rim.reduce((s, e) => s + len(sub(e.q, e.p)), 0)
+  if (perimeter <= 0 || area > perimeter * LEDGE_MM) return false
+  const half = LEDGE_MM / 2
+  // whether `x` is at least half the width from every boundary edge: a point that deep makes the patch wide
+  const deep = (x: V3): boolean => rim.every((e) => segmentDistance(x, e.p, e.q) >= half)
+  for (const f of members) {
+    const c = [at(f, 0), at(f, 1), at(f, 2)] as const
+    if (deep(scale([c[0][0] + c[1][0] + c[2][0], c[0][1] + c[1][1] + c[2][1], c[0][2] + c[1][2] + c[2][2]], 1 / 3))) return false
+  }
+  for (const e of edges.values()) {
+    if (deep(e.p) || deep(e.q)) return false
+    if (e.n > 1 && deep(scale([e.p[0] + e.q[0], e.p[1] + e.q[1], e.p[2] + e.q[2]], 0.5))) return false
+  }
+  return true
+}
+
+/** Whether the center of the facet at `tri[f * 9]` lies at least LEDGE_MM / 2 from each of its edges. */
+function deepInside(tri: Float64Array, f: number): boolean {
+  const c = [0, 1, 2].map((j) => [tri[f * 9 + j * 3]!, tri[f * 9 + j * 3 + 1]!, tri[f * 9 + j * 3 + 2]!] as V3)
+  const [a, b, d] = c as [V3, V3, V3]
+  const mid: V3 = [(a[0] + b[0] + d[0]) / 3, (a[1] + b[1] + d[1]) / 3, (a[2] + b[2] + d[2]) / 3]
+  const half = LEDGE_MM / 2
+  return segmentDistance(mid, a, b) >= half && segmentDistance(mid, b, d) >= half && segmentDistance(mid, d, a) >= half
+}
+
+/** The distance from `x` to the segment from `p` to `q`. */
+function segmentDistance(x: V3, p: V3, q: V3): number {
+  const d = sub(q, p)
+  const dd = dot(d, d)
+  const s = dd > 0 ? Math.min(1, Math.max(0, dot(sub(x, p), d) / dd)) : 0
+  return len(sub(x, [p[0] + d[0] * s, p[1] + d[1] * s, p[2] + d[2] * s]))
 }
 
 /**
