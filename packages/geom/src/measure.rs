@@ -299,8 +299,14 @@ fn fit_circle_2d(pts: &[V2]) -> Option<(V2, f64, f64)> {
         suvv += u * v * v;
         svuu += v * u * u;
     }
+    // det is the product of the spreads along the points' two principal directions, zero in theory for points on a
+    // line, but rounding leaves up to about 1e-16 of (suu + svv)^2, the total spread squared, which does not depend on
+    // how the line is turned (suu * svv would not do: a line along an axis whose mean rounds off it has svv tiny but
+    // uncorrelated with u). under 1e-12 of (suu + svv)^2 counts as a line; it rejects only arcs turning less than a few
+    // millionths of a radian across their points
     let det = suu * svv - suv * suv;
-    if det.abs() < 1e-18 {
+    let spread = suu + svv;
+    if det.abs() <= 1e-12 * spread * spread {
         return None;
     }
     let b1 = f64::midpoint(suuu, suvv);
@@ -1180,5 +1186,74 @@ mod tests {
             .collect();
         let (c, r, e) = fit_circle_2d(&pts).unwrap();
         assert!((c[0] - 3.0).abs() < 1e-9 && (c[1] + 1.0).abs() < 1e-9 && (r - 5.0).abs() < 1e-9 && e < 1e-9);
+    }
+
+    /// `n` points from `a` to `b`, each rounded on its own
+    fn on_line(a: V2, b: V2, n: u32) -> Vec<V2> {
+        (0..n)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(n - 1);
+                [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
+            })
+            .collect()
+    }
+
+    /// `n` points on the circle around `c` of radius `r`, from `from` to `to` radians
+    fn on_arc(c: V2, r: f64, from: f64, to: f64, n: u32) -> Vec<V2> {
+        (0..n)
+            .map(|i| {
+                let a = from + (to - from) * f64::from(i) / f64::from(n - 1);
+                [c[0] + r * a.m_cos(), c[1] + r * a.m_sin()]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn straight_diagonal_edge_fits_no_circle() {
+        // the points lie on one line up to rounding, which leaves the normal equations a determinant far above 1e-18
+        for (a, b, n) in [
+            ([12.3, 45.6], [187.9, 133.7], 8),
+            ([-140.25, 3.5], [96.75, 211.125], 40),
+            ([100.1, 100.3], [101.7, 102.9], 6),
+            ([0.0, 0.0], [0.3, 0.7], 5),
+        ] {
+            let fit = fit_circle_2d(&on_line(a, b, n));
+            assert!(fit.is_none(), "{a:?} to {b:?} in {n} points fit {fit:?}");
+        }
+        // a line along an axis cancels to exactly zero, and so do repeated points
+        assert!(fit_circle_2d(&on_line([5.0, 2.0], [80.0, 2.0], 7)).is_none());
+        assert!(fit_circle_2d(&[[3.0, 4.0]; 5]).is_none());
+    }
+
+    #[test]
+    fn real_arcs_fit_large_and_small() {
+        // (center, radius, from, to, points): 500 mm arcs over 20 and 2 degrees near (100, 100), a 1 mm quarter arc
+        // and a 0.2 mm one
+        for (c, r, from, to, n) in [
+            ([-380.0, -40.0], 500.0, 0.10, 0.45, 12),
+            ([-380.0, -40.0], 500.0, 0.27, 0.305, 9),
+            ([-380.0, -40.0], 500.0, 0.20, 0.40, 3),
+            ([7.25, -3.5], 1.0, 0.3, 0.3 + std::f64::consts::FRAC_PI_2, 8),
+            ([150.0, 150.0], 0.2, 1.0, 3.0, 6),
+        ] {
+            let (fc, fr, e) = fit_circle_2d(&on_arc(c, r, from, to, n)).expect("an arc fits");
+            let off = (fc[0] - c[0]).m_hypot(fc[1] - c[1]);
+            assert!(
+                off < 1e-6 * r && (fr - r).abs() < 1e-6 * r && e < 1e-6 * r,
+                "r {r}: {fc:?} {fr} {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn straight_edge_reads_as_an_edge() {
+        // a chain of points along a diagonal 3D edge is no circle
+        let chain: Vec<V3> = (0..12)
+            .map(|i| {
+                let t = f64::from(i) / 11.0;
+                [10.5 + 80.25 * t, 20.75 + 55.5 * t, 3.0 + 41.0 * t]
+            })
+            .collect();
+        assert!(fit_circle_3d(&chain, false).is_none());
     }
 }
