@@ -6,7 +6,7 @@
 // SX_GEOM_RECORD=1 with a built engine records again. Call `useGeomEngine(name)` at the top of a test file.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { gunzipSync, gzipSync } from 'node:zlib'
+import { gunzipSync, gzipSync, inflateRawSync } from 'node:zlib'
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'
 import { clearReplayCache } from '@slicerx/cad-history'
 import { setGeomProvider, type GeomProvider } from '../src/geom/client'
@@ -76,6 +76,65 @@ const saltless = (r: unknown): unknown => {
   if (r === null || typeof r !== 'object' || Array.isArray(r)) return r
   const { keySalt: _salt, ...rest } = r as Record<string, unknown>
   return rest
+}
+
+/**
+ * `v` with every ZIP archive in it (a project file the app wrote, sent as bytes: JSON gives a Uint8Array as an object of
+ * index keys) read back into its entries, by name: JSON entries parsed, so their ids pair like any others, the rest as
+ * text. Deflate output differs between zlib builds (Node on macOS and on Linux x64 pack the same entries into different
+ * bytes), so a recorded archive matches a live one when they hold the same files. Exported for its test.
+ */
+export function unzipped(v: unknown): unknown {
+  if (v === null || typeof v !== 'object') return v
+  // Number lists (meshes) hold no archive: left as they are, not copied.
+  if (Array.isArray(v)) return v.some((x) => x !== null && typeof x === 'object') ? v.map(unzipped) : v
+  const o = v as Record<string, unknown>
+  if (typeof o['0'] === 'number') {
+    // Bytes: an archive when they start with a ZIP local header, else left as they are.
+    const entries = o['0'] === 0x50 && o['1'] === 0x4b && o['2'] === 0x03 && o['3'] === 0x04 ? zipEntries(o) : null
+    return entries ? { zip: entries } : v
+  }
+  return Object.fromEntries(Object.entries(o).map(([k, x]) => [k, unzipped(x)]))
+}
+
+/** The entries of the archive held in `o` (index keys to bytes), or null when it is not one this can read. */
+function zipEntries(o: Record<string, unknown>): Record<string, unknown> | null {
+  const n = Object.keys(o).length
+  const b = new Uint8Array(n)
+  for (let i = 0; i < n; i++) {
+    const x = o[i]
+    if (typeof x !== 'number') return null
+    b[i] = x
+  }
+  const view = new DataView(b.buffer)
+  let end = n - 22
+  while (end >= 0 && view.getUint32(end, true) !== 0x06054b50) end--
+  if (end < 0) return null
+  const out: Record<string, unknown> = {}
+  try {
+    let at = view.getUint32(end + 16, true)
+    for (let i = view.getUint16(end + 10, true); i > 0; i--) {
+      if (view.getUint32(at, true) !== 0x02014b50) return null
+      const method = view.getUint16(at + 10, true)
+      const size = view.getUint32(at + 20, true)
+      const nameLen = view.getUint16(at + 28, true)
+      const local = view.getUint32(at + 42, true)
+      const name = new TextDecoder().decode(b.subarray(at + 46, at + 46 + nameLen))
+      const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true)
+      const packed = b.subarray(start, start + size)
+      if (method !== 0 && method !== 8) return null
+      const text = new TextDecoder().decode(method === 8 ? inflateRawSync(packed) : packed)
+      try {
+        out[name] = JSON.parse(text) as unknown
+      } catch {
+        out[name] = text
+      }
+      at += 46 + nameLen + view.getUint16(at + 30, true) + view.getUint16(at + 32, true)
+    }
+  } catch {
+    return null
+  }
+  return out
 }
 
 /**
@@ -153,14 +212,14 @@ export function replayGeom(file: string, recorded?: Replies) {
     async call<T>(op: string, request: unknown): Promise<T> {
       // A step's key salt comes from its id, which has the time in it; the face keys it makes come back in the
       // recorded replies, so the rest of every later request still matches.
-      const live = saltless(JSON.parse(JSON.stringify(request)))
+      const live = saltless(unzipped(JSON.parse(JSON.stringify(request))))
       /** The ids `r` pairs with when its request is the live one, or null when it is another request. */
       const matches = (r: Recorded): Map<string, string> | null => {
         if (r.op !== op) return null
         const paired = new Map(ids)
-        pairIds(saltless(withIds(r.request, paired)), live, paired)
+        pairIds(saltless(withIds(unzipped(r.request), paired)), live, paired)
         try {
-          expect(saltless(withIds(r.request, paired))).toEqual(live)
+          expect(saltless(withIds(unzipped(r.request), paired))).toEqual(live)
         } catch {
           return null
         }
@@ -173,7 +232,7 @@ export function replayGeom(file: string, recorded?: Replies) {
       if (r.op !== op) return mismatch(`call ${next} is ${op}, recorded as ${r.op}`)
       if (!paired) {
         try {
-          expect(saltless(withIds(r.request, ids))).toEqual(live)
+          expect(saltless(withIds(unzipped(r.request), ids))).toEqual(live)
         } catch (e) {
           return mismatch(`the ${op} request of call ${next} differs from the recorded one: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`)
         }

@@ -7,7 +7,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ReplayMismatch, replayGeom, withIds, writeRecording } from './geom-engine'
+import { zip, zipCompressed } from '../src/export/zip'
+import { ReplayMismatch, replayGeom, unzipped, withIds, writeRecording } from './geom-engine'
 
 describe('replayed geometry replies', () => {
   const one = () => replayGeom('fixtures/x.json', { t: [{ op: 'nest.arrange', request: { a: 1 }, reply: { ok: true } }] })
@@ -75,6 +76,56 @@ describe('replayed geometry replies', () => {
     await expect(r.call('nest.arrange', { a: 1 })).rejects.toBeInstanceOf(ReplayMismatch)
     expect(r.stale[0]).toContain('call 1 is nest.footprint, recorded as nest.arrange')
     expect(r.stale[1]).toContain('no recorded reply for call 2 (nest.arrange)')
+  })
+})
+
+// A project file goes to format.read3mf as bytes. Node's deflate packs the same entries into different bytes on macOS
+// and on Linux x64, so a recorded archive matches a live one on the files it holds, not on its bytes.
+describe('archives in a request', () => {
+  const files = (plans: string) => [
+    { name: '3D/3dmodel.model', data: `<model>${'<vertex x="1" y="2" z="3"/>'.repeat(40)}</model>` },
+    { name: 'Metadata/slicerx_plans.json', data: plans },
+  ]
+  /** The request as a recording keeps it: bytes go through JSON as an object of index keys. */
+  const request = (bytes: Uint8Array) => JSON.parse(JSON.stringify({ data: { bytes } })) as unknown
+  const replay = (bytes: Uint8Array) => replayGeom('fixtures/x.json', { t: [{ op: 'format.read3mf', request: request(bytes), reply: { ok: true } }] })
+
+  it('matches the same files packed into other bytes: stored against deflated, and another version-made-by', async () => {
+    const plans = JSON.stringify({ plans: [{ id: 'p1' }] })
+    const deflated = await zipCompressed(files(plans))
+    const stored = zip(files(plans))
+    expect(stored).not.toEqual(deflated)
+    const madeBy = deflated.slice()
+    // the central directory's version-made-by of the first entry
+    const view = new DataView(madeBy.buffer)
+    const central = view.getUint32(madeBy.length - 22 + 16, true)
+    view.setUint16(central + 4, 0x031e, true)
+    for (const live of [stored, madeBy]) {
+      const r = replay(deflated)
+      r.start('t')
+      expect(await r.call('format.read3mf', { data: { bytes: live } })).toEqual({ ok: true })
+      expect(r.stale).toEqual([])
+    }
+  })
+
+  it('fails an archive whose files differ, and one with a file missing', async () => {
+    const recorded = await zipCompressed(files(JSON.stringify({ plans: [{ hole: 3 }] })))
+    for (const live of [await zipCompressed(files(JSON.stringify({ plans: [{ hole: 4 }] }))), await zipCompressed(files('x').slice(0, 1))]) {
+      const r = replay(recorded)
+      r.start('t')
+      await expect(r.call('format.read3mf', { data: { bytes: live } })).rejects.toBeInstanceOf(ReplayMismatch)
+      expect(r.stale[0]).toContain('the format.read3mf request of call 1 differs from the recorded one')
+    }
+  })
+
+  it('reads JSON files as data, so their generated ids pair like any others, and leaves other bytes alone', async () => {
+    const r = replayGeom('fixtures/x.json', {
+      t: [{ op: 'format.read3mf', request: request(await zipCompressed(files(JSON.stringify({ step: 's1782000000000a85' })))), reply: { step: 's1782000000000a85' } }],
+    })
+    r.start('t')
+    expect(await r.call('format.read3mf', { data: { bytes: zip(files(JSON.stringify({ step: 's1782000000000a86' }))) } })).toEqual({ step: 's1782000000000a86' })
+    const plain = request(new Uint8Array([1, 2, 3])) as { data: { bytes: unknown } }
+    expect((unzipped(plain) as typeof plain).data.bytes).toBe(plain.data.bytes)
   })
 })
 
