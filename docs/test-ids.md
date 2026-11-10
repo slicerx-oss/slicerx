@@ -108,6 +108,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-sheet-status` | The record's status beside its buttons: the assumed values (`data-assumed`) while guesses remain, then whether it was confirmed or canceled |
 | `mimir-sheet-said` | On a sheet's record, the words the person wrote to mimir while it waited, which set the sheet aside |
 | `mimir-sizes-pill` | Sizes, floating over the chat while a waiting sheet's record is scrolled out of view; it scrolls the record back and focuses the first assumed size |
+| `mimir-reply-pill` | New reply below, floating over the chat while a pressed card holds it and mimir's reply goes on below the fold; it scrolls to the end and the chat follows the reply again |
 | `mimir-sheet-open` | On a built sheet's record in the tab: Edit sizes, once its rows drive the built steps |
 | `mimir-sheet-drawing` | The drawing that covers the view while a sheet waits: front, right, top and iso, with callouts. On a phone (`data-phone`) it shows Top and Isometric side by side, or Front or Right alone, picked in its header, and `data-folded` while folded to the header |
 | `mimir-drawing-views` | On a phone, the drawing's view picker (a radio group named Drawing view): Top and iso, then Front and Right when the sheet draws a callout in them, opening on Top and iso |
