@@ -28,6 +28,7 @@ const ENGINE: Record<string, GeomOpClass> = {
   'layers.plan': 'mesh',
   build: 'model',
   subtract: 'model',
+  interference: 'model',
   import: 'mesh',
   simplify: 'mesh',
   remesh: 'mesh',
