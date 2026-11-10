@@ -239,6 +239,14 @@ fn merge_written(g: &mut GcodeFile, written: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Stops the load when the shipped G-code files disagree. The two files ship inside the crate, so a family or model in
+/// both is a packaging mistake that machine.test.ts and this crate's tests catch; refusing it keeps one file from
+/// silently winning.
+#[allow(clippy::panic, reason = "a key in both shipped G-code files must never load")]
+fn refuse_gcode(e: &str) -> ! {
+    panic!("{e}")
+}
+
 fn gcode() -> &'static GcodeFile {
     static G: OnceLock<GcodeFile> = OnceLock::new();
     G.get_or_init(|| {
@@ -248,7 +256,7 @@ fn gcode() -> &'static GcodeFile {
             pending: Vec::new(),
         });
         if let Err(e) = merge_written(&mut g, stock::GCODE_WRITTEN) {
-            panic!("{e}");
+            refuse_gcode(&e);
         }
         for (k, f) in &cura().families {
             g.families.entry(k.clone()).or_insert_with(|| f.clone());
