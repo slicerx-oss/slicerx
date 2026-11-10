@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A built part checked against its plan: the overall size, each named hole, the feature count, a closed body, the
-// thinnest wall the nozzle can print and, for a planned hook with a lip, a tip that rises. The comparison is pure; the facts about the body come from body-facts.ts. Plans
+// thinnest wall the nozzle can print, for a planned hook with a lip a tip that rises and, for a part that holds
+// something, a floor. The comparison is pure; the facts about the body come from body-facts.ts. Plans
 // wait in a registry under their planId until design.check reads them. Only zod and hook-lip.ts (which imports nothing)
 // here, so any package can import the
 // plan and result shapes.
@@ -151,6 +152,17 @@ export interface BodyFacts {
    * stem. Absent when it was not read, or when the part has no upright round stem to read a hook from.
    */
   hookTipRiseMm?: number | null | undefined
+  /** Read only for a plan that sets a floor (plannedFloor): where the cavity opens through each part's bottom. */
+  floor?: FloorFacts | undefined
+}
+
+/**
+ * Each part's floor, as holder-floor.ts reads it from the mesh: the height of its lowest face and the openings through
+ * it, holes no wider than the plan's widest (plannedHoleMm) left out.
+ */
+export interface FloorFacts {
+  plannedHoleMm: number
+  parts: { name?: string | undefined; faceZ: number; openings: { from: V3; to: V3; alongMm: number; acrossMm: number }[] }[]
 }
 
 type V3 = [number, number, number]
@@ -353,6 +365,100 @@ export function hasHookLip(plan: PartPlan): boolean {
   return words.has('hook') && words.has('lip')
 }
 
+/** A size key's words that say it is a thickness and nothing else: bottom_thickness, floor, floor_mm. */
+const THICK_WORDS: ReadonlySet<string> = new Set(['thickness', 'thick', 'solid', 'closed', 'mm'])
+/** The words a wall thickness may have: wall, wall_thickness, side_wall. */
+const WALL_WORDS: ReadonlySet<string> = new Set(['wall', 'walls', 'side', ...THICK_WORDS])
+/** The words a cavity's depth may have besides depth: depth, cavity_depth, inner_depth, well_depth. */
+const CAVITY_WORDS: ReadonlySet<string> = new Set(['cavity', 'inner', 'inside', 'interior', 'well', 'pocket', 'cup', 'bowl'])
+/** The words of a part's height: height, overall_height, body_height, outer_height. */
+const HEIGHT_WORDS: ReadonlySet<string> = new Set(['overall', 'total', 'outer', 'body'])
+/** The feature kinds that hollow a part: a cut, pocket, shell or hollow. */
+const HOLLOWS = /\b(?:cut|pocket|shell|hollow)\b/i
+
+/** The floor a plan sets, in mm, and the size that sets it, as the floor item says it. */
+export interface PlannedFloor {
+  mm: number
+  /** The size's key (bottom_thickness), or the cavity's depth under the part's height. */
+  from: string
+}
+
+/**
+ * The floor a plan sets for a part that holds something, read from its sizes and kinds alone, never from its words:
+ * a size named for the floor or bottom and nothing else but its thickness (floor, bottom, bottom_thickness; base only
+ * as base_thickness) in a plan with a wall (a size named wall, or a shell or hollow feature), or a cut, pocket or shell
+ * feature with a depth (depth, cavity_depth, well_depth) less than the part's height (overall z, else its largest
+ * height size), whose floor is the difference. Null when the plan sets no floor: a tube or spout open at both ends, a
+ * plate with a base, a box that names no floor. Inch sizes are read in mm.
+ */
+export function plannedFloor(plan: Pick<PartPlan, 'units' | 'features' | 'overall'>): PlannedFloor | null {
+  const scale = plan.units === 'in' ? MM_PER_IN : 1
+  const sizes = plan.features.flatMap((f) => Object.entries(f.sizes).map(([key, v]) => ({ key, v, words: keyWords(key), kind: f.kind ?? '' })))
+  const only = (words: readonly string[], allowed: ReadonlySet<string>): boolean => words.every((w) => allowed.has(w))
+  const walled = sizes.some((s) => s.words.includes('wall') && only(s.words, WALL_WORDS)) || plan.features.some((f) => /\b(?:shell|hollow)\b/i.test(f.kind ?? ''))
+  if (walled)
+    for (const s of sizes) {
+      const named = s.words.filter((w) => w === 'floor' || w === 'bottom' || w === 'base')
+      if (named.length !== 1 || !only(s.words.filter((w) => w !== named[0]), THICK_WORDS)) continue
+      // a base alone is as often a plate under a part as a floor in it
+      if (named[0] === 'base' && !s.words.some((w) => w === 'thickness' || w === 'thick')) continue
+      return { mm: s.v * scale, from: s.key }
+    }
+  const tall = plan.overall?.z ?? Math.max(0, ...sizes.filter((s) => s.words.includes('height') && only(s.words.filter((w) => w !== 'height'), HEIGHT_WORDS)).map((s) => s.v))
+  for (const s of sizes) {
+    if (!HOLLOWS.test(s.kind) || s.words.at(-1) !== 'depth' || !only(s.words.slice(0, -1), CAVITY_WORDS)) continue
+    if (s.v < tall - 1e-6) return { mm: (tall - s.v) * scale, from: `${s.key} ${r2(s.v * scale)} mm under the ${r2(tall * scale)} mm height` }
+  }
+  return null
+}
+
+/**
+ * The widest hole a plan puts through its part, in mm, so an opening in a floor that is no wider is the plan's own (a
+ * planter's drain holes): its holes list, and sizes that name a hole's diameter (hole_diameter, drain_hole_dia, or
+ * diameter in a feature whose kind is a hole). 0 for none.
+ */
+export function plannedHoleMm(plan: Pick<PartPlan, 'units' | 'features' | 'holes'>): number {
+  const scale = plan.units === 'in' ? MM_PER_IN : 1
+  const listed = (plan.holes ?? []).map((h) => h.diameter)
+  const sized = plan.features.flatMap((f) =>
+    Object.entries(f.sizes).flatMap(([key, v]) => {
+      const words = keyWords(key)
+      const across = words.some((w) => w === 'diameter' || w === 'dia')
+      const hole = words.some((w) => w === 'hole' || w === 'holes' || w === 'drain') || /\bhole/i.test(f.kind ?? '')
+      return across && hole && !words.some((w) => w.startsWith('countersink') || w.startsWith('counterbore') || w === 'head') ? [v] : []
+    }),
+  )
+  return Math.max(0, ...listed, ...sized) * scale
+}
+
+/** A floor opening as an item says it: "75.4 mm across, from (-37.7, 0, 0.2) to (37.7, 0, 0.2)". */
+const openingWords = (o: FloorFacts['parts'][number]['openings'][number]): string => `${r2(Math.max(o.alongMm, o.acrossMm))} mm across, from ${at(o.from)} to ${at(o.to)}`
+
+/** Openings a floor item names one by one; the rest are counted. */
+const NAMED_OPENINGS = 2
+
+/**
+ * The floor item of a plan that sets a floor (plannedFloor): the part is closed at the bottom, its cavity opening only
+ * where the plan opens it, so a horizontal ray just above the lowest face meets solid between the walls. A miss names
+ * the part, the bottom face's height and where the air runs through, as the fit check names a touch.
+ */
+export function floorItem(floor: PlannedFloor, facts: FloorFacts): CheckItem {
+  const want = `closed at the bottom, with the plan's ${mm(floor.mm)} floor (${floor.from}): the cavity opens only where the plan opens it`
+  const open = facts.parts.flatMap((p) => p.openings.map((o) => ({ p, o })))
+  if (!open.length) {
+    const faces = [...new Set(facts.parts.map((p) => r2(p.faceZ)))]
+    return { name: 'floor', want, got: `closed: solid across the bottom face at z ${faces.join(', ')}${facts.plannedHoleMm > 0 ? ' (holes up to the planned size aside)' : ''}`, pass: true }
+  }
+  const named = open.slice(0, NAMED_OPENINGS).map(({ p, o }) => `${p.name ? `${p.name}: ` : ''}the cavity runs through the bottom face at z ${r2(p.faceZ)}, ${openingWords(o)}`)
+  const more = open.length - NAMED_OPENINGS
+  return {
+    name: 'floor',
+    want,
+    got: `open at the bottom: ${named.join('; ')}${more > 0 ? `; and ${more} more ${more === 1 ? 'opening' : 'openings'}` : ''}. Nothing above or below closes it there; build the floor, or start the cavity ${mm(floor.mm)} above the bottom`,
+    pass: false,
+  }
+}
+
 /**
  * Checks a body against its plan. Inch plans are compared in mm; the tolerances are in mm. The overall size is
  * compared axis by axis, since z is the print height: x and y swapped passes (the part turned on the bed prints the
@@ -362,6 +468,7 @@ export function hasHookLip(plan: PartPlan): boolean {
  * plan whose pieces print together without printInPlace naming them (printsTogether): its planned gaps are held to
  * `limits` too.
  * A plan with a hook and a lip (hasHookLip) holds the hook's tip to a rise of LIP_RISE_MM when the body's hook was read.
+ * A plan that sets a floor (plannedFloor) holds the body's floor, when it was read, to be closed (floorItem).
  */
 export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, limits?: FitLimits, together = false): CheckResult {
   const scale = plan.units === 'in' ? MM_PER_IN : 1
@@ -420,6 +527,9 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
       pass: rise !== null && rise >= LIP_RISE_MM,
     })
   }
+  // a part that holds something keeps its floor: the cavity does not run out through the bottom
+  const floor = plannedFloor(plan)
+  if (floor && body.floor) items.push(floorItem(floor, body.floor))
 
   return { pass: items.every((i) => i.pass), items }
 }

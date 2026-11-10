@@ -11,9 +11,10 @@
 import type { MeshPart, PilotEvent, PilotMachine } from '@slicerx/contracts'
 import { assessFit } from '@slicerx/pilot/evals'
 import { bedFit, bodyBoxes, bodyCount, bodyTriangles, closure, minWall, type BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
-import { holeLoops } from '../../../mcp/src/body-facts'
+import { floorFacts, holeLoops } from '../../../mcp/src/body-facts'
+import { floorItem } from '../../../mcp/src/design-check'
 import { hookOn, least, LIP_RISE_MM, most, surfacePoints, type V3 } from '../../../mcp/src/hook-lip'
-import type { BuildCase, HookSpec, OpMatch, SizeCheck } from './cases'
+import type { BuildCase, FloorSpec, HookSpec, OpMatch, SizeCheck } from './cases'
 
 export interface Check {
   pass: boolean
@@ -779,6 +780,15 @@ function pinMates({ bodies, box, lid }: { bodies: Body[]; box: Body; lid: Body }
   return { pass: false, detail: `the lid is planned apart, but no pin (${pins.map((p) => `${r(p)} mm`).join(', ')}) slides into both a bore of the box (${where(inBox)}) and one of the lid (${where(inLid)})` }
 }
 
+/**
+ * Whether a part that holds something is closed at the bottom, each part read as design.check reads a plan that sets a
+ * floor (holder-floor.ts, floorItem): no opening through its bottom face but holes up to the size asked for.
+ */
+export function floorCheck(spec: FloorSpec, parts: readonly MeshPart[]): Check {
+  const item = floorItem({ mm: spec.mm, from: 'as asked' }, floorFacts(parts, parts.map((p) => p.name), spec.holeMm ?? 0))
+  return { pass: item.pass, detail: item.got }
+}
+
 /** One design.check call of a run, as its results row keeps it: the plan it checked, and how it came out. */
 export interface CheckCall {
   /** The planId the call named, or null when it named none. */
@@ -826,6 +836,7 @@ export interface CaseScore {
   hook?: Check
   lid?: Check
   hinge?: Check
+  floor?: Check
   geometry: boolean
   extra: number
   turns: Check
@@ -880,7 +891,8 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   const stated = lidStated(run.events)
   if (c.lid) out.lid = lidCheck(c.machine, run.parts, stated)
   if (c.lid) out.hinge = hingeCheck(run.parts, stated, c.machine)
-  out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : []), ...(out.lid ? [out.lid] : []), ...(out.hinge ? [out.hinge] : [])].every((x) => x.pass)
+  if (c.floor) out.floor = floorCheck(c.floor, run.parts)
+  out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : []), ...(out.lid ? [out.lid] : []), ...(out.hinge ? [out.hinge] : []), ...(out.floor ? [out.floor] : [])].every((x) => x.pass)
   out.pass = out.geometry && turns.pass
   out.verdict = verdictOf(out, claim)
   return out

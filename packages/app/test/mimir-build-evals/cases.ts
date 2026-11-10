@@ -36,6 +36,15 @@ export type HookSpec = { kind: 'lip' } | { kind: 'leg'; rodMm: number }
  */
 export type LidSpec = { kind: 'hinged' }
 
+/**
+ * The part holds something, so it is closed at the bottom: `mm`, the floor the person asked for (or the walls' size when
+ * they named no floor), and `holeMm`, the widest hole they asked for through it, such as a planter's drain holes.
+ */
+export interface FloorSpec {
+  mm: number
+  holeMm?: number
+}
+
 export interface BuildCase {
   id: string
   title: string
@@ -53,6 +62,8 @@ export interface BuildCase {
   hook?: HookSpec
   /** The part has a lid, checked this way. */
   lid?: LidSpec
+  /** The part holds something, and its floor is checked as design.check checks a plan that sets one. */
+  floor?: FloorSpec
   /**
    * The person asks for this many separate parts in the one message, so each part may get its own dimension sheet and
    * Go without counting as an extra turn. One when not given.
@@ -84,6 +95,7 @@ export const BUILD_CASES: BuildCase[] = [
     machine: P1S,
     ops: ['geom.loft'],
     bodies: [1, 1],
+    floor: { mm: 2 },
     sizes: [
       // 150 + 25, or more if the blend sits between the body and the neck
       { axis: 'z', minMm: 165, maxMm: 215 },
@@ -124,6 +136,7 @@ export const BUILD_CASES: BuildCase[] = [
     machine: P1S,
     ops: ['geom.loft'],
     bodies: [1, 1],
+    floor: { mm: 3 },
     sizes: [
       { axis: 'z', minMm: 150, maxMm: 170 },
       { axis: 'xy', minMm: 68, maxMm: 85 },
@@ -176,6 +189,7 @@ export const BUILD_CASES: BuildCase[] = [
     machine: P1S,
     ops: ['geom.loft'],
     bodies: [1, 1],
+    floor: { mm: 3 },
     sizes: [
       { axis: 'z', minMm: 140, maxMm: 160 },
       // the round top sets the width; the square foot is 85 mm corner to corner
@@ -232,6 +246,8 @@ export const BUILD_CASES: BuildCase[] = [
     // the planter and the saucer, each its own body, and each may get its own sheet and Go
     bodies: [2, 2],
     parts: 2,
+    // the planter's floor has the five drain holes; the saucer's has none
+    floor: { mm: 3, holeMm: 6 },
     sizes: [
       // the saucer is the widest; the planter the tallest, standing in its saucer or apart
       { axis: 'xy', minMm: 135, maxMm: 150 },
