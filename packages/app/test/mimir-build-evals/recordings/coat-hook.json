@@ -843,7 +843,7 @@
    ],
    "calls": [
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mwap6nagd8",
       "part": 0,
@@ -866,7 +866,7 @@
      }
     },
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mwap6nagd8",
       "part": 0,
@@ -892,12 +892,12 @@
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}",
-    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, use geom.hole. The step was sent in a way this tool does not take; the text says what to change (for a join or cut on a design, leave target out and give part). Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}",
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, use geom.hole. The step was sent in a way this tool does not take; the text says what to change (for a join or cut on a design, leave target out and give part). Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
    ],
    "calls": [
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mwap6nagd8",
       "part": 0,
@@ -932,7 +932,7 @@
      }
     },
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mwap6nagd8",
       "part": 0,
@@ -975,7 +975,7 @@
    ],
    "calls": [
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mwap6nagd8",
       "part": 0,
@@ -1000,7 +1000,7 @@
      }
     },
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mwap6nagd8",
       "part": 0,
@@ -1028,8 +1028,8 @@
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}",
-    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, use geom.hole. The step was sent in a way this tool does not take; the text says what to change (for a join or cut on a design, leave target out and give part). Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}",
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, use geom.hole. The step was sent in a way this tool does not take; the text says what to change (for a join or cut on a design, leave target out and give part). Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
    ],
    "calls": [
     {
