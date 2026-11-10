@@ -385,6 +385,9 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
   const [shown, setShown] = useState<{ anchor: HTMLElement; layer: HTMLElement; content: TipContent; pinned: boolean; warm: boolean; glide: boolean; touch: boolean; still: boolean } | null>(null)
   const [mediaOn, setMediaOn] = useState(false)
   const [pos, setPos] = useState<{ x: number; y: number; side: Side } | null>(null)
+  // a tip that sits outside the window when it is placed again (the window narrowed under it) moves there at once:
+  // gliding, it would cross the window's edge on its way in
+  const [jump, setJump] = useState(false)
   const tipRef = useRef<HTMLDivElement>(null)
   const live = useRef({ enabled, resolve })
   live.current = { enabled, resolve }
@@ -635,12 +638,14 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     const el = tipRef.current
     if (!shown || !el) return
     toTopLayer(el)
+    setJump(false)
     const measure = () => {
       // The tip's own size: its box while it slides in is scaled down a little, and a tip placed by that size lands
       // closer to the window's edge than its gutter once it settles.
       const r = el.getBoundingClientRect()
       const tip = { w: Math.max(r.width, el.offsetWidth), h: Math.max(r.height, el.offsetHeight) }
       const view = { w: window.innerWidth, h: window.innerHeight }
+      if (r.width > 0 && (r.left < 0 || r.top < 0 || r.right > view.w || r.bottom > view.h)) setJump(true)
       const panel = shown.touch ? null : sidePanel(shown.anchor)
       const placed = aboveBar(shown.anchor, tip, view) ?? (shown.touch ? place(avoidBox(shown.anchor).getBoundingClientRect(), tip, 'top', view) : place(anchorRect(shown.anchor), tip, sideFor(shown.anchor), view, rowList(shown.anchor) !== null))
       // beside a side panel the tip is over the view: it never covers a control there
@@ -670,7 +675,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       className="sx-tip sx-overlay"
       data-side={pos?.side}
       data-warm={shown.warm ? true : undefined}
-      data-glide={shown.glide ? true : undefined}
+      data-glide={shown.glide && !jump ? true : undefined}
       data-fig={content.figure && !(content.demo && media) ? true : undefined}
       data-demo={content.demo && media ? true : undefined}
       data-still={shown.still ? true : undefined}
