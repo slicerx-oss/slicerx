@@ -91,4 +91,21 @@ describe('the Goal commands', () => {
     expect(builtinCommands(host, []).find((c) => c.id === 'goal-draft')!.title).toBe('Goal: Draft (0.24 mm, fastest)')
     set({ profile: null })
   })
+
+  it('say 5 walls for Strong on a Prusa MK4S, whose maker has no strong preset', async () => {
+    const { set } = await import('../src/state/store')
+    const { goalShows } = await import('../src/adapters/config')
+    const { goalSubtitle } = await import('../src/lib/estimate-line')
+    const { stockLayer } = await import('@slicerx/settings')
+    // the goal values the app's printer layer carries for the MK4S, as profile sync stores them
+    const layer = (await stockLayer({ printerId: 'prusa-mk4s', tier: 'standard', slots: [] }))!
+    set({ profile: { goalValues: layer.goalValues } as never })
+    // the Goal tile's subtitle (easy-settings.tsx) and the palette row read the same derived values
+    expect(goalSubtitle('strong', goalShows('strong', layer.goalValues))).toBe('5 walls')
+    expect(builtinCommands(host, []).find((c) => c.id === 'goal-strong')!.title).toBe('Goal: Strong (5 walls)')
+    // Standard on the same printer is the maker's 2 walls
+    expect(goalSubtitle('standard', goalShows('standard', layer.goalValues))).toBe('0.20 mm')
+    expect(layer.goalValues.standard['wall_loops']).toBe(2)
+    set({ profile: null })
+  })
 })

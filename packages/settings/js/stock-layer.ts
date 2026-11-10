@@ -5,7 +5,8 @@
 // process, resolved the way OrcaSlicer 2.4.2 resolves them (packages/profiles/resolved), plus the G-code
 // written for SlicerX. The app builds its printer layer from it, and the MCP server builds the same layer under a
 // project's settings, so one project on one printer slices the same in both.
-import type { EasyGoal, SettingValue } from '@slicerx/contracts/settings'
+import type { EasyGoal, PrintConfig, SettingValue } from '@slicerx/contracts/settings'
+import { applyEasy, goalEasy } from './easy'
 import { isCompatibleWithPrinter, type PrinterContext } from './compat'
 import { settingDefault } from './defaults'
 import { listFilamentFamilies, loadVendorFile, resolveFilamentPreset, type VendorFile } from './filaments'
@@ -435,6 +436,9 @@ async function tierProcessOwn(printerId: string, tier: EasyGoal, nozzle: number,
   const shipped = exact ?? (await resolvedProfile(printerId, tier, nozzle))
   if (!shipped) return { ...(processConfig(tier, nozzle, printerId) as Record<string, SettingValue>) }
   const own = { ...shipped.process } as Record<string, SettingValue>
+  // A maker with no Strength preset of its own: Strong is the maker's Standard with SlicerX's Strength rule at the Strong
+  // goal's strength (walls, infill and its pattern), so it is stronger than Standard, as SlicerX's own Strong is.
+  if (tier === 'strong' && shipped.tier !== 'strong') return { ...(applyEasy(goalEasy('strong'), own as PrintConfig, new Set(['strength'])) as Record<string, SettingValue>) }
   if (tier !== 'draft' && tier !== 'fine') return own
   const standard = { ...(await resolvedProfile(printerId, 'standard', nozzle))!.process } as Record<string, SettingValue>
   const std = layerOf(standard)
