@@ -79,6 +79,22 @@ describe('finished sketches in the design tools', () => {
     expect(add).toHaveBeenCalledTimes(3)
   })
 
+  it('carries a sweep\'s end section into the step under the engine\'s name', async () => {
+    const { add, run } = host()
+    const points = [[0, 0, 0], [0, 0, 30]]
+    const round = { loops: [{ type: 'circle', center: [0, 0], diameterMm: 8 }] }
+    await run('geom.sweep', { design: 'd1', profile: { loops: LOOPS }, path: { points }, end_profile: round, ease: 'smooth' })
+    const p = add.mock.calls[0]![2] as Extract<StepParams, { op: 'sketch.sweep' }>
+    expect(p).toMatchObject({ endProfile: { loops: [{ type: 'circle', center: [0, 0], diameterMm: 8 }] }, ease: 'smooth' })
+    expect(p.endProfile).not.toHaveProperty('open')
+    await run('geom.sweep', { design: 'd1', profile: { loops: LOOPS }, path: { points } })
+    expect(add.mock.calls[1]![2]).not.toHaveProperty('endProfile')
+    const bad = (end: unknown) => run('geom.sweep', { design: 'd1', profile: { loops: LOOPS }, path: { points }, end_profile: end })
+    await expect(bad({ loops: 'round' })).rejects.toThrow(/^end_profile/)
+    await expect(bad({ frame: FRAME, loops: round.loops })).rejects.toThrow("end_profile.frame: the end loop is drawn on the profile's own plane; leave its frame out")
+    expect(add).toHaveBeenCalledTimes(2)
+  })
+
   it('sweeps a finished profile sketch along a finished open path sketch, copying both into the step', async () => {
     const { add, run, sketches } = host()
     await run('design.sketch', { loops: LOOPS, frame: { origin: FRAME.origin, normal: FRAME.normal, u: FRAME.u } })

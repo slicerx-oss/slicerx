@@ -3,7 +3,7 @@
 // The loft and sweep steps as data, built in one place so Model's Loft and Sweep panels and the design tools a client
 // calls record exactly the same sketch.loft and sweep steps. Each step keeps its own copy of the loops it was made
 // from; nothing links back to a timeline sketch. Also the check that a sweep profile sits on the path's start.
-import type { LoftProfile, StepParams, SweepPath, Thicken } from './model'
+import type { LoftProfile, StepParams, SweepEnd, SweepPath, Thicken } from './model'
 import type { FaceFrame, SketchLoop, Vec3 } from './types'
 
 export type SolidOperation = 'new' | 'join' | 'cut'
@@ -40,13 +40,15 @@ export interface SweepOptions {
   /** the turn about the path by its end, degrees */
   twistDeg?: number | undefined
   ease?: 'linear' | 'smooth' | undefined
+  /** the section the profile turns into by the end, on the profile's own plane */
+  endProfile?: SweepEnd | object | undefined
   operation?: SolidOperation | undefined
   name?: string | undefined
 }
 
 /** The sketch.sweep step for this profile, path and options: the taper, twist and ease only when they change it. */
 export function sweepParams(o: SweepOptions): StepParams {
-  return plain({ op: 'sketch.sweep', profile: o.profile, path: o.path, ...(o.thicken ? { thicken: o.thicken } : {}), ...(o.scaleEnd !== undefined && o.scaleEnd !== 1 ? { scaleEnd: o.scaleEnd } : {}), ...(o.twistDeg ? { twistDeg: o.twistDeg } : {}), ...(o.ease === 'smooth' ? { ease: o.ease } : {}), operation: o.operation, name: o.name })
+  return plain({ op: 'sketch.sweep', profile: o.profile, path: o.path, ...(o.thicken ? { thicken: o.thicken } : {}), ...(o.scaleEnd !== undefined && o.scaleEnd !== 1 ? { scaleEnd: o.scaleEnd } : {}), ...(o.twistDeg ? { twistDeg: o.twistDeg } : {}), ...(o.ease === 'smooth' ? { ease: o.ease } : {}), ...(o.endProfile ? { endProfile: o.endProfile } : {}), operation: o.operation, name: o.name })
 }
 
 const BED: Pick<FaceFrame, 'origin' | 'u' | 'v'> = { origin: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0] }

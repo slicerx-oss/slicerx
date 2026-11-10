@@ -36,6 +36,11 @@ describe('a sweep step in the project file', () => {
     expect(roundTrip(spout)?.steps[0]?.params).toEqual(spout)
     const each = sweep({ scaleEnd: [1.5, 0.5] })
     expect(roundTrip(each)?.steps[0]?.params).toEqual(each)
+    // a square turning round by the end, and an open chain into another
+    const round = sweep({ endProfile: { loops: [{ type: 'circle', center: [0, 0], diameterMm: 10 }] } })
+    expect(roundTrip(round)?.steps[0]?.params).toEqual(round)
+    const vee = sweep({ endProfile: { open: true, loops: [{ points: [[-5, 0], [0, -2], [5, 0]] }] } })
+    expect(roundTrip(vee)?.steps[0]?.params).toEqual(vee)
   })
 
   it('leaves out a history whose sweep is damaged', () => {
@@ -51,6 +56,10 @@ describe('a sweep step in the project file', () => {
       sweep({ twistDeg: '90' }),
       sweep({ ease: 'quick' }),
       sweep({ path: { points: [[0, 0, 0], [0, 0, 20]], smooth: 'yes' } }),
+      sweep({ endProfile: 'round' }),
+      sweep({ endProfile: { loops: 'round' } }),
+      sweep({ endProfile: { loops: [], open: 'no' } }),
+      sweep({ endProfile: { frame: { origin: [0, 0, 0] }, loops: [] } }),
     ]
     for (const p of bad) expect(roundTrip(p), JSON.stringify(p)).toBeUndefined()
   })
@@ -59,5 +68,6 @@ describe('a sweep step in the project file', () => {
     expect(stepName({ params: sweep() as unknown as StepParams })).toBe('Sweep')
     expect(stepName({ params: sweep({ operation: 'cut' }) as unknown as StepParams })).toBe('Sweep cut')
     expect(stepName({ params: sweep({ scaleEnd: 0.4, twistDeg: 45, thicken: { thicknessMm: 1.6 } }) as unknown as StepParams })).toBe('Sweep, tapered, twisted, 1.6 mm shell')
+    expect(stepName({ params: sweep({ endProfile: { loops: [] } }) as unknown as StepParams })).toBe('Sweep, changing shape')
   })
 })
