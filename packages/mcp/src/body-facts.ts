@@ -452,14 +452,20 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, leaving: numb
       }
     }
     // A ray that meets a facet from outside has crossed air, not material: the gap between two bodies, or a facet whose
-    // normal points out. A ray that grazes the facet runs along a face from a sliver at its edge. Neither is a wall.
+    // normal points out. A ray that grazes the facet runs along a face: from a sliver at its edge, or from beside an edge
+    // where two faces meet near a right angle, such as the rim of a tube cut at a slant, where it reads how near it
+    // starts to that edge. Neither is a wall.
     if (leaves && hit < best) best = hit
   }
   return best
 }
 
-/** The cosine below which a ray grazes the facet it meets (about 84 degrees off its normal). */
-const GRAZE = 0.1
+/**
+ * The cosine below which a ray grazes the facet it meets (about 73 degrees off its normal). At the slanted tip of a
+ * swept spout the rays beside the rim leave through the bore at cosines of 0.10 to 0.2 and read 0.07 to 0.3 mm of a
+ * 1.6 mm wall; a real 0.41 mm floor between a countersink and a bore leaves at 0.52.
+ */
+const GRAZE = 0.3
 
 /** The cosine between the facet's normal at `tri[at]` and a unit direction: above zero when the direction leaves the solid through it. */
 function facing(tri: Float64Array, at: number, d0: number, d1: number, d2: number): number {

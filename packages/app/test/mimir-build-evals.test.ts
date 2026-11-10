@@ -556,10 +556,9 @@ describe('build eval scoring', () => {
   }
 
   it('reads no wall at an edge where two faces meet near a right angle, as a tube cut at a slant has', () => {
-    // design.check's read, leaving at a cosine over 0.1, measures how near a facet next to the edge is to it: under the
-    // 0.8 mm a 0.4 mm nozzle wants
-    expect(engineWall([wedge()]).mm).toBeLessThan(0.8)
-    // the scorer holds the far facet to a cosine over 0.3, so the wedge is whole
+    // design.check's read holds the far facet to a cosine over 0.3, so a facet next to the edge measures no wall there
+    expect(engineWall([wedge()]).mm).toBeGreaterThan(3)
+    // and so does the scorer: the wedge is whole
     const w = scored('cable-clip', [wedge()]).minWall
     expect(w?.pass, w?.detail).toBe(true)
     expect(Number.parseFloat(w!.detail)).toBeGreaterThan(3)
