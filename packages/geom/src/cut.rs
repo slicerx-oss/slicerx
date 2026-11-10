@@ -614,6 +614,19 @@ mod tests {
     }
 
     #[test]
+    fn section_of_a_cylinder_is_its_circle() {
+        let n = 128;
+        let c = build::cylinder(&crate::vec3::Frame::WORLD, 5.0, 0.0, 20.0, n);
+        let s = section(&c, &Plane::horizontal(7.5));
+        assert_eq!((s.islands(), s.open_chains), (1, 0));
+        // the drawn circle is a 128 sided polygon, a little under pi r squared
+        let k = n as f64;
+        let drawn = 0.5 * k * 25.0 * crate::fm::Fm::m_sin(std::f64::consts::TAU / k);
+        assert!((s.area() - drawn).abs() < 1e-9, "{}", s.area());
+        assert!((s.area() - std::f64::consts::PI * 25.0).abs() < 0.04);
+    }
+
+    #[test]
     fn plain_cut_conserves_volume() {
         let t = build::torus([0.0; 3], 20.0, 6.0, 150, 100);
         let plane = Plane::new([1.0, 2.0, 0.5], [0.3, 0.2, 1.0]).unwrap();

@@ -31,11 +31,11 @@ const EVERY_TURN: ReadonlySet<string> = new Set([TURN_SET_TOOL, 'pilot.ask', 'lo
 const BUILD: ReadonlySet<string> = new Set(['pilot.sheet', 'pilot.sheet_bind', 'design.new', 'design.plan', 'design.check', 'design.undo', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'geom.hole', 'geom.fillet', 'geom.chamfer', 'geom.shell', 'geom.boolean', 'geom.info', 'geom.edge_pick', 'geom.faces'])
 
 /**
- * Shaping a part further: join, cut, pattern, split, mark and fix it, and measure it, its print-in-place gaps too. The
- * fit check is here rather than in build, where a local model's new part turn has no room for it: a print-in-place
- * part loads it when design.check asks for it (calling it loads this set).
+ * Shaping a part further: join, cut, pattern, split, mark and fix it, and measure it: sections, interference and its
+ * print-in-place gaps. The fit check is here rather than in build, where a local model's new part turn has no room for
+ * it: a print-in-place part loads it when design.check asks for it (calling it loads this set).
  */
-const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.measure', 'geom.fit_check', 'geom.push_pull', 'geom.mirror', 'geom.array', 'geom.split', 'geom.subtract', 'geom.emboss', 'geom.cut', 'geom.hollow', 'geom.repair', 'geom.build', 'geom.boolean'])
+const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.measure', 'geom.fit_check', 'geom.interference', 'geom.push_pull', 'geom.mirror', 'geom.array', 'geom.split', 'geom.subtract', 'geom.emboss', 'geom.cut', 'geom.hollow', 'geom.repair', 'geom.build', 'geom.boolean'])
 
 /**
  * Editing a part already built: open it, go through its steps and sketches, pick its faces and edges, project them

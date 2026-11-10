@@ -45,6 +45,7 @@ pub mod hole;
 #[cfg(feature = "hollow")]
 pub mod hollow;
 pub mod import;
+pub mod interference;
 pub mod json;
 mod json_cad;
 #[cfg(feature = "texture")]

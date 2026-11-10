@@ -37,6 +37,7 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.info',
   'geom.measure',
   'geom.fit_check',
+  'geom.interference',
   'geom.cut',
   'geom.split',
   'geom.mirror',
