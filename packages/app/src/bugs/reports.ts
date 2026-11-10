@@ -7,7 +7,7 @@
 import type { Host } from '@slicerx/contracts'
 import { crashReportsRequired, isFork, UPSTREAM_REPORTS, type EditionConfig } from '@slicerx/edition-config'
 import { appStore, get, set, type AppState } from '../state/store'
-import { nativeCrashHost, startCrashCapture, takeOver, type CrashInfo } from './crash'
+import { nativeCrashHost, startCrashCapture, takeOver, type CrashInfo, type NativeCrashes } from './crash'
 import { logTail, note, previousLogTail, startLogCapture, unloadedCleanly } from './log'
 import { enqueue, flush, supabaseSender, type FlushResult, type SendResult, type Sender } from './outbox'
 import { browserFromUserAgent, finishReport, LIMITS, osFromUserAgent, type BugReport, type RawReport } from './report'
@@ -32,9 +32,17 @@ let ctx: Context | null = null
 const seen = new Set<string>()
 let crashCount = 0
 let pageCounted = false
+/** The shell's SX_CRASH_REPORTS_LOCAL switch, once its first answer is in (NativeCrashes.localOnly). */
+let localOnly = false
+/** Settles once the shell has said whether reports stay local; nothing is queued or sent before then. */
+let shellAnswered: Promise<unknown> = Promise.resolve()
 
-/** Whether automatic crash reports may be sent: always in a pre-alpha build, else the person's setting. */
+/**
+ * Whether automatic crash reports may be sent: always in a pre-alpha build, else the person's setting. Never in a test
+ * run that keeps them on this computer (SX_CRASH_REPORTS_LOCAL=1).
+ */
 export function crashReportsOn(): boolean {
+  if (localOnly) return false
   // A fork sends crash reports only to its own backend; without one they are off.
   if (ctx && isFork(ctx.edition) && !ctx.sender && !ctx.upstream) return false
   return Boolean(ctx && crashReportsRequired(ctx.edition)) || get().crashReports
@@ -128,9 +136,10 @@ function outbound(c: Context): Sender | null {
 }
 
 /** Sends the queue now; queued crash reports wait while crash reports are off. */
-export function sendQueued(): Promise<FlushResult> {
+export async function sendQueued(): Promise<FlushResult> {
+  await shellAnswered
   const send = ctx ? outbound(ctx) : null
-  if (!send) return Promise.resolve({ sent: 0, kept: 0, dropped: 0 })
+  if (!send) return { sent: 0, kept: 0, dropped: 0 }
   const on = crashReportsOn()
   return flush(send, (r) => (r.kind === 'manual' ? Boolean(ctx?.sender) : on))
 }
@@ -154,6 +163,7 @@ function crashBody(what: string, extra: string[] = []): string {
 }
 
 async function queueCrash(raw: Omit<RawReport, 'appVersion' | 'commit' | 'os' | 'printer'>, crashed?: Partial<Pick<RawReport, 'appVersion' | 'commit'>>): Promise<BugReport | null> {
+  await shellAnswered
   if (!crashReportsOn()) return null
   const report = finishReport({ ...raw, ...(await environment()), ...crashed })
   if (report.fingerprint) {
@@ -179,12 +189,17 @@ export function reportCrash(error: unknown, o: CrashInfo = {}): void {
   void queueCrash({ kind: 'crash', title, body: crashBody(o.where ? `Automatic crash report: ${o.where}.` : 'Automatic crash report.'), stack: fullStack, logTail: logTail() }).catch(() => undefined)
 }
 
-/** Queues what the shell recorded since the last launch, and a report when the web view reloaded by itself. */
-async function takeNative(host: Host, pageLoad: boolean): Promise<void> {
+/**
+ * Queues what the shell recorded since the last launch, and a report when the web view reloaded by itself. `asked` is
+ * the shell's answer when the caller already has it.
+ */
+async function takeNative(host: Host, pageLoad: boolean, asked?: Promise<NativeCrashes>): Promise<void> {
   const crashHost = nativeCrashHost()
   if (!crashHost) return
-  const got = await crashHost.take(pageLoad, host.build.commit)
+  const got = await (asked ?? crashHost.take(pageLoad, host.build.commit))
   if (ctx) ctx.os = got.os || ctx.os
+  // a test run keeps the shell's files where they are, for the run to read; nothing is queued from them
+  if (got.localOnly) return
   const started = typeof performance !== 'undefined' ? performance.timeOrigin : Date.now()
   for (const c of got.reports) {
     // A panic from before this page loaded ended the session whose log was saved; a newer one belongs to this one.
@@ -250,7 +265,18 @@ export function startBugReports(host: Host, edition: EditionConfig): () => void 
   // Once per page: a second start (React's development double mount) must not count as a reload.
   const first = !pageCounted
   pageCounted = true
-  void (first ? takeNative(host, true) : Promise.resolve())
+  // The shell says first whether reports stay on this computer; a crash from before then waits for the answer.
+  const crashHost = first ? nativeCrashHost() : null
+  const asked = crashHost ? crashHost.take(true, host.build.commit) : null
+  if (asked) {
+    shellAnswered = asked.then(
+      (got) => {
+        localOnly = got.localOnly === true
+      },
+      () => undefined,
+    )
+  }
+  void (asked ? takeNative(host, true, asked) : Promise.resolve())
     .catch(() => undefined)
     .then(() => sendQueued())
     .catch(() => undefined)
@@ -306,4 +332,6 @@ export function resetBugReports(): void {
   seen.clear()
   crashCount = 0
   pageCounted = false
+  localOnly = false
+  shellAnswered = Promise.resolve()
 }

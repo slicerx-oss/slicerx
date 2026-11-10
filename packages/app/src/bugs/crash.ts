@@ -26,6 +26,11 @@ export interface NativeCrashes {
   pageLoads: number
   /** The operating system and its version, as the shell reads it. */
   os: string
+  /**
+   * A test run's switch (SX_CRASH_REPORTS_LOCAL=1): every report stays on this computer. The page sends none, queues
+   * none it could send later, and leaves the shell's report files for the run to read.
+   */
+  localOnly?: boolean
 }
 
 /** The desktop shell's side of crash reporting (apps/desktop/src/host/crash.ts). */

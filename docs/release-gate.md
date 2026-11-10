@@ -78,6 +78,12 @@ single-instance, so the gate refuses to start while the same build is already ru
   so the object row's tools stay hidden. b1 leaves the object out of the print with its shortcut (V) there instead of
   the row's toggle.
 
+On every platform the gate starts the app with `SX_CRASH_REPORTS_LOCAL=1` and `SX_CRASH_REPORTS_DIR` set to a
+`crash-reports` folder in the run's own profile. The app still writes a crash report there, but never sends one, so a
+crash the gate caused (a hold timeout that kills the app, say) never reaches the bug channel and no later run on the
+machine picks it up. When the run ends, the gate copies any report left in that folder into `crash-reports/` in the
+report folder and names each one in the run's notes.
+
 ## Scenarios
 
 Every run starts the same way. It waits for the app to come up, accepts the pre-alpha agreement on the test profile,
