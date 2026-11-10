@@ -244,7 +244,11 @@ export interface WallBudget {
   /** Wall-clock time in ms (the app measures on its main thread). */
   maxMs: number
 }
-export const WALL_BUDGET: WallBudget = { maxFacets: 250_000, maxMs: 1500 }
+/**
+ * A curved part hollowed by the voxel shell (a lofted bottle shelled to 2 mm) comes back with about 600,000 facets and
+ * measures in under a second, so the facet cap leaves room for one that size; the time limit stops a slower one.
+ */
+export const WALL_BUDGET: WallBudget = { maxFacets: 1_000_000, maxMs: 1500 }
 
 /** The thinnest wall, in mm, or null with the reason when it was not measured (null alone: no ray met a far side). */
 export interface WallReading {

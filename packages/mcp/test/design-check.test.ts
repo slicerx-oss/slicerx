@@ -9,7 +9,7 @@ import { gunzipSync } from 'node:zlib'
 import { designNamed, type Design as HostDesign, type DesignHost } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
-import { minWall } from '../src/body-facts'
+import { minWall, WALL_BUDGET } from '../src/body-facts'
 import { createPlanRegistry, designCheck, FIX_ROUNDS, hasHookLip, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
 import { createCardPlans } from '../src/tab-tools'
 import { designToolset, NO_ENGINE_HOST } from '../src/toolset'
@@ -288,6 +288,19 @@ function boxTris([x0, y0, z0]: number[], [x1, y1, z1]: number[]): Tri[] {
 
 const meshOf = (tris: readonly Tri[]) => ({ positions: tris.flat(2), indices: tris.flatMap((_, t) => [t * 3, t * 3 + 1, t * 3 + 2]) })
 
+/** `tris`, each split into n by n facets turned the same way, as one mesh with every facet's corners its own. */
+function finely(tris: readonly Tri[], n: number) {
+  const positions: number[] = []
+  const at = ([a, b, c]: Tri, i: number, j: number): number[] => [0, 1, 2].map((k) => a[k]! + ((b[k]! - a[k]!) * i) / n + ((c[k]! - a[k]!) * j) / n)
+  for (const t of tris)
+    for (let i = 0; i < n; i++)
+      for (let j = 0; i + j < n; j++) {
+        positions.push(...at(t, i, j), ...at(t, i + 1, j), ...at(t, i, j + 1))
+        if (i + j < n - 1) positions.push(...at(t, i + 1, j), ...at(t, i + 1, j + 1), ...at(t, i, j + 1))
+      }
+  return { positions, indices: Array.from({ length: positions.length / 3 }, (_, v) => v) }
+}
+
 /**
  * One part of 7222 facets: a 100 x 100 x 10 mm slab whose top is 7200 small facets, and apart from it a 20 x 20 mm plate
  * 0.5 mm thick from facet 7210 on, whose top and bottom facets sit at odd places. Casting from every second facet (as
@@ -361,6 +374,15 @@ describe('minWall', () => {
     let t = 0
     expect(minWall([m], { maxFacets: 1_000_000, maxMs: 1000 }, () => (t += 60_000))).toEqual({ mm: null, why: 'part too dense' })
     expect(designCheck(bracket, { ...built, minWallMm: null, minWallWhy: 'part too dense' }, 0.4).pass).toBe(false)
+  })
+
+  it('measures a hollowed curved part as dense as a voxel shell leaves it, within the time budget', () => {
+    // a 70 mm square bottle lofted into a round neck and shelled to 2 mm comes back from the voxel hollow as about
+    // 583,000 facets; here a 70 mm box with a 2 mm wall, its 24 facets each split into 156 by 156
+    const m = finely([...boxTris([0, 0, 0], [70, 70, 70]), ...boxTris([2, 2, 2], [68, 68, 68]).map(([a, b, c]): Tri => [a, c, b])], 156)
+    expect(m.indices.length / 3).toBe(584_064)
+    // a clock that never moves, so a slow runner reads the facet cap and not its own speed
+    expect(minWall([m], WALL_BUDGET, () => 0)).toEqual({ mm: 2 })
   })
 
   it('a gap between two bodies of one part is not a wall, even across a facet turned the wrong way', () => {

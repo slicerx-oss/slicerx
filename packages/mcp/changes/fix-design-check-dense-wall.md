@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_design_check` 1.9.0 (past 1.8.0, the seam ledge reading) measures the minimum wall of a part with up to 1,000,000 facets, from 250,000, still within the 1.5 s limit. A curved part hollowed by `slicerx_geom_shell` (a 70 mm square bottle lofted into a round neck and shelled to 2 mm comes back with about 583,000 facets) now reads its wall. Before, its "minimum wall" item read `not measured (part too dense)` and failed, so the check failed a part whose walls were fine. A part past the new cap, or one that takes longer than the limit, still reads `not measured (part too dense)`.
