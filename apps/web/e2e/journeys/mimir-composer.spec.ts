@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // mimir's message box under fast typing and while a card waits, and the part card's Change size: every key typed at full
 // speed lands in order, a paste lands as pasted, words sent while a dimension sheet waits reach mimir (the sheet is set
-// aside and says so) instead of sitting in the box, and Change size opens its size row on the first click. Scripted,
-// no model behind it.
+// aside and says so) instead of sitting in the box, Change size opens its size row on the first click, and with no
+// model connected Enter keeps the message and says where to connect one. Scripted, no model behind it.
 import type { Page } from '@playwright/test'
 import { journey as test, expect } from '../journey'
 import { debugOn, emptyMimirTab, setPilot } from './lib/session'
@@ -88,3 +88,50 @@ test.describe('the part card', () => {
     await expect(row.locator('input').first()).toBeFocused()
   })
 })
+
+test.describe('with no model connected', () => {
+  test.beforeEach(async ({ page }) => fresh(page))
+
+  // Enter keeps the message and says where to connect, instead of doing nothing; connecting or emptying the box clears it.
+  test('says to connect a model above on Enter, keeping the message', async ({ page }) => {
+    await setPilot(page, 'unset')
+    await expect(page.getByTestId('mimir-connect')).toBeVisible()
+    const box = page.getByTestId('mimir-composer').getByRole('textbox')
+    const note = page.getByTestId('mimir-composer-off-note')
+    await box.fill('Make me a box with a lid')
+    await expect(note).toHaveCount(0)
+    await box.press('Enter')
+    await expect(box).toHaveValue('Make me a box with a lid')
+    await expect(note).toHaveText('Connect a model above to send this.')
+    await expect(note).toHaveAttribute('role', 'status')
+    // an empty box says nothing
+    await box.fill('')
+    await expect(note).toHaveCount(0)
+    await box.fill('Make me a box with a lid')
+    await box.press('Enter')
+    await expect(note).toBeVisible()
+    // once a model is connected the line goes and the message is still there to send
+    await setPilot(page, 'scripted')
+    await expect(note).toHaveCount(0)
+    await expect(box).toHaveValue('Make me a box with a lid')
+  })
+
+  // With turns in the chat the connect card is not shown, so the line points at Settings.
+  test('says to connect a model in Settings once the chat has turns', async ({ page }) => {
+    const box = page.getByTestId('mimir-composer').getByRole('textbox')
+    await box.fill('Make me a box with a lid')
+    await box.press('Enter')
+    await page.getByTestId('mimir-sheet-confirm').click()
+    await expect(page.getByTestId('mimir-part').last()).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('mimir-composer').getByRole('button', { name: 'Stop' })).toHaveCount(0, { timeout: 60_000 })
+    await setPilot(page, 'unset')
+    await expect(page.getByTestId('mimir-connect')).toHaveCount(0)
+    await box.fill('Make it 10 mm taller')
+    await box.press('Enter')
+    await expect(box).toHaveValue('Make it 10 mm taller')
+    await expect(page.getByTestId('mimir-composer-off-note')).toHaveText('Connect a model in Settings to send this.')
+    await setPilot(page, 'scripted')
+    await expect(page.getByTestId('mimir-composer-off-note')).toHaveCount(0)
+  })
+})
+
