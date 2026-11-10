@@ -46,7 +46,7 @@ fn indx_config(extra: &Value) -> Value {
         let path = format!("{}/../profiles/{file}", env!("CARGO_MANIFEST_DIR"));
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
     };
-    let (machine, gcode) = (read("machine.json"), read("gcode.json"));
+    let (machine, gcode) = (read("machine.json"), common::shipped_gcode::doc());
     let mut c = machine["models"]["prusa-core-one-indx"]["machine"].clone();
     let family = &gcode["families"][gcode["models"]["prusa-core-one-indx"].as_str().unwrap()];
     for (key, part) in [
