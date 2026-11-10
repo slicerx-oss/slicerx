@@ -28,7 +28,7 @@ import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, evalPrice, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, recordLive, refreshScore, summarize } from './mimir-build-evals/recordings'
-import { assemblySizes, checkFromCalls, classifyNoBuild, extraTurns, hookCheck, lastCheckPass, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
+import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, hookCheck, lastCheckPass, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
 
@@ -236,6 +236,40 @@ describe('build eval scoring', () => {
     expect(first.calls, JSON.stringify(first.calls)).toEqual(['design.new ok', 'design.steps ok'])
     const second = await driveCase(c, { steps, timeoutMs: 20_000 })
     expect(second.calls, JSON.stringify(second.calls)).toEqual(['design.new ok', 'design.steps ok'])
+  }, 30_000)
+
+  it('keeps each design.check call with the plan it named and the items it failed, so two plans in a run stay apart', () => {
+    // a run with two plans: the second plan's check passes, a look reads the part, and a check of the first plan fails
+    // on its size with no edit between
+    const check = (id: string, planId: string, output: unknown, ok = true): PilotEvent[] => [
+      { type: 'tool_call', callId: id, tool: 'design.check', source: 'command', input: { planId } },
+      { type: 'tool_result', callId: id, ok, summary: ok ? 'checked' : 'planId: there is no plan plan_c', output } as PilotEvent,
+    ]
+    const items = (sizeOk: boolean) => [
+      { name: 'overall size', want: '80 x 50 x 35 mm', got: '80 x 53 x 38 mm', pass: sizeOk },
+      { name: 'watertight', want: 'closed', got: 'closed', pass: true },
+    ]
+    const events = [
+      ...check('a', 'plan_b', { design: 'obj_1', pass: true, items: items(true) }),
+      { type: 'tool_call', callId: 'l', tool: 'design.look', source: 'command', input: { design: 'obj_1' } },
+      { type: 'tool_result', callId: 'l', ok: true, summary: 'Looked' } as PilotEvent,
+      ...check('b', 'plan_a', { design: 'obj_1', pass: false, items: items(false) }),
+      ...check('c', 'plan_c', undefined, false),
+    ] as PilotEvent[]
+    expect(checkCalls(events)).toEqual([
+      { planId: 'plan_b', design: 'obj_1', result: 'ok', pass: true, failed: [] },
+      { planId: 'plan_a', design: 'obj_1', result: 'ok', pass: false, failed: ['overall size'] },
+      { planId: 'plan_c', result: 'refused', why: 'planId: there is no plan plan_c' },
+    ])
+    expect(checkCalls([])).toEqual([])
+  })
+
+  it('puts the design.check calls of a driven run on its results row, with each plan id', async () => {
+    const r = await driveCase(asCase('check-calls'), { steps: [{ calls: [{ name: 'design.check', args: { planId: 'plan_one' } }, { name: 'design.check', args: { planId: 'plan_two' } }] }, { text: 'Checked.' }], timeoutMs: 20_000 })
+    expect(r.checks.map((x) => [x.planId, x.result])).toEqual([
+      ['plan_one', 'refused'],
+      ['plan_two', 'refused'],
+    ])
   }, 30_000)
 
   it('charges a renamed plan of a part already built, and frees a second part whose sheet has the same title', () => {
@@ -680,7 +714,7 @@ describe.runIf(live)('live build evals', () => {
     const out = process.env['SX_MIMIR_EVAL_OUT']
     if (out) {
       const at = new Date().toISOString()
-      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, lid: r.run.score.lid?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
+      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, lid: r.run.score.lid?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, checkCalls: r.run.checks, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
     }
   })
   for (const c of cases) {

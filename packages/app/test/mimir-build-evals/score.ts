@@ -463,6 +463,40 @@ export function verdictCounts(rows: readonly { id: string; verdict: Verdict }[])
   return { byCase, all }
 }
 
+/** One design.check call of a run, as its results row keeps it: the plan it checked, and how it came out. */
+export interface CheckCall {
+  /** The planId the call named, or null when it named none. */
+  planId: string | null
+  /** The design it checked, when the check said. */
+  design?: string
+  /** ok: the check measured the part (pass says how it came out); refused: it did not run, with the reason. */
+  result: 'ok' | 'refused' | 'no result'
+  pass?: boolean
+  /** The names of the items that failed, in the check's order. */
+  failed?: string[]
+  /** The reason a refused call gave, cut short. */
+  why?: string
+}
+
+/**
+ * Every design.check call of a run in order, with the planId it named and the items that failed, so a run that checks
+ * two plans, or one plan twice with different results, shows which plan each check was against.
+ */
+export function checkCalls(events: readonly PilotEvent[]): CheckCall[] {
+  const results = new Map(events.flatMap((e) => (e.type === 'tool_result' ? [[e.callId, e] as const] : [])))
+  return events.flatMap((e) => {
+    if (e.type !== 'tool_call' || e.tool !== 'design.check') return []
+    const planId = (e.input as { planId?: unknown } | null)?.planId
+    const call: CheckCall = { planId: typeof planId === 'string' ? planId : null, result: 'no result' }
+    const r = results.get(e.callId)
+    if (!r) return [call]
+    if (r.ok === false) return [{ ...call, result: 'refused' as const, why: (r.summary ?? '').slice(0, 160) }]
+    const out = r.output as { design?: unknown; pass?: unknown; items?: { name?: unknown; pass?: unknown }[] } | undefined
+    const failed = (out?.items ?? []).filter((i) => i.pass === false).map((i) => String(i.name))
+    return [{ ...call, ...(typeof out?.design === 'string' ? { design: out.design } : {}), result: 'ok' as const, ...(typeof out?.pass === 'boolean' ? { pass: out.pass } : {}), failed }]
+  })
+}
+
 export interface CaseScore {
   built: boolean
   /** The first reply turned the part down. */

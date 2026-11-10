@@ -30,7 +30,7 @@ import { cardPlans, clearPlans, PLAN_GO } from '../../src/workspaces/mimir/plan-
 import { forgetWaiting } from '../../src/cad/waiting'
 import { tabPilotOptions, toolsFor } from '../../src/workspaces/mimir/session'
 import type { BuildCase } from './cases'
-import { classifyNoBuild, placed, scoreCase, type CaseScore, type UserTurn } from './score'
+import { checkCalls, classifyNoBuild, placed, scoreCase, type CaseScore, type CheckCall, type UserTurn } from './score'
 
 /** The model the eval runs on unless told otherwise: the tab's Haiku. */
 export const EVAL_MODEL = 'claude-haiku-5-5'
@@ -124,6 +124,8 @@ export interface CaseRun {
   steps: EvalStep[]
   /** Every geom.* or design.* call, with ok or the error summary. */
   calls: string[]
+  /** Every design.check call, with the planId it named and the items that failed (score.ts checkCalls). */
+  checks: CheckCall[]
   reply: string
   error?: string
 }
@@ -252,7 +254,7 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
     const checked = e.tool === 'design.check' && r?.ok !== false ? (r?.output as { pass?: unknown } | undefined)?.pass : undefined
     return [`${e.tool} ${r ? (r.ok === false ? `FAIL ${r.summary ?? ''}`.slice(0, 160) : typeof checked === 'boolean' ? `ok (part ${checked ? 'passed' : 'failed'})` : 'ok') : 'no result'}`]
   })
-  const run: CaseRun = { score, turns, steps, calls, reply: firstReply.slice(0, 800) }
+  const run: CaseRun = { score, turns, steps, calls, checks: checkCalls(events), reply: firstReply.slice(0, 800) }
   if (error) run.error = error
   return run
 }
