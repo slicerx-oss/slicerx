@@ -4,6 +4,11 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { IconName } from './icons/icon-paths'
 import { applyTheme, clearTheme, subban, themeToCss, type Theme } from './theme'
+import { holdKeysForDialogs } from './components/dialog-hold'
+
+// A required dialog holds the keyboard with a window listener that must be the first one added (components/dialog-hold.ts).
+// Dialog's own code loads on demand, so the provider, which is in the first screen, installs it.
+holdKeysForDialogs()
 
 /** Icon overrides: inner SVG markup on the 24px grid, keyed by icon name. */
 export type IconOverrides = Partial<Record<IconName, string>>

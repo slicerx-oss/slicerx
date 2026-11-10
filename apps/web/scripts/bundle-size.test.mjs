@@ -45,7 +45,7 @@ test('passes a shell under the budget, and does not count a chunk that loads lat
   try {
     const r = check(dist)
     assert.equal(r.code, 0, r.out)
-    assert.match(r.out, /shell JS: \d+\.\d KB gzip \(budget 193 KB\)/)
+    assert.match(r.out, /shell JS: \d+\.\d KB gzip \(budget 188 KB\)/)
   } finally {
     rmSync(dist, { recursive: true, force: true })
   }
