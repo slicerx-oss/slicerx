@@ -118,7 +118,7 @@ describe('pieces made as separate array copies', () => {
   it('fails a copy that touches the next one: 9 bodies print as 8 pieces', async () => {
     const { pieces } = await piecesOf(lizard(), segments(9), new Set([3]))
     expect(pieces.pass).toBe(false)
-    expect(pieces.got).toBe('8 pieces: Segment 1 4 and Segment 1 5 touch, so they print as one piece; leave the planned gap between them')
+    expect(pieces.got).toBe('8 pieces: Segment 1 4 and Segment 1 5 touch at (64.8, 8.2, 0), so they print as one piece; leave the planned gap between them')
   })
 
   it('fails a missing copy: an array of 8 for 9 planned segments', async () => {

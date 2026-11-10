@@ -1,0 +1,4 @@
+### Changed
+
+- `slicerx_geom_fit_check` 1.1.0 gives `where` on a touch where neither body rests on the other's top face, such as a pin's end flush on a box's end wall: the point, and the axis the faces meeting there are square to when a face of either body through the point is, such as "at (80, 60, 3), where faces square to x meet". Before, only a body resting on another had `where`. A warning for such a touch reads "Lid and Tray touch at (80, 60, 3), where faces square to x meet, 0.0 mm; moving pieces need 0.3 mm or more".
+- `slicerx_design_check` 1.10.0 (past 1.9.0, the dense wall reading) names that place in its `pieces` and `gaps` items for a plan with `printInPlace`, such as "1 piece: Lid and Tray touch at (80, 60, 3), where faces square to x meet, so they print as one piece; leave the planned gap between them", where before it said only that the pieces touch.

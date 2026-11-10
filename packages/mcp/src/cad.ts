@@ -1612,7 +1612,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const r3n = (v: number): number => Math.round(v * 1000) / 1000 || 0
   const fitCheck = defineTool({
     name: 'geom.fit_check',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
