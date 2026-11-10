@@ -8,7 +8,7 @@ import type { ApprovalHost, Host, PrinterHost, PrinterConnection, SecretsHost, S
 import type { CameraStreams } from '../camera/stream'
 import { fromLinkResult, registerPrinterSetup, type AppSetupHost, type FoundPrinter } from '../first-run/setup-registry'
 import { createRemoteAccess, pairSource, setPairSource, setRemoteAccess, type BridgeRemote } from '../features/phone/remote'
-import { pairSourceFor, pairStorage, phoneAccessFor } from '../features/phone/wire'
+import { pairSourceFor, pairStorageReady, phoneAccessFor } from '../features/phone/wire'
 import { getPhoneAccess, setPhoneAccess } from '../lib/phone'
 import { appStore, get, set, toast } from '../state/store'
 import { promoteHandPrinters, withHandPrinters } from '../lib/hand-printers'
@@ -245,7 +245,9 @@ async function connect(host: Host, code?: string, again = false): Promise<boolea
     void Promise.all([import('../inventory/usage'), import('../state/actions')]).then(([u, a]) => {
       if (live?.bridge === bridge) stopFinished = u.watchFinishedPrints(host, a.recordSpoolUse)
     })
-    const storage = pairStorage()
+    // The entry may keep it in a loader: the sealing code arrives now, with the connection. No storage leaves phones out.
+    const storage = await pairStorageReady().catch(() => null)
+    if (live?.bridge !== bridge) return false
     if (storage && bridge.pair) {
       setPairSource(pairSourceFor(storage))
       setPhoneAccess(phoneAccessFor(bridge, storage, bridge.relayUrl ?? null))

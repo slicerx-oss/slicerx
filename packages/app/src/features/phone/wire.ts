@@ -2,31 +2,17 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Builds Phone access when the printer bridge connects: the pairing host (identity, pairings, the services a
 // paired phone may use) and the LAN listener behind one switch. The app entry only names where the secrets are
-// kept (setPairStorage). The pairing code is loaded on first use, so nothing here costs startup while the switch is off.
-import type { HostServices, IdentityStore, PairingStore } from '@slicerx/pair'
+// kept (setPairStorage, in pair-slot.ts). The pairing code is loaded on first use, so nothing here costs startup while the switch is off.
+import type { HostServices } from '@slicerx/pair'
 import type { ConnectedBridge } from '../../link/bridge'
 import type { PhoneAccess, PhoneState } from '../../lib/phone'
 import { PHONE_OFF } from '../../lib/phone'
 import { getRemoteAccess, type PairSource } from './remote'
 import { phoneQuestionFeed } from '../../workspaces/mimir/phone-answers'
 import { phoneApprovalFeed } from '../../workspaces/mimir/phone-approvals'
+import type { PairStorage } from './pair-slot'
 
-export interface PairStorage {
-  identity: IdentityStore
-  pairings: PairingStore
-  /** How this computer shows in a phone's list. */
-  name: string
-  kind: 'desktop' | 'web'
-}
-
-let storage: PairStorage | null = null
-
-/** Called by the app entry, once, with where this build keeps secrets. */
-export function setPairStorage(s: PairStorage | null): void {
-  storage = s
-}
-
-export const pairStorage = (): PairStorage | null => storage
+export { pairStorage, pairStorageReady, setPairStorage, type PairStorage } from './pair-slot'
 
 /** The identity and pairings the hub needs for Remote access. */
 export function pairSourceFor(s: PairStorage): PairSource {
