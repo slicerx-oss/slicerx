@@ -78,6 +78,7 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string?]>> = {
   // building and joining solids
   build: ['model', 'Build'],
   subtract: ['model', 'Subtract'],
+  interference: ['model', 'Interference check'],
   boolean: ['model', 'Join'],
   array: ['model', 'Array'],
   'array.merged': ['model', 'Array'],
