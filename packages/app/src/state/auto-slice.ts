@@ -9,7 +9,7 @@ import type { Host } from '@slicerx/contracts'
 import { cancelSlice, currentSlice, slicePlate, STALE_SLICE } from './actions'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { isBigSlice, sliceTimingsOf } from './slice-estimate'
-import { inputsChanged as changed, KEY_CONFIG } from './slice-inputs'
+import { flushRefreshOnly, inputsChanged as changed, KEY_CONFIG } from './slice-inputs'
 import { appStore, type AppState } from './store'
 
 export { INPUTS } from './slice-inputs'
@@ -150,6 +150,10 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     const turnedOn = !prev.autoSlice || (prev.autoSliceBySize && !s.autoSliceBySize)
     const released = prev.liveEdit && !s.liveEdit
     const loaded = prev.plateLoading && !s.plateLoading
+    // The measured flush tables land a moment after the first flush calculation (the footer's sleipnir line makes one
+    // as soon as the plate is in) and rewrite the flush settings unchanged. A slice done or running read the old
+    // values and goes again; with none yet there is nothing to redo, and a plate waiting for Slice keeps waiting.
+    if (!turnedOn && !released && !loaded && flushRefreshOnly(s, prev) && s.slice.status !== 'done' && s.slice.status !== 'running') return
     if (!turnedOn && !released && !changed(s, prev) && !loaded) {
       // A KEY_CONFIG value (a new printer's nozzle volume, an opened project's flush matrix) is not a slice input, but a
       // finished slice whose configuration read it is stale (resume-tops.ts stampBlock): mark it and slice again. The

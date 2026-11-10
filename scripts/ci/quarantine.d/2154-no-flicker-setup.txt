@@ -1,1 +1,0 @@
-no flicker > | subydoo-ci | 2026-11-10 | https://github.com/slicerx-oss/slicerx/issues/2154 | all three tests share a setup that stalls at the Slice plate click and ran past the 300 s GPU timing step in most merge groups from about 18:55 UTC on 2026-11-10; the click now fails after 30 s
