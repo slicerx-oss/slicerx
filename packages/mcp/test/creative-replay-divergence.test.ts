@@ -6,7 +6,7 @@ import type { LlmMessage } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { parseRecording } from '../evals/creative/recordings'
-import { differs, divergence, fingerprint } from '../evals/creative/replay-divergence'
+import { differs, divergence, fingerprint, MADE_ID } from '../evals/creative/replay-divergence'
 import { runPrompt } from '../evals/creative/run'
 
 const P = CREATIVE_PROMPTS.find((x) => x.id === 'cable-organizer')!
@@ -35,6 +35,14 @@ describe('replay divergence', () => {
     expect(differs(result('Cut', true, { steps: 3 }), result('Cut', true, { steps: 4 }), 'geom.extrude')).toEqual({ recorded: 'steps 3', got: 'steps 4' })
     expect(differs(result('Built', true, { parts: [{}] }), result('Built', true, { parts: [] }), 'geom.build')).toEqual({ recorded: 'parts 1', got: 'parts 0' })
     expect(differs(JSON.stringify({ ok: false, error: 'no', code: 'same_part' }), JSON.stringify({ ok: false, error: 'no' }))).toEqual({ recorded: 'code same_part', got: 'code none' })
+  })
+
+  it('reads a step id with no digit as made when it is the value of an id, but not a long word in running text', () => {
+    const made = (s: string) => s.match(MADE_ID) ?? []
+    expect(made('{"result":{"id":"smwatqzbcak","name":"Sketch 1"}}')).toEqual(['smwatqzbcak'])
+    expect(made('{"sketch":"smwatqzbcak","step":"sabcdefghij"}')).toEqual(['smwatqzbcak', 'sabcdefghij'])
+    expect(made('{"result":{"id":"smwapacdb1k"},"summary":"step 2 is in the sketchbook"}')).toEqual(['smwapacdb1k'])
+    expect(made('The successful substitution happened.')).toEqual([])
   })
 
   it('ignores ids a run makes, and what a result carries beyond what it says', () => {
