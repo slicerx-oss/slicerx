@@ -309,6 +309,8 @@ pub fn sweep_morph(
         ));
     }
     law.check()?;
+    #[cfg(test)]
+    CLEARED.set(false);
     let (pts, t_start, t_end) = path_points(path)?;
     // only a path of points leaves its plane; the given points, before smoothing or steps cut them
     let axis = if path.points.is_empty() {
@@ -529,13 +531,394 @@ pub fn sweep_morph(
         frame: end,
     };
     let mesh = sketch_loft::build_rows(&rings, &lens, &of, true, None, Some((&start, &finish)), size)?;
-    if boolean::Solid::new(&mesh).is_ok_and(|s| s.self_intersects()) {
+    // a sweep about an axis whose turns are shown apart, and each strip apart from its neighbors, needs no check; a
+    // sweep into an end profile always takes the whole check
+    let clear = to.is_none() && axis.is_some_and(|a| turns_clear(&mesh, &rings, &lens, a, size));
+    #[cfg(test)]
+    CLEARED.set(clear);
+    if !clear && boolean::Solid::new(&mesh).is_ok_and(|s| s.self_intersects()) {
         return Err(Error::geometry(
             "sweep",
             "the swept body runs into itself where the path comes back near itself; move those parts of the path further apart or use a smaller profile",
         ));
     }
     Ok(mesh)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Whether the last sweep on this thread left out the whole self-intersection check.
+    static CLEARED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The span of a sweep about an axis taken by a ring, the strip between two rings or a cap: its angles about the
+/// axis (unwrapped, the way the sweep winds), heights along it and distances from it.
+#[derive(Clone, Copy)]
+struct Span {
+    lo: f64,
+    hi: f64,
+    h: (f64, f64),
+    r: (f64, f64),
+}
+
+impl Span {
+    fn join(self, o: Self) -> Self {
+        Self {
+            lo: self.lo.min(o.lo),
+            hi: self.hi.max(o.hi),
+            h: (self.h.0.min(o.h.0), self.h.1.max(o.h.1)),
+            r: (self.r.0.min(o.r.0), self.r.1.max(o.r.1)),
+        }
+    }
+
+    /// The nearest a point of a triangle or cap with corners in this span comes to the axis: its corners lie less than
+    /// half a turn apart about it, so the whole of it lies beyond the line across their middle angle.
+    fn near(self) -> f64 {
+        self.r.0 * ((self.hi - self.lo) / 2.0).m_cos()
+    }
+
+    /// Whether nothing in this span can meet anything in `o`, one or more turns on: they are apart along the axis or
+    /// from it.
+    fn apart(self, o: Self, gap: f64) -> bool {
+        self.h.1 + gap < o.h.0
+            || o.h.1 + gap < self.h.0
+            || self.r.1 + gap < o.near()
+            || o.r.1 + gap < self.near()
+    }
+}
+
+/// The span of each of `rings` about the axis through `on` along `dir`, its angles counting up the way the rings go
+/// round, or None when a ring comes within `gap` of the axis.
+fn ring_spans(rings: &[Vec<V3>], (on, dir): (V3, V3), gap: f64) -> Option<Vec<Span>> {
+    let polar = |p: V3| {
+        let d = vec3::sub(p, on);
+        let h = vec3::dot(d, dir);
+        let r = vec3::sub(d, vec3::scale(dir, h));
+        (h, vec3::len(r), r)
+    };
+    let turn = |a: V3, b: V3| vec3::dot(vec3::cross(a, b), dir).m_atan2(vec3::dot(a, b));
+    // each ring's angles measured from its first point, and that point's angle carried on from ring to ring
+    let mut spans: Vec<Span> = Vec::with_capacity(rings.len());
+    let mut was: Option<(V3, f64)> = None;
+    for ring in rings {
+        let (_, _, r0) = polar(ring[0]);
+        let at = was.map_or(0.0, |(w, a)| a + turn(w, r0));
+        was = Some((r0, at));
+        let mut s = Span {
+            lo: f64::MAX,
+            hi: f64::MIN,
+            h: (f64::MAX, f64::MIN),
+            r: (f64::MAX, f64::MIN),
+        };
+        for &p in ring {
+            let (h, rho, rv) = polar(p);
+            if rho <= gap {
+                return None;
+            }
+            let a = at + turn(r0, rv);
+            s = s.join(Span {
+                lo: a,
+                hi: a,
+                h: (h, h),
+                r: (rho, rho),
+            });
+        }
+        spans.push(s);
+    }
+    // the way the sweep winds counts up
+    let m = spans.len();
+    if spans[m - 1].lo < spans[0].lo {
+        for s in &mut spans {
+            (s.lo, s.hi) = (-s.hi, -s.lo);
+        }
+    }
+    Some(spans)
+}
+
+/// The most of a turn one strip of a sweep about an axis may take for `turns_clear` to decide, radians.
+const STRIP_MOST: f64 = std::f64::consts::FRAC_PI_4;
+
+/// Whether `mesh`, a sweep about the axis through `on` along `dir` from `rings` (two side triangles a quad, strip by
+/// strip, then the start and end caps), cannot run into itself, so the self-intersection check of the whole can be left
+/// out. Each ring is its loops one after another, `lens` points each, the outer loop first and then any holes, and a
+/// strip is the side quads of every loop in that order. Each ring's angles about the axis, heights along it and distances from it bound what lies between: a side
+/// triangle or cap has its corners within less than half a turn of each other, so it lies in the wedge their angles
+/// span, at heights between theirs and no nearer the axis than `Span::near`. Then strips two or more apart within a
+/// turn lie in wedges that do not meet, and strips a turn or more apart must be apart along the axis or from it. What
+/// is left, each strip or cap and the next, is shown apart triangle by triangle. A hole's points count in its ring's
+/// span like the outer loop's, and its wall's triangles are among those shown apart, from the outer wall's, from other
+/// holes' and from the caps', so a holed sweep is left unchecked only when its loops are shown clear of each other as
+/// well. False when any of it cannot be shown, so the whole is checked as before.
+fn turns_clear(mesh: &TriMesh, rings: &[Vec<V3>], lens: &[usize], (on, dir): (V3, V3), size: f64) -> bool {
+    let m = rings.len();
+    if m < 3 {
+        return false;
+    }
+    let gap = size * 1e-6;
+    let Some(spans) = ring_spans(rings, (on, dir), gap) else {
+        return false;
+    };
+    if spans[m - 1].hi - spans[0].lo < 2.0 * std::f64::consts::PI {
+        // less than a turn: nothing comes back near, so the whole check is quick
+        return false;
+    }
+    // the start cap, the strips in order, the end cap
+    let items: Vec<Span> = std::iter::once(spans[0])
+        .chain(spans.windows(2).map(|w| w[0].join(w[1])))
+        .chain(std::iter::once(spans[m - 1]))
+        .collect();
+    if items.iter().any(|s| s.hi - s.lo > STRIP_MOST || s.near() <= gap)
+        || items.windows(2).any(|w| w[1].lo < w[0].lo)
+    {
+        return false;
+    }
+    // within a turn: everything before an item's neighbor ends before it starts
+    let ahead = gap / spans.iter().fold(0.0f64, |r, s| r.max(s.r.1));
+    let mut most = f64::MIN;
+    for k in 2..items.len() {
+        most = most.max(items[k - 2].hi);
+        if most + ahead >= items[k].lo {
+            return false;
+        }
+    }
+    // a turn or more on: what lies at the same angles is apart
+    let wide = items.iter().fold(0.0f64, |w, s| w.max(s.hi - s.lo));
+    let full = 2.0 * std::f64::consts::PI;
+    for x in &items {
+        let mut t = 1.0;
+        while x.lo + t * full <= items[items.len() - 1].hi {
+            let (lo, hi) = (x.lo + t * full - ahead, x.hi + t * full + ahead);
+            let from = items.partition_point(|y| y.lo < lo - wide);
+            for y in items[from..].iter().take_while(|y| y.lo <= hi) {
+                if y.hi >= lo && !x.apart(*y, gap) {
+                    return false;
+                }
+            }
+            t += 1.0;
+        }
+    }
+    neighbors_apart(mesh, rings, lens, size)
+}
+
+/// Whether in `mesh`, swept from `rings` of loops `lens` points each (two side triangles a quad, every loop's quads strip
+/// by strip, then the start and end caps), each strip or cap and the next meet only where they share corners: every two
+/// of their triangles whose boxes meet are shown to, an outer wall's and a hole wall's alike.
+fn neighbors_apart(mesh: &TriMesh, rings: &[Vec<V3>], lens: &[usize], size: f64) -> bool {
+    let m = rings.len();
+    let n = rings[0].len();
+    // each loop is a closed ring of its own quads, so a strip is two triangles a ring point whatever the holes
+    let strip = 2 * n;
+    let tris = &mesh.triangles;
+    if lens.iter().sum::<usize>() != n
+        || lens.iter().any(|&len| len < 3)
+        || rings.iter().any(|r| r.len() != n)
+        || tris.len() < (m - 1) * strip
+    {
+        return false;
+    }
+    let caps = &tris[(m - 1) * strip..];
+    let start: Vec<usize> = (0..caps.len())
+        .filter(|&t| caps[t].iter().all(|&v| (v as usize) < n))
+        .map(|t| (m - 1) * strip + t)
+        .collect();
+    let end: Vec<usize> = (0..caps.len())
+        .filter(|&t| caps[t].iter().all(|&v| (v as usize) >= (m - 1) * n))
+        .map(|t| (m - 1) * strip + t)
+        .collect();
+    if start.len() + end.len() != caps.len() {
+        return false;
+    }
+    let item = |k: usize, into: &mut Vec<usize>| {
+        if k == 0 {
+            into.extend(&start);
+        } else if k == m {
+            into.extend(&end);
+        } else {
+            into.extend((k - 1) * strip..k * strip);
+        }
+    };
+    let tol = size * 1e-12;
+    let boxes: Vec<(V3, V3)> = tris
+        .iter()
+        .map(|t| {
+            let p = t.map(|v| mesh.positions[v as usize]);
+            (
+                [0, 1, 2].map(|k| p[0][k].min(p[1][k]).min(p[2][k]) - tol),
+                [0, 1, 2].map(|k| p[0][k].max(p[1][k]).max(p[2][k]) + tol),
+            )
+        })
+        .collect();
+    let mut both = Vec::with_capacity(2 * strip);
+    (0..m).all(|k| {
+        both.clear();
+        item(k, &mut both);
+        item(k + 1, &mut both);
+        pairs_apart(&mesh.positions, tris, &boxes, &mut both, tol)
+    })
+}
+
+/// Whether every two of the triangles `which` of `tris` whose `boxes` (grown by `tol`) meet, meet at most where they
+/// share corners, shown by `corners_apart`. The boxes are swept along x.
+fn pairs_apart(at: &[V3], tris: &[[u32; 3]], boxes: &[(V3, V3)], which: &mut [usize], tol: f64) -> bool {
+    which.sort_by(|&a, &b| boxes[a].0[0].total_cmp(&boxes[b].0[0]));
+    for (k, &ta) in which.iter().enumerate() {
+        let (alo, ahi) = boxes[ta];
+        for &tb in &which[k + 1..] {
+            let (blo, bhi) = boxes[tb];
+            if blo[0] > ahi[0] {
+                break;
+            }
+            if ta == tb || (1..3).any(|i| blo[i] > ahi[i] || alo[i] > bhi[i]) {
+                continue;
+            }
+            if !corners_apart(at, tris[ta], tris[tb], tol) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Whether triangles `a` and `b` (corner indices into `at`) meet at most at the corners they share: a plane through a
+/// shared corner or edge, or any plane when they share none, has one wholly on each side. Every side is judged with
+/// room for rounding, `tol` for each unit of the plane's normal, so a pair that cannot be shown apart is never taken
+/// as apart.
+fn corners_apart(at: &[V3], a: [u32; 3], b: [u32; 3], tol: f64) -> bool {
+    let mut both = [0u32; 3];
+    let mut count = 0;
+    for &v in &a {
+        if b.contains(&v) {
+            both[count] = v;
+            count += 1;
+        }
+    }
+    let (pa, pb) = (a.map(|v| at[v as usize]), b.map(|v| at[v as usize]));
+    match count {
+        0 => axis_apart(pa, pb, tol),
+        1 => corner_apart((a, pa), (b, pb), both[0], at[both[0] as usize], tol),
+        2 => edge_apart(
+            (a, pa),
+            (b, pb),
+            [both[0], both[1]].map(|v| at[v as usize]),
+            &both[..2],
+            tol,
+        ),
+        _ => false,
+    }
+}
+
+fn unit(v: V3) -> V3 {
+    vec3::normalize(v).unwrap_or([0.0; 3])
+}
+
+fn normal_of(p: [V3; 3]) -> V3 {
+    unit(vec3::cross(vec3::sub(p[1], p[0]), vec3::sub(p[2], p[0])))
+}
+
+/// Two triangles with no corner in common, apart along one of the axes of the separating axis test.
+fn axis_apart(pa: [V3; 3], pb: [V3; 3], tol: f64) -> bool {
+    let (na, nb) = (normal_of(pa), normal_of(pb));
+    let ea = [0, 1, 2].map(|k| vec3::sub(pa[(k + 1) % 3], pa[k]));
+    let eb = [0, 1, 2].map(|k| vec3::sub(pb[(k + 1) % 3], pb[k]));
+    let mut axes = [na, nb]
+        .into_iter()
+        .chain(ea.iter().map(|&e| vec3::cross(na, e)))
+        .chain(eb.iter().map(|&f| vec3::cross(nb, f)))
+        .chain(
+            ea.iter()
+                .flat_map(|&e| eb.iter().map(move |&f| vec3::cross(e, f))),
+        );
+    axes.any(|n| {
+        let room = tol * vec3::len(n);
+        let span = |p: [V3; 3]| {
+            p.iter()
+                .map(|&q| vec3::dot(n, q))
+                .fold((f64::MAX, f64::MIN), |(lo, hi), d| (lo.min(d), hi.max(d)))
+        };
+        let ((alo, ahi), (blo, bhi)) = (span(pa), span(pb));
+        room > 0.0 && (ahi + 2.0 * room < blo || bhi + 2.0 * room < alo)
+    })
+}
+
+/// Two triangles sharing only corner `v` at `o`: a plane through `o` holds the rest of `a` on its plus side and the
+/// rest of `b` on its minus side. The planes tried lean a little off either triangle's own, or stand across the
+/// surface the two lie on along one of their edges from `o`.
+fn corner_apart((a, pa): ([u32; 3], [V3; 3]), (b, pb): ([u32; 3], [V3; 3]), v: u32, o: V3, tol: f64) -> bool {
+    let splits = |n: V3| {
+        let room = tol * vec3::len(n);
+        let side = |t: [u32; 3], p: [V3; 3]| {
+            t.into_iter()
+                .zip(p)
+                .filter(move |(w, _)| *w != v)
+                .map(move |(_, q)| vec3::dot(n, vec3::sub(q, o)))
+        };
+        room > 0.0 && side(a, pa).all(|d| d > room) && side(b, pb).all(|d| d < -room)
+    };
+    let toward = |p: [V3; 3], t: [u32; 3]| {
+        unit(
+            t.iter()
+                .zip(p)
+                .filter(|(w, _)| **w != v)
+                .fold([0.0; 3], |s, (_, q)| vec3::add(s, unit(vec3::sub(q, o)))),
+        )
+    };
+    let (na, nb) = (normal_of(pa), normal_of(pb));
+    let (sa, sb) = (toward(pa, a), toward(pb, b));
+    let up = unit(vec3::add(na, nb));
+    let lean = 1e-6;
+    let neg = |n: V3| vec3::scale(n, -1.0);
+    let leaning = [na, neg(na)]
+        .map(|n| vec3::add(n, vec3::scale(sa, lean)))
+        .into_iter()
+        .chain([nb, neg(nb)].map(|n| vec3::sub(n, vec3::scale(sb, lean))));
+    let across = [(a, pa, sa), (b, pb, neg(sb))].into_iter().flat_map(|(t, p, s)| {
+        t.into_iter()
+            .zip(p)
+            .filter(|(w, _)| *w != v)
+            .flat_map(move |(_, q)| {
+                let c = unit(vec3::cross(up, vec3::sub(q, o)));
+                [c, neg(c)].map(|n| vec3::add(n, vec3::scale(s, lean)))
+            })
+    });
+    std::iter::once(vec3::sub(sa, sb))
+        .chain(leaning)
+        .chain(across)
+        .any(splits)
+}
+
+/// Two triangles sharing edge `[u, w]` (corners `shared`): the plane through the edge halfway between them has the
+/// third corner of each on its own side. The plane is meant to hold the edge; both corners are held further off by the
+/// most it can lean along the edge, so the plane that holds the edge exactly splits them as well.
+fn edge_apart(
+    (a, pa): ([u32; 3], [V3; 3]),
+    (b, pb): ([u32; 3], [V3; 3]),
+    [u, w]: [V3; 2],
+    shared: &[u32],
+    tol: f64,
+) -> bool {
+    let e = unit(vec3::sub(w, u));
+    let third = |t: [u32; 3], p: [V3; 3]| {
+        t.into_iter()
+            .zip(p)
+            .find(|(v, _)| !shared.contains(v))
+            .map(|(_, q)| q)
+    };
+    let (Some(qa), Some(qb)) = (third(a, pa), third(b, pb)) else {
+        return false;
+    };
+    let off = |q: V3| {
+        let d = vec3::sub(q, u);
+        unit(vec3::sub(d, vec3::scale(e, vec3::dot(d, e))))
+    };
+    let n = vec3::sub(off(qa), off(qb));
+    let room = tol * vec3::len(n);
+    let len = vec3::len(vec3::sub(w, u));
+    if room <= 0.0 || len <= 0.0 {
+        return false;
+    }
+    let reach = vec3::len(vec3::sub(qa, u)).max(vec3::len(vec3::sub(qb, u)));
+    let extra = vec3::dot(n, vec3::sub(w, u)).abs() / len * reach;
+    vec3::dot(n, vec3::sub(qa, u)) > room + extra && vec3::dot(n, vec3::sub(qb, u)) < -(room + extra)
 }
 
 /// The rings and end frame of a sweep about the axis through `on` along `dir`: each ring is the profile, with the law
@@ -2326,5 +2709,260 @@ mod tests {
         // the same point count all along: the square takes the circle's
         let n = linear.positions.len() / 2;
         assert_eq!(eased.positions.len() % n, 0);
+    }
+
+    /// A thread tooth `w` wide at the root and `tall` high, at radius `r` on the axial plane, its crest 0.307 of its root.
+    fn tooth_of(r: f64, w: f64, tall: f64) -> Profile {
+        let f = FaceFrame::for_normal([r, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap();
+        let (a, c) = (w / 2.0, w * 0.1536);
+        on(
+            f,
+            Loop {
+                points: vec![[0.0, -a], [tall, -c], [tall, c], [0.0, a]],
+                ..Loop::default()
+            },
+        )
+    }
+
+    /// `turns` turns about z of a helix from radius `r`, growing `grow` mm a turn, `per` points a turn.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a few hundred points"
+    )]
+    fn coil(r: f64, grow: f64, pitch: f64, turns: f64, per: usize) -> Vec<V3> {
+        let n = (turns * per as f64).round() as usize;
+        (0..=n)
+            .map(|i| {
+                let f = i as f64 / per as f64;
+                let (s, c) = (2.0 * PI * f).m_sin_cos();
+                let rr = r + grow * f;
+                [rr * c, rr * s, pitch * f]
+            })
+            .collect()
+    }
+
+    /// The sweep, whether it left out the whole check, and whether that check finds it runs into itself.
+    fn swept(profile: &Profile, pts: &[V3], law: &Law) -> (Result<TriMesh>, bool, bool) {
+        let m = sweep_with(profile, &points(pts), None, law);
+        let clear = CLEARED.get();
+        let meets = m
+            .as_ref()
+            .is_ok_and(|m| boolean::Solid::new(m).is_ok_and(|s| s.self_intersects()));
+        (m, clear, meets)
+    }
+
+    #[test]
+    fn a_thread_whose_turns_stay_apart_leaves_out_the_whole_check() {
+        for per in [48, 400] {
+            let (m, clear, meets) = swept(&tooth(35.0), &helix(35.0, 4.0, 5, per), &Law::default());
+            closed(&m.unwrap());
+            assert!(clear, "{per} a turn");
+            assert!(!meets, "{per} a turn");
+        }
+        // one steep turn comes back far above where it started
+        let (m, clear, meets) = swept(&tooth(35.0), &helix(35.0, 20.0, 1, 48), &Law::default());
+        assert!(m.is_ok() && clear && !meets);
+    }
+
+    #[test]
+    fn turns_that_may_meet_are_checked_whole() {
+        let plain = Law::default();
+        // wider than the pitch: refused as before
+        let (m, clear, _) = swept(&tooth_of(35.0, 4.5, 2.1), &helix(35.0, 4.0, 5, 48), &plain);
+        assert!(m.is_err() && !clear);
+        // less than a step's rise short of the pitch: the turns do not meet, but that is not shown
+        let (m, clear, meets) = swept(&tooth_of(35.0, 3.95, 2.1), &helix(35.0, 4.0, 5, 48), &plain);
+        assert!(m.is_ok() && !clear && !meets);
+        // a taper that widens the tooth past the pitch by the end
+        let wider = Law {
+            scale_end: Scale::Even(1.3),
+            ..Law::default()
+        };
+        let (m, clear, _) = swept(&tooth(35.0), &helix(35.0, 4.0, 5, 48), &wider);
+        assert!(m.is_err() && !clear);
+        // a cone whose turns nest, 2 mm in a turn and 1 mm up, round a 2.5 mm wire
+        let wire = |r: f64| {
+            on(
+                FaceFrame::for_normal([r, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap(),
+                circle([0.0, 0.0], 2.5),
+            )
+        };
+        let (m, clear, _) = swept(&wire(35.0), &coil(35.0, -2.0, 1.0, 4.0, 48), &plain);
+        assert!(m.is_err() && !clear);
+        // the same cone 3 mm in a turn: its turns are apart from the axis, so that is shown
+        let (m, clear, meets) = swept(&wire(35.0), &coil(35.0, -3.0, 1.0, 4.0, 48), &plain);
+        assert!(m.is_ok() && clear && !meets);
+        // less than a turn: checked whole
+        let (m, clear, meets) = swept(&tooth(35.0), &coil(35.0, 0.0, 4.0, 0.75, 48), &plain);
+        assert!(m.is_ok() && !clear && !meets);
+    }
+
+    #[test]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "small counts"
+    )]
+    fn whenever_the_whole_check_is_left_out_it_finds_nothing() {
+        let mut seed = 0x5eed_2026_u64;
+        let mut rand = || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let (mut left_out, mut checked, mut holed) = (0, 0, 0);
+        for case in 0..100 {
+            let r = 8.0 + 40.0 * rand();
+            let pitch = 1.0 + 9.0 * rand();
+            let w = pitch * (0.3 + 1.0 * rand());
+            let tall = (0.5 + 3.0 * rand()).min(r / 3.0);
+            let grow = if rand() < 0.3 { -2.0 * rand() } else { 0.0 };
+            let turns = 1.0 + 2.0 * rand();
+            let per = 12 + (36.0 * rand()) as usize;
+            let law = if rand() < 0.3 {
+                Law {
+                    scale_end: Scale::Even(0.7 + 0.6 * rand()),
+                    twist_deg: if rand() < 0.3 {
+                        720.0 * rand()
+                    } else {
+                        40.0 * rand()
+                    },
+                    ..Law::default()
+                }
+            } else {
+                Law::default()
+            };
+            let mut profile = tooth_of(r, w, tall);
+            let bore = rand() < 0.5;
+            if bore {
+                profile.loops.push(bore_in(w, tall, 0.2 + 0.6 * rand()));
+            }
+            let (m, clear, meets) = swept(&profile, &coil(r, grow, pitch, turns, per), &law);
+            if clear {
+                left_out += 1;
+                holed += usize::from(bore);
+                assert!(
+                    m.is_ok() && !meets,
+                    "case {case}: left out, and the check finds it meets"
+                );
+            } else {
+                checked += 1;
+            }
+        }
+        assert!(
+            left_out > 20 && checked > 20 && holed > 10,
+            "{left_out} left out ({holed} with a bore), {checked} checked"
+        );
+    }
+
+    /// A round hole in `tooth_of`'s tooth `w` wide and `tall` high, a third of the way up it, `fill` of the most it can
+    /// take across.
+    fn bore_in(w: f64, tall: f64, fill: f64) -> Loop {
+        let (a, c) = (w / 2.0, w * 0.1536);
+        let up = tall / 3.0;
+        // the tooth's half width there, and the room to its root and its sides square to them
+        let half = a - (a - c) * up / tall;
+        let side = half * tall / (tall * tall + (a - c) * (a - c)).sqrt();
+        circle([up, 0.0], 2.0 * fill * up.min(side))
+    }
+
+    #[test]
+    fn a_holed_thread_whose_turns_and_loops_stay_apart_leaves_out_the_whole_check() {
+        // a 3 mm round with a 1.5 mm hole, 3 turns of a 6 mm pitch, and the thread tooth with a bore along it
+        let f = FaceFrame::for_normal([35.0, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap();
+        let tube = Profile {
+            frame: Some(f),
+            loops: vec![circle([0.0, 0.0], 3.0), circle([0.0, 0.0], 1.5)],
+            open: false,
+            landmarks: Vec::new(),
+        };
+        let mut bored = tooth(35.0);
+        bored.loops.push(bore_in(3.5, 2.1, 0.8));
+        for (profile, pts) in [
+            (&tube, helix(35.0, 6.0, 3, 48)),
+            (&bored, helix(35.0, 4.0, 5, 48)),
+            (&bored, helix(35.0, 4.0, 5, 400)),
+        ] {
+            let (m, clear, meets) = swept(profile, &pts, &Law::default());
+            let m = m.unwrap();
+            closed(&m);
+            assert_eq!(rows_of(&m).1.len(), 2);
+            // the check left out would have found nothing, and the mesh is the one it would have passed
+            assert!(clear && !meets, "{} points", pts.len());
+        }
+    }
+
+    #[test]
+    fn holed_turns_that_may_meet_are_checked_whole() {
+        let f = FaceFrame::for_normal([35.0, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap();
+        let tube = |d: f64| Profile {
+            frame: Some(f),
+            loops: vec![circle([0.0, 0.0], d), circle([0.0, 0.0], d / 2.0)],
+            open: false,
+            landmarks: Vec::new(),
+        };
+        // wider than the pitch: refused as before
+        let (m, clear, _) = swept(&tube(6.5), &helix(35.0, 6.0, 3, 48), &Law::default());
+        assert!(m.is_err() && !clear);
+        // less than a step's rise short of the pitch: the turns do not meet, but that is not shown
+        let mut bored = tooth_of(35.0, 3.95, 2.1);
+        bored.loops.push(bore_in(3.95, 2.1, 0.8));
+        let (m, clear, meets) = swept(&bored, &helix(35.0, 4.0, 5, 48), &Law::default());
+        assert!(m.is_ok() && !clear && !meets);
+    }
+
+    #[test]
+    fn a_hole_wall_through_the_outer_wall_is_not_shown_apart() {
+        let f = FaceFrame::for_normal([35.0, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap();
+        let tube = Profile {
+            frame: Some(f),
+            loops: vec![circle([0.0, 0.0], 3.0), circle([0.0, 0.0], 1.5)],
+            open: false,
+            landmarks: Vec::new(),
+        };
+        let mut m = sweep(&tube, &points(&helix(35.0, 6.0, 3, 48))).unwrap();
+        let (mut rings, lens) = rows_of(&m);
+        let axis = ([0.0; 3], [0.0, 0.0, 1.0]);
+        assert!(turns_clear(&m, &rings, &lens, axis, 3.0));
+        // one hole point halfway along, pushed out from the middle of its ring past the outer wall
+        let (k, j) = (rings.len() / 2, lens[0] + 3);
+        let n = rings[0].len();
+        let mid = sketch_loft::centroid(&rings[k][..lens[0]]);
+        let out = vec3::add(mid, vec3::scale(vec3::sub(rings[k][j], mid), 2.5));
+        rings[k][j] = out;
+        m.positions[k * n + j] = out;
+        assert!(boolean::Solid::new(&m).is_ok_and(|s| s.self_intersects()));
+        assert!(!turns_clear(&m, &rings, &lens, axis, 3.0));
+    }
+
+    #[test]
+    fn a_sweep_into_an_end_profile_takes_the_whole_check() {
+        let into = |w: f64| {
+            let (a, c) = (w / 2.0, w * 0.1536);
+            Profile {
+                loops: vec![Loop {
+                    points: vec![[0.0, -a], [1.6, -c], [1.6, c], [0.0, a]],
+                    ..Loop::default()
+                }],
+                ..Profile::default()
+            }
+        };
+        let path = points(&helix(35.0, 4.0, 5, 48));
+        // a thread tooth narrowing along a thread whose turns stay apart: the proof would show it, but the whole check
+        // runs, finds nothing and the sweep goes ahead
+        let m = sweep_morph(&tooth(35.0), Some(&into(2.4)), &path, None, &Law::default()).unwrap();
+        closed(&m);
+        assert!(!CLEARED.get());
+        assert!(!boolean::Solid::new(&m).is_ok_and(|s| s.self_intersects()));
+        let (rings, lens) = rows_of(&m);
+        assert!(turns_clear(&m, &rings, &lens, ([0.0; 3], [0.0, 0.0, 1.0]), 37.1));
+        // widening past the pitch by the end: the whole check refuses it
+        let e = sweep_morph(&tooth(35.0), Some(&into(4.5)), &path, None, &Law::default()).unwrap_err();
+        assert!(!CLEARED.get());
+        assert!(e.to_string().contains("runs into itself"), "{e}");
     }
 }
