@@ -15,6 +15,11 @@
 // price (drive.ts EVAL_PRICES: claude-sonnet-5-5), at mimir cloud's rates; no new request starts once the spend reaches
 // the cap less the stop margin, and no case starts past it. Recording stays on Haiku: recordings are kept one per case,
 // so a run on another model would replace the Haiku one.
+//
+// A replay's stored score is kept as recorded. SX_MIMIR_EVAL_UPDATE_SCORES=1 only fills fields a recording lacks. After a
+// scorer change moves a stored score, SX_MIMIR_EVAL_RESCORE=1 with SX_MIMIR_EVAL_RESCORE_REASON="which change" writes
+// each clean replay's score over the stored one and logs a RESCORE line per case with every field it moved; a replay
+// that diverged fails, and its recording is captured again instead.
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,7 +33,7 @@ import { setGeomProvider } from '../src/geom/client'
 import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, evalPrice, replaySteps, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
-import { loadRecording, recordLive, refreshScore, summarize } from './mimir-build-evals/recordings'
+import { loadRecording, recordLive, refreshScore, rescore, rescoreLine, scoreMoves, summarize } from './mimir-build-evals/recordings'
 import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, hingeCheck, hookCheck, lastCheckPass, lidStated, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
@@ -332,6 +337,50 @@ describe('build eval scoring', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  it('rescores a recording after a scorer change only with a reason and a clean replay, and lists what moved', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rec-'))
+    try {
+      const old = { pass: true, verdict: 'disagree' as const, geometry: true, built: true, refused: false, extra: 0, checks: { ops: true, minWall: true, sizes: true } }
+      const rec = { model: 'm', provider: 'p', capturedAt: 't', steps: [{ text: 'hi' }, { calls: [{ name: 'x', args: { a: 1 } }] }], score: old }
+      writeFileSync(join(dir, 'k.json'), `${JSON.stringify(rec, null, 1)}\n`)
+      const next = { ...old, pass: false, verdict: 'fail' as const, geometry: false, checks: { ops: true, minWall: false, sizes: true } }
+      // the fill-only refresh keeps its guard
+      expect(() => refreshScore('k', next, dir)).toThrow(/pass false, recorded true/)
+      // no reason, or a blank one, and a replay that diverged are refused, and the file is left as it was
+      expect(() => rescore('k', next, {}, dir)).toThrow(/SX_MIMIR_EVAL_RESCORE_REASON/)
+      expect(() => rescore('k', next, { reason: '  ' }, dir)).toThrow(/SX_MIMIR_EVAL_RESCORE_REASON/)
+      expect(() => rescore('k', next, { reason: 'scorer change', replayError: 'replay diverged at request 5 (geom.extrude)' }, dir)).toThrow(/did not run clean: replay diverged at request 5/)
+      expect(JSON.parse(readFileSync(join(dir, 'k.json'), 'utf8'))).toEqual(rec)
+      const moves = rescore('k', next, { reason: 'the scorer reads walls as design.check does' }, dir)
+      expect(moves).toEqual([
+        { key: 'pass', from: true, to: false },
+        { key: 'verdict', from: 'disagree', to: 'fail' },
+        { key: 'geometry', from: true, to: false },
+        { key: 'checks.minWall', from: true, to: false },
+      ])
+      expect(rescoreLine('k', moves, 'the scorer reads walls as design.check does')).toBe('RESCORE k (the scorer reads walls as design.check does): pass true -> false; verdict "disagree" -> "fail"; geometry true -> false; checks.minWall true -> false')
+      // only the score changed, and the reason is not in the recording
+      const after = JSON.parse(readFileSync(join(dir, 'k.json'), 'utf8')) as typeof rec
+      expect(after).toEqual({ ...rec, score: next })
+      expect(JSON.stringify(after)).not.toContain('design.check does')
+      // a second rescore finds nothing to move
+      expect(rescore('k', next, { reason: 'again' }, dir)).toEqual([])
+      expect(rescoreLine('k', [], 'again')).toBe('RESCORE k (again): no change')
+      expect(() => rescore('missing', next, { reason: 'x' }, dir)).toThrow(/no recording/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('lists a check a score gains or loses as a move from or to none', () => {
+    const base = { pass: true, verdict: 'pass' as const, geometry: true, built: true, refused: false, extra: 0 }
+    expect(scoreMoves({ ...base, checks: { ops: true, hook: true } }, { ...base, checks: { ops: true, lid: false } })).toEqual([
+      { key: 'checks.lid', from: undefined, to: false },
+      { key: 'checks.hook', from: true, to: undefined },
+    ])
+    expect(rescoreLine('k', [{ key: 'checks.lid', from: undefined, to: false }], 'r')).toBe('RESCORE k (r): checks.lid none -> false')
   })
 
   // a box from (x0, y0, z0) to (x1, y1, z1), closed and facing out
@@ -826,6 +875,14 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
     it.skipIf(!rec || (slow && !slowEvals))(title, { timeout: 180_000 }, async () => {
       const r = await driveCase(c, { steps: rec!.steps, timeoutMs: REPLAY_DRIVE_MS })
       console.log(line(c.id, r))
+      // SX_MIMIR_EVAL_RESCORE=1 (with SX_MIMIR_EVAL_RESCORE_REASON) writes this replay's score over the stored one after
+      // a scorer change, and logs each field it moved; it refuses a replay that did not run clean
+      if (process.env['SX_MIMIR_EVAL_RESCORE'] === '1') {
+        const reason = process.env['SX_MIMIR_EVAL_RESCORE_REASON']
+        // written straight to the run's output: vitest keeps a passing test's console lines to itself
+        process.stdout.write(`${rescoreLine(c.id, rescore(c.id, summary(r), { reason, replayError: r.error }), reason!.trim())}\n`)
+        return
+      }
       expect(r.error, r.error).toBeUndefined()
       // SX_MIMIR_EVAL_UPDATE_SCORES=1 fills the score fields a recording lacks from this replay; it refuses if the fields it has differ
       if (process.env['SX_MIMIR_EVAL_UPDATE_SCORES'] === '1') refreshScore(c.id, summary(r))

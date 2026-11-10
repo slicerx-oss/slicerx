@@ -84,3 +84,48 @@ export function refreshScore(id: string, next: ScoreSummary, dir = RECORDINGS_DI
   for (const [k, v] of Object.entries(next)) if (k in old && JSON.stringify(old[k]) !== JSON.stringify(v)) throw new Error(`${id}: replay scores ${k} ${JSON.stringify(v)}, recorded ${JSON.stringify(old[k])}`)
   saveRecording(id, { ...rec, score: next }, dir)
 }
+
+/** One stored score field a rescore moves: its place in the score (`verdict`, `checks.minWall`), what was stored and what the replay scores. */
+export interface ScoreMove {
+  key: string
+  from: unknown
+  to: unknown
+}
+
+/** The fields of `next` that differ from `old`, each check on its own, in `next`'s order. A field `old` lacks moves from undefined. */
+export function scoreMoves(old: ScoreSummary, next: ScoreSummary): ScoreMove[] {
+  const moves: ScoreMove[] = []
+  const was = old as unknown as Record<string, unknown>
+  for (const [k, v] of Object.entries(next)) {
+    if (k === 'checks') {
+      const before = (was['checks'] ?? {}) as Record<string, unknown>
+      for (const [c, to] of Object.entries(v as Record<string, unknown>)) if (JSON.stringify(before[c]) !== JSON.stringify(to)) moves.push({ key: `checks.${c}`, from: before[c], to })
+      for (const c of Object.keys(before)) if (!(c in (v as Record<string, unknown>))) moves.push({ key: `checks.${c}`, from: before[c], to: undefined })
+    } else if (JSON.stringify(was[k]) !== JSON.stringify(v)) moves.push({ key: k, from: was[k], to: v })
+  }
+  return moves
+}
+
+/** A rescore's moves as one line for the run log: the case, the reason, then each move or "no change". */
+export function rescoreLine(id: string, moves: readonly ScoreMove[], reason: string): string {
+  const said = (v: unknown) => (v === undefined ? 'none' : JSON.stringify(v))
+  const list = moves.length ? moves.map((m) => `${m.key} ${said(m.from)} -> ${said(m.to)}`).join('; ') : 'no change'
+  return `RESCORE ${id} (${reason}): ${list}`
+}
+
+/**
+ * For a scorer change (SX_MIMIR_EVAL_RESCORE=1): writes the score this replay computed over the stored one, where
+ * refreshScore would refuse, and touches nothing else. It needs a reason, which goes in the run log and not in the
+ * recording, and a replay that ran clean: a reply that diverged, or a drive that stopped early (`replayError`), means
+ * the recording is stale, and a stale recording is captured again, not rescored. Returns what moved.
+ */
+export function rescore(id: string, next: ScoreSummary, opts: { reason?: string | undefined; replayError?: string | undefined }, dir = RECORDINGS_DIR): ScoreMove[] {
+  const reason = opts.reason?.trim()
+  if (!reason) throw new Error(`${id}: a rescore needs SX_MIMIR_EVAL_RESCORE_REASON, saying which scorer change moved the score`)
+  if (opts.replayError) throw new Error(`${id}: a rescore needs a clean replay, and this one did not run clean: ${opts.replayError}`)
+  const rec = loadRecording(id, dir)
+  if (!rec) throw new Error(`no recording for ${id} in ${dir}`)
+  const moves = scoreMoves(rec.score, next)
+  if (moves.length) saveRecording(id, { ...rec, score: next }, dir)
+  return moves
+}
