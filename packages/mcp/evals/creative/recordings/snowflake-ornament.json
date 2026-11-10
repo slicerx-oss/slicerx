@@ -2,116 +2,8 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T19:38:49.382Z",
+ "capturedAt": "2026-11-10T13:21:20.264Z",
  "steps": [
-  {
-   "text": "I'll build this as a flat six-arm snowflake, 3 mm thick, with the arm tips 80 mm apart and a string loop on the top arm. Most sizes below are my guesses, so please check them first.",
-   "calls": [
-    {
-     "name": "pilot.sheet",
-     "args": {
-      "title": "Snowflake ornament",
-      "views": [
-       "top",
-       "front",
-       "iso"
-      ],
-      "dims": [
-       {
-        "key": "overall_across",
-        "label": "Tip to tip across (arms at 90 and 270)",
-        "value": 80,
-        "unit": "mm",
-        "source": "asked",
-        "min": 70,
-        "max": 90
-       },
-       {
-        "key": "thickness",
-        "label": "Thickness",
-        "value": 3,
-        "unit": "mm",
-        "source": "asked",
-        "min": 1,
-        "max": 10
-       },
-       {
-        "key": "arm_width",
-        "label": "Main arm width",
-        "value": 4,
-        "unit": "mm",
-        "source": "guess",
-        "min": 2,
-        "max": 10
-       },
-       {
-        "key": "branch_from_center",
-        "label": "Side branch positions from center (two per arm)",
-        "value": 16,
-        "unit": "mm",
-        "source": "guess",
-        "min": 8,
-        "max": 30
-       },
-       {
-        "key": "branch_length",
-        "label": "Side branch length",
-        "value": 9,
-        "unit": "mm",
-        "source": "guess",
-        "min": 3,
-        "max": 20
-       },
-       {
-        "key": "branch_width",
-        "label": "Side branch width",
-        "value": 3,
-        "unit": "mm",
-        "source": "guess",
-        "min": 1,
-        "max": 8
-       },
-       {
-        "key": "branch_angle",
-        "label": "Side branch angle from arm",
-        "value": 45,
-        "unit": "deg",
-        "source": "guess",
-        "min": 20,
-        "max": 70
-       },
-       {
-        "key": "hub_diameter",
-        "label": "Center hub diameter",
-        "value": 8,
-        "unit": "mm",
-        "source": "guess",
-        "min": 4,
-        "max": 20
-       },
-       {
-        "key": "loop_outer",
-        "label": "Hanging loop outer diameter",
-        "value": 8,
-        "unit": "mm",
-        "source": "guess",
-        "min": 5,
-        "max": 15
-       },
-       {
-        "key": "loop_hole",
-        "label": "Hanging loop hole diameter (for string)",
-        "value": 4,
-        "unit": "mm",
-        "source": "guess",
-        "min": 2,
-        "max": 8
-       }
-      ]
-     }
-    }
-   ]
-  },
   {
    "calls": [
     {
@@ -128,20 +20,189 @@
         "plane": "xy",
         "points": [
          [
-          -2,
+          1.5,
+          -2.598
+         ],
+         [
+          36.141,
+          17.402
+         ],
+         [
+          33.141,
+          22.598
+         ],
+         [
+          -1.5,
+          2.598
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "plane": "xy",
+        "points": [
+         [
+          1.5,
+          2.598
+         ],
+         [
+          -33.141,
+          22.598
+         ],
+         [
+          -36.141,
+          17.402
+         ],
+         [
+          -1.5,
+          -2.598
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "plane": "xy",
+        "points": [
+         [
+          -3,
           0
          ],
          [
-          2,
+          -3,
+          40
+         ],
+         [
+          3,
+          40
+         ],
+         [
+          3,
+          0
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "plane": "xy",
+        "points": [
+         [
+          -1.5,
+          2.598
+         ],
+         [
+          -36.141,
+          -17.402
+         ],
+         [
+          -33.141,
+          -22.598
+         ],
+         [
+          1.5,
+          -2.598
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "plane": "xy",
+        "points": [
+         [
+          -3,
           0
          ],
          [
-          2,
+          -3,
+          -40
+         ],
+         [
+          3,
+          -40
+         ],
+         [
+          3,
+          0
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "plane": "xy",
+        "points": [
+         [
+          -1.5,
+          -2.598
+         ],
+         [
+          33.141,
+          -22.598
+         ],
+         [
+          36.141,
+          -17.402
+         ],
+         [
+          1.5,
+          2.598
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "plane": "xy",
+        "points": [
+         [
+          6,
+          0
+         ],
+         [
+          3,
+          5.196
+         ],
+         [
+          -3,
+          5.196
+         ],
+         [
+          -6,
+          0
+         ],
+         [
+          -3,
+          -5.196
+         ],
+         [
+          3,
+          -5.196
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "plane": "xy",
+        "points": [
+         [
+          -4,
           40
          ],
          [
-          -2,
+          4,
           40
+         ],
+         [
+          4,
+          48
+         ],
+         [
+          -4,
+          48
          ]
         ],
         "from": 0,
@@ -151,26 +212,24 @@
       "dims": [
        {
         "key": "overall_across",
-        "label": "Tip to tip across (arms at 90 and 270)",
+        "label": "Tip to tip across the arms",
         "value": 80,
         "unit": "mm",
         "source": "asked",
-        "min": 70,
-        "max": 90,
         "at": {
          "a": [
-          0,
-          -40,
+          -34.641,
+          -20,
           0
          ],
          "b": [
-          0,
-          40,
+          34.641,
+          20,
           0
          ],
          "off": [
-          -8,
-          0,
+          -6,
+          6,
           0
          ]
         }
@@ -181,21 +240,19 @@
         "value": 3,
         "unit": "mm",
         "source": "asked",
-        "min": 1,
-        "max": 10,
         "at": {
          "a": [
-          2,
-          40,
+          0,
+          0,
           0
          ],
          "b": [
-          2,
-          40,
+          0,
+          0,
           3
          ],
          "off": [
-          4,
+          -8,
           0,
           0
          ]
@@ -203,153 +260,20 @@
        },
        {
         "key": "arm_width",
-        "label": "Main arm width",
-        "value": 4,
+        "label": "Arm width",
+        "value": 6,
         "unit": "mm",
         "source": "guess",
-        "min": 2,
-        "max": 10,
         "at": {
          "a": [
-          -2,
+          -3,
           20,
-          3
+          0
          ],
          "b": [
-          2,
+          3,
           20,
-          3
-         ],
-         "off": [
-          0,
-          4,
           0
-         ]
-        }
-       },
-       {
-        "key": "branch_from_center",
-        "label": "Side branch positions from center (two per arm)",
-        "value": 16,
-        "unit": "mm",
-        "source": "guess",
-        "min": 8,
-        "max": 30,
-        "at": {
-         "a": [
-          0,
-          0,
-          3
-         ],
-         "b": [
-          0,
-          16,
-          3
-         ],
-         "off": [
-          8,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "branch_length",
-        "label": "Side branch length",
-        "value": 9,
-        "unit": "mm",
-        "source": "guess",
-        "min": 3,
-        "max": 20,
-        "at": {
-         "a": [
-          0,
-          30,
-          3
-         ],
-         "b": [
-          6.4,
-          36.4,
-          3
-         ],
-         "off": [
-          -10,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "branch_width",
-        "label": "Side branch width",
-        "value": 3,
-        "unit": "mm",
-        "source": "guess",
-        "min": 1,
-        "max": 8,
-        "at": {
-         "a": [
-          -2,
-          30,
-          3
-         ],
-         "b": [
-          2,
-          30,
-          3
-         ],
-         "off": [
-          0,
-          -4,
-          0
-         ]
-        }
-       },
-       {
-        "key": "branch_angle",
-        "label": "Side branch angle from arm",
-        "value": 45,
-        "unit": "deg",
-        "source": "guess",
-        "min": 20,
-        "max": 70,
-        "at": {
-         "c": [
-          0,
-          0,
-          3
-         ],
-         "from": [
-          0,
-          1,
-          0
-         ],
-         "to": [
-          0.707,
-          0.707,
-          0
-         ],
-         "r": 10
-        }
-       },
-       {
-        "key": "hub_diameter",
-        "label": "Center hub diameter",
-        "value": 8,
-        "unit": "mm",
-        "source": "guess",
-        "min": 4,
-        "max": 20,
-        "at": {
-         "a": [
-          -4,
-          0,
-          3
-         ],
-         "b": [
-          4,
-          0,
-          3
          ],
          "off": [
           0,
@@ -359,49 +283,45 @@
         }
        },
        {
-        "key": "loop_outer",
-        "label": "Hanging loop outer diameter",
-        "value": 8,
+        "key": "hub_diameter",
+        "label": "Center hub diameter",
+        "value": 12,
         "unit": "mm",
         "source": "guess",
-        "min": 5,
-        "max": 15,
         "at": {
          "a": [
-          -4,
-          44,
-          3
+          -6,
+          0,
+          0
          ],
          "b": [
-          4,
-          44,
-          3
+          6,
+          0,
+          0
          ],
          "off": [
           0,
-          6,
+          -9,
           0
          ]
         }
        },
        {
         "key": "loop_hole",
-        "label": "Hanging loop hole diameter (for string)",
+        "label": "Loop hole for string",
         "value": 4,
         "unit": "mm",
         "source": "guess",
-        "min": 2,
-        "max": 8,
         "at": {
          "a": [
           -2,
           44,
-          3
+          0
          ],
          "b": [
           2,
           44,
-          3
+          0
          ],
          "off": [
           0,
@@ -416,6 +336,9 @@
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"overall_across\":80,\"thickness\":3,\"arm_width\":6,\"hub_diameter\":12,\"loop_hole\":4},\"changed\":[]}}"
+   ],
    "calls": [
     {
      "name": "design.plan",
@@ -427,580 +350,816 @@
         "name": "Hub",
         "kind": "extrude",
         "sizes": {
-         "hub_diameter": 8,
+         "diameter": 12,
          "thickness": 3
         }
        },
        {
-        "name": "Main arm",
+        "name": "Six arms",
         "kind": "extrude",
         "sizes": {
          "arm_length": 40,
-         "arm_width": 4,
+         "arm_width": 6,
          "thickness": 3
-        }
+        },
+        "count": 6
        },
        {
-        "name": "Side branches",
+        "name": "Loop",
         "kind": "extrude",
         "sizes": {
-         "branch_from_center": 16,
-         "branch_length": 9,
-         "branch_width": 3,
-         "branch_angle": 45,
+         "outer_width": 8,
          "thickness": 3
         }
        },
        {
-        "name": "Six-arm pattern",
-        "kind": "array",
+        "name": "Loop hole",
+        "kind": "hole",
         "sizes": {
-         "count": 6
-        }
-       },
-       {
-        "name": "Hanging loop",
-        "kind": "extrude and hole",
-        "sizes": {
-         "loop_outer": 8,
-         "loop_hole": 4,
-         "thickness": 3
+         "diameter": 4
         }
        }
       ],
+      "overall": {
+       "x": 80,
+       "y": 80,
+       "z": 3
+      },
+      "holes": [
+       {
+        "name": "String loop hole",
+        "diameter": 4
+       }
+      ],
       "assumptions": [
-       "Arms at 30, 90, 150, 210, 270, 330 degrees, so the top and bottom tips give the 80 mm vertical span",
-       "Two side branches per arm, at 16 mm and 26 mm? no: one branch pair at 16 mm from center, angled 45 degrees toward the tip",
-       "Loop centered 44 mm from center, touching the top arm tip",
-       "Flat ornament, 3 mm thick, extruded from the bed"
+       "Six arms are straight bars at 60 degree spacing, with the top arm pointing up, from the hub out to 40 mm radius; no branch detail added",
+       "Loop sits on top of the top arm, extending to about 48 mm above center, so overall height is about 48 mm",
+       "Ornament prints flat on the bed at 3 mm thickness"
       ],
       "questions": [
-       "Are the side branch pairs one pair per arm (as built) or two pairs?"
+       "Do you want branch detail on the arms (sub-arms), or the plain six-bar shape?"
+      ],
+      "reason": "Six-armed snowflake ornament, 80 mm across, 3 mm thick, with a string loop at the top."
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"reason: give a reason only with amends, to change an approved plan\"}"
+   ],
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Snowflake ornament",
+      "units": "mm",
+      "features": [
+       {
+        "name": "Hub",
+        "kind": "extrude",
+        "sizes": {
+         "diameter": 12,
+         "thickness": 3
+        }
+       },
+       {
+        "name": "Six arms",
+        "kind": "extrude",
+        "sizes": {
+         "arm_length": 40,
+         "arm_width": 6,
+         "thickness": 3
+        },
+        "count": 6
+       },
+       {
+        "name": "Loop",
+        "kind": "extrude",
+        "sizes": {
+         "outer_width": 8,
+         "thickness": 3
+        }
+       },
+       {
+        "name": "Loop hole",
+        "kind": "hole",
+        "sizes": {
+         "diameter": 4
+        }
+       }
+      ],
+      "overall": {
+       "x": 80,
+       "y": 80,
+       "z": 3
+      },
+      "holes": [
+       {
+        "name": "String loop hole",
+        "diameter": 4
+       }
+      ],
+      "assumptions": [
+       "Six arms are straight bars at 60 degree spacing, with the top arm pointing up, from the hub out to 40 mm radius; no branch detail added",
+       "Loop sits on top of the top arm, extending to about 48 mm above center, so overall height is about 48 mm",
+       "Ornament prints flat on the bed at 3 mm thickness"
+      ],
+      "questions": [
+       "Do you want branch detail on the arms (sub-arms), or the plain six-bar shape?"
       ]
      }
     }
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_1\",\"accepted\":true}}"
+   ],
    "calls": [
     {
      "name": "design.new",
      "args": {
       "name": "Snowflake ornament"
      }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d1",
-      "name": "Hub and main arm",
-      "solids": [
-       {
-        "type": "cylinder",
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "diameterMm": 8,
-        "heightMm": 3
-       },
-       {
-        "type": "prism",
-        "points": [
-         [
-          -2,
-          0
-         ],
-         [
-          2,
-          0
-         ],
-         [
-          2,
-          40
-         ],
-         [
-          -2,
-          40
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       }
-      ]
-     }
     },
     {
-     "name": "geom.build",
+     "name": "geom.extrude",
      "args": {
-      "design": "d1",
-      "name": "Side branches",
-      "solids": [
-       {
-        "type": "prism",
-        "points": [
-         [
-          1.0607,
-          14.9393
-         ],
-         [
-          7.424,
-          21.303
-         ],
-         [
-          5.303,
-          23.425
-         ],
-         [
-          -1.0607,
-          17.0607
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       },
-       {
-        "type": "prism",
-        "points": [
-         [
-          -1.0607,
-          14.9393
-         ],
-         [
-          -7.424,
-          21.303
-         ],
-         [
-          -5.303,
-          23.425
-         ],
-         [
-          1.0607,
-          17.0607
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.info",
-     "args": {
-      "design": "d1",
-      "step": "1"
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.info",
-     "args": {
-      "design": "d1"
-     }
-    }
-   ]
-  },
-  {
-   "text": "The prism points came out transposed (the arm ran along X, not Y). I'll undo the two steps and rebuild with swapped point coordinates.",
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    },
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d1",
-      "name": "Hub and main arm",
-      "solids": [
-       {
-        "type": "cylinder",
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "diameterMm": 8,
-        "heightMm": 3
-       },
-       {
-        "type": "prism",
-        "points": [
-         [
-          0,
-          -2
-         ],
-         [
-          40,
-          -2
-         ],
-         [
-          40,
-          2
-         ],
-         [
-          0,
-          2
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       }
-      ]
-     }
-    },
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d1",
-      "name": "Side branches",
-      "solids": [
-       {
-        "type": "prism",
-        "points": [
-         [
-          14.9393,
-          1.0607
-         ],
-         [
-          21.303,
-          7.424
-         ],
-         [
-          23.425,
-          5.303
-         ],
-         [
-          17.0607,
-          -1.0607
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       },
-       {
-        "type": "prism",
-        "points": [
-         [
-          14.9393,
-          -1.0607
-         ],
-         [
-          21.303,
-          -7.424
-         ],
-         [
-          23.425,
-          -5.303
-         ],
-         [
-          17.0607,
-          1.0607
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "text": "The branch piece landed relative to the bed origin, not the arm, so the two pieces don't line up. I'll undo and build the arm and branches as one part in a single step.",
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    },
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    }
-   ]
-  },
-  {
-   "text": "I'll build the hub, main arm and both side branches as one part in a single step so they stay aligned.",
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d1",
-      "name": "Snowflake arm",
-      "solids": [
-       {
-        "type": "cylinder",
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "diameterMm": 8,
-        "heightMm": 3
-       },
-       {
-        "type": "prism",
-        "points": [
-         [
-          0,
-          -2
-         ],
-         [
-          40,
-          -2
-         ],
-         [
-          40,
-          2
-         ],
-         [
-          0,
-          2
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       },
-       {
-        "type": "prism",
-        "points": [
-         [
-          14.9393,
-          1.0607
-         ],
-         [
-          21.303,
-          7.424
-         ],
-         [
-          23.425,
-          5.303
-         ],
-         [
-          17.0607,
-          -1.0607
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       },
-       {
-        "type": "prism",
-        "points": [
-         [
-          14.9393,
-          -1.0607
-         ],
-         [
-          21.303,
-          -7.424
-         ],
-         [
-          23.425,
-          -5.303
-         ],
-         [
-          17.0607,
-          1.0607
-         ]
-        ],
-        "origin": [
-         0,
-         0,
-         0
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "heightMm": 3
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.array",
-     "args": {
-      "design": "d1",
-      "part": 0,
-      "merge": true,
-      "spec": {
-       "kind": "circular",
-       "count": 6,
-       "center": [
-        90,
-        72,
-        0
-       ],
-       "axis": [
-        0,
-        0,
-        1
-       ]
+      "design": "Snowflake ornament",
+      "distance_mm": 3,
+      "extent": "oneSide",
+      "operation": "new",
+      "feature": "Hub",
+      "name": "Snowflake ornament",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 12
       }
      }
     }
    ]
   },
   {
-   "text": "The six-arm snowflake is in place, 80 mm tall tip to tip. Next I'll join the string loop to the top arm tip.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Started Snowflake ornament (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Circle extrude 3 mm. The part was off the bed, so it moved to the plate by (90, 90) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Circle extrude 3 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":3,\"unit\":\"mm\"},\"feature\":\"Hub\",\"state\":\"done\"},\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1494,\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943}],\"placedMm\":[90,90],\"landed\":\"The part was off the bed, so it moved to the plate by (90, 90) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+   ],
    "calls": [
     {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
-      "design": "d1",
-      "part": 0,
-      "distance_mm": 3,
-      "extent": "oneSide",
-      "operation": "join",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "type": "circle",
-         "center": [
-          90,
-          115
+      "design": "Snowflake ornament",
+      "name": "Arms",
+      "feature": "Six arms",
+      "solids": [
+       {
+        "type": "prism",
+        "points": [
+         [
+          1.5,
+          -2.598
          ],
-         "diameterMm": 8
-        },
-        {
-         "type": "circle",
-         "center": [
-          90,
-          115
+         [
+          36.141,
+          17.402
          ],
-         "diameterMm": 4
-        }
-       ]
-      },
-      "name": "Hanging loop"
+         [
+          33.141,
+          22.598
+         ],
+         [
+          -1.5,
+          2.598
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          1.5,
+          2.598
+         ],
+         [
+          -33.141,
+          22.598
+         ],
+         [
+          -36.141,
+          17.402
+         ],
+         [
+          -1.5,
+          -2.598
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          -3,
+          0
+         ],
+         [
+          -3,
+          40
+         ],
+         [
+          3,
+          40
+         ],
+         [
+          3,
+          0
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          -1.5,
+          2.598
+         ],
+         [
+          -36.141,
+          -17.402
+         ],
+         [
+          -33.141,
+          -22.598
+         ],
+         [
+          1.5,
+          -2.598
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          -3,
+          0
+         ],
+         [
+          -3,
+          -40
+         ],
+         [
+          3,
+          -40
+         ],
+         [
+          3,
+          0
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          -1.5,
+          -2.598
+         ],
+         [
+          33.141,
+          -22.598
+         ],
+         [
+          36.141,
+          -17.402
+         ],
+         [
+          1.5,
+          2.598
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       }
+      ]
+     }
+    },
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "Snowflake ornament",
+      "name": "Loop",
+      "feature": "Loop",
+      "solids": [
+       {
+        "type": "prism",
+        "points": [
+         [
+          -4,
+          40
+         ],
+         [
+          4,
+          40
+         ],
+         [
+          4,
+          48
+         ],
+         [
+          -4,
+          48
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       }
+      ]
      }
     }
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 2, Add Arms\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q802\",\"name\":\"Add Arms\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Six arms\",\"state\":\"done\"},\"minMm\":[-40,-36.141,0],\"sizeMm\":[80,72.282,3],\"volumeMm3\":4378.294,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1494,\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943},{\"index\":1,\"name\":\"Arms\",\"slot\":1,\"triangles\":68,\"minMm\":[-40,-36.141,0],\"sizeMm\":[80,72.282,3],\"volumeMm3\":4039.351}],\"placedMm\":[90,90]}}",
+    "{\"ok\":true,\"summary\":\"Built: step 3, Add Loop\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q803\",\"name\":\"Add Loop\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Loop\",\"state\":\"done\"},\"minMm\":[-48,-36.141,0],\"sizeMm\":[88,72.282,3],\"volumeMm3\":4570.294,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1494,\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943},{\"index\":1,\"name\":\"Arms\",\"slot\":1,\"triangles\":68,\"minMm\":[-40,-36.141,0],\"sizeMm\":[80,72.282,3],\"volumeMm3\":4039.351},{\"index\":2,\"name\":\"Loop\",\"slot\":1,\"triangles\":12,\"minMm\":[-48,-4,0],\"sizeMm\":[8,8,3],\"volumeMm3\":192}],\"placedMm\":[90,90]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.info",
+     "args": {
+      "design": "Snowflake ornament"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"3 parts, closed\",\"result\":{\"design\":\"d1\",\"parts\":[{\"part\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"areaMm2\":339.03045980507125,\"bounds\":{\"max\":[6,6,3],\"min\":[-6,-6,0]},\"components\":1,\"edges\":{\"boundaryEdges\":0,\"nonManifoldEdges\":0,\"flippedEdges\":0},\"triangles\":1494,\"vertices\":749,\"volumeMm3\":338.94328721257017,\"watertight\":true},{\"part\":1,\"name\":\"Arms\",\"slot\":1,\"areaMm2\":4053.8402390766855,\"bounds\":{\"max\":[40,36.14099884033203,3],\"min\":[-40,-36.14099884033203,0]},\"components\":1,\"edges\":{\"boundaryEdges\":0,\"nonManifoldEdges\":0,\"flippedEdges\":0},\"triangles\":68,\"vertices\":36,\"volumeMm3\":4039.351402726221,\"watertight\":true},{\"part\":2,\"name\":\"Loop\",\"slot\":1,\"areaMm2\":224,\"bounds\":{\"max\":[-40,4,3],\"min\":[-48,-4,0]},\"components\":1,\"edges\":{\"boundaryEdges\":0,\"nonManifoldEdges\":0,\"flippedEdges\":0},\"triangles\":12,\"vertices\":8,\"volumeMm3\":192,\"watertight\":true}]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "Snowflake ornament"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "Snowflake ornament"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Add Loop\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q802\",\"name\":\"Add Arms\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Six arms\",\"state\":\"done\"},\"minMm\":[-40,-36.141,0],\"sizeMm\":[80,72.282,3],\"volumeMm3\":4378.294,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1494,\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943},{\"index\":1,\"name\":\"Arms\",\"slot\":1,\"triangles\":68,\"minMm\":[-40,-36.141,0],\"sizeMm\":[80,72.282,3],\"volumeMm3\":4039.351}],\"placedMm\":[90,90]}}",
+    "{\"ok\":true,\"summary\":\"Removed Add Arms\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Circle extrude 3 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":3,\"unit\":\"mm\"},\"feature\":\"Hub\",\"state\":\"done\"},\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1494,\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943}],\"placedMm\":[90,90]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "Snowflake ornament",
+      "name": "Arms",
+      "feature": "Six arms",
+      "solids": [
+       {
+        "type": "prism",
+        "points": [
+         [
+          -2.598,
+          -1.5
+         ],
+         [
+          17.402,
+          -36.141
+         ],
+         [
+          22.598,
+          -33.141
+         ],
+         [
+          2.598,
+          1.5
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          2.598,
+          -1.5
+         ],
+         [
+          22.598,
+          33.141
+         ],
+         [
+          17.402,
+          36.141
+         ],
+         [
+          -2.598,
+          1.5
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          0,
+          3
+         ],
+         [
+          40,
+          3
+         ],
+         [
+          40,
+          -3
+         ],
+         [
+          0,
+          -3
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          2.598,
+          1.5
+         ],
+         [
+          -17.402,
+          36.141
+         ],
+         [
+          -22.598,
+          33.141
+         ],
+         [
+          -2.598,
+          -1.5
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          0,
+          -3
+         ],
+         [
+          -40,
+          -3
+         ],
+         [
+          -40,
+          3
+         ],
+         [
+          0,
+          3
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       },
+       {
+        "type": "prism",
+        "points": [
+         [
+          -2.598,
+          1.5
+         ],
+         [
+          -22.598,
+          -33.141
+         ],
+         [
+          -17.402,
+          -36.141
+         ],
+         [
+          2.598,
+          -1.5
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       }
+      ]
+     }
+    },
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "Snowflake ornament",
+      "name": "Loop",
+      "feature": "Loop",
+      "solids": [
+       {
+        "type": "prism",
+        "points": [
+         [
+          40,
+          4
+         ],
+         [
+          40,
+          -4
+         ],
+         [
+          48,
+          -4
+         ],
+         [
+          48,
+          4
+         ]
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 3
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 2, Add Arms\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q804\",\"name\":\"Add Arms\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Six arms\",\"state\":\"done\"},\"minMm\":[-36.141,-40,0],\"sizeMm\":[72.282,80,3],\"volumeMm3\":4378.294,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1494,\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943},{\"index\":1,\"name\":\"Arms\",\"slot\":1,\"triangles\":68,\"minMm\":[-36.141,-40,0],\"sizeMm\":[72.282,80,3],\"volumeMm3\":4039.351}],\"placedMm\":[90,90]}}",
+    "{\"ok\":true,\"summary\":\"Built: step 3, Add Loop\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q805\",\"name\":\"Add Loop\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Loop\",\"state\":\"done\"},\"minMm\":[-36.141,-40,0],\"sizeMm\":[72.282,88,3],\"volumeMm3\":4570.294,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1494,\"minMm\":[-6,-6,0],\"sizeMm\":[12,12,3],\"volumeMm3\":338.943},{\"index\":1,\"name\":\"Arms\",\"slot\":1,\"triangles\":68,\"minMm\":[-36.141,-40,0],\"sizeMm\":[72.282,80,3],\"volumeMm3\":4039.351},{\"index\":2,\"name\":\"Loop\",\"slot\":1,\"triangles\":12,\"minMm\":[-4,40,0],\"sizeMm\":[8,8,3],\"volumeMm3\":192}],\"placedMm\":[90,90]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.boolean",
+     "args": {
+      "design": "Snowflake ornament",
+      "op": "union",
+      "part": 0,
+      "with_parts": [
+       1,
+       2
+      ],
+      "feature": "Six arms"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Union: step 4, Join 2 parts\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smuo69q806\",\"name\":\"Join 2 parts\",\"op\":\"boolean\",\"part\":0,\"feature\":\"Six arms\",\"state\":\"done\"},\"minMm\":[-36.141,-40,0],\"sizeMm\":[72.282,88,3],\"volumeMm3\":4231.351,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1084,\"minMm\":[-36.141,-40,0],\"sizeMm\":[72.282,88,3],\"volumeMm3\":4231.351}],\"placedMm\":[90,90]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "Snowflake ornament",
+      "center": [
+       0,
+       44,
+       -1
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "diameter_mm": 4,
+      "part": 0,
+      "feature": "Loop hole",
+      "label": "Loop hole 4 mm"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"sx-geom hole.find: hole: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole's axis, such as its center on the face it starts at, and the axis\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "Snowflake ornament",
+      "distance_mm": 5,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Snowflake ornament",
+      "part": 0,
+      "feature": "Loop hole",
+      "frame": {
+       "origin": [
+        0,
+        44,
+        -1
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"The step did not go through: The shape stops 1.0 mm short of the part. The design is unchanged.\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "Snowflake ornament",
+      "distance_mm": 5,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Snowflake ornament",
+      "part": 0,
+      "feature": "Loop hole",
+      "frame": {
+       "origin": [
+        0,
+        44,
+        -1
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4
+      },
+      "flip": true
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 5, Hole 4 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Snowflake ornament\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smuo69q808\",\"name\":\"Hole 4 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":5,\"unit\":\"mm\"},\"feature\":\"Loop hole\",\"state\":\"done\"},\"minMm\":[-36.141,-40,0],\"sizeMm\":[72.282,88,3],\"volumeMm3\":4193.76,\"parts\":[{\"index\":0,\"name\":\"Snowflake ornament\",\"slot\":1,\"triangles\":1482,\"minMm\":[-36.141,-40,0],\"sizeMm\":[72.282,88,3],\"volumeMm3\":4193.76}],\"placedMm\":[90,90]}}"
+   ],
    "calls": [
     {
      "name": "design.check",
@@ -1012,9 +1171,13 @@
    ]
   },
   {
-   "text": "The ornament is modeled, but the plan check failed one item, so it isn't signed off yet. The part is 71.3 mm wide and 80 mm tall tip to tip, 3 mm thick, watertight, with a 4 mm string hole in the loop on the top arm.\n\nThe check wants 5 features and the design has 3. I built the hub, main arm and side branches as one step, so the count came up short; the geometry itself is fine. Also, the loop sits 43 mm from the center, not the 44 mm in the plan, so it overlaps the arm tip by 1 mm for a solid joint.\n\nTwo ways forward: I can accept it as is, or rebuild the hub, arm and branches as separate steps so the count matches the plan. Nothing has been sent to a printer. Which would you like?"
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Snowflake ornament (d1, tied to the plan): 1 of 5 checks against plan plan_1 failed: overall size (want 80 x 80 x 3 mm, got 72.28 x 88 x 3 mm)\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Snowflake ornament\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"overall size\",\"want\":\"80 x 80 x 3 mm\",\"got\":\"72.28 x 88 x 3 mm\",\"pass\":false},{\"name\":\"String loop hole\",\"want\":\"4 mm diameter\",\"got\":\"4 mm diameter\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"4 features, each built by a step tagged with its name\",\"got\":\"5 steps for 4 features (Six arms 2)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"2.01 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":72.282,\"y\":88,\"z\":3},\"holes\":[{\"diameterMm\":4.000000369613333}],\"features\":5,\"steps\":[\"Circle extrude 3 mm\",\"Add Arms\",\"Add Loop\",\"Join 2 parts\",\"Hole 4 mm\"],\"tags\":[\"Hub\",\"Six arms\",\"Loop\",\"Six arms\",\"Loop hole\"],\"stepIds\":[\"smuo69q801\",\"smuo69q804\",\"smuo69q805\",\"smuo69q806\",\"smuo69q808\"],\"watertight\":true,\"minWallMm\":2.01}}}"
+   ],
+   "text": "The ornament is modeled, but it fails one check: it measures **72.3 x 88 x 3 mm** against the planned **80 x 80 x 3 mm**. The 80 mm is the tip-to-tip span of the arms, which is correct. The extra height comes from the loop: it sits on the top arm and rises about 8 mm above the arm tip, and the bottom arm reaches 40 mm below center, so the total height is 88 mm.\n\nThe other checks pass: the 4 mm string hole is in place, the body is closed, and the minimum wall is 2.0 mm.\n\nHow do you want to go on?\n- **Accept 88 mm tall.** The 80 mm span stays across the arms, and I'll mark the size as a deliberate change.\n- **Shorten the arms to 36 mm radius.** Then the loop tip sits at about 44 mm and the overall height drops to about 80 mm, but the across span becomes about 72 mm.\n- **Keep the design as is** and I'll stop here. I haven't sliced or queued anything."
   }
  ],
  "defaultAnswer": true,
- "tabTools": true
+ "tabTools": true,
+ "samePart": true
 }
