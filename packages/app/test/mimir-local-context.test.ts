@@ -5,7 +5,8 @@
 // context.ts): the tab made as the app makes it, with the design tools and the app's built-in commands, and the request
 // read back from the HTTP body the provider adapter wrote. Each kind of turn (a new part, shaping it, editing it, the
 // app, the printers) fits a 16,384 token context with the whole system prompt, room for the reply and room for the
-// conversation. A cloud model gets every tool on every turn, as before.
+// conversation. A cloud model gets every tool on every turn, as before. Each prompt is pinned to its own text.
+import { readFileSync } from 'node:fs'
 import { HISTORY_VERSION } from '@slicerx/cad-history'
 import type { Host, JsonSchema, LlmHttpRequest, LlmTransport, MeshHandle } from '@slicerx/contracts'
 import { messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, REPLY_RESERVE, toolsTokens, TURN_SET_TOOL } from '@slicerx/pilot'
@@ -65,6 +66,15 @@ const TABS = 'The app has these tabs: mimir (this chat), Model, Slice, My models
 
 /** The spelling rule every mimir prompt carries (packages/pilot prompt.ts). */
 const AMERICAN = 'Write American spelling in replies, sheet rows and plan names (center, color, aluminum, gray, meter).'
+
+/**
+ * The whole system prompt each kind of model gets in the tab (rules, tabs line, playbooks and voice), kept beside the
+ * prompts in packages/pilot. A change to the prompt text updates the file of each prompt it moves on purpose, and a
+ * change to the local one also rechecks the budget below.
+ */
+const prompt = (file: string): string => readFileSync(new URL(`../../pilot/test/fixtures/${file}`, import.meta.url), 'utf8').replace(/\n$/, '')
+const LOCAL_PROMPT = prompt('mimir-prompt-local.txt')
+const CLOUD_PROMPT = prompt('mimir-prompt-cloud.txt')
 
 /** Room a local model keeps for the conversation after the system prompt, the tools, the request and the reply. */
 const CONVERSATION_ROOM = 1500
@@ -200,6 +210,9 @@ describe('the mimir tab on a local model', () => {
     expect(cloud.messages[0]!.content).toContain(MOVING_PARTS_ORDER)
     expect(sent.messages[0]!.content).not.toContain(MOVING_PARTS_ORDER)
     expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, ''))
+    // each prompt is pinned to its own text, so a wording change that moves the local prompt, and its budget, is made on purpose
+    expect(sent.messages[0]!.content, 'the local prompt (packages/pilot/test/fixtures/mimir-prompt-local.txt)').toBe(LOCAL_PROMPT)
+    expect(cloud.messages[0]!.content, 'the cloud prompt (packages/pilot/test/fixtures/mimir-prompt-cloud.txt)').toBe(CLOUD_PROMPT)
   })
 
   it('sends the design tools only on modeling turns and the app tools only on app turns', async () => {
