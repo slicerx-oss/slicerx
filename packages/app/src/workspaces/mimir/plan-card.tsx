@@ -11,7 +11,7 @@ import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon, ScrubNumber } from '@slicerx/ui'
 import { useState, type ReactNode } from 'react'
-import { editPlan, PLAN_CHANGE, PLAN_GO, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, samePlan, shownPlan, type PartPlan } from './plan-tool'
+import { amendOf, editPlan, PLAN_CHANGE, PLAN_GO, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, samePlan, shownPlan, type PartPlan } from './plan-tool'
 
 /** A size's key in plain words: "wall_thickness" and "wallThickness" read "Wall thickness". */
 export function plainLabel(key: string): string {
@@ -47,6 +47,13 @@ function fieldOf(kind: SizeKind, unit: 'mm' | 'in', value: number): { unit: stri
 /** Where a size sits in the plan, for editing it. */
 type SizeAt = { kind: 'feature'; index: number; key: string } | { kind: 'overall'; axis: 'x' | 'y' | 'z' } | { kind: 'hole'; index: number }
 
+/** The size at `at` in a plan, or undefined when it has none there. */
+function sizeAt(plan: PartPlan, at: SizeAt): number | undefined {
+  if (at.kind === 'feature') return plan.features[at.index]?.sizes[at.key]
+  if (at.kind === 'overall') return plan.overall?.[at.axis]
+  return plan.holes?.[at.index]?.diameter
+}
+
 function withSize(plan: PartPlan, at: SizeAt, value: number): PartPlan {
   if (at.kind === 'feature') return { ...plan, features: plan.features.map((f, i) => (i === at.index ? { ...f, sizes: { ...f.sizes, [at.key]: value } } : f)) }
   if (at.kind === 'overall') return plan.overall ? { ...plan, overall: { ...plan.overall, [at.axis]: value } } : plan
@@ -72,9 +79,14 @@ export interface PlanCardProps {
   onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
   /** The person wrote in the message box instead of answering, which turns the plan down. */
   dismissed?: boolean | undefined
+  /**
+   * For a change the build asks to make to an approved plan: that plan as approved, whose sizes show beside the new
+   * ones, and the build's reason.
+   */
+  amend?: { was: PartPlan; why: string } | undefined
 }
 
-export function PlanCard({ askId, plan: given, shown = given, picked, actionable, onChoose, dismissed = false }: PlanCardProps) {
+export function PlanCard({ askId, plan: given, shown = given, picked, actionable, onChoose, dismissed = false, amend }: PlanCardProps) {
   const [plan, setPlan] = useState(given)
   const [sent, setSent] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -113,10 +125,18 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
   // `kind` is what the size measures: a count reads "4", an angle "30°", a length "80 mm"; a count typed as a fraction is kept whole
   const row = (id: string, label: string, value: number, at: SizeAt, group: string, times = 1, kind: SizeKind = 'length'): ReactNode => {
     const f = fieldOf(kind, unit, value)
+    // a size the build asks to change reads the approved value beside it, in the tag the sheet's record uses for a change
+    const was = amend ? sizeAt(amend.was, at) : undefined
     return (
       <li key={id} className="sheet-rec-row plan-rec-row">
         <label className="sheet-rec-label" htmlFor={live ? id : undefined}>
           {label}
+          {was !== undefined && was !== value ? (
+            <small className="sheet-rec-tag" data-testid="mimir-plan-was">
+              was {times > 1 ? `${times} x ` : ''}
+              {sizeText(kind, was, unit)}
+            </small>
+          ) : null}
         </label>
         {live ? (
           <span className="sheet-rec-field">
@@ -134,18 +154,31 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
     )
   }
 
-  const status = dismissed ? 'Canceled' : chosen === null ? (inactive ? PLAN_INACTIVE : actionable ? (edits ? 'Your changes go with Go' : 'Waiting for your go') : 'No answer') : chosen === go ? (edits ? 'Approved with your changes' : 'Approved as shown') : 'Not approved, nothing built'
+  const waiting = edits ? 'Your changes go with Go' : amend ? 'Waiting for your go on the change' : 'Waiting for your go'
+  const approved = amend ? (edits ? 'Plan changed with your changes' : 'Plan changed') : edits ? 'Approved with your changes' : 'Approved as shown'
+  const declined = amend ? 'Not changed, the plan stays as approved' : 'Not approved, nothing built'
+  const status = dismissed ? 'Canceled' : chosen === null ? (inactive ? PLAN_INACTIVE : actionable ? waiting : 'No answer') : chosen === go ? approved : declined
   const base = `plan-${plan.planId}`
 
   return (
-    <div className="lookup-rec sheet-rec plan-rec" role="group" aria-label={`Plan for ${plan.part}`} data-testid="mimir-plan-card" data-plan-id={plan.planId} data-picked={chosen ?? undefined}>
+    <div className="lookup-rec sheet-rec plan-rec" role="group" aria-label={`${amend ? 'Plan change' : 'Plan'} for ${plan.part}`} data-testid="mimir-plan-card" data-plan-id={plan.planId} data-amends={amend?.was.planId} data-picked={chosen ?? undefined}>
       <div className="sheet-rec-head">
         <span className="lookup-rec-t">
           <Icon name="list" />
-          <span>Plan: {plan.part}</span>
+          <span>
+            {amend ? 'Plan change' : 'Plan'}: {plan.part}
+          </span>
         </span>
         <span className="plan-rec-units">Sizes in {UNIT_WORD[unit]}</span>
       </div>
+      {amend ? (
+        <section className="plan-rec-block" aria-label="Why the plan changes">
+          <span className="plan-rec-h">{ASSISTANT_NAME} asks to change the approved plan</span>
+          <ul className="plan-rec-notes">
+            <li data-testid="mimir-plan-why">{amend.why}</li>
+          </ul>
+        </section>
+      ) : null}
       <ol className="plan-rec-features">
         {plan.features.map((f, i) => (
           <li key={`${i}-${f.name}`} className="plan-rec-feature" data-testid="mimir-plan-feature">
@@ -218,5 +251,6 @@ export function planChoiceCard(props: ChoiceCardProps): ReactNode {
   const planId = planOfChoices(props.choices)
   const plan = planId ? planById(planId) : null
   if (!planId || !plan) return null
-  return <PlanCard key={props.askId} askId={props.askId} plan={plan} shown={shownPlan(planId) ?? plan} picked={props.picked} actionable={props.actionable} onChoose={props.onChoose} dismissed={props.dismissed} />
+  const amend = amendOf(planId)
+  return <PlanCard key={props.askId} askId={props.askId} plan={plan} shown={shownPlan(planId) ?? plan} picked={props.picked} actionable={props.actionable} onChoose={props.onChoose} dismissed={props.dismissed} amend={amend ? { was: amend.was, why: amend.why } : undefined} />
 }

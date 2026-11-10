@@ -6,12 +6,13 @@
 // inline and approve with Go. The card answers through the same question channel pilot.ask uses. The plans made there
 // are kept by id with the person's latest edits, so a later check can read the plan the part was built from. The app's
 // tab and the creative eval make these tools here (toolset.ts tabToolset), each over its own plan registry.
-import { askTool, defineTool, lookupTool, printInPlaceClearance, sheetBindTool, sheetTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
-import type { z } from 'zod'
-import { assumptionsInput, gapLimitsText, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
+import { askTool, defineTool, lookupTool, printInPlaceClearance, sheetBindTool, sheetTool, type PilotTool, type ToolContext, type ToolOutput } from '@slicerx/pilot'
+import { z } from 'zod'
+import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
-import { floorText, jointProblem, planFloors, raiseToFloors, underFloors, underLine, underName, type UnderFloor } from './plan-floors'
+import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
+import { floorText, jointProblem, planFloors, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
 
 export { PLAN_SIZE_MAX, type PartPlan }
 
@@ -21,6 +22,13 @@ export const PartPlanSchema = partPlanSchema.extend({ features: partPlanSchema.s
 /** What mimir sends: the plan without its id, which the tool gives it, and with no room for the card's own line. */
 export const PlanInputSchema = PartPlanSchema.omit({ planId: true }).extend({ assumptions: assumptionsInput })
 export type PlanInput = z.infer<typeof PlanInputSchema>
+
+/** design.plan's input: the plan, and for a change to an approved plan, the plan it amends and why (plan-amend.ts). */
+export const PlanToolInputSchema = PlanInputSchema.extend({
+  amends: z.string().trim().min(1).max(64).optional(),
+  reason: z.string().max(AMEND_REASON_MAX).optional(),
+})
+type PlanToolInput = z.infer<typeof PlanToolInputSchema>
 
 /** What the tool returns once the person answers on the card. */
 export interface PlanAnswer {
@@ -32,7 +40,27 @@ export interface PlanAnswer {
   gaps?: { sideMm: number; verticalMm: number }
   /** The sizes the card raised to the printer's floors before the person saw it, each from what to what and why. */
   raised?: { feature: string | null; size: string; from: number; to: number; why: string; pin?: number; bore?: number }[]
+  /** For an amend the person approved: the plan's revision now, and each size it changed. */
+  revision?: number
+  changes?: AmendChange[]
 }
+
+/** An amend waiting on the card or answered: the plan it amends, as approved, and the build's reason. */
+export interface PlanAmend {
+  /** The approved plan's id; the card's own id for the amend is amendId(planId, revision). */
+  planId: string
+  /** The approved plan as it was before the amend. */
+  was: PartPlan
+  why: string
+  /** The revision the plan gets on Go. */
+  revision: number
+}
+
+/** The card's id for an amend: the plan's id and the revision it would make, "plan_1~r2". */
+export const amendId = (planId: string, revision: number): string => `${planId}~r${revision}`
+
+/** The amends the card keeps for showing again (a saved conversation's cards). */
+const AMENDS_KEEP = 50
 
 /** The fit rule's smallest print-in-place gaps for a 0.4 mm nozzle in PLA, as design.plan's text names them. */
 const RULE = printInPlaceClearance()
@@ -81,6 +109,8 @@ export function createCardPlans(plans: PlanRegistry) {
   const shownPlans = new Map<string, PartPlan>()
   /** The plan the person last approved whose part is not built yet: the next design built ties to it. */
   let unbuilt: string | null = null
+  /** Each amend shown on a card, by its own id (amendId): the plan as it would be, as first shown, and what it amends. */
+  const amends = new Map<string, PlanAmend & { plan: PartPlan; shown: PartPlan }>()
 
   /** The card's own entry for this id: a plan an MCP client put (design.put_plan) is never the person's. */
   function cardEntry(planId: string) {
@@ -96,16 +126,30 @@ export function createCardPlans(plans: PlanRegistry) {
 
   /** The card plan with this id, as last edited, or null (also for a plan an MCP client put). */
   function planById(planId: string): PartPlan | null {
-    return cardEntry(planId)?.plan ?? null
+    return cardEntry(planId)?.plan ?? amends.get(planId)?.plan ?? null
+  }
+
+  /** The amend a card id stands for, or null for a plan's own card. */
+  function amendOf(id: string): PlanAmend | null {
+    const a = amends.get(id)
+    return a ? { planId: a.planId, was: a.was, why: a.why, revision: a.revision } : null
   }
 
   /** The plan with this id as mimir first showed it, before any edit, or null. */
   function shownPlan(planId: string): PartPlan | null {
-    return cardEntry(planId) ? (shownPlans.get(planId) ?? null) : null
+    return cardEntry(planId) ? (shownPlans.get(planId) ?? null) : (amends.get(planId)?.shown ?? null)
   }
 
   /** Records edits to a plan (sizes typed on its card); ignored for an unknown id or a plan of another shape. */
   function editPlan(planId: string, next: PartPlan): boolean {
+    // an amend's card takes edits to its sizes only, held apart from the approved plan until Go
+    const amend = amends.get(planId)
+    if (amend) {
+      const ok = PartPlanSchema.safeParse(next)
+      if (!ok.success || next.planId !== planId || amendShapeProblem(amend.was, ok.data)) return false
+      amend.plan = ok.data
+      return true
+    }
     const entry = cardEntry(planId)
     if (!entry || next.planId !== planId) return false
     const ok = PartPlanSchema.safeParse(next)
@@ -123,6 +167,7 @@ export function createCardPlans(plans: PlanRegistry) {
   function clearPlans(): void {
     plans.clear()
     shownPlans.clear()
+    amends.clear()
     unbuilt = null
   }
 
@@ -162,7 +207,7 @@ export function createCardPlans(plans: PlanRegistry) {
     const go = choices.find((c) => c.id.startsWith(`${PLAN_GO}:`))
     if (!go) return null
     const planId = go.id.slice(PLAN_GO.length + 1)
-    return cardEntry(planId) ? planId : null
+    return cardEntry(planId) || amends.has(planId) ? planId : null
   }
 
   /**
@@ -178,28 +223,33 @@ export function createCardPlans(plans: PlanRegistry) {
       source: 'command',
       permission: 'read',
       description:
-        `Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. A size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless they print in place, with the bore it gives around a pin; a wall or pin under two nozzle lines; a hole under the nozzle) is raised on the card with a line saying why. A plan with a hinge or a pin piece says whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption); one that says neither, or both, is refused. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, the edited plan when they changed anything or a size was raised (build from that), and raised, each size raised from what to what. Not accepted: build nothing and ask what to change. A part of one feature skips the plan.`,
+        `Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. A size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless they print in place, with the bore it gives around a pin; a wall or pin under two nozzle lines; a hole under the nozzle) is raised on the card with a line saying why. A plan with a hinge or a pin piece says whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption); one that says neither, or both, is refused. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, the edited plan when they changed anything or a size was raised (build from that), and raised, each size raised from what to what. Not accepted: build nothing and ask what to change. A part of one feature skips the plan. When the build finds an approved size it cannot keep, call it again with amends (the plan's planId) and reason (why, in a sentence the person reads): the person sees the changed sizes beside the old ones, raised to this printer's floors as a new plan's are, and presses Go or Not yet. Sizes only, once per fix round and never after the stop result; Go keeps the planId and its fix round and returns revision and changes, Not yet leaves the plan as approved.`,
       localDescription:
         `Before the first geometry step of a part with 2+ features, show the plan and wait: part, units, features in build order with sizes and kind (kinds: count or angle for each such size), overall and holes if known, assumptions, questions. printInPlace pieces: keep the gaps where they meet ${RULE_MIN}; pieces with a gap size print in place unless printInPlace is false. Build from the accepted plan, else build nothing and ask. More: kb.search "modeling tools".`,
-      input: PlanInputSchema,
-      args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}`,
+      input: PlanToolInputSchema,
+      // a local model plans and builds; changing an approved plan is for a cloud model, whose context holds its rules
+      localInput: PlanInputSchema,
+      args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}${i.amends ? `, amends ${i.amends}` : ''}`,
       async run(i, ctx) {
         if (!ctx.ask) return { ok: false, summary: 'Nobody here can approve a plan' }
-        // a hinged part says one way its lid prints, so the build has nothing to guess
-        const joint = jointProblem(i)
-        if (joint) throw new ToolInputError(`assumptions: ${joint}`)
         // sizes under the printer's floors are raised before the card shows, so the plan approved is one the build can
         // match; the gaps are the ones design.check holds the part to
         const limits = runFitLimits(ctx.context, opts.fitProfile?.())
         const floors = planFloors(limits)
-        const { plan: raisedPlan, raised } = raiseToFloors(tidyPlan({ planId: (opts.newId ?? newPlanId)(), ...i }), floors)
+        if (i.amends !== undefined) return amend(i, i.amends, ctx.ask, floors, limits)
+        if (i.reason !== undefined) throw new ToolInputError('reason: give a reason only with amends, to change an approved plan')
+        const { amends: _a, reason: _r, ...input } = i
+        // a hinged part says one way its lid prints, so the build has nothing to guess
+        const joint = jointProblem(input)
+        if (joint) throw new ToolInputError(`assumptions: ${joint}`)
+        const { plan: raisedPlan, raised } = raiseToFloors(tidyPlan({ planId: (opts.newId ?? newPlanId)(), ...input }), floors)
         // pieces that print together without printInPlace naming them: the card says so first, plainly
-        const plan: PartPlan = printsTogether(i) ? { ...raisedPlan, assumptions: [PRINTS_TOGETHER, ...raisedPlan.assumptions] } : raisedPlan
+        const plan: PartPlan = printsTogether(input) ? { ...raisedPlan, assumptions: [PRINTS_TOGETHER, ...raisedPlan.assumptions] } : raisedPlan
         const shown = structuredClone(plan)
         remember(plan)
         const picked = await ctx.ask({
           title: 'Plan',
-          question: `Build ${i.part} from this plan?`,
+          question: `Build ${input.part} from this plan?`,
           choices: [
             { id: planChoiceId(PLAN_GO, plan.planId), label: 'Go' },
             { id: planChoiceId(PLAN_CHANGE, plan.planId), label: 'Not yet' },
@@ -217,27 +267,82 @@ export function createCardPlans(plans: PlanRegistry) {
         unbuilt = plan.planId
         const edited = !samePlan(latest, shown)
         const answer: PlanAnswer = edited || raised.length ? { planId: plan.planId, accepted: true, edits: latest } : { planId: plan.planId, accepted: true }
-        if (raised.length) answer.raised = raised.map(raisedOut)
-        const together = printsTogether(latest)
-        const inPlace = together || (Array.isArray(latest.printInPlace) && latest.printInPlace.length >= 2)
-        // a size the person typed back under its floor is theirs to keep; the result says so, so the build follows it
-        // knowingly. A print-in-place part's gaps are named with the gaps this printer needs, below.
-        const under = edited ? underFloors(latest, floors).filter((u) => !(inPlace && u.what === 'gap')) : []
-        const notes = [
-          ...(raised.length ? [`The card raised ${raised.map((u) => `${underName(u)} to ${floorText(u, plan.units)}`).join(', ')} to this printer's smallest sizes; build from edits`] : []),
-          ...(under.length ? [`${under.map((u) => underLine(u, latest.units)).join('; ')}; the person set it on the card`] : []),
-        ]
-        const said = edited ? 'Approved with changes' : 'Approved as shown'
-        if (!inPlace) return { summary: [said, ...notes].join('. '), output: answer }
-        // a print-in-place part: the gaps this printer needs before the first step, and any planned gap under them
-        const gapsUnder = plannedGaps(latest, limits).filter((g) => !g.pass)
-        const summary = `${said}.${together ? ` ${PRINTS_TOGETHER}.` : ''} Moving pieces need gaps of ${gapLimitsText(limits)} on this printer.${gapsUnder.length ? ` ${gapsUnder.map((g) => g.text).join('; ')}` : ''}`
-        return { summary: notes.length ? `${summary.replace(/\.$/, '')}. ${notes.join('. ')}` : summary, output: { ...answer, gaps: { sideMm: limits.sideMm, verticalMm: limits.verticalMm } } }
+        return approved(answer, latest, { edited, raised, floors, limits, said: edited ? 'Approved with changes' : 'Approved as shown' })
       },
     }) as PilotTool<never>
   }
 
-  return { plans, planById, shownPlan, editPlan, unbuiltPlan, clearPlans, tieBuiltPart, withPlanTies, planOfChoices, planTool }
+  /**
+   * design.plan with amends: the approved plan with the sizes the build asks for, raised to the printer's floors as a
+   * new plan's are, on a card of its own beside the old values and the build's reason. On Go the plan takes the sizes
+   * under its own planId, keeping its design tie and fix round, and its revision goes up by one. On Not yet nothing
+   * changes.
+   */
+  async function amend(i: PlanToolInput, planId: string, ask: NonNullable<ToolContext['ask']>, floors: PlanFloors, limits: FitLimits): Promise<ToolOutput> {
+    const reason = amendReason(i.reason)
+    if ('problem' in reason) throw new ToolInputError(reason.problem)
+    const entry = plans.get(planId)
+    const problem = amendProblem(planId, entry, 'card')
+    if (problem) throw new ToolInputError(problem)
+    const was = entry!.plan
+    const shape = amendShapeProblem(was, i)
+    if (shape) throw new ToolInputError(shape)
+    if (!amendChanges(was, i).length) throw new ToolInputError(`amends: no size differs from the approved plan ${planId}`)
+    const revision = (entry!.revision ?? 1) + 1
+    const id = amendId(planId, revision)
+    // a size asked under its floor is raised as a new plan's is, with its line among the assumptions
+    const { plan, raised } = raiseToFloors({ ...amendedSizes(was, i), planId: id }, floors)
+    if (!amendChanges(was, plan).length) {
+      const back = raised.map((u) => `${underName(u)} stays ${floorText(u, was.units)}, ${u.why}`).join('; ')
+      return { ok: false, summary: `Nothing changed: ${back}. Build to the plan as approved`, output: { planId, accepted: false } satisfies PlanAnswer }
+    }
+    amends.set(id, { planId, was: structuredClone(was), why: reason.why, revision, plan, shown: structuredClone(plan) })
+    for (const k of [...amends.keys()].slice(0, Math.max(0, amends.size - AMENDS_KEEP))) amends.delete(k)
+    const picked = await ask({
+      title: 'Plan change',
+      question: `Change the plan for ${was.part}?`,
+      choices: [
+        { id: planChoiceId(PLAN_GO, id), label: 'Go' },
+        { id: planChoiceId(PLAN_CHANGE, id), label: 'Not yet' },
+      ],
+    })
+    if (picked.id !== planChoiceId(PLAN_GO, id)) return { ok: false, summary: 'Not approved; the plan stays as approved. Build to it, or stop and tell the person what is off', output: { planId, accepted: false } satisfies PlanAnswer }
+    // the plan was set aside or used its fix round while the card waited: nothing changes
+    const now = amendProblem(planId, plans.get(planId), 'card')
+    if (now) return { ok: false, summary: `Not changed: ${now.replace(/^amends: /, '')}`, output: { planId, accepted: false } satisfies PlanAnswer }
+    const shown = amends.get(id)!.shown
+    const card = amends.get(id)!.plan
+    const latest: PartPlan = { ...card, planId }
+    plans.put(latest, plans.get(planId)!.design, 'card')
+    plans.amended(planId, reason.why)
+    const changes = amendChanges(was, latest)
+    const edited = !samePlan(card, shown)
+    const answer: PlanAnswer = { planId, accepted: true, edits: latest, revision, changes, ...(raised.length ? { raised: raised.map(raisedOut) } : {}) }
+    const said = `Plan changed${edited ? ' with the person\'s edits' : ''} (revision ${revision}): ${changes.map((c) => changeText(c, latest.units)).join(', ')}. Build to it as changed`
+    return approved(answer, latest, { edited, raised, floors, limits, said })
+  }
+
+  /** An approved plan's result: the raised sizes, sizes the person set under their floors, and a print-in-place part's gaps. */
+  function approved(answer: PlanAnswer, latest: PartPlan, o: { edited: boolean; raised: UnderFloor[]; floors: PlanFloors; limits: FitLimits; said: string }): ToolOutput {
+    const { edited, raised, floors, limits, said } = o
+    if (raised.length) answer.raised = raised.map(raisedOut)
+    const together = printsTogether(latest)
+    const inPlace = together || (Array.isArray(latest.printInPlace) && latest.printInPlace.length >= 2)
+    // a size the person typed back under its floor is theirs to keep; the result says so, so the build follows it
+    // knowingly. A print-in-place part's gaps are named with the gaps this printer needs, below.
+    const under = edited ? underFloors(latest, floors).filter((u) => !(inPlace && u.what === 'gap')) : []
+    const notes = [
+      ...(raised.length ? [`The card raised ${raised.map((u) => `${underName(u)} to ${floorText(u, latest.units)}`).join(', ')} to this printer's smallest sizes; build from edits`] : []),
+      ...(under.length ? [`${under.map((u) => underLine(u, latest.units)).join('; ')}; the person set it on the card`] : []),
+    ]
+    if (!inPlace) return { summary: [said, ...notes].join('. '), output: answer }
+    // a print-in-place part: the gaps this printer needs before the first step, and any planned gap under them
+    const gapsUnder = plannedGaps(latest, limits).filter((g) => !g.pass)
+    const summary = `${said}.${together ? ` ${PRINTS_TOGETHER}.` : ''} Moving pieces need gaps of ${gapLimitsText(limits)} on this printer.${gapsUnder.length ? ` ${gapsUnder.map((g) => g.text).join('; ')}` : ''}`
+    return { summary: notes.length ? `${summary.replace(/\.$/, '')}. ${notes.join('. ')}` : summary, output: { ...answer, gaps: { sideMm: limits.sideMm, verticalMm: limits.verticalMm } } }
+  }
+
+  return { plans, planById, shownPlan, amendOf, editPlan, unbuiltPlan, clearPlans, tieBuiltPart, withPlanTies, planOfChoices, planTool }
 }
 
 export type CardPlans = ReturnType<typeof createCardPlans>

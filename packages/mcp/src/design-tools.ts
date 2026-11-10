@@ -4,7 +4,7 @@
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
 import { bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
@@ -13,7 +13,8 @@ import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
 import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
-import { jointProblem, LID_STATEMENT, planFloors, underFloors, underLine } from './plan-floors'
+import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
+import { jointProblem, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
 import { meshStats } from './mesh'
 
 type V3 = [number, number, number]
@@ -558,11 +559,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'read',
     description:
-      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), that its thinnest wall is at least twice the nozzle and, when the plan has a hook with a lip, that the hook's tip rises at least 3 mm above its lowest point toward its end. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material; gap sizes in the plan too), and is checked only after slicerx_geom_fit_check has run on the design as it is now, over the planned pieces; until then the check is refused and uses no check. A plan the person made in the mimir tab whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer, approved or declined. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), that its thinnest wall is at least twice the nozzle and, when the plan has a hook with a lip, that the hook's tip rises at least 3 mm above its lowest point toward its end. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material; gap sizes in the plan too), and is checked only after slicerx_geom_fit_check has run on the design as it is now, over the planned pieces; until then the check is refused and uses no check. A plan the person made in the mimir tab whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer, approved or declined. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over. A plan changed with amends is checked at its new sizes, and the result gives its revision; the change keeps the plan's fix round.",
     localDescription:
       'After a planned part\'s last feature, check it against its plan (planId): size, holes, a step or more tagged with each planned feature, closed body, thinnest wall. A plan with printInPlace also gets pieces and gaps (gap sizes in the plan too), only after geom.fit_check has run on the design as it is now. Fix failed items once and check again; on stop, stop building and tell the person what is off. Give design when asked. More: kb.search "design check".',
     input: z.object({
@@ -597,8 +598,10 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const result = designCheck(entry.plan, body, nozzleMm, limits, together)
       const failed = result.items.filter((x) => !x.pass)
       const which = `${d.name} (${d.id}, ${how})`
-      const summary = result.pass ? `${which} matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${which}: ${failed.length} of ${result.items.length} checks against plan ${entry.plan.planId} failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
-      const output = { planId: entry.plan.planId, design: d.id, designName: d.name, chosen: how, nozzleMm, ...result, body }
+      const checked = result.pass ? `${which} matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${which}: ${failed.length} of ${result.items.length} checks against plan ${entry.plan.planId} failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
+      // an amended plan says which revision it checked, so the build reads the sizes it was held to
+      const summary = entry.revision ? `${checked} (plan revision ${entry.revision})` : checked
+      const output = { planId: entry.plan.planId, ...(entry.revision ? { revision: entry.revision } : {}), design: d.id, designName: d.name, chosen: how, nozzleMm, ...result, body }
       const open = designs.list().map((x) => x.id)
       // a miss only on how a part of several pieces is named is not the part's fault: once per plan it keeps the fix round
       if (failed.length === 1 && isNamingMiss(failed[0]!) && plans.waiveNaming(entry.plan.planId, open)) return { summary: `${summary}. This miss does not use the fix round.`, output }
@@ -617,26 +620,31 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description:
-      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace. Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with, and underFloors: each size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless the pieces print in place, with pin and bore when it runs around a pin; a wall or pin under two nozzle lines; a hole under the nozzle), with the floor and why, and unstated when a plan with a hinge or a pin piece does not say whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption), or says both. The plan is kept as given; put it again with the floor to build to it.',
+      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace. Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with, and underFloors: each size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless the pieces print in place, with pin and bore when it runs around a pin; a wall or pin under two nozzle lines; a hole under the nozzle), with the floor and why, and unstated when a plan with a hinge or a pin piece does not say whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption), or says both. The plan is kept as given; put it again with the floor to build to it. Once its part is built, a size the build cannot keep is changed with amends (its planId) and reason (why, required): sizes only, once per fix round and never after the stop result; the plan keeps its design and fix round, and the result gives its revision and each change.',
     input: z.object({
       plan: partPlanSchema.extend({ assumptions: assumptionsInput }).describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
       design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
+      amends: z.string().trim().min(1).max(64).optional().describe("To change your built plan's sizes: its planId, the same as plan.planId; once per fix round"),
+      reason: z.string().max(AMEND_REASON_MAX).optional().describe('With amends: why the build changes the plan'),
     }),
     async run(i, ctx) {
+      if (plans.get(i.plan.planId)?.origin === 'card') throw new ToolInputError(new PlanOwnedError(i.plan.planId).message)
+      const fit = () => planFloors(runFitLimits(ctx?.context, { ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() }))
+      if (i.amends !== undefined) return amendPlan(i.plan, i.amends, i.reason, i.design, fit)
+      if (i.reason !== undefined) throw new ToolInputError('reason: give a reason only with amends, to change a plan of yours')
       // a tie names a design that exists (get refuses one that does not)
       const tied = i.design ? designs.get(i.design) : undefined
-      if (plans.get(i.plan.planId)?.origin === 'card') throw new ToolInputError(new PlanOwnedError(i.plan.planId).message)
       plans.put(i.plan, tied?.id, 'client')
       const p = i.plan
       const holes = (p.holes ?? []).reduce((n, h) => n + (h.count ?? 1), 0)
       const shape = [plural(p.features.length, 'feature'), ...(holes ? [plural(holes, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : [])].join(', ')
       // sizes under the printer's floors are named, not changed: the client's plan is its own
-      const under = underFloors(p, planFloors(runFitLimits(ctx?.context, { ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })))
-      const floors = under.length ? ` ${under.map((u) => underLine(u, p.units)).join('; ')}. Put the plan again with ${under.length === 1 ? 'that size' : 'those sizes'} raised for a part that prints.` : ''
+      const under = underFloors(p, fit())
+      const floors = underText(under, p.units)
       // a hinge or pin plan that does not say how it prints is kept, with what it leaves the build to guess
       const unstated = jointProblem(p)
       const say = unstated ? ` The plan has a hinge or pin but does not say ${unstated === LID_STATEMENT ? '' : 'one way '}how it prints: ${unstated}.` : ''
@@ -649,11 +657,48 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           features: p.features.length,
           holes,
           ...(unstated ? { unstated } : {}),
-          underFloors: under.map((u) => ({ feature: u.feature, size: u.feature === null ? `${u.hole} ${u.size}` : u.size, planned: u.planned, floor: u.floor, why: u.why, ...(u.bore !== undefined ? { pin: u.pin!, bore: u.bore } : {}) })),
+          underFloors: under.map(underOut),
         },
       }
     },
   })
 
+  /**
+   * design.put_plan with amends: a client's built plan takes new sizes under its planId (plan-amend.ts), with its design
+   * tie and fix round as they were, and its revision goes up by one. Sizes under the printer's floors are named, as a
+   * new client plan's are, and kept as given.
+   */
+  function amendPlan(given: PartPlan, planId: string, reason: string | undefined, design: string | undefined, fit: () => PlanFloors): ToolOutput {
+    const why = amendReason(reason)
+    if ('problem' in why) throw new ToolInputError(why.problem)
+    if (given.planId !== planId) throw new ToolInputError(`amends: give the plan with the planId it amends; plan.planId is ${given.planId}, amends is ${planId}`)
+    const entry = plans.get(planId)
+    const problem = amendProblem(planId, entry, 'client')
+    if (problem) throw new ToolInputError(problem)
+    if (design !== undefined && design !== entry!.design) throw new ToolInputError(`design: an amend keeps the plan's design, ${entry!.design}`)
+    const shape = amendShapeProblem(entry!.plan, given)
+    if (shape) throw new ToolInputError(shape)
+    const changes = amendChanges(entry!.plan, given)
+    if (!changes.length) throw new ToolInputError(`amends: no size differs from plan ${planId}`)
+    const p = amendedSizes(entry!.plan, given)
+    plans.put(p, entry!.design, 'client')
+    const revision = plans.amended(planId, why.why)
+    const under = underFloors(p, fit())
+    return {
+      summary: `Changed plan ${planId} for ${p.part} (revision ${revision}): ${changes.map((c) => changeText(c, p.units)).join(', ')}.${underText(under, p.units)} Build to it as changed, then check it with design.check and planId ${planId}.`,
+      output: { planId, part: p.part, design: entry!.design!, revision, changes, underFloors: under.map(underOut) },
+    }
+  }
+
   return [create, open, list, steps, edit, undo, redo, timeline, roll, save, check, plan] as PilotTool<never>[]
+}
+
+/** Sizes under the printer's floors in the result's words, for a plan kept as the client gave it. */
+function underText(under: UnderFloor[], units: 'mm' | 'in'): string {
+  return under.length ? ` ${under.map((u) => underLine(u, units)).join('; ')}. Put the plan again with ${under.length === 1 ? 'that size' : 'those sizes'} raised for a part that prints.` : ''
+}
+
+/** A size under its floor as design.put_plan returns it. */
+function underOut(u: UnderFloor) {
+  return { feature: u.feature, size: u.feature === null ? `${u.hole} ${u.size}` : u.size, planned: u.planned, floor: u.floor, why: u.why, ...(u.bore !== undefined ? { pin: u.pin!, bore: u.bore } : {}) }
 }

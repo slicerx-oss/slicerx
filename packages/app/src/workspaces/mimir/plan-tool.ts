@@ -14,4 +14,4 @@ export { PartPlanSchema, PLAN_CHANGE, PLAN_GO, PLAN_KEEP, PLAN_SIZE_MAX, planCho
 /** The tab's card plans, over the window's registry. */
 export const cardPlans = createCardPlans(mimirPlans)
 
-export const { planById, shownPlan, editPlan, unbuiltPlan, clearPlans, tieBuiltPart, withPlanTies, planOfChoices, planTool } = cardPlans
+export const { planById, shownPlan, amendOf, editPlan, unbuiltPlan, clearPlans, tieBuiltPart, withPlanTies, planOfChoices, planTool } = cardPlans

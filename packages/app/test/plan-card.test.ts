@@ -342,3 +342,30 @@ describe('the plan card', () => {
     expect(plainLabel('m3-hole')).toBe('M3 hole')
   })
 })
+
+describe('a plan change card', () => {
+  const was: PartPlan = { planId: 'plan_1', ...BOX, assumptions: [...BOX.assumptions] }
+  const asked: PartPlan = { ...was, planId: 'plan_1~r2', features: was.features.map((f) => (f.name === 'Body' ? { ...f, sizes: { ...f.sizes, wall_thickness: 2.4 } } : f)), overall: { ...was.overall!, z: 48 } }
+  const why = 'The lid adds 4 mm over the rim, so the box closes at 48 mm.'
+
+  it('says the build asks to change the plan, with its reason and the approved value beside each changed size', () => {
+    render(createElement(PlanCard, { askId: 'a', plan: asked, picked: null, actionable: true, onChoose: vi.fn(async () => undefined), amend: { was, why } }))
+    const card = screen.getByTestId('mimir-plan-card')
+    expect(card.getAttribute('aria-label')).toBe('Plan change for a box with a lid')
+    expect(card.getAttribute('data-amends')).toBe('plan_1')
+    expect(within(card).getByText('Plan change: a box with a lid')).toBeTruthy()
+    expect(within(card).getByText('mimir asks to change the approved plan')).toBeTruthy()
+    expect(screen.getByTestId('mimir-plan-why').textContent).toBe(why)
+    // only the changed sizes carry the approved value, in the plan's units
+    expect(screen.getAllByTestId('mimir-plan-was').map((t) => t.textContent)).toEqual(['was 2 mm', 'was 44 mm'])
+    expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Waiting for your go on the change')
+  })
+
+  it('reads Plan changed on Go and keeps the old plan on Not yet', () => {
+    render(createElement(PlanCard, { askId: 'a', plan: asked, picked: planChoiceId('go', 'plan_1~r2'), actionable: false, amend: { was, why } }))
+    expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Plan changed')
+    cleanup()
+    render(createElement(PlanCard, { askId: 'a', plan: asked, picked: planChoiceId('change', 'plan_1~r2'), actionable: false, amend: { was, why } }))
+    expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Not changed, the plan stays as approved')
+  })
+})

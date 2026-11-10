@@ -769,6 +769,13 @@ export interface PlanEntry {
 
   /** Its last design.check passed; a whole new design of its part is then refused (design.new). */
   passed?: true
+
+  /** How many times the build changed the plan with an amend (plan-amend.ts), plus one: absent for the plan as first approved. */
+  revision?: number
+  /** The failed check count when it was last amended: one amend per fix round. */
+  amendedAt?: number
+  /** Why it was last amended, as the build said it. */
+  amendWhy?: string
 }
 
 /**
@@ -840,6 +847,11 @@ export interface PlanRegistry {
    * keeps refusing it. A plan that is not stale is left as it is.
    */
   supersede(planId: string): void
+  /**
+   * Counts an amend of a kept plan (plan-amend.ts), put already with its new sizes: its revision goes up by one, and no
+   * other amend is taken before another check fails. Returns the new revision, or 0 for an unknown plan.
+   */
+  amended(planId: string, why: string): number
   /** Records the design the chat started for a kept plan's part, stale or not (PlanEntry.claimed); no-op for an unknown plan. */
   claim(planId: string, design: string): void
   /** Keeps the fit check just run on a design, replacing the one before. */
@@ -871,7 +883,7 @@ export function createPlanRegistry(): PlanRegistry {
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.superseded ? { superseded: was.superseded } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}) }
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.superseded ? { superseded: was.superseded } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}), ...(was?.revision ? { revision: was.revision } : {}), ...(was?.amendedAt !== undefined ? { amendedAt: was.amendedAt } : {}), ...(was?.amendWhy ? { amendWhy: was.amendWhy } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -931,6 +943,14 @@ export function createPlanRegistry(): PlanRegistry {
       if (!entry?.stale) return
       delete entry.stale
       entry.superseded = true
+    },
+    amended(planId, why) {
+      const entry = plans.get(planId)
+      if (!entry) return 0
+      entry.revision = (entry.revision ?? 1) + 1
+      entry.amendedAt = entry.failedChecks ?? 0
+      entry.amendWhy = why
+      return entry.revision
     },
     claim(planId, design) {
       const entry = plans.get(planId)
