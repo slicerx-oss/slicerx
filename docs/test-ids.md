@@ -227,6 +227,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong`; the picked tile's tooltip gives about how long and how much from the last slice, or "Updating the estimate." |
 | `slice-estimate` | The Slice sidebar footer: the estimate line over the main action; `data-stale` while it updates |
 | `slice-estimate-time` | The print time in the footer; opens the breakdown |
+| `slice-sleipnir-cap` | Under the Slice plate button while the settings are off screen: sleipnir's layers are thinner than the layer height |
+| `slice-sleipnir-cap-off` | Turn sleipnir off, beside that line |
 | `slice-estimate-breakdown` | The breakdown: where the time goes, filament per slot, electricity, filament changes and layers |
 | `slice-estimate-warnings` | The warnings chip, shown only with warnings; shows the first one on the plate |
 | `slice-estimate-error` | The engine's message when a slice fails |
@@ -252,6 +254,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-output-export-gcode`, `slice-output-export-3mf` | Export G-code and Export plate 3MF in that menu |
 | `easy-layer-edit` | Edit layer heights, in the layer height picker's menu: opens the layer height editor, checked when the plate has layer heights of its own |
 | `easy-layer-custom` | Custom, the layer height picker's value when the plate has layer heights of its own |
+| `easy-sleipnir-cap` | Under Layer height in Easy: sleipnir's layers are thinner than the layer height |
+| `easy-sleipnir-cap-off` | Turn sleipnir off, beside that line |
 | `layer-profile-editor` | The layer height editor dialog |
 | `lp-graph` | Its graph of layer height against height on the plate |
 | `lp-area` | The graph's plot area: a press adds a point there |
@@ -331,6 +335,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-setting-object-chip` | On a plate row, an object that prints the setting with its own value, with `data-object`; a click selects it |
 | `slice-setting-reset` | A row's reset, with `data-key`: back to the Easy value, or in the selection's scope to the plate's |
 | `slice-setting-unsupported` | Under a select holding a value the engine cannot print: what slicing uses instead; the select's `aria-describedby` |
+| `slice-setting-sleipnir-cap` | Under the Expert Layer height row: sleipnir's layers are thinner than the layer height, with Turn sleipnir off |
 | `setting-text` | A text setting's field in its row (an infill angle template, extra solid infill layers, notes) |
 | `setting-mm-or-percent` | A number-or-percent setting's unit toggle and number field, in its row |
 | `export-save-project`, `export-locked-project`, `export-gcode-3mf`, `export-all-plates` | Its items (each opens the system's save dialog) |
