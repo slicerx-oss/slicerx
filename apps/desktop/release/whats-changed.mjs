@@ -21,7 +21,10 @@ import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
 const gitCli = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim()
-const ghCli = (...args) => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+// a long range's pull requests with their bodies pass 1 MiB, the default buffer
+const ghCli = (...args) => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 })
+
+export const PR_LIMIT = 1000
 
 const SEP = '\u001e'
 
@@ -84,10 +87,13 @@ export function whatsChanged({ since: sinceArg, to = 'HEAD', git = gitCli, gh = 
   const toDate = git('log', '-1', '--format=%cI', to)
   let prs = []
   try {
-    const out = gh('pr', 'list', '--state', 'merged', '--search', `merged:>${date}`, '--limit', '200', '--json', 'number,title,body,url,labels,mergeCommit,mergedAt')
-    prs = inRange(JSON.parse(out), hashes, toDate)
-  } catch {
-    console.error('whats-changed: no pull requests read (gh missing or signed out); commit trailers only')
+    const out = gh('pr', 'list', '--state', 'merged', '--search', `merged:>${date}`, '--limit', String(PR_LIMIT), '--json', 'number,title,body,url,labels,mergeCommit,mergedAt')
+    const merged = JSON.parse(out)
+    if (merged.length >= PR_LIMIT) console.error(`whats-changed: gh gave ${merged.length} pull requests, the limit; older ones in the range may be missing`)
+    prs = inRange(merged, hashes, toDate)
+  } catch (e) {
+    const why = String(e?.code ?? e?.stderr ?? e?.message ?? e).trim().split('\n')[0]
+    console.error(`whats-changed: no pull requests read (${why}); commit trailers only`)
   }
   const owner = commitPrs(hashes, prs)
   for (const pr of prs) {

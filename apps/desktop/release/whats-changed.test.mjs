@@ -5,9 +5,11 @@
 // fixtures/whats-changed-0.2.15.json is the desktop-v0.2.14..desktop-v0.2.15 range as git and gh gave it.
 // Usage: node --test apps/desktop/release/whats-changed.test.mjs (pnpm test:scripts)
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join as joinPath } from 'node:path'
 import { test } from 'node:test'
-import { capitalize, commitPrs, NO_CONTEXT, render, standsAlone, whatsChanged } from './whats-changed.mjs'
+import { capitalize, commitPrs, NO_CONTEXT, PR_LIMIT, render, standsAlone, whatsChanged } from './whats-changed.mjs'
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/whats-changed-0.2.15.json', import.meta.url), 'utf8'))
 
@@ -134,4 +136,39 @@ test('a change with only one source comes out as before', () => {
     { note: 'Fix: change 18', ref: '#18', url: 'https://example.test/pull/18', reports: [] },
   ])
   assert.equal(render(r), '## What changed\n\n- Trailer note.\n- Pull request note.\n- Fix: change 18')
+})
+
+test('a gh answer over 1 MiB, as a long range gives, is read in full', () => {
+  // a real gh on PATH, so the default reader and its buffer are what runs
+  const dir = mkdtempSync(joinPath(tmpdir(), 'wc-gh-'))
+  const big = { ...pr(19, 1, 'Text from a long pull request.'), body: `## For users\n\nText from a long pull request.\n\n${'x'.repeat(1300 * 1024)}\n` }
+  writeFileSync(joinPath(dir, 'answer.json'), JSON.stringify([big]))
+  writeFileSync(joinPath(dir, 'gh'), `#!/bin/sh\ncat '${joinPath(dir, 'answer.json')}'\n`)
+  chmodSync(joinPath(dir, 'gh'), 0o755)
+  const path = process.env.PATH
+  process.env.PATH = `${dir}:${path}`
+  try {
+    const { git } = stubs({ commits: [{ hash: hash(1) }], prs: [] })
+    const r = whatsChanged({ since: 'desktop-v0.2.9', git })
+    assert.deepEqual(r.notes.map((n) => [n.note, n.ref]), [['Text from a long pull request.', '#19']])
+  } finally {
+    process.env.PATH = path
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a gh answer at the limit warns that older pull requests may be missing', (t) => {
+  const said = []
+  t.mock.method(console, 'error', (line) => said.push(line))
+  const prs = Array.from({ length: PR_LIMIT }, (_, i) => pr(5000 + i, 9, null))
+  run({ commits: [{ hash: hash(1) }], prs })
+  assert.ok(said.some((l) => l.includes(`gh gave ${PR_LIMIT} pull requests, the limit`)), said.join('\n'))
+})
+
+test('a failed gh read says why', (t) => {
+  const said = []
+  t.mock.method(console, 'error', (line) => said.push(line))
+  const { git } = stubs({ commits: [{ hash: hash(1) }], prs: [] })
+  whatsChanged({ since: 'desktop-v0.2.9', git, gh: () => { throw Object.assign(new Error('spawnSync gh ENOBUFS'), { code: 'ENOBUFS' }) } })
+  assert.deepEqual(said, ['whats-changed: no pull requests read (ENOBUFS); commit trailers only'])
 })
