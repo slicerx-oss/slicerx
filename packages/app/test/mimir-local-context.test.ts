@@ -98,7 +98,7 @@ const BUILD_PINS: Record<string, string[]> = {
   'geom.revolve': ['angle_deg required', 'axis required', 'axis.direction required', 'axis.point required', 'frame.normal required', 'frame.origin required', 'loops.[].center required', 'loops.[].diameterMm required', 'loops.[].points required', 'loops.[].segments required', 'loops.[].segments.[].type line|arc|spline', 'loops.[].segments.[].type required', 'loops.[].start required', 'loops.[].type circle', 'loops.[].type required', 'loops.[].type spline', 'operation new|join|cut', 'operation required'],
   'geom.loft': ['operation new|join|cut', 'operation required', 'profiles.[].loops required'],
   'geom.sweep': ['operation new|join|cut', 'operation required', 'profile.loops required'],
-  'geom.hole': ['counterbore.depth_mm required', 'counterbore.diameter_mm required', 'countersink.angle_deg required', 'countersink.diameter_mm required', 'face.topology.bodyId required', 'face.topology.faceKey required', 'face.topology.part required', 'face.topology.revision required'],
+  'geom.hole': ['counterbore.depth_mm required', 'counterbore.diameter_mm required', 'countersink.angle_deg required', 'countersink.diameter_mm required', 'diameter_mm required', 'face.at required'],
   'geom.fillet': ['edges required', 'edges.[].a required', 'edges.[].b required', 'edges.[].face required', 'radius_mm required'],
   'geom.chamfer': ['distance_mm required', 'edges required', 'edges.[].a required', 'edges.[].b required', 'edges.[].face required'],
   'geom.shell': ['open required', 'open.[].at required', 'open.[].normal required', 'wall_mm required'],
@@ -115,7 +115,7 @@ const TWIN_RULES: Record<string, string[]> = {
   'design.plan': ['kinds', 'count or angle', 'keep the gaps where they meet at least', 'unless printInPlace is false'],
   'geom.chamfer': ["edge's own face", 'distance2_mm'],
   'geom.fillet': ['edge_pick'],
-  'geom.hole': ['counterbore', 'countersink', 'never makes a new hole'],
+  'geom.hole': ['counterbore', 'countersink', 'flat face', 'geom.hole_edit'],
   'geom.shell': ['outward normal'],
 }
 

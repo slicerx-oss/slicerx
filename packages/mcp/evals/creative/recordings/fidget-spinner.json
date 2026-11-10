@@ -681,7 +681,7 @@
   {
    "calls": [
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "d1",
       "center": [

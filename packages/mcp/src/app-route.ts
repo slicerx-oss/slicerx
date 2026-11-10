@@ -33,6 +33,7 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.fillet',
   'geom.chamfer',
   'geom.hole',
+  'geom.hole_edit',
   'geom.shell',
   'geom.info',
   'geom.measure',

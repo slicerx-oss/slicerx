@@ -29,7 +29,7 @@ it.each(['measure.feature', 'measure', 'hole.find'])('rejects a scoped operation
   const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
   const reference = { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }
   const result = changeAt === 'hole.find'
-    ? await h.call('slicerx_geom_hole', { design: d.id, face: reference, diameter_mm: 6 })
+    ? await h.call('slicerx_geom_hole_edit', { design: d.id, face: reference, diameter_mm: 6 })
     : await h.call('slicerx_geom_measure', { design: d.id, a: reference })
   expect(result.isError, text(result)).toBe(true)
   expect(result.structuredContent).toMatchObject({ error: { code: 'stale_body', details: { bodyId: d.id, currentRevision: designs.revision(d.id) } } })
@@ -144,7 +144,7 @@ it('reports an applied hole edit when its later read-back fails', async () => {
   const d = await designs.create('Hole', [mesh]), revision = designs.revision(d.id)
   const unused = async (): Promise<never> => { throw new Error('must not read a file') }
   const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
-  const result = await h.call('slicerx_geom_hole', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, diameter_mm: 6 })
+  const result = await h.call('slicerx_geom_hole_edit', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, diameter_mm: 6 })
   expect(result.isError, text(result)).toBeFalsy()
   expect(d.history.steps).toHaveLength(1)
   expect(data(result)).toMatchObject({ output: { after: null, operationResult: { status: 'applied', priorRevision: revision,
@@ -167,7 +167,7 @@ it.each([
   const d = await designs.create('Hole', [mesh]), revision = designs.revision(d.id)
   const unused = async (): Promise<never> => { throw new Error('must not read a file') }
   const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
-  const result = await h.call('slicerx_geom_hole', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, ...request })
+  const result = await h.call('slicerx_geom_hole_edit', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, ...request })
   expect(result.isError, text(result)).toBeFalsy()
   expect(data(result)).toMatchObject({ output: { after: { diameterMm: 4 }, operationResult: { status: 'applied', verification: { status, toleranceMm: 0.01 } } } })
   const after = data<{ output: { after: Record<string, unknown> } }>(result).output.after
@@ -205,7 +205,7 @@ it.each([false, true])('refuses invalid or removed scoped holes before committin
   const unused = async (): Promise<never> => { throw new Error('must not read a file') }
   const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
   if (removed) designs.get = () => { throw Object.assign(new Error('The body was removed.'), { code: 'not_found' }) }
-  const result = await h.call('slicerx_geom_hole', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, diameter_mm: 6 })
+  const result = await h.call('slicerx_geom_hole_edit', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, diameter_mm: 6 })
   expect(result.isError, text(result)).toBe(true)
   const code = removed ? 'stale_body' : 'invalid_model'
   expect(result.structuredContent).toMatchObject({ error: { code, details: { operationResult: { status: 'refused', reason: code, priorRevision: revision, revision: removed ? null : revision } } } })
@@ -215,7 +215,7 @@ it.each([false, true])('refuses invalid or removed scoped holes before committin
   else expect(designs.revision(d.id)).toBe(revision)
 })
 
-it.each(['slicerx_geom_push_pull', 'slicerx_geom_hole'])('%s refuses a stale face with the id of a design given by its name', async (tool) => {
+it.each(['slicerx_geom_push_pull', 'slicerx_geom_hole_edit'])('%s refuses a stale face with the id of a design given by its name', async (tool) => {
   const mesh = { name: 'Surface', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [17], table: [{ kind: 'plane', normal: [0, 0, 1], offset: 0 }] } }
   const outDir = mkdtempSync(join(tmpdir(), 'stale-by-name-')); directories.push(outDir)
   const engine = vi.fn(async (op: string) => {
@@ -229,9 +229,9 @@ it.each(['slicerx_geom_push_pull', 'slicerx_geom_hole'])('%s refuses a stale fac
   const unused = async (): Promise<never> => { throw new Error('must not read a file') }
   const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
   const face = { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }
-  const result = await h.call(tool, { design: '  corner   plate ', face, ...(tool === 'slicerx_geom_hole' ? { diameter_mm: 6 } : { distance_mm: 2 }) })
+  const result = await h.call(tool, { design: '  corner   plate ', face, ...(tool === 'slicerx_geom_hole_edit' ? { diameter_mm: 6 } : { distance_mm: 2 }) })
   expect(result.isError, text(result)).toBe(true)
   const details = (result.structuredContent as { error: { details: { bodyId?: string; operationResult: { bodyId: string } } } }).error.details
   expect(details.operationResult.bodyId).toBe(d.id)
-  if (tool === 'slicerx_geom_hole') expect(details.bodyId).toBe(d.id)
+  if (tool === 'slicerx_geom_hole_edit') expect(details.bodyId).toBe(d.id)
 })

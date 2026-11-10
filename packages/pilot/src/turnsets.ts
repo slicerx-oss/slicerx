@@ -41,7 +41,7 @@ const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.me
  * Editing a part already built: open it, go through its steps and sketches, pick its faces and edges, project them
  * into a sketch (never a first part's step, so not in build), and step back and forth. Every other design tool is here too, so a design tool is never in no set.
  */
-const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'design.sketch_svg', 'design.sketch_project', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces'])
+const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'design.sketch_svg', 'design.sketch_project', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces', 'geom.hole_edit'])
 
 /**
  * Sending a sliced plate: which printer and spools, the printers' list and state, and the send. In app as well as
@@ -53,7 +53,7 @@ const SEND: ReadonlySet<string> = new Set(['run.target', 'printer.list', 'printe
 export const TURN_SET_WORDS: Record<TurnSet, string> = {
   build: 'start a new part: the dimension sheet, the plan, sketches extruded, revolved, lofted or swept into solids, holes, fillets, chamfers, shells, booleans, and reading the part back',
   shape: 'shape a part further: push and pull faces, mirror, pattern, split, subtract, emboss text, cut, hollow, repair, and measure it',
-  edit: 'change a part already built: open it, its timeline and steps, its sketches, pick faces and edges, undo and redo',
+  edit: 'change a part already built: open it, its timeline and steps, its sketches, pick faces and edges, change its holes, undo and redo',
   app: 'slicing, settings and profiles, the project and plate, the knowledge base, the app commands, and sending a sliced plate to a printer',
   print: 'the printers: their state, history and cameras, sending, pausing and canceling prints, spools, fleets and schedules, setting printers up, and their commands',
 }

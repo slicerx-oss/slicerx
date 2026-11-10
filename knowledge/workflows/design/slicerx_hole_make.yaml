@@ -1,0 +1,24 @@
+kind: guide
+schema_version: 1
+id: slicerx_hole_make
+name: Making a new hole (geom.hole) in SlicerX designs
+aliases: [geom.hole, make a hole, new hole, drill a hole, cut a hole, screw hole, through hole, blind hole, counterbored hole, countersunk hole]
+applies_to: [all]
+summary: >
+  geom.hole cuts a new round hole in a model or a design, a circle on the
+  face it starts at cut into it: diameter_mm across, through the wall it starts in or depth_mm
+  deep, with a counterbore or a countersink at its entry. To change a hole
+  already there, use geom.hole_edit.
+facts:
+  - {text: "Place it by center and axis: center is the hole's center on the flat face it starts at (or any point on its axis line), and axis is the hole's axis either way round. Left out, the axis is square to the face at center.", src: [slicerx_app_cad]}
+  - {text: "Or place it by face, a point on the face it starts at ({\"at\": [x, y, z]}, with normal when the point is on an edge); the hole goes square into that face.", src: [slicerx_app_cad]}
+  - {text: "The hole starts where its axis line meets the part nearest the point, on a flat face square to the axis. Its whole circle, and the head's, must sit on that face, so a pick on the round side of a boss is refused: give the center on the boss's flat top instead.", src: [slicerx_app_cad]}
+  - {text: "Without depth_mm the hole goes through the wall it starts in, to the face where the material ends along the axis. A depth_mm as deep as that wall or deeper makes it through too.", src: [slicerx_app_cad]}
+  - {text: "A counterbore (diameter_mm and depth_mm) is wider than the hole and less deep, for a screw head. A countersink takes its diameter on the face and the cone's full angle, 30 to 90, 90 for most metric screws. A hole takes one or the other, not both.", src: [slicerx_app_cad]}
+  - {text: "A hole narrower than the nozzle closes up as it prints, so it is refused before anything changes. A hole already on that axis is refused too; change it with geom.hole_edit.", src: [slicerx_app_cad]}
+  - {text: "It returns the hole as made: center, axis, diameterMm, depthMm, kind (through or blind) and head.", src: [slicerx_app_cad]}
+  - {text: "With design it adds a cut step named by label (default \"Hole <diameter> mm\"), and a second cut for a counterbore or a countersink. When the head cannot go on, the hole is taken back off and the call is refused. With a model it writes the new STL.", src: [slicerx_app_cad]}
+pilot_actions:
+  - "For a screw hole in a plate, give center on the face the screw goes in from, the axis, diameter_mm, and a counterbore or countersink for the head."
+  - "Name a hole step for its use, such as \"M3 clearance\", with label."
+src: [slicerx_app_cad]

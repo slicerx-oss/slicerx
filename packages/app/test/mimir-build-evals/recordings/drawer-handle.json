@@ -506,7 +506,7 @@
    ],
    "calls": [
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mw911mn8d1",
       "center": [
@@ -526,7 +526,7 @@
      }
     },
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mw911mn8d1",
       "center": [
@@ -549,8 +549,8 @@
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"pick: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole's axis, such as its center on the face it starts at, and the axis. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}",
-    "{\"ok\":false,\"summary\":\"pick: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole's axis, such as its center on the face it starts at, and the axis. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
+    "{\"ok\":false,\"summary\":\"pick: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole's axis, such as its center on the face it starts at, and the axis. This tool changes a hole that is already there; for a new hole, use geom.hole\"}",
+    "{\"ok\":false,\"summary\":\"pick: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole's axis, such as its center on the face it starts at, and the axis. This tool changes a hole that is already there; for a new hole, use geom.hole\"}"
    ],
    "calls": [
     {

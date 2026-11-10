@@ -48,6 +48,7 @@ const BUILDERS: ReadonlySet<string> = new Set([
   'geom.fillet',
   'geom.chamfer',
   'geom.hole',
+  'geom.hole_edit',
   'geom.shell',
   'geom.cut',
   'geom.split',

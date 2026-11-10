@@ -41,14 +41,26 @@ describe('design tools over the app link', () => {
     const design = ((await runCall('design.new', { name: 'Plate' })) as { output: { design: string } }).output.design
     await runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 3 })
     await runCall('geom.extrude', { design, operation: 'cut', frame: { origin: [MID, MID, 3], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 4 }, distance_mm: 3 })
-    const out = await runCall('geom.hole', { design, center: [MID, MID, 3], axis: [0, 0, 1], diameter_mm: 3, label: 'M2.5 clearance' })
+    const out = await runCall('geom.hole_edit', { design, center: [MID, MID, 3], axis: [0, 0, 1], diameter_mm: 3, label: 'M2.5 clearance' })
     expect(JSON.stringify(out)).not.toMatch(/positions|indices/)
     expect(out).toMatchObject({
       output: { steps: 3, before: { center: [MID, MID, 3], diameterMm: 4, depthMm: 3, kind: 'through' }, after: { diameterMm: 3, depthMm: 3, kind: 'through', head: 'none' } },
     })
     const step = get().plate.find((e) => e.id === design)?.history?.steps.at(-1)
     expect(step?.params).toMatchObject({ op: 'hole.apply', hole: { diameterMm: expect.closeTo(4, 5), through: true }, spec: { diameterMm: 3 }, label: 'M2.5 clearance' })
-    expect(await code(runCall('geom.hole', { design, center: [MID + 8, MID + 3, 3], axis: [0, 0, 1], diameter_mm: 3 }))).toBe('invalid_input')
+    expect(await code(runCall('geom.hole_edit', { design, center: [MID + 8, MID + 3, 3], axis: [0, 0, 1], diameter_mm: 3 }))).toBe('invalid_input')
+  })
+
+  it('cut a new hole on the plate as a circle cut step, and refuse one where a hole already is', async () => {
+    const design = ((await runCall('design.new', { name: 'Plate' })) as { output: { design: string } }).output.design
+    await runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 3 })
+    const out = await runCall('geom.hole', { design, center: [MID, MID, 3], axis: [0, 0, 1], diameter_mm: 3, label: 'M2.5 clearance' })
+    expect(JSON.stringify(out)).not.toMatch(/positions|indices/)
+    expect(out).toMatchObject({ output: { steps: 2, hole: { center: [MID, MID, 3], axis: [0, 0, 1], depthMm: 3, kind: 'through', head: 'none' } } })
+    const step = get().plate.find((e) => e.id === design)?.history?.steps.at(-1)
+    expect(step).toMatchObject({ label: 'M2.5 clearance', params: { op: 'shape.extrude', shape: { type: 'circle', diameterMm: 3 }, spec: { distanceMm: expect.closeTo(3.05, 5), operation: 'cut' } } })
+    expect(await code(runCall('geom.hole', { design, center: [MID, MID, 3], axis: [0, 0, 1], diameter_mm: 4 }))).toBe('invalid_input')
+    expect(get().plate.find((e) => e.id === design)?.history?.steps).toHaveLength(2)
   })
 
   it('wait for the person: busy while they edit a step of that object', async () => {

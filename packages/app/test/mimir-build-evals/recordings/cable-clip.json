@@ -1158,7 +1158,7 @@
    ],
    "calls": [
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mw8y3c90d1",
       "face": {
@@ -1186,7 +1186,7 @@
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, use geom.hole\"}"
    ],
    "calls": [
     {
