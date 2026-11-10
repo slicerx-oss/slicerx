@@ -22,6 +22,7 @@ describe('layer height picker', () => {
   })
   it('carries the brand line and the tooltip', () => {
     expect(SLEIPNIR_LINE).toContain('Thinner layers where steps would show')
+    expect(SLEIPNIR_LINE).toContain('up to half the nozzle')
     expect(OPTION_TIPS['smart_layer.sleipnir']?.body).toMatch(/^sleipnir changes the layer height as the part goes up/)
   })
 })

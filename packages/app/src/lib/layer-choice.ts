@@ -10,7 +10,8 @@ export const FIXED_HEIGHTS = [0.08, 0.12, 0.16, 0.2, 0.24, 0.28] as const
 export const SLEIPNIR = 'sleipnir'
 export type LayerChoice = (typeof FIXED_HEIGHTS)[number] | typeof SLEIPNIR
 
-export const SLEIPNIR_LINE = 'Thinner layers where steps would show, your layer height elsewhere'
+/** sleipnir prints no layer thicker than half the nozzle (plate/sleipnir-cap.tsx), so the line says so. */
+export const SLEIPNIR_LINE = 'Thinner layers where steps would show, and your layer height elsewhere, up to half the nozzle'
 
 /** Detail (0 to 100) that gives a fixed height: 0 is 0.28 mm, 100 is 0.08 mm. */
 export function detailForHeight(mm: number): number {
