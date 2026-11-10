@@ -130,6 +130,37 @@ test.describe('the sidebar panels', () => {
       await sidebarDone(page)
     }
   })
+
+  test('the Filament card reads in full at the narrowest sidebar width: spool ids clear of their counts, and the dry note on two lines', async ({ page }) => {
+    // Bay 2's AMS holds two spools the plate uses, and its PLA asks to be dried
+    await sidebarAs(page, { mode: 'simple', printer: 'bay-2' })
+    try {
+      await setState(page, { paneSizes: { 'slicerx:prepare-left': 288 } })
+      await expect.poll(async () => Math.round((await page.locator('.pane[data-side="left"]').boundingBox())!.width)).toBeLessThanOrEqual(290)
+      const note = page.getByRole('status', { name: 'Setup notes' })
+      await expect(note).toBeVisible({ timeout: 30_000 })
+      const tiles = await page.getByTestId('slice-filament-slot').evaluateAll((els) =>
+        els.map((el) => {
+          const id = el.querySelector<HTMLElement>('.spool-id')!
+          const count = el.querySelector<HTMLElement>('.spool-count')!
+          const a = id.getBoundingClientRect()
+          const b = count.getBoundingClientRect()
+          const apart = b.width === 0 || a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top
+          return { id: id.textContent, cut: id.scrollWidth > id.clientWidth + 1, apart }
+        }),
+      )
+      expect(tiles.length).toBeGreaterThan(1)
+      for (const t of tiles) expect(t, `spool ${t.id}`).toEqual({ id: t.id, cut: false, apart: true })
+      // the note wraps rather than cutting its text, and It's dry sits under it
+      const line = note.locator('.rail-foot-line')
+      expect(await line.evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1)).toBe(true)
+      const dry = note.getByRole('button', { name: "It's dry" })
+      if (await dry.count()) expect((await dry.boundingBox())!.y).toBeGreaterThanOrEqual((await line.boundingBox())!.y + (await line.boundingBox())!.height - 1)
+    } finally {
+      await layoutReset(page)
+      await sidebarDone(page)
+    }
+  })
 })
 
 // The Settings tabs' ARIA and state are covered by RTL tests; these two stay because they measure layout.
