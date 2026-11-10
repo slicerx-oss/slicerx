@@ -33,3 +33,14 @@ export const configRead = (s: Pick<AppState, (typeof KEY_CONFIG)[number]>, multi
  */
 export const inputsChanged = (a: AppState, b: AppState): boolean =>
   INPUTS.some((k) => a[k] !== b[k] && !(k === 'layerMarks' && printed(a.layerMarks) === printed(b.layerMarks)) && !(k === 'printerSlots' && slotsRead(a.printerSlots) === slotsRead(b.printerSlots)))
+
+/**
+ * True when the one slice input that moved is the flush settings, rewritten with the same values: the measured flush
+ * tables landing (filament/flush.ts onFlushData), so every reader works its flush volumes out again. Nothing a person
+ * set has changed.
+ */
+export const flushRefreshOnly = (a: AppState, b: AppState): boolean => {
+  if (a.flush === b.flush || inputsChanged({ ...a, flush: b.flush }, b)) return false
+  const keys = Object.keys(a.flush) as (keyof AppState['flush'])[]
+  return keys.length === Object.keys(b.flush).length && keys.every((k) => a.flush[k] === b.flush[k])
+}

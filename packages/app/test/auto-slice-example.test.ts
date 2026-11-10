@@ -101,6 +101,44 @@ describe('the example plate at launch', () => {
     }
   })
 
+  it('the measured flush tables landing after the plate do not start a slice, with the sleipnir line on', async () => {
+    // The footer's sleipnir line works out the plate's slice settings on its first render, which makes the first flush
+    // calculation and loads the measured flush tables; when they land the flush settings are written again, unchanged.
+    const s = await launch('auto')
+    stops.push(s.stop)
+    await s.seedExamplePlate(s.h)
+    await settle()
+    expect(s.get().sliceHeld).toBe(true)
+    const { sleipnirCapText } = await import('../src/plate/sleipnir-cap')
+    const { goalEasy } = await import('../src/adapters/config')
+    await import('../src/filament/flush')
+    const { flushDataReady, loadFlushData } = await import('@slicerx/settings/flush')
+    expect(flushDataReady()).toBe(false)
+    // the line as the footer reads it, for 0.28 mm layers on a 0.4 mm nozzle with sleipnir on
+    const st = s.get()
+    const line = sleipnirCapText({ ...st, easy: { ...goalEasy('standard'), varyLayerHeight: true }, overrides: { ...st.overrides, layer_height: 0.28, nozzle_diameter: [0.4] } })
+    expect(line).toBe('With sleipnir on, layers are at most 0.20 mm, not 0.28 mm.')
+    const flush = s.get().flush
+    await loadFlushData()
+    // the tables' write: the same values in a new object
+    expect(s.get().flush).not.toBe(flush)
+    expect(s.get().flush).toEqual(flush)
+    await settle()
+    expect(s.requests).toHaveLength(0)
+    expect(s.get().slice.status).toBe('idle')
+    expect(s.get().sliceHeld).toBe(true)
+  })
+
+  it('a flush value someone changes still slices', async () => {
+    const s = await launch('auto')
+    stops.push(s.stop)
+    await s.seedExamplePlate(s.h)
+    await settle()
+    s.set((st) => ({ flush: { ...st.flush, multiplier: st.flush.multiplier + 0.5 } }))
+    await vi.waitFor(() => expect(s.requests).toHaveLength(1), { timeout: 3000 })
+    expect(s.get().sliceHeld).toBe(false)
+  })
+
   it('slices on the first edit, as the setting says', async () => {
     const s = await launch('auto')
     stops.push(s.stop)
