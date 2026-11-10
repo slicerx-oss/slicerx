@@ -8,6 +8,7 @@ import { registerPrinterSetup } from '../src/first-run/setup-registry'
 import '../src/inventory/usage'
 import '../src/state/actions'
 import { migrateSetupPrinters, setupHostFor } from '../src/first-run/setup-host'
+import { filamentInput } from '../src/first-run/printer-form'
 import { addHandPrinter, isExportOnly, LEGACY_SETUP_KEY, withHandPrinters } from '../src/lib/hand-printers'
 import { fleetQuery } from '../src/lib/queries'
 import { printTarget, shownPrinter } from '../src/lib/use-printer'
@@ -74,6 +75,7 @@ describe('printers added by hand', () => {
     const { printerId } = await setupHostFor(h).addPrinter({ profileId: 'bambu-a1', nozzleMm: 0.4, name: 'A1', filament: { system: 'ams', slots: 8 } })
     expect(get().handPrinters.find((p) => p.id === printerId)).toMatchObject({ filamentSystem: 'ams', slotCount: 8 })
     const st = await h.printers!.status(printerId)
+    // named as the printer's own report names AMS slots: a letter per unit from A, four places each
     expect(st.slots.map((x) => x.id)).toEqual(['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4'])
     expect(st.slots.every((x) => x.material === undefined && x.color === undefined)).toBe(true)
     const back = normalizePrefs(JSON.parse(localStorage.getItem('slicerx.prefs.v1') ?? '{}') as unknown)
@@ -95,6 +97,19 @@ describe('printers added by hand', () => {
     expect((await h.printers!.status(old)).slots).toEqual([])
     // a slot count outside what any unit has is dropped on reload
     expect(normalizePrefs({ handPrinters: [{ ...rec, id: 'x', filamentSystem: 'ams', slotCount: 99 }] }).handPrinters?.[0]?.slotCount).toBeUndefined()
+  })
+
+  it('keeps no unit when setup says none on a printer whose catalog has an AMS, as the connected path names none', async () => {
+    const h = host()
+    for (const profileId of ['bambu-a1', 'bambu-x1-carbon']) {
+      const filament = filamentInput({ kind: 'none', units: 1, slots: 1 })
+      const { printerId } = await setupHostFor(h).addPrinter({ profileId, nozzleMm: 0.4, filament })
+      const rec = get().handPrinters.find((p) => p.id === printerId)!
+      expect(rec.filamentSystem, profileId).toBeUndefined()
+      expect(rec.slotCount, profileId).toBeUndefined()
+      expect((await h.printers!.status(printerId)).slots, profileId).toEqual([])
+      expect((await rows(h)).find((r) => r.id === printerId)?.filamentSystem, profileId).toBeUndefined()
+    }
   })
 
   it('stays after a reload', async () => {
