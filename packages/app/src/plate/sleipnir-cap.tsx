@@ -26,6 +26,8 @@ let last: { from: unknown[]; text: string | null } | null = null
  * layers it does not plan (a calibration plate, the plate's own layer heights). Kept while the slice inputs stay the same.
  */
 export function sleipnirCapText(s: AppState): string | null {
+  // a plate object whose mesh has not come in yet (a project still opening) has no parts to slice: no line until it has
+  if (s.plate.some((o) => !o.handle)) return null
   const from = READ.map((k) => s[k])
   if (last && last.from.every((v, i) => v === from[i])) return last.text
   const meta = s.plates.find((p) => p.id === s.activePlate)

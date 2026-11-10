@@ -36,6 +36,20 @@ describe('the sleipnir layer height line', () => {
     expect(sleipnirCapText(get())).toBeNull()
   })
 
+  it('says nothing while a project is still opening, with a plate object whose mesh has not come in, and reads once it has', () => {
+    // the slice footer reads the line on every render, the held open included
+    setup({ layer_height: 0.28, nozzle_diameter: [0.4] })
+    const box = { id: 'b', name: 'Box', parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    set({ plate: [box] as never, sliceHeld: true, heldByOpenedProject: true })
+    try {
+      expect(sleipnirCapText(get())).toBeNull()
+      set({ plate: [{ ...box, handle: { id: 'b', hash: 'b', name: 'Box', triangles: 0, bboxMm: [1, 1, 1], openEdges: 0, parts: [] } }] as never, sliceHeld: false, heldByOpenedProject: false })
+      expect(sleipnirCapText(get())).toBe('With sleipnir on, layers are at most 0.20 mm, not 0.28 mm.')
+    } finally {
+      set({ plate: [], sliceHeld: false, heldByOpenedProject: false })
+    }
+  })
+
   it('turns sleipnir off only when asked, keeping the layer height', () => {
     setup({ layer_height: 0.28, nozzle_diameter: [0.4], smart_layer: 'quality' })
     expect(get().easy.varyLayerHeight).toBe(true)
