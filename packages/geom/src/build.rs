@@ -144,8 +144,13 @@ fn sweep(
 
 /// The center of the circle through three points, or none when they lie on a line.
 fn circumcenter(a: V2, b: V2, c: V2) -> Option<V2> {
-    let d = 2.0 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
-    if d.abs() < 1e-18 {
+    // d is twice the cross product of the sides from a, |ab| |ac| times the sine of the angle at a. taken from the
+    // sides, its rounding is about 1e-16 of |ab| |ac| wherever the points sit (from the coordinates themselves it was
+    // 1e-16 of their size times a side, so three points on a line near 100 mm read 1e-12). under 1e-12 of |ab| |ac|
+    // (squared here, no roots) counts as a line
+    let (ab, ac) = ([b[0] - a[0], b[1] - a[1]], [c[0] - a[0], c[1] - a[1]]);
+    let d = 2.0 * (ab[0] * ac[1] - ab[1] * ac[0]);
+    if d * d <= 4e-24 * (ab[0] * ab[0] + ab[1] * ab[1]) * (ac[0] * ac[0] + ac[1] * ac[1]) {
         return None;
     }
     let (sa, sb, sc) = (
@@ -398,6 +403,42 @@ mod tests {
         let m = extrude(std::slice::from_ref(&poly), &Frame::WORLD, 0.0, 3.0).unwrap();
         assert!(m.edge_report().is_watertight());
         assert!((m.volume() - poly.area() * 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn collinear_points_have_no_circumcenter() {
+        // on one line up to rounding, near 100 mm, with the middle point at several places along it
+        let (a, c) = ([100.123, 99.877], [101.987, 103.311]);
+        for t in [0.37, 0.5, 0.61, 1.0 / 3.0] {
+            let b = [a[0] + t * (c[0] - a[0]), a[1] + t * (c[1] - a[1])];
+            assert!(
+                circumcenter(a, b, c).is_none(),
+                "t {t}: {:?}",
+                circumcenter(a, b, c)
+            );
+            assert!(circumcenter(b, a, c).is_none() && circumcenter(c, b, a).is_none());
+        }
+        let (a, c) = ([287.4, -211.9], [312.65, -173.15]);
+        let b = [a[0] + 0.29 * (c[0] - a[0]), a[1] + 0.29 * (c[1] - a[1])];
+        assert!(circumcenter(a, b, c).is_none());
+        assert!(circumcenter([4.0, 1.0], [9.0, 1.0], [30.0, 1.0]).is_none());
+        assert!(circumcenter([4.0, 1.0], [4.0, 1.0], [30.0, 7.0]).is_none());
+    }
+
+    #[test]
+    fn arcs_have_their_circumcenter() {
+        // (center, radius, three angles): a 500 mm arc near (100, 100) at 10 and 1 degree steps, a 1 mm arc and a
+        // 0.05 mm one
+        for (o, r, angles) in [
+            ([-380.0, -40.0], 500.0, [0.10, 0.27, 0.45]),
+            ([-380.0, -40.0], 500.0, [0.27, 0.2875, 0.305]),
+            ([7.25, -3.5], 1.0, [0.3, 0.9, 1.6]),
+            ([150.0, 150.0], 0.05, [1.0, 1.4, 1.8]),
+        ] {
+            let p = |a: f64| [o[0] + r * a.m_cos(), o[1] + r * a.m_sin()];
+            let c = circumcenter(p(angles[0]), p(angles[1]), p(angles[2])).expect("an arc has a center");
+            assert!((c[0] - o[0]).m_hypot(c[1] - o[1]) < 1e-6 * r, "r {r}: {c:?}");
+        }
     }
 
     #[test]
