@@ -90,6 +90,27 @@ async function shownViews(drawing: Locator): Promise<{ view: string | null; cell
   })
 }
 
+/**
+ * Waits until each view is drawn for its cell as the window now has it. After a resize the drawing keeps its old size
+ * until the window holds still for a moment (sheet-view.tsx SETTLE_MS) and is then drawn again, so a view read in that
+ * moment is the old drawing in the new cell: at 360 after 390, its callouts sat up to 23 px under the cell. Drawn
+ * again, each view's svg is the size sheet-view.tsx gives a phone's cell: the frame's width shared by its views, and
+ * its height less the 22 px band for the views' labels.
+ */
+async function drawnForCells(drawing: Locator): Promise<void> {
+  await expect
+    .poll(() =>
+      drawing.locator('.mimir-drawing-grid').evaluate((grid) => {
+        const r = grid.getBoundingClientRect()
+        const svgs = [...grid.querySelectorAll(':scope > .mimir-drawing-cell > svg')]
+        const w = Math.max(80, Math.floor(r.width / svgs.length))
+        const h = Math.max(60, Math.floor(r.height) - 22)
+        return svgs.length > 0 && svgs.every((s) => s.getAttribute('width') === String(w) && s.getAttribute('height') === String(h))
+      }),
+    )
+    .toBe(true)
+}
+
 const overlaps = (a: Box, b: Box): boolean => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
 /** Review shots at both widths in light and dark, when shots are on. */
@@ -131,6 +152,7 @@ journey.describe('the size drawing on a phone', () => {
 
     for (const phone of PHONES) {
       await page.setViewportSize(phone)
+      await drawnForCells(drawing)
       // it opens on Top and Isometric side by side, with the picker naming the choices that draw a callout
       await expect(picker.getByRole('radio')).toHaveText(BACKPLATE.map((p) => p.name))
       await expect(page.getByTestId('mimir-drawing-view-front')).toHaveCount(0)
