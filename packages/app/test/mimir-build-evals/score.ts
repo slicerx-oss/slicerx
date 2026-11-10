@@ -3,7 +3,7 @@
 // Scores one build eval run on two counts. Geometry: the steps a good build uses ran, the part is one closed solid (or
 // the bodies the case allows), its walls print, it fits the bed and its main sizes are near the request, read on each
 // body or assembly rather than on the plate, since parts are laid out apart to print; a hook holds what hangs on it,
-// and a hinged lid sits on its box at a gap that prints apart. Turns: the
+// and a hinged lid sits on its box at a gap that prints apart and turns on a pin through both. Turns: the
 // person sends one message, confirms the dimension sheet once and presses Go on the plan once (once for each part
 // when the message asks for separate parts); any other answer, question card or nudge is an extra turn, and one extra
 // turn fails the run however good the part is. The run's verdict is pass or fail from those checks alone, or disagree
@@ -11,6 +11,7 @@
 import type { MeshPart, PilotEvent, PilotMachine } from '@slicerx/contracts'
 import { assessFit } from '@slicerx/pilot/evals'
 import { bedFit, bodyBoxes, bodyCount, bodyTriangles, closure, minWall, type BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
+import { holeLoops } from '../../../mcp/src/body-facts'
 import { hookOn, least, LIP_RISE_MM, most, surfacePoints, type V3 } from '../../../mcp/src/hook-lip'
 import type { BuildCase, HookSpec, OpMatch, SizeCheck } from './cases'
 
@@ -333,6 +334,26 @@ function nearestGaps(from: Float64Array, to: Float64Array, reach: number): { nea
   return { near, side, over, level }
 }
 
+type Body = ReturnType<typeof bodyTriangles>[number]
+
+/**
+ * The box and its lid among the part's bodies: the largest body is the box, and the lid the next largest whose largest
+ * side is near the box's (a pin or a loose knuckle is a rod or a stub, far smaller across its two largest sides). The
+ * other bodies come with them, largest first. `why` says what is missing instead.
+ */
+function boxAndLid(parts: MeshPart[]): { bodies: Body[]; box: Body; lid: Body } | { why: string } {
+  const bodies = bodyTriangles(parts).sort((a, b) => b.volumeMm3 - a.volumeMm3)
+  if (bodies.length < 2) return { why: 'one body: the lid is not a piece of its own, so it cannot open' }
+  const box = bodies[0]!
+  const face = (b: { min: V3; max: V3 }) => {
+    const [, m, l] = [0, 1, 2].map((k) => b.max[k]! - b.min[k]!).sort((x, y) => x - y)
+    return m! * l!
+  }
+  const lid = bodies.slice(1).find((b) => face(b) >= LID_FACE_SHARE * face(box))
+  if (!lid) return { why: 'no lid: no other body is near the size of the box, so the lid is part of the box or missing' }
+  return { bodies, box, lid }
+}
+
 /**
  * Whether the box's lid is joined to it and can open (cases.ts LidSpec): the largest body is the box and the next
  * largest whose largest side is near the box's is its lid; the lid must be a piece of its own, come within LID_REACH_MM of the box (a lid laid apart has no
@@ -341,16 +362,9 @@ function nearestGaps(from: Float64Array, to: Float64Array, reach: number): { nea
  * either body straight across to the faces of the other (nearestGaps).
  */
 export function lidCheck(m: PilotMachine, parts: MeshPart[]): Check {
-  const bodies = bodyTriangles(parts).sort((a, b) => b.volumeMm3 - a.volumeMm3)
-  if (bodies.length < 2) return { pass: false, detail: 'one body: the lid is not a piece of its own, so it cannot open' }
-  const box = bodies[0]!
-  // the lid covers the box: a pin or a loose knuckle is a rod or a stub, far smaller across its two largest sides
-  const face = (b: { min: V3; max: V3 }) => {
-    const [, m, l] = [0, 1, 2].map((k) => b.max[k]! - b.min[k]!).sort((x, y) => x - y)
-    return m! * l!
-  }
-  const lid = bodies.slice(1).find((b) => face(b) >= LID_FACE_SHARE * face(box))
-  if (!lid) return { pass: false, detail: 'no lid: no other body is near the size of the box, so the lid is part of the box or missing' }
+  const found = boxAndLid(parts)
+  if ('why' in found) return { pass: false, detail: found.why }
+  const { box, lid } = found
   const a = nearestGaps(lid.tri, box.tri, LID_REACH_MM)
   const b = nearestGaps(box.tri, lid.tri, LID_REACH_MM)
   const near = Math.min(a.near, b.near)
@@ -463,6 +477,166 @@ export function verdictCounts(rows: readonly { id: string; verdict: Verdict }[])
   return { byCase, all }
 }
 
+/** How far from the hinge's axis a knuckle's wall stands at most, mm: rays out from the axis must meet it within this. */
+const KNUCKLE_MM = 8
+/** Rays out from the axis at each station, evenly round it. */
+const RAYS = 8
+/** Stations along the axis, mm apart. */
+const STATION_MM = 0.5
+/** A rod: its two smaller sizes under this share of its length, and its length at least ROD_MM. */
+const ROD_SHARE = 0.25
+const ROD_MM = 10
+
+type Axis = { at: V3; dir: V3; from: string }
+
+/** Where a ray from o along d meets triangle `tri[t]` (Moller and Trumbore), as its distance, or -1. */
+function rayTriangle(o: V3, d: V3, tri: Float64Array, t: number): number {
+  const e1: V3 = [tri[t + 3]! - tri[t]!, tri[t + 4]! - tri[t + 1]!, tri[t + 5]! - tri[t + 2]!]
+  const e2: V3 = [tri[t + 6]! - tri[t]!, tri[t + 7]! - tri[t + 1]!, tri[t + 8]! - tri[t + 2]!]
+  const p: V3 = [d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]]
+  const det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2]
+  if (Math.abs(det) < 1e-12) return -1
+  const inv = 1 / det
+  const sv: V3 = [o[0] - tri[t]!, o[1] - tri[t + 1]!, o[2] - tri[t + 2]!]
+  const u = (sv[0] * p[0] + sv[1] * p[1] + sv[2] * p[2]) * inv
+  if (u < 0 || u > 1) return -1
+  const q: V3 = [sv[1] * e1[2] - sv[2] * e1[1], sv[2] * e1[0] - sv[0] * e1[2], sv[0] * e1[1] - sv[1] * e1[0]]
+  const v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) * inv
+  if (v < 0 || u + v > 1) return -1
+  return (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv
+}
+
+/**
+ * The lines a hinge's pin may run along: each rod among the bodies (a separate pin) along its long side through its
+ * middle, and each round hole of the box or the lid (the bore of a knuckle, where a pin built into the other part runs)
+ * along its axis. Lines that are one (parallel and within half a millimeter) are kept once.
+ */
+function hingeAxes(bodies: readonly Body[], box: Body, lid: Body): Axis[] {
+  const out: Axis[] = []
+  const add = (at: V3, dir: V3, from: string) => {
+    const same = out.some((x) => {
+      if (Math.abs(Math.abs(x.dir[0] * dir[0] + x.dir[1] * dir[1] + x.dir[2] * dir[2]) - 1) > 1e-3) return false
+      const w: V3 = [at[0] - x.at[0], at[1] - x.at[1], at[2] - x.at[2]]
+      const along = w[0] * x.dir[0] + w[1] * x.dir[1] + w[2] * x.dir[2]
+      return Math.hypot(w[0] - along * x.dir[0], w[1] - along * x.dir[1], w[2] - along * x.dir[2]) < 0.5
+    })
+    if (!same) out.push({ at, dir, from })
+  }
+  for (const b of bodies) {
+    if (b === box || b === lid) continue
+    const size = [0, 1, 2].map((k) => b.max[k]! - b.min[k]!)
+    const long = size.indexOf(Math.max(...size))
+    const others = size.filter((_, k) => k !== long)
+    if (size[long]! < ROD_MM || others.some((x) => x > ROD_SHARE * size[long]!)) continue
+    add([0, 1, 2].map((k) => (b.min[k]! + b.max[k]!) / 2) as V3, [0, 1, 2].map((k) => (k === long ? 1 : 0)) as V3, 'a pin')
+  }
+  for (const [b, name] of [[lid, 'the lid'], [box, 'the box']] as const) {
+    const n = b.tri.length / 3
+    for (const h of holeLoops({ positions: Array.from(b.tri), indices: Array.from({ length: n }, (_, i) => i) })) add(h.at, h.axis, `a bore in ${name}`)
+  }
+  return out
+}
+
+/** Whether point p is inside body b: an odd number of its faces along a ray from p. */
+function inside(b: Body, p: V3): boolean {
+  // a slanted ray, so it meets no edge of a part drawn square to the axes
+  const d: V3 = [0.2672612, 0.5345225, 0.8017837]
+  let n = 0
+  for (let t = 0; t < b.tri.length; t += 9) if (rayTriangle(p, d, b.tri, t) > 1e-9) n++
+  return n % 2 === 1
+}
+
+/** Whether body b wraps the axis at p: every ray out from p, square to the axis, meets b within KNUCKLE_MM. */
+function wraps(tri: Float64Array, p: V3, rays: readonly V3[]): boolean {
+  return rays.every((d) => {
+    for (let t = 0; t < tri.length; t += 9) {
+      const h = rayTriangle(p, d, tri, t)
+      if (h > 1e-9 && h <= KNUCKLE_MM) return true
+    }
+    return false
+  })
+}
+
+/** The triangles of b that come within `reach` of the line through `at` along unit `dir`, by their boxes. */
+function nearLine(b: Body, at: V3, dir: V3, reach: number): Float64Array {
+  const keep: number[] = []
+  for (let t = 0; t < b.tri.length; t += 9) {
+    const c: V3 = [0, 1, 2].map((k) => (b.tri[t + k]! + b.tri[t + 3 + k]! + b.tri[t + 6 + k]!) / 3) as V3
+    const r = Math.max(...[0, 3, 6].map((j) => Math.hypot(b.tri[t + j]! - c[0], b.tri[t + j + 1]! - c[1], b.tri[t + j + 2]! - c[2])))
+    const w: V3 = [c[0] - at[0], c[1] - at[1], c[2] - at[2]]
+    const along = w[0] * dir[0] + w[1] * dir[1] + w[2] * dir[2]
+    if (Math.hypot(w[0] - along * dir[0], w[1] - along * dir[1], w[2] - along * dir[2]) <= reach + r) for (let k = 0; k < 9; k++) keep.push(b.tri[t + k]!)
+  }
+  return Float64Array.from(keep)
+}
+
+/**
+ * Whether the box's lid turns on a hinge pin (cases.ts LidSpec): along some line, a pin runs through a knuckle of the
+ * box and a knuckle of the lid. The line is a separate pin's, or the bore of a knuckle (hingeAxes). Along it, every
+ * half millimeter, a body wraps the line where rays out from it all round meet that body within KNUCKLE_MM, and the
+ * pin is the body the line runs inside. It passes when the lid wraps the line around the box's own pin, the box wraps it
+ * around the lid's own pin, or one separate pin runs inside both a knuckle of the box and a knuckle of the lid. A lid
+ * laid apart, with no pin, or with a pin through one part only, fails.
+ */
+export function hingeCheck(parts: MeshPart[]): Check {
+  const found = boxAndLid(parts)
+  if ('why' in found) return { pass: false, detail: found.why }
+  const { bodies, box, lid } = found
+  const axes = hingeAxes(bodies, box, lid)
+  if (!axes.length) return { pass: false, detail: 'no pin and no knuckle bore to read a hinge from' }
+  const lo = [0, 1, 2].map((k) => Math.min(box.min[k]!, lid.min[k]!))
+  const hi = [0, 1, 2].map((k) => Math.max(box.max[k]!, lid.max[k]!))
+  type Seen = { axis: Axis; box: number; lid: number; pin: string | null; held: boolean }
+  const seen: Seen[] = []
+  for (const axis of axes) {
+    const { at, dir } = axis
+    // the axis must pass by both bodies, within a knuckle's reach of each box
+    const by = (b: Body) => [0, 1, 2].every((k) => dir[k] !== 0 || (at[k]! >= b.min[k]! - KNUCKLE_MM && at[k]! <= b.max[k]! + KNUCKLE_MM))
+    if (!by(box) || !by(lid)) continue
+    const u0: V3 = Math.abs(dir[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]
+    const uRaw: V3 = [dir[1] * u0[2] - dir[2] * u0[1], dir[2] * u0[0] - dir[0] * u0[2], dir[0] * u0[1] - dir[1] * u0[0]]
+    const ul = Math.hypot(...uRaw)
+    const u: V3 = [uRaw[0] / ul, uRaw[1] / ul, uRaw[2] / ul]
+    const v: V3 = [dir[1] * u[2] - dir[2] * u[1], dir[2] * u[0] - dir[0] * u[2], dir[0] * u[1] - dir[1] * u[0]]
+    // off the square directions a little, so no ray runs along a face drawn square to the axes
+    const rays = Array.from({ length: RAYS }, (_, i) => {
+      const a = 0.1 + (2 * Math.PI * i) / RAYS
+      return [0, 1, 2].map((k) => Math.cos(a) * u[k]! + Math.sin(a) * v[k]!) as V3
+    })
+    const near = new Map(bodies.map((b) => [b, nearLine(b, at, dir, KNUCKLE_MM)] as const))
+    // the stations: along the axis over the box and the lid together
+    const ends = [0, 1, 2].flatMap((k) => (dir[k] === 0 ? [] : [((lo[k]! - at[k]!) / dir[k]!), ((hi[k]! - at[k]!) / dir[k]!)]))
+    const [t0, t1] = [Math.min(...ends), Math.max(...ends)]
+    const s: Seen = { axis, box: 0, lid: 0, pin: null, held: false }
+    const boxOn = new Set<Body>()
+    const lidOn = new Set<Body>()
+    for (let t = t0 + STATION_MM / 2; t < t1; t += STATION_MM) {
+      const p: V3 = [at[0] + dir[0] * t, at[1] + dir[1] * t, at[2] + dir[2] * t]
+      const byBox = wraps(near.get(box)!, p, rays)
+      const byLid = wraps(near.get(lid)!, p, rays)
+      if (!byBox && !byLid) continue
+      // the body the axis runs inside here: the pin, a separate one or one built into a part
+      const pin = bodies.find((b) => near.get(b)!.length && inside(b, p))
+      if (byBox) s.box += STATION_MM
+      if (byLid) s.lid += STATION_MM
+      if (pin && byLid && pin !== lid) lidOn.add(pin)
+      if (pin && byBox && pin !== box) boxOn.add(pin)
+    }
+    const shared = [...lidOn].find((b) => boxOn.has(b))
+    if (lidOn.has(box)) [s.held, s.pin] = [true, "the box's own pin"]
+    else if (boxOn.has(lid)) [s.held, s.pin] = [true, "the lid's own pin"]
+    else if (shared) [s.held, s.pin] = [true, 'a separate pin']
+    else s.pin = lidOn.size || boxOn.size ? `a pin through the ${lidOn.size ? 'lid' : 'box'} only` : 'no pin'
+    seen.push(s)
+  }
+  const along = (s: Seen) => `${s.axis.from} along ${['x', 'y', 'z'][s.axis.dir.map(Math.abs).indexOf(Math.max(...s.axis.dir.map(Math.abs)))] ?? 'a slant'}`
+  const best = seen.find((s) => s.held) ?? [...seen].sort((a, b) => Math.min(b.box, b.lid) - Math.min(a.box, a.lid))[0]
+  if (!best) return { pass: false, detail: 'no pin or knuckle bore runs by both the box and the lid' }
+  const r = (v: number) => Math.round(v * 10) / 10
+  const held = best.held ? `held by ${best.pin}` : best.pin === 'no pin' ? 'no pin runs through the knuckles' : best.pin
+  return { pass: best.held, detail: `${along(best)}: the box wraps it over ${r(best.box)} mm and the lid over ${r(best.lid)} mm, ${held}` }
+}
+
 /** One design.check call of a run, as its results row keeps it: the plan it checked, and how it came out. */
 export interface CheckCall {
   /** The planId the call named, or null when it named none. */
@@ -509,6 +683,7 @@ export interface CaseScore {
   sizes?: Check
   hook?: Check
   lid?: Check
+  hinge?: Check
   geometry: boolean
   extra: number
   turns: Check
@@ -558,7 +733,8 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   out.sizes = { pass: off.length === 0, detail: `${shown} mm${off.length ? `; off: ${off.map((s) => `${s.axis} ${side(s.axis)} (want ${s.minMm} to ${s.maxMm})`).join(', ')}` : ''}` }
   if (c.hook) out.hook = hookCheck(c.hook, run.parts)
   if (c.lid) out.lid = lidCheck(c.machine, run.parts)
-  out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : []), ...(out.lid ? [out.lid] : [])].every((x) => x.pass)
+  if (c.lid) out.hinge = hingeCheck(run.parts)
+  out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : []), ...(out.lid ? [out.lid] : []), ...(out.hinge ? [out.hinge] : [])].every((x) => x.pass)
   out.pass = out.geometry && turns.pass
   out.verdict = verdictOf(out, claim)
   return out

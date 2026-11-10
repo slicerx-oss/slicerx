@@ -28,7 +28,7 @@ import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, evalPrice, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, recordLive, refreshScore, summarize } from './mimir-build-evals/recordings'
-import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, hookCheck, lastCheckPass, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
+import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, hingeCheck, hookCheck, lastCheckPass, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
 
@@ -292,7 +292,7 @@ describe('build eval scoring', () => {
     const wide = summarize(scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 130, 110, 4)]))
     expect(wide.geometry).toBe(false)
     expect(wide.checks).toMatchObject({ watertight: true, bodies: true, minWall: true, bedFit: true, sizes: false })
-    expect(Object.keys(wide.checks).sort()).toEqual(['bedFit', 'bodies', 'lid', 'minWall', 'ops', 'sizes', 'watertight'])
+    expect(Object.keys(wide.checks).sort()).toEqual(['bedFit', 'bodies', 'hinge', 'lid', 'minWall', 'ops', 'sizes', 'watertight'])
     // a case with a hook adds the hook; a run that built nothing has no part checks
     expect(summarize(scored('cable-hook', [box(0, 0, 0, 40, 40, 5)])).checks.hook).toBe(false)
     const none = summarize(scored('hinged-box', []))
@@ -430,6 +430,44 @@ describe('build eval scoring', () => {
     // a lid touching the top of the 35 mm box and standing 12 mm (a run kept 80 by 50 by 47)
     const stacked = scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 0, 35, 80, 50, 47)])
     expect(stacked.sizes?.detail).toMatch(/z 47 \(want 33 to 45\)/)
+  })
+
+  // boxes as one part, so those that meet at a corner are one body, as a knuckle joined onto its box is
+  const joined = (...boxes: MeshPart[]): MeshPart => {
+    const positions: number[] = []
+    const indices: number[] = []
+    for (const b of boxes) {
+      const at = positions.length / 3
+      positions.push(...b.positions)
+      indices.push(...Array.from(b.indices, (i) => i + at))
+    }
+    return { name: 'joined', slot: 1, positions: new Float32Array(positions), indices: new Uint32Array(indices) }
+  }
+  // a square knuckle from x0 to x1 around a pin line along x at y 53, z 38: 3 mm wide inside, 6 mm outside, its lower
+  // front corner at y 50, z 35 (the box's back top edge), and with `lip`, its front wall standing on z0 instead
+  const knuckle = (x0: number, x1: number, z0 = 35) => [
+    box(x0, 50, z0, x1, 56, 36.5),
+    box(x0, 50, 39.5, x1, 56, 41),
+    box(x0, 50, 36.5, x1, 51.5, 39.5),
+    box(x0, 54.5, 36.5, x1, 56, 39.5),
+  ]
+
+  it('reads a hinge as working only when one pin runs through a knuckle of the box and one of the lid', () => {
+    // the 80 by 50 by 35 box with knuckles at both ends of its back edge, and the lid with its knuckle between them
+    const base = joined(box(0, 0, 0, 80, 50, 35), ...knuckle(0, 20), ...knuckle(60, 80))
+    const lid = joined(box(20.4, 0, 35.4, 59.6, 50, 36.5), ...knuckle(20.4, 59.6, 35.4))
+    const pin = box(0, 52.2, 37.2, 80, 53.8, 38.8)
+    expect(hingeCheck([base, lid, pin])).toEqual({ pass: true, detail: 'a pin along x: the box wraps it over 40 mm and the lid over 39 mm, held by a separate pin' })
+    // the same knuckles with no pin: the lid's knuckle only lines up with the box's (a lid check alone passes this)
+    expect(hingeCheck([base, lid])).toEqual({ pass: false, detail: 'no pin and no knuckle bore to read a hinge from' })
+    // a pin through the box's knuckles that stops short of the lid's
+    expect(hingeCheck([base, lid, box(0, 52.2, 37.2, 19.6, 53.8, 38.8)])).toEqual({ pass: false, detail: 'a pin along x: the box wraps it over 40 mm and the lid over 39 mm, a pin through the box only' })
+    // a lid laid apart has no hinge
+    expect(hingeCheck([box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 80, 110, 4)])).toEqual({ pass: false, detail: 'no pin and no knuckle bore to read a hinge from' })
+    // and the hinge is part of the geometry
+    const s = scored('hinged-box', [base, lid, pin])
+    expect(s.hinge?.pass).toBe(true)
+    expect(scored('hinged-box', [base, lid]).geometry).toBe(false)
   })
 
   it('reads a hinged lid as joined only when it sits on its box at a gap that prints apart', () => {
@@ -648,7 +686,7 @@ describe('build eval scoring', () => {
 
 const line = (id: string, r: CaseRun, usd?: number, model?: string): string => {
   const s = r.score
-  const checks = [s.ops, s.watertight, s.bodies, s.minWall, s.bedFit, s.sizes, s.hook, s.lid].map((c, i) => (c ? `${['ops', 'closed', 'bodies', 'wall', 'bed', 'size', 'hook', 'lid'][i]} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')).filter(Boolean)
+  const checks = [s.ops, s.watertight, s.bodies, s.minWall, s.bedFit, s.sizes, s.hook, s.lid, s.hinge].map((c, i) => (c ? `${['ops', 'closed', 'bodies', 'wall', 'bed', 'size', 'hook', 'lid', 'hinge'][i]} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')).filter(Boolean)
   const said = s.claim.said ? `  says ${s.claim.said} (${s.claim.from === 'check' ? 'last design.check' : 'reply'})` : ''
   return `${(s.verdict === 'fail' && s.refused ? 'REFUSED' : s.verdict.toUpperCase()).padEnd(8)} ${id.padEnd(16)} turns ${s.turns.pass ? 'ok' : 'FAIL'} (${s.turns.detail})  ${checks.join('  ')}${said}${model ? `  ${model}` : ''}${usd === undefined ? '' : `  $${usd.toFixed(3)}`}${r.error ? `  error: ${r.error}` : ''}`
 }
@@ -714,7 +752,7 @@ describe.runIf(live)('live build evals', () => {
     const out = process.env['SX_MIMIR_EVAL_OUT']
     if (out) {
       const at = new Date().toISOString()
-      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, lid: r.run.score.lid?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, checkCalls: r.run.checks, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
+      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, lid: r.run.score.lid?.detail ?? null, hinge: r.run.score.hinge?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, checkCalls: r.run.checks, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
     }
   })
   for (const c of cases) {

@@ -30,7 +30,8 @@ export type HookSpec = { kind: 'lip' } | { kind: 'leg'; rodMm: number }
 /**
  * How a box's lid is checked. hinged: the lid is a body of its own, sits on its box (within 2 mm of it, not laid apart
  * where no hinge joins them) and keeps the gap the fit rule gives a print in place joint on the case's machine, so it
- * neither fuses to the box nor binds.
+ * neither fuses to the box nor binds; and the lid turns on a pin that runs through a knuckle of the box and a knuckle
+ * of the lid (a separate pin, or one built into either part inside the other's knuckle).
  */
 export type LidSpec = { kind: 'hinged' }
 
