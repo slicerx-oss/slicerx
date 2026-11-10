@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { coaster3mf } from '../lib/coaster.mjs'
 import { waitUntil } from '../lib/util.mjs'
 import { signIn } from './accounts.mjs'
+import { showObjects } from './open.mjs'
 
 const MESH_EXPORT = /(stl|obj)$/
 
@@ -24,6 +25,9 @@ export async function exportOffers(s) {
     for (const k of items) texts.push((await s.one(k))?.text ?? '')
   }
   if (!(await s.one('export-menu'))?.visible) {
+    // The Objects card sits in a side pane, which can start shut (the Windows window's right pane does).
+    if (!(await s.one('slice-objects-add-menu'))?.visible) await showObjects(s)
+    if (!(await s.one('slice-objects-add-menu'))?.visible) s.stop('the Objects card shows its Add menu', 'no slice-objects-add-menu on screen: the side pane that holds the Objects card is shut and its edge tab did not open it')
     await s.click('slice-objects-add-menu')
     await s.waitFor('export-menu', 'visible', 5000)
   }
@@ -100,8 +104,12 @@ async function showUploads(s) {
   await s.waitFor('uploads-list', 'visible', 15_000)
 }
 
-export async function upload(s, { account, out, waitSignin, waitScan, waitReview, platform }) {
+export async function upload(s, { account, out, waitSignin, waitScan, waitReview, platform, listing: reused }) {
   await signIn(s, account, waitSignin, 'Sign in for the upload')
+  if (reused) {
+    s.info('reusing an existing listing: no creator page, no upload, no approval', { listing: reused })
+    return sealed(s, reused)
+  }
   await creatorPage(s, account)
 
   // A fresh model for this run.
@@ -183,7 +191,11 @@ export async function upload(s, { account, out, waitSignin, waitScan, waitReview
   await s.shot('live', 'Your uploads: live')
   await s.call('app_press_key', { key: 'Escape' })
 
-  // In the Feed, opens, sealed.
+  await sealed(s, listing)
+}
+
+/** The tail of d: the listing is in the Feed, opens from the Vault, and its exports are sealed. */
+async function sealed(s, listing) {
   // The Vault keeps its rows for a minute while it stays open, so each look leaves for Slice and comes back,
   // which loads them again once they are that old.
   const inFeed = await waitUntil(async () => {

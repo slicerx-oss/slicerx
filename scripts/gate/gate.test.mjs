@@ -254,6 +254,17 @@ describe('the command line', () => {
     const port = await freePort()
     assert.ok(Number.isInteger(port) && port > 0 && port < 65536, String(port))
   })
+  it('takes --listing only with --only d, to rerun the tail of d on an existing listing', () => {
+    const id = '8ec9afc2-4c57-4fdb-8968-962dbcaca923'
+    const o = options(['--only', 'd', '--listing', id, '--account', 'qa-win@qa.slicerx.app'])
+    assert.equal(o.listing, id)
+    assert.deepEqual(o.run, ['d'])
+    assert.equal(options(['--only', 'd', '--account', 'qa-win@qa.slicerx.app']).listing, null)
+    for (const bad of [[], ['--only', 'a,d'], ['--only', 'a'], ['--skip', 'a']]) {
+      assert.throws(() => options([...bad, '--listing', id, '--account', 'qa-win@qa.slicerx.app']), /--listing works only with --only d/, bad.join(' '))
+    }
+    assert.throws(() => options(['--only', 'd', '--listing', 'nope', '--account', 'qa-win@qa.slicerx.app']), /--listing is a listing id/)
+  })
   it('takes a longer or shorter start wait in seconds, within bounds', () => {
     assert.equal(options(['--only', 'a', '--wait-start', '300']).waitStart, 300)
     assert.throws(() => options(['--only', 'a', '--wait-start', '0']), /--wait-start is seconds/)
@@ -354,9 +365,11 @@ describe('the report', () => {
   })
 })
 
+let exportFake
 describe('the export menus on an opened upload', () => {
   /** A stand-in app: the Add menu holds Export, and the Print button's menu has the printer's outputs. */
-  const fake = ({ printMenu = true, exportOnTop = false } = {}) => {
+  const fake = (exportFake = ({ printMenu = true, exportOnTop = false, shutPane = false, stuck = false } = {}) => {
+    let shut = shutPane
     const open = new Set(exportOnTop ? ['export-menu'] : [])
     const shown = { 'slice-objects-add-menu': true, ...(printMenu ? { 'slice-output-menu': true } : {}) }
     const opens = {
@@ -378,15 +391,28 @@ describe('the export menus on an opened upload', () => {
       clicks,
       checks,
       ids: async () => Object.fromEntries([...Object.keys(shown), ...open].map((k) => [k, 1])),
-      one: async (id) => (open.has(id) || shown[id] ? { visible: true, text: text[id] ?? '' } : null),
+      one: async (id) => {
+        if (id === 'edge-tab-right') return { index: 0, visible: true, expanded: !shut }
+        if (id === 'object-select') return { index: 0, visible: !shut }
+        if (shut && id === 'slice-objects-add-menu') return null
+        return open.has(id) || shown[id] ? { visible: true, text: text[id] ?? '' } : null
+      },
+      stop: (name, detail) => {
+        throw new Error(`stopped: ${name}: ${detail}`)
+      },
       click: async (id) => {
+        if (id === 'edge-tab-right') {
+          clicks.push(id)
+          if (!stuck) shut = !shut
+          return
+        }
         if (!open.has(id) && !shown[id]) throw new Error(`not_found: ${id}`)
         clicks.push(id)
         if (id !== 'export-menu') open.clear()
         for (const k of [...open]) if (k !== 'export-menu') open.delete(k)
         for (const k of opens[id] ?? []) open.add(k)
       },
-      waitFor: async (id) => open.has(id) || !!shown[id],
+      waitFor: async (id) => (id === 'object-select' ? !shut : open.has(id) || !!shown[id]),
       shot: async () => {},
       check: (name, ok) => checks.push([name, ok]),
       call: async (tool) => {
@@ -394,7 +420,7 @@ describe('the export menus on an opened upload', () => {
         return {}
       },
     }
-  }
+  })
 
   it('opens Export from the Add menu and reads the Print menu too', async () => {
     const s = fake()
@@ -410,6 +436,19 @@ describe('the export menus on an opened upload', () => {
     const texts = await exportOffers(s)
     assert.deepEqual(s.clicks, ['export-menu'])
     assert.equal(texts.length, 4)
+  })
+})
+
+describe('the export menus when the side pane starts shut', () => {
+  it('opens the pane through its edge tab before the Add menu is clicked', async () => {
+    const s = exportFake({ shutPane: true })
+    const texts = await exportOffers(s)
+    assert.deepEqual(s.clicks.slice(0, 2), ['edge-tab-right', 'slice-objects-add-menu'])
+    assert.ok(texts.includes('Sliced plate as .gcode.3mf'))
+  })
+  it('stops with a plain message naming the pane when it will not open', async () => {
+    const s = exportFake({ shutPane: true, stuck: true })
+    await assert.rejects(() => exportOffers(s), /side pane that holds the Objects card is shut/)
   })
 })
 

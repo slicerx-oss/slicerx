@@ -25,6 +25,7 @@ export const HELP = `node scripts/gate/run.mjs --app <bridge build> [options]
   --out <dir>           Where the report, screenshots and results.json go (default: a new temp folder)
   --only <list>         Scenarios to run, for example a,b,e (default: all, a b c d e w)
   --skip <list>         Scenarios to leave out
+  --listing <id>        With --only d alone: sign in, skip the creator page and the upload, and run d's Feed, open and sealed checks on this live listing
   --starters <list>     Starter slugs for e (default: every starter)
   --wait-start <s>      How long to wait for the started app's connection file (default ${START_WAIT_S})
   --wait-signin <min>   How long to wait for the operator at each sign-in link (default 10)
@@ -54,6 +55,7 @@ export function options(argv) {
       out: { type: 'string' },
       only: { type: 'string' },
       skip: { type: 'string' },
+      listing: { type: 'string' },
       starters: { type: 'string' },
       'wait-start': { type: 'string' },
       'wait-signin': { type: 'string' },
@@ -74,6 +76,11 @@ export function options(argv) {
   for (const k of [...only, ...skip]) if (!(k in SCENARIOS)) throw new Error(`no scenario ${k}; the scenarios are ${Object.keys(SCENARIOS).join(', ')}`)
   const run = Object.keys(SCENARIOS).filter((k) => (only.length ? only.includes(k) : true) && !skip.includes(k))
   if (!run.length) throw new Error('no scenario left to run')
+  const listing = values.listing?.trim().toLowerCase()
+  if (values.listing !== undefined) {
+    if (only.length !== 1 || only[0] !== 'd' || skip.length) throw new Error('--listing works only with --only d (and no --skip): it reruns the last steps of d on an existing listing')
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(listing)) throw new Error(`--listing is a listing id (a UUID), not ${values.listing}`)
+  }
   const platform = values.platform ?? PLATFORMS[process.platform] ?? process.platform
   if (!Object.values(PLATFORMS).includes(platform)) throw new Error(`--platform is windows, macos or linux, not ${platform}`)
   const account = values.account?.trim().toLowerCase()
@@ -101,6 +108,7 @@ export function options(argv) {
     account: account ?? null,
     out: resolve(values.out ?? join(tmpdir(), `sx-gate-${platform}-${new Date().toISOString().replace(/[:.]/g, '-')}`)),
     run,
+    listing: listing ?? null,
     starters: startersList.length ? startersList : null,
     waitStart,
     waitSignin: minutes(values['wait-signin'], 10, '--wait-signin'),
