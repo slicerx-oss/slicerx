@@ -21,10 +21,6 @@ const ELSEWHERE: Record<string, string> = {
   'fidget-spinner': 'captured again with the hole tools (feat/geom-hole-tools)',
   'headphone-hook': 'captured again with the hole tools (feat/geom-hole-tools)',
   'gear-pair': 'not captured again yet: two live runs stopped at their cost cap before the model finished',
-  // design.plan now refuses these plans as saying both ways: printInPlace names the pieces, and an assumption lays them
-  // out 10 mm apart to print open. A hinged part laid open still prints assembled, so the plan check is to change
-  'hinge-box': 'its plan is refused as saying both assembled and apart, though it prints open on its hinge',
-  'infinity-cube': 'its plan is refused as saying both assembled and apart, though it prints open on its hinges',
 }
 
 // the replays build real geometry, so they run where the engine is built (the web job), and skip on the replay job

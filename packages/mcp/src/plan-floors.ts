@@ -142,18 +142,26 @@ export const LID_STATEMENT = 'say whether the lid prints assembled on its hinge 
 export const LID_ONE_WAY = 'say one way the lid prints, assembled on its hinge or laid apart beside the box; the plan says both, in its assumptions'
 
 /**
- * Printing apart, as a plan states it: beside the base or each other, laid apart or out, printed apart, printed
- * separately (not hedged), or pieces 2 mm or more apart. Printed flat or laid flat says how a part lies on the bed, not
- * that its pieces lie apart (a flexi fish printed flat on the bed prints in place), and a gap's few tenths of a
- * millimeter apart, or pieces printed in place as separate bodies, are no such statement.
+ * Printing apart, as a plan states it: laid out apart (beside the base or each other, laid apart or out, printed apart,
+ * pieces 2 mm or more apart) or printed separately (not hedged), to be put together after. Printed flat or laid flat
+ * says how a part lies on the bed, not that its pieces lie apart (a flexi fish printed flat on the bed prints in place),
+ * and a gap's few tenths of a millimeter apart, or pieces printed in place as separate bodies, are no such statement.
+ * A plan whose printInPlace names its pieces prints them assembled, so there a layout apart is the pieces laid open on
+ * their hinges (a box with its lid opened flat beside it), and only printed separately says apart.
  */
 const APART_WORDS = /\bbeside\s+(?:the|each|it|its)\b|\blaid\s+(?:apart|out)\b|\bprint(?:s|ed|ing)?\s+apart\b/i
 const SEPARATE = /\bseparately\b/gi
 const MM_APART = /(\d+(?:\.\d+)?)\s*mm\s+apart\b/gi
 
-function saysApart(text: string): boolean {
+/** The pieces laid out apart on the bed: beside, laid apart or out, printed apart, 2 mm or more apart. */
+function laidApart(text: string): boolean {
   if (APART_WORDS.test(text)) return true
   for (const m of text.matchAll(MM_APART)) if (Number(m[1]) >= 2) return true
+  return false
+}
+
+/** The pieces printed separately, to be put together after; "could be printed separately" says nothing. */
+function printedSeparately(text: string): boolean {
   for (const m of text.toLowerCase().matchAll(SEPARATE)) {
     const before = text.toLowerCase().slice(0, m.index).split(/\s+/).filter(Boolean).slice(-3)
     if (!before.some((w) => HEDGE_WORDS.has(w) || /n['\u2019]t$/.test(w))) return true
@@ -164,14 +172,18 @@ function saysApart(text: string): boolean {
 /**
  * What a plan with a hinge or a pin of its own (its part or a feature names a hinge, or a feature is named as a pin,
  * rod, axle, shaft or dowel) leaves the build to guess about how it prints: LID_STATEMENT when it says neither in place
- * (printsInPlace, which reads printInPlace too) nor apart (printInPlace false, or its part or an assumption saysApart),
- * LID_ONE_WAY when it says both, else null.
+ * (printsInPlace, which reads printInPlace too) nor apart (printInPlace false, or its part or an assumption says the
+ * pieces print separately or, unless printInPlace names them, are laid out apart), LID_ONE_WAY when it says both, else
+ * null.
  */
 export function jointProblem(plan: FloorPlan): string | null {
   const pinPiece = plan.features.some((f) => keyWords(f.name).some((w) => PIN_WORDS.has(w) && w !== 'peg'))
   if (!HINGE.test(plan.part) && !plan.features.some((f) => HINGE.test(f.name)) && !pinPiece) return null
   const assembled = printsInPlace(plan)
-  const apart = plan.printInPlace === false || [plan.part, ...plan.assumptions].some(saysApart)
+  // with its pieces named in printInPlace, a plan laid out apart prints open on its hinges; printed separately still
+  // contradicts it
+  const named = Array.isArray(plan.printInPlace)
+  const apart = plan.printInPlace === false || [plan.part, ...plan.assumptions].some((t) => printedSeparately(t) || (!named && laidApart(t)))
   return assembled && apart ? LID_ONE_WAY : !assembled && !apart ? LID_STATEMENT : null
 }
 

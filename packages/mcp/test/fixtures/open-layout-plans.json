@@ -1,0 +1,128 @@
+{
+  "hinge-box": {
+    "part": "SD card box with print-in-place hinge",
+    "units": "mm",
+    "overall": {
+      "x": 60,
+      "y": 40,
+      "z": 30
+    },
+    "printInPlace": [
+      "Base",
+      "Lid"
+    ],
+    "features": [
+      {
+        "name": "Base shell",
+        "kind": "extrude",
+        "sizes": {
+          "length": 60,
+          "width": 40,
+          "height": 25,
+          "wall": 2
+        }
+      },
+      {
+        "name": "Lid",
+        "kind": "extrude",
+        "sizes": {
+          "length": 60,
+          "width": 40,
+          "thickness": 5
+        }
+      },
+      {
+        "name": "Hinge pin",
+        "kind": "extrude",
+        "sizes": {
+          "diameter": 2,
+          "length": 40
+        }
+      },
+      {
+        "name": "Hinge knuckles",
+        "kind": "extrude",
+        "sizes": {
+          "diameter": 6,
+          "gap": 0.4,
+          "count": 5
+        }
+      }
+    ],
+    "assumptions": [
+      "Closed box is 60 x 40 x 30 mm: base 25 mm tall plus a 5 mm lid.",
+      "Walls 2 mm, so the inside is about 56 x 36 mm, room for SD cards (32 x 24 x 2.1 mm) stacked or lying flat.",
+      "Hinge runs along the back edge: 2 mm pin, 6 mm knuckles, 0.4 mm clearance for PETG on a 0.4 mm nozzle.",
+      "Lid prints flat beside the base, 10 mm apart, opened hinge-side down.",
+      "No SD card slots or dividers unless you ask for them."
+    ],
+    "questions": [
+      "Do you want the card slots or a divider inside, and how many cards does the box hold?"
+    ]
+  },
+  "infinity-cube": {
+    "part": "Infinity cube",
+    "units": "mm",
+    "features": [
+      {
+        "name": "Cube bodies",
+        "kind": "extrude",
+        "sizes": {
+          "cube_edge": 20,
+          "count": 8
+        }
+      },
+      {
+        "name": "Hinge knuckles",
+        "kind": "extrude",
+        "sizes": {
+          "knuckle_diameter": 8,
+          "knuckle_length": 8,
+          "count": 12
+        }
+      },
+      {
+        "name": "Hinge pin bores",
+        "kind": "hole",
+        "sizes": {
+          "pin_bore_diameter": 3.4,
+          "count": 12
+        }
+      },
+      {
+        "name": "Hinge pins",
+        "kind": "extrude",
+        "sizes": {
+          "pin_diameter": 3,
+          "count": 12
+        }
+      }
+    ],
+    "overall": {
+      "x": 40,
+      "y": 40,
+      "z": 40
+    },
+    "printInPlace": [
+      "Cube 1",
+      "Cube 2",
+      "Cube 3",
+      "Cube 4",
+      "Cube 5",
+      "Cube 6",
+      "Cube 7",
+      "Cube 8"
+    ],
+    "assumptions": [
+      "Eight 20 mm cubes in a 2 by 2 by 2 arrangement (40 mm overall when folded), each cube joined to three neighbors by a hinge along a shared edge: 12 hinges.",
+      "Hinge pin 3 mm, pin bore 3.4 mm, knuckle 8 mm diameter, 8 mm long, all from the 0.4 mm nozzle and PLA defaults.",
+      "Moving gaps of 0.4 mm between knuckles and cube faces, above and below the hinge, for PLA on a 0.4 mm nozzle.",
+      "Printed flat as one plate, pieces laid out with a 10 mm gap, 0.2 mm layers.",
+      "Hinge pin diameter and knuckle size are standard fidget-cube values, not from a source."
+    ],
+    "questions": [
+      "Do you want the 2 by 2 by 2 cube (40 mm folded) or a single ring of eight cubes?",
+      "Is 0.4 mm clearance right for your P1S, or do you want a looser fit?"
+    ]
+  }
+}
