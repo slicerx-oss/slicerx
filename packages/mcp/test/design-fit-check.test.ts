@@ -83,6 +83,17 @@ describe('design.check on a print-in-place plan', () => {
     expect(summary).toContain('Lid and Tray touch on the top face of Tray, 0.0 mm; this print-in-place plan needs 0.4 mm or more')
   })
 
+  it('a lid touching its box side by side says where and across which faces, so the touch can be found', async () => {
+    // a 40 mm tray and a 20 mm block against its +x side, face to face at x = 80: a pin's end flush on a box's end wall
+    const t = await harness()
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...rect(40, 30, 60, 60), distance_mm: 10, name: 'Tray' })
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...rect(20, 10, 90, 60), distance_mm: 6, name: 'Lid' })
+    const { out, summary } = await t.check(planOf(['Lid', 'Tray']))
+    expect(item(out, 'pieces').got).toMatch(/^1 piece: (Lid and Tray|Tray and Lid) touch at \(80, [\d.]+, [\d.]+\), where faces square to x meet, so they print as one piece; leave the planned gap between them$/)
+    expect(item(out, 'gaps').got).toMatch(/touch at \(80, [\d.]+, [\d.]+\), where faces square to x meet, 0\.0 mm; this print-in-place plan needs 0\.3 mm or more/)
+    expect(summary).toMatch(/where faces square to x meet/)
+  })
+
   it('a pin 0.2 mm from its arm fails the gaps item with where it is', async () => {
     const t = await pinInArm(3.4, 3)
     const { out } = await t.check(planOf(['Arm', 'Pin']))

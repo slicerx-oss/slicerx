@@ -98,6 +98,68 @@ const ON_FACE_MM = 0.05
 
 type Mesh = { positions: number[]; indices: number[] }
 
+/** How near square to an axis a face must be to be named as square to it: about 1 degree. */
+const SQUARE = 0.9998
+
+/** The distance from `p` to the triangle `a`, `b`, `c`, mm: to its nearest point, inside it, on an edge or a corner. */
+function triangleDistance(p: V3, a: V3, b: V3, c: V3): number {
+  const sub = (u: V3, v: V3): V3 => [u[0] - v[0], u[1] - v[1], u[2] - v[2]]
+  const dot = (u: V3, v: V3): number => u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+  const to = (q: V3): number => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])
+  const along = (o: V3, e: V3, t: number): V3 => [o[0] + e[0] * t, o[1] + e[1] * t, o[2] + e[2] * t]
+  const ab = sub(b, a)
+  const ac = sub(c, a)
+  const d1 = dot(ab, sub(p, a))
+  const d2 = dot(ac, sub(p, a))
+  if (d1 <= 0 && d2 <= 0) return to(a)
+  const d3 = dot(ab, sub(p, b))
+  const d4 = dot(ac, sub(p, b))
+  if (d3 >= 0 && d4 <= d3) return to(b)
+  const vc = d1 * d4 - d3 * d2
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return to(along(a, ab, d1 / (d1 - d3)))
+  const d5 = dot(ab, sub(p, c))
+  const d6 = dot(ac, sub(p, c))
+  if (d6 >= 0 && d5 <= d6) return to(c)
+  const vb = d5 * d2 - d1 * d6
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return to(along(a, ac, d2 / (d2 - d6)))
+  const va = d3 * d6 - d5 * d4
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return to(along(b, sub(c, b), (d4 - d3) / (d4 - d3 + (d5 - d6))))
+  const den = 1 / (va + vb + vc)
+  return to(along(along(a, ab, vb * den), ac, vc * den))
+}
+
+/**
+ * Where two bodies touch, in words: the point, and the axis the faces meeting there are square to, when a face of one
+ * body through the point is square to it and a face of the other faces it the other way ("at (80, 60, 3), where faces
+ * square to x meet"), so the face to move is plain. Faces both bodies turn the same way there (the bottoms of two blocks
+ * side by side on the bed) do not meet.
+ */
+function touchAt([ma, mb]: readonly [Mesh, Mesh], p: V3): string {
+  const where = `at (${p.map((c) => Math.round(c * 10) / 10 || 0).join(', ')})`
+  // the axes, with the way they face (+1 or -1), of a body's faces through the point that are square to one
+  const facing = (m: Mesh): Set<string> => {
+    const out = new Set<string>()
+    for (let t = 0; t + 2 < m.indices.length; t += 3) {
+      const [a, b, c] = [0, 1, 2].map((k) => {
+        const i = m.indices[t + k]! * 3
+        return [m.positions[i]!, m.positions[i + 1]!, m.positions[i + 2]!] as V3
+      }) as [V3, V3, V3]
+      if (triangleDistance(p, a, b, c) > ON_FACE_MM) continue
+      const u: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+      const v: V3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
+      const n: V3 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+      const len = Math.hypot(...n)
+      const k = len > 0 ? [0, 1, 2].find((j) => Math.abs(n[j]!) / len >= SQUARE) : undefined
+      if (k !== undefined) out.add(`${k}${Math.sign(n[k]!)}`)
+    }
+    return out
+  }
+  const a = facing(ma)
+  const b = facing(mb)
+  const axis = [0, 1, 2].find((k) => (a.has(`${k}1`) && b.has(`${k}-1`)) || (a.has(`${k}-1`) && b.has(`${k}1`)))
+  return axis === undefined ? where : `${where}, where faces square to ${'xyz'[axis]} meet`
+}
+
 /**
  * The bodies and gaps of the design's parts (all, or those in `only`, by index). Bodies are named for their part, with
  * a number when a part holds several or two parts share a name.
@@ -148,7 +210,8 @@ export async function fitFacts(host: DesignHost, d: HostDesign, limits: FitLimit
     const direction = fitDirection(g.kind, g.from, g.to, lower !== null)
     const pair: [number, number] = lower === a ? [b, a] : [a, b]
     const ends = lower === a ? { from: g.to, to: g.from } : { from: g.from, to: g.to }
-    const where = lower !== null ? `on the top face of ${bodies[lower]!.name}` : undefined
+    // a touch with neither body on top of the other: where it is, so the face to move can be found
+    const where = lower !== null ? `on the top face of ${bodies[lower]!.name}` : kind === 'fused' ? touchAt([ma, mb], ends.from) : undefined
     return { bodies: pair, kind, gapMm: g.gapMm, limitMm: fitLimitFor(limits, direction), ...ends, direction, ...(where ? { where } : {}), ...(flat && direction === 'z' ? { flat: true as const } : {}) }
   })
   // two bodies with nothing under the limit keep one gap: their closest
