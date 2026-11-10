@@ -86,6 +86,8 @@ export interface PrinterModel {
   filamentSystem?: FilamentSystem
   /** What the maker calls the unit when it is not the plain system name, such as the A1's AMS lite. */
   filamentUnit?: string
+  /** Whether an AMS HT (one-spool high temperature unit) can join its AMS units; setup offers to count them only then. */
+  amsHt?: boolean
   /** Ways to reach it, best first. Always ends in `export` unless the machine has no other way to take a file. */
   connections: ConnectionId[]
   find: FindGuide

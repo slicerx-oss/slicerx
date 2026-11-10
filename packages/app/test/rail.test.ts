@@ -43,6 +43,10 @@ describe('the rail\'s groups', () => {
 
   it('is one group of plain slots without a printer', () => {
     expect(railGroups([slot(1, '1'), slot(2, '2')]).map((g) => g.unit)).toEqual(['Slots'])
+    // an AMS HT's one slot, from E on, as a connected printer and a printer set up by hand name it
+    expect(railGroups([slot(1, 'A1'), slot(2, 'A2'), slot(3, 'A3'), slot(4, 'A4'), slot(5, 'E1'), slot(6, 'F1')]).map((g) => g.unit)).toEqual(['AMS 1', 'AMS HT 1', 'AMS HT 2'])
+    // a fifth AMS lists all four places, so it stays an AMS
+    expect(railGroups(['A', 'B', 'C', 'D', 'E'].flatMap((u, i) => [1, 2, 3, 4].map((k) => slot(i * 4 + k, `${u}${k}`)))).at(-1)!.unit).toBe('AMS 5')
   })
 })
 

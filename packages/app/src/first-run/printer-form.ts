@@ -77,6 +77,10 @@ export function tileForModel(model: PrinterModel): BrandTile | undefined {
 
 /** AMS units the form offers, 4 slots each: up to 8, the 32 filaments a project holds. */
 export const AMS_UNIT_CHOICES = [1, 2, 3, 4, 5, 6, 7, 8] as const
+/** AMS HT units the form offers, one slot each, named E1 to L1 after the AMS slots, as the printer names them. */
+export const AMS_HT_CHOICES = [0, 1, 2, 3, 4, 5, 6, 7, 8] as const
+/** AMS units beside an AMS HT: four at most (A to D), since the HT slots start at E. */
+export const AMS_UNITS_WITH_HT = 4
 /** Slot counts the form offers for an MMU or another filament system, up to the 32 a project holds. */
 export const SLOT_CHOICES = [2, 3, 4, 5, 6, 8, 12, 16, 24, 32] as const
 
@@ -144,7 +148,8 @@ export interface PrinterForm {
   /** "Not sure": assumes 0.4 mm brass and flags it in Printers for confirmation. */
   nozzleUnsure: boolean
   toolhead: 'direct' | 'bowden'
-  filament: { kind: FilamentKind; units: number; slots: number }
+  /** `htUnits`: AMS HT units beside the AMS units (0 when absent), for a model that takes one. */
+  filament: { kind: FilamentKind; units: number; slots: number; htUnits?: number }
   connection: ConnectionId | null
   fields: PlainFields
   /** Length of each secret the person typed, 0 when empty. The values are never stored here. */
@@ -470,7 +475,9 @@ export function withHardware(form: PrinterForm, hw: PrinterHardware): PrinterFor
   if (units.some((u) => u.kind === 'mmu')) {
     next = { ...next, filament: { kind: 'mmu', units: 1, slots: units.find((u) => u.kind === 'mmu')!.slots.length || 5 } }
   } else if (units.length) {
-    next = { ...next, filament: { kind: 'ams', units: units.length, slots: units.reduce((n, u) => n + u.slots.length, 0) } }
+    // an AMS HT counts apart from the AMS units, one slot each, as setup asks for them
+    const ht = units.filter((u) => u.kind === 'ams-ht').length
+    next = { ...next, filament: { kind: 'ams', units: Math.max(1, units.length - ht), slots: units.reduce((n, u) => n + u.slots.length, 0), ...(ht ? { htUnits: ht } : {}) } }
   }
   return next
 }
@@ -539,11 +546,20 @@ export function nozzleText(form: PrinterForm): string {
 export interface HandFilament {
   system: 'single' | 'ams' | 'mmu' | 'toolchanger'
   slots: number
+  /** AMS HT units, whose one slot each comes after the AMS slots. */
+  htUnits?: number
 }
 
-/** The filament system picked in the wizard, as the saved printer keeps it: four slots per AMS unit, one spool for none. */
+/** The AMS HT units the form counts: 0 to 8 whole units, 0 when it has none. */
+export const htUnitsOf = (f: PrinterForm['filament']): number => (f.kind === 'ams' && Number.isInteger(f.htUnits) ? Math.max(0, Math.min(8, f.htUnits ?? 0)) : 0)
+
+/**
+ * The filament system picked in the wizard, as the saved printer keeps it: four slots per AMS unit and one per AMS HT
+ * (with four AMS units at most beside one), one spool for none.
+ */
 export function filamentInput(f: PrinterForm['filament']): HandFilament {
-  if (f.kind === 'ams') return { system: 'ams', slots: Math.max(1, f.units) * 4 }
+  const ht = htUnitsOf(f)
+  if (f.kind === 'ams') return { system: 'ams', slots: Math.max(1, ht ? Math.min(f.units, AMS_UNITS_WITH_HT) : f.units) * 4 + ht, ...(ht ? { htUnits: ht } : {}) }
   if (f.kind === 'mmu') return { system: 'mmu', slots: f.slots }
   if (f.kind === 'other') return { system: 'toolchanger', slots: f.slots }
   return { system: 'single', slots: 1 }
@@ -552,7 +568,8 @@ export function filamentInput(f: PrinterForm['filament']): HandFilament {
 export function filamentText(form: PrinterForm): string {
   const f = form.filament
   if (f.kind === 'none' || f.kind === 'single') return FILAMENT_LABELS[f.kind]
-  if (f.kind === 'ams') return `AMS, ${f.units} ${f.units === 1 ? 'unit' : 'units'}, ${f.slots || f.units * 4} slots`
+  const ht = htUnitsOf(f)
+  if (f.kind === 'ams') return `AMS, ${f.units} ${f.units === 1 ? 'unit' : 'units'}${ht ? ` and ${ht} AMS HT` : ''}, ${f.slots || f.units * 4 + ht} slots`
   return `${FILAMENT_LABELS[f.kind]}, ${f.slots} slots`
 }
 

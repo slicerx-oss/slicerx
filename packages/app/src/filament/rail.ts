@@ -43,14 +43,20 @@ export function slotMismatch(printerSlots: readonly FilamentSlot[], slots: reado
   return out
 }
 
-/** Slots grouped by the unit that holds them: AMS 1, AMS 2, then External; one group when there is only one unit. */
+/**
+ * Slots grouped by the unit that holds them: AMS 1, AMS 2, then AMS HT 1, then External; one group when there is only
+ * one unit. An AMS HT holds one slot and takes the letters from E on (E1 is the first, whatever the AMS units before it),
+ * while an AMS lists all four of its places, so a unit from E on with one slot is an AMS HT.
+ */
 export function railGroups(slots: readonly ResolvedSlot[]): { unit: string; slots: ResolvedSlot[] }[] {
   const groups = new Map<string, ResolvedSlot[]>()
   for (const s of slots) {
-    const unit = /^[A-Z]\d$/.test(s.label) ? `AMS ${s.label.charCodeAt(0) - 64}` : /^ext/i.test(s.label) ? 'External' : 'Slots'
+    const unit = /^[A-Z]\d$/.test(s.label) ? s.label[0]! : /^ext/i.test(s.label) ? 'External' : 'Slots'
     groups.set(unit, [...(groups.get(unit) ?? []), s])
   }
-  return [...groups].map(([unit, list]) => ({ unit, slots: list }))
+  const n = (letter: string) => letter.charCodeAt(0) - 64
+  const name = (unit: string, list: readonly ResolvedSlot[]) => (unit.length !== 1 ? unit : n(unit) >= 5 && list.length === 1 && list[0]!.label === `${unit}1` ? `AMS HT ${n(unit) - 4}` : `AMS ${n(unit)}`)
+  return [...groups].map(([unit, list]) => ({ unit: name(unit, list), slots: list }))
 }
 
 const NAMES: readonly [string, string][] = [

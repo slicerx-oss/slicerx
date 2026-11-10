@@ -30,7 +30,9 @@ import { OrbitPanel, useLongWait } from './raven-orbit'
 import type { SetupPrinter } from './model'
 import {
   addressOf,
+  AMS_HT_CHOICES,
   AMS_UNIT_CHOICES,
+  AMS_UNITS_WITH_HT,
   BRAND_TILES,
   brandTile,
   buildVolumeText,
@@ -43,6 +45,7 @@ import {
   FILAMENT_LABELS,
   filamentInput,
   filamentText,
+  htUnitsOf,
   FIRMWARE_LABELS,
   isIPv4,
   modelLabel,
@@ -292,7 +295,7 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
       const { brand, model } = modelLabel(f)
       const nozzle = nozzleMm(f.nozzles[0] ?? EMPTY_FORM.nozzles[0]!) ?? 0.4
       const connected = m !== null && m.id !== 'export'
-      const { printerId, credentialKept } = await host.addPrinter({ profileId: profileIdOf(f), nozzleMm: nozzle, name: f.name?.trim() || (model === 'Set up by hand' ? `${brand} printer` : model), ...(connected ? { connection: connectionInput(f, secretFor(m, f)) } : {}), filament: filamentInput(f.filament) })
+      const { printerId, credentialKept } = await host.addPrinter({ profileId: profileIdOf(f), nozzleMm: nozzle, name: f.name?.trim() || (model === 'Set up by hand' ? `${brand} printer` : model), ...(connected ? { connection: connectionInput(f, secretFor(m, f)) } : {}), filament: filamentInput(currentModel(f)?.amsHt ? f.filament : { ...f.filament, htUnits: 0 }) })
       // The slice follows this size: it picks the presets that match the nozzle. A printer with more than one
       // nozzle keeps each, so every extruder slices with its own.
       const extruders = extruderNozzles(f)
@@ -604,10 +607,32 @@ function NozzleSection({ ctl }: { ctl: PrinterController }) {
           </Field>
           {fil.kind === 'ams' ? (
             <Field htmlFor="fr-ams" label="AMS units">
-              <Select id="fr-ams" value={String(fil.units)} onChange={(e) => setForm((f) => ({ ...f, filament: { ...f.filament, units: Number(e.target.value), slots: Number(e.target.value) * 4 } }))}>
-                {AMS_UNIT_CHOICES.map((u) => (
+              <Select id="fr-ams" value={String(fil.units)} onChange={(e) => setForm((f) => ({ ...f, filament: { ...f.filament, units: Number(e.target.value), slots: Number(e.target.value) * 4 + htUnitsOf(f.filament) } }))}>
+                {/* beside an AMS HT, four AMS units at most: the HT slots start at E */}
+                {AMS_UNIT_CHOICES.filter((u) => !htUnitsOf(fil) || u <= AMS_UNITS_WITH_HT).map((u) => (
                   <option key={u} value={u}>
                     {u} ({u * 4} slots)
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          {fil.kind === 'ams' && model?.amsHt ? (
+            <Field htmlFor="fr-ams-ht" label="AMS HT units">
+              <Select
+                id="fr-ams-ht"
+                value={String(htUnitsOf(fil))}
+                onChange={(e) =>
+                  setForm((f) => {
+                    const ht = Number(e.target.value)
+                    const units = ht ? Math.min(f.filament.units, AMS_UNITS_WITH_HT) : f.filament.units
+                    return { ...f, filament: { ...f.filament, units, slots: units * 4 + ht, htUnits: ht } }
+                  })
+                }
+              >
+                {AMS_HT_CHOICES.map((u) => (
+                  <option key={u} value={u}>
+                    {u === 0 ? 'None' : `${u} (${u} ${u === 1 ? 'slot' : 'slots'})`}
                   </option>
                 ))}
               </Select>

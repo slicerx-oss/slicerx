@@ -64,7 +64,8 @@ describe('a printer found on the network', () => {
       { size: 0.6, other: '', type: 'hardened-steel', highFlow: true },
       { size: 0.4, other: '', type: 'hardened-steel' },
     ])
-    expect(f.filament).toEqual({ kind: 'ams', units: 2, slots: 5 })
+    // its AMS and its AMS HT: the HT counts apart, as setup asks for it
+    expect(f.filament).toEqual({ kind: 'ams', units: 1, slots: 5, htUnits: 1 })
     expect(f.nozzleUnsure).toBe(false)
   })
 

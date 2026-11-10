@@ -264,6 +264,44 @@ test('add it by hand starts with no brand chosen', async ({ page }) => {
   await sidebarDone(page)
 })
 
+test('setup counts an AMS HT beside the AMS, and the Filament card names its slot E1 after A1 to A4', async ({ page }) => {
+  type Hand = { id: string; slotCount?: number; amsHtUnits?: number }
+  const hands = () => page.evaluate(() => (window as unknown as { __sx: { getState(): { handPrinters: Hand[] } } }).__sx.getState().handPrinters)
+  const before = await hands()
+  await sidebarAs(page, { mode: 'advanced' })
+  try {
+    await page.getByTestId('slice-machine-printer').click()
+    await page.locator('.choose-add').click()
+    await page.getByRole('button', { name: /Add it by hand/ }).first().click()
+    const search = page.getByTestId('setup-printer-search')
+    // an A1 mini comes with an AMS lite: no AMS HT to count
+    await search.fill('A1 mini')
+    await page.getByTestId('setup-printer-hit').first().click()
+    await expect(page.getByLabel('AMS units')).toBeVisible()
+    await expect(page.getByLabel('AMS HT units')).toHaveCount(0)
+    // an X1 Carbon takes one: one AMS and one AMS HT, saved with no connection
+    await search.fill('X1 Carbon')
+    await page.getByTestId('setup-printer-hit').first().click()
+    await page.getByLabel('AMS HT units').selectOption('1')
+    await expect(page.getByLabel('AMS units')).toHaveValue('1')
+    // beside an AMS HT the AMS stops at four units, where the HT letters start
+    expect(await page.getByLabel('AMS units').locator('option').count()).toBe(4)
+    await page.getByTestId('setup-connection-export').click()
+    await page.locator('.fr-foot').getByRole('button', { name: 'Continue' }).click()
+    await expect.poll(async () => (await hands()).length).toBe(before.length + 1)
+    const added = (await hands()).find((h) => !before.some((b) => b.id === h.id))!
+    expect(added).toMatchObject({ slotCount: 5, amsHtUnits: 1 })
+    await setState(page, { setup: null, printerId: added.id })
+    await dismiss(page)
+    await expect(page.getByTestId('slice-filament-slot').locator('.spool-id')).toHaveText(['A1', 'A2', 'A3', 'A4', 'E1'], { timeout: 30_000 })
+    await expect(page.getByRole('group', { name: 'AMS HT 1' })).toBeVisible()
+  } finally {
+    await setState(page, { setup: null, handPrinters: before })
+    await dismiss(page)
+    await sidebarDone(page)
+  }
+})
+
 // ---- the machine card ----------------------------------------------------------------------------------------
 
 // The no-printer state is covered by the machine card unit test, since the web build always has its demo printers.
