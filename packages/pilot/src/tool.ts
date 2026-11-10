@@ -175,6 +175,11 @@ export interface PilotTool<I = unknown> {
    * `description`. A cloud model, MCP clients and the read-backs always get `description`.
    */
   localDescription?: string
+  /**
+   * The input a local model is shown, when it leaves out fields that only a cloud model or MCP client is told to use
+   * (a field costs a local model's context on every turn). The tool takes and checks `input` either way.
+   */
+  localInput?: z.ZodType
   source: ToolSource
   permission: PermissionClass
   input: z.ZodType<I>
@@ -308,15 +313,16 @@ function sameTuple(s: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * The tool as a local model gets it (runtime.ts): its localDescription when it has one, and its input schema without
- * the keywords that say nothing (leanSchema). The tool takes and checks exactly the same input either way; a cloud
+ * The tool as a local model gets it (runtime.ts): its localDescription when it has one, and its input schema (its
+ * localInput when it has one) without the keywords that say nothing (leanSchema). The tool takes and checks exactly the same input either way; a cloud
  * model and MCP clients get toolSpec.
  */
 export function localToolDef(t: PilotTool<never> | PilotTool<unknown>): { name: string; description: string; parameters: ToolSpec['inputSchema'] } {
-  const spec = toolSpec(t)
+  const shown = t.localInput ? { ...t, input: t.localInput } : t
+  const spec = toolSpec(shown as PilotTool<unknown>)
   let input: unknown
   try {
-    input = z.toJSONSchema(t.input as z.ZodType, { target: 'draft-2020-12', unrepresentable: 'any', io: 'input' })
+    input = z.toJSONSchema(shown.input as z.ZodType, { target: 'draft-2020-12', unrepresentable: 'any', io: 'input' })
   } catch {
     // no input form: every object keeps additionalProperties as published
     input = undefined
