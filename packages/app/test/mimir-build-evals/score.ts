@@ -186,10 +186,65 @@ export function assemblySizes(parts: readonly MeshPart[]): [number, number, numb
 
 const round1 = (v: number): number => Math.round(v * 10) / 10
 
+/** How near a point of one body must come to another body's surface to touch it, mm. */
+const JOIN_MM = 0.05
+/**
+ * How far where two bodies meet must reach both ways, mm: two bodies joined over a face meet over an area this wide or
+ * more, while two that meet only along an edge or at a point meet along a line or not at all across.
+ */
+const JOIN_ACROSS_MM = 1
+
+/**
+ * Whether two bodies are joined over a face: the points of each that lie inside the other or on its surface (a body
+ * standing in another, or face to face with it) reach JOIN_ACROSS_MM or more both ways. Bodies that meet only along an
+ * edge or at a point, or not at all, are not.
+ */
+function joinedOverFace(a: Body & { pts: V3[] }, b: Body & { pts: V3[] }): boolean {
+  const dist = (p: V3, q: V3) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])
+  const meet: V3[] = []
+  for (const [x, y] of [[a, b], [b, a]] as const) {
+    const near = (q: V3) => [0, 1, 2].every((k) => q[k]! >= y.min[k]! - JOIN_MM && q[k]! <= y.max[k]! + JOIN_MM)
+    const touches = (q: V3) => {
+      for (let t = 0; t < y.tri.length; t += 9) if (dist(q, nearestOnTriangle(q, y.tri, t)) <= JOIN_MM) return true
+      return false
+    }
+    for (const q of x.pts) if (near(q) && (touches(q) || inside(y, q))) meet.push(q)
+  }
+  if (meet.length < 3) return false
+  // the longest way across, from the point farthest from any one, and how far the rest stand off that line
+  const p = meet.reduce((m, q) => (dist(q, meet[0]!) > dist(m, meet[0]!) ? q : m))
+  const q = meet.reduce((m, r) => (dist(r, p) > dist(m, p) ? r : m))
+  const len = dist(p, q)
+  if (len < JOIN_ACROSS_MM) return false
+  const u: V3 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]]
+  const off = most(meet, (r) => {
+    const w: V3 = [r[0] - p[0], r[1] - p[1], r[2] - p[2]]
+    return Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]) / len
+  })
+  return off >= JOIN_ACROSS_MM
+}
+
+/**
+ * The surface points of each group of the part's bodies joined over a face (joinedOverFace), as one body: the bodies a
+ * boolean join of them would make one, read whether the build joined them or left them as bodies that overlap.
+ */
+function joinedGroups(parts: readonly MeshPart[]): V3[][] {
+  const bodies = bodyTriangles([...parts]).map((b) => ({ ...b, pts: surfacePoints([{ positions: b.tri, indices: Array.from({ length: b.tri.length / 3 }, (_, i) => i) }]) }))
+  const parent = bodies.map((_, i) => i)
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)))
+  const boxesMeet = (a: Body, b: Body) => [0, 1, 2].every((k) => a.min[k]! <= b.max[k]! + TOUCH_MM && b.min[k]! <= a.max[k]! + TOUCH_MM)
+  for (let i = 0; i < bodies.length; i++)
+    for (let j = i + 1; j < bodies.length; j++) if (find(i) !== find(j) && boxesMeet(bodies[i]!, bodies[j]!) && joinedOverFace(bodies[i]!, bodies[j]!)) parent[find(i)] = find(j)
+  const groups = new Map<number, V3[]>()
+  for (const [i, b] of bodies.entries()) groups.set(find(i), [...(groups.get(find(i)) ?? []), ...b.pts])
+  return [...groups.values()]
+}
+
 /**
  * Whether the part's hook holds what hangs on it (cases.ts HookSpec). lip reads the stem from the part itself (hookOn,
  * the reading design.check holds a planned hook's lip to), so a revolved, lofted or extruded stem is judged by its
- * shape, and says whether it tapers and is hollow; leg reads the rod from the part itself.
+ * shape, and says whether it tapers and is hollow; the hook must be joined to the stem over a face (joinedGroups), at
+ * its side or its top, and its tip must rise. leg reads the rod from the part itself.
  */
 export function hookCheck(spec: HookSpec, parts: readonly MeshPart[]): Check {
   const pts = surfacePoints(parts)
@@ -212,10 +267,14 @@ export function hookCheck(spec: HookSpec, parts: readonly MeshPart[]): Check {
   const read = hookOn(pts)
   if (read.found === 'no stem') return { pass: false, detail: 'no round column to read the stem from' }
   if (read.found === 'no hook') return { pass: false, detail: 'nothing reaches out past the stem' }
-  const { stem, side, riseMm } = read
-  const lip = riseMm >= LIP_RISE_MM
-  const shape = `stem ${stem.bottomMm > stem.topMm ? 'tapers' : 'runs'} from ${stem.bottomMm} to ${stem.topMm} mm across, ${stem.hollow ? 'hollow' : 'solid'}`
-  return { pass: side && lip, detail: `${shape}; ${side ? 'leaves the stem side below its top' : 'meets the stem only at its top'}; tip ${lip ? 'rises' : 'rises only'} ${round1(riseMm)} mm above the hook's lowest point near the end (want ${LIP_RISE_MM} mm or more)` }
+  const shape = (s: { bottomMm: number; topMm: number; hollow: boolean }) =>
+    `stem ${s.bottomMm > s.topMm ? 'tapers' : 'runs'} from ${s.bottomMm} to ${s.topMm} mm across, ${s.hollow ? 'hollow' : 'solid'}`
+  const rises = (riseMm: number) => `tip ${riseMm >= LIP_RISE_MM ? 'rises' : 'rises only'} ${round1(riseMm)} mm above the hook's lowest point near the end (want ${LIP_RISE_MM} mm or more)`
+  // the hook read with only the bodies joined to the stem: one that stands apart, or meets it only along an edge or at a
+  // point, is not there
+  const held = joinedGroups(parts).map((g) => hookOn(g)).find((r) => r.found === 'hook')
+  if (!held || held.found !== 'hook') return { pass: false, detail: `${shape(read.stem)}; the hook is not joined to the stem over a face (it stands apart, or meets it only along an edge or at a point); ${rises(read.riseMm)}` }
+  return { pass: held.riseMm >= LIP_RISE_MM, detail: `${shape(held.stem)}; joined to the stem at its ${held.side ? 'side below its top' : 'top'}; ${rises(held.riseMm)}` }
 }
 
 /** How near a lid must come to its box to be joined to it by a hinge, mm: past this it lies apart. */

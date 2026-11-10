@@ -636,15 +636,52 @@ describe('build eval scoring', () => {
     expect(held, held.detail).toMatchObject({ pass: true })
     // read on rings inside its ends: 29 mm across 10 mm up the stem
     expect(held.detail).toMatch(/stem tapers from 29 to 22 mm across, hollow/)
-    expect(held.detail).toMatch(/leaves the stem side below its top/)
+    expect(held.detail).toMatch(/joined to the stem at its side below its top/)
     // the same arm with no lip: nothing keeps the headband on
     const bare = hookCheck(c.hook!, [base, stem, arm])
     expect(bare, bare.detail).toMatchObject({ pass: false })
     expect(bare.detail).toMatch(/rises only/)
-    // an arm that sits on the stem's top, not its side
-    const onTop = hookCheck(c.hook!, [base, stem, box(120, 122, 162, 196, 134, 170), box(186, 122, 170, 196, 134, 185)])
-    expect(onTop, onTop.detail).toMatchObject({ pass: false })
-    expect(onTop.detail).toMatch(/meets the stem only at its top/)
+  })
+
+  describe('a stand\'s hook, joined to its stem at the side or the top', () => {
+    const c = BUILD_CASES.find((x) => x.id === 'headphone-stand')!
+    // the same stand: a base 110 mm across, a hollow stem tapering from 30 to 22 mm across up to 162 mm
+    const stand = () => [column(128, 128, 0, 12, 55, 55), column(128, 128, 12, 162, 15, 11, 2.5)]
+
+    it('passes a hook off the stem\'s top, as the prompt asks for a hook at the top', () => {
+      // a 60 mm arm laid on the stem's top, and a lip 15 mm up at its end
+      const r = hookCheck(c.hook!, [...stand(), box(120, 122, 162, 196, 134, 170), box(186, 122, 170, 196, 134, 185)])
+      expect(r, r.detail).toMatchObject({ pass: true })
+      expect(r.detail).toMatch(/joined to the stem at its top/)
+    })
+
+    it('passes a hook off the stem\'s side below its top', () => {
+      // an arm out of the stem's side 10 mm below its top, its end inside the wall, and the same lip
+      const r = hookCheck(c.hook!, [...stand(), box(137, 122, 146, 196, 134, 158), box(186, 122, 158, 196, 134, 173)])
+      expect(r, r.detail).toMatchObject({ pass: true })
+      expect(r.detail).toMatch(/joined to the stem at its side below its top/)
+    })
+
+    it('fails a hook that floats clear of the stem', () => {
+      // the same arm and lip 2 mm clear of the stem's side: nothing holds the hook up
+      const r = hookCheck(c.hook!, [...stand(), box(142, 122, 146, 196, 134, 158), box(186, 122, 158, 196, 134, 173)])
+      expect(r, r.detail).toMatchObject({ pass: false })
+      expect(r.detail).toMatch(/not joined to the stem/)
+    })
+
+    it('fails a hook that meets the stem only at a point', () => {
+      // an arm whose bottom edge only touches the rim of the stem's top, at one corner of it
+      const r = hookCheck(c.hook!, [...stand(), box(139, 122, 162, 196, 134, 170), box(186, 122, 170, 196, 134, 185)])
+      expect(r, r.detail).toMatchObject({ pass: false })
+      expect(r.detail).toMatch(/not joined to the stem/)
+    })
+
+    it('fails a hook whose tip does not rise', () => {
+      // the arm on the stem's top with no lip: joined, but nothing keeps the headband on
+      const r = hookCheck(c.hook!, [...stand(), box(120, 122, 162, 196, 134, 170)])
+      expect(r, r.detail).toMatchObject({ pass: false })
+      expect(r.detail).toMatch(/rises only/)
+    })
   })
 
   // a recording as a live run made it: a lookup, then a reply, each reply with the results it read
