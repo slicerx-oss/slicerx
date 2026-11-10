@@ -23,12 +23,13 @@ import { createTransportClient } from '@slicerx/pilot'
 import { createNodeTransport } from '@slicerx/pilot/node'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { budgetedClient, canStart, createBudget, HAIKU_5_5, STOP_MARGIN_USD } from '../../mcp/evals/creative/live'
+import { minWall as engineWall } from '../../mcp/src/body-facts'
 import { setGeomProvider } from '../src/geom/client'
 import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, evalPrice, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, recordLive, refreshScore, summarize } from './mimir-build-evals/recordings'
-import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, hingeCheck, hookCheck, lastCheckPass, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
+import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, hingeCheck, hookCheck, lastCheckPass, lidStated, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
 
@@ -470,6 +471,107 @@ describe('build eval scoring', () => {
     expect(scored('hinged-box', [base, lid]).geometry).toBe(false)
   })
 
+  // a round tube standing on z0: outer radius ro and a bore of radius ri through it, both drawn with n sides
+  const tube = (cx: number, cy: number, z0: number, z1: number, ro: number, ri: number, n = 32): MeshPart => {
+    const v: number[] = []
+    for (const [r, z] of [[ro, z0], [ro, z1], [ri, z0], [ri, z1]] as const)
+      for (let i = 0; i < n; i++) v.push(cx + r * Math.cos((2 * Math.PI * i) / n), cy + r * Math.sin((2 * Math.PI * i) / n), z)
+    const [ob, ot, ib, it] = [0, n, 2 * n, 3 * n]
+    const f: number[] = []
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n
+      f.push(ob + i, ob + j, ot + j, ob + i, ot + j, ot + i)
+      f.push(ib + i, it + j, ib + j, ib + i, it + i, it + j)
+      f.push(ob + i, ib + j, ob + j, ob + i, ib + i, ib + j)
+      f.push(ot + i, ot + j, it + j, ot + i, it + j, it + i)
+    }
+    return { name: 'tube', slot: 1, positions: new Float32Array(v), indices: new Uint32Array(f) }
+  }
+  const planned = (plan: Record<string, unknown>): PilotEvent[] => [
+    { type: 'tool_call', callId: 'p', tool: 'design.plan', source: 'command', input: { part: 'Hinged box', units: 'mm', features: [], ...plan } } as PilotEvent,
+    { type: 'tool_result', callId: 'p', ok: true, summary: 'Planned' } as PilotEvent,
+  ]
+  const scoredAs = (events: PilotEvent[], parts: MeshPart[]) =>
+    scoreCase(BUILD_CASES.find((c) => c.id === 'hinged-box')!, { events, turns: [{ kind: 'message', text: '' }], parts, firstReply: '', firstBuilt: true, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 })
+
+  it('reads how the plan says the lid prints: apart for printInPlace false or an assumption, else on its hinge', () => {
+    expect(lidStated([])).toBe('assembled')
+    expect(lidStated(planned({ printInPlace: ['Base', 'Lid'] }))).toBe('assembled')
+    expect(lidStated(planned({ printInPlace: false }))).toBe('apart')
+    expect(lidStated(planned({ assumptions: ['The lid prints beside the box and goes on after'] }))).toBe('apart')
+    // a refused plan says nothing
+    expect(lidStated([planned({ printInPlace: false })[0]!, { type: 'tool_result', callId: 'p', ok: false, summary: 'refused' } as PilotEvent])).toBe('assembled')
+  })
+
+  it('holds a lid planned apart to printing apart, on the bed, with a pin that fits a bore of each part', () => {
+    // a 80 mm round box and its lid 20 mm apart, each with a 7 mm bore, and a 6 mm pin lying beside them
+    const base = tube(0, 0, 0, 35, 40, 3.5)
+    const lid = tube(100, 0, 0, 20, 40, 3.5)
+    const pin = box(-30, 60, 0, 30, 66, 6)
+    const apart = planned({ printInPlace: false })
+    const s = scoredAs(apart, [base, lid, pin])
+    expect(s.lid, JSON.stringify(s.lid)).toMatchObject({ pass: true })
+    expect(s.hinge).toEqual({ pass: true, detail: 'a 6 mm pin slides into a bore of the box and a bore of the lid' })
+    // the 10 mm apart part with no pin: apart as planned, but nothing joins it to the box
+    const bare = scoredAs(apart, [box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 80, 110, 4)])
+    expect(bare.lid?.pass).toBe(true)
+    expect(bare.hinge).toEqual({ pass: false, detail: 'the lid is planned apart but no separate pin was built, so nothing joins it to the box' })
+    expect(bare.geometry).toBe(false)
+    // and planned on its hinge, the same part fails the lid
+    expect(scoredAs(planned({ printInPlace: ['Base', 'Lid'] }), [box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 80, 110, 4)]).lid?.pass).toBe(false)
+    // a lid 1 mm off the box, or one lifted off the bed, does not print apart
+    expect(scoredAs(apart, [base, tube(81, 0, 0, 20, 40, 3.5), pin]).lid?.detail).toMatch(/comes within 1 mm of the box/)
+    expect(scoredAs(apart, [base, tube(100, 0, 3, 23, 40, 3.5), pin]).lid?.detail).toMatch(/do not rest on the bed/)
+    // a pin too tight for the bores
+    expect(scoredAs(apart, [tube(0, 0, 0, 35, 40, 3.05), tube(100, 0, 0, 20, 40, 3.05), pin]).hinge?.pass).toBe(false)
+  })
+
+  // a 10 mm wedge prism, 20 mm long: its bottom face meets a side at 84 degrees along x = 0, with thin facets next to
+  // that edge, the way a tube cut at a slant meets its bore
+  const wedge = (): MeshPart => {
+    const a = (84 * Math.PI) / 180
+    const xs = [0, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 10]
+    const q: [number, number] = [10 * Math.cos(a), 10 * Math.sin(a)]
+    const v: number[] = []
+    for (const y of [0, 20]) {
+      for (const x of xs) v.push(x, y, 0)
+      v.push(q[0], y, q[1])
+    }
+    const n = xs.length
+    const top = n
+    const f: number[] = []
+    for (let i = 0; i + 1 < n; i++) f.push(i, i + 1, n + 1 + i + 1, i, n + 1 + i + 1, n + 1 + i)
+    f.push(0, top, n + 1 + top, 0, n + 1 + top, n + 1, n - 1, n + 1 + n - 1, n + 1 + top, n - 1, n + 1 + top, top)
+    for (let i = 0; i + 1 < n; i++) f.push(top, i + 1, i, n + 1 + top, n + 1 + i, n + 1 + i + 1)
+    // each facet faces away from the inside
+    const c = [(10 + q[0]) / 3, 10, q[1] / 3]
+    for (let t = 0; t < f.length; t += 3) {
+      const [p0, p1, p2] = [f[t]!, f[t + 1]!, f[t + 2]!].map((i) => [v[i * 3]!, v[i * 3 + 1]!, v[i * 3 + 2]!]) as [number[], number[], number[]]
+      const e1 = p1.map((x, k) => x - p0[k]!)
+      const e2 = p2.map((x, k) => x - p0[k]!)
+      const nn = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!]
+      if (nn.reduce((s2, x, k) => s2 + x * (p0[k]! - c[k]!), 0) < 0) [f[t + 1], f[t + 2]] = [f[t + 2]!, f[t + 1]!]
+    }
+    return { name: 'wedge', slot: 1, positions: new Float32Array(v), indices: new Uint32Array(f) }
+  }
+
+  it('reads no wall at an edge where two faces meet near a right angle, as a tube cut at a slant has', () => {
+    // design.check's read, leaving at a cosine over 0.1, measures how near a facet next to the edge is to it: under the
+    // 0.8 mm a 0.4 mm nozzle wants
+    expect(engineWall([wedge()]).mm).toBeLessThan(0.8)
+    // the scorer holds the far facet to a cosine over 0.3, so the wedge is whole
+    const w = scored('cable-clip', [wedge()]).minWall
+    expect(w?.pass, w?.detail).toBe(true)
+    expect(Number.parseFloat(w!.detail)).toBeGreaterThan(3)
+  })
+
+  it('reads the thinnest wall from every facet, so a small thin spot no area sample lands on still fails', () => {
+    // a 40 by 40 by 10 mm block and, apart from it, a 1 mm square tab 0.1 mm thick: too little area for a sample
+    const s = scored('cable-clip', [box(0, 0, 0, 40, 40, 10), box(60, 0, 0, 61, 1, 0.1)])
+    expect(s.minWall).toEqual({ pass: false, detail: '0.1 mm (want 0.8 mm or more)' })
+    expect(scored('cable-clip', [box(0, 0, 0, 40, 40, 10)]).minWall).toEqual({ pass: true, detail: '10 mm (want 0.8 mm or more)' })
+  })
+
   it('reads a hinged lid as joined only when it sits on its box at a gap that prints apart', () => {
     const lid = (parts: MeshPart[]) => scored('hinged-box', parts).lid!
     const base = box(0, 0, 0, 80, 50, 35)
@@ -663,11 +765,11 @@ describe('build eval scoring', () => {
   })
 
   it('knows which recorded replays disagree: their last check failed and the scorer passes them', () => {
-    // twisted-vase and cable-clip failed their last check live too. phone-stand-lip's last check passed live and fails
-    // in the replay on the feature count, which now wants each step tied to a planned feature (a replay does not
-    // compare a check's words with the recording's)
+    // twisted-vase failed its last check live too. phone-stand-lip's last check passed live and fails in the replay on
+    // the feature count, which now wants each step tied to a planned feature (a replay does not compare a check's words
+    // with the recording's). cable-clip left this list when the scorer read its 0.41 mm floor as design.check does
     const disagree = BUILD_CASES.filter((c) => loadRecording(c.id)?.score.verdict === 'disagree').map((c) => c.id)
-    expect(disagree).toEqual(['twisted-vase', 'cable-clip', 'phone-stand-lip'])
+    expect(disagree).toEqual(['twisted-vase', 'phone-stand-lip'])
   })
 
   it('prices a live run on Haiku or Sonnet 5.5 and refuses a model with no price', () => {
