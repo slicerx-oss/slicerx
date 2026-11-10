@@ -21,7 +21,8 @@ export interface SizeCheck {
 }
 
 /**
- * How a hook on the part is checked. lip: the hook leaves the side of a lofted stem below its top, and its tip rises
+ * How a hook on the part is checked. lip: the hook is joined to a lofted stem over a face, at its side or its top (one
+ * that stands apart, or meets the stem only along an edge or at a point, holds nothing), and its tip rises 3 mm or more
  * above the lowest point of the hook's outer half (a lip that keeps a headband on). leg: the rod's hook hangs a leg
  * past the bend, at least the rod's thickness plus 5 mm below its top, so a cable cannot slide off the end.
  */
