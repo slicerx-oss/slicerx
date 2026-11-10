@@ -61,7 +61,7 @@ describe('plain Ender-3 V3 stock presets', () => {
   const num = (values: Record<string, unknown>, k: string): number => Number(String(one(values[k] ?? settingDefault(k))).replace('%', ''))
   const text = (values: Record<string, unknown>, k: string): string => String(one(values[k] ?? settingDefault(k)))
   // The maker's presets: Fine, Standard and Draft on 0.4 mm, Optimal (our Fine), Standard and Draft on 0.6 mm. Strong
-  // takes Standard. Layer height, first layer height, top shell layers.
+  // takes Standard with SlicerX's Strength rule (5 walls, 35% gyroid infill). Layer height, first layer height, top shell layers.
   const TIERS: Record<string, Record<string, [number, number, number]>> = {
     '0.4': { draft: [0.24, 0.2, 3], standard: [0.2, 0.2, 3], fine: [0.12, 0.12, 5], strong: [0.2, 0.2, 3] },
     '0.6': { draft: [0.36, 0.36, 3], standard: [0.3, 0.3, 3], fine: [0.24, 0.24, 3], strong: [0.3, 0.3, 3] },
@@ -72,6 +72,7 @@ describe('plain Ender-3 V3 stock presets', () => {
     for (const [nozzle, tiers] of Object.entries(TIERS)) {
       const wide = (a: string, b: string): string => (nozzle === '0.4' ? a : b)
       for (const [tier, [layer, first, top]] of Object.entries(tiers)) {
+        const strong = tier === 'strong'
         const l = await stockLayer({ printerId: V3, tier: tier as 'draft', slots: [], nozzle: Number(nozzle) })
         const want: [string, string | number, string | number][] = [
           ['nozzle', l!.nozzle, Number(nozzle)],
@@ -81,9 +82,9 @@ describe('plain Ender-3 V3 stock presets', () => {
           ['initial_layer_line_width', text(l!.values, 'initial_layer_line_width'), '0.5'],
           ['top_shell_layers', num(l!.values, 'top_shell_layers'), top],
           ['bottom_shell_layers', num(l!.values, 'bottom_shell_layers'), 3],
-          ['wall_loops', num(l!.values, 'wall_loops'), 3],
-          ['sparse_infill_pattern', text(l!.values, 'sparse_infill_pattern'), 'crosshatch'],
-          ['sparse_infill_density', num(l!.values, 'sparse_infill_density'), 15],
+          ['wall_loops', num(l!.values, 'wall_loops'), strong ? 5 : 3],
+          ['sparse_infill_pattern', text(l!.values, 'sparse_infill_pattern'), strong ? 'gyroid' : 'crosshatch'],
+          ['sparse_infill_density', num(l!.values, 'sparse_infill_density'), strong ? 35 : 15],
           ['elefant_foot_compensation', num(l!.values, 'elefant_foot_compensation'), 0.15],
           ['outer_wall_line_width', text(l!.values, 'outer_wall_line_width'), wide('0.42', '0.62')],
           ['inner_wall_line_width', text(l!.values, 'inner_wall_line_width'), wide('0.45', '0.65')],

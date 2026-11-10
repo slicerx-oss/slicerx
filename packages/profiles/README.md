@@ -34,3 +34,5 @@ See `docs/licensing.md` for the whole picture.
 - TypeScript: `import gcode from '@slicerx/profiles/gcode.json'`, and dynamic imports such as `import('@slicerx/profiles/filaments/BBL.json')`. `@slicerx/settings` does this for you.
 
 The files are written by the settings package's scripts (`packages/settings/scripts/gen-resolved.ts` and others, then `apply-overlay.ts`) and locked by its tests. Do not edit them by hand.
+
+After a refresh of these files, `packages/settings/fixtures/stock-tiers.json` (a hash of every stock printer's quality tiers) fails until it is written again from the repository root: `SX_STOCK_TIERS_UPDATE=1 pnpm --filter @slicerx/settings exec vitest run js/stock-layer-strong.test.ts`.
