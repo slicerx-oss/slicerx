@@ -16,6 +16,7 @@ import { get, pilotState, pushRecent, toast, useApp } from '../state/store'
 
 import { ASK } from './command-bar-id'
 import { closeCommandBar, commandPlaceholder, dropCommandSubmit, queueCommandSubmit, setCommandQuery, takeCommandSubmit, useCommandQuery } from './command-draft'
+import { connectHint as connectHintOf, useMimirChoices } from '../pilot-connect/mimir-choices'
 export { ASK } from './command-bar-id'
 
 /** The rows that are commands, for the footer's count: places, settings and the assistant row are not. */
@@ -63,6 +64,8 @@ export function CommandBar() {
   // Named from the one constant, and only when the feature is in this build.
   const pilotLabel = pilot ? ASSISTANT_NAME : undefined
   const toolHint = pilot && pilotLabel ? `${pilotLabel} can run this` : null
+  // before a model is connected the mimir row says what the connect card offers here
+  const connectHint = connectHintOf(useMimirChoices())
 
   const plate = useApp((s) => s.plate)
   const plates = useApp((s) => s.plates)
@@ -86,8 +89,8 @@ export function CommandBar() {
   const actions = useMemo(() => new Map<string, () => void>(), [])
 
   const groups = useMemo<PaletteGroup[]>(() => {
-    return results?.commandGroups({ open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet: { data: printers }, actions, pilotLabel, settingsApi }) ?? []
-  }, [results, open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, printers, actions, pilotLabel, settingsApi])
+    return results?.commandGroups({ open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet: { data: printers }, actions, pilotLabel, connectHint, settingsApi }) ?? []
+  }, [results, open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, printers, actions, pilotLabel, connectHint, settingsApi])
 
   const close = closeCommandBar
 

@@ -29,6 +29,8 @@ export interface ComposerProps {
   onStop?: () => void
   /** Sending is off, for example while nothing can answer yet; typing and attaching still work. */
   sendOff?: boolean
+  /** Why sending is off, shown under the box once Enter is pressed on a message while it is, so Enter never looks dead. */
+  offNote?: string
   placeholder?: string
   /**
    * A question card waits in the running reply: text in the box answers it (`onAnswer`) in place of a new message, and
@@ -43,9 +45,12 @@ export interface ComposerProps {
   answers?: 'choice' | 'sheet'
 }
 
-export function Composer({ attachments, onSend, running = false, onStop, sendOff = false, placeholder = `Ask ${ASSISTANT_NAME}`, answering = false, onAnswer, answers: kind = 'choice' }: ComposerProps) {
+export function Composer({ attachments, onSend, running = false, onStop, sendOff = false, offNote, placeholder = `Ask ${ASSISTANT_NAME}`, answering = false, onAnswer, answers: kind = 'choice' }: ComposerProps) {
   const ids = useId()
   const [text, setText] = useState('')
+  // Enter pressed on a message while sending is off: the box says why, until sending is on again or the box empties
+  const [tried, setTried] = useState(false)
+  const offShown = tried && sendOff && offNote !== undefined && text.trim() !== ''
   const field = useRef<HTMLTextAreaElement>(null)
   const ready = (text.trim() !== '' || attachments.list.length > 0) && !sendOff
   // an answer to a waiting card is words only: a tool result cannot carry a file
@@ -80,6 +85,7 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
       setText('')
       return
     }
+    if (sendOff && text.trim() !== '') setTried(true)
     if (!ready || running) return
     onSend(text.trim(), attachments.list)
     setText('')
@@ -97,6 +103,10 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
         // an answer is words only, so say why Return does nothing while files are attached
         <div className="composer-note" role="status" data-testid="mimir-composer-files-note">
           Files cannot go with an answer. Remove them to send.
+        </div>
+      ) : offShown ? (
+        <div className="composer-note" role="status" data-testid="mimir-composer-off-note">
+          {offNote}
         </div>
       ) : null}
       <div className="composer-row">

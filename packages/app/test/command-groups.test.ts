@@ -20,7 +20,7 @@ beforeEach(() => {
 })
 afterEach(() => off())
 
-function groups(query: string, over: { pilot?: boolean; pilotMode?: 'on' | 'connect' | 'off' } = {}) {
+function groups(query: string, over: { pilot?: boolean; pilotMode?: 'on' | 'connect' | 'off'; connectHint?: string } = {}) {
   const s = get()
   const actions = new Map<string, () => void>()
   const out = commandGroups({
@@ -35,6 +35,7 @@ function groups(query: string, over: { pilot?: boolean; pilotMode?: 'on' | 'conn
     fleet: { data: [] },
     actions,
     pilotLabel: 'mimir',
+    ...(over.connectHint ? { connectHint: over.connectHint } : {}),
     settingsApi: api,
     recents: [],
     plate: [],
@@ -49,6 +50,13 @@ function groups(query: string, over: { pilot?: boolean; pilotMode?: 'on' | 'conn
 }
 
 describe('the command bar results', () => {
+  it("says what the connect card offers on the mimir row before a model is connected", () => {
+    const row = (o: Parameters<typeof groups>[1]) => groups('?how do I stop stringing', o).out[0]!.items[0]!
+    expect(row({}).hint).toBe('Sends what you have selected as context')
+    expect(row({ pilotMode: 'connect', connectHint: 'Connect your own API key (OpenAI or Anthropic) first' }).hint).toBe('Connect your own API key (OpenAI or Anthropic) first')
+    expect(row({ pilotMode: 'connect' }).hint).toBe('Connect a model first')
+  })
+
   it('finds a command by its alias', () => {
     const { out } = groups('clone')
     expect(out[0]!.items.map((i) => i.label)).toContain('Duplicate the selected objects')

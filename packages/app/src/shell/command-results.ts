@@ -28,6 +28,8 @@ type Input = Pick<AppState, 'recents' | 'plate' | 'plates' | 'activePlate' | 'us
   fleet: { data: readonly PrinterInfo[] | undefined }
   actions: Map<string, () => void>
   pilotLabel: string | undefined
+  /** Before a model is connected: what the connect card offers here (mimir-choices.ts connectHint). */
+  connectHint?: string | undefined
   settingsApi: SettingsApi | null
 }
 
@@ -76,7 +78,7 @@ function toItem(c: CommandSpec, workspace: string, spaces: readonly ActiveWorksp
   return { id: c.id, label: c.title, icon, ...(hint ? { hint } : {}), ...(keys ? { keys } : {}) }
 }
 
-export function commandGroups({ open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet, actions, pilotLabel, settingsApi }: Input): PaletteGroup[] {
+export function commandGroups({ open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet, actions, pilotLabel, connectHint, settingsApi }: Input): PaletteGroup[] {
   if (!open) return []
   actions.clear()
   const q = query.trim()
@@ -87,7 +89,7 @@ export function commandGroups({ open, all, query, recents, workspace, spaces, pi
     return { id: h.id, label: h.label, hint: h.hint, icon: h.icon as IconName }
   }
   if (q) {
-    const askRow: PaletteGroup = { title: pilotLabel ?? 'Assistant', items: [{ id: ASK, label: `Ask ${pilotLabel ?? 'the assistant'}: ${q.replace(/^\?+\s*/, '')}`, icon: 'pilot', hint: pilotMode === 'connect' ? 'Connect ChatGPT or an API key first' : 'Sends what you have selected as context' }] }
+    const askRow: PaletteGroup = { title: pilotLabel ?? 'Assistant', items: [{ id: ASK, label: `Ask ${pilotLabel ?? 'the assistant'}: ${q.replace(/^\?+\s*/, '')}`, icon: 'pilot', hint: pilotMode === 'connect' ? (connectHint ?? 'Connect a model first') : 'Sends what you have selected as context' }] }
     // A line that starts with "?" is a question, nothing else.
     if (q.startsWith('?')) return askOn ? [askRow] : [{ title: 'Assistant', items: [] }]
     const ranked = rankCommands(q, all, workspace, (text, c) => scoreCommand(text, c.title, c.keywords)).slice(0, 40)
