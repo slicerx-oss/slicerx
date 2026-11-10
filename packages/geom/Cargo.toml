@@ -43,6 +43,10 @@ name = "nest_bench"
 required-features = ["nest"]
 
 [[test]]
+name = "countersink"
+required-features = ["holes"]
+
+[[test]]
 name = "timing"
 required-features = ["calib", "hollow"]
 
