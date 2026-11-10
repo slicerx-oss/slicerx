@@ -3,7 +3,7 @@
 // Whether Windows Firewall lets the app hear printers, and Windows' own page to allow it (src-tauri/src/firewall.rs).
 // The shell reads the rules and opens the page; it never adds a rule.
 import type { FirewallHost } from '@slicerx/contracts'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 export function createTauriFirewall(): FirewallHost {
   return {

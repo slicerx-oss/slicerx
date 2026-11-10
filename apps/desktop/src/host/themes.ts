@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The themes folder in the app data directory. Rust owns the path; the webview gets file text only.
 import type { ThemesHost } from '@slicerx/contracts'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 export function createTauriThemes(): ThemesHost {
   return {

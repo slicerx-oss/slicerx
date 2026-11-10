@@ -3,7 +3,7 @@
 // mimir cloud through the Tauri commands in src-tauri/src/llm.rs. The install token stays in the keychain; only
 // the quota and counts come back.
 import type { MimirCloudHost, MimirQuota } from '@slicerx/app'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 export function createTauriMimirCloud(): MimirCloudHost {
   return {

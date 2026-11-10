@@ -5,7 +5,8 @@
 import type { ChamberCooling, Collision, CollisionFix, GcodeExport, MeshHandle, PlateArrangement, PlateCheck, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
 import { readPlateArrangement, readPlateCheck } from '@slicerx/contracts'
 import { chamberCoolingOf, encodeParts, sliceClock } from '@slicerx/slicer'
-import { Channel, invoke } from '@tauri-apps/api/core'
+import { Channel } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 // Small hand-written guards for the two info objects the Rust side returns. No schema library: the
 // desktop entry stays small, and a wrong shape here is a build bug, not user input.

@@ -3,7 +3,7 @@
 // The pairing host's sealed document, kept by the shell (src-tauri/src/pairdoc.rs): encrypted in the app data
 // folder, with the key in the system keychain.
 import type { DocStore } from '@slicerx/app'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 export function tauriDocStore(): DocStore {
   return {

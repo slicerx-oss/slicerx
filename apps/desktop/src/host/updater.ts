@@ -3,7 +3,8 @@
 // In-app updates through the shell (src-tauri/src/updates.rs): the page decides when to check and asks before the
 // restart; Rust fetches, checks the signature against the edition's update key, installs and restarts.
 import type { FoundUpdate, UpdaterHost } from '@slicerx/app'
-import { Channel, invoke } from '@tauri-apps/api/core'
+import { Channel } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 /** How this install takes updates, or null when the build has no update feed. */
 export async function updaterMode(): Promise<UpdaterHost['mode'] | null> {
