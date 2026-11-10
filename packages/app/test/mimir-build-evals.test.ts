@@ -19,7 +19,7 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { MeshPart, PilotEvent } from '@slicerx/contracts'
-import { createTransportClient } from '@slicerx/pilot'
+import { createTransportClient, type LlmMessage } from '@slicerx/pilot'
 import { createNodeTransport } from '@slicerx/pilot/node'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { budgetedClient, canStart, createBudget, HAIKU_5_5, STOP_MARGIN_USD } from '../../mcp/evals/creative/live'
@@ -27,7 +27,7 @@ import { minWall as engineWall } from '../../mcp/src/body-facts'
 import { setGeomProvider } from '../src/geom/client'
 import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
-import { driveCase, EVAL_MODEL, evalPrice, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
+import { driveCase, EVAL_MODEL, evalPrice, replaySteps, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, recordLive, refreshScore, summarize } from './mimir-build-evals/recordings'
 import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, hingeCheck, hookCheck, lastCheckPass, lidStated, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
@@ -38,6 +38,20 @@ const summary = (r: CaseRun) => summarize(r.score)
 const REPLAY_DRIVE_MS = 170_000
 
 describe('build eval scoring', () => {
+  it('carries a sketch id with no digit from this run into the next call, as it does one with a digit', () => {
+    const made = (id: string) => JSON.stringify({ ok: true, summary: 'Sketch 1 is in the timeline', result: { id, name: 'Sketch 1', loops: 1 } })
+    const [step] = replaySteps([{ seen: [made('smwapacdb1k')], calls: [{ name: 'geom.extrude', args: { sketch: 'smwapacdb1k', distance_mm: 80 } }] }])
+    if (typeof step !== 'function') throw new Error('a replayed step reads the results before it')
+    for (const now of ['smwatqzbcak', 'smwatqz9bck']) {
+      const asked: LlmMessage[] = [
+        { role: 'user', content: 'a phone stand' },
+        { role: 'assistant', content: '', toolCalls: [{ id: 'c0', name: 'design.sketch', arguments: '{}' }] },
+        { role: 'tool', callId: 'c0', content: made(now) },
+      ]
+      expect(step(asked).calls).toEqual([{ name: 'geom.extrude', args: { sketch: now, distance_mm: 80 } }])
+    }
+  })
+
   it('reads a reply that turns the headphone stand down as turning the part down', () => {
     expect(classifyNoBuild('The curved hook and tapered hollow stem need a swept path and a loft, which this modeler cannot create. I can stack faceted sections instead. Want that?')).toBe('declined')
     expect(classifyNoBuild('What height should the stand be?')).toBe('asked')
