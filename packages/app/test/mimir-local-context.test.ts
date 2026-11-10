@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { HISTORY_VERSION } from '@slicerx/cad-history'
 import type { Host, JsonSchema, LlmHttpRequest, LlmTransport, MeshHandle } from '@slicerx/contracts'
-import { messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, REPLY_RESERVE, toolsTokens, TURN_SET_TOOL } from '@slicerx/pilot'
+import { messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, REPLY_RESERVE, RESHAPE_LINE, toolsTokens, TURN_SET_TOOL } from '@slicerx/pilot'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { runCall } from '../src/app-link/methods'
 import { builtinCommands } from '../src/commands/builtin'
@@ -209,7 +209,9 @@ describe('the mimir tab on a local model', () => {
     expect(sent.messages[0]!.content).not.toContain(MOVING_PARTS_LINE)
     expect(cloud.messages[0]!.content).toContain(MOVING_PARTS_ORDER)
     expect(sent.messages[0]!.content).not.toContain(MOVING_PARTS_ORDER)
-    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, ''))
+    expect(cloud.messages[0]!.content).toContain(RESHAPE_LINE)
+    expect(sent.messages[0]!.content).not.toContain(RESHAPE_LINE)
+    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(`\n${RESHAPE_LINE}`, '').replace(MOVING_PARTS_ORDER, ''))
     // each prompt is pinned to its own text, so a wording change that moves the local prompt, and its budget, is made on purpose
     expect(sent.messages[0]!.content, 'the local prompt (packages/pilot/test/fixtures/mimir-prompt-local.txt)').toBe(LOCAL_PROMPT)
     expect(cloud.messages[0]!.content, 'the cloud prompt (packages/pilot/test/fixtures/mimir-prompt-cloud.txt)').toBe(CLOUD_PROMPT)
