@@ -561,7 +561,8 @@ fn sketch_sweep_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<V
         None | Some(Value::Null) => None,
         Some(v) => Some(item(v, "target", files)?),
     };
-    let tool = sketch_sweep::sweep_with(&profile, &path, thicken.as_ref(), &law)?;
+    let to: Option<sketch_loft::Profile> = field_or_default(req, "endProfile")?;
+    let tool = sketch_sweep::sweep_morph(&profile, to.as_ref(), &path, thicken.as_ref(), &law)?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
     tool_reply(r, target.as_ref(), op, enc, boolean::storage_mesh)
