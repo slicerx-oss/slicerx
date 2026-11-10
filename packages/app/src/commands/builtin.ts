@@ -83,7 +83,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     { id: 'plate-clear', title: 'Clear the plate', section: 'plate', keywords: ['empty', 'reset'], workspace: 'prepare', enabled: hasJob, run: async () => { if (await confirmDiscard('clear the plate')) clearPlate() } },
   )
   for (const m of DEMO_MODELS) {
-    out.push({ id: `plate-add-${m.slug}`, title: `Put the ${m.name.toLowerCase()} on the plate`, section: 'plate', keywords: [m.name, 'example', 'model'], workspace: 'prepare', tool: { permission: 'slice' }, run: async () => { if (!(await confirmDiscard('replace the plate'))) return; setWorkspace('prepare'); await loadDemoModel(host, m.slug, { replace: true }) } })
+    out.push({ id: `plate-add-${m.slug}`, title: `Put the ${m.name} on the plate`, section: 'plate', keywords: [m.name, 'example', 'model'], workspace: 'prepare', tool: { permission: 'slice' }, run: async () => { if (!(await confirmDiscard('replace the plate'))) return; setWorkspace('prepare'); await loadDemoModel(host, m.slug, { replace: true }) } })
   }
 
   out.push(
