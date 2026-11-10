@@ -274,11 +274,11 @@ const MAX_ENTRIES = 4_000_000
  * The thinnest wall: from the center of every facet a ray goes in, against its outward normal, to the first facet of
  * the same part it meets on the far side. The shortest such distance over every part. Each part's facets sit in a
  * uniform grid, so a ray only tests the facets of the cells it passes through. Over the budget (too many facets, or too
- * long) the reading is null with why "part too dense". A far facet counts when the ray leaves through it at a cosine
- * over `leaving` to its normal (GRAZE unless given). Needles, specks and flat patches narrower than LEDGE_MM across
- * measure no wall.
+ * long) the reading is null with why "part too dense". A far facet counts only when it faces back against the facet the
+ * ray starts from: the cosine between their two normals is under -`opposed` (OPPOSED unless given). Needles, specks and
+ * flat patches narrower than LEDGE_MM across measure no wall.
  */
-export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now(), leaving = GRAZE): WallReading {
+export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now(), opposed = OPPOSED): WallReading {
   const facets = meshes.reduce((n, m) => n + Math.floor(m.indices.length / 3), 0)
   if (facets > budget.maxFacets) return { mm: null, why: TOO_DENSE }
   const start = now()
@@ -286,7 +286,7 @@ export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGE
   if (late()) return { mm: null, why: TOO_DENSE }
   let best = Infinity
   for (const m of meshes) {
-    const r = partWall(m, best, late, leaving)
+    const r = partWall(m, best, late, opposed)
     if (r === null) return { mm: null, why: TOO_DENSE }
     best = r
   }
@@ -318,7 +318,7 @@ function shareEdge(tri: Float64Array, a: number, b: number): boolean {
 }
 
 /** The thinnest wall of one part, no more than `bestSoFar`; null when `late` says the time ran out. */
-function partWall(m: Mesh, bestSoFar: number, late: () => boolean, leaving: number): number | null {
+function partWall(m: Mesh, bestSoFar: number, late: () => boolean, opposed: number): number | null {
   const tris = Math.floor(m.indices.length / 3)
   if (tris === 0) return bestSoFar
   // every facet's corners, nine numbers each
@@ -445,8 +445,8 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, leaving: numb
     const dt1 = d1 !== 0 ? cs1 / Math.abs(d1) : Infinity
     const dt2 = d2 !== 0 ? cs2 / Math.abs(d2) : Infinity
     let hit = Infinity
-    // whether the nearest facet met so far faces the ray's way: the ray leaves the solid there, not along it
-    let leaves = true
+    // whether the nearest facet met so far faces back against this one, as the far side of a wall does
+    let faces = true
     for (;;) {
       const c = (i2 * n1 + i1) * n0 + i0
       for (let q = start[c]!; q < start[c + 1]!; q++) {
@@ -457,7 +457,9 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, leaving: numb
         // a facet sharing an edge with this one is its neighbor on the same surface, never the far side of a wall
         if (d > 1e-6 && d < hit && !shareEdge(tri, b, f * 9)) {
           hit = d
-          leaves = facing(tri, f * 9, d0, d1, d2) > leaving
+          // the ray runs along this facet's normal turned in, so the far facet's normal against the ray is the cosine
+          // between the two normals with its sign turned
+          faces = facing(tri, f * 9, d0, d1, d2) > opposed
         }
       }
       const exit = Math.min(t0, t1, t2)
@@ -478,11 +480,11 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, leaving: numb
       }
     }
     // A ray that meets a facet from outside has crossed air, not material: the gap between two bodies, or a facet whose
-    // normal points out. A ray that grazes the facet runs along a face: from a sliver at its edge, or from beside an edge
-    // where two faces meet near a right angle, such as the rim of a tube cut at a slant, where it reads how near it
-    // starts to that edge. Neither is a wall. Nor is a reading from a flat patch narrower than LEDGE_MM across (asked
-    // only of a reading that would win).
-    if (leaves && hit < best && !narrow(t)) best = hit
+    // normal points out. A far facet that does not face back against this one meets it across an edge: from a sliver,
+    // from beside the rim of a tube cut at a slant, or from the top face of an open rim over facets that lean in under
+    // it, the ray reads how near it starts to that edge. None is a wall. Nor is a reading from a flat patch narrower
+    // than LEDGE_MM across (asked only of a reading that would win).
+    if (faces && hit < best && !narrow(t)) best = hit
   }
   return best
 
@@ -606,11 +608,20 @@ function segmentDistance(x: V3, p: V3, q: V3): number {
 }
 
 /**
- * The cosine below which a ray grazes the facet it meets (about 73 degrees off its normal). At the slanted tip of a
- * swept spout the rays beside the rim leave through the bore at cosines of 0.10 to 0.2 and read 0.07 to 0.3 mm of a
- * 1.6 mm wall; a real 0.41 mm floor between a countersink and a bore leaves at 0.52.
+ * How squarely a far facet must face back against the facet a ray starts from to measure a wall: the cosine between
+ * their normals must be under minus this (about 61 degrees short of straight back; a wall's two faces meet at -1).
+ * The two faces of a wall, tapered or not, face nearly opposite each other. Where they meet less squarely, the far
+ * facet lies across an edge from the start, and the reading is how near the start is to that edge:
+ * - the slanted tip of a swept spout: rays beside the rim leave through the bore at -0.10 to -0.2 and read 0.07 to
+ *   0.3 mm of a 1.6 mm wall;
+ * - the open top of a twisted vase with a 2 mm wall, whose cavity's last section is 1.1 mm under the rim: the top
+ *   face and the facets leaning in under it meet at -0.38 to -0.425 and read 0.89 to 0.95 mm;
+ * - a toy rocket's 4 mm fin, from its flat bottom to its slanted edge: -0.457, 2.13 mm.
+ * The thinnest real wall that meets least squarely in the recorded builds is a cable clip's 0.41 mm floor between its
+ * countersink and its bore, at -0.522. This sits between the two: over the -0.457 the edges reach, under the -0.522 a
+ * real floor keeps.
  */
-const GRAZE = 0.3
+const OPPOSED = 0.49
 
 /** The cosine between the facet's normal at `tri[at]` and a unit direction: above zero when the direction leaves the solid through it. */
 function facing(tri: Float64Array, at: number, d0: number, d1: number, d2: number): number {

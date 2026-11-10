@@ -640,7 +640,7 @@ describe('build eval scoring', () => {
   }
 
   it('reads no wall at an edge where two faces meet near a right angle, as a tube cut at a slant has', () => {
-    // design.check's read holds the far facet to a cosine over 0.3, so a facet next to the edge measures no wall there
+    // design.check's read counts a far facet only where it faces back against the start, so a facet next to the edge measures no wall there
     expect(engineWall([wedge()]).mm).toBeGreaterThan(3)
     // and so does the scorer: the wedge is whole
     const w = scored('cable-clip', [wedge()]).minWall

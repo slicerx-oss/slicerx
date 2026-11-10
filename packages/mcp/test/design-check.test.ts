@@ -9,6 +9,7 @@ import { gunzipSync } from 'node:zlib'
 import { designNamed, type Design as HostDesign, type DesignHost } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
+import { minWall as creativeWall } from '../evals/creative/mesh-checks'
 import { minWall, WALL_BUDGET } from '../src/body-facts'
 import { createPlanRegistry, designCheck, FIX_ROUNDS, hasHookLip, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
 import { createCardPlans } from '../src/tab-tools'
@@ -407,8 +408,18 @@ describe('minWall', () => {
   })
 
   it('the 0.41 mm floor of a cable clip, between its countersink and its bore, still reads 0.41 mm', () => {
-    // its rays leave the floor through the bore at a cosine of 0.52: a real wall, too thin for a 0.4 mm nozzle
+    // its rays leave the floor through the bore, whose normal meets the floor's at a cosine of -0.52: a real wall, too thin for a 0.4 mm nozzle
     expect(minWall([fixture('cable-clip-floor.json.gz')]).mm).toBeCloseTo(0.406, 3)
+  })
+
+  it('the open rim of a twisted vase reads its wall, not the tilted facets just under the rim', () => {
+    // the top 6 mm of a hexagon vase 80 mm across the corners with a 2 mm wall, swept 160 mm up with a 60 degree twist
+    // and its cavity swept and cut the same way, as a build left it. The cavity's last section is 1.1 mm under the open
+    // top, and the facets between lean up to 25 degrees; the top face's rays leave through them where the two normals
+    // meet at cosines of -0.38 to -0.425, and read 0.89 to 0.95 mm
+    const rim = fixture('twisted-vase-rim.json.gz')
+    expect(minWall([rim]).mm).toBeCloseTo(1.843, 3)
+    expect(creativeWall([{ name: 'Vase', slot: 1, positions: new Float32Array(rim.positions), indices: new Uint32Array(rim.indices) }]).minWallMm).toBeCloseTo(1.843, 3)
   })
 
   it('a needle facet on the rim of a bore that narrows to the top does not read the rim as a wall a hair thick', () => {
@@ -428,20 +439,22 @@ describe('minWall', () => {
     return taperedTube({ foot: [9 + spread, 9 + spread + wall], top: [9, 9 + wall], height: 50, sides: 48, needle: 0.01 })
   }
 
-  it('reads the stem by its walls when the bore leans 4 or 12 degrees, under the lean a ray grazes at', () => {
-    // a ray grazes a face it meets at under about 17.5 degrees: the needle's ray down measures no wall
+  it('reads the stem by its walls when the bore leans 4, 12 or 20 degrees, under the lean a far face must face back by', () => {
+    // the needle faces up and the bore's side, leaning d degrees, faces in: their normals meet at a cosine of -sin(d),
+    // which counts as a wall only under -0.49 (a lean over about 29 degrees). The needle's ray down measures no wall.
     expect(minWall([leaning(4)]).mm).toBeGreaterThan(1.8)
     expect(minWall([leaning(12)]).mm).toBeGreaterThan(1.8)
+    expect(minWall([leaning(20)]).mm).toBeGreaterThan(1.8)
   })
 
-  it('counts the needle when the bore leans 20 degrees, past the lean a ray grazes at', () => {
-    // at 20 degrees the ray meets the bore's side squarely enough to count: the rim reads a hair thick, as any wall that
-    // leans that much from a ray does
-    expect(minWall([leaning(20)]).mm).toBeLessThan(0.2)
+  it('counts the needle when the bore leans 35 degrees, past the lean a far face must face back by', () => {
+    // at 35 degrees the bore's side faces back against the needle squarely enough to count (-0.57): the rim reads a
+    // hair thick, as any wall that leans that much from a ray does
+    expect(minWall([leaning(35)]).mm).toBeLessThan(0.2)
   })
 
   it('still reads a real 0.3 mm wall as thin beside a bore that leans, needle and all', () => {
-    // a stem 0.3 mm thick: rays across the wall meet the other side squarely, so the grazing rule leaves it thin
+    // a stem 0.3 mm thick: rays across the wall meet the other side squarely, so the wall read leaves it thin
     const thin = minWall([leaning(4, 0.3)]).mm
     expect(thin).toBeGreaterThan(0.25)
     expect(thin).toBeLessThanOrEqual(0.3)

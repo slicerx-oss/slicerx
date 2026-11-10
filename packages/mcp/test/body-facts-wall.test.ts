@@ -7,6 +7,8 @@
 // and a swept spout with a 1.6 mm wall read 0.067 mm from the rays beside its slanted tip, which leave along the bore.
 // It also skips a flat patch narrower than 0.01 mm across: a toy rocket's nose cone joined flush onto its body, both
 // on one 25 mm circle with 256 and 160 sides, left strips under the cone microns wide that read a 0.004 mm wall.
+// And a far face that does not face back against the start: a twisted vase's 2 mm wall read 0.89 mm at its open rim,
+// from the top face to the facets leaning in just under it.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
@@ -82,7 +84,7 @@ describe('the thinnest wall', () => {
     // all; their rays meet the cone's slope 0.004 mm up. The thinnest wall after them is the fins.
     const rocket = JSON.parse(gunzipSync(readFileSync(join(__dirname, 'fixtures', 'toy-rocket-seam-ledge.json.gz'))).toString('utf8')) as { positions: number[]; indices: number[] }
     expect(minWall([rocket]).mm).toBeCloseTo(5, 3)
-    // the creative eval reads the same wall with its stricter leaving cosine
+    // the creative eval reads the same wall
     expect(creativeWall([part(rocket)])).toMatchObject({ minWallMm: 5, how: 'every facet' })
   })
 
@@ -157,10 +159,22 @@ describe('the thinnest wall', () => {
   })
 
   it('a ray leaving a thin floor at a slant, as between a countersink and a bore, still reads the floor', () => {
-    // the cable clip's 0.41 mm floor leaves at a cosine of 0.52
+    // the cable clip's 0.41 mm floor: the far face's normal and the start facet's meet at a cosine of -0.52
     const top: V[] = [[0, 0, 0], [10, 0, 0], [5, 5, 0]]
     expect(minWall([mesh([top, slant(0.52, 0.41), beside, FAR])]).mm).toBeCloseTo(0.41, 3)
-    expect(minWall([mesh([top, slant(0.35, 0.41), beside, FAR])]).mm).toBeCloseTo(0.41, 3)
+    expect(minWall([mesh([top, slant(0.7, 0.41), beside, FAR])]).mm).toBeCloseTo(0.41, 3)
+  })
+
+  it('a ray leaving through a face that does not face back against its start, as at the open rim of a twisted vase, reads no wall there', () => {
+    // a twisted vase with a 2 mm wall: the top face's rays leave through the tilted facets just under the rim, and the
+    // two normals meet at cosines of -0.38 to -0.425, reading 0.89 to 0.95 mm. A toy rocket's fin reads 2.13 mm of a 4
+    // mm fin the same way at -0.457.
+    const top: V[] = [[0, 0, 0], [10, 0, 0], [5, 5, 0]]
+    expect(minWall([mesh([top, slant(0.395, 0.886), beside, FAR])]).mm).toBeCloseTo(3, 3)
+    expect(minWall([mesh([top, slant(0.425, 0.924), beside, FAR])]).mm).toBeCloseTo(3, 3)
+    expect(minWall([mesh([top, slant(0.457, 2.13), beside, FAR])]).mm).toBeCloseTo(3, 3)
+    // the creative eval reads it the same way
+    expect(creativeWall([part(mesh([top, slant(0.425, 0.924), beside, FAR]))]).minWallMm).toBeCloseTo(3, 3)
   })
 })
 
