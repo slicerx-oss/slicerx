@@ -628,6 +628,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
   const sheets = new Map<string, (values: Record<string, number> | null, said?: string) => void>()
   const lastSheet = new Map<string, PilotSheet>()
+  // Question cards and sheets each session has waiting on the person: no push to go on fires past one (planGoesOn)
+  const facing = new Map<string, number>()
+  const face = (sessionId: string, by: 1 | -1): void => {
+    const n = (facing.get(sessionId) ?? 0) + by
+    if (n > 0) facing.set(sessionId, n)
+    else facing.delete(sessionId)
+  }
   // Sessions with a confirmed sheet no part has used yet: where pilot.sheet is offered, a new part waits for one. The
   // confirmation carries over to later runs of the chat (a plan answered in the next message needs no second sheet)
   // until a run starts a part with it; the run after that asks again.
@@ -1088,12 +1095,15 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         const askId = `ask_${newId()}`
         const onAbort = (): void => {
           asks.delete(askId)
+          face(sessionId, -1)
           reject(new Error('Run canceled.'))
         }
+        face(sessionId, 1)
         asks.set(askId, {
           ids: new Set(q.choices.map((c) => c.id)),
           resolve: (choiceId, said) => {
             signal.removeEventListener('abort', onAbort)
+            face(sessionId, -1)
             if (wasDismissed(choiceId)) {
               emit(said ? { type: 'ask_answered', askId, choiceId, dismissed: true, said } : { type: 'ask_answered', askId, choiceId, dismissed: true })
               resolve(said ? { id: choiceId, said } : { id: choiceId })
@@ -1113,10 +1123,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         const sheet = { ...draft, dims, id: `sheet_${newId()}` }
         const onAbort = (): void => {
           sheets.delete(sheet.id)
+          face(sessionId, -1)
           reject(new Error('Run canceled.'))
         }
+        face(sessionId, 1)
         sheets.set(sheet.id, (given, said) => {
           signal.removeEventListener('abort', onAbort)
+          face(sessionId, -1)
           const answer = answerOf(sheet, given, said)
           // the latest sheet's answer stands: a cancel takes back an earlier confirmation; words that set it aside
           // leave an earlier one as it was. A sheet of a part already built confirms no new part, and takes none
@@ -1371,15 +1384,17 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
      * out before a reply is read). It ends as it would have with no approved plan, with design.check's stop in force (the
      * fix round is used, so mimir says what is off), or when the reply's last words ask the person for a decision the
      * plan does not settle (unsettledQuestion): "should I go on?" or "shall I add the clearance the plan has?" go on, a
-     * size the plan lacks or a choice between two options waits for the person, except after a check that failed with
-     * its fix round open, which goes on to the fix whatever the reply asks (the person is asked once the round is used). A print-in-place plan whose sizes the
+     * size the plan lacks or a choice between two options waits for the person, as does a question card or sheet still
+     * waiting on them. A failed check with its fix round open goes on under the same rules. A print-in-place plan whose sizes the
      * person changed on its sheet after the Go (isStale) goes on to be made again, never built: every body of its part
      * waits for the new plan (waitsForPlan), so the note asks for design.plan with the confirmed sizes instead.
      */
     const planGoesOn = (text: string): { left: PlanLeft; again: boolean } | null => {
+      // never past a question card or sheet waiting on the person, nor a decision the reply asks them for: the push
+      // never answers for the person
+      if (facing.has(sessionId)) return null
       const left = planLeft(messages, runStart)
-      // a check that failed with its fix round open is fixed before any question: the person is asked after the round
-      if (!left || (left.fix === undefined && unsettledQuestion(text) !== undefined)) return null
+      if (!left || unsettledQuestion(text) !== undefined) return null
       return { left, again: isStale(sessionId) && planned.get(sessionId)?.planId === left.planId }
     }
     // how long the run has waited on slow_down refusals in a row
