@@ -212,7 +212,11 @@ fn the_start_and_end_moves_stay_where_both_heads_reach_and_the_end_lifts_first()
             }
             n
         };
-        assert!(moves(&lines[..first_layer]) >= 6, "the start's prime moves");
+        // Each primed nozzle's line: X and Y to its start, Y out, X over, Y back.
+        assert!(
+            moves(&lines[..first_layer]) >= 5 * filaments,
+            "the start's prime moves"
+        );
         assert!(moves(&lines[end..]) >= 1, "the end's present move");
         // The end lifts above the print before it moves the bed or the head.
         let top = lines[first_layer..end]
