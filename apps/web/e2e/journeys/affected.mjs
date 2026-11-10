@@ -50,6 +50,8 @@ export const journeys = [
   { paths: ['packages/app/src/workspaces/prepare/', 'packages/app/src/presets/', 'packages/app/src/filament/', 'packages/app/src/adapters/', 'packages/app/src/calibration/', 'packages/settings/', 'packages/profiles/'], journeys: settings },
   // printers, the bridge and the phone's live view
   { paths: ['packages/app/src/send/', 'packages/app/src/link/', 'packages/app/src/connected-apps/', 'packages/app/src/camera/', 'packages/app/src/queue/', 'packages/app/src/inventory/', 'packages/app/src/features/fleet/', 'packages/connect/link-client/', 'packages/connect/mock-printers/', 'packages/connect/link/'], journeys: bridge },
+  // a printer's own web page: the card and HUD buttons, the address check and the catalog it loads on first use
+  { paths: ['packages/app/src/lib/links.ts', 'packages/app/src/features/fleet/web-ui.ts', 'packages/connect/catalog/src/web-ui.ts'], journeys: [...bridge, 'printer-page'] },
   // clients reaching the open app
   { paths: ['packages/app/src/app-link/', 'packages/app/src/agent-bridge/', 'packages/app-bridge/', 'packages/mcp/src/app'], journeys: ['links'] },
   // mimir
