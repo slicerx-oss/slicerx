@@ -590,9 +590,9 @@ async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[
   }
 }
 
-/** A sweep step's engine request without its operation: the profile, the path and the taper and twist it was made with. */
+/** A sweep step's engine request without its operation: the profile, the path, and the taper, twist and end section it was made with. */
 function sweepOpts(p: Extract<StepParams, { op: 'sketch.sweep' }>): Record<string, unknown> {
-  return { profile: p.profile, path: p.path, ...(p.thicken ? { thicken: p.thicken } : {}), ...(p.scaleEnd !== undefined ? { scaleEnd: p.scaleEnd } : {}), ...(p.twistDeg ? { twistDeg: p.twistDeg } : {}), ...(p.ease ? { ease: p.ease } : {}) }
+  return { profile: p.profile, path: p.path, ...(p.thicken ? { thicken: p.thicken } : {}), ...(p.scaleEnd !== undefined ? { scaleEnd: p.scaleEnd } : {}), ...(p.twistDeg ? { twistDeg: p.twistDeg } : {}), ...(p.ease ? { ease: p.ease } : {}), ...(p.endProfile ? { endProfile: p.endProfile } : {}) }
 }
 
 /** A loft step's engine request without its operation: the profiles and the options it was made with. */

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A client sweeps one closed profile along an open path: a new body, a post joined to a base and a groove cut across
-// it, a spout that narrows and turns, a tube and a spout with their bores, each a step that replays from the saved 3MF,
-// and the input the sweep refuses.
+// it, a spout that narrows and turns, a tube and a spout with their bores, a post that turns round, each a step that
+// replays from the saved 3MF, and the input the sweep refuses.
 import { describe, expect, it } from 'vitest'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -165,6 +165,51 @@ describe('sweep as a design step', () => {
     const shell = await h.call('slicerx_geom_sweep', { design: d, profile: { loops: ring }, path: up, thicken: { thicknessMm: 1 } })
     expect(shell.isError).toBe(true)
     expect(text(shell)).toMatch(/a profile with holes already has its walls; leave thicken out/)
+    expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
+  }, 60_000)
+
+  it('sweeps a square post that turns round by its top, and replays the end section from the saved file', async () => {
+    const h = await connect({ geomEngine: engine })
+    const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: Summary }>(r).output
+    }
+    const d = (await ok('slicerx_design_new', { name: 'Post' })).design
+    // a 20 mm square into a 20 mm round over 30 mm: the ruled loft between the two
+    const post = await ok('slicerx_geom_sweep', { design: d, profile: { loops: [square(20)] }, end_profile: { loops: [{ type: 'circle', center: [0, 0], diameterMm: 20 }] }, path: { points: [[0, 0, 0], [0, 0, 30]] }, name: 'Post' })
+    const loft = await ok('slicerx_geom_loft', { design: d, profiles: [{ frame: { origin: [40, 0, 0], normal: [0, 0, 1] }, loops: [square(20)] }, { frame: { origin: [40, 0, 30], normal: [0, 0, 1] }, loops: [{ type: 'circle', center: [0, 0], diameterMm: 20 }] }], name: 'Loft' })
+    expect(Math.abs(post.volumeMm3 / loft.parts[1]!.volumeMm3 - 1)).toBeLessThan(5e-3)
+    expect(post.volumeMm3).toBeGreaterThan(Math.PI * 100 * 30)
+    expect(post.volumeMm3).toBeLessThan(400 * 30)
+    // an open half round flattening to a V, thickened, round a bend, eased
+    const arc = Array.from({ length: 13 }, (_, i) => [6 * Math.cos(Math.PI + (Math.PI * i) / 12), 6 * Math.sin(Math.PI + (Math.PI * i) / 12)])
+    const scoop = await ok('slicerx_geom_sweep', { design: d, profile: { frame: { origin: [-40, 0, 0], normal: [0, 0, 1] }, open: true, loops: [{ points: arc }] }, end_profile: { open: true, loops: [{ points: [[-6, 0], [0, -2], [6, 0]] }] }, path: { points: [[-40, 0, 0], [-40, 0, 20], [-50, 0, 40]], smooth: true }, thicken: { thicknessMm: 1 }, ease: 'smooth', name: 'Scoop' })
+    expect(scoop.parts).toHaveLength(3)
+    const steps = data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
+    expect(steps.map((s) => s.name)).toEqual(['Sweep, changing shape', 'Loft, 2 profiles', 'Sweep, changing shape, 1 mm shell'])
+    const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d })).output
+    const again = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs[0]!
+    expect(again.steps).toBe(3)
+    expect(again.parts.map((p) => p.volumeMm3)).toEqual(scoop.parts.map((p) => expect.closeTo(p.volumeMm3, 1)))
+  }, 60_000)
+
+  it('refuses an end section that is open where the profile is closed, has its own frame, or ends a profile with holes, leaving the design as it was', async () => {
+    const h = await connect({ geomEngine: engine })
+    const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'Duct' })).output.design
+    const profile = { loops: [square(20)] }
+    const path = { points: [[0, 0, 0], [0, 0, 30]] }
+    const open = await h.call('slicerx_geom_sweep', { design: d, profile, path, end_profile: { open: true, loops: [{ points: [[-5, 0], [5, 0]] }] } })
+    expect(open.isError).toBe(true)
+    expect(text(open)).toMatch(/endProfile: the profile is closed and the end profile is an open chain/)
+    const framed = await h.call('slicerx_geom_sweep', { design: d, profile, path, end_profile: { frame: { origin: [0, 0, 30], normal: [0, 0, 1] }, loops: [square(10)] } })
+    expect(framed.isError).toBe(true)
+    expect(text(framed)).toMatch(/end_profile\.frame: the end loop is drawn on the profile's own plane/)
+    // a tube's profile, an outer loop and its bore, takes no end section yet
+    const ring = [{ type: 'circle', center: [0, 0], diameterMm: 20 }, { type: 'circle', center: [0, 0], diameterMm: 16 }]
+    const holed = await h.call('slicerx_geom_sweep', { design: d, profile: { loops: ring }, path, end_profile: { loops: [square(20)] } })
+    expect(holed.isError).toBe(true)
+    expect(text(holed)).toMatch(/endProfile: a profile with holes takes no end profile yet/)
     expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
   }, 60_000)
 

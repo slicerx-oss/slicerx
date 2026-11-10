@@ -56,9 +56,10 @@ export type StepParams =
   | { op: 'sketch.loft'; profiles: LoftProfile[]; smooth?: boolean; closed?: boolean; thicken?: Thicken; operation?: 'new' | 'join' | 'cut'; name?: string }
   /**
    * A solid swept from one sketch profile along an open path, the profile keeping its turn relative to the path; an open
-   * profile is thickened into a shell. scaleEnd and twistDeg taper and turn it by length along the path, eased by ease.
+   * profile is thickened into a shell. scaleEnd and twistDeg taper and turn it by length along the path, and endProfile
+   * is the section it turns into by the end, all eased by ease.
    */
-  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; thicken?: Thicken; scaleEnd?: number | [number, number]; twistDeg?: number; ease?: 'linear' | 'smooth'; operation?: 'new' | 'join' | 'cut'; name?: string }
+  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; thicken?: Thicken; scaleEnd?: number | [number, number]; twistDeg?: number; ease?: 'linear' | 'smooth'; endProfile?: SweepEnd; operation?: 'new' | 'join' | 'cut'; name?: string }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
   | { op: 'hollow'; wallMm: number }
   | { op: 'repair' }
@@ -98,6 +99,12 @@ export interface LoftProfile {
 export interface Thicken {
   thicknessMm: number
   side?: 'outward' | 'inward' | 'center'
+}
+
+/** The section a sweep turns into by its end: one loop on the profile's own plane, closed or open as the profile is. */
+export interface SweepEnd {
+  loops: SketchLoop[]
+  open?: boolean
 }
 
 /** The path of a sweep: one open chain of lines, arcs and splines on a plane (the bed when frame is absent), or points in space. */
@@ -648,7 +655,7 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
     case 'sketch.loft':
       return `${p.operation === 'cut' ? 'Loft cut' : p.smooth ? 'Smooth loft' : 'Loft'}${p.closed ? ' ring' : ''}, ${p.profiles.length} profiles${p.thicken ? `, ${len(p.thicken.thicknessMm)} shell` : ''}`
     case 'sketch.sweep':
-      return `${p.operation === 'cut' ? 'Sweep cut' : 'Sweep'}${p.scaleEnd !== undefined ? ', tapered' : ''}${p.twistDeg ? ', twisted' : ''}${p.thicken ? `, ${len(p.thicken.thicknessMm)} shell` : ''}`
+      return `${p.operation === 'cut' ? 'Sweep cut' : 'Sweep'}${p.scaleEnd !== undefined ? ', tapered' : ''}${p.twistDeg ? ', twisted' : ''}${p.endProfile ? ', changing shape' : ''}${p.thicken ? `, ${len(p.thicken.thicknessMm)} shell` : ''}`
     case 'subtract':
       return p.label
     case 'hollow':
