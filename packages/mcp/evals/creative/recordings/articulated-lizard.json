@@ -2,244 +2,420 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T19:20:02.306Z",
+ "capturedAt": "2026-11-10T06:11:41.172Z",
  "steps": [
   {
-   "text": "A realistic sculpted lizard is outside what I can build, because my tools can't model free-curving organic forms. The closest versions I can make are below.",
+   "text": "A realistic lizard is a living creature with a sculpted head, legs and skin, and my modeling tools can't produce that shape. The closest version they can build is a segmented body that keeps the articulated, side-to-side swing, without legs or a sculpted head. Which version would you like?",
    "calls": [
     {
      "name": "pilot.ask",
      "args": {
       "title": "Lizard version",
-      "question": "Which version should I build? Sizes come after you pick one.",
+      "question": "Which version should I build? The tools cannot model a sculpted lizard with legs and a head, so pick the closest form.",
       "choices": [
        {
-        "id": "flat_outline",
-        "label": "Flat lizard outline, chain of links"
+        "id": "tapered-segments",
+        "label": "Tapered segmented body, no legs"
        },
        {
-        "id": "stacked_segments",
-        "label": "Stacked box segments with a tail"
+        "id": "flat-silhouette",
+        "label": "Flat lizard silhouette, segmented spine"
        },
        {
         "id": "nothing",
         "label": "Nothing for now"
        }
-      ]
+      ],
+      "sizes": false
      }
     }
    ]
   },
   {
-   "calls": [
-    {
-     "name": "pilot.sheet",
-     "args": {
-      "title": "Articulated lizard chain, flat",
-      "views": [
-       "top",
-       "iso"
-      ],
-      "part": [
-       {
-        "plane": "xy",
-        "points": [
-         [
-          0,
-          -6
-         ],
-         [
-          14,
-          -6
-         ],
-         [
-          14,
-          6
-         ],
-         [
-          0,
-          6
-         ]
-        ],
-        "from": 0,
-        "to": 5
-       }
-      ],
-      "dims": [
-       {
-        "key": "total_length",
-        "label": "Total length",
-        "value": 150,
-        "unit": "mm",
-        "min": 140,
-        "max": 160,
-        "source": "asked",
-        "note": "From your request"
-       },
-       {
-        "key": "segment_count",
-        "label": "Body segments",
-        "value": 9,
-        "unit": "mm",
-        "min": 4,
-        "max": 14,
-        "source": "guess",
-        "note": "Count of chained segments"
-       },
-       {
-        "key": "segment_length",
-        "label": "Segment length",
-        "value": 14,
-        "unit": "mm",
-        "min": 8,
-        "max": 25,
-        "source": "guess"
-       },
-       {
-        "key": "segment_width",
-        "label": "Segment width",
-        "value": 12,
-        "unit": "mm",
-        "min": 6,
-        "max": 25,
-        "source": "guess"
-       },
-       {
-        "key": "segment_thickness",
-        "label": "Thickness",
-        "value": 5,
-        "unit": "mm",
-        "min": 3,
-        "max": 10,
-        "source": "guess"
-       },
-       {
-        "key": "joint_pin_diameter",
-        "label": "Joint pin diameter",
-        "value": 2.5,
-        "unit": "mm",
-        "min": 1.5,
-        "max": 4,
-        "source": "guess"
-       },
-       {
-        "key": "joint_clearance",
-        "label": "Joint clearance",
-        "value": 0.4,
-        "unit": "mm",
-        "min": 0.2,
-        "max": 0.8,
-        "source": "guess",
-        "note": "Gap so segments swing without fusing"
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Answered in words: \\\"Use common sizes and sensible defaults, then build it\\\"\",\"result\":{\"picked\":null,\"said\":\"Use common sizes and sensible defaults, then build it\"}}"
+   ],
+   "text": "Thanks. I'll build the segmented body with common sizes. Because the segments are a print-in-place chain, the plan needs to be approved first. The plan lists each piece and its gaps, and you can edit the sizes before pressing Go.",
    "calls": [
     {
      "name": "design.plan",
      "args": {
-      "part": "Articulated lizard chain (flat, print in place)",
+      "part": "Articulated segmented lizard body (no legs, no sculpted head)",
       "units": "mm",
       "features": [
        {
-        "name": "Segment",
+        "name": "Segment body",
         "kind": "extrude",
         "sizes": {
-         "segment_length": 14,
-         "segment_width": 12,
-         "segment_thickness": 5
+         "length": 13,
+         "width": 20,
+         "height": 12,
+         "count": 10
         }
        },
        {
-        "name": "Joint knuckles",
+        "name": "Hinge pin",
         "kind": "extrude",
         "sizes": {
-         "joint_pin_diameter": 2.5,
-         "joint_clearance": 0.4
+         "diameter": 3,
+         "height": 10
         }
        },
        {
-        "name": "Chain of 9 segments",
-        "kind": "array",
+        "name": "Hinge socket",
+        "kind": "hole",
         "sizes": {
-         "segment_count": 9,
-         "pitch": 14.4,
-         "total_length": 150
+         "diameter": 3.6,
+         "depth": 10
         }
        },
        {
-        "name": "Head and tail taper",
-        "kind": "extrude",
+        "name": "Head nose round",
+        "kind": "fillet",
         "sizes": {
-         "total_length": 150
+         "radius": 3
         }
        }
       ],
       "assumptions": [
-       "Chain lies flat on the bed; joints swing about vertical pins, so side-to-side motion is in the bed plane.",
-       "Each segment is a rounded block with a knuckle at each end, 0.4 mm clearance per joint.",
-       "Flat print needs no supports, all overhangs are in the bed plane.",
-       "Outline is a stylized flat lizard silhouette, not a sculpted body, because sculpted organic forms are out of tool scope.",
-       "Sizes are defaults as you asked; the segment count, length, width and pin are guesses."
+       "Ten segments, each 13 mm long on a 15 mm pitch, so the chain is about 150 mm overall with the 0.4 mm joint gap.",
+       "Each segment swings side to side about a vertical pin (3 mm) in a socket (3.6 mm) on the neighbor, giving 0.3 mm radial clearance.",
+       "Joints are vertical pins only, so the chain moves in the horizontal plane; the tail narrows through the segments by fixed steps, not a loft.",
+       "Printed flat on the bed in one job, Bambu P1S, PLA, 0.4 mm nozzle, no supports needed since every joint is a vertical pin with no overhang beyond 45 degrees.",
+       "Sizes are common defaults, not measured from any real lizard."
       ],
       "questions": [
-       "Should the four legs be flat plates added to segments 2, 4, 6 and 8?"
+       "Should the segments taper from head to tail (wider at the head) instead of uniform width?"
+      ],
+      "printInPlace": [
+       "Segment 1",
+       "Segment 2",
+       "Segment 3",
+       "Segment 4",
+       "Segment 5",
+       "Segment 6",
+       "Segment 7",
+       "Segment 8",
+       "Segment 9",
+       "Segment 10"
       ]
      }
     }
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Approved as shown. Moving pieces need gaps of at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers) on this printer.\",\"result\":{\"planId\":\"plan_1\",\"accepted\":true,\"gaps\":{\"sideMm\":0.3,\"verticalMm\":0.4}}}"
+   ],
+   "text": "The plan is approved. Next I'll build the first segment as a rectangular body, then add its hinge pin and socket.",
    "calls": [
     {
      "name": "design.new",
      "args": {
-      "name": "Articulated lizard chain"
+      "name": "Articulated lizard body"
      }
     },
     {
-     "name": "geom.extrude",
+     "name": "design.sketch",
      "args": {
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 14,
-       "heightMm": 12,
-       "cornerRadiusMm": 3
-      },
-      "distance_mm": 5,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Segment 1",
-      "design": "PLACEHOLDER"
+      "loops": [
+       {
+        "points": [
+         [
+          -6.5,
+          -10
+         ],
+         [
+          6.5,
+          -10
+         ],
+         [
+          6.5,
+          10
+         ],
+         [
+          -6.5,
+          10
+         ]
+        ]
+       }
+      ]
      }
     }
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Started Articulated lizard body (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":true,\"summary\":\"Sketch 1 is in the timeline\",\"result\":{\"id\":\"smuo69q801k\",\"name\":\"Sketch 1\",\"loops\":1}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "sketch": "smuo69q801k",
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Segment 1",
+      "feature": "Segment body"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"blocked\":true,\"message\":\"Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.\"}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Lizard segment sizes",
+      "views": [
+       "top",
+       "front",
+       "side",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          -6.5,
+          -10
+         ],
+         [
+          6.5,
+          -10
+         ],
+         [
+          6.5,
+          10
+         ],
+         [
+          -6.5,
+          10
+         ]
+        ],
+        "from": 0,
+        "to": 12
+       }
+      ],
+      "dims": [
+       {
+        "key": "segment_length",
+        "label": "Segment length (X)",
+        "value": 13,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          -6.5,
+          -10,
+          0
+         ],
+         "b": [
+          6.5,
+          -10,
+          0
+         ],
+         "off": [
+          0,
+          -4,
+          0
+         ]
+        }
+       },
+       {
+        "key": "segment_width",
+        "label": "Segment width (Y)",
+        "value": 20,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          6.5,
+          -10,
+          0
+         ],
+         "b": [
+          6.5,
+          10,
+          0
+         ],
+         "off": [
+          4,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "segment_height",
+        "label": "Segment height (Z)",
+        "value": 12,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          6.5,
+          10,
+          0
+         ],
+         "b": [
+          6.5,
+          10,
+          12
+         ],
+         "off": [
+          4,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "joint_pitch",
+        "label": "Joint pitch (segment plus 0.4 mm gap)",
+        "value": 13.4,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          -6.5,
+          -10,
+          0
+         ],
+         "b": [
+          6.9,
+          -10,
+          0
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"segment_length\":13,\"segment_width\":20,\"segment_height\":12,\"joint_pitch\":13.4,\"clearance\":0.3,\"clearance_vertical\":0.4},\"changed\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "sketch": "smuo69q801k",
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Segment 1",
+      "feature": "Segment body"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 12 mm. The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q802\",\"name\":\"Sketch extrude 12 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":12,\"unit\":\"mm\"},\"feature\":\"Segment body\",\"state\":\"done\"},\"minMm\":[-6.5,-10,0],\"sizeMm\":[13,20,12],\"volumeMm3\":3120,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":12,\"minMm\":[-6.5,-10,0],\"sizeMm\":[13,20,12],\"volumeMm3\":3120}],\"placedMm\":[128,128],\"landed\":\"The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+   ],
+   "text": "The first segment is in the timeline. Next I'll add the hinge pin at the front and the socket at the rear.",
    "calls": [
     {
      "name": "geom.extrude",
      "args": {
       "design": "d1",
       "shape": {
-       "type": "rectangle",
-       "widthMm": 14,
-       "heightMm": 12,
-       "cornerRadiusMm": 3
+       "type": "circle",
+       "diameterMm": 3
       },
-      "distance_mm": 5,
+      "placement": {
+       "center": [
+        6.7,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 12,
       "extent": "oneSide",
-      "operation": "new",
-      "name": "Segment 1"
+      "operation": "join",
+      "part": 0,
+      "feature": "Hinge pin",
+      "target": "d1"
      }
     }
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 2, Circle extrude 12 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q803\",\"name\":\"Circle extrude 12 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":12,\"unit\":\"mm\"},\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3169.47,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":334,\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3169.47}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 3.6
+      },
+      "placement": {
+       "center": [
+        -6.7,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        12
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 13,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0,
+      "feature": "Hinge socket",
+      "target": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 3, Hole 3.6 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q804\",\"name\":\"Hole 3.6 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":13,\"unit\":\"mm\"},\"feature\":\"Hinge socket\",\"state\":\"done\"},\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":536,\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21}],\"placedMm\":[128,128]}}"
+   ],
+   "text": "Segment 1 has its pin and socket. Next I'll repeat it into a chain of 10 separate segments on a 13.4 mm pitch.",
    "calls": [
     {
      "name": "geom.array",
@@ -247,22 +423,433 @@
       "design": "d1",
       "spec": {
        "kind": "linear",
-       "count": 9,
+       "count": 10,
        "step": [
-        14.4,
+        13.4,
         0,
         0
        ]
       },
-      "merge": false
+      "merge": false,
+      "part": 0,
+      "feature": "Segment body"
      }
     }
    ]
   },
   {
-   "text": "I built the start of the chain, but it isn't a finished lizard yet, and I haven't sent anything to the printer.\n\nThe version you asked for can't be a sculpted lizard, since my tools can't model free-curving organic forms. You didn't pick one of the offered versions, so I went with your \"common sizes and sensible defaults\" note: a flat chain of 9 segments, 14 mm long, 12 mm wide and 5 mm thick, at a 14.4 mm pitch, so about 129 mm long. The sizes are my guesses except the 150 mm total length you gave, and the chain lies flat so the joints swing side to side and nothing needs supports.\n\nWhat's there now is nine separate blocks in the design \"Articulated lizard chain\". The knuckle joints, head, tail and legs are not built yet, so the blocks won't hinge and the total length is short of 150 mm. The next step is to design the joints properly. Should I keep going with a flat stylized silhouette (head, tail and four legs added to the chain), or would you rather a plain segmented chain with no legs?"
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Arrayed 10 separate copies: step 4, Array of 10, separate. Articulated lizard body did not fit on the bed where it stood, so it moved by (-61.15, 0) mm as a whole; its coordinates stay the design's own.\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smuo69q805\",\"name\":\"Array of 10, separate\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Segment body\",\"state\":\"done\"},\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[135.3,20,12.01],\"volumeMm3\":31172.1,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":536,\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":1,\"name\":\"Segment 1 2\",\"slot\":1,\"triangles\":536,\"minMm\":[6.9,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":2,\"name\":\"Segment 1 3\",\"slot\":1,\"triangles\":536,\"minMm\":[20.3,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":3,\"name\":\"Segment 1 4\",\"slot\":1,\"triangles\":536,\"minMm\":[33.7,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":4,\"name\":\"Segment 1 5\",\"slot\":1,\"triangles\":536,\"minMm\":[47.1,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":5,\"name\":\"Segment 1 6\",\"slot\":1,\"triangles\":536,\"minMm\":[60.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":6,\"name\":\"Segment 1 7\",\"slot\":1,\"triangles\":536,\"minMm\":[73.9,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":7,\"name\":\"Segment 1 8\",\"slot\":1,\"triangles\":536,\"minMm\":[87.3,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":8,\"name\":\"Segment 1 9\",\"slot\":1,\"triangles\":536,\"minMm\":[100.7,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21},{\"index\":9,\"name\":\"Segment 1 10\",\"slot\":1,\"triangles\":536,\"minMm\":[114.1,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21}],\"placedMm\":[66.850000095,128],\"landed\":\"Articulated lizard body did not fit on the bed where it stood, so it moved by (-61.15, 0) mm as a whole; its coordinates stay the design's own.\"}}"
+   ],
+   "text": "The chain of 10 separate segments is in place. Next I'll check the joint gaps with the fit check, then run the plan check.",
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "d1",
+      "layer_height_mm": 0.2,
+      "material": "PLA"
+     }
+    },
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_1",
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"10 pieces; no gap under 0.3 mm side by side or 0.4 mm above or below, smallest 0.3 mm\",\"result\":{\"design\":\"d1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":10,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Segment 1\"},{\"body\":1,\"part\":1,\"name\":\"Segment 1 2\"},{\"body\":2,\"part\":2,\"name\":\"Segment 1 3\"},{\"body\":3,\"part\":3,\"name\":\"Segment 1 4\"},{\"body\":4,\"part\":4,\"name\":\"Segment 1 5\"},{\"body\":5,\"part\":5,\"name\":\"Segment 1 6\"},{\"body\":6,\"part\":6,\"name\":\"Segment 1 7\"},{\"body\":7,\"part\":7,\"name\":\"Segment 1 8\"},{\"body\":8,\"part\":8,\"name\":\"Segment 1 9\"},{\"body\":9,\"part\":9,\"name\":\"Segment 1 10\"}],\"gaps\":[{\"bodies\":[6,7],\"names\":[\"Segment 1 7\",\"Segment 1 8\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[88.161,1.061,12],\"to\":[88.37,1.27,12]},{\"bodies\":[3,4],\"names\":[\"Segment 1 4\",\"Segment 1 5\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[47.961,-1.061,6],\"to\":[48.17,-1.27,6]},{\"bodies\":[4,5],\"names\":[\"Segment 1 5\",\"Segment 1 6\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[61.361,-1.061,6],\"to\":[61.57,-1.27,6]},{\"bodies\":[0,1],\"names\":[\"Segment 1\",\"Segment 1 2\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[7.761,1.061,6],\"to\":[7.97,1.27,6]},{\"bodies\":[5,6],\"names\":[\"Segment 1 6\",\"Segment 1 7\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[74.761,-1.061,6],\"to\":[74.97,-1.27,6]},{\"bodies\":[2,3],\"names\":[\"Segment 1 3\",\"Segment 1 4\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[34.561,1.061,12],\"to\":[34.77,1.27,12]},{\"bodies\":[1,2],\"names\":[\"Segment 1 2\",\"Segment 1 3\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[21.161,1.061,6],\"to\":[21.37,1.27,6]},{\"bodies\":[7,8],\"names\":[\"Segment 1 8\",\"Segment 1 9\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[101.561,1.061,12],\"to\":[101.77,1.27,12]},{\"bodies\":[8,9],\"names\":[\"Segment 1 9\",\"Segment 1 10\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.295,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[114.961,1.061,6],\"to\":[115.17,1.27,6]}],\"warnings\":[]}}",
+    "{\"ok\":true,\"summary\":\"Articulated lizard body (d1, tied to the plan): 1 of 5 checks against plan plan_1 failed: feature count (want 4 features, each built by a step tagged with its name, got 4 steps, none tagged for Head nose round)\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Articulated lizard body\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"feature count\",\"want\":\"4 features, each built by a step tagged with its name\",\"got\":\"4 steps, none tagged for Head nose round\",\"pass\":false},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"2.99 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"10 separate pieces (Segment 1, Segment 2, Segment 3, Segment 4, Segment 5, Segment 6, Segment 7, Segment 8, Segment 9, Segment 10)\",\"got\":\"10 pieces (Segment 2, Segment 3, Segment 4, Segment 5, Segment 6, Segment 7, Segment 8, Segment 9 and Segment 10 are Segment 1 2, Segment 1 3, Segment 1 4, Segment 1 5, Segment 1 6, Segment 1 7, Segment 1 8, Segment 1 9 and Segment 1 10, in the array of Segment 1)\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.3 mm, between Segment 1 7 and Segment 1 8\",\"pass\":true}],\"body\":{\"size\":{\"x\":135.3,\"y\":20,\"z\":12.01},\"holes\":[],\"features\":4,\"steps\":[\"Sketch extrude 12 mm\",\"Circle extrude 12 mm\",\"Hole 3.6 mm\",\"Array of 10, separate\"],\"tags\":[\"Segment body\",\"Hinge pin\",\"Hinge socket\",\"Segment body\"],\"stepIds\":[\"smuo69q802\",\"smuo69q803\",\"smuo69q804\",\"smuo69q805\"],\"parts\":[{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01}],\"watertight\":true,\"minWallMm\":2.991,\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"pla\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Segment 1\",\"partName\":\"Segment 1\",\"array\":{\"of\":\"Segment 1\",\"n\":1}},{\"part\":1,\"name\":\"Segment 1 2\",\"partName\":\"Segment 1 2\",\"array\":{\"of\":\"Segment 1\",\"n\":2}},{\"part\":2,\"name\":\"Segment 1 3\",\"partName\":\"Segment 1 3\",\"array\":{\"of\":\"Segment 1\",\"n\":3}},{\"part\":3,\"name\":\"Segment 1 4\",\"partName\":\"Segment 1 4\",\"array\":{\"of\":\"Segment 1\",\"n\":4}},{\"part\":4,\"name\":\"Segment 1 5\",\"partName\":\"Segment 1 5\",\"array\":{\"of\":\"Segment 1\",\"n\":5}},{\"part\":5,\"name\":\"Segment 1 6\",\"partName\":\"Segment 1 6\",\"array\":{\"of\":\"Segment 1\",\"n\":6}},{\"part\":6,\"name\":\"Segment 1 7\",\"partName\":\"Segment 1 7\",\"array\":{\"of\":\"Segment 1\",\"n\":7}},{\"part\":7,\"name\":\"Segment 1 8\",\"partName\":\"Segment 1 8\",\"array\":{\"of\":\"Segment 1\",\"n\":8}},{\"part\":8,\"name\":\"Segment 1 9\",\"partName\":\"Segment 1 9\",\"array\":{\"of\":\"Segment 1\",\"n\":9}},{\"part\":9,\"name\":\"Segment 1 10\",\"partName\":\"Segment 1 10\",\"array\":{\"of\":\"Segment 1\",\"n\":10}}],\"pieces\":10,\"gaps\":[{\"bodies\":[6,7],\"kind\":\"apart\",\"gapMm\":0.2954138529798805,\"limitMm\":0.3,\"from\":[88.16066017187622,1.0606601238250732,12],\"to\":[88.36954917345173,1.2695493996465077,12],\"direction\":\"xy\"},{\"bodies\":[3,4],\"kind\":\"apart\",\"gapMm\":0.29541385297988676,\"limitMm\":0.3,\"from\":[47.960660171876214,-1.0606601238250732,6.000009848715781],\"to\":[48.16954917345174,-1.2695493996465024,6.000009848715781],\"direction\":\"xy\"},{\"bodies\":[4,5],\"kind\":\"apart\",\"gapMm\":0.29541385297988676,\"limitMm\":0.3,\"from\":[61.36066017187621,-1.0606601238250732,6.000009848715781],\"to\":[61.56954917345174,-1.2695493996465024,6.000009848715781],\"direction\":\"xy\"},{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.2954138529798883,\"limitMm\":0.3,\"from\":[7.760660171876211,1.0606601238250732,5.999990151284538],\"to\":[7.969549173451746,1.2695493996464975,5.999990151284538],\"direction\":\"xy\"},{\"bodies\":[5,6],\"kind\":\"apart\",\"gapMm\":0.29541385297988926,\"limitMm\":0.3,\"from\":[74.76066017187621,-1.0606601238250732,6.000009848716015],\"to\":[74.96954917345174,-1.269549399646506,6.000009848716015],\"direction\":\"xy\"},{\"bodies\":[2,3],\"kind\":\"apart\",\"gapMm\":0.29541385297989053,\"limitMm\":0.3,\"from\":[34.56066017187621,1.0606601238250732,12],\"to\":[34.76954917345173,1.2695493996465148,12],\"direction\":\"xy\"},{\"bodies\":[1,2],\"kind\":\"apart\",\"gapMm\":0.29541385297989087,\"limitMm\":0.3,\"from\":[21.16066017187621,1.0606601238250732,5.999990151284538],\"to\":[21.369549173451748,1.2695493996464975,5.999990151284538],\"direction\":\"xy\"},{\"bodies\":[7,8],\"kind\":\"apart\",\"gapMm\":0.2954138529799006,\"limitMm\":0.3,\"from\":[101.5606601718762,1.0606601238250732,12],\"to\":[101.76954917345172,1.269549399646522,12],\"direction\":\"xy\"},{\"bodies\":[8,9],\"kind\":\"apart\",\"gapMm\":0.2954138529799034,\"limitMm\":0.3,\"from\":[114.9606601718762,1.0606601238250732,5.999990151284538],\"to\":[115.16954917345176,1.2695493996464975,5.999990151284538],\"direction\":\"xy\"}]}}}}"
+   ],
+   "text": "The fit check passes on the segment-to-segment gaps except one diagonal gap at 0.295 mm, just under the 0.3 mm limit. The plan check also flags that the head round is missing. I'll rewind the array and socket, widen the socket slightly, and add the corner round before arraying again.",
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Array of 10, separate\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q804\",\"name\":\"Hole 3.6 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":13,\"unit\":\"mm\"},\"feature\":\"Hinge socket\",\"state\":\"done\"},\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":536,\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3117.21}],\"placedMm\":[66.850000095,128]}}",
+    "{\"ok\":true,\"summary\":\"Removed Hole 3.6 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q803\",\"name\":\"Circle extrude 12 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":12,\"unit\":\"mm\"},\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3169.47,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":334,\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3169.47}],\"placedMm\":[66.850000095,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 3.7
+      },
+      "placement": {
+       "center": [
+        -6.7,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        12
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 13,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0,
+      "feature": "Hinge socket",
+      "target": "d1"
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "d1",
+      "face": {
+       "at": [
+        6.5,
+        10,
+        6
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 3, Hole 3.7 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q806\",\"name\":\"Hole 3.7 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":13,\"unit\":\"mm\"},\"feature\":\"Hinge socket\",\"state\":\"done\"},\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3114.022,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":538,\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3114.022}],\"placedMm\":[66.850000095,128]}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 12 mm, fillet up to 8.515 mm\",\"result\":{\"chain\":[{\"a\":[6.500000000367422,10,12],\"b\":[6.500000000367422,10,0],\"face\":[0,1,0],\"keys\":[3782835216168484,515746943306004]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[6.500000000367422,10,12],\"b\":[6.500000000367422,10,0],\"face\":[0,1,0],\"keys\":[3782835216168484,515746943306004]},\"faces\":[{\"curved\":false,\"normal\":[0,1,0]},{\"curved\":false,\"normal\":[1,0,0]}],\"lengthMm\":12,\"loop\":[{\"edge\":{\"a\":[6.500000000367422,10,12],\"b\":[6.500000000367422,10,0],\"face\":[0,1,0],\"keys\":[3782835216168484,515746943306004]},\"supported\":true},{\"edge\":{\"a\":[6.500000000367422,10,0],\"b\":[-6.499999999632578,10,0],\"face\":[0,1,0],\"keys\":[3782835216168484,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[-6.499999999632578,10,0],\"b\":[-6.499999999632578,10,12],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[-6.499999999632578,10,12],\"b\":[6.500000000367422,10,12],\"face\":[0,1,0],\"keys\":[3782835216168484,234011805839290]},\"supported\":true}],\"maxDistanceMm\":[13,8.515],\"maxRadiusMm\":8.515,\"supported\":true,\"part\":0}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "d1",
+      "face": {
+       "at": [
+        6.5,
+        -10,
+        6
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "d1",
+      "face": {
+       "at": [
+        -6.5,
+        10,
+        6
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "d1",
+      "face": {
+       "at": [
+        -6.5,
+        -10,
+        6
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Picked an edge of 12 mm, fillet up to 8.515 mm\",\"result\":{\"chain\":[{\"a\":[6.500000000367422,-10,0],\"b\":[6.500000000367422,-10,12],\"face\":[0,-1,0],\"keys\":[3503046102338221,515746943306004]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[6.500000000367422,-10,0],\"b\":[6.500000000367422,-10,12],\"face\":[0,-1,0],\"keys\":[3503046102338221,515746943306004]},\"faces\":[{\"curved\":false,\"normal\":[0,-1,0]},{\"curved\":false,\"normal\":[1,0,0]}],\"lengthMm\":12,\"loop\":[{\"edge\":{\"a\":[6.500000000367422,-10,0],\"b\":[6.500000000367422,-10,12],\"face\":[0,-1,0],\"keys\":[3503046102338221,515746943306004]},\"supported\":true},{\"edge\":{\"a\":[6.500000000367422,-10,12],\"b\":[-6.499999999632578,-10,12],\"face\":[0,-1,0],\"keys\":[3503046102338221,234011805839290]},\"supported\":true},{\"edge\":{\"a\":[-6.499999999632578,-10,12],\"b\":[-6.499999999632578,-10,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[-6.499999999632578,-10,0],\"b\":[6.500000000367422,-10,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,1853607923679434]},\"supported\":true}],\"maxDistanceMm\":[13,8.515],\"maxRadiusMm\":8.515,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 12 mm, fillet up to 8.164 mm\",\"result\":{\"chain\":[{\"a\":[-6.499999999632578,10,0],\"b\":[-6.499999999632578,10,12],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[-6.499999999632578,10,0],\"b\":[-6.499999999632578,10,12],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]},\"faces\":[{\"curved\":false,\"normal\":[0,1,0]},{\"curved\":false,\"normal\":[-1,0,0]}],\"lengthMm\":12,\"loop\":[{\"edge\":{\"a\":[-6.499999999632578,10,0],\"b\":[-6.499999999632578,10,12],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[-6.499999999632578,10,12],\"b\":[6.500000000367422,10,12],\"face\":[0,1,0],\"keys\":[3782835216168484,234011805839290]},\"supported\":true},{\"edge\":{\"a\":[6.500000000367422,10,12],\"b\":[6.500000000367422,10,0],\"face\":[0,1,0],\"keys\":[3782835216168484,515746943306004]},\"supported\":true},{\"edge\":{\"a\":[6.500000000367422,10,0],\"b\":[-6.499999999632578,10,0],\"face\":[0,1,0],\"keys\":[3782835216168484,1853607923679434]},\"supported\":true}],\"maxDistanceMm\":[13,8.164],\"maxRadiusMm\":8.164,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 12 mm, fillet up to 8.164 mm\",\"result\":{\"chain\":[{\"a\":[-6.499999999632578,-10,12],\"b\":[-6.499999999632578,-10,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[-6.499999999632578,-10,12],\"b\":[-6.499999999632578,-10,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]},\"faces\":[{\"curved\":false,\"normal\":[0,-1,0]},{\"curved\":false,\"normal\":[-1,0,0]}],\"lengthMm\":12,\"loop\":[{\"edge\":{\"a\":[-6.499999999632578,-10,12],\"b\":[-6.499999999632578,-10,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[-6.499999999632578,-10,0],\"b\":[6.500000000367422,-10,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[6.500000000367422,-10,0],\"b\":[6.500000000367422,-10,12],\"face\":[0,-1,0],\"keys\":[3503046102338221,515746943306004]},\"supported\":true},{\"edge\":{\"a\":[6.500000000367422,-10,12],\"b\":[-6.499999999632578,-10,12],\"face\":[0,-1,0],\"keys\":[3503046102338221,234011805839290]},\"supported\":true}],\"maxDistanceMm\":[13,8.164],\"maxRadiusMm\":8.164,\"supported\":true,\"part\":0}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fillet",
+     "args": {
+      "design": "d1",
+      "edges": [
+       {
+        "a": [
+         6.500000000367422,
+         10,
+         12
+        ],
+        "b": [
+         6.500000000367422,
+         10,
+         0
+        ],
+        "face": [
+         0,
+         1,
+         0
+        ],
+        "keys": [
+         3782835216168484,
+         515746943306004
+        ]
+       },
+       {
+        "a": [
+         6.500000000367422,
+         -10,
+         0
+        ],
+        "b": [
+         6.500000000367422,
+         -10,
+         12
+        ],
+        "face": [
+         0,
+         -1,
+         0
+        ],
+        "keys": [
+         3503046102338221,
+         515746943306004
+        ]
+       },
+       {
+        "a": [
+         -6.499999999632578,
+         10,
+         0
+        ],
+        "b": [
+         -6.499999999632578,
+         10,
+         12
+        ],
+        "face": [
+         0,
+         1,
+         0
+        ],
+        "keys": [
+         3782835216168484,
+         3911591363755447
+        ]
+       },
+       {
+        "a": [
+         -6.499999999632578,
+         -10,
+         12
+        ],
+        "b": [
+         -6.499999999632578,
+         -10,
+         0
+        ],
+        "face": [
+         0,
+         -1,
+         0
+        ],
+        "keys": [
+         3503046102338221,
+         3911591363755447
+        ]
+       }
+      ],
+      "radius_mm": 2.5,
+      "feature": "Head nose round",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"The step did not go through: sx-geom edge.fillet: faceReference: the face reference was split; repair the reference before editing. The design is unchanged.\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fillet",
+     "args": {
+      "design": "d1",
+      "edges": [
+       {
+        "a": [
+         6.5,
+         10,
+         12
+        ],
+        "b": [
+         6.5,
+         10,
+         0
+        ],
+        "face": [
+         0,
+         1,
+         0
+        ]
+       },
+       {
+        "a": [
+         6.5,
+         -10,
+         0
+        ],
+        "b": [
+         6.5,
+         -10,
+         12
+        ],
+        "face": [
+         0,
+         -1,
+         0
+        ]
+       },
+       {
+        "a": [
+         -6.5,
+         10,
+         0
+        ],
+        "b": [
+         -6.5,
+         10,
+         12
+        ],
+        "face": [
+         0,
+         1,
+         0
+        ]
+       },
+       {
+        "a": [
+         -6.5,
+         -10,
+         12
+        ],
+        "b": [
+         -6.5,
+         -10,
+         0
+        ],
+        "face": [
+         0,
+         -1,
+         0
+        ]
+       }
+      ],
+      "radius_mm": 2.5,
+      "feature": "Head nose round",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Filleted: step 4, Fillet 2.5 mm, 4 edges\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smuo69q808\",\"name\":\"Fillet 2.5 mm, 4 edges\",\"op\":\"edge.fillet\",\"part\":0,\"value\":{\"label\":\"Radius\",\"value\":2.5,\"unit\":\"mm\"},\"feature\":\"Head nose round\",\"state\":\"done\"},\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":758,\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447}],\"placedMm\":[66.850000095,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.array",
+     "args": {
+      "design": "d1",
+      "spec": {
+       "kind": "linear",
+       "count": 10,
+       "step": [
+        13.4,
+        0,
+        0
+       ]
+      },
+      "merge": false,
+      "part": 0,
+      "feature": "Segment body"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Arrayed 10 separate copies: step 5, Array of 10, separate\",\"result\":{\"design\":\"d1\",\"name\":\"Articulated lizard body\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smuo69q809\",\"name\":\"Array of 10, separate\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Segment body\",\"state\":\"done\"},\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[135.3,20,12.01],\"volumeMm3\":30484.47,\"parts\":[{\"index\":0,\"name\":\"Segment 1\",\"slot\":1,\"triangles\":758,\"minMm\":[-6.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":1,\"name\":\"Segment 1 2\",\"slot\":1,\"triangles\":758,\"minMm\":[6.9,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":2,\"name\":\"Segment 1 3\",\"slot\":1,\"triangles\":758,\"minMm\":[20.3,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":3,\"name\":\"Segment 1 4\",\"slot\":1,\"triangles\":758,\"minMm\":[33.7,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":4,\"name\":\"Segment 1 5\",\"slot\":1,\"triangles\":758,\"minMm\":[47.1,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":5,\"name\":\"Segment 1 6\",\"slot\":1,\"triangles\":758,\"minMm\":[60.5,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":6,\"name\":\"Segment 1 7\",\"slot\":1,\"triangles\":758,\"minMm\":[73.9,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":7,\"name\":\"Segment 1 8\",\"slot\":1,\"triangles\":758,\"minMm\":[87.3,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":8,\"name\":\"Segment 1 9\",\"slot\":1,\"triangles\":758,\"minMm\":[100.7,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447},{\"index\":9,\"name\":\"Segment 1 10\",\"slot\":1,\"triangles\":758,\"minMm\":[114.1,-10,-0.01],\"sizeMm\":[14.7,20,12.01],\"volumeMm3\":3048.447}],\"placedMm\":[66.850000095,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "d1",
+      "layer_height_mm": 0.2,
+      "material": "PLA"
+     }
+    },
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_1",
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"10 pieces; no gap under 0.3 mm side by side or 0.4 mm above or below, smallest 0.35 mm\",\"result\":{\"design\":\"d1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":10,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Segment 1\"},{\"body\":1,\"part\":1,\"name\":\"Segment 1 2\"},{\"body\":2,\"part\":2,\"name\":\"Segment 1 3\"},{\"body\":3,\"part\":3,\"name\":\"Segment 1 4\"},{\"body\":4,\"part\":4,\"name\":\"Segment 1 5\"},{\"body\":5,\"part\":5,\"name\":\"Segment 1 6\"},{\"body\":6,\"part\":6,\"name\":\"Segment 1 7\"},{\"body\":7,\"part\":7,\"name\":\"Segment 1 8\"},{\"body\":8,\"part\":8,\"name\":\"Segment 1 9\"},{\"body\":9,\"part\":9,\"name\":\"Segment 1 10\"}],\"gaps\":[{\"bodies\":[6,7],\"names\":[\"Segment 1 7\",\"Segment 1 8\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[88.161,-1.061,6],\"to\":[88.405,-1.305,6]},{\"bodies\":[3,4],\"names\":[\"Segment 1 4\",\"Segment 1 5\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[47.961,1.061,6],\"to\":[48.205,1.305,6]},{\"bodies\":[4,5],\"names\":[\"Segment 1 5\",\"Segment 1 6\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[61.361,1.061,6],\"to\":[61.605,1.305,6]},{\"bodies\":[0,1],\"names\":[\"Segment 1\",\"Segment 1 2\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[7.761,1.061,6],\"to\":[8.005,1.305,6]},{\"bodies\":[1,2],\"names\":[\"Segment 1 2\",\"Segment 1 3\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[21.161,1.061,6],\"to\":[21.405,1.305,6]},{\"bodies\":[2,3],\"names\":[\"Segment 1 3\",\"Segment 1 4\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[34.561,1.061,6],\"to\":[34.805,1.305,6]},{\"bodies\":[5,6],\"names\":[\"Segment 1 6\",\"Segment 1 7\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[74.761,1.061,6],\"to\":[75.005,1.305,6]},{\"bodies\":[7,8],\"names\":[\"Segment 1 8\",\"Segment 1 9\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[101.561,-1.061,6],\"to\":[101.805,-1.305,6]},{\"bodies\":[8,9],\"names\":[\"Segment 1 9\",\"Segment 1 10\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.345,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[114.961,-1.061,6],\"to\":[115.205,-1.305,6]}],\"warnings\":[]}}",
+    "{\"ok\":true,\"summary\":\"Articulated lizard body (d1, tied to the plan) matches plan plan_1: all 5 checks pass\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Articulated lizard body\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"4 features, each built by a step tagged with its name\",\"got\":\"5 steps for 4 features (Segment body 2)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"2.99 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"10 separate pieces (Segment 1, Segment 2, Segment 3, Segment 4, Segment 5, Segment 6, Segment 7, Segment 8, Segment 9, Segment 10)\",\"got\":\"10 pieces (Segment 2, Segment 3, Segment 4, Segment 5, Segment 6, Segment 7, Segment 8, Segment 9 and Segment 10 are Segment 1 2, Segment 1 3, Segment 1 4, Segment 1 5, Segment 1 6, Segment 1 7, Segment 1 8, Segment 1 9 and Segment 1 10, in the array of Segment 1)\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.35 mm, between Segment 1 7 and Segment 1 8\",\"pass\":true}],\"body\":{\"size\":{\"x\":135.3,\"y\":20,\"z\":12.01},\"holes\":[],\"features\":5,\"steps\":[\"Sketch extrude 12 mm\",\"Circle extrude 12 mm\",\"Hole 3.7 mm\",\"Fillet 2.5 mm, 4 edges\",\"Array of 10, separate\"],\"tags\":[\"Segment body\",\"Hinge pin\",\"Hinge socket\",\"Head nose round\",\"Segment body\"],\"stepIds\":[\"smuo69q802\",\"smuo69q803\",\"smuo69q806\",\"smuo69q808\",\"smuo69q809\"],\"parts\":[{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01},{\"x\":14.7,\"y\":20,\"z\":12.01}],\"watertight\":true,\"minWallMm\":2.991,\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"pla\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Segment 1\",\"partName\":\"Segment 1\",\"array\":{\"of\":\"Segment 1\",\"n\":1}},{\"part\":1,\"name\":\"Segment 1 2\",\"partName\":\"Segment 1 2\",\"array\":{\"of\":\"Segment 1\",\"n\":2}},{\"part\":2,\"name\":\"Segment 1 3\",\"partName\":\"Segment 1 3\",\"array\":{\"of\":\"Segment 1\",\"n\":3}},{\"part\":3,\"name\":\"Segment 1 4\",\"partName\":\"Segment 1 4\",\"array\":{\"of\":\"Segment 1\",\"n\":4}},{\"part\":4,\"name\":\"Segment 1 5\",\"partName\":\"Segment 1 5\",\"array\":{\"of\":\"Segment 1\",\"n\":5}},{\"part\":5,\"name\":\"Segment 1 6\",\"partName\":\"Segment 1 6\",\"array\":{\"of\":\"Segment 1\",\"n\":6}},{\"part\":6,\"name\":\"Segment 1 7\",\"partName\":\"Segment 1 7\",\"array\":{\"of\":\"Segment 1\",\"n\":7}},{\"part\":7,\"name\":\"Segment 1 8\",\"partName\":\"Segment 1 8\",\"array\":{\"of\":\"Segment 1\",\"n\":8}},{\"part\":8,\"name\":\"Segment 1 9\",\"partName\":\"Segment 1 9\",\"array\":{\"of\":\"Segment 1\",\"n\":9}},{\"part\":9,\"name\":\"Segment 1 10\",\"partName\":\"Segment 1 10\",\"array\":{\"of\":\"Segment 1\",\"n\":10}}],\"pieces\":10,\"gaps\":[{\"bodies\":[6,7],\"kind\":\"apart\",\"gapMm\":0.34528642955712907,\"limitMm\":0.3,\"from\":[88.16066017187622,-1.0606601238250732,6.00000386331766],\"to\":[88.40481446969743,-1.3048145775869113,6.000003863317659],\"direction\":\"xy\"},{\"bodies\":[3,4],\"kind\":\"apart\",\"gapMm\":0.3452864295571363,\"limitMm\":0.3,\"from\":[47.960660171876214,1.0606601238250732,5.999996136681235],\"to\":[48.20481446969742,1.3048145775869286,5.999996136681235],\"direction\":\"xy\"},{\"bodies\":[4,5],\"kind\":\"apart\",\"gapMm\":0.3452864295571363,\"limitMm\":0.3,\"from\":[61.36066017187621,1.0606601238250732,5.999996136681235],\"to\":[61.604814469697416,1.3048145775869286,5.999996136681235],\"direction\":\"xy\"},{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.34528642955713723,\"limitMm\":0.3,\"from\":[7.760660171876211,1.0606601238250732,5.999996136682053],\"to\":[8.004814469697429,1.3048145775869158,5.999996136682054],\"direction\":\"xy\"},{\"bodies\":[1,2],\"kind\":\"apart\",\"gapMm\":0.34528642955713784,\"limitMm\":0.3,\"from\":[21.16066017187621,1.0606601238250732,5.999996136681996],\"to\":[21.404814469697428,1.3048145775869167,5.999996136681995],\"direction\":\"xy\"},{\"bodies\":[2,3],\"kind\":\"apart\",\"gapMm\":0.3452864295571391,\"limitMm\":0.3,\"from\":[34.56066017187621,1.0606601238250732,5.999996136681881],\"to\":[34.804814469697426,1.3048145775869184,5.9999961366818795],\"direction\":\"xy\"},{\"bodies\":[5,6],\"kind\":\"apart\",\"gapMm\":0.3452864295571413,\"limitMm\":0.3,\"from\":[74.76066017187621,1.0606601238250732,5.999996136681235],\"to\":[75.00481446969742,1.3048145775869286,5.999996136681235],\"direction\":\"xy\"},{\"bodies\":[7,8],\"kind\":\"apart\",\"gapMm\":0.34528642955714917,\"limitMm\":0.3,\"from\":[101.5606601718762,-1.0606601238250732,6.000003863318575],\"to\":[101.80481446969742,-1.3048145775869255,6.000003863318575],\"direction\":\"xy\"},{\"bodies\":[8,9],\"kind\":\"apart\",\"gapMm\":0.34528642955715133,\"limitMm\":0.3,\"from\":[114.9606601718762,-1.0606601238250732,6.000003863325164],\"to\":[115.20481446969733,-1.3048145775870281,6.000003863325164],\"direction\":\"xy\"}]}}}}"
+   ],
+   "text": "I built the articulated body as a chain of 10 print-in-place segments with no legs or sculpted head, since the tools can't model a real lizard shape. Each segment swings side to side on a vertical pin in the next segment's socket, and the plan check and gap check both pass with 0.35 mm joint clearance.\n\n**The chain is about 135 mm long, not 150 mm.** To get closer to 150 mm, I can add a segment or two or lengthen the pitch. I also used uniform width, not a taper, and rounded the segment corners by 2.5 mm.\n\nI have not sliced it, so supports and the print time are not yet checked. Each segment is a separate piece on the bed, so one job will print all 10. Tell me if you want me to slice it on the P1S with PLA."
   }
  ],
  "defaultAnswer": true,
- "tabTools": true
+ "tabTools": true,
+ "samePart": true
 }
