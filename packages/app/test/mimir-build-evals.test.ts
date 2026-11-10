@@ -765,11 +765,11 @@ describe('build eval scoring', () => {
   })
 
   it('knows which recorded replays disagree: their last check failed and the scorer passes them', () => {
-    // twisted-vase failed its last check live too. phone-stand-lip's last check passed live and fails in the replay on
-    // the feature count, which now wants each step tied to a planned feature (a replay does not compare a check's words
-    // with the recording's). cable-clip left this list when the scorer read its 0.41 mm floor as design.check does
+    // twisted-vase failed its last check live too. phone-stand-lip's and coat-hook's last check failed live on the
+    // minimum wall (0.23 and 0.45 mm) while the scorer passes them. cable-clip left this list when the scorer read its
+    // 0.41 mm floor as design.check does
     const disagree = BUILD_CASES.filter((c) => loadRecording(c.id)?.score.verdict === 'disagree').map((c) => c.id)
-    expect(disagree).toEqual(['twisted-vase', 'phone-stand-lip'])
+    expect(disagree).toEqual(['twisted-vase', 'phone-stand-lip', 'coat-hook'])
   })
 
   it('prices a live run on Haiku or Sonnet 5.5 and refuses a model with no price', () => {
