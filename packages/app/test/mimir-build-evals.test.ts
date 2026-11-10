@@ -30,6 +30,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { budgetedClient, canStart, createBudget, HAIKU_5_5, STOP_MARGIN_USD } from '../../mcp/evals/creative/live'
 import { minWall as engineWall } from '../../mcp/src/body-facts'
 import { setGeomProvider } from '../src/geom/client'
+import { finishSketch } from '../src/cad/sketches'
+import { get } from '../src/state/store'
 import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, evalPrice, replaySteps, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
@@ -921,6 +923,25 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
       }
     })
   }
+  // A failed test runs again in the same process (scripts/ci/pr-test.sh, --retry=1), after an attempt that may have
+  // left a finished sketch in the design timeline. The retry starts from an empty timeline, so its steps number from 1
+  // as the recording's do and it replays as a first attempt does. phone-stand-lip draws three sketches of its own.
+  it.skipIf(!loadRecording('phone-stand-lip'))('replays a case after an earlier attempt left a sketch in the timeline, as it did live', { timeout: 180_000 }, async () => {
+    const c = BUILD_CASES.find((x) => x.id === 'phone-stand-lip')!
+    const rec = loadRecording(c.id)!
+    const left = finishSketch({ loops: [{ points: [[0, 0], [20, 0], [20, 10], [0, 10]] }] }).id
+    expect(get().timeline.items.map((i) => i.id)).toContain(left)
+    const r = await driveCase(c, { steps: rec.steps, timeoutMs: REPLAY_DRIVE_MS })
+    expect(r.error, r.error).toBeUndefined()
+    expect(summary(r)).toEqual(rec.score)
+    expect(get().timeline.items.map((i) => i.id)).not.toContain(left)
+    // the recording draws sketches of its own, so they number from the timeline's first: Sketch 1 on, and the next one
+    // carries on from them (an uncleared leftover would have taken Sketch 1)
+    const names = get().timeline.items.filter((i) => i.kind === 'sketch').map((i) => i.name)
+    expect(names.length).toBeGreaterThan(0)
+    expect(names).toEqual(names.map((_, k) => `Sketch ${k + 1}`))
+    expect(finishSketch({ loops: [{ points: [[0, 0], [20, 0], [20, 10], [0, 10]] }] }).name).toBe(`Sketch ${names.length + 1}`)
+  })
 })
 
 describe.runIf(live)('live build evals', () => {

@@ -28,6 +28,7 @@ import { get, set } from '../../src/state/store'
 import { bundledKb } from '../../src/workspaces/mimir/kb'
 import { cardPlans, clearPlans, PLAN_GO } from '../../src/workspaces/mimir/plan-tool'
 import { forgetWaiting } from '../../src/cad/waiting'
+import { history } from '../../src/plate/history'
 import { tabPilotOptions, toolsFor } from '../../src/workspaces/mimir/session'
 import type { BuildCase } from './cases'
 import { checkCalls, classifyNoBuild, placed, scoreCase, type CaseScore, type CheckCall, type UserTurn } from './score'
@@ -137,6 +138,10 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   // designs an earlier drive started and never built on wait in the host; let them go, as clearing a project does
   forgetWaiting()
   set({ plate: [], selection: null, selectedIds: [], historyEdit: null, printerModel: { vendor: 'Bambu Lab', model: 'P1S' }, profile: null, overrides: {} })
+  // and the design timeline starts empty, as clearing a project leaves it: a sketch an earlier drive (or a failed
+  // attempt the test runner retries) finished would number this drive's steps and sketches past the recording's
+  set({ timeline: { bodies: [], items: [], marker: 0 }, rollback: null, parked: null })
+  history().clear()
   const replayCheck = createReplayCheck()
   const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? [], replayCheck), { chunk: false })
   const inner = opts.client ?? script!
