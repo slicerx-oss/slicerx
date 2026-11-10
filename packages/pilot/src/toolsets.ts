@@ -11,6 +11,12 @@
 // stay in while they fit, and the list is the same request after request until something forces a change, so the
 // provider's prompt cache keeps hitting. A capped request also carries pilot.load_tools, which loads a toolset that was
 // left out for the next step.
+//
+// A cloud turn has a kind (turnKind): building a part keeps every design tool, slicing the slicing and project tools,
+// and running a printer every printer tool with send. Each of those carries the printer safety tools (SAFETY_TOOLS),
+// which take the printer as an argument, so they stay four whatever the fleet's size. A turn of the same kind as the
+// last sends the last list again, and while an approved plan is being built every turn is a design turn. A turn that
+// is none of these alone is mixed: it picks as before, with the safety tools always in.
 import type { PilotContext } from '@slicerx/contracts'
 import { z } from 'zod'
 import { onEveryLocalTurn, toolGroupOf, type ToolSurface } from './surfaces'
@@ -139,6 +145,66 @@ export function turnNeeds(message: string, opts: { designs?: boolean; context?: 
   if (opts.context?.printerId) needs.add('printers')
   if (opts.context?.objects?.length) needs.add('project')
   return needs
+}
+
+/**
+ * What a capped cloud turn is for, by the toolsets its message asks for: building a part, slicing a plate or running a
+ * printer, or mixed (none of those alone). A turn while an approved plan is still being built is a design turn whatever
+ * its words, so the build's tool list holds until it ends. On the design tab a message that asks for none of the three
+ * is a design turn. A mixed turn picks its tools as before kinds, with the safety tools always in.
+ */
+export type TurnKind = 'design' | 'slicing' | 'printer' | 'mixed'
+
+const KIND_OF: readonly [Toolset, Exclude<TurnKind, 'mixed'>][] = [
+  ['cad', 'design'],
+  ['settings', 'slicing'],
+  ['printers', 'printer'],
+]
+
+/**
+ * The turn's kind from what its message alone needs (turnNeeds without the tab), a build going on, what mimir's last
+ * reply offered (a "yes please" takes the offer's kind), and the tab.
+ */
+export function turnKind(messageNeeds: ReadonlySet<Toolset>, opts: { designs?: boolean; building?: boolean; offer?: ReadonlySet<Toolset> } = {}): TurnKind {
+  if (opts.building) return 'design'
+  const of = (sets: ReadonlySet<Toolset>) => KIND_OF.filter(([set]) => sets.has(set)).map(([, kind]) => kind)
+  let kinds = of(messageNeeds)
+  if (kinds.length === 0 && opts.offer) kinds = of(opts.offer)
+  if (kinds.length === 1) return kinds[0]!
+  return kinds.length === 0 && opts.designs ? 'design' : 'mixed'
+}
+
+/** The toolsets each kind keeps whole, after core and the protected ones. */
+export const KIND_SETS: Record<Exclude<TurnKind, 'mixed'>, readonly Toolset[]> = {
+  design: ['cad'],
+  slicing: ['settings', 'project'],
+  printer: ['printers'],
+}
+/** The toolsets each kind fills first with the room left, before the rest in TOOLSET_PRIORITY order. */
+const KIND_FILL: Record<Exclude<TurnKind, 'mixed'>, readonly Toolset[]> = {
+  design: ['cad'],
+  slicing: ['settings', 'project'],
+  printer: ['printers', 'settings', 'project'],
+}
+
+/**
+ * The printer safety tools every capped turn of a kind carries: stop or pause any printer by its id, see it first, and
+ * find its id. They take the printer as an argument, so the list is the same four whatever the fleet's size; the
+ * per-printer commands (pause, send) are fill, kept as room allows.
+ */
+export const SAFETY_TOOLS: readonly string[] = ['printer.list', 'printer.status', 'printer.pause', 'printer.cancel']
+/** What a printer turn adds to the safety tools: sending a job to any printer, and where it goes. */
+export const SEND_TOOLS: readonly string[] = ['printer.queue', 'run.target']
+/** The most tools a kind ever pins: the safety tools and the send tools, whatever the fleet's size. */
+export const MAX_PINNED = SAFETY_TOOLS.length + SEND_TOOLS.length
+
+/**
+ * The tool names a cloud turn of this kind always carries when they are offered: the safety tools on every kind, mixed
+ * included, and send on a printer turn. None without a kind (a pick made outside a cloud turn).
+ */
+export function pinnedFor(kind: TurnKind | undefined): ReadonlySet<string> {
+  if (!kind) return new Set()
+  return new Set(kind === 'printer' ? [...SAFETY_TOOLS, ...SEND_TOOLS] : SAFETY_TOOLS)
 }
 
 /** What a turn sent when tools were left out: the cap, how many tools there were and went, and the toolsets in and out. */
@@ -273,6 +339,9 @@ export interface StickyToolsets {
   lastNeeds: Set<Toolset>
   /** What mimir's last reply named: an offer ("want me to send it to the printer?") that a short "yes please" accepts. */
   lastOffer: Set<Toolset>
+  /** The last turn's kind, and the tool names its last request carried: a next turn of the same kind sends them again. */
+  lastKind?: TurnKind
+  lastPick?: { names: Set<string>; sets: Toolset[]; report: ToolCapReport | null }
 }
 
 export function stickyToolsets(): StickyToolsets {
@@ -295,7 +364,7 @@ export function stickyToolsets(): StickyToolsets {
  */
 export function stickyCapTools<T extends SetTool>(
   tools: readonly T[],
-  opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; loaded?: ReadonlySet<Toolset>; state: Readonly<StickyToolsets> },
+  opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; loaded?: ReadonlySet<Toolset>; state: Readonly<StickyToolsets>; kind?: TurnKind },
 ): { tools: T[]; sets: Toolset[]; report: ToolCapReport | null } {
   const bySet = new Map<Toolset, T[]>()
   for (const t of tools) {
@@ -309,7 +378,12 @@ export function stickyCapTools<T extends SetTool>(
   const st = opts.state
   const loaded = opts.loaded ?? new Set<Toolset>()
   const kept = (s: Toolset): boolean => opts.protect.has(s) || loaded.has(s)
-  const tier = (s: Toolset): number => (loaded.has(s) ? 6 : opts.protect.has(s) ? 5 : opts.needs.has(s) ? 4 : st.lastOffer.has(s) ? 3 : st.lastNeeds.has(s) ? 2 : st.used.has(s) ? 1 : 0)
+  // a kind's own toolsets rank between protected and this message's needs; a mixed turn has none
+  const kindSets: readonly Toolset[] = opts.kind && opts.kind !== 'mixed' ? KIND_SETS[opts.kind] : []
+  const tier = (s: Toolset): number => (loaded.has(s) ? 6 : opts.protect.has(s) ? 5 : kindSets.includes(s) ? 4.5 : opts.needs.has(s) ? 4 : st.lastOffer.has(s) ? 3 : st.lastNeeds.has(s) ? 2 : st.used.has(s) ? 1 : 0)
+  // a kind fills its own toolsets first, then the rest in TOOLSET_PRIORITY order
+  const first: readonly Toolset[] = opts.kind && opts.kind !== 'mixed' ? KIND_FILL[opts.kind] : []
+  const fillOrder = [...first, ...TOOLSET_PRIORITY.filter((s) => !first.includes(s))]
   const order = (s: Toolset): number => TOOLSET_PRIORITY.indexOf(s)
   // lower first: the toolset that goes first
   const key = (s: Toolset): number[] => [tier(s), st.sets.includes(s) ? 1 : 0, st.used.get(s)?.turn ?? -1, st.used.get(s)?.calls ?? 0, -order(s)]
@@ -320,8 +394,10 @@ export function stickyCapTools<T extends SetTool>(
     return 0
   }
   const calledTools = tools.filter((t) => opts.called.has(t.name))
+  const pins = pinnedFor(opts.kind)
+  const pinned = tools.filter((t) => pins.has(t.name))
   const chosen = new Set<Toolset>(present.filter((s) => s === 'core' || st.sets.includes(s) || tier(s) > 0))
-  const size = (sets: ReadonlySet<Toolset>): number => new Set([...calledTools, ...[...sets].flatMap((s) => bySet.get(s) ?? [])]).size
+  const size = (sets: ReadonlySet<Toolset>): number => new Set([...pinned, ...calledTools, ...[...sets].flatMap((s) => bySet.get(s) ?? [])]).size
   const evicted: Toolset[] = []
   while (size(chosen) > room) {
     const out = [...chosen].filter((s) => s !== 'core' && !kept(s)).sort(less)[0]
@@ -333,8 +409,9 @@ export function stickyCapTools<T extends SetTool>(
   const add = (list: readonly T[]): void => {
     for (const t of list) if (keep.size < room) keep.add(t)
   }
-  // core first: a chat that called more tools than the room holds still keeps core
+  // core first: a chat that called more tools than the room holds still keeps core; then the kind's pinned tools
   add(bySet.get('core') ?? [])
+  add(pinned)
   add(calledTools)
   // most wanted first, so a chat whose protected toolsets alone are over the room keeps the most of them
   const whole = new Set<Toolset>(['core'])
@@ -353,7 +430,7 @@ export function stickyCapTools<T extends SetTool>(
   }
   for (const s of wantedOut) tryWhole(s)
   for (const s of wantedOut) add(bySet.get(s)!)
-  const rest = present.filter((s) => !whole.has(s))
+  const rest = fillOrder.filter((s) => bySet.has(s) && !whole.has(s))
   for (const s of rest) tryWhole(s)
   for (const s of rest) add(bySet.get(s)!)
   const sets = present.filter((s) => whole.has(s) && (bySet.get(s) ?? []).every((t) => keep.has(t)))
