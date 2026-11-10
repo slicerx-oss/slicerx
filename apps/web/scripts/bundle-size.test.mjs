@@ -41,11 +41,11 @@ function check(dist) {
 }
 
 test('passes a shell under the budget, and does not count a chunk that loads later', () => {
-  const dist = build({ entry: bulk(100), shared: bulk(100), lazy: bulk(400) })
+  const dist = build({ entry: bulk(90), shared: bulk(90), lazy: bulk(400) })
   try {
     const r = check(dist)
     assert.equal(r.code, 0, r.out)
-    assert.match(r.out, /shell JS: \d+\.\d KB gzip \(budget 206 KB\)/)
+    assert.match(r.out, /shell JS: \d+\.\d KB gzip \(budget 193 KB\)/)
   } finally {
     rmSync(dist, { recursive: true, force: true })
   }

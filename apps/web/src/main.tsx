@@ -3,7 +3,7 @@
 // First: Zod must be jitless before any module makes a schema (packages/app/src/zod-jitless.ts).
 import '@slicerx/app/zod-jitless'
 import type { AppFeature, EditionHost } from '@slicerx/contracts'
-import { setCurrentEdition, SlicerXApp } from '@slicerx/app'
+import { setCurrentEdition, SlicerXApp } from '@slicerx/app/shell'
 import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
