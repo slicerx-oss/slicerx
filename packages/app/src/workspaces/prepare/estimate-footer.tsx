@@ -26,6 +26,7 @@ import { get, showSliced, shownSlice, toast, useApp } from '../../state/store'
 import { isBigSlice, sliceTimingsOf } from '../../state/slice-estimate'
 import { sliceFraction } from '../slice-progress'
 import { RolledBack } from './rolled-back'
+import { SleipnirCapLine } from '../../plate/sleipnir-cap'
 import { Loading } from '../../shell/loading'
 import './estimate-footer.css'
 
@@ -171,6 +172,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
         <PreflightWarning plan={trouble} check={check} checking={checking} />
       ) : null}
       <ResumeElsewhereNote />
+      <SleipnirCapLine testId="slice-sleipnir-cap" underSlice />
       {/* A slice the kept resume plan refused says so once, above, with its two ways on. */}
       {slice.status === 'error' && !(slice.code === 'resume_void' && unsafe === RESUME_VOID) ? (
         <p className="app-err est-error" role="alert" data-testid="slice-estimate-error">

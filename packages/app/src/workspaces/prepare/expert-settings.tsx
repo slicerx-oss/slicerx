@@ -21,6 +21,7 @@ import { variesPerObject } from '../../plate/plate-wide'
 import { setPlateSettings } from '../../plate/plates'
 import { objectOverrides, sourceId } from '../../plate/object-settings'
 import { selectObject } from '../../plate/select'
+import { sleipnirCapText, SLEIPNIR_OFF, turnSleipnirOff } from '../../plate/sleipnir-cap'
 import { ownKeys, scopeValue, setScoped } from '../../plate/scope'
 import { plateSequence } from '../../plate/plate-sequence'
 import { get, markStale, set, useApp, type PlateMeta } from '../../state/store'
@@ -400,6 +401,8 @@ export function ExpertSettings() {
   const config = useMemo(() => resolveConfig(easy, overrides), [easy, overrides])
   const activeMeta = useApp((s) => s.plates.find((p) => p.id === s.activePlate))
   const seqNote = plateSequenceNote(activeMeta, config)
+  // sleipnir's thickest layer below the layer height: said on the Layer height row (plate/sleipnir-cap.tsx)
+  const capText = useApp(sleipnirCapText)
   // With the selection's scope picked, each row reads and writes the selection's own values over the plate's.
   const { scope, name: scopeName } = useScope()
   const plate = useApp((s) => s.plate)
@@ -459,6 +462,14 @@ export function ExpertSettings() {
     if (def.key === 'enable_prime_tower' && !o.idPrefix) return <PrimeTowerRow key={key} enabled={on(config[def.key])} onEnable={(v) => setOverride(def.key, v)} />
     const chips = chipsFor(def)
     if (def.key === 'print_sequence') return <Field key={key} def={def} value={config[def.key]} overridden={def.key in overrides} onSet={setSequence} {...extra} note={o.note ?? seqNote} pin={pin} chips={chips} />
+    if (def.key === 'layer_height' && capText) {
+      const capNote = (
+        <span data-testid="slice-setting-sleipnir-cap">
+          {capText} <LinkButton onClick={turnSleipnirOff}>{SLEIPNIR_OFF}</LinkButton>
+        </span>
+      )
+      return <Field key={key} def={def} value={config[def.key]} overridden={def.key in overrides} {...extra} note={o.note ? <>{o.note}. {capNote}</> : capNote} pin={pin} chips={chips} />
+    }
     return <Field key={key} def={def} value={config[def.key]} overridden={def.key in overrides} {...extra} pin={pin} chips={chips} />
   }
   const searching = Boolean(q)

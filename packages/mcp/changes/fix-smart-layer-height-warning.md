@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_slice_file` 1.15.0 and `slicerx_estimate_file` 1.12.0 warn when the call sets `layer_height` above the thickest layer smart layer heights print and leaves `smart_layer` unnamed. Smart layer heights stay on by default and print layers of at most half the nozzle (0.20 mm on a 0.4 mm nozzle, lower when `smart_layer_max_height` is lower), so a 0.28 mm `layer_height` slices thinner and slower than asked. The warning reads `With smart layer heights on (smart_layer quality), layers are at most 0.20 mm, not the 0.28 mm layer_height. Set smart_layer to off for 0.28 mm layers.` Nothing about the slice changes. A call that names `smart_layer`, or a layer height at or below the cap, gets no warning.

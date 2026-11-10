@@ -93,3 +93,41 @@ export function smartLayerBounds(opts: { nozzleDiameter: number; layerHeight?: n
 export function isSmartLayerOn(mode: unknown): mode is Exclude<SmartLayerMode, 'off'> {
   return mode === 'quality' || mode === 'strength'
 }
+
+const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v)
+const positive = (v: unknown): number | undefined => {
+  const n = Number(first(v))
+  return Number.isFinite(n) && n > 0 ? n : undefined
+}
+
+/**
+ * The thickest layer sleipnir prints (mm) for a resolved config, or null with sleipnir off. The planner bounds its
+ * layers by the nozzle, at most half of it in either mode, and the thickest layer setting can only lower that; the
+ * layer height plays no part. packages/geom/src/layers.rs resolve_bounds does the same.
+ */
+export function smartLayerCeiling(config: Readonly<Record<string, unknown>>): number | null {
+  const mode = first(config['smart_layer'])
+  if (!isSmartLayerOn(mode)) return null
+  const nozzle = positive(config['nozzle_diameter']) ?? 0.4
+  const band = Math.min(SMART_LAYER_MODE_BANDS[mode].max, SMART_LAYER_MAX_RATIO) * nozzle
+  const max = positive(config['smart_layer_max_height'])
+  return snap(max !== undefined ? Math.min(band, max) : band)
+}
+
+/** A layer height sleipnir does not reach: the layer height asked for and the thickest layer it prints instead. */
+export interface SmartLayerCap {
+  layerMm: number
+  capMm: number
+}
+
+/** The layer height sleipnir passes over with this config, or null when it prints that thick or is off. */
+export function smartLayerCap(config: Readonly<Record<string, unknown>>): SmartLayerCap | null {
+  const capMm = smartLayerCeiling(config)
+  const layerMm = positive(config['layer_height'])
+  return capMm !== null && layerMm !== undefined && layerMm > capMm + 1e-9 ? { layerMm, capMm } : null
+}
+
+/** The line that says so, in the app's words. */
+export function smartLayerCapText(cap: SmartLayerCap): string {
+  return `With sleipnir on, layers are at most ${cap.capMm.toFixed(2)} mm, not ${cap.layerMm.toFixed(2)} mm.`
+}

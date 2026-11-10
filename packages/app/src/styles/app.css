@@ -69,6 +69,8 @@ a { color: var(--purple); }
 .support-line .sx-ic { width: 15px; height: 15px; margin-top: 2px; color: var(--orange); }
 .support-line.ok .sx-ic { color: var(--green); }
 .support-line .support-body { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+/* sleipnir's cap line wraps without leaving its last word alone on a line */
+.support-line .sleipnir-cap-text { text-wrap: pretty; }
 
 /* expert settings */
 .expert { margin-top: 12px; }

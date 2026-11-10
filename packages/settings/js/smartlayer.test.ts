@@ -5,7 +5,7 @@ import type { PrintConfig } from '@slicerx/contracts/settings'
 import { EASY_GOALS, SMART_LAYER_LABELS } from '@slicerx/contracts/settings'
 import { applyEasy, goalEasy, matchGoal } from './easy'
 import { settingDef } from './schema'
-import { isSmartLayerOn, smartLayerBounds, smartLayerLimits, smartLayerWindow } from './smartlayer'
+import { isSmartLayerOn, smartLayerBounds, smartLayerCap, smartLayerCapText, smartLayerCeiling, smartLayerLimits, smartLayerWindow } from './smartlayer'
 import { validate } from './validate'
 
 const research = { smartLayer: { minRatio: 0.2, maxRatio: 0.6, note: 'silk shows steps', src: ['x'] } }
@@ -88,5 +88,30 @@ describe('sleipnir in Easy mode', () => {
     expect(matchGoal(goalEasy('fine'))).toBe('fine')
     expect(matchGoal({ ...goalEasy('fine'), varyLayerHeight: false })).toBeNull()
     expect(matchGoal({ detail: 0, strength: 10, speed: 'sport', supports: 'auto', brim: true, smartLayer: 'off' })).toBe('draft')
+  })
+})
+
+describe('a layer height sleipnir passes over', () => {
+  it('caps at half the nozzle in either mode: 0.20 mm on a 0.4 mm nozzle, 0.30 mm on a 0.6', () => {
+    expect(smartLayerCap({ smart_layer: 'quality', nozzle_diameter: [0.4], layer_height: 0.28 })).toEqual({ layerMm: 0.28, capMm: 0.2 })
+    expect(smartLayerCap({ smart_layer: 'strength', nozzle_diameter: ['0.6'], layer_height: '0.4' })).toEqual({ layerMm: 0.4, capMm: 0.3 })
+    expect(smartLayerCapText({ layerMm: 0.28, capMm: 0.2 })).toBe('With sleipnir on, layers are at most 0.20 mm, not 0.28 mm.')
+  })
+  it('says nothing at exactly half the nozzle, below it, or with sleipnir off', () => {
+    expect(smartLayerCap({ smart_layer: 'quality', nozzle_diameter: [0.4], layer_height: 0.2 })).toBeNull()
+    expect(smartLayerCap({ smart_layer: 'quality', nozzle_diameter: [0.6], layer_height: 0.3 })).toBeNull()
+    expect(smartLayerCap({ smart_layer: 'quality', nozzle_diameter: [0.4], layer_height: 0.16 })).toBeNull()
+    expect(smartLayerCap({ smart_layer: 'off', nozzle_diameter: [0.4], layer_height: 0.28 })).toBeNull()
+    expect(smartLayerCeiling({ smart_layer: 'off', nozzle_diameter: [0.4] })).toBeNull()
+  })
+  it('takes a lower thickest layer setting, never a higher one', () => {
+    expect(smartLayerCeiling({ smart_layer: 'quality', nozzle_diameter: [0.4], smart_layer_max_height: 0.16 })).toBe(0.16)
+    expect(smartLayerCeiling({ smart_layer: 'quality', nozzle_diameter: [0.4], smart_layer_max_height: 0.3 })).toBe(0.2)
+    expect(smartLayerCap({ smart_layer: 'quality', nozzle_diameter: [0.4], smart_layer_max_height: 0.16, layer_height: 0.2 })).toEqual({ layerMm: 0.2, capMm: 0.16 })
+  })
+  it('says nothing for Draft, which prints fixed layers, and says it for Standard at the same height', () => {
+    const base = { nozzle_diameter: [0.4], layer_height: 0.28 } as unknown as PrintConfig
+    expect(smartLayerCap({ ...applyEasy(goalEasy('draft'), base), layer_height: 0.28 })).toBeNull()
+    expect(smartLayerCap({ ...applyEasy(goalEasy('standard'), base), layer_height: 0.28 })?.capMm).toBe(0.2)
   })
 })
