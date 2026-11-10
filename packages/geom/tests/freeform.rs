@@ -945,14 +945,15 @@ fn a_smooth_loft_shells_open_at_the_top_to_the_voxel_wall() {
     let r = &m["report"];
     assert_eq!(r["exact"], false);
     assert!(r["note"].as_str().unwrap().contains("curved"), "{r}");
-    // what cutting the hollowed loft out of the loft for the cavity made, before the inner wall stood for it
+    // the cavity runs out through the open top. Moved up through it instead, the cavity left a lip inside the rim
+    // where the sides lean out (the opening 16.8 mm from the axis, now 18.7) and 622 mm3 more
     assert!(
-        (volume(&m) - 12_270.26).abs() < 12_270.26 * 1e-4,
+        (volume(&m) - 11_647.93).abs() < 11_647.93 * 1e-4,
         "{}",
         volume(&m)
     );
     let tris = m["mesh"]["indices"].as_array().unwrap().len() / 3;
-    assert!(tris.abs_diff(31_312) < 313, "{tris}");
+    assert!(tris.abs_diff(29_380) < 294, "{tris}");
 }
 
 fn rect(w: f64, h: f64) -> Value {

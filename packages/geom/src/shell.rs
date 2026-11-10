@@ -308,29 +308,76 @@ enum Unusable {
     Cut,
 }
 
-/// The voxel hollow with each open face cut through: the cavity, moved out through the face by the wall and a
-/// little more, removes the wall under it. Returns the result, the voxel size, and why the cavity came from a boolean
-/// if it did.
+/// A voxel shell: the result, its report, the voxel size, and why the cavity came from a boolean if it did.
+type Shelled = (TriMesh, BooleanReport, f64, Option<Unusable>);
+
+/// The voxel hollow open at each open face. The room past each open face counts as body while the wall is made, so
+/// the inner wall runs out through the face and the cavity, cut out of the body, opens it. When that cavity does not
+/// hold, the cavity of the closed hollow, moved out through each face by the wall and a little more, removes the wall
+/// under it.
 fn voxel_shell(
     w: &TriMesh,
     faces: &Faces,
     opened: &[u32],
     wall: f64,
     opts: BooleanOptions,
-) -> Result<(TriMesh, BooleanReport, f64, Option<Unusable>)> {
-    let (inner, voxel) = hollow::inner_wall(
-        w,
-        &HollowOptions {
-            wall_mm: wall,
-            ..HollowOptions::default()
-        },
-    )
-    .map_err(|_| too_thick())?;
+) -> Result<Shelled> {
+    let hollow_opts = HollowOptions {
+        wall_mm: wall,
+        ..HollowOptions::default()
+    };
+    if !opened.is_empty()
+        && let Some(done) = open_by_room(w, faces, opened, wall, &hollow_opts, opts)?
+    {
+        return Ok(done);
+    }
+    let (inner, voxel) = hollow::inner_wall(w, &hollow_opts).map_err(|_| too_thick())?;
     if inner.triangles.is_empty() {
         return Err(too_thick());
     }
     let (out, r, why) = open_through(w, faces, opened, wall, voxel, &inner, opts)?;
     Ok((out, r, voxel, why))
+}
+
+/// The body less a cavity that runs out through each open face, or none when that cavity does not hold. The cavity's
+/// sides cross the face, so the cut meets them across; a cavity moved out through the face instead runs alongside its
+/// own sides below the face wherever the body is not straight up and down, and leaves slivers and faces that cross
+/// there.
+fn open_by_room(
+    w: &TriMesh,
+    faces: &Faces,
+    opened: &[u32],
+    wall: f64,
+    hollow_opts: &HollowOptions,
+    opts: BooleanOptions,
+) -> Result<Option<Shelled>> {
+    let voxel = hollow::voxel_for(w, wall).map_err(|_| too_thick())?;
+    // past the face by the wall and three voxels, so the cavity's top stays clear of the face; into the body by a
+    // voxel, so the room and the body share their cells
+    let past = wall + 3.0 * voxel;
+    let mut rooms = Vec::with_capacity(opened.len());
+    for &f in opened {
+        let Some(&Surface::Plane { normal, .. }) = faces.table.get(f as usize) else {
+            return Err(Error::invalid("open", "pick flat faces to open"));
+        };
+        rooms.push(prism(w, faces, f, normal, past, voxel));
+    }
+    let (inner, voxel) = hollow::inner_wall_through(w, hollow_opts, &rooms).map_err(|_| too_thick())?;
+    if inner.triangles.is_empty() {
+        return Err(too_thick());
+    }
+    let Ok(cavity) = turned_over(&inner) else {
+        return Ok(None);
+    };
+    let mut body = w.clone();
+    body.faces = None;
+    let before = body.volume();
+    let Ok((out, r)) = boolean::boolean(&[body], &[cavity], BoolOp::Difference, &opts) else {
+        return Ok(None);
+    };
+    // a body too thin for the wall has its only cavity in the room past the face, and loses nothing
+    let hollowed = r.volume_mm3 < before * (1.0 - 1e-6);
+    Ok((r.watertight && !r.empty && hollowed).then_some((out, r, voxel, None)))
 }
 
 /// The body with the inner wall `inner` (as the hollow makes it, facing into the cavity) and each open face cut
@@ -721,6 +768,24 @@ mod tests {
         };
         let error = shell(&m, &[missing], 2.0, &o()).unwrap_err().to_string();
         assert!(error.contains("missing") && error.contains("repair"), "{error}");
+    }
+
+    #[test]
+    fn a_shallow_round_body_open_at_the_top_is_a_dish() {
+        // 3 mm tall: closed, a 2 mm wall leaves no cavity; open at the top it leaves a dish 1 mm deep, as a box does
+        let m = build::cylinder(&Frame::WORLD, 15.0, 0.0, 3.0, 64);
+        let (out, r) = shell(&m, &[top(3.0)], 2.0, &o()).unwrap();
+        assert!(!r.exact && r.watertight && r.shells == 1, "{r:?}");
+        let want = std::f64::consts::PI * (225.0 * 3.0 - 169.0);
+        assert!(
+            (out.volume() - want).abs() / want < 0.12,
+            "{} vs {want}",
+            out.volume()
+        );
+        // 1.5 mm tall, the cavity only reaches the room past the top: too thick
+        let m = build::cylinder(&Frame::WORLD, 15.0, 0.0, 1.5, 64);
+        let e = shell(&m, &[top(1.5)], 2.0, &o()).unwrap_err().to_string();
+        assert!(e.contains("too thick"), "{e}");
     }
 
     #[test]
