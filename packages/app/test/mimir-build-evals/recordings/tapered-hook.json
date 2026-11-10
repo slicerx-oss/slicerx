@@ -805,12 +805,12 @@
   }
  ],
  "score": {
-  "pass": false,
-  "verdict": "fail",
+  "pass": true,
+  "verdict": "pass",
   "geometry": true,
   "built": true,
   "refused": false,
-  "extra": 1,
+  "extra": 0,
   "checks": {
    "ops": true,
    "watertight": true,

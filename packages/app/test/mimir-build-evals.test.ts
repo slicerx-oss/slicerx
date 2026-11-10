@@ -55,6 +55,25 @@ describe('build eval scoring', () => {
     expect(extraTurns(more).map((t) => t.kind)).toEqual(['sheet', 'answer', 'nudge'])
   })
 
+  it('lets one Go on a change to an approved plan through as a plan change, and counts a second', () => {
+    // the cable hook run that fixed its plan's overall size with amends after its check failed (live, 11-10)
+    const turns: UserTurn[] = [
+      { kind: 'message', text: 'a cable hook' },
+      { kind: 'sheet', title: 'Cable hook' },
+      { kind: 'go', part: 'Build cable hook from this plan?', plan: 'p1', design: 'd1' },
+      { kind: 'amend', part: 'Change the cable hook plan?', plan: 'p1', revision: 2, design: 'd1' },
+    ]
+    expect(extraTurns(turns)).toEqual([])
+    const c = BUILD_CASES.find((x) => x.id === 'cable-hook')!
+    const scored = scoreCase(c, { events: [], turns, parts: [], firstReply: '', firstBuilt: false, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 })
+    expect(scored.turns).toEqual({ pass: true, detail: 'one message, sheet and Go only, and one plan change' })
+    // a second change to the same plan is past the one fix round, so it counts; so does a Go on a plan for the same part
+    const again: UserTurn = { kind: 'amend', part: 'Change the cable hook plan?', plan: 'p1', revision: 3, design: 'd1' }
+    expect(extraTurns([...turns, again])).toEqual([again])
+    expect(scoreCase(c, { events: [], turns: [...turns, again], parts: [], firstReply: '', firstBuilt: false, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 }).turns).toEqual({ pass: false, detail: 'another plan change' })
+    expect(extraTurns([...turns, { kind: 'go', part: 'Build cable hook from this plan?', plan: 'p2', design: 'd1' }]).map((t) => t.kind)).toEqual(['go'])
+  })
+
   it('counts only steps that ran, and a revolve as partial only under a full turn', () => {
     const events: PilotEvent[] = [
       { type: 'tool_call', callId: 'a', tool: 'geom.loft', source: 'command', input: {} },
@@ -823,6 +842,12 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
         expect(r.score.bodies, JSON.stringify(r.score.bodies)).toEqual({ pass: true, detail: '2 (want 2 to 2)' })
         // in the order the run built them
         expect(r.score.sizes?.detail.replace(/ mm$/, '').split(', ').sort()).toEqual(['120 by 120 by 100', '140 by 140 by 15'])
+      }
+      if (c.id === 'tapered-hook') {
+        // its check failed on the overall size, and it changed the approved plan with amends: the Go on that change is a
+        // plan change, not another Go
+        expect(r.turns.map((t) => t.kind)).toEqual(['message', 'sheet', 'go', 'amend'])
+        expect(r.score.turns).toEqual({ pass: true, detail: 'one message, sheet and Go only, and one plan change' })
       }
     })
   }
