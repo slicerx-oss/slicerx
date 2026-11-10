@@ -196,6 +196,16 @@ describe('a new hole cut in a design', () => {
     expect(sunk.steps).toBe(4)
   }, 60_000)
 
+  it('cuts a drain hole through the floor of a wider bore round its axis line', async () => {
+    const { ok } = await client()
+    const d = (await ok<{ design: string }>('slicerx_design_new', { name: 'Cup' })).design
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, placement: { center: [10, 10] }, distance_mm: 20 })
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'circle', diameterMm: 16 }, frame: top(20), placement: { center: [10, 10] }, distance_mm: 15, operation: 'cut' })
+    // the cup's 16 mm bore holds the line, but it is not a hole on that axis: the drain goes through the 5 mm floor
+    const r = await ok<Made>('slicerx_geom_hole', { design: d, center: [13, 10, 0], axis: [0, 0, 1], diameter_mm: 2 })
+    expect(r.hole).toMatchObject({ center: [13, 10, 0], axis: [0, 0, -1], depthMm: 5, kind: 'through', head: 'none' })
+  }, 60_000)
+
   it('refuses a spot that cannot take a new hole, says what to send, and leaves the design as it was', async () => {
     const { h, ok } = await client()
     const d = (await ok<{ design: string }>('slicerx_design_new', { name: 'Boss plate' })).design

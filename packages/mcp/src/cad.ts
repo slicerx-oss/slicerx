@@ -1982,10 +1982,18 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const normal = i.face?.normal as V3 | undefined
       const axis = i.axis as V3 | undefined
       const radius = Math.max(i.diameter_mm, head?.diameter_mm ?? 0) / 2
-      // a hole already on that line is refused: changing one is geom.hole_edit's
-      const already = async (find: (req: Record<string, unknown>) => Promise<FoundHole>, from: V3, along: V3): Promise<void> => {
+      // a hole already on that axis line, where the new one would start, is refused: changing one is geom.hole_edit's.
+      // A wider hole round the line (a planter's bore over its drain holes) or one along the line past the entry is not
+      const already = async (find: (req: Record<string, unknown>) => Promise<FoundHole>, from: V3, along: V3, entry?: V3): Promise<void> => {
         const h = await find({ at: from, axis: along }).catch(() => null)
-        if (h) throw new ToolInputError(`center: a ${r3(h.diameterMm)} mm hole is on that axis already, entering at (${h.entry.map(r3).join(', ')}); to change it, use geom.hole_edit`)
+        if (!h) return
+        const a = unit(along)!
+        const d = sub(h.entry, from)
+        const off = len(sub(d, a.map((c) => c * dot(d, a)) as V3))
+        if (off > Math.max(0.05, 0.01 * h.diameterMm)) return
+        const t = entry ? dot(sub(h.entry, entry), h.axis) : 0
+        if (t < -0.05 || t > h.depthMm + 0.05) return
+        throw new ToolInputError(`center: a ${r3(h.diameterMm)} mm hole is on that axis already, entering at (${h.entry.map(r3).join(', ')}); to change it, use geom.hole_edit`)
       }
       // where the hole goes, and the cut that makes it: a circle on the entry face cut into it, as Extrude with Cut does
       const placed = async (tris: readonly Tri[], find: (req: Record<string, unknown>) => Promise<FoundHole>) => {
@@ -1996,7 +2004,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           if (axis) await already(find, at, axis)
           throw e
         }
-        await already(find, p.entry, p.into)
+        await already(find, p.entry, p.into, p.entry)
         const through = i.depth_mm === undefined || i.depth_mm >= p.wallMm - HOLE_FLAT_MM
         const deep = through ? p.wallMm : i.depth_mm!
         if (i.counterbore && i.counterbore.depth_mm >= deep) throw new ToolInputError(`counterbore: its depth_mm must be less than the hole's ${r3(deep)} mm`)
@@ -2006,7 +2014,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           placement: { center: [0, 0] as [number, number] },
           spec: { distanceMm, extent: 'oneSide' as const, operation: 'cut' as const, ...(taperDeg ? { taperDeg } : {}) },
         })
-        const cut = circle(i.diameter_mm, through ? deep + HOLE_OVERLAP_MM : deep)
+        // to a ten-thousandth of a mm, so a depth read from float32 positions reads as typed in the history
+        const cut = circle(i.diameter_mm, Math.round((through ? deep + HOLE_OVERLAP_MM : deep) * 1e4) / 1e4)
         // the head is a second cut on the same face: a wider circle for a counterbore, one narrowing to the hole for a
         // countersink (its sides drafted by half the cone's angle)
         const half = ((i.countersink?.angle_deg ?? 90) * Math.PI) / 360
@@ -2047,20 +2056,19 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const steps = d.history.steps.length
         const redo = d.redo
         await host.add(d, k, plain<StepParams>({ op: 'shape.extrude', ...p.cut }), i.label ?? `Hole ${Math.round(i.diameter_mm * 100) / 100} mm`, withFeature(i.feature))
-        let made: Record<string, unknown> | null = null
-        try {
-          const hole = await find({ at: p.entry, axis: p.into })
-          if (p.headCut) {
+        // the hole as cut, when the engine reads it as a hole (one that runs out through a round face does not)
+        const hole = await find({ at: p.entry, axis: p.into }).catch(() => null)
+        if (p.headCut) {
+          try {
             await host.add(d, k, plain<StepParams>({ op: 'shape.extrude', ...p.headCut }), headLabel, withFeature(i.feature))
-            made = readMade(hole, await find(onAxis(hole)), i)
-          } else made = plainHole(hole)
-        } catch (e) {
-          // the cut stands without a read-back; a head that did not go on takes the cut back off, so a call does all or nothing
-          if (head) {
+          } catch (e) {
+            // a head that does not go on takes the cut back off, so a call does all or nothing
             await replayChange(host, d, { ...d.history, steps: d.history.steps.slice(0, steps) }, redo)
             throw e
           }
         }
+        let made: Record<string, unknown> | null = null
+        if (hole) made = p.headCut ? await find(onAxis(hole)).then((shaft) => readMade(hole, shaft, i), () => null) : plainHole(hole)
         const out = stepOut(d, verb(p.through))
         return { summary: made ? out.summary : `${out.summary}; the hole was cut but not read back`, output: { ...out.output, part: k, hole: made } }
       }
@@ -2071,14 +2079,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const cut = (out['mesh'] as { stlPath?: string } | undefined)?.stlPath
       let made: Record<string, unknown> | null = null
       if (cut) {
-        const hole = await find(cut, { at: p.entry, axis: p.into })
+        const hole = await find(cut, { at: p.entry, axis: p.into }).catch(() => null)
         if (p.headCut) {
           out = await call('shape.extrude', { ...p.headCut, target: { stlPath: cut } })
           const headed = (out['mesh'] as { stlPath?: string } | undefined)?.stlPath
-          made = headed ? readMade(hole, await find(headed, onAxis(hole)), i) : null
-        } else made = plainHole(hole)
+          made = headed && hole ? await find(headed, onAxis(hole)).then((shaft) => readMade(hole, shaft, i), () => null) : null
+        } else made = hole && plainHole(hole)
       }
-      return { summary: verb(p.through), output: { ...out, hole: made } }
+      return { summary: made ? verb(p.through) : `${verb(p.through)}; the hole was cut but not read back`, output: { ...out, hole: made } }
     },
   })
 

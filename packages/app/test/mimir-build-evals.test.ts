@@ -819,7 +819,8 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
         // the five drain holes are in the planter's floor, and the saucer and planter stand 6.5 mm apart corner to
         // corner on the plate: each is sized on its own, though their square boxes overlap
         expect(r.score.bodies, JSON.stringify(r.score.bodies)).toEqual({ pass: true, detail: '2 (want 2 to 2)' })
-        expect(r.score.sizes?.detail).toBe('140 by 140 by 15, 120 by 120 by 100 mm')
+        // in the order the run built them
+        expect(r.score.sizes?.detail.replace(/ mm$/, '').split(', ').sort()).toEqual(['120 by 120 by 100', '140 by 140 by 15'])
       }
     })
   }
