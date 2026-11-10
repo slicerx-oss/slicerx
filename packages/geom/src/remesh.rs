@@ -804,6 +804,220 @@ fn signed_area(positions: &[V3], segs: &[(u32, u32)], flat: &impl Fn(V3) -> Poin
         / 2.0
 }
 
+/// a triangle under this area, mm^2, is a sliver: a boolean leaves them where a cut runs along a surface it nearly
+/// meets (a countersink cut again over its own cone), and f32 storage flattens the thinnest to nothing
+const SLIVER_AREA: f64 = 1e-6;
+/// the longest edge a sliver may lose: the surface moves by no more than this
+const SLIVER_EDGE: f64 = 1e-2;
+
+/// the mesh without its slivers: each loses its shortest edge that can go (collapsed onto the end that changes the
+/// volume least), or else is turned with the triangle across its long edge when both lie on one face. No triangle
+/// turns over, the mesh stays closed as it was, and the volume moves by half a billionth of the whole at most, so
+/// the two passes of a boolean's tidy stay within a billionth. None when there is no sliver or none could go.
+#[allow(clippy::too_many_lines, reason = "one pass, read top to bottom")]
+pub(crate) fn drop_slivers(mesh: &TriMesh) -> Option<TriMesh> {
+    let small = |m: &TriMesh, t: [u32; 3]| {
+        let [a, b, c] = m.corners(t);
+        vec3::len(vec3::tri_normal(a, b, c)) / 2.0 < SLIVER_AREA
+    };
+    if !mesh.triangles.iter().any(|&t| small(mesh, t)) {
+        return None;
+    }
+    let mut m = mesh.clone();
+    let mut alive = vec![true; m.triangles.len()];
+    let mut left = 5e-10 * mesh.volume().abs();
+    let mut changed = false;
+    for _ in 0..32 {
+        let mut around: Vec<Vec<usize>> = vec![Vec::new(); m.positions.len()];
+        for (t, tri) in m.triangles.iter().enumerate() {
+            if alive[t] {
+                for &v in tri {
+                    around[v as usize].push(t);
+                }
+            }
+        }
+        // a vertex whose triangles changed this pass: its list above is out of date
+        let mut busy = vec![false; m.positions.len()];
+        let mut any = false;
+        for t in 0..m.triangles.len() {
+            let tri = m.triangles[t];
+            if !alive[t] || tri.iter().any(|&v| busy[v as usize]) || !small(&m, tri) {
+                continue;
+            }
+            let p = m.corners(tri);
+            let mut by_length: Vec<usize> = (0..3).collect();
+            by_length.sort_by(|&x, &y| {
+                let lx = vec3::len(vec3::sub(p[(x + 1) % 3], p[x]));
+                let ly = vec3::len(vec3::sub(p[(y + 1) % 3], p[y]));
+                lx.total_cmp(&ly)
+            });
+            let collapse = by_length.iter().find_map(|&k| {
+                let (a, b) = (tri[k], tri[(k + 1) % 3]);
+                if vec3::len(vec3::sub(p[(k + 1) % 3], p[k])) > SLIVER_EDGE {
+                    return None;
+                }
+                [(a, b), (b, a)]
+                    .into_iter()
+                    .filter_map(|(from, to)| {
+                        collapsed(&m, &around, &alive, from, to).map(|dv| (from, to, dv))
+                    })
+                    .min_by(|x, y| x.2.abs().total_cmp(&y.2.abs()))
+                    .filter(|x| x.2.abs() <= left)
+            });
+            if let Some((from, to, dv)) = collapse {
+                left -= dv.abs();
+                for &s in &around[from as usize] {
+                    for v in m.triangles[s] {
+                        busy[v as usize] = true;
+                    }
+                    if m.triangles[s].contains(&to) {
+                        alive[s] = false;
+                    } else {
+                        for v in &mut m.triangles[s] {
+                            if *v == from {
+                                *v = to;
+                            }
+                        }
+                    }
+                }
+                any = true;
+                continue;
+            }
+            let k = by_length[2];
+            if let Some((o, turned, dv)) = turned(&m, &around, &alive, t, k)
+                && dv.abs() <= left
+            {
+                left -= dv.abs();
+                for v in m.triangles[t].into_iter().chain(m.triangles[o]) {
+                    busy[v as usize] = true;
+                }
+                [m.triangles[t], m.triangles[o]] = turned;
+                any = true;
+            }
+        }
+        changed |= any;
+        if !any {
+            break;
+        }
+    }
+    if !changed {
+        return None;
+    }
+    let keep: Vec<usize> = (0..m.triangles.len()).filter(|&t| alive[t]).collect();
+    let mut out = TriMesh::new(m.positions, keep.iter().map(|&t| m.triangles[t]).collect());
+    if let Some(f) = m.faces.as_ref().filter(|f| f.ids.len() == alive.len()) {
+        out.faces = Some(Faces {
+            ids: keep.iter().map(|&t| f.ids[t]).collect(),
+            table: f.table.clone(),
+            keys: f.keys.clone(),
+        });
+    }
+    let out = compact(out);
+    let v0 = mesh.volume();
+    (out.edge_report().is_watertight() == mesh.edge_report().is_watertight()
+        && (out.volume() - v0).abs() <= 1e-9 * v0.abs())
+    .then_some(out)
+}
+
+/// the volume change of moving `from` onto `to`, which removes the two triangles on their edge; none when that would
+/// pinch the surface (the two ends share a neighbor besides the corners across the edge) or turn a triangle over
+fn collapsed(m: &TriMesh, around: &[Vec<usize>], alive: &[bool], from: u32, to: u32) -> Option<f64> {
+    let fan = &around[from as usize];
+    let on_edge = fan.iter().filter(|&&s| m.triangles[s].contains(&to)).count();
+    if on_edge != 2 || fan.iter().any(|&s| !alive[s]) {
+        return None;
+    }
+    let near = |v: u32| -> Vec<u32> {
+        let mut n: Vec<u32> = around[v as usize]
+            .iter()
+            .flat_map(|&s| m.triangles[s])
+            .filter(|&w| w != v)
+            .collect();
+        n.sort_unstable();
+        n.dedup();
+        n
+    };
+    let theirs = near(to);
+    if near(from)
+        .iter()
+        .filter(|w| theirs.binary_search(w).is_ok())
+        .count()
+        != 2
+    {
+        return None;
+    }
+    let (f, d) = (
+        m.positions[from as usize],
+        vec3::sub(m.positions[to as usize], m.positions[from as usize]),
+    );
+    let mut dv = 0.0;
+    for &s in fan {
+        let tri = m.triangles[s];
+        let at = tri.iter().position(|&v| v == from)?;
+        let (q, r) = (tri[(at + 1) % 3], tri[(at + 2) % 3]);
+        let (pq, pr) = (m.positions[q as usize], m.positions[r as usize]);
+        dv += vec3::dot(d, vec3::cross(vec3::sub(pq, f), vec3::sub(pr, f))) / 6.0;
+        if q == to || r == to {
+            continue;
+        }
+        let before = vec3::tri_normal(f, pq, pr);
+        let after = vec3::tri_normal(m.positions[to as usize], pq, pr);
+        if vec3::len(after) <= 0.0 || vec3::dot(before, after) <= 0.0 {
+            return None;
+        }
+    }
+    Some(dv)
+}
+
+/// triangle `t` and the one across its edge `k` turned to the other diagonal, with the volume change; only within one
+/// face, onto a diagonal not already there, when neither new triangle turns over and the smaller grows
+fn turned(
+    m: &TriMesh,
+    around: &[Vec<usize>],
+    alive: &[bool],
+    t: usize,
+    k: usize,
+) -> Option<(usize, [[u32; 3]; 2], f64)> {
+    let tri = m.triangles[t];
+    let (u, v, w) = (tri[k], tri[(k + 1) % 3], tri[(k + 2) % 3]);
+    let mut across = around[u as usize]
+        .iter()
+        .copied()
+        .filter(|&s| s != t && alive[s] && m.triangles[s].contains(&v));
+    let o = across.next()?;
+    let ot = m.triangles[o];
+    if across.next().is_some()
+        || m.faces.as_ref().is_some_and(|f| f.ids.get(o) != f.ids.get(t))
+        || !(0..3).any(|j| ot[j] == v && ot[(j + 1) % 3] == u)
+    {
+        return None;
+    }
+    let x = m.triangles[o].into_iter().find(|&y| y != u && y != v)?;
+    if x == w
+        || around[w as usize]
+            .iter()
+            .any(|&s| alive[s] && m.triangles[s].contains(&x))
+    {
+        return None;
+    }
+    let new = [[w, u, x], [w, x, v]];
+    let at = |i: u32| vec3::sub(m.positions[i as usize], m.positions[u as usize]);
+    let vol = |s: [u32; 3]| vec3::dot(at(s[0]), vec3::cross(at(s[1]), at(s[2]))) / 6.0;
+    let area = |s: [u32; 3]| vec3::len(vec3::tri_normal(at(s[0]), at(s[1]), at(s[2]))) / 2.0;
+    let facing = vec3::add(
+        vec3::tri_normal(at(u), at(v), at(w)),
+        vec3::tri_normal(at(v), at(u), at(x)),
+    );
+    let worse = area(tri).min(area(m.triangles[o]));
+    if new.iter().any(|&s| {
+        vec3::dot(vec3::tri_normal(at(s[0]), at(s[1]), at(s[2])), facing) <= 0.0 || area(s) <= worse
+    }) {
+        return None;
+    }
+    let dv = vol(new[0]) + vol(new[1]) - vol(tri) - vol(m.triangles[o]);
+    Some((o, new, dv))
+}
+
 /// triangles with no area (a corner on the opposite edge) flipped away with the triangle across their long edge:
 /// (a, b, c) with c on ab and (b, a, d) across it become (a, c, d) and (c, b, d). The count flipped.
 fn drop_needles(m: &mut TriMesh) -> usize {
@@ -1005,6 +1219,53 @@ mod tests {
         let again = remesh_flat(&out, &RemeshOptions::default());
         assert!(again.edge_report().is_watertight());
         assert!(worst(&again) > 12.0, "{}", worst(&again));
+    }
+
+    /// a box with a point 20 nanometers along one of its edges from a corner, splitting the two triangles on that edge:
+    /// two of the four are slivers
+    fn sliver_box() -> TriMesh {
+        let mut m = crate::build::box_mesh([0.0; 3], [20.0, 10.0, 5.0]);
+        let [a, b, c] = m.triangles[0];
+        let o = (1..m.triangles.len())
+            .find(|&o| m.triangles[o].contains(&a) && m.triangles[o].contains(&b))
+            .unwrap();
+        let d = m.triangles[o].into_iter().find(|&v| v != a && v != b).unwrap();
+        let (pa, pb) = (m.positions[a as usize], m.positions[b as usize]);
+        let p = u32::try_from(m.positions.len()).unwrap();
+        m.positions
+            .push(vec3::add(pa, vec3::scale(vec3::sub(pb, pa), 1e-9)));
+        m.triangles[0] = [a, p, c];
+        m.triangles.push([p, b, c]);
+        m.triangles[o] = [b, p, d];
+        m.triangles.push([p, a, d]);
+        if let Some(f) = m.faces.as_mut() {
+            let (i0, io) = (f.ids[0], f.ids[o]);
+            f.ids.extend([i0, io]);
+        }
+        m
+    }
+
+    #[test]
+    fn drops_slivers_and_keeps_the_volume() {
+        let m = sliver_box();
+        assert!(m.edge_report().is_watertight());
+        let small = |m: &TriMesh| {
+            m.triangles
+                .iter()
+                .filter(|&&t| {
+                    let [a, b, c] = m.corners(t);
+                    vec3::len(vec3::tri_normal(a, b, c)) / 2.0 < SLIVER_AREA
+                })
+                .count()
+        };
+        assert_eq!(small(&m), 2);
+        let out = drop_slivers(&m).unwrap();
+        assert_eq!(small(&out), 0);
+        assert_eq!(out.triangles.len(), 12);
+        assert!(out.edge_report().is_watertight());
+        assert!((out.volume() - 1000.0).abs() < 1e-9 * 1000.0, "{}", out.volume());
+        // nothing to drop
+        assert!(drop_slivers(&out).is_none());
     }
 
     #[test]
