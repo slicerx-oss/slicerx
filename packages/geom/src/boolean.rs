@@ -457,9 +457,15 @@ pub(crate) fn stores_clean(mesh: &TriMesh) -> bool {
     !mesh.is_empty() && storage_mesh(mesh).is_ok()
 }
 
-/// a boolean's result with its flat faces filled again (remesh.rs), for results people see
+/// a boolean's result with its flat faces filled again and its slivers gone (remesh.rs), for results people see.
+/// Slivers go before the fill too: the fill can give up on a mesh full of them and leave it as it was.
 pub fn tidy(mut out: TriMesh, report: &mut BooleanReport) -> TriMesh {
-    out = crate::remesh::tidy_flat(&out, &crate::remesh::RemeshOptions::default());
+    let unslivered = |m: TriMesh| crate::remesh::drop_slivers(&m).unwrap_or(m);
+    out = unslivered(out);
+    out = unslivered(crate::remesh::tidy_flat(
+        &out,
+        &crate::remesh::RemeshOptions::default(),
+    ));
     report.triangles = out.triangles.len();
     report.volume_mm3 = out.volume();
     out
