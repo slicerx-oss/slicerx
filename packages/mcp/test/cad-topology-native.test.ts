@@ -37,7 +37,7 @@ it.skipIf(!exact)('verifies an exact scoped hole edit and refuses old revisions 
     expect(candidates).toHaveLength(1)
     expect(candidates[0]!.faceKey).not.toBeNull()
     const reference = { bodyId: design, revision: inspected.revision, part: 0, faceKey: candidates[0]!.faceKey }
-    const edited = await ok<Summary & { after: { diameterMm: number }; topology: TopologyManifest; operationResult: { status: string; verification: { status: string } } }>('slicerx_geom_hole', { design, face: { topology: reference }, diameter_mm: 4 })
+    const edited = await ok<Summary & { after: { diameterMm: number }; topology: TopologyManifest; operationResult: { status: string; verification: { status: string } } }>('slicerx_geom_hole_edit', { design, face: { topology: reference }, diameter_mm: 4 })
     expect(edited.operationResult).toMatchObject({ status: 'applied', verification: { status: 'verified' } })
     expect(edited.after.diameterMm).toBeCloseTo(4, 2)
     expect(edited.exact).toBe(true)
@@ -49,7 +49,7 @@ it.skipIf(!exact)('verifies an exact scoped hole edit and refuses old revisions 
     expect(calls).not.toContain('hole.apply')
     const stale = async (id: string) => {
       const count = calls.length
-      const result = await h.call('slicerx_geom_hole', { design: id, face: { topology: reference }, diameter_mm: 5 })
+      const result = await h.call('slicerx_geom_hole_edit', { design: id, face: { topology: reference }, diameter_mm: 5 })
       expect(result.isError, text(result)).toBe(true)
       expect(result.structuredContent).toMatchObject({ error: { code: 'stale_body', details: { operationResult: { status: 'refused' } } } })
       expect(calls).toHaveLength(count)

@@ -17,7 +17,7 @@ import { gapMm, gapSentence, nozzleOr } from './design-check'
 import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
 import type { PlanRegistry } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
-import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, partAt, partsAt, replayChange, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import type { AppLinkCaller } from './app-route'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
@@ -126,6 +126,80 @@ export function triangleAt(tris: Tri[], at: V3, normal?: V3): number {
   if (!first) throw new ToolInputError('at: no face there')
   if (near.some(({ t }) => dot(t.n, first.t.n) < 0.9999)) throw new ToolInputError('at: the point is on an edge between faces; give normal, the outward normal of the face you mean')
   return first.i
+}
+
+/** Where the line through `at` along unit `dir` crosses the triangles: how far along it, and the face's outward normal. */
+function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3 }[] {
+  const out: { s: number; n: V3 }[] = []
+  for (const t of tris) {
+    if (!(t.area > 0)) continue
+    const [a, b, c] = t.p
+    const e1 = sub(b, a)
+    const e2 = sub(c, a)
+    const p = cross(dir, e2)
+    const det = dot(e1, p)
+    // a face along the line (a hole's own wall, say) is never crossed
+    if (Math.abs(det) <= 1e-9 * len(e1) * len(e2)) continue
+    const q = sub(at, a)
+    const u = dot(q, p) / det
+    if (u < -1e-9 || u > 1 + 1e-9) continue
+    const r = cross(q, e1)
+    const v = dot(dir, r) / det
+    if (v < -1e-9 || u + v > 1 + 1e-9) continue
+    out.push({ s: dot(e2, r) / det, n: t.n })
+  }
+  return out
+}
+
+/** How far a new through hole's cut runs past the face where the material ends, so it never stops flush with it, mm. */
+const HOLE_OVERLAP_MM = 0.05
+/** The entry face holds the hole's circle when the face there is this close to the entry's plane, mm. */
+const HOLE_FLAT_MM = 0.01
+
+/**
+ * Where a new hole goes into a part, from a point on its axis line and the axis (either way round), or from a point on
+ * the face it starts at alone (the hole square to that face; `normal` says which face on an edge): its entry, where the
+ * line meets the part nearest the point, on a flat face square to the axis that holds the whole circle of `radiusMm`;
+ * `into`, the way into the material there; and `wallMm`, how far the material runs that way (through the wall the hole
+ * starts in). Anything else is refused with what is there.
+ */
+function newHolePath(tris: readonly Tri[], at: V3, axis: V3 | undefined, normal: V3 | undefined, radiusMm: number): { entry: V3; into: V3; wallMm: number } {
+  const r3 = (c: number) => Math.round(c * 1000) / 1000 || 0
+  const mm = (v: V3) => v.map(r3).join(', ')
+  const notFlat = (p: V3) => new ToolInputError(`center: the face at (${mm(p)}) is not flat across the hole's ${r3(radiusMm * 2)} mm circle (it runs off the face or onto a round one); a hole starts on a flat face, such as the top of a boss`)
+  let a: V3 | undefined
+  if (axis) a = unit(axis)
+  else {
+    try {
+      a = tris[triangleAt([...tris], at, normal)]!.n
+    } catch (e) {
+      // a point between two facets of a round face (a boss's side) is no edge to pick a side of: it is not flat
+      const near = tris.filter((t) => t.area > 0 && distance(at, t.p) <= NEAR_MM)
+      if (near.length > 1 && near.every((t) => dot(t.n, near[0]!.n) > Math.cos(Math.PI / 6))) throw notFlat(at)
+      throw e
+    }
+  }
+  if (!a) throw new ToolInputError('axis: must be a non-zero vector')
+  const hits = lineHits(tris, at, a)
+  if (!hits.length) throw new ToolInputError(`center: the hole's axis line through (${mm(at)}) meets no face of the part; give its center on the face it starts at`)
+  const first = hits.reduce((x, y) => (Math.abs(y.s) < Math.abs(x.s) ? y : x))
+  const entry = at.map((c, k) => c + a[k]! * first.s) as V3
+  const off = (Math.acos(Math.min(1, Math.abs(dot(first.n, a)))) * 180) / Math.PI
+  if (off > 1) throw new ToolInputError(`axis: the face the hole starts on at (${mm(entry)}) is ${Math.round(off)} degrees off square to the axis; a hole goes square into a flat face`)
+  const into = (dot(first.n, a) < 0 ? a : a.map((c) => -c)) as V3
+  const way = dot(a, into)
+  const exit = hits.map((h) => ({ d: (h.s - first.s) * way, n: h.n })).filter((h) => h.d > 1e-6).sort((x, y) => x.d - y.d)[0]
+  if (!exit || dot(exit.n, into) <= 0) throw new ToolInputError(`center: the part is not closed along the hole's axis from (${mm(entry)})`)
+  // the whole circle on the entry face: a hole that runs off it, or onto a round face, is refused
+  const u = unit(cross(into, Math.abs(into[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1]))!
+  const v = cross(into, u)
+  for (let k = 0; k < 8; k++) {
+    const t = (k * Math.PI) / 4
+    const q = entry.map((c, j) => c + radiusMm * (Math.cos(t) * u[j]! + Math.sin(t) * v[j]!)) as V3
+    const near = lineHits(tris, q, into).reduce<{ s: number; n: V3 } | null>((x, y) => (!x || Math.abs(y.s) < Math.abs(x.s) ? y : x), null)
+    if (!near || Math.abs(near.s) > HOLE_FLAT_MM || dot(near.n, first.n) < 0.9999) throw notFlat(entry)
+  }
+  return { entry, into, wallMm: exit.d }
 }
 
 const faceRef = z
@@ -1721,15 +1795,15 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     return { ...readHole({ ...before, diameterMm: shaft.diameterMm, depthMm: dot(sub(before.entry, far), before.axis), through: shaft.through }), ...head }
   }
 
-  const holeTool = defineTool({
-    name: 'geom.hole',
-    version: '1.3.0',
+  const holeEdit = defineTool({
+    name: 'geom.hole_edit',
+    version: '1.0.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Change a round hole already in a model or a design, as the hole tool does: a new diameter, a blind hole\'s depth, and a counterbore or a countersink at its entry. It never makes a new hole; for one, cut a circle loop with the extrude tool. Pick the hole by a point on its wall ("face", with the wall\'s normal pointing into the hole when the point is on an edge) or by "center" and "axis", a point on its axis line (its center on the face it starts at, say) and the axis either way round; a hole with a counterbore already is found by its shaft. Returns the hole as found before the change and as made after it (center, axis, diameterMm, depthMm, kind through or blind, head); a pick with no hole says what face is there. With "design" it adds the same hole step the app records, so it replays and edits like one made by hand; with a model it writes the new STL.',
+      'Change a round hole already in a model or a design, as the hole tool does: a new diameter, a blind hole\'s depth, and a counterbore or a countersink at its entry. It never makes a new hole; for one, use geom.hole. Pick the hole by a point on its wall ("face", with the wall\'s normal pointing into the hole when the point is on an edge) or by "center" and "axis", a point on its axis line (its center on the face it starts at, say) and the axis either way round; a hole with a counterbore already is found by its shaft. Returns the hole as found before the change and as made after it (center, axis, diameterMm, depthMm, kind through or blind, head); a pick with no hole says what face is there. With "design" it adds the same hole step the app records, so it replays and edits like one made by hand; with a model it writes the new STL.',
     localDescription:
-      'Change a round hole already in a model or design: a new diameter_mm, a blind hole\'s depth_mm, or a counterbore or countersink at its entry. It never makes a new hole; for one, cut a circle loop with the extrude tool. Pick it by a point on its wall (face) or by center and axis. With design it adds a step; with a model, an STL. Returns the hole before and after. More: kb.search "hole tool".',
+      'Change a round hole already in a model or design: a new diameter_mm, a blind hole\'s depth_mm, or a counterbore or countersink at its entry. It never makes a new hole; for one, use geom.hole. Pick it by a point on its wall (face) or by center and axis. With design it adds a step; with a model, an STL. Returns the hole before and after. More: kb.search "change a hole".',
     input: z.object({
       model: modelOrDesign,
       design: designArg.optional(),
@@ -1822,7 +1896,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
             catch (e) { verification = { status: 'failed', reason: e instanceof Error ? e.message : String(e) } }
             return { summary: `${out.summary}${verification.status === 'failed' ? '; the edit was applied but its read-back failed' : verification.status === 'unverified' ? '; head dimensions remain unverified' : ''}`, output: {
               ...out.output, part, before: readHole(before), after, topology: compactManifest(topology),
-              operationResult: { operation: 'geom.hole', status: 'applied', bodyId: d.id, priorRevision: reference.revision,
+              operationResult: { operation: 'geom.hole_edit', status: 'applied', bodyId: d.id, priorRevision: reference.revision,
                 revision: commit.revision, target: reference, verification,
                 measurements: { source: 'tessellation', before: readHole(before), after } },
             } }
@@ -1840,7 +1914,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
             ...(e instanceof ToolInputError ? e.details : {}),
             bodyId: bodyIdOf(i.design), currentRevision: current?.revision ?? null,
             topology: current ? compactManifest(current) : null,
-            operationResult: { operation: 'geom.hole', status: 'refused', reason: code, bodyId: bodyIdOf(i.design),
+            operationResult: { operation: 'geom.hole_edit', status: 'refused', reason: code, bodyId: bodyIdOf(i.design),
               priorRevision: reference.revision, revision: current?.revision ?? null, target: reference },
           })
         }
@@ -1858,16 +1932,155 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   // A pick that finds no hole most often means a new hole was wanted, which this tool does not make: the refusal says
   // how to make one.
-  const resize = holeTool.run.bind(holeTool)
-  holeTool.run = async (i, ctx) => {
+  const resize = holeEdit.run.bind(holeEdit)
+  holeEdit.run = async (i, ctx) => {
     try {
       return await resize(i, ctx)
     } catch (e) {
       const m = e instanceof Error ? e.message : ''
       if (!/^pick: (?:no round hole|the hole does not end)/.test(m)) throw e
-      throw new ToolInputError(`${m.replace(/\.$/, '')}. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)`, e instanceof ToolInputError ? e.code : 'invalid_input', e instanceof ToolInputError ? e.details : undefined)
+      throw new ToolInputError(`${m.replace(/\.$/, '')}. This tool changes a hole that is already there; for a new hole, use geom.hole`, e instanceof ToolInputError ? e.code : 'invalid_input', e instanceof ToolInputError ? e.details : undefined)
     }
   }
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, traceImage, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, fitCheck, interference, shell, holeTool] as PilotTool<never>[]
+  const holeMake = defineTool({
+    name: 'geom.hole',
+    version: '2.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Make a new round hole in a model or a design, a circle on the face it starts at cut into it: diameter_mm across, through the wall it starts in or depth_mm deep, with a counterbore or a countersink at its entry. Give "center", its center on the flat face it starts at (or any point on its axis line), and "axis", the hole\'s axis either way round (left out, square to the face at center); or "face", a point on that face, for a hole square to it. The whole circle, and the head\'s, must sit on that flat face. To change a hole already there, use geom.hole_edit; a hole already on that axis is refused. Returns the hole as made (center, axis, diameterMm, depthMm, kind through or blind, head). With "design" it adds a cut step, and a second one for a counterbore or a countersink; with a model it writes the new STL.',
+    localDescription:
+      'Make a new round hole of diameter_mm in a model or a design, through the wall it starts in or depth_mm deep, with a counterbore or countersink at its entry. Give center (its center on the flat face it starts at) and axis, or face (a point on that face). To change a hole already there, use geom.hole_edit. More: kb.search "make a hole".',
+    input: z.object({
+      model: modelOrDesign,
+      design: designArg.optional(),
+      feature: featureArg,
+      part: partArg.describe('With a design: the part to cut it in (default: the part its axis line meets first)'),
+      center: vec3.optional().describe('The hole\'s center on the face it starts at, mm, or any point on its axis line'),
+      axis: vec3.optional().describe('With center: the hole\'s axis, either way round (default: square to the face at center)'),
+      face: z.object({ at: vec3, normal: vec3.optional() }).optional().describe('Instead of center: {"at":[x,y,z]}, a point on the face it starts at (with "normal" on an edge); the hole goes square into it'),
+      diameter_mm: z.number().positive().max(10_000),
+      depth_mm: z.number().positive().max(10_000).optional().describe('A blind hole\'s depth from its entry; left out, it goes through the wall it starts in'),
+      counterbore: z.object({ diameter_mm: z.number().positive().max(10_000), depth_mm: z.number().positive().max(10_000) }).optional().describe('A counterbore at the entry for a screw head: wider than the hole, less deep'),
+      countersink: z.object({ diameter_mm: z.number().positive().max(10_000), angle_deg: z.number().min(30).max(90).default(90) }).optional().describe('A countersink at the entry for a flat head: its diameter on the face, and the cone\'s full angle, 30 to 90 (90 for most metric screws)'),
+      label: z.string().min(1).max(120).optional().describe('With a design: the step\'s name in the history, such as "M3 clearance"; default "Hole <diameter> mm"'),
+    }),
+    async run(i) {
+      oneOf(i)
+      // narrower than the nozzle closes up as it prints: refused as the hole tool refuses it, before the engine runs
+      const small = customHoleProblem(i.diameter_mm, nozzleOr(deps.nozzleMm?.()))
+      if (small) throw new ToolInputError(small)
+      if (i.center && i.face) throw new ToolInputError('give "center" (with "axis") or "face", not both')
+      if (!i.center && !i.face) throw new ToolInputError('center: give the hole\'s center on the face it starts at, with its axis, or "face", a point on that face')
+      if (i.face && i.axis) throw new ToolInputError('axis: a hole picked by "face" goes square into it; for another axis give "center" and "axis"')
+      if (i.counterbore && i.countersink) throw new ToolInputError('a hole takes a counterbore or a countersink, not both')
+      const head = i.counterbore ?? i.countersink
+      const headName = i.counterbore ? 'counterbore' : 'countersink'
+      if (head && head.diameter_mm <= i.diameter_mm) throw new ToolInputError(`${headName}: its diameter_mm must be more than the hole's ${r3(i.diameter_mm)} mm`)
+      const at = (i.center ?? i.face!.at) as V3
+      const normal = i.face?.normal as V3 | undefined
+      const axis = i.axis as V3 | undefined
+      const radius = Math.max(i.diameter_mm, head?.diameter_mm ?? 0) / 2
+      // a hole already on that line is refused: changing one is geom.hole_edit's
+      const already = async (find: (req: Record<string, unknown>) => Promise<FoundHole>, from: V3, along: V3): Promise<void> => {
+        const h = await find({ at: from, axis: along }).catch(() => null)
+        if (h) throw new ToolInputError(`center: a ${r3(h.diameterMm)} mm hole is on that axis already, entering at (${h.entry.map(r3).join(', ')}); to change it, use geom.hole_edit`)
+      }
+      // where the hole goes, and the cut that makes it: a circle on the entry face cut into it, as Extrude with Cut does
+      const placed = async (tris: readonly Tri[], find: (req: Record<string, unknown>) => Promise<FoundHole>) => {
+        let p: ReturnType<typeof newHolePath>
+        try {
+          p = newHolePath(tris, at, axis, normal, radius)
+        } catch (e) {
+          if (axis) await already(find, at, axis)
+          throw e
+        }
+        await already(find, p.entry, p.into)
+        const through = i.depth_mm === undefined || i.depth_mm >= p.wallMm - HOLE_FLAT_MM
+        const deep = through ? p.wallMm : i.depth_mm!
+        if (i.counterbore && i.counterbore.depth_mm >= deep) throw new ToolInputError(`counterbore: its depth_mm must be less than the hole's ${r3(deep)} mm`)
+        const circle = (diameterMm: number, distanceMm: number, taperDeg?: number) => ({
+          frame: frameFor(p.entry, p.into.map((c) => -c) as V3),
+          shape: { type: 'circle' as const, diameterMm },
+          placement: { center: [0, 0] as [number, number] },
+          spec: { distanceMm, extent: 'oneSide' as const, operation: 'cut' as const, ...(taperDeg ? { taperDeg } : {}) },
+        })
+        const cut = circle(i.diameter_mm, through ? deep + HOLE_OVERLAP_MM : deep)
+        // the head is a second cut on the same face: a wider circle for a counterbore, one narrowing to the hole for a
+        // countersink (its sides drafted by half the cone's angle)
+        const half = ((i.countersink?.angle_deg ?? 90) * Math.PI) / 360
+        const headCut = i.counterbore
+          ? circle(i.counterbore.diameter_mm, i.counterbore.depth_mm)
+          : i.countersink
+            ? circle(i.countersink.diameter_mm, (i.countersink.diameter_mm - i.diameter_mm) / 2 / Math.tan(half), i.countersink.angle_deg / 2)
+            : undefined
+        if (i.countersink && headCut!.spec.distanceMm >= deep) throw new ToolInputError(`countersink: its cone, ${r3(headCut!.spec.distanceMm)} mm deep, must be less deep than the hole's ${r3(deep)} mm`)
+        return { ...p, through, cut, headCut }
+      }
+      const headLabel = head ? `${headName === 'counterbore' ? 'Counterbore' : 'Countersink'} ${Math.round(head.diameter_mm * 100) / 100} mm` : ''
+      const verb = (through: boolean) => `Made a ${r3(i.diameter_mm)} mm ${through ? 'through' : 'blind'} hole${head ? ` with a ${headName}` : ''}`
+      const plainHole = (h: FoundHole) => ({ ...readHole(h), head: 'none' })
+      const onAxis = (h: FoundHole) => ({ at: h.entry, axis: h.axis })
+      if (i.design) {
+        const d = designOf(i.design)
+        const tris = d.parts.map((x) => partTriangles(bakeMesh(x, d.transform)))
+        const findIn = (k: number) => (req: Record<string, unknown>) => findHole((r) => engine('hole.find', r), { mesh: item(d, k), ...req })
+        if (i.part !== undefined && !tris[i.part]) throw new ToolInputError(`part: the design has ${tris.length} part${tris.length === 1 ? '' : 's'}`)
+        let part = i.part
+        if (part === undefined && axis) {
+          const a = unit(axis)
+          if (!a) throw new ToolInputError('axis: must be a non-zero vector')
+          const first = tris.map((t, k) => ({ k, s: Math.min(...lineHits(t, at, a).map((h) => Math.abs(h.s))) })).filter((x) => Number.isFinite(x.s)).sort((x, y) => x.s - y.s)[0]
+          if (!first) {
+            // the line runs down a hole's middle and meets no face
+            for (const k of tris.keys()) await already(findIn(k), at, a)
+            throw new ToolInputError(`center: the hole's axis line through (${at.map(r3).join(', ')}) meets no part of the design; give its center on the face it starts at`)
+          }
+          part = first.k
+        }
+        part ??= faceAt(d, at, normal).part
+        const k = part
+        const find = findIn(k)
+        const p = await placed(tris[k]!, find)
+        const host = designs()
+        const steps = d.history.steps.length
+        const redo = d.redo
+        await host.add(d, k, plain<StepParams>({ op: 'shape.extrude', ...p.cut }), i.label ?? `Hole ${Math.round(i.diameter_mm * 100) / 100} mm`, withFeature(i.feature))
+        let made: Record<string, unknown> | null = null
+        try {
+          const hole = await find({ at: p.entry, axis: p.into })
+          if (p.headCut) {
+            await host.add(d, k, plain<StepParams>({ op: 'shape.extrude', ...p.headCut }), headLabel, withFeature(i.feature))
+            made = readMade(hole, await find(onAxis(hole)), i)
+          } else made = plainHole(hole)
+        } catch (e) {
+          // the cut stands without a read-back; a head that did not go on takes the cut back off, so a call does all or nothing
+          if (head) {
+            await replayChange(host, d, { ...d.history, steps: d.history.steps.slice(0, steps) }, redo)
+            throw e
+          }
+        }
+        const out = stepOut(d, verb(p.through))
+        return { summary: made ? out.summary : `${out.summary}; the hole was cut but not read back`, output: { ...out.output, part: k, hole: made } }
+      }
+      const stlPath = await path(i.model!)
+      const find = (mesh: string, req: Record<string, unknown>) => findHole((r) => call('hole.find', r), { mesh: { stlPath: mesh }, ...req })
+      const p = await placed(triangles(stlPath), (req) => find(stlPath, req))
+      let out = await call('shape.extrude', { ...p.cut, target: { stlPath } })
+      const cut = (out['mesh'] as { stlPath?: string } | undefined)?.stlPath
+      let made: Record<string, unknown> | null = null
+      if (cut) {
+        const hole = await find(cut, { at: p.entry, axis: p.into })
+        if (p.headCut) {
+          out = await call('shape.extrude', { ...p.headCut, target: { stlPath: cut } })
+          const headed = (out['mesh'] as { stlPath?: string } | undefined)?.stlPath
+          made = headed ? readMade(hole, await find(headed, onAxis(hole)), i) : null
+        } else made = plainHole(hole)
+      }
+      return { summary: verb(p.through), output: { ...out, hole: made } }
+    },
+  })
+
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, traceImage, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, fitCheck, interference, shell, holeMake, holeEdit] as PilotTool<never>[]
 }

@@ -144,7 +144,7 @@ it.skipIf(!exact || noSx())('replays an exact bracket hole edit through a later 
   await rectangle(10, 30, [5, 15], 3)
   await ok('slicerx_geom_boolean', { design: d, op: 'union', part: 0, with_parts: [1] })
   await ok('slicerx_geom_extrude', { design: d, shape: { type: 'circle', diameterMm: 3 }, frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, placement: { center: [5, 5] }, distance_mm: 3, operation: 'cut' })
-  await ok('slicerx_geom_hole', { design: d, center: [5, 5, 3], axis: [0, 0, -1], diameter_mm: 4 })
+  await ok('slicerx_geom_hole_edit', { design: d, center: [5, 5, 3], axis: [0, 0, -1], diameter_mm: 4 })
   await rectangle(6, 8, [50, 5], 4)
   await ok('slicerx_geom_cut', { design: d, part: 0, plane: { axis: 'z', at: 2 }, keep: 'below' })
   const diameter = async (design: string, diameter: number) => {

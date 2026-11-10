@@ -138,18 +138,18 @@ describe('the request the tab sends for the headphone stand', () => {
   })
 
   // the live baseline: the cable hook asked which screws, the stand asked for its sizes in words and needed a nudge, and
-  // two parts tried geom.hole for a new hole
+  // two parts tried geom.hole for a new hole, which it now makes; resizing one is geom.hole_edit
   it.each(MODELS)('on a %s model, defaults a screw, takes the sheet as the size question, and cuts new holes', async (_name, pref) => {
     const r = await standRequest(pref)
     const { system } = r
     expect(system).not.toMatch(/never fill it with a guess/)
     expect(system).toMatch(/screw they did not name is a common one from parts\.lookup/)
     expect(system).toMatch(/When asked for the sizes first, the sheet is that question/)
-    expect(system).toMatch(/a new hole is a circle cut\), geom\.hole to resize a hole/)
+    expect(system).toMatch(/geom\.hole for a new round hole, geom\.hole_edit to resize one/)
     // the rerun bound an empty sheet before building anything
     expect(system).toMatch(/Once the part is built, never before, tie the sheet's sizes to the steps they set with pilot\.sheet_bind, a row for each size that sets one step; skip it when none does/)
     const hole = r.tools.find((t) => t.name === 'geom__hole')!
-    expect(hole.description).toMatch(/It never makes a new hole; for one, cut a circle loop with the extrude tool/)
+    expect(hole.description).toMatch(/^Make a new round hole .*To change a hole already there, use geom\.hole_edit/)
   })
 })
 
@@ -277,8 +277,8 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
 })
 
 // Calls the live baseline made that the tools turned down, replayed through the tab: a design named by its title, a
-// join given a target as well as the design, and geom.hole picked on a boss to make a new hole. Each now builds, or
-// is turned down with what to send instead, so the next call can be right.
+// join given a target as well as the design, and geom.hole picked on the round side of a boss to make a new hole. Each
+// now builds, or is turned down with what to send instead, so the next call can be right.
 describe.skipIf(!liveEngine)('baseline refusals replayed in the tab', () => {
   beforeAll(async () => setGeomProvider(await wasmGeom()))
   afterAll(() => setGeomProvider(null))
@@ -334,6 +334,6 @@ describe.skipIf(!liveEngine)('baseline refusals replayed in the tab', () => {
     expect(seen['unknown target']?.ok).toBe(false)
     expect(seen['unknown target']?.text).toMatch(/leave target out and give part, one of 0 \(Body\)/)
     expect(seen['hole on a boss']?.ok).toBe(false)
-    expect(seen['hole on a boss']?.text).toMatch(/for a new hole, cut a circle loop with the extrude tool \(operation cut\)/)
+    expect(seen['hole on a boss']?.text).toMatch(/is not flat across the hole's 3 mm circle .*a hole starts on a flat face, such as the top of a boss/)
   })
 })

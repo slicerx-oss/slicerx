@@ -149,7 +149,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.boolean': 'edit',
   'geom.fillet': 'edit',
   'geom.chamfer': 'edit',
+  // a new hole cut in a part, and changing a hole already there
   'geom.hole': 'edit',
+  'geom.hole_edit': 'edit',
   'geom.shell': 'edit',
   'geom.info': 'read',
   'geom.measure': 'read',

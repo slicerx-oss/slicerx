@@ -155,6 +155,8 @@ describe('the set a request picks', () => {
     expect(turnSetsOf({ name: 'geom.sweep' })).toEqual(new Set(['build']))
     expect(turnSetsOf({ name: 'geom.revolve' })).toEqual(new Set(['build']))
     expect(turnSetsOf({ name: 'geom.hole' })).toEqual(new Set(['build']))
+    // a new part's holes are cut while it is built; changing a hole already there is an edit
+    expect(turnSetsOf({ name: 'geom.hole_edit' })).toEqual(new Set(['edit']))
     // projecting a face or edges into a sketch needs a part already built, so it is an edit, beside the sketch tools
     // and edge picks it needs, and never a new part's step
     expect(turnSetsOf({ name: 'design.sketch_project' })).toEqual(new Set(['edit']))

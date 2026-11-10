@@ -73,7 +73,7 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
   it('lists the CAD tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'loft', 'sweep', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell', 'hole']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'loft', 'sweep', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell', 'hole', 'hole_edit']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('extrudes a rectangle, then cuts a hole into its top face', async () => {
@@ -147,7 +147,7 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
     const model = data<{ output: MeshOut }>(drilled).output.mesh.stlPath
     type Read = { center: V3; axis: V3; diameterMm: number; depthMm: number; kind: string; head?: string }
 
-    const r = await h.call('slicerx_geom_hole', { model, center: [15, 10, 5], axis: [0, 0, 1], diameter_mm: 3.4, countersink: { diameter_mm: 6.5 } })
+    const r = await h.call('slicerx_geom_hole_edit', { model, center: [15, 10, 5], axis: [0, 0, 1], diameter_mm: 3.4, countersink: { diameter_mm: 6.5 } })
     expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
     const out = data<{ output: MeshOut & { before: Read; after: Read } }>(r).output
     expect(out.before).toEqual({ center: [15, 10, 5], axis: [0, 0, 1], diameterMm: 6, depthMm: 5, kind: 'through' })
@@ -156,12 +156,35 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
     expect(out.mesh.stlPath).not.toBe(model)
 
     // a point on the wall picks the same hole; a point on the top face is not a hole
-    const wall = await h.call('slicerx_geom_hole', { model, face: { at: [18, 10, 2.5], normal: [-1, 0, 0] }, diameter_mm: 8 })
+    const wall = await h.call('slicerx_geom_hole_edit', { model, face: { at: [18, 10, 2.5], normal: [-1, 0, 0] }, diameter_mm: 8 })
     expect(wall.isError, JSON.stringify(wall.content)).toBeFalsy()
     expect(data<{ output: { before: Read; after: Read } }>(wall).output.after).toMatchObject({ diameterMm: 8, kind: 'through', head: 'none' })
-    const flat = await h.call('slicerx_geom_hole', { model, face: { at: [5, 5, 5] }, diameter_mm: 8 })
+    const flat = await h.call('slicerx_geom_hole_edit', { model, face: { at: [5, 5, 5] }, diameter_mm: 8 })
     expect(flat.isError).toBe(true)
     expect(JSON.stringify(flat.content)).toMatch(/the pick is on a flat face/)
+  })
+
+  it('cuts a new hole in an STL, countersunk through or blind, and refuses one where a hole already is', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    const model = data<{ output: MeshOut }>(await h.call('slicerx_geom_extrude', { shape: rect, placement: place, distance_mm: 5 })).output.mesh.stlPath
+    type Read = { center: V3; axis: V3; diameterMm: number; depthMm: number; kind: string; head?: string }
+
+    const r = await h.call('slicerx_geom_hole', { model, center: [15, 10, 5], axis: [0, 0, 1], diameter_mm: 3.4, countersink: { diameter_mm: 6.5 } })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const out = data<{ output: MeshOut & { hole: Read } }>(r).output
+    expect(out.hole).toMatchObject({ center: [15, 10, 5], axis: [0, 0, 1], depthMm: 5, kind: 'through', head: 'countersink', countersink: { diameterMm: 6.5, angleDeg: 90 } })
+    expect(out.hole.diameterMm).toBeCloseTo(3.4, 2)
+    expect(out.watertight).toBe(true)
+    expect(out.mesh.stlPath).not.toBe(model)
+
+    // a point on a face alone: square into it, to a depth
+    const blind = await h.call('slicerx_geom_hole', { model: out.mesh.stlPath, face: { at: [5, 5, 5] }, diameter_mm: 3, depth_mm: 2 })
+    expect(blind.isError, JSON.stringify(blind.content)).toBeFalsy()
+    expect(data<{ output: { hole: Read } }>(blind).output.hole).toMatchObject({ center: [5, 5, 5], axis: [0, 0, 1], depthMm: 2, kind: 'blind', head: 'none' })
+    // the hole made first is there already: changing it is geom.hole_edit's
+    const again = await h.call('slicerx_geom_hole', { model: out.mesh.stlPath, center: [15, 10, 5], axis: [0, 0, 1], diameter_mm: 4 })
+    expect(again.isError).toBe(true)
+    expect(JSON.stringify(again.content)).toMatch(/hole is on that axis already.*use geom\.hole_edit/)
   })
 
   it('runs union, subtract and intersect', async () => {

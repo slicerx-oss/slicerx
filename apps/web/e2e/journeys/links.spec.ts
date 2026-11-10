@@ -502,7 +502,7 @@ test('scoped exact hole edits use app revisions across a visible undo', async ({
         const faces = read.faces.filter((f) => f.part === 0 && f.surfaceType === 'cylinder' && f.ambiguity === 'none')
         expect(faces).toHaveLength(1)
         const reference = { bodyId: design, revision: read.revision, part: 0, faceKey: faces[0]!.faceKey }
-        const edited = await editor.ok('geom_hole', { design, face: { topology: reference }, diameter_mm: 4 })
+        const edited = await editor.ok('geom_hole_edit', { design, face: { topology: reference }, diameter_mm: 4 })
         expect(edited.operationResult).toMatchObject({ status: 'applied', verification: { status: 'verified' } })
         expect(edited.after.diameterMm).toBeCloseTo(4, 2)
         expect(edited.parts[1]).toEqual(before.parts[1])
@@ -512,7 +512,7 @@ test('scoped exact hole edits use app revisions across a visible undo', async ({
         expect(undone.revision).not.toBe(read.revision)
         expect(undone.revision).not.toBe(edited.topology.revision)
         expect(undone.faces.find((f) => f.part === 0 && f.surfaceType === 'cylinder')?.dimensions.diameterMm).toBeCloseTo(3, 2)
-        const stale = await editor.call('geom_hole', { design, face: { topology: reference }, diameter_mm: 5 })
+        const stale = await editor.call('geom_hole_edit', { design, face: { topology: reference }, diameter_mm: 5 })
         expect(stale).toMatchObject({ isError: true, structuredContent: { error: { code: 'stale_body', details: { operationResult: { status: 'refused' } } } } })
         expect((await topology()).revision).toBe(undone.revision)
         expect(fallbacks).toEqual([])

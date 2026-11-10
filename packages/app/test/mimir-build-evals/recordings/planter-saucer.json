@@ -519,7 +519,7 @@
    "text": "The planter body is built. Next I'll add the five drain holes, one step each, on a 20 mm radius circle in the bottom.",
    "calls": [
     {
-     "name": "geom.hole",
+     "name": "geom.hole_edit",
      "args": {
       "design": "obj_mw91bcqgd1",
       "center": [

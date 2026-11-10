@@ -4,8 +4,9 @@
 // A part made in the tab stands on the bed with room for its skirt. A tab joined to it through the tab's geom.extrude
 // pushes the skirt past the bed edge, so the part lands again the way a new part lands, and the step says how far it
 // moved. The move lands the design as a whole: its coordinates stay the design's, so a hole made another size through
-// geom.hole finds the hole where the design put it, wherever the part went on the plate. Runs against the geometry
-// engine (live wasm when built, recorded replies otherwise).
+// geom.hole_edit finds the hole where the design put it, wherever the part went on the plate, and geom.hole cuts a new
+// one where the design's coordinates say. Runs against the geometry engine (live wasm when built, recorded replies
+// otherwise).
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -51,9 +52,15 @@ describe('a step through the tools of the tab that pushes the skirt of a part of
     expect([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]).toEqual([128, 128])
     // on the plate the hole moved with the part, from (215, 115) to (118, 128); in the design's coordinates it is where
     // it was made. A step that keeps the part on the bed moves nothing
-    const r = await run<{ landed?: string; after: { center: number[]; diameterMm: number } }>('geom.hole', { design: d, center: [215, 115, 5], axis: [0, 0, -1], diameter_mm: 3.4, counterbore: { diameter_mm: 6.5, depth_mm: 3 } })
+    const r = await run<{ landed?: string; after: { center: number[]; diameterMm: number } }>('geom.hole_edit', { design: d, center: [215, 115, 5], axis: [0, 0, -1], diameter_mm: 3.4, counterbore: { diameter_mm: 6.5, depth_mm: 3 } })
     expect(r.output.landed).toBeUndefined()
     r.output.after.center.forEach((v, k) => expect(v).toBeCloseTo([215, 115, 5][k]!, 3))
     expect(r.output.after.diameterMm).toBeCloseTo(3.4, 3)
+    // a new hole in the tab, by the design's coordinates, lands on the part where it went
+    const cut = await run<{ landed?: string; hole: { center: number[]; depthMm: number; kind: string } }>('geom.hole', { design: d, center: [240, 115, 5], axis: [0, 0, 1], diameter_mm: 4 })
+    expect(cut.output.landed).toBeUndefined()
+    expect(cut.output.hole).toMatchObject({ center: [240, 115, 5], kind: 'through' })
+    // through the tab, whose join left its bottom 0.01 mm under the bed
+    expect(cut.output.hole.depthMm).toBeCloseTo(5, 1)
   })
 })

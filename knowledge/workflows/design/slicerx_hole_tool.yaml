@@ -1,13 +1,14 @@
 kind: guide
 schema_version: 1
 id: slicerx_hole_tool
-name: The hole tool (geom.hole) in SlicerX designs
-aliases: [hole tool, geom.hole, resize a hole, change a hole, counterbore, countersink, blind hole, hole depth, screw head recess]
+name: Changing a hole (geom.hole_edit) in SlicerX designs
+aliases: [hole tool, geom.hole_edit, resize a hole, change a hole, edit a hole, add a counterbore, add a countersink, hole depth, screw head recess]
 applies_to: [all]
 summary: >
-  geom.hole changes a round hole already in a model or a design, as the hole
-  tool in the app does: a new diameter, a blind hole's depth, and a
-  counterbore or a countersink at its entry.
+  geom.hole_edit changes a round hole already in a model or a design, as the
+  hole tool in the app does: a new diameter, a blind hole's depth, and a
+  counterbore or a countersink at its entry. It never makes a new hole;
+  geom.hole does that.
 facts:
   - {text: "Pick the hole by a point on its wall (face). When the point is on an edge, give the wall's normal pointing into the hole.", src: [slicerx_app_cad]}
   - {text: "Or pick it by center and axis: a point on its axis line (its center on the face it starts at, say) and the axis either way round. The end nearest the point is the entry.", src: [slicerx_app_cad]}
@@ -15,7 +16,7 @@ facts:
   - {text: "Left out, diameter_mm keeps the hole's own diameter. depth_mm sets a blind hole's depth from its entry; a through hole stays through.", src: [slicerx_app_cad]}
   - {text: "A counterbore (diameter_mm and depth_mm) is wider than the hole and less deep, for a screw head. A countersink takes its diameter on the face and the cone's full angle, 90 for most metric screws. A hole takes one or the other, not both.", src: [slicerx_app_cad]}
   - {text: "A hole narrower than the nozzle closes up as it prints, so it is refused before anything changes.", src: [slicerx_app_cad]}
-  - {text: "It returns the hole as found before the change and as made after it: center, axis, diameterMm, depthMm, kind (through or blind) and head. A pick with no hole there says what face is there instead.", src: [slicerx_app_cad]}
+  - {text: "It returns the hole as found before the change and as made after it: center, axis, diameterMm, depthMm, kind (through or blind) and head. A pick with no hole there says what face is there instead, and that a new hole is geom.hole's.", src: [slicerx_app_cad]}
   - {text: "With design it adds the same hole step the app records, so it replays and edits like one made by hand, named by label (default \"Hole <diameter> mm\"). With a model it writes the new STL.", src: [slicerx_app_cad]}
 pilot_actions:
   - "Give what the hole becomes: at least one of diameter_mm, depth_mm, counterbore or countersink."
