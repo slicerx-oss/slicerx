@@ -3,6 +3,7 @@
 // A plan's sizes against the printer's floors before Go: design.plan raises a print-in-place gap, a wall, a pin or a
 // hole under the smallest this printer makes, with a line on the card saying why, and leaves a plan that is already
 // fine as it was; design.put_plan names such sizes and keeps the client's plan as given.
+import { readFileSync } from 'node:fs'
 import type { DesignHost } from '@slicerx/cad-history'
 import type { AskAnswer, ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
@@ -240,11 +241,29 @@ describe('a hinge or pin plan states how it prints', () => {
     // pieces named in printInPlace print assembled; printInPlace false says they print apart
     expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'] })).toBeNull()
     expect(jointProblem({ ...unsaid, printInPlace: false })).toBeNull()
-    expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'], assumptions: ['The lid prints laid apart beside the box.'] })).toBe(LID_ONE_WAY)
+    // named pieces laid out apart print open on their hinges; printed separately to put together still says both
+    expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'], assumptions: ['The lid prints laid apart beside the box.'] })).toBeNull()
+    expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'], assumptions: ['The pin is printed separately and pushed in.'] })).toBe(LID_ONE_WAY)
     // a recorded flexi fish: print in place in its name, a pin per joint, and printed flat on the bed
     const fish: PlanInput = { ...unsaid, part: 'Flexi fish, print in place', features: [{ name: 'Joint pin sockets', sizes: { joint_pin_diameter: 3 } }], assumptions: ['Printed flat on the bed, side profile up, no supports needed.'] }
     expect(jointProblem(fish)).toBeNull()
     expect(jointProblem({ ...unsaid, assumptions: ['The box is laid flat on the bed.'] })).toBe(LID_STATEMENT)
+  })
+
+  it('takes the recorded hinged box and infinity cube, laid open on their hinges, and still refuses one that says both', async () => {
+    // both name their pieces in printInPlace and lay them out 10 mm apart to print open (their 11-09 captures' plans)
+    const recorded = JSON.parse(readFileSync(new URL('./fixtures/open-layout-plans.json', import.meta.url), 'utf8')) as Record<string, PlanInput>
+    for (const id of ['hinge-box', 'infinity-cube']) {
+      const input = recorded[id]!
+      expect(Array.isArray(input.printInPlace), id).toBe(true)
+      expect(jointProblem(input), id).toBeNull()
+      expect((await plan(input)).answer.accepted, id).toBe(true)
+    }
+    const card = createCardPlans(createPlanRegistry())
+    const tool = card.planTool({ newId: () => 'plan-1' })
+    const ctx = { ask: async () => ({ id: planChoiceId(PLAN_GO, 'plan-1') }) } as unknown as ToolContext
+    const both: PlanInput = { ...unsaid, printInPlace: ['Box', 'Lid'], assumptions: ['The lid prints on its hinge, and the hinge pin is printed separately to push in after.'] }
+    await expect(tool.run(tool.input.parse(both) as never, ctx)).rejects.toThrow(`assumptions: ${LID_ONE_WAY}`)
   })
 
   it('design.put_plan keeps such a plan and names the missing statement', async () => {
