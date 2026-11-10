@@ -4,7 +4,8 @@
 import type { EasyGoal, EasySettings, PrintConfig, SettingValue, SpeedPreset, SupportMode } from '@slicerx/contracts'
 import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, SwitchRow, tipAttrs, type IconName } from '@slicerx/ui'
 import { lazy, Suspense, useMemo, useState } from 'react'
-import { easyConfig, easyConfigFor, goalEasy, goalKeys, GOALS, inferEasy, matchGoal, resolveConfig } from '../../adapters/config'
+import { strengthOutcome } from '@slicerx/settings/easy'
+import { easyConfig, easyConfigFor, goalEasy, goalKeys, GOALS, goalShows, inferEasy, matchGoal, resolveConfig } from '../../adapters/config'
 import { goalEstimate, goalSubtitle } from '../../lib/estimate-line'
 import { goalEdits, goalEditsTip } from '../../lib/goal-edits'
 import { choicePatch, chosenFrom, FIXED_HEIGHTS, SLEIPNIR, SLEIPNIR_LINE, type LayerChoice } from '../../lib/layer-choice'
@@ -21,6 +22,9 @@ import './goal-tiles.css'
 
 // The layer height editor loads when it opens, so the startup shell stays small.
 const LayerProfileEditor = lazy(() => import('./layer-profile-editor').then((m) => ({ default: m.LayerProfileEditor })))
+
+/** The walls at the Strength slider's two ends, from the rules a slice applies. */
+const STRENGTH_ENDS = [strengthOutcome(0).walls, strengthOutcome(100).walls] as const
 
 const GOAL_OPTIONS = [
   { value: 'draft', label: 'Draft', icon: 'preset-draft', testId: 'slice-goal-draft' },
@@ -151,7 +155,7 @@ export function EasySettingsPanel() {
   const phone = usePhoneLayout()
   // What each goal gives on this printer and nozzle: the printer's own tier presets, else SlicerX's goals.
   const goalValues = profile?.goalValues
-  const subtitles = useMemo(() => Object.fromEntries(GOALS.map((g) => [g, goalSubtitle(g, goalValues?.[g] ?? easyConfig(goalEasy(g)))])) as Record<EasyGoal, string>, [goalValues, profile])
+  const subtitles = useMemo(() => Object.fromEntries(GOALS.map((g) => [g, goalSubtitle(g, goalShows(g, goalValues))])) as Record<EasyGoal, string>, [goalValues, profile])
   // About how long and how much from the last slice: the picked tile's tooltip says it.
   const line = useApp((s) => goalEstimate(shownSlice(s.slice)))
   const edits = useMemo(() => (goal === 'custom' ? goalEdits(resolveConfig(easy, overrides), goalBase) : []), [goal, goalBase, easy, overrides, profile])
@@ -279,8 +283,8 @@ export function EasySettingsPanel() {
         </div>
         <Range id="easy-strength" onPointerDown={beginLiveEdit} min={0} max={100} step={5} value={strengthAt} onChange={(strength) => pick({ strength }, keys.strength)} aria-valuetext={`${walls} walls, ${infill} percent infill`} />
         <div className="ticks">
-          <span>2 walls</span>
-          <span>6 walls</span>
+          <span>{STRENGTH_ENDS[0]} walls</span>
+          <span>{STRENGTH_ENDS[1]} walls</span>
         </div>
       </div>
 

@@ -126,6 +126,14 @@ export function easyConfigFor(easy: EasySettings, controls: readonly string[]): 
 export const GOALS: readonly EasyGoal[] = ['draft', 'standard', 'fine', 'strong']
 
 /**
+ * What `goal` gives on the printer in use, for the words that name it (the Goal tiles' subtitles, the palette's Goal
+ * commands): the printer's own preset for that tier when it has one (`goalValues`, from the profile), else SlicerX's.
+ */
+export function goalShows(goal: EasyGoal, goalValues?: Readonly<Partial<Record<EasyGoal, Record<string, SettingValue>>>>): Record<string, SettingValue> {
+  return goalValues?.[goal] ?? (easyConfig(goalEasy(goal)) as Record<string, SettingValue>)
+}
+
+/**
  * What picking `goal` gives on this printer: its Easy values with nothing moved by the person and no overrides. With a
  * maker preset, the layer is the one built for the tier in use, so this holds for that goal (the plate's base goal).
  */
