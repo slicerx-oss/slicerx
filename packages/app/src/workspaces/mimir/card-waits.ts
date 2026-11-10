@@ -13,6 +13,11 @@ export function cardWaits(t: Transcript): boolean {
   return t.status === 'running' && t.turns.some((turn) => turn.blocks.some((b) => (b.kind === 'approval' && b.resolution === null && !b.replay) || (b.kind === 'choice' && b.picked === null && !b.replay)))
 }
 
+/** The ids of every card in the conversation still waiting for the person: approvals, questions and size sheets. */
+export function waitingCards(t: Transcript): string[] {
+  return t.turns.flatMap((turn) => turn.blocks.flatMap((b) => (((b.kind === 'approval' && b.resolution === null) || (b.kind === 'choice' && b.picked === null) || (b.kind === 'sheet' && b.answer === null)) && !b.replay ? [b.id] : [])))
+}
+
 /** The newest question card (a choice, a plan or a printer pick) waiting in a running reply, or null. */
 export function openChoice(t: Transcript): { askId: string; title: string; question: string; choices: { id: string; label: string }[] } | null {
   if (t.status !== 'running') return null
