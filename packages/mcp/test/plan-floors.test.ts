@@ -237,6 +237,33 @@ describe('a hinge or pin plan states how it prints', () => {
     expect(unstatedJoint({ part: 'Pencil box', units: 'mm', features: [{ name: 'Tray', sizes: { wall: 2 } }], assumptions: [] })).toBe(false)
   })
 
+  it('leaves a rod with no hinge and no lid alone, and still asks a lid on a pin', async () => {
+    // the cable hook build eval's plan (live runs on 11-10, refused with the lid line): a 10 mm round rod bent into a J
+    // on a screwed plate, nothing that moves
+    const hook: PlanInput = {
+      part: 'Cable hook',
+      units: 'mm',
+      features: [
+        { name: 'Base plate', kind: 'extrude', sizes: { length: 40, width: 40, thickness: 5 } },
+        { name: 'J rod', kind: 'sweep', sizes: { rod_diameter: 10, rise: 60, bend_radius: 20 } },
+        { name: 'Screw holes', kind: 'hole', sizes: { hole_diameter: 4.5, spacing: 24 } },
+      ],
+      assumptions: ['The rod rises from the middle of the plate and bends over toward +X.'],
+      questions: [],
+    }
+    expect(jointProblem(hook)).toBeNull()
+    expect((await plan(hook)).answer.accepted).toBe(true)
+    for (const name of ['Hook rod', 'Shaft', 'Axle', 'Dowel', 'Rod']) {
+      expect(jointProblem({ ...hook, features: [...hook.features.slice(0, 1), { ...hook.features[1]!, name }] }), name).toBeNull()
+    }
+    // a pin beside a lid, with no hinge named, still says how it prints; a hinge alone still does too
+    const pinnedLid: PlanInput = { part: 'Pill box', units: 'mm', features: [{ name: 'Box', sizes: { wall: 2 } }, { name: 'Lid', sizes: { wall: 2 } }, { name: 'Pin', sizes: { pin_diameter: 3 } }], assumptions: [], questions: [] }
+    expect(jointProblem(pinnedLid)).toBe(LID_STATEMENT)
+    expect(jointProblem({ ...pinnedLid, part: 'Lidded pill box', features: [pinnedLid.features[0]!, pinnedLid.features[2]!] })).toBe(LID_STATEMENT)
+    expect(jointProblem({ ...hook, part: 'Hinged cable hook' })).toBe(LID_STATEMENT)
+    expect(jointProblem({ ...hook, features: [...hook.features, { name: 'Hinge knuckle', sizes: { knuckle_length: 8 } }] })).toBe(LID_STATEMENT)
+  })
+
   it('reads printInPlace as the statement, and printed flat as how the part lies, not apart', async () => {
     // pieces named in printInPlace print assembled; printInPlace false says they print apart
     expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'] })).toBeNull()

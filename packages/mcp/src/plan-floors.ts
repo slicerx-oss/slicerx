@@ -169,21 +169,27 @@ function printedSeparately(text: string): boolean {
   return false
 }
 
+/** A lid in a plan's part or a feature's name: a pin piece turns in one only beside a lid. */
+const LID = /\blid(?:s|ded)?\b/i
+
 /**
  * What a plan with a hinge or a pin of its own (its part or a feature names a hinge, or a feature is named as a pin,
- * rod, axle, shaft or dowel) leaves the build to guess about how it prints: LID_STATEMENT when it says neither in place
+ * rod, axle, shaft or dowel and its part or a feature names a lid) leaves the build to guess about how it prints. A pin
+ * piece with no hinge and no lid is a solid part of the build (a cable hook's rod, a stand's axle), with nothing to print
+ * assembled or apart. LID_STATEMENT when it says neither in place
  * (printsInPlace, which reads printInPlace too) nor apart (printInPlace false, or its part or an assumption says the
  * pieces print separately or, unless printInPlace names them, are laid out apart), LID_ONE_WAY when it says both, else
  * null.
  */
 export function jointProblem(plan: FloorPlan): string | null {
+  const named = (re: RegExp) => re.test(plan.part) || plan.features.some((f) => re.test(f.name))
   const pinPiece = plan.features.some((f) => keyWords(f.name).some((w) => PIN_WORDS.has(w) && w !== 'peg'))
-  if (!HINGE.test(plan.part) && !plan.features.some((f) => HINGE.test(f.name)) && !pinPiece) return null
+  if (!named(HINGE) && !(pinPiece && named(LID))) return null
   const assembled = printsInPlace(plan)
   // with its pieces named in printInPlace, a plan laid out apart prints open on its hinges; printed separately still
   // contradicts it
-  const named = Array.isArray(plan.printInPlace)
-  const apart = plan.printInPlace === false || [plan.part, ...plan.assumptions].some((t) => printedSeparately(t) || (!named && laidApart(t)))
+  const listed = Array.isArray(plan.printInPlace)
+  const apart = plan.printInPlace === false || [plan.part, ...plan.assumptions].some((t) => printedSeparately(t) || (!listed && laidApart(t)))
   return assembled && apart ? LID_ONE_WAY : !assembled && !apart ? LID_STATEMENT : null
 }
 
