@@ -3,7 +3,7 @@
 // What the modeling tools do to the plate, on the typed geometry calls in geom/cad.ts: extrude a shape
 // from a face or the bed, copy an object in a line, a grid or a circle, and describe a measurement.
 // Each change lands in one store update, so undo takes it back in one step. No React in here.
-import { ADDS_NOTHING_MM3, loftParams, sweepParams, type History, type LoftOptions, type Pattern, type SketchConstraint, type StepParams, type SweepOptions } from '@slicerx/cad-history'
+import { ADDS_NOTHING_MM3, GAP_NAMED_MM, loftParams, sweepParams, type History, type LoftOptions, type Pattern, type SketchConstraint, type StepParams, type SweepOptions } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { arrayCopies, arrayMerged, extrudeShape, loftSketch, revolveSketch, sweepSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
@@ -218,6 +218,20 @@ function targetOf(t: { objectId: string; partIndex: number } | undefined, operat
 }
 
 /**
+ * What a person reads when a join or cut misses the body: the engine's reason, or with none (an older engine's reply)
+ * the volume it added, as a join off the body always adds a piece.
+ */
+function missMessage(report: ExtrudeReport, operation: string): string {
+  const m = report.miss
+  const check = 'so nothing changed. Check the distance and the direction.'
+  if (m?.reason === 'apart' && m.gapMm >= GAP_NAMED_MM) return `The shape stops ${m.gapMm.toFixed(1)} mm short of the body, ${check}`
+  if (m?.reason === 'unchanged') return `The shape only touches the body, ${check}`
+  if (operation !== 'join') return `The shape does not reach the body, ${check}`
+  const adds = m ? m.reason === 'apart' : Math.abs(report.volumeChangeMm3) > ADDS_NOTHING_MM3
+  return adds ? 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.' : `The shape is already inside the body, ${check}`
+}
+
+/**
  * Puts an extrude or revolve result on the plate in one store update, so undo takes it back in one step. `record` and
  * `at` are how the step is recorded and where the body it joins or cuts stood, both read as the engine started: the
  * result was worked out there, so a drag while the engine ran does not shift the step.
@@ -233,18 +247,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     // A shape that misses the body changes nothing and is not a step: the body keeps its mesh too. A join that
     // would leave pieces floating off the body (text running past the face) counts as a miss, and so does one that
     // adds nothing: a join off the body always adds a piece, so one that adds no volume sits inside it.
-    if (!r.report.touches) {
-      const adds = Math.abs(r.report.volumeChangeMm3) > ADDS_NOTHING_MM3
-      return {
-        message: operation !== 'join'
-          ? 'The shape does not reach the body, so nothing changed. Check the distance and the direction.'
-          : adds
-            ? 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.'
-            : 'The shape is already inside the body, so nothing changed. Check the distance and the direction.',
-        warn: true,
-        missed: true,
-      }
-    }
+    if (!r.report.touches) return { message: missMessage(r.report, operation), warn: true, missed: true }
     const parts = entry.parts.map((p, i) => (i === t.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
     const handle = await host.loadParts(entry.name, parts)
     // drawn on a finished sketch: kept where the sketch is stored, as the design tools keep their steps

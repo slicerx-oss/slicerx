@@ -67,6 +67,30 @@ export const NOT_CLOSED = 'The part is not closed after this step: look where th
  */
 export const ADDS_NOTHING_MM3 = 1e-6
 
+/** `why` without the full stop that ends it, for a sentence that goes on after it ("...: why. The design is unchanged."). */
+export const unstopped = (why: string): string => why.replace(/[.\s]+$/, '')
+
+/** Why the engine's join or cut does not touch the part: clear of it by a gap, inside it, or meeting it with no change. */
+export type Miss = { reason: 'apart'; gapMm: number } | { reason: 'inside' } | { reason: 'unchanged' }
+
+/** A gap shorter than this, in mm, is not named: the shape meets the part, or part of it does. */
+export const GAP_NAMED_MM = 0.05
+
+const INSIDE = 'The shape is already inside the part, so nothing changed.'
+
+/**
+ * Why a join or cut that does not touch the part is refused, in a sentence: how far short of the part it stops, a join
+ * inside the part, or a shape that only meets it. With no reason (an older engine's reply) a join that adds no volume
+ * sits inside the part, and anything else no longer reaches it.
+ */
+export function missSentence(report: { miss?: Miss; volumeChangeMm3?: number }, joins: boolean): string {
+  const m = report.miss
+  if (!m) return joins && report.volumeChangeMm3 !== undefined && Math.abs(report.volumeChangeMm3) <= ADDS_NOTHING_MM3 ? INSIDE : 'The shape no longer reaches the part.'
+  if (m.reason === 'inside') return INSIDE
+  if (m.reason === 'apart' && m.gapMm >= GAP_NAMED_MM) return `The shape stops ${m.gapMm.toFixed(1)} mm short of the part.`
+  return m.reason === 'apart' && joins ? 'Part of the shape would float off the part, so nothing changed.' : 'The shape only touches the part, so nothing changed.'
+}
+
 /**
  * The part with a step's result mesh, its faces with it. Its paint goes: the triangles it named are not there any
  * more. `dropped` is told when there was paint, for the step's note.
@@ -384,10 +408,9 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       case 'sketch.loft':
       case 'sketch.sweep': {
         const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: p.operation, target: item(part) } : p.op === 'sketch.sweep' ? { ...sweepOpts(p), operation: p.operation, target: item(part) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
-        const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean; volumeChangeMm3?: number; watertight?: boolean } }
-        // a join off the part always adds a piece, so one that adds no volume sits inside it
+        const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean; miss?: Miss; volumeChangeMm3?: number; watertight?: boolean } }
         const joins = (p.op === 'shape.extrude' ? p.spec.operation : p.operation) === 'join'
-        if (!r.report.touches) throw new Broken(joins && r.report.volumeChangeMm3 !== undefined && Math.abs(r.report.volumeChangeMm3) <= ADDS_NOTHING_MM3 ? 'The shape is already inside the part, so nothing changed.' : 'The shape no longer reaches the part.')
+        if (!r.report.touches) throw new Broken(missSentence(r.report, joins))
         out[i] = keep(part, r.mesh)
         // the step lands, and says so, when the engine reads the part it left as open
         if (r.report.watertight === false) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${NOT_CLOSED}` : NOT_CLOSED

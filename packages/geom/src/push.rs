@@ -159,6 +159,7 @@ pub fn push_face(
         report: ExtrudeReport {
             volume_change_mm3: r.volume_mm3 - v0,
             touches: true,
+            miss: None,
             shells: r.shells,
             watertight: r.watertight,
             boolean: Some(r),

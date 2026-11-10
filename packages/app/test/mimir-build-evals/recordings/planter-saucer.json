@@ -602,7 +602,7 @@
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"The step did not go through: The shape no longer reaches the part.. The design is unchanged.\"}"
+    "{\"ok\":false,\"summary\":\"The step did not go through: The shape stops 1.0 mm short of the part. The design is unchanged.\"}"
    ],
    "calls": [
     {

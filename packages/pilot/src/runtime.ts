@@ -1260,7 +1260,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       emit({ type: 'lookup', lookup: { id: `lk_${newId()}`, ...out.lookup } })
     }
     if (out.citations) for (const c of out.citations) if (!citations.some((x) => x.id === c.id)) citations.push(c)
-    return { message: toolMessage(plain ? { ...out, summary: `${out.summary}. ${plain.hint}` } : out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
+    return { message: toolMessage(plain ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${plain.hint}` } : out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
 
   async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet, kind?: TurnKind, building = false): Promise<PilotEvent & { type: 'done'; capped?: true }> {

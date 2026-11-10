@@ -735,7 +735,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -783,7 +783,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -843,7 +843,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:

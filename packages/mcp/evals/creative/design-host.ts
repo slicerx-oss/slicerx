@@ -21,7 +21,7 @@
 //
 // Left out, and said so by the tools: exact designs (the developer exact-solids option, off in the app too) and sketch
 // constraints (the app's own sketch solver).
-import { anchoredMove, appendStep, bakeMesh, claimSketches, designFrame, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOnSketch, replayHistory, storedToDesign, translation, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
+import { anchoredMove, appendStep, bakeMesh, claimSketches, designFrame, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOnSketch, replayHistory, storedToDesign, translation, unstopped, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import type { Bed } from '@slicerx/contracts'
 import { boxInBed, sepOf } from '@slicerx/settings/box-pack'
@@ -219,7 +219,7 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
     const history = appendStep(d.history, step)
     const r = await run(history)
     const st = r.status[r.status.length - 1]
-    if (st?.state !== 'done') throw new Error(`The step did not go through: ${st?.message ?? 'the steps before it are broken'}. The design is unchanged.`)
+    if (st?.state !== 'done') throw new Error(`The step did not go through: ${unstopped(st?.message ?? 'the steps before it are broken')}. The design is unchanged.`)
     guard(d.id, o?.expectedRevision)
     const landed = keep(s, history, r)
     s.redo = []
