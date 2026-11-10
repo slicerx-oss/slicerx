@@ -6,7 +6,8 @@
 // it. Arrow keys move, Enter picks, Escape closes and gives focus back to the view. A finger's list has 44 px rows and
 // ends with More actions, the ring a held finger opened before. The tag beside the pointer after a click says which
 // of how many things under that spot is picked; clicking the same spot again steps to the next.
-import { ContextMenu, MenuHeading, MenuItem, MenuSeparator, focusGoesBack, type IconName } from '@slicerx/ui'
+import { MenuHeading, MenuItem, MenuSeparator, type IconName } from '@slicerx/ui'
+import { ContextMenu, focusGoesBack } from '@slicerx/ui/context-menu'
 import { useStore } from 'zustand'
 import { applyCandidate } from '../../plate/select-other-pick'
 import { candidateWords, closeOtherList, otherView, selectOther, type OtherCandidate, type OtherKind } from '../../plate/select-other'

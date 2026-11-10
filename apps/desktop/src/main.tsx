@@ -76,7 +76,7 @@ if (__SX_FEATURE_CONNECT__) {
 
 // mimir signs in with ChatGPT through the Rust side; the webview never sees a token.
 if (__SX_FEATURE_PILOT__) {
-  const [{ registerChatGpt, registerAgentInstall }, { createTauriChatGpt }, { createTauriAgents }] = await Promise.all([import('@slicerx/app'), import('./host/chatgpt'), import('./host/agents')])
+  const [{ registerChatGpt }, { registerAgentInstall }, { createTauriChatGpt }, { createTauriAgents }] = await Promise.all([import('@slicerx/app'), import('@slicerx/app/pilot-connect/agents'), import('./host/chatgpt'), import('./host/agents')])
   registerChatGpt(() => createTauriChatGpt())
   registerAgentInstall(() => createTauriAgents())
   // Set up local AI reads the hardware and reaches Ollama and LM Studio through the shell.
@@ -98,7 +98,7 @@ if (__SX_FEATURE_CONNECT__) {
 
 // The AI clients' marks identify them in "Connect your AI agent"; unaltered, never implying endorsement.
 if (__SX_FEATURE_PILOT__) {
-  const [{ registerAgentMarks }, { BrandLogo }] = await Promise.all([import('@slicerx/app'), import('@slicerx/brand-icons')])
+  const [{ registerAgentMarks }, { BrandLogo }] = await Promise.all([import('@slicerx/app/pilot-connect/agents'), import('@slicerx/brand-icons')])
   registerAgentMarks((mark, size, title) => <BrandLogo slug={mark} size={size} title={title} />)
 }
 

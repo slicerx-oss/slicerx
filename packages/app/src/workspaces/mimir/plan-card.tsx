@@ -9,7 +9,8 @@
 import { kindOf, sizeLabelKey, sizeText, sizeUnit, wholeCount, type SizeKind } from '@slicerx/contracts/size-kind'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
-import { Button, Icon, ScrubNumber } from '@slicerx/ui'
+import { Button, Icon } from '@slicerx/ui'
+import { ScrubNumber } from '@slicerx/ui/scrub'
 import { useState, type ReactNode } from 'react'
 import { amendOf, editPlan, PLAN_CHANGE, PLAN_GO, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, samePlan, shownPlan, type PartPlan } from './plan-tool'
 

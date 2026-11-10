@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 import type { PilotSheet, PilotSheetAnswer } from '@slicerx/contracts'
 import { dimText, dimUnit, wholeCount } from '@slicerx/contracts/size-kind'
-import { Button, Icon, ScrubNumber, tipAttrs } from '@slicerx/ui'
+import { Button, Icon, tipAttrs } from '@slicerx/ui'
+import { ScrubNumber } from '@slicerx/ui/scrub'
 import { useState } from 'react'
 import { safeUrl } from './citations'
 

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A finished sketch's menu, in the timeline strip and the Model tree: change it, or extrude or revolve it.
-import { ContextMenu, MenuItem, type MenuPoint } from '@slicerx/ui'
+import { MenuItem } from '@slicerx/ui'
+import { ContextMenu, type MenuPoint } from '@slicerx/ui/context-menu'
 import { openSketch } from './sketches'
 
 const LATER = 'Rolled back: move the timeline marker past it first.'

@@ -6,7 +6,8 @@
 // Steps use the same rows and operations as the history list in Slice (cad/history), so nothing new is stored.
 // It is a tree to the keyboard: one row is in the tab order, Up and Down move between rows, Right opens an object or
 // goes into it (on a step, to its More button), Left closes it or goes back to its object, and Home and End jump.
-import { Icon, useContextMenu } from '@slicerx/ui'
+import { Icon } from '@slicerx/ui'
+import { useContextMenu } from '@slicerx/ui/context-menu'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { SketchItem } from '@slicerx/cad-history'
 import { HistorySteps } from '../../cad/history/history-panel'

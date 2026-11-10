@@ -5,7 +5,8 @@
 // Escape closes it and returns focus to the tab. Its context menu pins it open; the pin is remembered per panel with
 // the pane sizes.
 import { rightClickWords, useCoarsePointer } from '../lib/phone-layout'
-import { EdgeTab, keymapFor, Menu, MenuAnchor, MenuItem, useLongPress } from '@slicerx/ui'
+import { EdgeTab, keymapFor, Menu, MenuAnchor, MenuItem } from '@slicerx/ui'
+import { useLongPress } from '@slicerx/ui/context-menu'
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useLookChoice } from '../first-run/look'
 import { set, useApp } from '../state/store'

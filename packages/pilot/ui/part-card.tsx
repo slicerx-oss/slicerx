@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { useEffect, useId, useRef, useState } from 'react'
-import { Button, Icon, tipAttrs, VectorField } from '@slicerx/ui'
+import { Button, Icon, tipAttrs } from '@slicerx/ui'
+import { VectorField } from '@slicerx/ui/scrub'
 import { followUps, partLine, partTitle, sizeRequest, type CreatedPart, type FollowUp } from './part'
 
 /** What the card and chips do. Each names the part it was made for, never the current selection. */

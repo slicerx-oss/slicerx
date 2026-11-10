@@ -6,7 +6,8 @@
 // number's unit beside its label, the settings rows' sizes), choices that never run past the edge, messages as
 // sentences, and the action row with the primary action on the right. Probe mode for the view lives here too.
 import type { PickEvent } from '@slicerx/viewport'
-import { Block, Button, Icon, Input, Menu, MenuItem, Seg, Select, SplitButton, Steady, VectorField, type Axis, type IconName, type SegOption, type TipSpec } from '@slicerx/ui'
+import { Block, Button, Icon, Input, Menu, MenuItem, Seg, Select, SplitButton, Steady, type IconName, type SegOption, type TipSpec } from '@slicerx/ui'
+import { VectorField, type Axis } from '@slicerx/ui/scrub'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'

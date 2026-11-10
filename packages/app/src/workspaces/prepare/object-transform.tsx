@@ -5,7 +5,8 @@
 // letter moves the object live, so one edit or one drag is one undo step.
 import { MoreButton, useMore } from '../../shell/more'
 import { setRotateSpace, useRotateSpace, useTool } from '../../plate/tools'
-import { Button, Icon, ScrubNumber, Seg, VectorField } from '@slicerx/ui'
+import { Button, Icon, Seg } from '@slicerx/ui'
+import { ScrubNumber, VectorField } from '@slicerx/ui/scrub'
 import { useState } from 'react'
 import { centerSelected, dropSelectedToBed, fillBed, instanceCount, mirrorSelected, scaleSelectedToSize, setInstanceCount, setTrs } from '../../plate/edit'
 import { plateScrub } from '../../plate/scrub'

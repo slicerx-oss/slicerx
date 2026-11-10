@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The selection bar under the object list: how many are selected and what to do with them. Its menu, the rows' context
 // menu and the view's share one list of items, so a verb is the same wherever it is asked for.
-import { Button, ContextMenu, Menu, MenuAnchor, MenuItems, MenuSeparator, Popover, SelectionBar, type MenuEntry, type MenuPoint } from '@slicerx/ui'
+import { Button, Menu, MenuAnchor, MenuSeparator, Popover, SelectionBar } from '@slicerx/ui'
+import { ContextMenu, MenuItems, type MenuEntry, type MenuPoint } from '@slicerx/ui/context-menu'
 import { useEffect, useMemo, useState } from 'react'
 import { createStore, useStore } from 'zustand'
 import { getCommand, isEnabled, runCommand, useCommands } from '../../commands/registry'
