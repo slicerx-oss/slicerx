@@ -240,6 +240,7 @@ describe('editing a step', () => {
       undo.undo()
       expect(get().historyEdit).toBeNull()
       expect(get().plate[0]).toBe(original)
+      expect(get().objectTool).toBeNull()
     } finally {
       undo.dispose()
     }

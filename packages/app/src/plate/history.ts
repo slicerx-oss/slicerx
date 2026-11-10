@@ -4,7 +4,7 @@
 // in the app store and keeps the state before each change: adds, removes, moves, rotations,
 // scaling, arranging, plates and object settings all come back the same way. Snapshots share
 // meshes by reference, so a step costs a few arrays, not geometry.
-import { appStore, fullPlate, markStale, type AppState } from '../state/store'
+import { appStore, fullPlate, isCadTool, markStale, type AppState } from '../state/store'
 
 /** What one step restores. */
 export type Snapshot = Pick<AppState, 'plate' | 'selection'> & Partial<Pick<AppState, 'selectedIds' | 'plates' | 'activePlate' | 'objectSettings' | 'slotSetup' | 'flush' | 'timeline' | 'rollback'>>
@@ -137,9 +137,10 @@ export function createHistory(store = appStore, limit = 100): History {
     lastStep = null
     restoring = true
     try {
-      // A history step open for editing closes first: the object goes back to how it is.
+      // A history step open for editing closes first: the object goes back to how it is, and the tool it opened
+      // closes with it. That tool's panel is keyed to the step, so left open it would mount again with nothing to edit.
       const open = store.getState().historyEdit
-      if (open) store.setState((s) => ({ plate: fullPlate(s), historyEdit: null }))
+      if (open) store.setState((s) => ({ plate: fullPlate(s), historyEdit: null, ...(isCadTool(s.objectTool) ? { objectTool: null } : {}) }))
       const current = store.getState()
       to.push(snap(current))
       // A restored plate must not show the other plate's toolpaths while its own slice is absent.
