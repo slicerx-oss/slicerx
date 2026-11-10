@@ -31,6 +31,12 @@ describe('command registry', () => {
     expect(new Set(specs.map((c) => c.id)).size).toBe(specs.length)
   })
 
+  it("names each example model as it is written, not in lower case", () => {
+    const specs = builtinCommands(host, workspaces)
+    expect(specs.find((c) => c.id === 'plate-add-x-mark')?.title).toBe('Put the Layered X on the plate')
+    expect(specs.find((c) => c.id === 'plate-add-wall-hook')?.title).toBe('Put the Wall hook on the plate')
+  })
+
   it('finds commands by keyword and title', () => {
     const off = registerCommands(builtinCommands(host, workspaces))
     expect(searchCommands('go printers')[0]?.command.id).toBe('open-printers')
