@@ -30,6 +30,11 @@ export interface PlanLeft {
   build: string[]
   /** Planned features a step built without its plan feature tag. */
   tag: UntaggedFeature[]
+  /**
+   * The plan's last design.check failed after the design's last change and its one fix round is open (no stop): the
+   * items it failed, by name (empty when the result did not list them). Absent otherwise.
+   */
+  fix?: string[]
 }
 
 /** A feature name or tag as compared: lower case, words only, plurals made single (as design.check compares them). */
@@ -51,7 +56,7 @@ const nameKey = (name: string): string =>
 const nameWords = (name: string): Set<string> => new Set(name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d/.test(w)).map(single))
 
 /** Calls that only read a design: their results say what the design is, not that it changed. */
-const READS: ReadonlySet<string> = new Set(['design.list', 'design.steps', 'design.timeline', 'design.check', 'design.plan', 'geom.info', 'geom.faces', 'geom.edge_pick'])
+const READS: ReadonlySet<string> = new Set(['design.list', 'design.steps', 'design.timeline', 'design.check', 'design.plan', 'geom.info', 'geom.faces', 'geom.edge_pick', 'geom.measure', 'geom.fit_check', 'geom.interference'])
 /** Calls that build or change a design: the design tools and the modeling tools. */
 const BUILDS = /^(design|geom)\./
 
@@ -72,6 +77,8 @@ interface Reading {
   edits?: { part?: unknown; features?: unknown }
   pass?: boolean
   stop?: boolean
+  /** design.check: the names of the items it failed. */
+  failed?: string[]
 }
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
@@ -108,6 +115,7 @@ function read(content: string): Reading {
     if (r['edits'] && typeof r['edits'] === 'object') reading.edits = r['edits'] as NonNullable<Reading['edits']>
     if (typeof r['pass'] === 'boolean') reading.pass = r['pass']
     if (str(r['stop']) || r['repeated'] === true) reading.stop = true
+    if (Array.isArray(r['items'])) reading.failed = r['items'].flatMap((x) => (x && typeof x === 'object' && (x as { pass?: unknown }).pass === false ? (str((x as { name?: unknown }).name) ?? []) : []))
     return reading
   } catch {
     const reading: Reading = { ok: content.startsWith('{"ok":true') }
@@ -153,7 +161,11 @@ const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((f)
  *  - no plan was approved in this run, or carried from an earlier one;
  *  - design.check stopped the plan (its fix round is used, so mimir tells the person what is off);
  *  - design.check passed after the design's last change;
- *  - the design's steps are unknown (results without lastStep or step rows) and the part has a body.
+ *  - the design's steps are unknown (results without lastStep or step rows) and the part has a body, and no failed
+ *    check is waiting on its fix round.
+ * A design.check of the plan that failed after the design's last change, with its fix round still open (no stop), is
+ * the plan unfinished too: its failed items are in fix, to be fixed and checked again, even with every feature built
+ * and tagged.
  */
 export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | null {
   from = carriedPlanFrom(messages, from) ?? from
@@ -168,6 +180,8 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
   let changed = -1
   let passed = -1
   let stop = false
+  // the plan's last failed check with its fix round open: where, and the items it failed
+  let missed: { at: number; items: string[] } | undefined
   messages.slice(from).forEach((m, i) => {
     if (m.role === 'assistant') for (const c of m.toolCalls ?? []) calls.set(c.id, c)
     if (m.role !== 'tool') return
@@ -186,6 +200,7 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
       steps = undefined
       changed = passed = -1
       stop = false
+      missed = undefined
       return
     }
     if (!plan || !r.ok) return
@@ -193,6 +208,7 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
       if (str(args(call)['planId']) !== plan.planId) return
       if (r.stop) stop = true
       if (r.pass === true) passed = i
+      missed = r.pass === false && !r.stop ? { at: i, items: r.failed ?? [] } : undefined
       return
     }
     if (!BUILDS.test(call.name)) return
@@ -226,8 +242,9 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
   if (!plan || stop) return null
   if (passed >= 0 && passed > changed) return null
   const noBody = !started || body === false
-  const left: PlanLeft = { planId: plan.planId, part: plan.part, ...(design ? { design } : {}), noBody, build: [], tag: [] }
-  if (!steps) return noBody ? left : null
+  const fix = missed && missed.at > changed ? missed.items : undefined
+  const left: PlanLeft = { planId: plan.planId, part: plan.part, ...(design ? { design } : {}), noBody, build: [], tag: [], ...(fix ? { fix } : {}) }
+  if (!steps) return noBody || fix ? left : null
   const tagged = new Set(steps.flatMap((s) => (s.feature ? [nameKey(s.feature)] : [])))
   // the steps no feature of the plan is tagged on, with what they were called
   const keys = new Set(plan.features.map(nameKey))
@@ -248,7 +265,7 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
     if (step) left.tag.push({ feature, step })
     else left.build.push(feature)
   }
-  return left.noBody || left.build.length || left.tag.length ? left : null
+  return left.noBody || left.build.length || left.tag.length || left.fix ? left : null
 }
 
 // Words that ask mimir to go on with the work in hand: "keep going", "continue", "go ahead", "then build it".
@@ -314,7 +331,11 @@ export function planLeftNote(left: PlanLeft, tools: { editStep: boolean; check: 
     const how = tools.editStep ? 'set feature on the step that built it with design.edit_step' : 'tag the step that built it with its feature'
     lines.push(`Built, but no step is tagged with the feature: ${left.tag.map((t) => `"${t.feature}"${t.step ? ` (step "${t.step}")` : ''}`).join(', ')}. Do not build these again; ${how}.`)
   }
-  if (tools.check) lines.push(`Then check the part with design.check (planId ${left.planId}).`)
+  if (left.fix)
+    lines.push(
+      `Its last design.check failed${left.fix.length ? ` on ${list(left.fix)}` : ''}, and the plan's one fix round is open: fix ${left.fix.length === 1 ? 'that item' : 'those items'} now (the part to what the plan wants, or a size the build cannot keep through amends), then call design.check (planId ${left.planId}) again. Only a second failed check ends the building.`,
+    )
+  else if (tools.check) lines.push(`Then check the part with design.check (planId ${left.planId}).`)
   lines.push('Ask the person only about something the plan does not settle.')
   return lines.join(' ')
 }
@@ -323,6 +344,7 @@ export function planLeftNote(left: PlanLeft, tools: { editStep: boolean; check: 
 export function planLeftNotice(left: PlanLeft, assistant: string): string {
   if (left.noBody) return `${assistant} went on to build ${left.part}, which the plan still needs.`
   if (left.build.length) return `${assistant} went on to the parts the plan still needs: ${list(left.build)}.`
+  if (left.fix && !left.tag.length) return `${assistant} went on to fix what the design check found${left.fix.length ? `: ${list(left.fix)}` : ''}.`
   return `${assistant} went on to finish the plan, marking the steps that built ${list(left.tag.map((t) => t.feature))}.`
 }
 
