@@ -28,12 +28,16 @@ function info(h: HandPrinter): PrinterInfo {
 const hand = (id: string) => get().handPrinters.find((h) => h.id === id)
 
 /**
- * The slots picked in setup, empty and in order: an AMS unit's by letter and place ("A1" to "A4", then "B1"), any other
- * unit's by number. None for a single spool, or a printer added before setup kept its slots.
+ * The slots picked in setup, empty and in order, named as a connected printer names them: an AMS unit's by letter and
+ * place ("A1" to "A4", then "B1"), then an AMS HT's one slot each from E ("E1", "F1"), any other unit's by number. None
+ * for a single spool, or a printer added before setup kept its slots.
  */
-export function handSlots(h: Pick<HandPrinter, 'filamentSystem' | 'slotCount'>): FilamentSlot[] {
+export function handSlots(h: Pick<HandPrinter, 'filamentSystem' | 'slotCount' | 'amsHtUnits'>): FilamentSlot[] {
   const n = h.filamentSystem && h.slotCount ? h.slotCount : 0
-  return Array.from({ length: n }, (_, i) => ({ id: h.filamentSystem === 'ams' ? `${String.fromCharCode(65 + Math.floor(i / 4))}${(i % 4) + 1}` : String(i + 1) }))
+  if (h.filamentSystem !== 'ams') return Array.from({ length: n }, (_, i) => ({ id: String(i + 1) }))
+  const ht = Math.min(n, h.amsHtUnits ?? 0)
+  const letter = (k: number) => String.fromCharCode(65 + k)
+  return [...Array.from({ length: n - ht }, (_, i) => ({ id: `${letter(Math.floor(i / 4))}${(i % 4) + 1}` })), ...Array.from({ length: ht }, (_, i) => ({ id: `${letter(4 + i)}1` }))]
 }
 
 function status(id: string): PrinterStatus {

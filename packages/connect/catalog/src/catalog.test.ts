@@ -135,6 +135,13 @@ test('the A1 family has an AMS lite, the other Bambu printers an AMS', () => {
   assert.equal(filamentUnitName('Unlisted', 'mmu'), 'MMU')
 })
 
+test('an AMS HT can join every Bambu printer with a full-size AMS, not the AMS lite ones, and no other brand', () => {
+  const ht = PRINTER_MODELS.filter((m) => m.amsHt).map((m) => m.id)
+  for (const id of ['bambu-x1-carbon', 'bambu-x1', 'bambu-x1e', 'bambu-p1p', 'bambu-p1s', 'bambu-p2s', 'bambu-h2d', 'bambu-h2s']) assert.ok(ht.includes(id), id)
+  assert.ok(!ht.includes('bambu-a1') && !ht.includes('bambu-a1-mini'))
+  for (const m of PRINTER_MODELS.filter((x) => x.amsHt)) assert.ok(m.brand === 'bambu-lab' && m.filamentSystem === 'ams' && !m.filamentUnit, m.id)
+})
+
 test('every Bambu Lab model has its SSDP and report code, so a found printer never needs its model picked', () => {
   const file = JSON.parse(readFileSync(new URL('../bambu-model-codes.json', import.meta.url), 'utf8')) as { codes: Record<string, string> }
   const named = new Set(Object.values(file.codes))

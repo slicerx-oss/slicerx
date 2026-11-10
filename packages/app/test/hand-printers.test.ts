@@ -9,7 +9,7 @@ import '../src/inventory/usage'
 import '../src/state/actions'
 import { migrateSetupPrinters, setupHostFor } from '../src/first-run/setup-host'
 import { filamentInput } from '../src/first-run/printer-form'
-import { addHandPrinter, isExportOnly, LEGACY_SETUP_KEY, withHandPrinters } from '../src/lib/hand-printers'
+import { addHandPrinter, handSlots, isExportOnly, LEGACY_SETUP_KEY, withHandPrinters } from '../src/lib/hand-printers'
 import { fleetQuery } from '../src/lib/queries'
 import { printTarget, shownPrinter } from '../src/lib/use-printer'
 import { loadPrefs, normalizePrefs } from '../src/state/prefs'
@@ -110,6 +110,21 @@ describe('printers added by hand', () => {
       expect((await h.printers!.status(printerId)).slots, profileId).toEqual([])
       expect((await rows(h)).find((r) => r.id === printerId)?.filamentSystem, profileId).toBeUndefined()
     }
+  })
+
+  it('names AMS HT slots after the AMS slots, E1 on, as a connected printer names them, and keeps the count after a reload', async () => {
+    expect(handSlots({ filamentSystem: 'ams', slotCount: 5, amsHtUnits: 1 }).map((x) => x.id)).toEqual(['A1', 'A2', 'A3', 'A4', 'E1'])
+    expect(handSlots({ filamentSystem: 'ams', slotCount: 10, amsHtUnits: 2 }).map((x) => x.id)).toEqual(['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4', 'E1', 'F1'])
+    expect(handSlots({ filamentSystem: 'ams', slotCount: 8 }).map((x) => x.id)).toEqual(['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4'])
+    const h = host()
+    // an X1 Carbon added by hand with two AMS units and one AMS HT
+    const { printerId } = await setupHostFor(h).addPrinter({ profileId: 'bambu-x1-carbon', nozzleMm: 0.4, name: 'X1C', filament: { system: 'ams', slots: 9, htUnits: 1 } })
+    expect(get().handPrinters.find((p) => p.id === printerId)).toMatchObject({ filamentSystem: 'ams', slotCount: 9, amsHtUnits: 1 })
+    expect((await h.printers!.status(printerId)).slots.map((x) => x.id)).toEqual(['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4', 'E1'])
+    const back = normalizePrefs(JSON.parse(localStorage.getItem('slicerx.prefs.v1') ?? '{}') as unknown).handPrinters?.find((p) => p.id === printerId)
+    expect(back).toMatchObject({ slotCount: 9, amsHtUnits: 1 })
+    // nine units, a fraction, a count that leaves no AMS unit, or one on another system is dropped
+    for (const bad of [{ amsHtUnits: 9 }, { amsHtUnits: 1.5 }, { slotCount: 4, amsHtUnits: 1 }, { filamentSystem: 'mmu', amsHtUnits: 1 }]) expect(normalizePrefs({ handPrinters: [{ ...back, id: 'x', ...bad }] }).handPrinters?.[0]?.amsHtUnits, JSON.stringify(bad)).toBeUndefined()
   })
 
   it('stays after a reload', async () => {

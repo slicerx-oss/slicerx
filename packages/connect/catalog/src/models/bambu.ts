@@ -41,12 +41,15 @@ const FIND_A1 = find({
 })
 
 const STD = [0.2, 0.4, 0.6, 0.8]
+// An AMS HT joins the AMS units of every model with a full-size AMS (the maker's store lists the X1, P1, P2S, H2 and X2
+// families). The A1 and A1 mini are left out: they come with the AMS lite, and an HT there needs a separate hub.
 const bambu = (m: Omit<PrinterModel, 'brand' | 'connections' | 'nozzleCount' | 'defaultNozzle' | 'find'> & Partial<PrinterModel>): PrinterModel => ({
   brand: 'bambu-lab',
   connections: ['bambu-lan', 'bambuddy', 'export'],
   nozzleCount: 1,
   defaultNozzle: 0.4,
   find: FIND_X1,
+  ...(m.filamentSystem === 'ams' && m.filamentUnit === undefined ? { amsHt: true } : {}),
   ...m,
 })
 

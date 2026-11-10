@@ -117,6 +117,8 @@ export interface HandPrinter {
   filamentSystem?: 'ams' | 'mmu' | 'toolchanger'
   /** Its slots, as picked in setup (four per AMS unit); absent for a printer added before setup kept them. */
   slotCount?: number
+  /** AMS HT units among its AMS slots (one slot each, after the AMS slots), as picked in setup. */
+  amsHtUnits?: number
   /** Where it is, kept for when a printer bridge can reach it. The access code is never kept here. */
   connection?: { family: string; address: string; serial?: string; needsSecret: boolean }
 }
@@ -273,11 +275,14 @@ function handPrinter(v: unknown): HandPrinter | undefined {
   const filamentSystem = oneOf(v['filamentSystem'], ['ams', 'mmu', 'toolchanger'] as const)
   const slots = num(v['slotCount'], 1, MAX_HAND_SLOTS)
   const slotCount = filamentSystem && slots !== undefined && Number.isInteger(slots) ? slots : undefined
+  // up to eight AMS HT units, each one of the slots, beside at least one AMS unit's four
+  const ht = num(v['amsHtUnits'], 1, 8)
+  const amsHtUnits = filamentSystem === 'ams' && slotCount !== undefined && ht !== undefined && Number.isInteger(ht) && slotCount - ht >= 4 ? ht : undefined
   const c = v['connection']
   const family = isRec(c) ? str(c['family'], 40) : undefined, address = isRec(c) ? str(c['address'], 200) : undefined
   const serial = isRec(c) ? str(c['serial'], 60) : undefined, needsSecret = isRec(c) ? bool(c['needsSecret']) : undefined
   const connection = family && address && needsSecret !== undefined ? { family, address, needsSecret, ...(serial ? { serial } : {}) } : undefined
-  return { id, name, profileId, vendor, model, nozzleCount, ...(filamentSystem ? { filamentSystem } : {}), ...(slotCount ? { slotCount } : {}), ...(connection ? { connection } : {}) }
+  return { id, name, profileId, vendor, model, nozzleCount, ...(filamentSystem ? { filamentSystem } : {}), ...(slotCount ? { slotCount } : {}), ...(amsHtUnits ? { amsHtUnits } : {}), ...(connection ? { connection } : {}) }
 }
 
 function printerBay(v: unknown): PrinterBay | undefined {

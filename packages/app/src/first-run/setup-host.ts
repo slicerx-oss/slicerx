@@ -98,7 +98,7 @@ export function handRecord(input: { profileId: string; name?: string; connection
     model: model?.name ?? (input.name?.trim() || input.profileId),
     nozzleCount: model?.nozzleCount ?? 1,
     // the wizard's filament system and slots over the catalog's: a single spool picked on an AMS model has none
-    ...(input.filament ? (input.filament.system === 'single' ? {} : { filamentSystem: input.filament.system, slotCount: input.filament.slots }) : fs === 'ams' || fs === 'mmu' || fs === 'toolchanger' ? { filamentSystem: fs } : {}),
+    ...(input.filament ? (input.filament.system === 'single' ? {} : { filamentSystem: input.filament.system, slotCount: input.filament.slots, ...(input.filament.system === 'ams' && input.filament.htUnits ? { amsHtUnits: input.filament.htUnits } : {}) }) : fs === 'ams' || fs === 'mmu' || fs === 'toolchanger' ? { filamentSystem: fs } : {}),
     ...(c && c.family !== 'export' ? { connection: { family: c.family, address: c.address, needsSecret, ...(c.serial ? { serial: c.serial } : {}) } } : {}),
   }
 }

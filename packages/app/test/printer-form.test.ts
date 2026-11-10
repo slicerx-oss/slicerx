@@ -26,6 +26,8 @@ import {
   unlocked,
   type PrinterForm,
   filamentInput,
+  filamentText,
+  withHardware,
 } from '../src/first-run/printer-form'
 import { createHostSetup, type TestStep } from '../src/first-run/setup-host'
 import { setBridgeConnector } from '../src/link/bridge'
@@ -217,6 +219,23 @@ describe("the wizard's filament system as the printer is saved", () => {
     expect(filamentInput({ kind: 'none', units: 1, slots: 1 })).toEqual({ system: 'single', slots: 1 })
     expect(filamentInput({ kind: 'mmu', units: 1, slots: 5 })).toEqual({ system: 'mmu', slots: 5 })
     expect(filamentInput({ kind: 'other', units: 1, slots: 6 })).toEqual({ system: 'toolchanger', slots: 6 })
+  })
+
+  it('adds an AMS HT slot per unit after the AMS slots, with four AMS units at most beside one', () => {
+    expect(filamentInput({ kind: 'ams', units: 2, slots: 9, htUnits: 1 })).toEqual({ system: 'ams', slots: 9, htUnits: 1 })
+    expect(filamentInput({ kind: 'ams', units: 2, slots: 8, htUnits: 0 })).toEqual({ system: 'ams', slots: 8 })
+    expect(filamentInput({ kind: 'ams', units: 8, slots: 34, htUnits: 2 })).toEqual({ system: 'ams', slots: 18, htUnits: 2 })
+    // the count only goes with an AMS, and a fraction or a count past eight is not a unit count
+    expect(filamentInput({ kind: 'mmu', units: 1, slots: 5, htUnits: 1 })).toEqual({ system: 'mmu', slots: 5 })
+    expect(filamentInput({ kind: 'ams', units: 1, slots: 4, htUnits: 1.5 })).toEqual({ system: 'ams', slots: 4 })
+    expect(filamentInput({ kind: 'ams', units: 1, slots: 4, htUnits: 9 })).toEqual({ system: 'ams', slots: 12, htUnits: 8 })
+    expect(filamentText({ ...EMPTY_FORM, filament: { kind: 'ams', units: 1, slots: 5, htUnits: 1 } })).toBe('AMS, 1 unit and 1 AMS HT, 5 slots')
+  })
+
+  it('reads an AMS HT the printer reported apart from its AMS units', () => {
+    const slots = (unit: string, n: number) => Array.from({ length: n }, (_, i) => ({ id: `${unit}${i + 1}` }))
+    const f = withHardware(EMPTY_FORM, { filamentUnits: [{ id: 'A', kind: 'ams', slots: slots('A', 4) }, { id: 'E', kind: 'ams-ht', slots: slots('E', 1) }] }).filament
+    expect(f).toEqual({ kind: 'ams', units: 1, slots: 5, htUnits: 1 })
   })
 })
 
