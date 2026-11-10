@@ -1989,7 +1989,7 @@
    ],
    "defaultNozzle": 0.4,
    "nozzleCount": 2,
-   "flavor": "marlin",
+   "flavor": "marlin2",
    "limits": {},
    "sources": [
     "https://www.sovol3d.com/products/sv04"
