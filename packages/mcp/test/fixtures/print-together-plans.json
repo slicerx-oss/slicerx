@@ -1,0 +1,154 @@
+{
+  "flexi-fish": {
+    "part": "Flexi fish, print in place",
+    "units": "mm",
+    "features": [
+      {
+        "kind": "extrude",
+        "name": "Body profile",
+        "sizes": {
+          "overall_length": 120,
+          "body_height": 18,
+          "body_depth": 12
+        }
+      },
+      {
+        "kind": "split",
+        "name": "Segments and joint gaps",
+        "sizes": {
+          "segment_count": 5,
+          "joint_gap": 0.4
+        }
+      },
+      {
+        "kind": "hole",
+        "name": "Joint pin sockets",
+        "sizes": {
+          "joint_pin_diameter": 3
+        }
+      },
+      {
+        "kind": "extrude",
+        "name": "Tail fin",
+        "sizes": {
+          "fin_height": 26,
+          "fin_thickness": 1.2
+        }
+      }
+    ],
+    "assumptions": [
+      "Stylized fish: a side profile extruded to body depth, not a sculpted form.",
+      "Each segment is a separate piece joined by a pin in a socket, with the joint gap so it moves freely when printed in place.",
+      "The tail fin is a thin flat plate joined to the tail stalk by its own pin, so it flops.",
+      "Printed flat on the bed, side profile up, no supports needed."
+    ],
+    "questions": [
+      "Should the segments be printed as one piece in place (joints free), or as separate pieces to assemble?"
+    ]
+  },
+  "articulated-lizard": {
+    "part": "Articulated lizard chain (flat, print in place)",
+    "units": "mm",
+    "features": [
+      {
+        "name": "Segment",
+        "kind": "extrude",
+        "sizes": {
+          "segment_length": 14,
+          "segment_width": 12,
+          "segment_thickness": 5
+        }
+      },
+      {
+        "name": "Joint knuckles",
+        "kind": "extrude",
+        "sizes": {
+          "joint_pin_diameter": 2.5,
+          "joint_clearance": 0.4
+        }
+      },
+      {
+        "name": "Chain of 9 segments",
+        "kind": "array",
+        "sizes": {
+          "segment_count": 9,
+          "pitch": 14.4,
+          "total_length": 150
+        }
+      },
+      {
+        "name": "Head and tail taper",
+        "kind": "extrude",
+        "sizes": {
+          "total_length": 150
+        }
+      }
+    ],
+    "assumptions": [
+      "Chain lies flat on the bed; joints swing about vertical pins, so side-to-side motion is in the bed plane.",
+      "Each segment is a rounded block with a knuckle at each end, 0.4 mm clearance per joint.",
+      "Flat print needs no supports, all overhangs are in the bed plane.",
+      "Outline is a stylized flat lizard silhouette, not a sculpted body, because sculpted organic forms are out of tool scope.",
+      "Sizes are defaults as you asked; the segment count, length, width and pin are guesses."
+    ],
+    "questions": [
+      "Should the four legs be flat plates added to segments 2, 4, 6 and 8?"
+    ]
+  },
+  "fidget-spinner": {
+    "part": "Three lobe print-in-place fidget spinner",
+    "units": "mm",
+    "features": [
+      {
+        "name": "Base disc",
+        "kind": "extrude",
+        "sizes": {
+          "base_diameter": 20,
+          "cap_thickness": 3
+        }
+      },
+      {
+        "name": "Axle post",
+        "kind": "extrude",
+        "sizes": {
+          "axle_diameter": 8,
+          "height": 19
+        }
+      },
+      {
+        "name": "Spinner lobes",
+        "kind": "extrude",
+        "sizes": {
+          "span": 75,
+          "lobe_tip_width": 14,
+          "body_thickness": 8
+        }
+      },
+      {
+        "name": "Hub bore",
+        "kind": "cut",
+        "sizes": {
+          "bore_diameter": 8.6
+        }
+      },
+      {
+        "name": "Top cap",
+        "kind": "extrude",
+        "sizes": {
+          "axle_diameter": 8,
+          "cap_diameter": 12,
+          "cap_thickness": 3
+        }
+      }
+    ],
+    "assumptions": [
+      "Printed flat on the bed: base disc and axle post at the bottom, spinner body floats on the axle with 0.3 mm gaps above and below, top cap sits above the spinner.",
+      "Three lobes spaced 120 degrees, tip width 14 mm, tips on a 37.5 mm radius so the span is 75 mm.",
+      "Hub outer diameter 16 mm, with a 0.3 mm radial clearance between bore and axle.",
+      "Base disc is 3 mm thick and the top cap is 3 mm thick; axle post runs up through the spinner."
+    ],
+    "questions": [
+      "Base disc diameter (20 mm assumed) and top cap diameter (12 mm assumed) are my guesses; say if you want different."
+    ]
+  }
+}

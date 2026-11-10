@@ -1,29 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A plan whose pieces print together without saying so in printInPlace. Recorded runs of a flexi fish and an
-// articulated lizard planned a piece count (segment_count) and a joint gap, but no printInPlace, so neither the plan's
+// articulated lizard (test/fixtures/print-together-plans.json) planned a piece count (segment_count) and a joint gap, but no printInPlace, so neither the plan's
 // gaps nor the check's planned gaps item looked at them. design.plan now reads such a plan as print-in-place, says so on
 // the card, and design.check holds its planned gaps to the fit rule for the run's own material.
+import { readFileSync } from 'node:fs'
 import type { Design as HostDesign, DesignHost } from '@slicerx/cad-history'
 import type { PilotMachine } from '@slicerx/contracts'
 import { printInPlaceClearance, type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
-import { loadRecording } from '../evals/creative/recordings'
 import { gapWay, type PartPlan } from '../src/design-check'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../src/toolset'
 
 const LINE = 'These pieces print together, so their gaps follow the fit rule'
 
-/** The design.plan arguments a recorded run sent, and the machine it ran on. */
+/**
+ * The design.plan arguments recorded runs sent (the 11-07 captures of these prompts, kept here since the recordings were
+ * captured again), and the machine each prompt runs on.
+ */
+const RECORDED_PLANS = JSON.parse(readFileSync(new URL('./fixtures/print-together-plans.json', import.meta.url), 'utf8')) as Record<string, Omit<PartPlan, 'planId'>>
 function recorded(id: string): { input: Omit<PartPlan, 'planId'>; machine: PilotMachine } {
-  const rec = loadRecording(id)
-  if (rec.status !== 'recorded') throw new Error(`${id} is not recorded`)
-  const call = rec.steps.flatMap((s) => s.calls ?? []).find((c) => c.name === 'design.plan')
-  if (!call) throw new Error(`${id} has no design.plan call`)
+  const input = RECORDED_PLANS[id]
+  if (!input) throw new Error(`${id} has no recorded plan`)
   const prompt = CREATIVE_PROMPTS.find((p) => p.id === id)
   if (!prompt) throw new Error(`${id} has no prompt`)
-  return { input: call.args as unknown as Omit<PartPlan, 'planId'>, machine: prompt.machine }
+  return { input: structuredClone(input), machine: prompt.machine }
 }
 
 type Tri = [number[], number[], number[]]

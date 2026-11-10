@@ -5,7 +5,7 @@
 import type { LlmMessage } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
-import { loadRecording, parseRecording, RECORDINGS_DIR } from '../evals/creative/recordings'
+import { parseRecording } from '../evals/creative/recordings'
 import { differs, divergence, fingerprint } from '../evals/creative/replay-divergence'
 import { runPrompt } from '../evals/creative/run'
 
@@ -96,7 +96,8 @@ describe('replay divergence', () => {
     const rec = parseRecording(JSON.stringify({ ...base, steps: [{ calls: [{ name: 'design.list', args: {} }] }, { text: 'Done.', seen: ['{"ok":true}'] }] }))
     expect(rec.status === 'recorded' && rec.steps[1]?.seen).toEqual(['{"ok":true}'])
     expect(() => parseRecording(JSON.stringify({ ...base, steps: [{ text: 'x', seen: 'no' }] }))).toThrow(/seen must be a list/)
-    const old = loadRecording('cable-organizer', RECORDINGS_DIR)
+    // a file from before seen reads with none
+    const old = parseRecording(JSON.stringify({ ...base, steps: [{ calls: [{ name: 'design.list', args: {} }] }, { text: 'Done.' }] }))
     expect(old.status === 'recorded' ? old.steps.some((s) => s.seen) : false).toBe(false)
   })
 })
