@@ -6,11 +6,12 @@
 // (step-wasm-plugin.ts).
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { resolveResource } from '@tauri-apps/api/path'
+import { tracked } from './invoke'
 
 /** The wasm's path inside the app's resources; tauri.conf.json's asset protocol scope is `$RESOURCE/` plus this. */
 export const STEP_WASM_RESOURCE = 'mcp/step-reader/occt-import-js.wasm'
 
 /** The asset protocol URL of the bundled wasm. */
-export async function stepWasmUrl(resolve: (path: string) => Promise<string> = resolveResource, toUrl: (path: string) => string = convertFileSrc): Promise<string> {
+export async function stepWasmUrl(resolve: (path: string) => Promise<string> = tracked('resolve_resource', resolveResource), toUrl: (path: string) => string = convertFileSrc): Promise<string> {
   return toUrl(await resolve(STEP_WASM_RESOURCE))
 }

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Sign in with ChatGPT through the Tauri commands in src-tauri/src/chatgpt.rs.
 import type { ChatGptAccount, ChatGptHost } from '@slicerx/app'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 export function createTauriChatGpt(): ChatGptHost {
   return {

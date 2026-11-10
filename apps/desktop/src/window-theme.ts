@@ -3,7 +3,7 @@
 // The native window follows the app's light or dark mode, so the Windows and Linux title bar (and the macOS
 // traffic lights and menus) match the theme, now and on every switch. Its background follows the page's own, and the
 // shell keeps it for the next launch (src-tauri/src/prefs.rs), so the window never opens in a color the app is not.
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './host/invoke'
 import { onThemeChange, pageBackground } from '@slicerx/ui/theme'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 

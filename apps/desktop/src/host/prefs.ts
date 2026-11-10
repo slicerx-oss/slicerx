@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The shell's copy of the prefs (src-tauri/src/prefs.rs). One write in flight at a time; a change made while one is
 // in flight is sent when it finishes, latest only, so dragging a pane edge does not queue a write per frame.
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 export function prefsWriter(send: (json: string) => Promise<unknown> = (json) => invoke('prefs_save', { json })): (json: string) => void {
   let busy = false

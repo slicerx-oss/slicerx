@@ -3,7 +3,7 @@
 // Prints for a Bambu Lab printer with Developer Mode off, through Bambu Connect. The shell writes the file and opens
 // Bambu Lab's import link (src-tauri/src/bambu_connect.rs); the webview sends bytes and a name, never a path.
 import type { BambuConnectHost } from '@slicerx/contracts'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 
 export function createTauriBambuConnect(): BambuConnectHost {
   return {

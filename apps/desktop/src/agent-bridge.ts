@@ -4,7 +4,7 @@
 // (src-tauri/src/agent_bridge). Imported only by a build made with SLICERX_AGENT_BRIDGE=1; it does nothing unless the
 // shell was built with the agent-bridge feature and started with SX_AGENT_BRIDGE_PORT. See docs/agent-bridge.md.
 import type { EditionHost } from '@slicerx/contracts'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './host/invoke'
 import { listen } from '@tauri-apps/api/event'
 import { BridgeError, createPageBridge, installCapture } from '../../../packages/app/src/agent-bridge'
 

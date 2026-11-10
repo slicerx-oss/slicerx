@@ -4,7 +4,7 @@
 // servers' model lists, and pulls and checks go through the model transport (llm.rs), which only
 // reaches 127.0.0.1 for a local model. The webview itself makes no request to a local server.
 import type { Hardware, LocalAiHost } from '@slicerx/app'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './invoke'
 import { createTauriLlm } from './llm'
 
 export function createTauriLocalAi(): LocalAiHost {
