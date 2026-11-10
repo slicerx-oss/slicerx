@@ -128,7 +128,7 @@ describe('a reply that builds nothing', () => {
     const FISH = CREATIVE_PROMPTS.find((x) => x.id === 'flexi-fish')!
     const choices = [{ id: 'segmented_fish', label: 'Segmented fish with flopping fin' }, { id: 'chain_no_fin', label: 'Jointed chain, no fin' }, { id: 'nothing', label: 'Nothing for now' }]
     const ask = { name: 'pilot.ask', args: { title: 'Fish version', question: 'Which version should I build?', choices } }
-    const card = { name: 'design.plan', args: { part: 'Segmented fish', units: 'mm', features: [{ name: 'Body segments', kind: 'extrude', sizes: { segment_length: 16, segment_height: 24, segment_width: 12, count: 6 } }, { name: 'Hinge pins and sockets', kind: 'hole', sizes: { pin_diameter: 2, socket_diameter: 2.4 } }], assumptions: [], questions: [] } }
+    const card = { name: 'design.plan', args: { part: 'Segmented fish', units: 'mm', features: [{ name: 'Body segments', kind: 'extrude', sizes: { segment_length: 16, segment_height: 24, segment_width: 12, count: 6 } }, { name: 'Hinge pins and sockets', kind: 'hole', sizes: { pin_diameter: 2, socket_diameter: 2.4 } }], assumptions: ['The segments print in place on their pins'], questions: [] } }
     // mimir is told once that the approved plan has no body yet, and the model stops a second time without building
     const client = createScriptedClient([{ text: offer, calls: [ask] }, { calls: [ask] }, { text: plan, calls: [card] }, { text: next }, { text: next }], { chunk: false })
     const run = await runPrompt(FISH, { geom: undefined, client })

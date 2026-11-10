@@ -188,9 +188,9 @@ describe('designCheck', () => {
     expect(designCheck({ ...bracket, features: bracket.features.map((f) => ({ ...f, kinds: { width: 'count' as const } })) }, built, 0.4)).toEqual(designCheck(bracket, built, 0.4))
   })
 
-  it('design.plan is 1.1.0 and tells the model to give a kind for each count and angle, locally too', () => {
+  it('design.plan is 1.2.0 and tells the model to give a kind for each count and angle, locally too', () => {
     const t = createCardPlans(createPlanRegistry()).planTool()
-    expect(t.version).toBe('1.1.0')
+    expect(t.version).toBe('1.2.0')
     expect(t.description).toMatch(/kinds/)
     expect(t.localDescription).toMatch(/kinds/)
   })
@@ -1229,7 +1229,7 @@ describe('design.put_plan', () => {
     // two designs open, neither named as the part: the tie picks the right one
     const { plans, run } = tools([boxDesign('d1', 'Other'), boxDesign('d2', 'Clip')])
     const kept = await run('design.put_plan', { plan: boxPlan, design: 'd1' })
-    expect(kept.output).toEqual({ planId: 'box-1', part: 'Spacer', design: 'd1', features: 0, holes: 0 })
+    expect(kept.output).toEqual({ planId: 'box-1', part: 'Spacer', design: 'd1', features: 0, holes: 0, underFloors: [] })
     expect(kept.summary).toContain('Kept plan box-1 for Spacer (0 features, 40 x 20 x 5 mm overall), tied to Other (d1)')
     expect(plans.get('box-1')).toEqual({ plan: boxPlan, origin: 'client', design: 'd1' })
     const r = await run('design.check', { planId: 'box-1' })
@@ -1267,9 +1267,9 @@ describe('design.put_plan', () => {
     expect(plans.get('client-59')?.origin).toBe('client')
   })
 
-  it('is 1.2.0, keeps the kinds of each size, drops an empty kinds map, and refuses kinds that name no size', async () => {
+  it('is 1.3.0, keeps the kinds of each size, drops an empty kinds map, and refuses kinds that name no size', async () => {
     const { plans, run, set } = tools([boxDesign('d1', 'Spacer')])
-    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.2.0')
+    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.3.0')
     const features = [{ name: 'Wheel', sizes: { spokes: 5, rake: 12 }, kinds: { spokes: 'count', rake: 'angle' } }, { name: 'Rim', sizes: { width: 8 }, kinds: {} }]
     await run('design.put_plan', { plan: { ...boxPlan, planId: 'kinds-1', features } })
     expect(plans.get('kinds-1')!.plan.features).toEqual([features[0], { name: 'Rim', sizes: { width: 8 } }])

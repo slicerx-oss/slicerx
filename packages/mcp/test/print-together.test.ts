@@ -121,7 +121,9 @@ describe('a recorded plan whose pieces print together', () => {
     expect([rule.sideMm, rule.verticalMm]).toEqual([0.4, 0.6])
     const r = await planAndCheck(input, petg)
     expect(r.planned.summary).toContain('at least 0.4 mm side by side and 0.6 mm above or below (PETG, 0.4 mm nozzle, 0.2 mm layers) on this printer')
-    expect(r.gaps).toEqual({ name: 'planned gaps', want: 'every gap the plan sets at least 0.4 mm side by side and 0.6 mm above or below (PETG, 0.4 mm nozzle, 0.2 mm layers)', got: 'joint_gap of Segments and joint gaps: gap 0.4 mm (vertical) is under the 0.6 mm this printer needs between moving parts; use 0.6 mm', pass: false })
+    // the card raised the 0.4 mm joint to PETG's 0.6 mm before Go, so the part built from the plan clears it
+    expect(r.planned.summary).toContain('The card raised Segments and joint gaps joint gap to 0.6 mm on each side')
+    expect(r.gaps).toEqual({ name: 'planned gaps', want: 'every gap the plan sets at least 0.4 mm side by side and 0.6 mm above or below (PETG, 0.4 mm nozzle, 0.2 mm layers)', got: 'joint_gap 0.6 mm (vertical)', pass: true })
   })
 })
 
@@ -147,8 +149,9 @@ describe('a plan left alone', () => {
 
   it('reads a chain of 6 links with a 0.2 mm link gap as print-in-place', async () => {
     const r = await planAndCheck(chain(), machine)
-    expect(r.shown?.assumptions).toEqual([LINE, 'Links are 15 mm long.'])
-    expect(r.gaps).toMatchObject({ got: 'link_gap of Links: gap 0.2 mm (vertical) is under the 0.4 mm this printer needs between moving parts; use 0.4 mm', pass: false })
+    // the card says so first, then raises the 0.2 mm link gap to the 0.4 mm it needs
+    expect(r.shown?.assumptions).toEqual([LINE, 'Links link gap raised from 0.2 mm to 0.4 mm on each side, the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.', 'Links are 15 mm long.'])
+    expect(r.gaps).toMatchObject({ got: 'link_gap 0.4 mm (vertical)', pass: true })
   })
 
   it('leaves a plan with printInPlace false alone', async () => {
@@ -162,7 +165,7 @@ describe('a plan left alone', () => {
 
   it('still reads the near misses of print separately as print-in-place', async () => {
     for (const said of ['The links are not printed separately.', "The links aren't printed separately.", 'The links could be printed separately if wanted.', 'The end cap is printed separately.', 'Each link is a separate piece joined by a pin.']) {
-      const r = await planAndCheck(chain({ assumptions: [said] }), machine)
+      const r = await planAndCheck(chain({ assumptions: [said] }, { link_count: 6, link_gap: 0.4 }), machine)
       expect(r.shown?.assumptions, said).toEqual([LINE, said])
     }
     // a question is not what the plan says: the fish asked whether to print the segments as separate pieces
