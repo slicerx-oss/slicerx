@@ -188,9 +188,9 @@ describe('designCheck', () => {
     expect(designCheck({ ...bracket, features: bracket.features.map((f) => ({ ...f, kinds: { width: 'count' as const } })) }, built, 0.4)).toEqual(designCheck(bracket, built, 0.4))
   })
 
-  it('design.plan is 1.2.0 and tells the model to give a kind for each count and angle, locally too', () => {
+  it('design.plan is 1.3.0 and tells the model to give a kind for each count and angle, locally too', () => {
     const t = createCardPlans(createPlanRegistry()).planTool()
-    expect(t.version).toBe('1.2.0')
+    expect(t.version).toBe('1.3.0')
     expect(t.description).toMatch(/kinds/)
     expect(t.localDescription).toMatch(/kinds/)
   })

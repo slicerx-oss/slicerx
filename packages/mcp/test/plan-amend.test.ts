@@ -6,7 +6,7 @@
 // plan with no card. An amend changes sizes only, once per fix round, and never after the stop result.
 import type { Design as HostDesign, DesignHost } from '@slicerx/cad-history'
 import type { PilotMachine } from '@slicerx/contracts'
-import type { ToolContext } from '@slicerx/pilot'
+import { toolSpec, type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { createPlanRegistry, type PartPlan } from '../src/design-check'
 import { amendChanges, amendProblem, amendShapeProblem, changeText } from '../src/plan-amend'
@@ -97,6 +97,15 @@ function tab(answers: ('go' | 'not yet')[] = []) {
 const taller = (p: PlanInput, z: number): PlanInput => ({ ...p, features: p.features.map((f) => (f.name === 'Base' ? { ...f, sizes: { ...f.sizes, height: z } } : f)), overall: { ...p.overall!, z } })
 
 describe('design.plan with amends', () => {
+  it('tells the model a first plan takes no reason: amends and reason are for changing an approved plan', () => {
+    const plan = tabToolset(boxHost(), createCardPlans(createPlanRegistry()), { nozzleMm: () => machine.nozzle }).find((t) => t.name === 'design.plan')!
+    expect(plan.version).toBe('1.3.0')
+    const props = toolSpec(plan).inputSchema.properties as Record<string, { description?: string }>
+    expect(props['amends']?.description).toMatch(/only to change a plan the person approved/i)
+    expect(props['reason']?.description).toMatch(/only with amends/i)
+    expect(props['reason']?.description).toMatch(/a first plan takes none/i)
+  })
+
   it('changes a built part plan to the height the build made with the person\'s Go, keeping its planId, tie and fix round', async () => {
     const t = tab()
     await t.approve(box)

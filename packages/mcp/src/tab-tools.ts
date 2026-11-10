@@ -25,8 +25,8 @@ export type PlanInput = z.infer<typeof PlanInputSchema>
 
 /** design.plan's input: the plan, and for a change to an approved plan, the plan it amends and why (plan-amend.ts). */
 export const PlanToolInputSchema = PlanInputSchema.extend({
-  amends: z.string().trim().min(1).max(64).optional(),
-  reason: z.string().max(AMEND_REASON_MAX).optional(),
+  amends: z.string().trim().min(1).max(64).optional().describe("Only to change a plan the person approved, once its part is built: that plan's planId. Leave it out of a first plan"),
+  reason: z.string().max(AMEND_REASON_MAX).optional().describe('Only with amends: why the build changes the approved plan, in a sentence the person reads. A first plan takes none'),
 })
 type PlanToolInput = z.infer<typeof PlanToolInputSchema>
 
@@ -219,7 +219,7 @@ export function createCardPlans(plans: PlanRegistry) {
   function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.2.0',
+      version: '1.3.0',
       source: 'command',
       permission: 'read',
       description:
