@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // What a setting helps with, in the words people search for: "stringing" finds retraction and travel, "elephant foot"
-// finds its compensation. Search matches these as well as the setting's name.
+// finds its compensation. Search matches these as well as the setting's name. A problem can name printer settings too
+// (retraction is the printer's); the process search lists those apart, as links into Printer settings.
+import type { SettingDef } from '@slicerx/contracts'
+import { fuzzyScore } from '../../commands/fuzzy'
 
 /** Print problems, each with the settings that help with it. */
 const PROBLEMS: Readonly<Record<string, readonly string[]>> = {
-  stringing: ['travel_speed', 'reduce_infill_retraction', 'reduce_crossing_wall', 'ooze_prevention', 'standby_temperature_delta', 'wipe_on_loops', 'role_based_wipe_speed', 'wipe_speed'],
+  stringing: ['retraction_length', 'retraction_speed', 'deretraction_speed', 'retraction_minimum_travel', 'z_hop', 'wipe_distance', 'travel_speed', 'max_travel_detour_distance', 'reduce_infill_retraction', 'reduce_crossing_wall', 'ooze_prevention', 'standby_temperature_delta', 'wipe_on_loops', 'role_based_wipe_speed', 'wipe_speed'],
   oozing: ['ooze_prevention', 'standby_temperature_delta', 'wipe_on_loops'],
   'elephant foot': ['elefant_foot_compensation', 'elefant_foot_compensation_layers', 'initial_layer_print_height', 'first_layer_flow_ratio'],
   'first layer squish': ['elefant_foot_compensation', 'initial_layer_print_height', 'first_layer_flow_ratio'],
@@ -17,6 +20,7 @@ const PROBLEMS: Readonly<Record<string, readonly string[]>> = {
   pillowing: ['top_shell_layers', 'top_shell_thickness', 'top_surface_density', 'top_bottom_infill_wall_overlap', 'sparse_infill_density'],
   'holes in top': ['top_shell_layers', 'top_shell_thickness', 'top_surface_density', 'sparse_infill_density'],
   sagging: ['thick_bridges', 'bridge_flow', 'bridge_speed', 'enable_extra_bridge_layer', 'support_type'],
+  'bridging sags': ['thick_bridges', 'bridge_flow', 'bridge_speed', 'enable_extra_bridge_layer', 'support_type'],
   'drooping overhangs': ['enable_overhang_speed', 'overhang_4_4_speed', 'extra_perimeters_on_overhangs', 'support_threshold_angle', 'wave_overhangs'],
   curling: ['enable_overhang_speed', 'slowdown_for_curled_perimeters', 'extra_perimeters_on_overhangs', 'wave_overhangs'],
   'part too big': ['xy_contour_compensation', 'xy_hole_compensation', 'elefant_foot_compensation'],
@@ -25,7 +29,7 @@ const PROBLEMS: Readonly<Record<string, readonly string[]>> = {
   fit: ['xy_contour_compensation', 'xy_hole_compensation', 'hole_to_polyhole'],
   'weak part': ['wall_loops', 'sparse_infill_density', 'sparse_infill_pattern', 'top_shell_layers', 'bottom_shell_layers'],
   'layer lines': ['layer_height', 'smart_layer', 'precise_z_height', 'ironing_type'],
-  'rough top': ['ironing_type', 'top_surface_pattern', 'top_surface_speed', 'top_shell_layers'],
+  'rough top surface': ['ironing_type', 'top_surface_pattern', 'top_surface_speed', 'top_shell_layers'],
   'smooth top': ['ironing_type', 'top_surface_pattern'],
   'gaps between lines': ['top_bottom_infill_wall_overlap', 'infill_wall_overlap', 'print_flow_ratio', 'filter_out_gap_fill'],
   'over extrusion': ['print_flow_ratio', 'outer_wall_flow_ratio', 'top_solid_infill_flow_ratio'],
@@ -62,4 +66,45 @@ export function fixMatch(key: string, query: string): string | null {
     if (words.every((w) => pw.some((x) => x.startsWith(w)))) return p
   }
   return null
+}
+
+/** The problem the whole search names ("stringing", "rough top surface"), or null when it names none. */
+export function namedProblem(query: string): string | null {
+  const words = query.trim().toLowerCase().split(/\s+/)
+  if (words.join(' ').length < 3) return null
+  for (const p of Object.keys(PROBLEMS)) {
+    const pw = p.split(' ')
+    if (words.every((w) => pw.some((x) => x.startsWith(w)))) return p
+  }
+  return null
+}
+
+/**
+ * Why a setting matches a search: its name, or a problem it helps with (`fix`); null when it does not match. A search
+ * that names a problem takes a name only when the name holds the words as typed, so "stringing" lists the settings
+ * that help with stringing and not every name whose letters spell it out in order (Support ironing spacing).
+ */
+export function searchMatch(def: Pick<SettingDef, 'key' | 'label'>, query: string): { fix: string | null } | null {
+  const q = query.trim()
+  if (!q) return { fix: null }
+  const label = def.label ?? ''
+  const named = fuzzyScore(q, label) >= 0 || fuzzyScore(q, def.key) >= 0
+  const typed = label.toLowerCase().includes(q.toLowerCase()) || def.key.includes(q.toLowerCase().replace(/\s+/g, '_'))
+  if (named && (typed || !namedProblem(q))) return { fix: null }
+  const fix = fixMatch(def.key, q)
+  return fix ? { fix } : null
+}
+
+/** The printer settings a searched problem names, as links into Printer settings, in the problem's own order. */
+export function printerFixes(query: string, settings: readonly SettingDef[]): { def: SettingDef; fix: string }[] {
+  const q = query.trim()
+  if (!namedProblem(q)) return []
+  const out: { def: SettingDef; fix: string }[] = []
+  for (const def of settings) {
+    if (def.section !== 'printer' || def.mode === 'hidden') continue
+    const fix = fixMatch(def.key, q)
+    if (fix) out.push({ def, fix })
+  }
+  const order = (d: SettingDef) => Object.values(PROBLEMS).flat().indexOf(d.key)
+  return out.sort((a, b) => order(a.def) - order(b.def))
 }

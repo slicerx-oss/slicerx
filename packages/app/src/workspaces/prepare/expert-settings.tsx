@@ -15,7 +15,6 @@ import { formatValue, resolveConfig, SETTINGS } from '../../adapters/settings'
 import { presetOwnValue } from '../../adapters/config'
 import { shortLabel, WIDE_SELECTS } from '../../adapters/short-labels'
 import { useFilamentCount } from '../../filament/count'
-import { fuzzyScore } from '../../commands/fuzzy'
 import { effectiveMode, useLayout } from '../../first-run/look'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { variesPerObject } from '../../plate/plate-wide'
@@ -28,7 +27,7 @@ import { get, markStale, set, useApp, type PlateMeta } from '../../state/store'
 import { appName } from '../../edition'
 import { useScope } from './scope-bar'
 
-import { fixMatch } from './setting-fixes'
+import { printerFixes, searchMatch } from './setting-fixes'
 import { buildTabs, EDITABLE_PROCESS, offeredTabs, sectionHasRows, sectionOpen, sectionRows, type ViewSection, type ViewTab } from './settings-view'
 
 export { EDITABLE, LIST_ENUM_KEYS, PROCESS_EDITABLE, INTENTS, visibleLevels } from './settings-view'
@@ -465,12 +464,9 @@ export function ExpertSettings() {
   const searching = Boolean(q)
   const tabsAll = useMemo(() => buildTabs({ mode, changed, filamentCount, searching }), [mode, changed, filamentCount, searching])
   /** Why a row matched a search: its name, or a problem it helps with. */
-  const matchOf = (def: SettingDef): { fix: string | null } | null => {
-    if (!q) return { fix: null }
-    if (fuzzyScore(q, def.label ?? '') >= 0 || fuzzyScore(q, def.key) >= 0) return { fix: null }
-    const fix = fixMatch(def.key, q)
-    return fix ? { fix } : null
-  }
+  const matchOf = (def: SettingDef): { fix: string | null } | null => searchMatch(def, q)
+  // a problem whose fix is a printer setting (retraction) links to it in Printer settings
+  const elsewhere = useMemo(() => (q && !changedOnly ? printerFixes(q, SETTINGS) : []), [q, changedOnly])
   const offered = offeredTabs(filamentCount)
   const tabs = tabsAll.filter((t) => offered.some((o) => o.id === t.intent.id))
   const stored = useApp((s) => s.settingsTab)
@@ -625,7 +621,26 @@ export function ExpertSettings() {
           })}
         </div>
       </div>
-      {flat && !count ? <p className="sx-muted sx-small">{changedOnly ? 'Nothing changed yet.' : `No setting matches "${query}"`}</p> : null}
+      {flat && !count && !elsewhere.length ? <p className="sx-muted sx-small">{changedOnly ? 'Nothing changed yet.' : `No setting matches "${query}"`}</p> : null}
+      {elsewhere.length ? (
+        <section className="expert-group tier-group" data-testid="slice-settings-printer-fixes" aria-label="In Printer settings">
+          <h4>
+            <span className="tier-h">
+              <Icon name="printer" size={14} />
+              In Printer settings
+            </span>
+            <span className="sx-mono">{elsewhere.length}</span>
+          </h4>
+          <ul>
+            {elsewhere.map(({ def, fix }) => (
+              <li key={def.key} className="sx-small">
+                <LinkButton onClick={() => set({ settingFocus: { key: def.key, label: def.label ?? def.key }, printerSettingsOpen: true })}>{def.label ?? def.key}</LinkButton>
+                <span className="sx-muted"> helps with {fix}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <div id="set-tab-panel" role="tabpanel" aria-labelledby={flat ? undefined : `set-tab-${tabId}`} aria-label={flat ? (searching ? 'Search results' : 'Changed settings') : undefined}>
         {flat
           ? found.map(({ t, sections }) => (

@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { setSettingsView } from '../src/agent-bridge/settings'
 import { appState } from '../src/agent-bridge/page'
 import { SECTIONS, sectionOf } from '../src/workspaces/prepare/setting-sections'
-import { fixMatch } from '../src/workspaces/prepare/setting-fixes'
+import { fixMatch, printerFixes, searchMatch } from '../src/workspaces/prepare/setting-fixes'
+import { SETTINGS } from '../src/adapters/settings'
 import { buildTabs, EDITABLE_PROCESS, sectionHasRows, sectionOpen, sectionRows } from '../src/workspaces/prepare/settings-view'
 import { get, set } from '../src/state/store'
 
@@ -81,6 +82,32 @@ describe('search by what a setting fixes', () => {
     expect(fixMatch('brim_width', 'warp')).toBe('warping')
     expect(fixMatch('brim_width', 'stringing')).toBeNull()
     expect(fixMatch('travel_speed', 'st')).toBeNull()
+  })
+
+  // what the Settings search lists for a problem: the process rows, and the printer settings it links to
+  const rows = (q: string) => EDITABLE_PROCESS.filter((d) => d.mode !== 'hidden' && searchMatch(d, q) !== null).map((d) => d.key)
+  const printer = (q: string) => printerFixes(q, SETTINGS).map((f) => f.def.key)
+
+  it('finds the top surface settings for "rough top surface"', () => {
+    expect(rows('rough top surface')).toEqual(expect.arrayContaining(['ironing_type', 'top_surface_pattern', 'top_surface_speed', 'top_shell_layers']))
+    // the shorter search still finds them
+    expect(rows('rough top')).toEqual(expect.arrayContaining(['ironing_type', 'top_surface_pattern']))
+    expect(searchMatch({ key: 'ironing_type', label: 'Ironing type' }, 'rough top surface')).toEqual({ fix: 'rough top surface' })
+  })
+
+  it('finds the bridge settings for "bridging sags"', () => {
+    expect(rows('bridging sags')).toEqual(expect.arrayContaining(['thick_bridges', 'bridge_flow', 'bridge_speed', 'enable_extra_bridge_layer']))
+    expect(searchMatch({ key: 'bridge_flow', label: 'Bridge flow' }, 'bridging sags')).toEqual({ fix: 'bridging sags' })
+  })
+
+  it('lists retraction and travel for "stringing", and not a name that only spells it out', () => {
+    expect(printer('stringing').slice(0, 2)).toEqual(['retraction_length', 'retraction_speed'])
+    expect(printer('stringing')).toEqual(expect.arrayContaining(['retraction_minimum_travel', 'z_hop']))
+    expect(rows('stringing')).toEqual(expect.arrayContaining(['travel_speed', 'max_travel_detour_distance', 'reduce_crossing_wall']))
+    expect(rows('stringing')).not.toContain('support_ironing_spacing')
+    // a search that names no problem still matches a name letter by letter
+    expect(searchMatch({ key: 'support_ironing_spacing', label: 'Support ironing spacing' }, 'sup iron')).toEqual({ fix: null })
+    expect(printer('support')).toEqual([])
   })
 })
 
