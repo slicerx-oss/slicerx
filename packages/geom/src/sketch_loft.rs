@@ -819,7 +819,7 @@ pub(crate) fn one_region(loops: &[Loop], verb: &str) -> std::result::Result<Poly
 
 /// `ring` with `n` points: its own points all kept, and the points it lacks spread over its sides by their length.
 /// A `closed` ring has a side from its last point back to its first; an open chain does not.
-fn resample(ring: &[V2], n: usize, closed: bool) -> Vec<V2> {
+pub(crate) fn resample(ring: &[V2], n: usize, closed: bool) -> Vec<V2> {
     let k = ring.len();
     if n <= k {
         return ring.to_vec();

@@ -1315,3 +1315,145 @@ fn a_holed_sweep_says_what_is_wrong() {
         "profile: a sweep profile is one outer loop with any holes inside it, not 2 separate shapes"
     );
 }
+
+#[test]
+fn a_square_that_turns_round_is_the_ruled_loft_between_them() {
+    let (square, round) = (rect(20.0, 20.0), circle([0.0, 0.0], 20.0));
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "loops": [square] }, "endProfile": { "loops": [round] }, "path": up(40.0) }),
+    );
+    solid(&m);
+    let loft = run(
+        "sketch.loft",
+        &json!({ "profiles": [{ "frame": level(0.0), "loops": [square] }, { "frame": level(40.0), "loops": [round] }] }),
+    );
+    assert!(
+        (volume(&m) / volume(&loft) - 1.0).abs() < 5e-3,
+        "{} vs {}",
+        volume(&m),
+        volume(&loft)
+    );
+    // the square at the bottom and the circle at the top
+    let pts = points(&m);
+    let foot = pts
+        .iter()
+        .filter(|p| p[2].abs() < 1e-9)
+        .fold(0.0f64, |r, p| r.max(p[0].abs().max(p[1].abs())));
+    assert!((foot - 10.0).abs() < 1e-9, "{foot}");
+    let top = pts
+        .iter()
+        .filter(|p| (p[2] - 40.0).abs() < 1e-9)
+        .map(|p| p[0].m_hypot(p[1]))
+        .fold(0.0f64, f64::max);
+    assert!((top - 10.0).abs() < 1e-5, "{top}");
+}
+
+#[test]
+fn a_duct_turns_round_through_a_bend_with_twist_and_scale() {
+    // 20 by 10 mm into a 20 mm round, along a 30 mm quarter bend
+    let path = json!({ "loops": [{ "start": [30, 0], "segments": [{ "type": "arc", "center": [0, 0], "sweepDeg": 90 }] }] });
+    let frame = json!({ "origin": [30, 0, 0], "normal": [0, 1, 0], "u": [-1, 0, 0], "v": [0, 0, 1] });
+    let len = 30.0 * PI / 2.0;
+    for ease in ["linear", "smooth"] {
+        let m = run(
+            "sketch.sweep",
+            &json!({ "profile": { "frame": frame, "loops": [rect(20.0, 10.0)] }, "endProfile": { "loops": [circle([0.0, 0.0], 20.0)] }, "path": path, "ease": ease }),
+        );
+        solid(&m);
+        assert_eq!(m["edges"]["nonManifoldEdges"], 0, "{}", m["edges"]);
+        let v = volume(&m);
+        assert!(v > 200.0 * len && v < PI * 100.0 * len, "{ease}: {v}");
+    }
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "frame": frame, "loops": [rect(8.0, 4.0)] }, "endProfile": { "loops": [circle([0.0, 0.0], 6.0)] }, "path": path, "twistDeg": 45, "scaleEnd": 1.2 }),
+    );
+    solid(&m);
+}
+
+#[test]
+fn an_open_chain_turns_into_another_thickened() {
+    // a half round 10 mm across flattening to a shallow V
+    let u = half_circle(5.0, 24);
+    let v = json!({ "points": [[-5, 0], [0, -2], [5, 0]] });
+    let m = run(
+        "sketch.sweep",
+        &json!({ "profile": { "open": true, "loops": [{ "points": u }] }, "endProfile": { "open": true, "loops": [v] }, "path": up(20.0), "thicken": { "thicknessMm": 1 } }),
+    );
+    solid(&m);
+    // 5 mm deep at the start and 2 mm at the end
+    let pts = points(&m);
+    let deep = |z: f64| {
+        pts.iter()
+            .filter(|p| (p[2] - z).abs() < 1e-6)
+            .fold(0.0f64, |d, p| d.max(-p[1]))
+    };
+    assert!(
+        (deep(0.0) - 5.0).abs() < 1e-6 && (deep(20.0) - 2.0).abs() < 1e-6,
+        "{} {}",
+        deep(0.0),
+        deep(20.0)
+    );
+}
+
+/// `steps` points on from the start of a helix of radius `r` and `pitch` about z, `per` points a turn.
+fn helix(r: f64, pitch: f64, steps: u32, per: u32) -> Vec<[f64; 3]> {
+    (0..=steps)
+        .map(|i| {
+            let t = f64::from(i) / f64::from(per);
+            let (s, c) = (2.0 * PI * t).m_sin_cos();
+            [r * c, r * s, pitch * t]
+        })
+        .collect()
+}
+
+#[test]
+fn a_morph_says_what_is_wrong() {
+    let round = json!({ "loops": [circle([0.0, 0.0], 10.0)] });
+    let chain = json!({ "open": true, "loops": [{ "points": [[-5, 0], [5, 0]] }] });
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": round, "endProfile": chain, "path": up(10.0) })
+        ),
+        "endProfile: the profile is closed and the end profile is an open chain; both are closed or both open"
+    );
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": round, "endProfile": { "frame": level(10.0), "loops": [circle([0.0, 0.0], 8.0)] }, "path": up(10.0) })
+        ),
+        "endProfile.frame: the end profile is drawn on the profile's own plane; leave its frame out"
+    );
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": round, "endProfile": { "loops": [circle([-6.0, 0.0], 4.0), circle([6.0, 0.0], 4.0)] }, "path": up(10.0) })
+        ),
+        "endProfile: a sweep profile is one closed loop, not 2"
+    );
+    // a tube's profile, an outer loop and its bore, takes no end section yet
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": { "loops": ring_loops() }, "endProfile": { "loops": [rect(20.0, 20.0)] }, "path": up(10.0) })
+        ),
+        "endProfile: a profile with holes takes no end profile yet; sweep the outside with its end profile, then cut the bore with a sweep of its own"
+    );
+    // a coil whose wire grows from 4 to 20 mm: its turns, 12 mm apart, run into each other
+    let side = json!({ "origin": [20, 0, 0], "normal": [0, -1, 0], "u": [1, 0, 0], "v": [0, 0, 1] });
+    let coil = json!({ "points": helix(20.0, 12.0, 72, 48) });
+    let wire = |d: f64| json!({ "loops": [circle([0.0, 0.0], d)] });
+    solid(&run(
+        "sketch.sweep",
+        &json!({ "profile": { "frame": side, "loops": [circle([0.0, 0.0], 4.0)] }, "endProfile": wire(8.0), "path": coil }),
+    ));
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": { "frame": side, "loops": [circle([0.0, 0.0], 4.0)] }, "endProfile": wire(20.0), "path": coil })
+        ),
+        "sweep: the swept body runs into itself where the path comes back near itself; move those parts of the path further apart or use a smaller profile"
+    );
+}
