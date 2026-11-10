@@ -422,6 +422,25 @@ fn closest_pairs(
         .collect()
 }
 
+/// The smallest distance between two bodies, mm: 0 where they touch or one holds the other.
+#[cfg(feature = "cad")]
+pub(crate) fn gap_mm(a: &TriMesh, b: &TriMesh) -> f64 {
+    let (Some(ba), Some(bb)) = (a.bounds(), b.bounds()) else {
+        return 0.0;
+    };
+    // no pair of points is closer than the boxes, so the search starts there and reaches twice as far each time
+    let floor = vec3::len([0, 1, 2].map(|k| (ba.min[k] - bb.max[k]).max(bb.min[k] - ba.max[k]).max(0.0)));
+    let most = floor + ba.diagonal() + bb.diagonal();
+    let mut reach = 2.0 * floor + 0.1;
+    while reach < 4.0 * most + 1.0 {
+        if let Some(c) = closest_pairs(a, b, &ba, &bb, reach, false).first() {
+            return if c.fused { 0.0 } else { c.d };
+        }
+        reach *= 2.0;
+    }
+    floor
+}
+
 /// The squared distance between a box (its span on each axis) and a triangle's box.
 fn box_gap2(cb: &[(f64, f64); 3], t: &[V3; 3]) -> f64 {
     (0..3)

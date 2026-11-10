@@ -6,7 +6,7 @@
 // and its reason returned: a design never keeps a broken edit the client did not ask for.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, designNamed, noDesignMessage, parseHistories, replayHistory, stepId, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, designNamed, noDesignMessage, parseHistories, replayHistory, stepId, unstopped, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { soup, slug, type Design, type DesignFiles } from './design-tools'
 import { writeBinaryStl, readStlPositions } from './mesh'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
@@ -84,7 +84,7 @@ export class Designs implements DesignHost {
     const history = appendStep(d.history, step)
     const r = await this.run(history)
     const st = r.status[r.status.length - 1]
-    if (st?.state !== 'done') throw new ToolInputError(`The step did not go through: ${st?.message ?? 'the steps before it are broken'}. The design is unchanged.`, 'invalid_input', { design: d.id })
+    if (st?.state !== 'done') throw new ToolInputError(`The step did not go through: ${unstopped(st?.message ?? 'the steps before it are broken')}. The design is unchanged.`, 'invalid_input', { design: d.id })
     guard()
     this.keep(d, history, r)
     d.redo = []
@@ -106,7 +106,7 @@ export class Designs implements DesignHost {
     const r = await replayHistory(this.deps.engine, { history, exact: history.exact === true })
     if (history.exact) {
       const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')
-      if (broken || r.exactFellBack?.length) throw new ToolInputError(`Exact replay stopped: ${broken?.message ?? 'a step requires the mesh path'}. The design is unchanged.`)
+      if (broken || r.exactFellBack?.length) throw new ToolInputError(`Exact replay stopped: ${unstopped(broken?.message ?? 'a step requires the mesh path')}. The design is unchanged.`)
     }
     return r
   }

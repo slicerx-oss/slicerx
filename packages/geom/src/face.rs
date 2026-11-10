@@ -619,10 +619,26 @@ pub struct ExtrudeResult {
 pub struct ExtrudeReport {
     pub volume_change_mm3: f64,
     pub touches: bool,
+    /// why a join or cut does not touch the body, when it does not
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub miss: Option<Miss>,
     pub shells: usize,
     pub watertight: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub boolean: Option<BooleanReport>,
+}
+
+/// Why a join or cut leaves the body as it was, or adds a body of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(tag = "reason", rename_all = "camelCase")]
+pub enum Miss {
+    /// the shape is clear of the body, by the smallest distance between them (0 when only part of it floats off)
+    #[serde(rename_all = "camelCase")]
+    Apart { gap_mm: f64 },
+    /// a join that lies inside the body
+    Inside,
+    /// a cut that meets the body and removes nothing
+    Unchanged,
 }
 
 /// Copies of the shape on its face, made in one step: a line or a grid along the face's `u` and `v`, a circle
@@ -796,6 +812,7 @@ pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> R
                 report: ExtrudeReport {
                     volume_change_mm3: r.volume_mm3,
                     touches: true,
+                    miss: None,
                     shells: r.shells,
                     watertight: r.watertight,
                     boolean: None,
@@ -825,10 +842,12 @@ pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> R
             // a join that adds a body of its own touches nothing; one that closes a hollow (a hook over
             // an open stem, a lid on a cup) adds only an inner shell, so the outer shells are counted
             let touches = changed && (op != Operation::Join || outer_shells(&mesh) <= shells0);
+            let miss = (!touches).then(|| miss(&tool, t, op, changed));
             Ok(ExtrudeResult {
                 report: ExtrudeReport {
                     volume_change_mm3: dv,
                     touches,
+                    miss,
                     shells: r.shells,
                     watertight: r.watertight,
                     boolean: Some(r),
@@ -837,6 +856,20 @@ pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> R
                 tool,
             })
         }
+    }
+}
+
+/// Why a join or cut of `tool` does not touch `target`: a join that changed nothing lies inside it, one that added a
+/// body of its own is apart, and a cut that changed nothing is apart unless it meets the body.
+fn miss(tool: &TriMesh, target: &TriMesh, op: Operation, changed: bool) -> Miss {
+    if op == Operation::Join && !changed {
+        return Miss::Inside;
+    }
+    let gap_mm = crate::fit::gap_mm(tool, target);
+    if changed || gap_mm > 1e-6 {
+        Miss::Apart { gap_mm }
+    } else {
+        Miss::Unchanged
     }
 }
 
@@ -1192,6 +1225,11 @@ mod tests {
         )
         .unwrap();
         assert!(!far.report.touches);
+        assert!(
+            matches!(far.report.miss, Some(Miss::Apart { gap_mm }) if gap_mm > 50.0),
+            "{:?}",
+            far.report.miss
+        );
         let hex = Shape::Polygon {
             sides: 6,
             diameter_mm: 10.0,
@@ -1231,7 +1269,11 @@ mod tests {
         .unwrap();
         // the sealed hollow is a second, inward-facing shell; the lid still joined the one body
         assert_eq!(lid.report.shells, 2, "{:?}", lid.report);
-        assert!(lid.report.touches, "{:?}", lid.report);
+        assert!(
+            lid.report.touches && lid.report.miss.is_none(),
+            "{:?}",
+            lid.report
+        );
         // a lid off to the side is still a body of its own
         let apart = apply(
             build::box_mesh([40.0, 0.0, 0.0], [50.0, 10.0, 3.0]),
@@ -1240,6 +1282,76 @@ mod tests {
         )
         .unwrap();
         assert!(!apart.report.touches, "{:?}", apart.report);
+        assert!(
+            matches!(apart.report.miss, Some(Miss::Apart { gap_mm }) if (gap_mm - 10.0).abs() < 1e-9),
+            "{:?}",
+            apart.report
+        );
+    }
+
+    #[test]
+    fn a_join_that_stops_short_of_the_body_says_how_far() {
+        // a pin placed on a plate's old top, 4 mm up, after the plate was made 2.8 mm thick
+        let plate = build::box_mesh([0.0; 3], [120.0, 75.0, 2.8]);
+        let at = Frame::from_normal([30.0, 37.5, 4.0], [0.0, 0.0, 1.0], None).unwrap();
+        let pin = apply(
+            build::cylinder(&at, 2.5, 0.0, 10.0, 48),
+            Operation::Join,
+            Some(&plate),
+        )
+        .unwrap();
+        assert!(!pin.report.touches, "{:?}", pin.report);
+        assert!(
+            matches!(pin.report.miss, Some(Miss::Apart { gap_mm }) if (gap_mm - 1.2).abs() < 1e-9),
+            "{:?}",
+            pin.report.miss
+        );
+        let sent = serde_json::to_value(&pin.report).unwrap();
+        assert_eq!(sent["miss"]["reason"], "apart", "{sent}");
+        assert!(
+            (sent["miss"]["gapMm"].as_f64().unwrap() - 1.2).abs() < 1e-9,
+            "{sent}"
+        );
+        // an arm started at the face of a back plate 5 mm thick, after the plate was made 3.5 mm thick
+        let back = build::box_mesh([-12.5, 0.0, 0.0], [12.5, 3.5, 70.0]);
+        let at = Frame::from_normal([0.0, 5.0, 40.0], [0.0, 1.0, 0.0], None).unwrap();
+        let arm = apply(
+            build::cylinder(&at, 6.0, 0.0, 45.0, 48),
+            Operation::Join,
+            Some(&back),
+        )
+        .unwrap();
+        assert!(
+            matches!(arm.report.miss, Some(Miss::Apart { gap_mm }) if (gap_mm - 1.5).abs() < 1e-9),
+            "{:?}",
+            arm.report.miss
+        );
+        // the same arm on the plate as it was touches it
+        let back = build::box_mesh([-12.5, 0.0, 0.0], [12.5, 5.0, 70.0]);
+        let arm = apply(
+            build::cylinder(&at, 6.0, 0.0, 45.0, 48),
+            Operation::Join,
+            Some(&back),
+        )
+        .unwrap();
+        assert!(
+            arm.report.touches && arm.report.miss.is_none(),
+            "{:?}",
+            arm.report
+        );
+        // a cut that stops short is apart by its gap as well
+        let above = Frame::from_normal([30.0, 37.5, 4.0], [0.0, 0.0, 1.0], None).unwrap();
+        let short = apply(
+            build::cylinder(&above, 2.0, 0.0, 10.0, 48),
+            Operation::Cut,
+            Some(&plate),
+        )
+        .unwrap();
+        assert!(
+            matches!(short.report.miss, Some(Miss::Apart { gap_mm }) if (gap_mm - 1.2).abs() < 1e-9),
+            "{:?}",
+            short.report
+        );
     }
 
     #[test]
@@ -1271,6 +1383,8 @@ mod tests {
         )
         .unwrap();
         assert!(!out.report.touches, "{:?}", out.report);
+        // the flipped cut stands on the top face: it meets the body and removes nothing
+        assert_eq!(out.report.miss, Some(Miss::Unchanged), "{:?}", out.report);
         assert!(out.report.volume_change_mm3.abs() < 1e-6, "{:?}", out.report);
         let inside = extrude(
             &p.frame,
@@ -1282,6 +1396,7 @@ mod tests {
         )
         .unwrap();
         assert!(!inside.report.touches, "{:?}", inside.report);
+        assert_eq!(inside.report.miss, Some(Miss::Inside), "{:?}", inside.report);
         assert!(
             inside.report.volume_change_mm3.abs() < 1e-6,
             "{:?}",

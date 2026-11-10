@@ -3,7 +3,7 @@
 // What the Model tools tell a person: real numbers in their messages, plain words for the engine's refusals, nothing
 // recorded when nothing changed, and a word when a tool has nothing to do.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ADDS_NOTHING_MM3, clearReplayCache, replayHistory } from '@slicerx/cad-history'
+import { ADDS_NOTHING_MM3, clearReplayCache, replayHistory, type Miss } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { setGeomProvider, toGeom } from '../src/geom/client'
 import { applyExtrude } from '../src/cad/cad-ops'
@@ -89,13 +89,13 @@ describe('subtract a shape', () => {
 
 describe('a shape on a face that misses the body', () => {
   const frame = { origin: [100, 100, 10] as [number, number, number], normal: [0, 0, 1] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 1, 0] as [number, number, number] }
-  const reply = (volumeChangeMm3: number) => {
+  const reply = (volumeChangeMm3: number, miss?: Miss) => {
     setGeomProvider({
       call: async <R,>(op: string): Promise<R> => {
         calls.push(op)
         // the engine's join left the text's letters floating: a bigger mesh, but touches is false
         const big = boxMesh(40, 40, 12)
-        return { mesh: { positions: Array.from(big.positions), indices: Array.from(big.indices) }, tool: { positions: [], indices: [] }, frame: 'target', report: { volumeChangeMm3, touches: false, shells: 3, watertight: true } } as R
+        return { mesh: { positions: Array.from(big.positions), indices: Array.from(big.indices) }, tool: { positions: [], indices: [] }, frame: 'target', report: { volumeChangeMm3, touches: false, ...(miss ? { miss } : {}), shells: 3, watertight: true } } as R
       },
     })
   }
@@ -130,6 +130,20 @@ describe('a shape on a face that misses the body', () => {
     expect((await run()).message).toBe(message)
   })
 
+  it('names how far short of the body the shape stops, and says a shape that only meets it changed nothing', async () => {
+    reply(240, { reason: 'apart', gapMm: 4 })
+    expect((await run()).message).toBe('The shape stops 4.0 mm short of the body, so nothing changed. Check the distance and the direction.')
+    reply(0, { reason: 'apart', gapMm: 1.2 })
+    expect((await run('cut')).message).toBe('The shape stops 1.2 mm short of the body, so nothing changed. Check the distance and the direction.')
+    // only part of it floats off: no gap to name
+    reply(240, { reason: 'apart', gapMm: 0 })
+    expect((await run()).message).toBe('Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.')
+    reply(0, { reason: 'inside' })
+    expect((await run()).message).toBe('The shape is already inside the body, so nothing changed. Check the distance and the direction.')
+    reply(0, { reason: 'unchanged' })
+    expect((await run('cut')).message).toBe('The shape only touches the body, so nothing changed. Check the distance and the direction.')
+  })
+
   it('says a cut that misses the body changed nothing, and records no step', async () => {
     reply(0)
     const before = get().plate[0]!
@@ -145,18 +159,32 @@ describe('a replayed join or cut that changes nothing', () => {
   const box = boxMesh(10, 10, 5)
   const base = { name: 'body', slot: 1, positions: Array.from(box.positions), indices: Array.from(box.indices) }
   // the engine changes nothing: a join inside the part or a cut that misses it
+  let miss: Miss | undefined
   const engine = async (op: string) => {
     calls.push(op)
-    return { mesh: { positions: base.positions, indices: base.indices }, report: { touches: false, volumeChangeMm3: 0, shells: 1, watertight: true } }
+    return { mesh: { positions: base.positions, indices: base.indices }, report: { touches: false, ...(miss ? { miss } : {}), volumeChangeMm3: 0, shells: 1, watertight: true } }
   }
   const replayed = (operation: 'join' | 'cut') =>
     replayHistory(engine, { history: { version: 1, base: [base], steps: [{ id: 's1', part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'shape.extrude', frame, shape: { type: 'rectangle', widthMm: 4, heightMm: 4 }, placement: {}, spec: { distanceMm: 2, operation } } }] } })
 
   it('says a join sits inside the part, and a cut no longer reaches it', async () => {
+    miss = undefined
     clearReplayCache()
     expect((await replayed('join')).status[0]).toMatchObject({ state: 'broken', message: 'The shape is already inside the part, so nothing changed.' })
     clearReplayCache()
     expect((await replayed('cut')).status[0]).toMatchObject({ state: 'broken', message: 'The shape no longer reaches the part.' })
+  })
+
+  it.each<[Miss, 'join' | 'cut', string]>([
+    [{ reason: 'apart', gapMm: 4 }, 'join', 'The shape stops 4.0 mm short of the part.'],
+    [{ reason: 'apart', gapMm: 1.24 }, 'cut', 'The shape stops 1.2 mm short of the part.'],
+    [{ reason: 'apart', gapMm: 0.01 }, 'join', 'Part of the shape would float off the part, so nothing changed.'],
+    [{ reason: 'inside' }, 'join', 'The shape is already inside the part, so nothing changed.'],
+    [{ reason: 'unchanged' }, 'cut', 'The shape only touches the part, so nothing changed.'],
+  ])('says why the engine found %j for a %s', async (why, operation, message) => {
+    miss = why
+    clearReplayCache()
+    expect((await replayed(operation)).status[0]).toMatchObject({ state: 'broken', message })
   })
 })
 

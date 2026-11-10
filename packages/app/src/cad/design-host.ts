@@ -18,7 +18,7 @@
 // now, moved with the design it was drawn for or the first feature drawn on it, then into a design's frame by that
 // design's landing (cad-history design-frame.ts). Where a body stands comes from one place for every reader
 // (sketch-place.ts), waiting designs included, so the mimir tab's host, the app link's and Model read the same.
-import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, withPlaced, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, unstopped, withPlaced, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
@@ -270,7 +270,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       const after = afterEdit(d.id)
       await applyHistory(loader, d.id, next, step.id, guard, capture, after.land).catch((e: unknown) => {
         if (e instanceof Error && 'code' in e && e.code === 'stale_body') throw e
-        throw new Error(`The step did not go through: ${e instanceof Error ? e.message : String(e)}. The design is unchanged.`)
+        throw new Error(`The step did not go through: ${unstopped(e instanceof Error ? e.message : String(e))}. The design is unchanged.`)
       })
       moved = after.landed()
     }
@@ -296,7 +296,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     const project = projectGeneration()
     const r = await runReplay({ history })
     const k = need === undefined ? -1 : history.steps.findIndex((s) => s.id === need)
-    if (k >= 0 && r.status[k]?.state !== 'done') throw new Error(`The step did not go through: ${r.status[k]?.message ?? 'the steps before it are broken'}. The design is unchanged.`)
+    if (k >= 0 && r.status[k]?.state !== 'done') throw new Error(`The step did not go through: ${unstopped(r.status[k]?.message ?? 'the steps before it are broken')}. The design is unchanged.`)
     if (!r.parts.length) throw new Error('The design has no body yet.')
     const parts = r.parts.map(toPart)
     const handle = await loader.loadParts(name, parts)

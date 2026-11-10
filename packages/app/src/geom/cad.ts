@@ -10,7 +10,7 @@
 // input's local frame, so the object keeps its transform.
 import { geom, usesWorker, type GeomMesh, type TypedGeomMesh } from './client'
 import { fitCall } from './fit-client'
-import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, LoftProfile, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, SweepPath, ThreadPlace, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
+import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, LoftProfile, Mat4, Miss, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, SweepPath, ThreadPlace, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
 
 export type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, SketchSegment, ThreadPlace, ThreadSize, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
 
@@ -139,6 +139,8 @@ export interface ExtrudeReport {
   volumeChangeMm3: number
   /** The tool reaches the target (always true for a new body). */
   touches: boolean
+  /** Why it does not, when it does not: apart from the target by a gap, inside it, or meeting it with no change. */
+  miss?: Miss
   shells: number
   watertight: boolean
   boolean?: BooleanReport

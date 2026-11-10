@@ -1229,7 +1229,7 @@
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"The step did not go through: boolean: the result is unsafe at mesh storage precision (collapsed triangles); change the cut or placement. The design is unchanged.. The cut or join left faces that line up or slivers. For a cut, extend the cutting shape about 0.05 mm past the faces it meets; for a join, overlap the bodies about 0.05 mm rather than letting faces just touch. Try again once, and tell the person in plain words if it still fails; never quote the engine text.\"}"
+    "{\"ok\":false,\"summary\":\"The step did not go through: boolean: the result is unsafe at mesh storage precision (collapsed triangles); change the cut or placement. The design is unchanged. The cut or join left faces that line up or slivers. For a cut, extend the cutting shape about 0.05 mm past the faces it meets; for a join, overlap the bodies about 0.05 mm rather than letting faces just touch. Try again once, and tell the person in plain words if it still fails; never quote the engine text.\"}"
    ],
    "calls": [
     {
