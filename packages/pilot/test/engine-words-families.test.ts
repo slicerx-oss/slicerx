@@ -43,6 +43,18 @@ const CASES: readonly (readonly [string, string, RegExp])[] = [
   // array.rs, sketch_sweep.rs, hollow.rs: over a size limit
   ['geom.array', 'count: at most 2000 copies', /more detail/],
   ['geom.hollow', 'voxelMm: the grid would have 912000000 cells; use a larger voxel', /more detail/],
+  // mcp cad.ts: a step sent with a target or part that does not fit the design; nothing for the person to do
+  ['geom.cut', 'target: with a design, join and cut work on its "part"; leave target out', /sent that step the wrong way/],
+  ['geom.join', 'target: with a design, join and cut work on its "part"; leave target out and give part, one of 0 (Plate), 1 (Hook)', /sent that step the wrong way/],
+  ['geom.cut', 'target: Hook is part 1 (Hook), but part is 0 (Plate); give one of them', /sent that step the wrong way/],
+  ['geom.face_pick', 'part: the design has 2 parts', /sent that step the wrong way/],
+  ['geom.sweep', 'profile: its loop sits 40 mm from where the path starts (0, 5, 40), and the profile is carried as it sits. Loop points are [u, v] from the profile frame\'s origin, so with the origin on the path\'s start a loop around it is centered at [0, 0].', /sent that step the wrong way/],
+  ['geom.hole', 'pick: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole\'s axis, such as its center on the face it starts at, and the axis. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)', /sent that step the wrong way/],
+  ['geom.subtract', "solids: a design's subtract step takes boxes and cylinders; a countersink cut needs a model (or build it as its own part)", /sent that step the wrong way/],
+  // cad-history replay.ts: an earlier step removed the part
+  ['design.edit_step', 'The step did not go through: The part this step works on is gone. The design is unchanged.', /no longer there/],
+  ['geom.boolean', 'The part this step works on is gone.', /no longer there/],
+  ['design.edit_step', 'Edited step 2, Cut; step 4 broke: A part this step combines is gone.', /no longer there/],
   // any other engine refusal
   ['geom.build', 'request: missing "parts"', /could not be made/],
   ['geom.build', 'unknown operation "brep.wedge"', /could not be made/],
@@ -90,15 +102,33 @@ describe('every engine refusal in plain words', () => {
     expect(row.summary).toMatch(plain)
     expect(row.summary).not.toContain(text)
     expect(row.summary).not.toMatch(/[a-z][A-Za-z0-9_.]*: |\b[a-z]+[A-Z]\w*\b|watertight|mesh|sx-geom|brep|\(|;|\u2014|\u2013/)
-    // the engine's words stay in the row's details
+    // the engine's words stay in the row's details; the title says what happened in a few words
     expect(row.detail).toBe(text)
+    expect(row.title).toBe(plainEngine(text, tool)?.title)
     // the model reads the engine's text, with how to go on and never to quote it
     expect(read).toContain(text.slice(0, 40).replace(/"/g, '\\"'))
     expect(read).toMatch(/never quote the engine text/)
   })
 
-  it('every plain line says what to try', () => {
-    for (const [tool, text] of CASES) expect(plainEngine(text, tool)?.shown).toMatch(/Try|try|fixes it|Check/)
+  it('every plain line says what to try, unless there is nothing for the person to do', () => {
+    for (const [tool, text] of CASES) {
+      const shown = plainEngine(text, tool)?.shown
+      if (/wrong way|no longer there/.test(shown ?? '')) expect(shown).not.toMatch(/Try|try|size|Check/)
+      else expect(shown).toMatch(/Try|try|fixes it|Check/)
+    }
+  })
+
+  it('every refusal has a short title, and none sends a refusal that is not about size to simpler sizes', () => {
+    for (const [tool, text] of CASES) {
+      const r = plainEngine(text, tool)!
+      expect(r.title.split(' ').length).toBeLessThanOrEqual(4)
+      expect(r.shown).not.toContain(r.title)
+      expect(r.shown).not.toMatch(/simpler sizes/)
+    }
+    // the two refusals that read as "simpler sizes" before
+    expect(plainEngine('target: with a design, join and cut work on its "part"; leave target out', 'geom.cut')?.title).toBe('Step sent wrong')
+    expect(plainEngine('The step did not go through: The part this step works on is gone. The design is unchanged.', 'design.edit_step')?.title).toBe('Part is gone')
+    expect(plainEngine('request: missing "parts"', 'geom.build')).toMatchObject({ title: 'Step not made', shown: 'That step could not be made, so the part is unchanged. Try asking for it another way.' })
   })
 
   it('leaves a printer\'s or the slicer\'s own words alone, and a modeling tool\'s plain sentences', async () => {

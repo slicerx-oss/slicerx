@@ -17,18 +17,23 @@ describe('an engine refusal in a step row', () => {
     const t = foldEvents(
       [
         { type: 'tool_call', callId: 'c1', tool: 'geom.fillet', source: 'command', input: {}, args: '' },
-        { type: 'tool_result', callId: 'c1', ok: false, summary: SHOWN, detail: RAW, ms: 40 },
+        { type: 'tool_result', callId: 'c1', ok: false, title: 'Size too big', summary: SHOWN, detail: RAW, ms: 40 },
       ],
       startTurn(emptyTranscript(), { user: 'Round the top edges' }, 0),
     )
     const block = t.turns.at(-1)?.blocks.find((b) => b.kind === 'tools')
     if (block?.kind !== 'tools') throw new Error('no tool rows')
-    expect(block.rows[0]).toMatchObject({ state: 'bad', summary: SHOWN, detail: RAW })
+    expect(block.rows[0]).toMatchObject({ state: 'bad', title: 'Size too big', summary: SHOWN, detail: RAW })
     const { container, getByRole } = render(<ToolGroup rows={block.rows} />)
     expect(container.querySelector('.tsum')?.textContent).not.toContain('radiusMm')
     fireEvent.click(getByRole('button', { expanded: false }))
     const row = container.querySelector('.tool')
     expect(row?.querySelector('.trow .tsum')?.textContent).toBe(SHOWN)
+    // the title in the name's place, the sentence once, and the time beside them
+    expect(row?.querySelector('.trow .tname')?.textContent).toBe('Size too big')
+    expect(row?.querySelector('.trow')?.textContent?.split(SHOWN)).toHaveLength(2)
+    expect(row?.querySelector('.trow .dur')?.textContent).not.toBe('')
+    expect(row?.classList.contains('failed')).toBe(true)
     expect(row?.querySelector('.trow')?.textContent).not.toContain(RAW)
     expect(row?.querySelector('.tdet [data-testid="tool-engine-detail"]')?.textContent).toBe(RAW)
   })

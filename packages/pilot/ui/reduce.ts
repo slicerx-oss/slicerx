@@ -37,6 +37,8 @@ export interface ToolRowModel {
   progress: { line: string; fraction: number | undefined }[]
   ms: number | undefined
   untrusted: boolean
+  /** A refused step's title in a few words, in place of the step's name. */
+  title?: string
   /** The engine's own words for a step it refused, shown only in the row's details. */
   detail?: string
 }
@@ -431,6 +433,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
         ...(event.output !== undefined ? { output: event.output } : {}),
         ms: event.ms,
         untrusted: event.untrusted === true,
+        ...(event.title ? { title: event.title } : {}),
         ...(event.detail ? { detail: event.detail } : {}),
       }))
     case 'settings_diff':

@@ -445,6 +445,8 @@ export type PilotEvent =
       display?: ToolDisplay[]
       untrusted?: boolean
       ms?: number
+      /** A refused step's title in a few words, when `summary` says it plainly: the row shows it in place of the step's name. */
+      title?: string
       /** The engine's own words for a step it refused, when `summary` says it plainly: for the row's details only. */
       detail?: string
     }

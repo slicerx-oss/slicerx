@@ -137,16 +137,19 @@ export function ToolRow({ row, words }: { row: ToolRowModel; words?: StepWords |
   const images = row.display.filter((d) => d.kind === 'image')
   const rest = row.display.filter((d) => d.kind !== 'image')
   const said = words?.(row) ?? null
+  // a refused step says what happened in a few words; its plain sentence is the summary, so it shows once
+  const title = row.state === 'bad' && row.title ? row.title : said ? (row.state === 'running' ? said.doing : said.done) : undefined
+  const cls = `tool${open ? ' open' : ''}${row.state === 'bad' ? ' failed' : ''}`
   return (
-    <div className={open ? 'tool open' : 'tool'}>
+    <div className={cls}>
       <button type="button" className="trow" aria-expanded={open} aria-controls={detId} onClick={() => setManual(!open)}>
         <span className="st">
           {row.state === 'running' ? isRecall(row.tool) ? <RavenWait who="muninn"><Spinner /></RavenWait> : <Spinner /> : row.state === 'ok' ? <Icon name="check" /> : <Icon name="alert" className="bad" />}
           <span className="vh">{row.state === 'running' ? 'Running' : row.state === 'ok' ? 'Done' : 'Failed'}</span>
         </span>
-        {said ? (
+        {title !== undefined ? (
           <span className="tname plain" {...tipAttrs({ title: row.tool })}>
-            {row.state === 'running' ? said.doing : said.done}
+            {title}
           </span>
         ) : (
           <span className="tname">
