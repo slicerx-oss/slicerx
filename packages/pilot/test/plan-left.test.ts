@@ -94,6 +94,19 @@ function designTools(check: () => Record<string, unknown> = () => ({ pass: false
       step(d, 'Join 1 part', a)
       return { summary: 'Union', output: summary(d) }
     }),
+    tool('geom.shell', (a) => {
+      const d = get(a['design'])
+      step(d, 'Shell, 2 mm walls, 1 open face', a)
+      return { summary: `Shelled: step ${d.steps.length}`, output: summary(d) }
+    }),
+    tool('geom.build', (a) => {
+      const d = get(a['design'])
+      const made = String(a['name'] ?? 'Body')
+      d.parts.push(made)
+      const s = step(d, `Add ${made}`, a, made)
+      return { summary: `Built: step ${d.steps.length}, ${s.name}`, output: summary(d) }
+    }),
+    tool('geom.fit_check', (a) => ({ summary: '2 pieces; 2 gaps under the limit', output: { design: get(a['design']).id, pieces: 2 } })),
     tool('geom.info', (a) => ({ summary: '1 part, closed', output: { design: get(a['design']).id } })),
     tool('design.undo', (a) => {
       const d = get(a['design'])
@@ -318,6 +331,68 @@ describe('a reply that ends as before', () => {
     ]
     const c = createScriptedClient(tagged, { chunk: false })
     const { events } = await replay(c)
+    expect(notices(events)).toEqual([])
+    expect(c.remaining()).toBe(1)
+  })
+})
+
+// hinged box, run live on Haiku 2026-11-10 (mimir-quality-hinged-box-fix-1): the plan, then extrude, shell, build,
+// boolean, build, build, boolean, every step tagged with its planned feature, then geom.fit_check and design.check. The
+// check failed on the lid's gaps (0.295 mm over the box and 0.28 mm beside it) and the size, its first check, so the
+// fix round was open; the reply stopped on it.
+const HINGED_FEATURES = ['Base shell', 'Lid plate', 'Hinge knuckles', 'Hinge pin']
+const HINGED_LAST =
+  'The box is built, but the design check failed, so I have stopped there and nothing is queued or sent to the printer.\n\n**What is off:**\n- **Size:** the outside hinge knuckles stick out the back, so the part measures 80 x 56.5 x 37.4 mm, not 80 x 50 x 35 mm. The 37.4 mm height is the lid, which sits 0.4 mm above the box.\n- **Hinge contact:** the fit check finds the lid and box touching at one spot, about x 12 mm, so they would print fused. I expected a 0.3 mm gap there, so this needs a look.\n- **Lid orientation:** the lid is still in its closed position, on top of the box. Our rule is that a lid prints open and flat, beside the base, so it needs to be rotated before printing.'
+const HINGED: ScriptStepData[] = [
+  { text: 'I will plan this first, since the hinge moves.', calls: [call('design.plan', { part: 'Hinged box', units: 'mm', features: HINGED_FEATURES.map((name) => ({ name, sizes: {} })), assumptions: [], questions: [], printInPlace: ['Base', 'Lid'] })] },
+  { text: 'The plan is approved. I will build the base first.', calls: [call('design.new', { name: 'Hinged box' })] },
+  { calls: [call('geom.extrude', { design: 'd1', operation: 'new', name: 'Base', feature: 'Base shell' })] },
+  { calls: [call('geom.shell', { design: 'd1', wall_mm: 2, feature: 'Base shell' })] },
+  { calls: [call('geom.build', { design: 'd1', name: 'Base knuckles', feature: 'Hinge knuckles' })] },
+  { calls: [call('geom.boolean', { design: 'd1', op: 'union', part: 0, with_parts: [1], feature: 'Hinge knuckles' })] },
+  { text: 'The base is built. Now the lid and its pin.', calls: [call('geom.build', { design: 'd1', name: 'Lid', feature: 'Lid plate' })] },
+  { calls: [call('geom.build', { design: 'd1', name: 'Hinge pin', feature: 'Hinge pin' })] },
+  { calls: [call('geom.boolean', { design: 'd1', op: 'union', part: 1, with_parts: [2], feature: 'Lid plate' })] },
+  { text: 'Both parts are built. Now the gaps and the plan check.', calls: [call('geom.fit_check', { design: 'd1' }), call('design.check', { planId: 'plan_1', design: 'd1' })] },
+  { text: HINGED_LAST },
+]
+const HINGED_MISS = { pass: false, items: [{ name: 'overall size', pass: false }, { name: 'feature count', pass: true }, { name: 'pieces', pass: false }, { name: 'gaps', pass: false }] }
+
+describe("the hinged box's stop on its first failed check", () => {
+  it('goes on once to fix the failed items while the fix round is open, though every feature is built and tagged', async () => {
+    const client = createScriptedClient([...HINGED, { text: 'The lid gap is fixed and checked again.' }], { chunk: false })
+    const { events } = await replay(client, { tools: designTools(() => HINGED_MISS) })
+    const sent = notes(client.requests.at(-1)!.messages)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).not.toContain('Still to build')
+    expect(sent[0]).not.toContain('no step is tagged')
+    expect(sent[0]).toContain("Its last design.check failed on overall size, pieces and gaps, and the plan's one fix round is open: fix those items now")
+    expect(sent[0]).toContain('then call design.check (planId plan_1) again. Only a second failed check ends the building.')
+    expect(client.requests.at(-1)!.messages.at(-2)).toMatchObject({ role: 'assistant', content: HINGED_LAST })
+    expect(notices(events)).toEqual([expect.objectContaining({ message: 'mimir went on to fix what the design check found: overall size, pieces and gaps.' })])
+    expect(done(events)).toMatchObject({ stopReason: 'end' })
+  })
+
+  it('goes on even when the reply ends on a question, since the person is asked once the round is used', async () => {
+    const steps = [...HINGED.slice(0, -1), { text: `${HINGED_LAST}\n\nShould I trim the lid knuckles, or move the hinge lower?` }, { text: 'Fixed and checked again.' }]
+    const client = createScriptedClient(steps, { chunk: false })
+    const { events } = await replay(client, { tools: designTools(() => HINGED_MISS) })
+    expect(notes(client.requests.at(-1)!.messages)).toHaveLength(1)
+    expect(notices(events)).toHaveLength(1)
+  })
+
+  it('ends as before once the part changed after the check, which then has to be checked again by the model', async () => {
+    const steps = [...HINGED.slice(0, -1), { text: 'I will raise the lid.', calls: [call('geom.build', { design: 'd1', name: 'Lid', feature: 'Lid plate' })] }, { text: 'The lid is raised.' }, { text: 'never sent' }]
+    const c = createScriptedClient(steps, { chunk: false })
+    const { events } = await replay(c, { tools: designTools(() => HINGED_MISS) })
+    expect(notices(events)).toEqual([])
+    expect(c.remaining()).toBe(1)
+  })
+
+  it("ends as before on the check's stop, after the round", async () => {
+    const steps = [...HINGED, { text: 'never sent' }]
+    const c = createScriptedClient(steps, { chunk: false })
+    const { events } = await replay(c, { tools: designTools(() => ({ ...HINGED_MISS, stop: 'The fix round is used: stop building, and tell the person exactly what is off.' })) })
     expect(notices(events)).toEqual([])
     expect(c.remaining()).toBe(1)
   })
