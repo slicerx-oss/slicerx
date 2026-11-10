@@ -13,6 +13,7 @@ import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
 import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
+import { jointProblem, LID_STATEMENT, planFloors, underFloors, underLine } from './plan-floors'
 import { meshStats } from './mesh'
 
 type V3 = [number, number, number]
@@ -616,16 +617,16 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
-      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace. Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
+      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace. Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with, and underFloors: each size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless the pieces print in place, with pin and bore when it runs around a pin; a wall or pin under two nozzle lines; a hole under the nozzle), with the floor and why, and unstated when a plan with a hinge or a pin piece does not say whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption), or says both. The plan is kept as given; put it again with the floor to build to it.',
     input: z.object({
       plan: partPlanSchema.extend({ assumptions: assumptionsInput }).describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
       design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
     }),
-    async run(i) {
+    async run(i, ctx) {
       // a tie names a design that exists (get refuses one that does not)
       const tied = i.design ? designs.get(i.design) : undefined
       if (plans.get(i.plan.planId)?.origin === 'card') throw new ToolInputError(new PlanOwnedError(i.plan.planId).message)
@@ -633,9 +634,23 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const p = i.plan
       const holes = (p.holes ?? []).reduce((n, h) => n + (h.count ?? 1), 0)
       const shape = [plural(p.features.length, 'feature'), ...(holes ? [plural(holes, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : [])].join(', ')
+      // sizes under the printer's floors are named, not changed: the client's plan is its own
+      const under = underFloors(p, planFloors(runFitLimits(ctx?.context, { ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })))
+      const floors = under.length ? ` ${under.map((u) => underLine(u, p.units)).join('; ')}. Put the plan again with ${under.length === 1 ? 'that size' : 'those sizes'} raised for a part that prints.` : ''
+      // a hinge or pin plan that does not say how it prints is kept, with what it leaves the build to guess
+      const unstated = jointProblem(p)
+      const say = unstated ? ` The plan has a hinge or pin but does not say ${unstated === LID_STATEMENT ? '' : 'one way '}how it prints: ${unstated}.` : ''
       return {
-        summary: `Kept plan ${p.planId} for ${p.part} (${shape})${tied ? `, tied to ${tied.name} (${tied.id})` : ''}. Build it, then check it with design.check and planId ${p.planId}.`,
-        output: { planId: p.planId, part: p.part, ...(tied ? { design: tied.id } : {}), features: p.features.length, holes },
+        summary: `Kept plan ${p.planId} for ${p.part} (${shape})${tied ? `, tied to ${tied.name} (${tied.id})` : ''}.${floors}${say} Build it, then check it with design.check and planId ${p.planId}.`,
+        output: {
+          planId: p.planId,
+          part: p.part,
+          ...(tied ? { design: tied.id } : {}),
+          features: p.features.length,
+          holes,
+          ...(unstated ? { unstated } : {}),
+          underFloors: under.map((u) => ({ feature: u.feature, size: u.feature === null ? `${u.hole} ${u.size}` : u.size, planned: u.planned, floor: u.floor, why: u.why, ...(u.bore !== undefined ? { pin: u.pin!, bore: u.bore } : {}) })),
+        },
       }
     },
   })

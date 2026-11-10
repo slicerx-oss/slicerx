@@ -275,7 +275,7 @@ describe('a client plan over the app link', () => {
       throw Object.assign(new Error('app_link_off'), { code: 'app_link_off' })
     }) as AppLinkCaller['call'])
     const here = await off.run('design.put_plan', { plan })
-    expect(here.output).toEqual({ planId: 'clip-1', part: 'Clip', features: 1, holes: 0 })
+    expect(here.output).toEqual({ planId: 'clip-1', part: 'Clip', features: 1, holes: 0, underFloors: [] })
     expect(here.summary).toContain('Kept plan clip-1 for Clip (1 feature)')
   })
 })

@@ -158,6 +158,9 @@ export const DEFAULT_NOZZLE_MM = 0.4
 const mm = (v: number): string => `${Math.round(v * 100) / 100} mm`
 const r2 = (v: number): number => Math.round(v * 100) / 100
 
+/** The thinnest wall a nozzle prints reliably: two lines side by side. design.check holds the body to it, and a plan's walls and pins are raised to it (plan-floors.ts). */
+export const minWallFor = (nozzleMm: number): number => 2 * nozzleMm
+
 /** A nozzle diameter to hold walls to: the one given when it is a positive finite number, else 0.4 mm. */
 export function nozzleOr(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : DEFAULT_NOZZLE_MM
@@ -326,7 +329,7 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
 
   items.push(featureItem(plan.features.map((f) => f.name), body))
   items.push({ name: 'watertight', want: 'closed', got: body.watertight ? 'closed' : openWords(body.openWhy), pass: body.watertight })
-  const wall = 2 * nozzle
+  const wall = minWallFor(nozzle)
   const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'
   items.push({ name: 'minimum wall', want: `at least ${mm(wall)} (twice the ${mm(nozzle)} nozzle)`, got: body.minWallMm === null ? unmeasured : mm(body.minWallMm), pass: body.minWallMm !== null && body.minWallMm >= wall - 1e-6 })
   if (plan.printInPlace) items.push(...fitItems(plan.printInPlace, body))
@@ -376,7 +379,7 @@ export function gapSentence(fit: FitFacts, g: FitGap, needs: string): string {
 }
 
 /** A size key's words: print_gap, printGap and print-gap all read print, gap. */
-const keyWords = (key: string): string[] => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+export const keyWords = (key: string): string[] => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
 
 /**
  * The words that say which way a gap runs (a gap named neither way is on every face), and those that make a size with
@@ -428,7 +431,7 @@ const SEPARATELY = /\b(?:print|prints|printed|printing)\s+(them\s+)?(?:separatel
 /** Words before it that make it the pieces': they, each, all, the pieces. */
 const MANY_WORDS: ReadonlySet<string> = new Set([...[...PIECE_WORDS].filter((w) => w.endsWith('s')), 'they', 'them', 'all', 'each', 'every', 'both'])
 /** Words just before it that make it no statement: not printed separately, could be printed separately. */
-const HEDGE_WORDS: ReadonlySet<string> = new Set(['not', 'never', 'no', 'without', 'cannot', 'can', 'could', 'may', 'might', 'or', 'if', 'whether', 'instead'])
+export const HEDGE_WORDS: ReadonlySet<string> = new Set(['not', 'never', 'no', 'without', 'cannot', 'can', 'could', 'may', 'might', 'or', 'if', 'whether', 'instead'])
 
 /**
  * True when a plan's text says its pieces print separately: "The links are printed separately", "Each segment is

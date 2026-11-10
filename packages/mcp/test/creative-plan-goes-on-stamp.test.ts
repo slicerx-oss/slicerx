@@ -10,7 +10,7 @@ import { parseRecording } from '../evals/creative/recordings'
 import { replayScored, runPrompt, STALE_PLAN_GOES_ON, STALE_RESTART } from '../evals/creative/run'
 
 const FISH = CREATIVE_PROMPTS.find((x) => x.id === 'flexi-fish')!
-const card = { name: 'design.plan', args: { part: 'Segmented fish', units: 'mm', features: [{ name: 'Body segments', kind: 'extrude', sizes: { segment_length: 16, segment_height: 24, segment_width: 12, count: 6 } }, { name: 'Hinge pins and sockets', kind: 'hole', sizes: { pin_diameter: 2, socket_diameter: 2.4 } }], assumptions: [], questions: [] } }
+const card = { name: 'design.plan', args: { part: 'Segmented fish', units: 'mm', features: [{ name: 'Body segments', kind: 'extrude', sizes: { segment_length: 16, segment_height: 24, segment_width: 12, count: 6 } }, { name: 'Hinge pins and sockets', kind: 'hole', sizes: { pin_diameter: 2, socket_diameter: 2.4 } }], assumptions: ['The segments print in place on their pins'], questions: [] } }
 // the plan gets Go and the reply ends with nothing built: mimir goes on once with its note
 const before = [{ text: 'Here is the plan.', calls: [card] }, { text: 'The plan is approved.' }]
 // a capture made since the note: the model answered it by starting the part, then ended
