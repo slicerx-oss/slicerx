@@ -5,7 +5,7 @@
 import { Button, Menu, MenuItem, Popover, SplitButton, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useState, type CSSProperties } from 'react'
 import { useHost } from '../../host'
-import { slicedIn } from '../../lib/estimate-line'
+import { filamentChanges, slicedIn } from '../../lib/estimate-line'
 import { isExportOnly } from '../../lib/hand-printers'
 import { useCompactLayout } from '../../lib/phone-layout'
 import { formatCost, formatDuration, formatGrams } from '../../lib/preview-stats'
@@ -205,20 +205,22 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   return (
     <div className="slice-lite slice-done" data-section="estimate" data-testid="slice-estimate" data-stale={done.stale ? true : undefined}>
       <div className="est-row">
-        <span className="sx-menu-anchor est-anchor">
-          <button type="button" className="est-time" data-testid="slice-estimate-time" aria-haspopup="dialog" aria-expanded={breakdown} {...tipAttrs({ title: slicedIn(r.wallMs, host.capabilities.threads), body: 'Click for where the time and filament go.' })} onClick={() => setBreakdown(!breakdown)}>
-            {formatDuration(r.stats.timeS)}
-          </button>
-          <Popover open={breakdown} onClose={() => setBreakdown(false)} label="Estimate breakdown" className="est-pop">
-            <Suspense fallback={<Loading />}>
-              <Breakdown />
-            </Suspense>
-          </Popover>
+        {/* the figures wrap as a group, so a narrow pane drops the last of them to a second line and Slice again stays whole */}
+        <span className="est-figs">
+          <span className="sx-menu-anchor est-anchor">
+            <button type="button" className="est-time" data-testid="slice-estimate-time" aria-haspopup="dialog" aria-expanded={breakdown} {...tipAttrs({ title: slicedIn(r.wallMs, host.capabilities.threads), body: 'Click for where the time and filament go.' })} onClick={() => setBreakdown(!breakdown)}>
+              {formatDuration(r.stats.timeS)}
+            </button>
+            <Popover open={breakdown} onClose={() => setBreakdown(false)} label="Estimate breakdown" className="est-pop">
+              <Suspense fallback={<Loading />}>
+                <Breakdown />
+              </Suspense>
+            </Popover>
+          </span>
+          <span className="est-fig">{formatGrams(grams)}</span>
+          {r.stats.cost > 0 ? <span className="est-fig">{formatCost(r.stats.cost)}</span> : null}
+          {used > 1 ? <span className="est-fig est-muted">{filamentChanges(r.stats.toolChanges)}</span> : null}
         </span>
-        <span className="est-fig">{formatGrams(grams)}</span>
-        {r.stats.cost > 0 ? <span className="est-fig">{formatCost(r.stats.cost)}</span> : null}
-        {used > 1 ? <span className="est-fig est-muted">{r.stats.toolChanges} {r.stats.toolChanges === 1 ? 'change' : 'changes'}</span> : null}
-        <span className="est-grow" />
         {warnings > 0 ? (
           <button type="button" className="est-warn" data-testid="slice-estimate-warnings" {...tipAttrs({ title: warnings === 1 ? '1 warning' : `${warnings} warnings`, body: 'Show the first one on the plate.' })} onClick={() => void import('../../lib/warning-actions').then((m) => r.warnings[0] && m.jumpToWarning(r.warnings[0]))}>
             {warnings} {warnings === 1 ? 'warning' : 'warnings'}
