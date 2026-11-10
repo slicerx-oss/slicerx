@@ -174,3 +174,44 @@ describe('the message box under fast typing', () => {
     expect(box.value).toBe(text)
   })
 })
+
+describe('sending while it is off', () => {
+  function Off({ onSend, offNote, sendOff = true }: { onSend: (t: string, a: PilotAttachment[]) => void; offNote?: string; sendOff?: boolean }) {
+    const attachments = useAttachments()
+    return <Composer attachments={attachments} onSend={onSend} sendOff={sendOff} {...(offNote ? { offNote } : {})} />
+  }
+
+  it('says why on Enter, keeps the text and sends nothing', () => {
+    const onSend = vi.fn()
+    render(<Off onSend={onSend} offNote="Connect a model above to send this." />)
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(screen.queryByTestId('mimir-composer-off-note')).toBeNull()
+    fireEvent.change(box, { target: { value: 'A hook for my bike' } })
+    expect(screen.queryByTestId('mimir-composer-off-note')).toBeNull()
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+    expect(box.value).toBe('A hook for my bike')
+    const note = screen.getByTestId('mimir-composer-off-note')
+    expect(note.textContent).toBe('Connect a model above to send this.')
+    expect(note.getAttribute('role')).toBe('status')
+  })
+
+  it('stays quiet with no note given, on an empty box, and once sending is on again', () => {
+    const onSend = vi.fn()
+    const { rerender } = render(<Off onSend={onSend} />)
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: 'A hook' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(screen.queryByTestId('mimir-composer-off-note')).toBeNull()
+    rerender(<Off onSend={onSend} offNote="Connect a model above to send this." />)
+    fireEvent.change(box, { target: { value: '' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(screen.queryByTestId('mimir-composer-off-note')).toBeNull()
+    fireEvent.change(box, { target: { value: 'A hook' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(screen.getByTestId('mimir-composer-off-note')).toBeTruthy()
+    rerender(<Off onSend={onSend} offNote="Connect a model above to send this." sendOff={false} />)
+    expect(screen.queryByTestId('mimir-composer-off-note')).toBeNull()
+  })
+})
+

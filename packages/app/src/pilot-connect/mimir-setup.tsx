@@ -4,58 +4,26 @@
 // (free; in the browser for signed-in people only), a ChatGPT sign-in where the shell has one, your own key, a local
 // model where this shell can run one, and in first-run Skip. The picked card opens its panel under the cards.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Button, Icon, type IconName } from '@slicerx/ui'
-import { lazy, Suspense, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
+import { Button, Icon } from '@slicerx/ui'
+import { lazy, Suspense, useRef, useState, type KeyboardEvent } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
 import { set, useApp, type PilotPref } from '../state/store'
 import { useChatGpt } from './chatgpt'
 import { ChatGptCard } from './chatgpt-card'
-import { useMimirCloudHost, type MimirCloudHost } from './cloud'
-import { cloudOffered, cloudReady } from './cloud-edition'
+import { useMimirCloudHost } from './cloud'
+import { cloudOffer, mimirChoices, useLocalRuns, type MimirChoice } from './mimir-choices'
 import { ConnectPanel } from './connect-panel'
 import { PROVIDERS } from './keys'
 import { LocalAiCard } from './local-ai-card'
-import { onLocalAiChange, registeredLocalAi } from './local-ai-host'
-import type { EditionConfig } from '@slicerx/edition-config'
 import './connect.css'
 
 const SignInForm = lazy(() => import('../features/store/signin').then((m) => ({ default: m.SignInForm })))
 
-export type MimirChoice = 'cloud' | 'chatgpt' | 'key' | 'local' | 'skip'
 /** Where the setup shows: first-run (with Skip, and choices that apply on finish), Settings, or the mimir panel. */
 export type MimirSetupPlace = 'setup' | 'settings' | 'panel'
-/** mimir cloud here: ready to use, offered once the person signs in (the browser), or not offered. */
-export type CloudOffer = 'ready' | 'sign-in' | 'none'
 
-export interface MimirOption {
-  id: MimirChoice
-  icon: IconName
-  name: string
-  sum: string
-}
-
-/** Whether this build offers mimir cloud: the edition has it and the shell carries its host; a host that needs a
- * signed-in person (the browser) offers it as a sign-in until then. */
-export function cloudOffer(edition: EditionConfig, h: MimirCloudHost | null): CloudOffer {
-  if (!cloudOffered(edition, h)) return 'none'
-  return cloudReady(edition, h) ? 'ready' : 'sign-in'
-}
-
-/**
- * The choices, in order: mimir cloud where offered, sign-in only where the shell can do it, your own key, local only
- * where the edition keeps it and the shell can run one (a browser cannot download or start a model), Skip in first-run.
- */
-export function mimirChoices(opts: { cloud?: CloudOffer; signIn: boolean; localAi: boolean; skip?: boolean }): MimirOption[] {
-  const out: MimirOption[] = []
-  if (opts.cloud === 'ready') out.push({ id: 'cloud', icon: 'cloud', name: `Use ${ASSISTANT_NAME} free`, sum: PROVIDERS['mimir-cloud'].where })
-  if (opts.cloud === 'sign-in') out.push({ id: 'cloud', icon: 'cloud', name: `Sign in to use ${ASSISTANT_NAME} free`, sum: `Free daily use with your ${ASSISTANT_NAME} account. No key.` })
-  if (opts.signIn) out.push({ id: 'chatgpt', icon: 'creator', name: 'Sign in with ChatGPT', sum: 'Answers with your ChatGPT plan. Nothing to paste.' })
-  out.push({ id: 'key', icon: 'key', name: 'Use your own API key', sum: 'An OpenAI or Anthropic key. You pick the model.' })
-  if (opts.localAi) out.push({ id: 'local', icon: 'desktop', name: 'Run a local model', sum: 'Free and private. Downloads once, then works offline.' })
-  if (opts.skip ?? true) out.push({ id: 'skip', icon: 'close', name: 'Skip for now', sum: 'Connect it later in Settings.' })
-  return out
-}
+export { cloudOffer, mimirChoices, type CloudOffer, type MimirChoice, type MimirOption } from './mimir-choices'
 
 /** The card a saved connection belongs to, or null with none saved. */
 export function choiceOf(pref: PilotPref | null, signIn: boolean): MimirChoice | null {
@@ -72,11 +40,6 @@ export function mimirOnFinish(choice: MimirChoice): { mode: 'on'; provider: 'mim
 }
 
 /** True when this shell can download and run a local model (a desktop shell registers one; a browser cannot). */
-function useLocalRuns(): boolean {
-  const edition = useEdition()
-  const f = useSyncExternalStore(onLocalAiChange, registeredLocalAi, () => null)
-  return edition.features.localAi && f !== null
-}
 
 /**
  * The setup. First-run controls the choice (`choice`, `onChoose`) so finishing can apply it; Settings and the panel

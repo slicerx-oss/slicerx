@@ -483,6 +483,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           attachments={attachments}
           running={run.running}
           sendOff={ready === null || notice}
+          // with no model connected, Enter says where to connect one: the card above, or Settings once the chat has turns
+          {...(connecting ? { offNote: transcript.turns.length === 0 && !notice ? 'Connect a model above to send this.' : 'Connect a model in Settings to send this.' } : {})}
           onStop={run.cancel}
           onSend={(text, files) => send(text, files)}
           // a question card takes the words as its answer; a waiting sheet is set aside for them, and its record says so
