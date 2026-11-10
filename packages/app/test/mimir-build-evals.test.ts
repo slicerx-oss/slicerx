@@ -900,11 +900,12 @@ describe('build eval scoring', () => {
     expect(floorCheck({ mm: 3 }, parts('planter-saucer')).pass).toBe(false)
   })
 
-  it('knows which recorded replays disagree: their last check failed and the scorer passes them', () => {
-    // twisted-vase failed its last check live too. cable-clip left this list when the scorer read its 0.41 mm floor as
-    // design.check does, and phone-stand-lip when the scorer read its 0.23 mm wedge as design.check does. watering-spout
-    // and coat-hook left it when design.check read the wall at a slanted cut as a whole wall (1.334 and 3.05 mm), so
-    // their replayed checks pass as the scorer does
+  it('knows which recorded replays disagree with the scorer', () => {
+    // twisted-vase's last check passed live, floor included, and the scorer fails it: it swept the twisted walls where
+    // the case asks for a loft, and the Go on its amended plan is an extra turn. cable-clip left this list when the
+    // scorer read its 0.41 mm floor as design.check does, and phone-stand-lip when the scorer read its 0.23 mm wedge as
+    // design.check does. watering-spout and coat-hook left it when design.check read the wall at a slanted cut as a
+    // whole wall (1.334 and 3.05 mm), so their replayed checks pass as the scorer does
     const disagree = BUILD_CASES.filter((c) => loadRecording(c.id)?.score.verdict === 'disagree').map((c) => c.id)
     expect(disagree).toEqual(['twisted-vase'])
   })
