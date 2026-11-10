@@ -36,6 +36,7 @@ node scripts/gate/run.mjs --app target/agent-bridge/release/slicerx.exe --platfo
 | `--account <address>` | The test account for c, d and e and the signed-in half of b. Only `@qa.slicerx.app` addresses are accepted. |
 | `--out <dir>` | Where `report.html`, `results.json` and `shots/` go. |
 | `--only a,b,e`, `--skip c,d` | Run some of the scenarios. |
+| `--listing <id>` | With `--only d` alone: sign in, skip the creator page and the upload, and run d's Feed, open and sealed checks on that live listing. The report says the listing was reused. |
 | `--starters <slugs>` | Slice only these starters in e. |
 | `--wait-start <s>` | How long to wait for the started app to write its connection file. The default is 180. |
 | `--wait-signin <min>` | How long to wait for the operator at each sign-in link. The default is 10. |
