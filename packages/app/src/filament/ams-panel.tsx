@@ -181,7 +181,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
           </span>
         ) : (
           <span className="fil-head">
-            {total ? <span className="fil-total" data-testid="slice-filament-total" title={total}>{total}</span> : null}
+            {total ? <span className="fil-total" data-testid="slice-filament-total">{total}</span> : null}
             {menu}
           </span>
         )
