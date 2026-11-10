@@ -1363,20 +1363,23 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let callLimited = false
     /**
      * Whether a reply that would end here goes on once, and what the plan approved in this run still needs: features
-     * with no tagged step, or a part with no body (planLeft). A plan approved in an earlier run of the chat counts too
+     * with no tagged step, a part with no body, or the items its last design.check failed while its fix round is open
+     * (planLeft). A plan approved in an earlier run of the chat counts too
      * while the person's messages since only ask to go on with it ("keep going", "then build it"; carriedPlanFrom). It
      * goes on only when the run has steps and tool calls left,
      * was not canceled, declined or stopped at its limit, and did not end on the slow_down line or an error (those break
      * out before a reply is read). It ends as it would have with no approved plan, with design.check's stop in force (the
      * fix round is used, so mimir says what is off), or when the reply's last words ask the person for a decision the
      * plan does not settle (unsettledQuestion): "should I go on?" or "shall I add the clearance the plan has?" go on, a
-     * size the plan lacks or a choice between two options waits for the person. A print-in-place plan whose sizes the
+     * size the plan lacks or a choice between two options waits for the person, except after a check that failed with
+     * its fix round open, which goes on to the fix whatever the reply asks (the person is asked once the round is used). A print-in-place plan whose sizes the
      * person changed on its sheet after the Go (isStale) goes on to be made again, never built: every body of its part
      * waits for the new plan (waitsForPlan), so the note asks for design.plan with the confirmed sizes instead.
      */
     const planGoesOn = (text: string): { left: PlanLeft; again: boolean } | null => {
       const left = planLeft(messages, runStart)
-      if (!left || unsettledQuestion(text) !== undefined) return null
+      // a check that failed with its fix round open is fixed before any question: the person is asked after the round
+      if (!left || (left.fix === undefined && unsettledQuestion(text) !== undefined)) return null
       return { left, again: isStale(sessionId) && planned.get(sessionId)?.planId === left.planId }
     }
     // how long the run has waited on slow_down refusals in a row
