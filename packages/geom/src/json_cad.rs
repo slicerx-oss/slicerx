@@ -426,7 +426,7 @@ fn extrude_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value>
         world.as_ref(),
         pattern.as_ref(),
     )?;
-    tool_reply(r, target.as_ref(), spec.operation, enc)
+    tool_reply(r, target.as_ref(), spec.operation, enc, boolean::storage_mesh)
 }
 
 #[cfg(feature = "cad")]
@@ -435,12 +435,13 @@ fn tool_reply(
     target: Option<&Item>,
     op: face::Operation,
     enc: MeshOut,
+    stored: fn(&TriMesh) -> Result<TriMesh>,
 ) -> Result<Value> {
     let (mesh, local) = match (target, op) {
         (Some(t), face::Operation::Join | face::Operation::Cut) => (t.to_local(&r.mesh)?, true),
         _ => (r.mesh, false),
     };
-    let mesh = boolean::storage_mesh(&mesh)?;
+    let mesh = stored(&mesh)?;
     let mut v = mesh_report(&mesh, enc);
     insert(&mut v, "frame", json!(if local { "target" } else { "world" }));
     insert(&mut v, "tool", enc.mesh(&r.tool));
@@ -510,7 +511,7 @@ fn sketch_revolve_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result
     let tool = sketch::revolve(&frame.checked()?, &polys, axis.point, axis.direction, angle)?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
-    tool_reply(r, target.as_ref(), op, enc)
+    tool_reply(r, target.as_ref(), op, enc, boolean::storage_mesh)
 }
 
 #[cfg(feature = "cad")]
@@ -529,7 +530,18 @@ fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Va
     let tool = sketch_loft::loft_with(&profiles, &opts)?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
-    tool_reply(r, target.as_ref(), op, enc)
+    tool_reply(r, target.as_ref(), op, enc, loft_stored)
+}
+
+/// [`boolean::storage_mesh`] for a loft, refused with what a loft can change: it has no cut or placement
+#[cfg(feature = "cad")]
+fn loft_stored(mesh: &TriMesh) -> Result<TriMesh> {
+    boolean::stored(
+        mesh,
+        "loft",
+        "the result is",
+        "change the loft's profiles or the spacing between them",
+    )
 }
 
 #[cfg(feature = "cad")]
@@ -550,7 +562,7 @@ fn sketch_sweep_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<V
     let tool = sketch_sweep::sweep_with(&profile, &path, thicken.as_ref(), &law)?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
-    tool_reply(r, target.as_ref(), op, enc)
+    tool_reply(r, target.as_ref(), op, enc, boolean::storage_mesh)
 }
 
 #[cfg(feature = "cad")]
@@ -1749,6 +1761,27 @@ mod tests {
         assert!(
             e.starts_with("array: the merged copies are unsafe at mesh storage precision"),
             "{e}"
+        );
+    }
+
+    #[test]
+    fn a_loft_refused_at_storage_precision_says_what_to_change() {
+        // a box with a sliver that lies flat once rounded to the f32 positions clients store
+        let mut m = build::box_mesh([0.0; 3], [10.0; 3]);
+        m.faces = None;
+        let n = u32::try_from(m.positions.len()).unwrap();
+        m.positions
+            .extend([[0.0, 0.0, 20.0], [1.0, 1.0, 20.0], [2.0, 2.0 + 1e-9, 20.0]]);
+        m.triangles.push([n, n + 1, n + 2]);
+        let words = |r: crate::error::Result<crate::mesh::TriMesh>| r.unwrap_err().to_string();
+        assert_eq!(
+            words(super::loft_stored(&m)),
+            "loft: the result is unsafe at mesh storage precision (collapsed triangles); change the loft's profiles or the spacing between them"
+        );
+        // a cut or a join keeps its words
+        assert_eq!(
+            words(crate::boolean::storage_mesh(&m)),
+            "boolean: the result is unsafe at mesh storage precision (collapsed triangles); change the cut or placement"
         );
     }
 
