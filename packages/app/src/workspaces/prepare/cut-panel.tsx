@@ -6,7 +6,8 @@
 // the section, computed again only when the plane settles. Pins and dowels go where the panel's
 // placement says: automatically, or where clicks on the plane put them, drawn as circles of their
 // size. Loaded the first time the tool opens.
-import { Button, ScrubNumber, Select, VectorField } from '@slicerx/ui'
+import { Button, Select } from '@slicerx/ui'
+import { ScrubNumber, VectorField } from '@slicerx/ui/scrub'
 import { useEffect, useMemo, useState } from 'react'
 import { useHost } from '../../host'
 import { clearanceFor } from '../../plate/clearance'

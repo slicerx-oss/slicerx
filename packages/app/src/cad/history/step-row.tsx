@@ -4,7 +4,8 @@
 // suppress or delete it. Shared by the history list in Slice and the Model tree. The tree's row is calmer: the
 // step's icon before its name, the move, suppress and delete actions in one More menu in a slot of its own at the
 // row's end, and under a sketch extrude or revolve the sketch as a sub-row that opens it (the history is unchanged).
-import { Button, Icon, useContextMenu } from '@slicerx/ui'
+import { Button, Icon } from '@slicerx/ui'
+import { useContextMenu } from '@slicerx/ui/context-menu'
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { useApp, type PlateEntry } from '../../state/store'
 import { mainNumber, stepName, type Step } from '@slicerx/cad-history'

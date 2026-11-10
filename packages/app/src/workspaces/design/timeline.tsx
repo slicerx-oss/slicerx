@@ -4,7 +4,8 @@
 // timeline runs (docs/cad-history.md, "Timeline"). The marker rolls the whole design back (cad/history/rollback.ts).
 // A click on a feature picks its body, a double click opens the step's tool, and dragging a feature moves it among
 // its body's steps. Every action is an existing history operation (cad/history/ops.ts).
-import { Button, Icon, useContextMenu } from '@slicerx/ui'
+import { Button, Icon } from '@slicerx/ui'
+import { useContextMenu } from '@slicerx/ui/context-menu'
 import { useEffect, useRef, useState } from 'react'
 import { featureParams, mainNumber, stepName, type FeatureItem, type SketchItem, type Step } from '@slicerx/cad-history'
 import { beginEdit, cancelEdit, moveStep, toolFor } from '../../cad/history/ops'

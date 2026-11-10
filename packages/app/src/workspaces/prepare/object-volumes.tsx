@@ -3,7 +3,8 @@
 // Volumes of the selected object: negative volumes (cut away), support blockers and support enforcers.
 // Add one from a shape or from another object on the plate, list them under the object, and move and
 // size the one you pick.
-import { Button, LinkButton, Select, tipAttrs, VectorField } from '@slicerx/ui'
+import { Button, LinkButton, Select, tipAttrs } from '@slicerx/ui'
+import { VectorField } from '@slicerx/ui/scrub'
 import { useMemo, useState } from 'react'
 import { useHost } from '../../host'
 import { copyVolume } from '../../plate/clipboard'

@@ -8,7 +8,8 @@ export { registerChatGpt, type ChatGptHost, type ChatGptAccount } from './pilot-
 export { registerMimirCloud, type MimirCloudHost, type MimirQuota } from './pilot-connect/cloud'
 export { registerLocalAi, type LocalAiHost } from './pilot-connect/local-ai-host'
 export type { Hardware, LocalNet } from '@slicerx/pilot/local-ai'
-export { registerAgentInstall, registerAgentMarks, type AgentInstallHost, type AgentId, type InstallResult } from './pilot-connect/agents'
+// The agent list (registerAgentInstall, registerAgentMarks) comes from @slicerx/app/pilot-connect/agents, so it loads
+// with Connect your AI agent instead of riding in the startup shell.
 export { registerCommand, registerCommands, listCommands, searchCommands, runCommand, commandTools, commandIdForTool } from './commands/registry'
 export { fuzzyScore } from './commands/fuzzy'
 export { setWorkspace, toast, useApp } from './state/store'

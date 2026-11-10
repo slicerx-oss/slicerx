@@ -8,7 +8,8 @@
 // Under the spools: what the target prints with, and why (picked by hand, by color, the spool used last), or that
 // it is another material than the profile's. Every line keeps its height, so nothing moves when one changes.
 import { rightClickWords, useCoarsePointer } from '../lib/phone-layout'
-import { Button, LinkButton, Menu, MenuItem, Seg, Select, SwatchRing, tipAttrs, useLongPress } from '@slicerx/ui'
+import { Button, LinkButton, Menu, MenuItem, Seg, Select, SwatchRing, tipAttrs } from '@slicerx/ui'
+import { useLongPress } from '@slicerx/ui/context-menu'
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { useStore } from 'zustand'
 import { activeMeta } from '../plate/plates'

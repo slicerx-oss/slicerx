@@ -7,7 +7,8 @@
 // color change can note the filament slot to load; the note is saved with the project and does not change the G-code.
 // The marks go into the next slice as layer G-code.
 import { rightClickWords, useCoarsePointer } from '../../lib/phone-layout'
-import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator, Range, Textarea, tipAttrs, useLongPress, type IconName } from '@slicerx/ui'
+import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator, Range, Textarea, tipAttrs, type IconName } from '@slicerx/ui'
+import { useLongPress } from '@slicerx/ui/context-menu'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
 import { resolveSlots } from '../../filament/slots'
 import { Swatch } from '../../parts'

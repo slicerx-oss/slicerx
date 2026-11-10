@@ -3,7 +3,8 @@
 // An object's menu in the Model tree. The icon row has the likeliest verbs; the items are the ones the palette and the
 // Slice tools run, through the same commands, on the selection the right click made. A step's menu is in
 // cad/history/step-menu.tsx.
-import { ContextMenu, MenuIcon, MenuIconRow, MenuItem, type MenuPoint } from '@slicerx/ui'
+import { MenuItem } from '@slicerx/ui'
+import { ContextMenu, MenuIcon, MenuIconRow, type MenuPoint } from '@slicerx/ui/context-menu'
 import { runCommand } from '../../commands/registry'
 import { formatShortcut } from '../../lib/keys'
 import { toggleLock } from '../../plate/object-list'

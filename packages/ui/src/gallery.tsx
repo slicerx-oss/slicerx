@@ -4,6 +4,7 @@
 // dev-only route; the render test proves each component renders on the server.
 import { MenuIcon, MenuIconRow } from './components/context-menu'
 import { EdgeTab } from './components/edge-tab'
+import { VectorField } from './components/scrub'
 import {
   AppBar,
   Avatar,
@@ -34,7 +35,6 @@ import {
   Popover,
   Rail,
   Range,
-  VectorField,
   SearchButton,
   Seg,
   Select,

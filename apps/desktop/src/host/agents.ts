@@ -3,7 +3,8 @@
 // "Connect your AI agent" on the desktop: the bundled MCP server's path, the hub this app runs, the
 // agent credential in the keychain, and running the client's install step. Tauri commands in
 // src-tauri/src/agents.rs; the credential itself never reaches this side.
-import { appName, type AgentInstallHost } from '@slicerx/app'
+import { appName } from '@slicerx/app'
+import type { AgentInstallHost } from '@slicerx/app/pilot-connect/agents'
 import { invoke } from '@tauri-apps/api/core'
 
 /** The hub's key and address, for the install steps the Rust side builds itself. */

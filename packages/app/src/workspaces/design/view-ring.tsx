@@ -7,7 +7,8 @@
 //
 // Agents do the same through MCP: each verb names its tool. Drop to bed names slicerx_project_move, since every
 // object a client places already sits on the bed. The verbs under More name theirs in MORE_AGENT_TOOLS.
-import { ContextMenu, MenuItems, RadialMenu, type MenuEntry, type RingItem } from '@slicerx/ui'
+import { ContextMenu, MenuItems, type MenuEntry } from '@slicerx/ui/context-menu'
+import { RadialMenu, type RingItem } from '@slicerx/ui/radial-menu'
 import { useStore } from 'zustand'
 import { startFillet } from '../../cad/start-hint'
 import { runCommand } from '../../commands/registry'

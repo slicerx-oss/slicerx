@@ -4,7 +4,8 @@
 // verbs as an icon row, then rename, the moves, its faces, the sketch and the way back to the latest. Delete asks first, since
 // later steps that use the step may break.
 import { formatShortcut } from '../../lib/keys'
-import { Button, ContextMenu, Dialog, MenuIcon, MenuIconRow, MenuItem, type MenuPoint } from '@slicerx/ui'
+import { Button, Dialog, MenuItem } from '@slicerx/ui'
+import { ContextMenu, MenuIcon, MenuIconRow, type MenuPoint } from '@slicerx/ui/context-menu'
 
 export interface StepMenuProps {
   at: MenuPoint | null

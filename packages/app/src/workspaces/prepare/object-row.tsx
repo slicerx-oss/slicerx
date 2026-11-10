@@ -3,7 +3,8 @@
 // One object in the Objects card: a 36 px row with its thumbnail, name, part colors, a badge for settings of its own,
 // one warning icon, lock and print toggles that show on hover (and stay while on), and a chevron that opens the tree
 // of its parts and volumes. A click selects it, Cmd or Ctrl adds it, a double-click or F2 renames it in place.
-import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, useContextMenu, type IconName } from '@slicerx/ui'
+import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, type IconName } from '@slicerx/ui'
+import { useContextMenu } from '@slicerx/ui/context-menu'
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { partBadge, slotLabel } from '../../filament/rail'
 import { effectiveSlot, type ResolvedSlot } from '../../filament/slots'
