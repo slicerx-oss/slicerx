@@ -373,13 +373,40 @@ describe("the hinged box's stop on its first failed check", () => {
     expect(done(events)).toMatchObject({ stopReason: 'end' })
   })
 
-  it('goes on even when the reply ends on a question, since the person is asked once the round is used', async () => {
-    const steps = [...HINGED.slice(0, -1), { text: `${HINGED_LAST}\n\nShould I trim the lid knuckles, or move the hinge lower?` }, { text: 'Fixed and checked again.' }]
-    const client = createScriptedClient(steps, { chunk: false })
-    const { events } = await replay(client, { tools: designTools(() => HINGED_MISS) })
-    expect(notes(client.requests.at(-1)!.messages)).toHaveLength(1)
-    expect(notices(events)).toHaveLength(1)
+  it('ends as before when the reply asks the person for a decision the plan does not settle', async () => {
+    const steps = [...HINGED.slice(0, -1), { text: `${HINGED_LAST}\n\nShould I trim the lid knuckles, or move the hinge lower?` }, { text: 'never sent' }]
+    const c = createScriptedClient(steps, { chunk: false })
+    const { events } = await replay(c, { tools: designTools(() => HINGED_MISS) })
+    expect(notices(events)).toEqual([])
+    expect(c.remaining()).toBe(1)
   })
+
+  /** A tool that puts a question card or a sheet in front of the person and returns without waiting for the answer. */
+  const leavesOpen = (kind: 'ask' | 'sheet'): PilotTool<never> =>
+    defineTool<Args>({
+      name: kind === 'ask' ? 'test.ask_later' : 'test.sheet_later',
+      version: '1',
+      description: 'leaves a card open',
+      source: 'command',
+      permission: 'read',
+      input: z.record(z.string(), z.unknown()),
+      run: async (_a, ctx) => {
+        if (kind === 'ask') void ctx.ask!({ title: 'Lid', question: 'Should the lid snap shut?', choices: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] }).catch(() => undefined)
+        else void ctx.sheet!({ title: 'Lid sizes', dims: [{ key: 'gap', label: 'Lid gap', value: 0.4, unit: 'mm', source: 'guess' }] } as never).catch(() => undefined)
+        return { summary: 'shown' }
+      },
+    }) as PilotTool<never>
+
+  for (const kind of ['ask', 'sheet'] as const)
+    it(`gives no push while a ${kind === 'ask' ? 'question card' : 'sheet'} waits on the person, and answers nothing for them`, async () => {
+      const steps = [...HINGED.slice(0, -1), { calls: [call(kind === 'ask' ? 'test.ask_later' : 'test.sheet_later', {})] }, { text: HINGED_LAST }, { text: 'never sent' }]
+      const c = createScriptedClient(steps, { chunk: false })
+      const { events } = await replay(c, { tools: [...designTools(() => HINGED_MISS), leavesOpen(kind)] })
+      expect(events.some((e) => e.type === kind)).toBe(true)
+      expect(notices(events)).toEqual([])
+      expect(c.remaining()).toBe(1)
+      expect(events.some((e) => e.type === (kind === 'ask' ? 'ask_answered' : 'sheet_answered'))).toBe(false)
+    })
 
   it('ends as before once the part changed after the check, which then has to be checked again by the model', async () => {
     const steps = [...HINGED.slice(0, -1), { text: 'I will raise the lid.', calls: [call('geom.build', { design: 'd1', name: 'Lid', feature: 'Lid plate' })] }, { text: 'The lid is raised.' }, { text: 'never sent' }]
