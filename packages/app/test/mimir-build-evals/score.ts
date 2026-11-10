@@ -23,12 +23,14 @@ export interface Check {
 /**
  * Something the person did in the run, in order. The first message, one sheet confirm and one Go are free, or one sheet
  * and one Go for each part when the message asks for separate parts. A Go names the plan it approved, and the design
- * that plan was built in once a step built it (the drive reads the tie after the run).
+ * that plan was built in once a step built it (the drive reads the tie after the run). An amend is the Go on a change to
+ * an approved plan (design.plan with amends, after a failed check): the plan it changes and the revision it makes.
  */
 export type UserTurn =
   | { kind: 'message'; text: string }
   | { kind: 'sheet'; title: string }
   | { kind: 'go'; part: string; plan: string; design?: string }
+  | { kind: 'amend'; part: string; plan: string; revision: number; design?: string }
   | { kind: 'answer'; question: string; picked: string }
   | { kind: 'nudge'; text: string; why: NoBuild }
 
@@ -72,11 +74,19 @@ const goPart = (t: Extract<UserTurn, { kind: 'go' }>): string => t.design ?? `pl
  * them) go in order to the Gos that come after them before the next sheet, one each; a sheet with no such Go goes to
  * the last Go before it, and stands for a part of its own when there is none. A sheet is free once for each part, up to
  * `parts`, so two parts whose sheets share a title are both free, and a part sized again after its Go counts.
+ *
+ * An amend is part of the flow: a build whose check fails may change its approved plan once in that fix round, and the
+ * person's Go on the change is free once for each plan. A second change to the same plan counts.
  */
 export function extraTurns(turns: readonly UserTurn[], parts = 1): UserTurn[] {
   const extra = new Set<number>()
   const gos = new Set<string>()
+  const amended = new Set<string>()
   turns.forEach((t, i) => {
+    if (t.kind === 'amend') {
+      if (amended.has(t.plan)) extra.add(i)
+      amended.add(t.plan)
+    }
     if (t.kind !== 'go') return
     const part = goPart(t)
     if (gos.has(part) || gos.size >= parts) extra.add(i)
@@ -100,7 +110,7 @@ export function extraTurns(turns: readonly UserTurn[], parts = 1): UserTurn[] {
     if (sheeted.has(part) || sheeted.size >= parts) extra.add(i)
     sheeted.add(part)
   })
-  return turns.filter((t, i) => (t.kind === 'message' ? i > 0 : t.kind === 'sheet' || t.kind === 'go' ? extra.has(i) : true))
+  return turns.filter((t, i) => (t.kind === 'message' ? i > 0 : t.kind === 'sheet' || t.kind === 'go' || t.kind === 'amend' ? extra.has(i) : true))
 }
 
 /** `parts` placed on the plate: each one's positions through its 4x4 column-major transform. */
@@ -778,7 +788,10 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   const ops: Check = { pass: hit.length > 0, detail: `${hit.length ? `used ${hit.join(', ')}` : `none of ${c.ops.join(', ')}`}; steps ${used.join(', ') || 'none'}` }
   const parts = c.parts ?? 1
   const extra = extraTurns(run.turns, parts)
-  const turns: Check = { pass: extra.length === 0, detail: extra.length ? extra.map((t) => (t.kind === 'nudge' ? `nudge (${t.why})` : t.kind === 'answer' ? `answer "${t.question.slice(0, 40)}"` : `another ${t.kind}`)).join(', ') : parts > 1 ? `one message, and a sheet and Go for each of ${parts} parts only` : 'one message, sheet and Go only' }
+  // the plan changes let through, named so a results row shows the run fixed its plan that way
+  const changes = run.turns.filter((t) => t.kind === 'amend').length - extra.filter((t) => t.kind === 'amend').length
+  const changed = changes ? `, and ${changes === 1 ? 'one plan change' : `${changes} plan changes`}` : ''
+  const turns: Check = { pass: extra.length === 0, detail: extra.length ? extra.map((t) => (t.kind === 'nudge' ? `nudge (${t.why})` : t.kind === 'answer' ? `answer "${t.question.slice(0, 40)}"` : t.kind === 'amend' ? 'another plan change' : `another ${t.kind}`)).join(', ') : `${parts > 1 ? `one message, and a sheet and Go for each of ${parts} parts only` : 'one message, sheet and Go only'}${changed}` }
   const refused = !run.firstBuilt && classifyNoBuild(run.firstReply) === 'declined'
   const built = run.parts.length > 0
   const claim = runClaim({ check: lastCheckPass(run.events), reply: run.reply ?? run.firstReply })

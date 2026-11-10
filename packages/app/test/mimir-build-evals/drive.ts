@@ -201,7 +201,10 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
       if (ev.type === 'ask') {
         const go = ev.choices.find((ch) => ch.id.startsWith(`${PLAN_GO}:`))
         if (go) {
-          turns.push({ kind: 'go', part: ev.question, plan: go.id.slice(PLAN_GO.length + 1) })
+          // a change to an approved plan has its own card: go:<planId>~r<revision> (tab-tools amendId)
+          const id = go.id.slice(PLAN_GO.length + 1)
+          const amend = /^(.+)~r(\d+)$/.exec(id)
+          turns.push(amend ? { kind: 'amend', part: ev.question, plan: amend[1]!, revision: Number(amend[2]) } : { kind: 'go', part: ev.question, plan: id })
           void pilot.answer!(ev.askId, go.id)
         } else {
           const pick = ev.choices.find((ch) => !/\bnothing\b/i.test(ch.label)) ?? ev.choices[0]
@@ -240,7 +243,7 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   const left = script?.remaining() ?? 0
   if (left > 0 && !replayCheck.diverged) error ??= `the replay left ${left} recorded repl${left === 1 ? 'y' : 'ies'} unused`
   // each Go stands for the design its plan was built in (the tie the plan card makes), not the model's words for the part
-  for (const t of turns) if (t.kind === 'go') {
+  for (const t of turns) if (t.kind === 'go' || t.kind === 'amend') {
     const design = cardPlans.plans.get(t.plan)?.design
     if (design) t.design = design
   }
