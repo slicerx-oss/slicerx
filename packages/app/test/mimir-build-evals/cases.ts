@@ -27,6 +27,13 @@ export interface SizeCheck {
  */
 export type HookSpec = { kind: 'lip' } | { kind: 'leg'; rodMm: number }
 
+/**
+ * How a box's lid is checked. hinged: the lid is a body of its own, sits on its box (within 2 mm of it, not laid apart
+ * where no hinge joins them) and keeps the gap the fit rule gives a print in place joint on the case's machine, so it
+ * neither fuses to the box nor binds.
+ */
+export type LidSpec = { kind: 'hinged' }
+
 export interface BuildCase {
   id: string
   title: string
@@ -42,6 +49,8 @@ export interface BuildCase {
   control?: boolean
   /** The part has a hook, checked this way. */
   hook?: HookSpec
+  /** The part has a lid, checked this way. */
+  lid?: LidSpec
   /**
    * The person asks for this many separate parts in the one message, so each part may get its own dimension sheet and
    * Go without counting as an extra turn. One when not given.
@@ -87,7 +96,9 @@ export const BUILD_CASES: BuildCase[] = [
     ops: ['geom.sweep'],
     bodies: [1, 1],
     sizes: [
-      { axis: 'z', minMm: 70, maxMm: 100 },
+      // the 5 mm plate, the 60 mm rise and the bend's 20 mm radius to the rod's middle, plus half the 10 mm rod: 90, or
+      // 85 when the rise is read from the bed; a hook that turns over at the top of its rise stands only 70
+      { axis: 'z', minMm: 80, maxMm: 100 },
       { axis: 'xy', minMm: 40, maxMm: 80 },
     ],
     hook: { kind: 'leg', rodMm: 10 },
@@ -146,7 +157,12 @@ export const BUILD_CASES: BuildCase[] = [
     machine: P1S,
     ops: ['geom.extrude', 'geom.build'],
     bodies: [1, 4],
-    sizes: [{ axis: 'xy', minMm: 75, maxMm: 100 }],
+    sizes: [
+      { axis: 'xy', minMm: 75, maxMm: 100 },
+      // 35 mm closed, with the lid on its box; the hinge knuckles or a lid laid over the top may stand up to 10 mm more
+      { axis: 'z', minMm: 33, maxMm: 45 },
+    ],
+    lid: { kind: 'hinged' },
     control: true,
   },
   // a loft vase that changes section, a handle swept along an arc, a clip and a stand that extrudes and fillets build, a
