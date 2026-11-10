@@ -774,9 +774,25 @@ fn shell_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     let wall: f64 = field(req, "wallMm")?;
     let opts: BooleanOptions = field_or_default(req, "options")?;
     let (m, r) = shell::shell(&it.world(), &open, wall, &opts)?;
-    let mut v = mesh_report(&it.to_local(&m)?, enc);
+    let m = shell_stored(&it.to_local(&m)?, wall)?;
+    let mut v = mesh_report(&m, enc);
     insert(&mut v, "report", to_value(&r)?);
     Ok(v)
+}
+
+/// [`boolean::storage_mesh`] for a shell, refused at the shell with what it can change: its wall
+#[cfg(feature = "shell")]
+fn shell_stored(mesh: &TriMesh, wall: f64) -> Result<TriMesh> {
+    boolean::stored_in(mesh, "shell", |reason| {
+        let what = match reason {
+            "collapsed triangles" => "it would keep triangles too thin to store".to_owned(),
+            "intersecting faces" => "its inner faces would cross once stored".to_owned(),
+            other => format!("it would not store cleanly ({other})"),
+        };
+        format!(
+            "a {wall} mm wall does not work on this body, since {what}; try a wall a little thinner or thicker"
+        )
+    })
 }
 
 /// The round surface under a pick, with the size that suits it and every size there is.

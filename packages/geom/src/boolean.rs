@@ -419,16 +419,20 @@ pub(crate) fn storage_mesh(mesh: &TriMesh) -> Result<TriMesh> {
 /// the same check, refused in the words of the op that made the mesh
 #[allow(clippy::cast_possible_truncation, reason = "mesh storage uses f32 positions")]
 pub(crate) fn stored(mesh: &TriMesh, op: &'static str, what: &str, hint: &str) -> Result<TriMesh> {
+    stored_in(mesh, op, |reason| {
+        format!("{what} unsafe at mesh storage precision ({reason}); {hint}")
+    })
+}
+
+/// the same check, refused with `words` for the reason (collapsed triangles, open or non-manifold edges, invalid
+/// topology, intersecting faces)
+#[allow(clippy::cast_possible_truncation, reason = "mesh storage uses f32 positions")]
+pub(crate) fn stored_in(mesh: &TriMesh, op: &'static str, words: impl Fn(&str) -> String) -> Result<TriMesh> {
     let mut out = mesh.clone();
     for point in &mut out.positions {
         *point = point.map(|v| f64::from(v as f32));
     }
-    let refuse = |reason| {
-        Error::geometry(
-            op,
-            format!("{what} unsafe at mesh storage precision ({reason}); {hint}"),
-        )
-    };
+    let refuse = |reason: &str| Error::geometry(op, words(reason));
     out.validate(op)?;
     if out.is_empty() {
         return Ok(out);

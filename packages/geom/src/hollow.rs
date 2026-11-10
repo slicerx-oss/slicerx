@@ -18,6 +18,12 @@ const HARD_MAX_CELLS: f64 = 32.0e6;
 /// stand-in for infinity in the squared distance transform
 const FAR: f64 = 1.0e12;
 const HOLE_SIDES: usize = 24;
+/// the depth field's offset, in voxels: 0.4 tuned on a sphere, a cube and a torus (volume within a few percent)
+const BIAS: f64 = 0.4;
+/// the least clearance, in voxels, between the wall's level and a node's depth (see `level_clearance`), and the one a
+/// coarser voxel is chosen for when a level has less
+const MIN_CLEARANCE: f64 = 0.063;
+const CLEARANCE: f64 = 0.07;
 /// sample offsets (fractions of a voxel) that keep column rays off triangle edges, so shared edges are never hit twice or missed
 const JITTER: [f64; 2] = [0.000_137, 0.000_291];
 
@@ -123,7 +129,7 @@ fn cells_along(size: f64, h: f64) -> usize {
     reason = "vertex counts are checked below 2^32"
 )]
 pub fn hollow(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, HollowReport)> {
-    let (inner, grid) = wall_surface(mesh, opts)?;
+    let (inner, grid) = wall_surface(mesh, opts, &[])?;
     let volume_before = mesh.volume();
     let mut out = mesh.clone();
     let mut holes = 0;
@@ -159,11 +165,39 @@ pub fn hollow(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, HollowRe
 /// As `hollow`.
 #[cfg(feature = "shell")]
 pub(crate) fn inner_wall(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, f64)> {
-    let (inner, grid) = wall_surface(mesh, opts)?;
+    let (inner, grid) = wall_surface(mesh, opts, &[])?;
     Ok((inner, grid.h))
 }
 
-fn wall_surface(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, Grid)> {
+/// the inner wall with the closed meshes in `through` counted as part of the body, so the wall runs on through them
+/// rather than closing under them: past an open face it crosses the face, and the cavity breaks through it cleanly.
+///
+/// # Errors
+/// As `hollow`.
+#[cfg(feature = "shell")]
+pub(crate) fn inner_wall_through(
+    mesh: &TriMesh,
+    opts: &HollowOptions,
+    through: &[TriMesh],
+) -> Result<(TriMesh, f64)> {
+    let (inner, grid) = wall_surface(mesh, opts, through)?;
+    Ok((inner, grid.h))
+}
+
+/// the voxel size `hollow` takes for `mesh` with no voxel given
+#[cfg(feature = "shell")]
+pub(crate) fn voxel_for(mesh: &TriMesh, wall_mm: f64) -> Result<f64> {
+    let bounds = mesh
+        .bounds()
+        .ok_or_else(|| Error::mesh("hollow", "the mesh is empty"))?;
+    let opts = HollowOptions {
+        wall_mm,
+        ..HollowOptions::default()
+    };
+    Ok(choose_grid(bounds, &opts)?.h)
+}
+
+fn wall_surface(mesh: &TriMesh, opts: &HollowOptions, through: &[TriMesh]) -> Result<(TriMesh, Grid)> {
     mesh.validate("hollow")?;
     if !(opts.wall_mm.is_finite() && opts.wall_mm > 0.0) {
         return Err(Error::invalid("wallMm", "must be a positive number"));
@@ -178,12 +212,22 @@ fn wall_surface(mesh: &TriMesh, opts: &HollowOptions) -> Result<(TriMesh, Grid)>
             return Err(Error::invalid("diameterMm", "must be a positive number"));
         }
     }
-    let bounds = mesh
+    let mut all = mesh.clone();
+    for t in through {
+        t.validate("hollow")?;
+        all.append(t);
+    }
+    let bounds = all
         .bounds()
         .ok_or_else(|| Error::mesh("hollow", "the mesh is empty"))?;
     let grid = choose_grid(bounds, opts)?;
 
-    let inside = voxelize(mesh, &grid);
+    let mut inside = voxelize(mesh, &grid);
+    for t in through {
+        for (a, b) in inside.iter_mut().zip(voxelize(t, &grid)) {
+            *a |= b;
+        }
+    }
     let field = depth_field(&inside, &grid, opts.wall_mm);
     let mut inner = extract_surface(&field, &grid);
     smooth(&mut inner, opts.smooth_iterations);
@@ -207,11 +251,61 @@ fn choose_grid(bounds: Aabb, opts: &HollowOptions) -> Result<Grid> {
     for _ in 0..8 {
         let g = Grid::new(bounds, h);
         if g.cells() <= AUTO_MAX_CELLS {
-            return Ok(g);
+            return Ok(Grid::new(bounds, clear_of_nodes(h, opts.wall_mm)));
         }
         h *= (g.cells() / AUTO_MAX_CELLS).m_cbrt().max(1.01);
     }
-    Ok(Grid::new(bounds, h))
+    Ok(Grid::new(bounds, clear_of_nodes(h, opts.wall_mm)))
+}
+
+/// how far, in voxels, the wall's level in the depth field lies from the nearest depth a node can have.
+///
+/// a node's depth is the distance to the nearest outside cell, the root of a sum of three squares in voxels. a level
+/// close to one of them puts the surface's corners right next to those nodes, in slivers that smoothing folds over
+/// each other. a lofted vase hollowed at 89 walls from 1.0 to 3.0 mm crossed itself at 35, each with its level within
+/// 0.062 voxels of a node's depth (all but one within 0.048), and at none of the 45 from 0.062 up.
+fn level_clearance(h: f64, wall: f64) -> f64 {
+    let level = wall / h + BIAS;
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the level is a few voxels"
+    )]
+    let top = (level + 1.0).m_powi(2).ceil() as u64;
+    #[allow(clippy::cast_precision_loss, reason = "small whole numbers")]
+    (0..=top)
+        .filter(|&k| sum_of_three_squares(k))
+        .map(|k| (k as f64).sqrt() - level)
+        .fold(f64::MAX, |best, d| best.min(d.abs()))
+}
+
+/// whether `k` is a sum of three squares: every number but those of the form 4^a (8b + 7)
+fn sum_of_three_squares(mut k: u64) -> bool {
+    while k != 0 && k.is_multiple_of(4) {
+        k /= 4;
+    }
+    k % 8 != 7
+}
+
+/// the voxel `h`, or when the wall's level sits too close to a node's depth (see [`level_clearance`]) the least
+/// coarser one, in steps of a quarter percent up to 8%, whose level clears every depth by `CLEARANCE`; failing
+/// that, the one in the range that clears them most
+fn clear_of_nodes(h: f64, wall: f64) -> f64 {
+    if level_clearance(h, wall) >= MIN_CLEARANCE {
+        return h;
+    }
+    let mut best = (h, 0.0);
+    for i in 1..=32 {
+        let c = h * (1.0 + 0.0025 * f64::from(i));
+        let d = level_clearance(c, wall);
+        if d >= CLEARANCE {
+            return c;
+        }
+        if d > best.1 {
+            best = (c, d);
+        }
+    }
+    best.0
 }
 
 #[allow(
@@ -352,8 +446,7 @@ fn depth_field(inside: &[bool], g: &Grid, wall: f64) -> Vec<f64> {
             }
         }
     }
-    // 0.4 tuned on a sphere, a cube and a torus (volume within a few percent)
-    let bias = 0.4 * g.h;
+    let bias = BIAS * g.h;
     d2.iter()
         .zip(inside)
         .map(|(&d, &i)| if i { d.sqrt() * g.h - bias - wall } else { -wall })
@@ -676,6 +769,34 @@ mod tests {
         );
         let expect = 2.0 * PI * PI * 20.0 * (6.0f64.m_powi(2) - 4.0f64.m_powi(2));
         shell_check(&out, t.volume(), expect, 0.08);
+    }
+
+    #[test]
+    fn the_voxel_keeps_the_wall_level_clear_of_node_depths() {
+        for k in [7, 15, 23, 28, 31, 60] {
+            assert!(!sum_of_three_squares(k), "{k}");
+        }
+        for k in [0, 1, 2, 3, 4, 5, 6, 8, 9, 12, 14, 16] {
+            assert!(sum_of_three_squares(k), "{k}");
+        }
+        // a third of the wall puts the level at 3.4 voxels, 0.064 from the root of 12, and is kept
+        assert!((clear_of_nodes(2.0 / 3.0, 2.0) - 2.0 / 3.0).abs() < 1e-12);
+        // the twisted vase's 2 mm wall on a 0.8401 mm voxel: 0.048 from the root of 8, so the voxel grows a little
+        let h = clear_of_nodes(0.8401, 2.0);
+        assert!(level_clearance(0.8401, 2.0) < 0.05);
+        assert!(
+            h > 0.8401 && h <= 0.8401 * 1.08 && level_clearance(h, 2.0) >= CLEARANCE,
+            "{h}"
+        );
+        // every wall on any voxel the automatic choice can start from: a third of the wall or coarser
+        for i in 0..400 {
+            let wall = 0.8 + 0.01 * f64::from(i);
+            for h in [1.0, 1.1, 1.3, 1.6, 2.0, 3.0].map(|f| f * wall / 3.0) {
+                let c = clear_of_nodes(h, wall);
+                assert!(c >= h && c <= h * 1.08 + 1e-12, "{wall} {h}");
+                assert!(level_clearance(c, wall) >= MIN_CLEARANCE, "{wall} {h} {c}");
+            }
+        }
     }
 
     #[test]
