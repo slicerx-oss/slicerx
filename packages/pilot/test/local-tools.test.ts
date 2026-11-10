@@ -122,3 +122,23 @@ describe('the local form of every tool', () => {
     expect(toolSpec(probe).inputSchema).toMatchObject({ additionalProperties: false, properties: { n: { maximum: Number.MAX_SAFE_INTEGER }, open: { additionalProperties: false } } })
   })
 })
+
+describe('a local input', () => {
+  it('shows a local model the fields of localInput, while the tool still takes and checks its whole input', async () => {
+    const t = defineTool({
+      name: 'test.local_input',
+      version: '1.0.0',
+      description: 'A tool with a field only cloud models are told of.',
+      source: 'command',
+      permission: 'read',
+      input: z.object({ part: z.string(), amends: z.string().optional() }),
+      localInput: z.object({ part: z.string() }),
+      async run(i) {
+        return { summary: i.amends ? `amends ${i.amends}` : 'new' }
+      },
+    })
+    expect(Object.keys((localToolDef(t).parameters as { properties: object }).properties)).toEqual(['part'])
+    expect(Object.keys((toolSpec(t).inputSchema as { properties: object }).properties)).toEqual(['part', 'amends'])
+    expect((await t.run(t.input.parse({ part: 'Box', amends: 'p1' }), {} as never)).summary).toBe('amends p1')
+  })
+})
