@@ -1009,7 +1009,8 @@
    "bodies": true,
    "minWall": true,
    "bedFit": true,
-   "sizes": true
+   "sizes": true,
+   "floor": true
   }
  }
 }

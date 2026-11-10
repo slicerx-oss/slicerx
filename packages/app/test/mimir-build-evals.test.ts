@@ -23,6 +23,7 @@
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import type { MeshPart, PilotEvent } from '@slicerx/contracts'
 import { createTransportClient, type LlmMessage } from '@slicerx/pilot'
 import { createNodeTransport } from '@slicerx/pilot/node'
@@ -36,7 +37,7 @@ import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, evalPrice, replaySteps, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, recordLive, refreshScore, rescore, rescoreLine, scoreMoves, summarize } from './mimir-build-evals/recordings'
-import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, hingeCheck, hookCheck, lastCheckPass, lidStated, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
+import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, floorCheck, hingeCheck, hookCheck, lastCheckPass, lidStated, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
 
@@ -884,6 +885,21 @@ describe('build eval scoring', () => {
     ])
   })
 
+  it('fails a vase, bottle or planter whose cavity runs out through the bottom, as design.check does', () => {
+    // the parts mimir built in recorded runs (packages/mcp/test/holder-floor.test.ts says where each one came from)
+    const fixtures = JSON.parse(gunzipSync(readFileSync(join(__dirname, '../../mcp/test/fixtures/holder-floors.json.gz'))).toString('utf8')) as Record<string, { parts: { name: string; positions: number[]; indices: number[] }[] }>
+    const parts = (id: string): MeshPart[] => fixtures[id]!.parts.map((p, slot) => ({ name: p.name, slot, positions: Float32Array.from(p.positions), indices: Uint32Array.from(p.indices) }))
+    const floorOf = (id: string) => BUILD_CASES.find((c) => c.id === id)!.floor!
+    expect(BUILD_CASES.filter((c) => c.floor).map((c) => c.id)).toEqual(['square-bottle', 'twisted-vase', 'flared-vase', 'planter-saucer'])
+    const open = floorCheck(floorOf('twisted-vase'), parts('twisted-vase-open'))
+    expect(open.pass).toBe(false)
+    expect(open.detail).toMatch(/^open at the bottom: Vase body: the cavity runs through the bottom face at z 0, /)
+    expect(floorCheck(floorOf('square-bottle'), parts('square-bottle'))).toEqual({ pass: true, detail: 'closed: solid across the bottom face at z 0' })
+    // the planter's five drain holes are the 6 mm the request asks for
+    expect(floorCheck(floorOf('planter-saucer'), parts('planter-saucer'))).toEqual({ pass: true, detail: 'closed: solid across the bottom face at z 0 (holes up to the planned size aside)' })
+    expect(floorCheck({ mm: 3 }, parts('planter-saucer')).pass).toBe(false)
+  })
+
   it('knows which recorded replays disagree: their last check failed and the scorer passes them', () => {
     // twisted-vase failed its last check live too. cable-clip left this list when the scorer read its 0.41 mm floor as
     // design.check does, and phone-stand-lip when the scorer read its 0.23 mm wedge as design.check does. watering-spout
@@ -909,7 +925,7 @@ describe('build eval scoring', () => {
 
 const line = (id: string, r: CaseRun, usd?: number, model?: string): string => {
   const s = r.score
-  const checks = [s.ops, s.watertight, s.bodies, s.minWall, s.bedFit, s.sizes, s.hook, s.lid, s.hinge].map((c, i) => (c ? `${['ops', 'closed', 'bodies', 'wall', 'bed', 'size', 'hook', 'lid', 'hinge'][i]} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')).filter(Boolean)
+  const checks = [s.ops, s.watertight, s.bodies, s.minWall, s.bedFit, s.sizes, s.hook, s.lid, s.hinge, s.floor].map((c, i) => (c ? `${['ops', 'closed', 'bodies', 'wall', 'bed', 'size', 'hook', 'lid', 'hinge', 'floor'][i]} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')).filter(Boolean)
   const said = s.claim.said ? `  says ${s.claim.said} (${s.claim.from === 'check' ? 'last design.check' : 'reply'})` : ''
   return `${(s.verdict === 'fail' && s.refused ? 'REFUSED' : s.verdict.toUpperCase()).padEnd(8)} ${id.padEnd(16)} turns ${s.turns.pass ? 'ok' : 'FAIL'} (${s.turns.detail})  ${checks.join('  ')}${said}${model ? `  ${model}` : ''}${usd === undefined ? '' : `  $${usd.toFixed(3)}`}${r.error ? `  error: ${r.error}` : ''}`
 }

@@ -5,11 +5,13 @@
 // inner loops of its flat faces, as geom.faces finds them, each measured with the engine's hole finder as geom.measure
 // and geom.hole do), its feature steps with the planned feature each was tagged with, and its thinnest wall (a ray
 // from each facet inward to the far side, through a grid of the facets, within a budget, skipping slivers and ledges
-// a join leaves) and, when asked, the hook on its upright stem (hook-lip.ts).
+// a join leaves), when asked, the hook on its upright stem (hook-lip.ts) and, when asked, the floor of a part that holds
+// something (holder-floor.ts).
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
-import type { BodyFacts, FitLimits } from './design-check'
+import type { BodyFacts, FitLimits, FloorFacts } from './design-check'
 import { fitFacts } from './fit-facts'
+import { floorOpenings } from './holder-floor'
 import { hookOn, surfacePoints } from './hook-lip'
 
 type V3 = [number, number, number]
@@ -25,10 +27,11 @@ const vertex = (m: Mesh, i: number): V3 => [m.positions[i * 3] ?? 0, m.positions
 const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3] ?? 0), vertex(m, m.indices[t * 3 + 1] ?? 0), vertex(m, m.indices[t * 3 + 2] ?? 0)]
 
 /**
- * The facts about the design's body now; with `fit`, the limits of a print-in-place plan, its pieces and gaps too, and
- * with `hook`, how far the hook on its upright stem rises at its tip.
+ * The facts about the design's body now; with `fit`, the limits of a print-in-place plan, its pieces and gaps too, with
+ * `hook`, how far the hook on its upright stem rises at its tip, and with `floor`, where each part's cavity opens
+ * through its bottom (holes up to `floor.plannedHoleMm` across left out, as the plan's own).
  */
-export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean } = {}): Promise<BodyFacts> {
+export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; floor?: { plannedHoleMm: number } } = {}): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
   // closed as geom.info and the slicer read it: corners at the same point of the part's own positions are one vertex,
   // whatever their indices
@@ -81,6 +84,20 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     ...(wall.why ? { minWallWhy: wall.why } : {}),
     ...gaps,
     ...(opts.hook ? hookFacts(world) : {}),
+    ...(opts.floor ? { floor: floorFacts(world, d.parts.map((p) => p.name), opts.floor.plannedHoleMm) } : {}),
+  }
+}
+
+/** Each part's floor, named by its part when it has a name (the build eval scorer reads it the same way). */
+export function floorFacts(world: readonly Mesh[], names: readonly (string | undefined)[], plannedHoleMm: number): FloorFacts {
+  const read = floorOpenings(world, plannedHoleMm)
+  return {
+    plannedHoleMm,
+    parts: read.parts.map((p, k) => ({
+      ...(names[k] ? { name: names[k] } : {}),
+      faceZ: Math.round(p.faceZ * 1000) / 1000,
+      openings: p.openings.map((o) => ({ from: o.from, to: o.to, alongMm: Math.round(o.alongMm * 1000) / 1000, acrossMm: Math.round(o.acrossMm * 1000) / 1000 })),
+    })),
   }
 }
 
