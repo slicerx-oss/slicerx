@@ -68,6 +68,35 @@ describe('printers added by hand', () => {
     expect(found?.state).toBeUndefined()
   })
 
+  it("keeps the wizard's AMS units and slots, gives them as the printer's slots, and keeps them after a reload", async () => {
+    const h = host()
+    // two AMS units picked in the wizard on an A1, whose catalog entry has one
+    const { printerId } = await setupHostFor(h).addPrinter({ profileId: 'bambu-a1', nozzleMm: 0.4, name: 'A1', filament: { system: 'ams', slots: 8 } })
+    expect(get().handPrinters.find((p) => p.id === printerId)).toMatchObject({ filamentSystem: 'ams', slotCount: 8 })
+    const st = await h.printers!.status(printerId)
+    expect(st.slots.map((x) => x.id)).toEqual(['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4'])
+    expect(st.slots.every((x) => x.material === undefined && x.color === undefined)).toBe(true)
+    const back = normalizePrefs(JSON.parse(localStorage.getItem('slicerx.prefs.v1') ?? '{}') as unknown)
+    expect(back.handPrinters?.[0]).toMatchObject({ id: printerId, filamentSystem: 'ams', slotCount: 8 })
+  })
+
+  it('keeps a single spool picked over the catalog AMS, and an MMU or other unit by its slot count', async () => {
+    const h = host()
+    const one = (await setupHostFor(h).addPrinter({ profileId: 'bambu-a1', nozzleMm: 0.4, name: 'A1 single', filament: { system: 'single', slots: 1 } })).printerId
+    const rec = get().handPrinters.find((p) => p.id === one)!
+    expect(rec.filamentSystem).toBeUndefined()
+    expect(rec.slotCount).toBeUndefined()
+    expect((await h.printers!.status(one)).slots).toEqual([])
+    const mmu = (await setupHostFor(h).addPrinter({ profileId: 'prusa-mk4s', nozzleMm: 0.4, filament: { system: 'mmu', slots: 5 } })).printerId
+    expect(get().handPrinters.find((p) => p.id === mmu)).toMatchObject({ filamentSystem: 'mmu', slotCount: 5 })
+    expect((await h.printers!.status(mmu)).slots.map((x) => x.id)).toEqual(['1', '2', '3', '4', '5'])
+    // a printer added before the wizard kept its choice has no slots, as before
+    const old = addHandPrinter({ name: 'Old', profileId: 'bambu-a1', vendor: 'Bambu Lab', model: 'A1', nozzleCount: 1, filamentSystem: 'ams' }, 0.4)
+    expect((await h.printers!.status(old)).slots).toEqual([])
+    // a slot count outside what any unit has is dropped on reload
+    expect(normalizePrefs({ handPrinters: [{ ...rec, id: 'x', filamentSystem: 'ams', slotCount: 99 }] }).handPrinters?.[0]?.slotCount).toBeUndefined()
+  })
+
   it('stays after a reload', async () => {
     await setupHostFor(host()).addPrinter({ profileId: 'bambu-a1-mini', nozzleMm: 0.2 })
     const saved = JSON.parse(localStorage.getItem('slicerx.prefs.v1') ?? '{}') as unknown

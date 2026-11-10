@@ -115,6 +115,8 @@ export interface HandPrinter {
   model: string
   nozzleCount: number
   filamentSystem?: 'ams' | 'mmu' | 'toolchanger'
+  /** Its slots, as picked in setup (four per AMS unit); absent for a printer added before setup kept them. */
+  slotCount?: number
   /** Where it is, kept for when a printer bridge can reach it. The access code is never kept here. */
   connection?: { family: string; address: string; serial?: string; needsSecret: boolean }
 }
@@ -125,6 +127,9 @@ export interface PrinterBay {
   name: string
   place?: string
 }
+
+/** The most slots a hand-added printer keeps: eight AMS units of four, the 32 a project holds. */
+const MAX_HAND_SLOTS = 32
 
 // Guards: each returns the value when it has the right shape, else undefined, and callers pick the default.
 type Rec = Record<string, unknown>
@@ -266,11 +271,13 @@ function handPrinter(v: unknown): HandPrinter | undefined {
   const nozzleCount = num(v['nozzleCount'], 1, 16)
   if (!id || !name || !profileId || !vendor || !model || nozzleCount === undefined) return undefined
   const filamentSystem = oneOf(v['filamentSystem'], ['ams', 'mmu', 'toolchanger'] as const)
+  const slots = num(v['slotCount'], 1, MAX_HAND_SLOTS)
+  const slotCount = filamentSystem && slots !== undefined && Number.isInteger(slots) ? slots : undefined
   const c = v['connection']
   const family = isRec(c) ? str(c['family'], 40) : undefined, address = isRec(c) ? str(c['address'], 200) : undefined
   const serial = isRec(c) ? str(c['serial'], 60) : undefined, needsSecret = isRec(c) ? bool(c['needsSecret']) : undefined
   const connection = family && address && needsSecret !== undefined ? { family, address, needsSecret, ...(serial ? { serial } : {}) } : undefined
-  return { id, name, profileId, vendor, model, nozzleCount, ...(filamentSystem ? { filamentSystem } : {}), ...(connection ? { connection } : {}) }
+  return { id, name, profileId, vendor, model, nozzleCount, ...(filamentSystem ? { filamentSystem } : {}), ...(slotCount ? { slotCount } : {}), ...(connection ? { connection } : {}) }
 }
 
 function printerBay(v: unknown): PrinterBay | undefined {

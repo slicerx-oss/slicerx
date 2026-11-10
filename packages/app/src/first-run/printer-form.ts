@@ -535,6 +535,20 @@ export function nozzleText(form: PrinterForm): string {
   return form.nozzleUnsure ? `${text}, to confirm` : text
 }
 
+/** The wizard's filament system as a hand-added printer keeps it: the system and its slots. */
+export interface HandFilament {
+  system: 'single' | 'ams' | 'mmu' | 'toolchanger'
+  slots: number
+}
+
+/** The filament system picked in the wizard, as the saved printer keeps it: four slots per AMS unit, one spool for none. */
+export function filamentInput(f: PrinterForm['filament']): HandFilament {
+  if (f.kind === 'ams') return { system: 'ams', slots: Math.max(1, f.units) * 4 }
+  if (f.kind === 'mmu') return { system: 'mmu', slots: f.slots }
+  if (f.kind === 'other') return { system: 'toolchanger', slots: f.slots }
+  return { system: 'single', slots: 1 }
+}
+
 export function filamentText(form: PrinterForm): string {
   const f = form.filament
   if (f.kind === 'none' || f.kind === 'single') return FILAMENT_LABELS[f.kind]

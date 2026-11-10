@@ -41,6 +41,7 @@ import {
   EMPTY_FORM,
   extruderNozzles,
   FILAMENT_LABELS,
+  filamentInput,
   filamentText,
   FIRMWARE_LABELS,
   isIPv4,
@@ -291,7 +292,7 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
       const { brand, model } = modelLabel(f)
       const nozzle = nozzleMm(f.nozzles[0] ?? EMPTY_FORM.nozzles[0]!) ?? 0.4
       const connected = m !== null && m.id !== 'export'
-      const { printerId, credentialKept } = await host.addPrinter({ profileId: profileIdOf(f), nozzleMm: nozzle, name: f.name?.trim() || (model === 'Set up by hand' ? `${brand} printer` : model), ...(connected ? { connection: connectionInput(f, secretFor(m, f)) } : {}) })
+      const { printerId, credentialKept } = await host.addPrinter({ profileId: profileIdOf(f), nozzleMm: nozzle, name: f.name?.trim() || (model === 'Set up by hand' ? `${brand} printer` : model), ...(connected ? { connection: connectionInput(f, secretFor(m, f)) } : {}), filament: filamentInput(f.filament) })
       // The slice follows this size: it picks the presets that match the nozzle. A printer with more than one
       // nozzle keeps each, so every extruder slices with its own.
       const extruders = extruderNozzles(f)

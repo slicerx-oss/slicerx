@@ -25,6 +25,7 @@ import {
   setFirmware,
   unlocked,
   type PrinterForm,
+  filamentInput,
 } from '../src/first-run/printer-form'
 import { createHostSetup, type TestStep } from '../src/first-run/setup-host'
 import { setBridgeConnector } from '../src/link/bridge'
@@ -207,3 +208,15 @@ describe('filament system choices', () => {
     expect(SLOT_CHOICES.every((n, i) => i === 0 || n > SLOT_CHOICES[i - 1]!)).toBe(true)
   })
 })
+
+describe("the wizard's filament system as the printer is saved", () => {
+  it('gives the AMS units as slots, a single spool or none as one, and an MMU or other unit by its slots', () => {
+    expect(filamentInput({ kind: 'ams', units: 2, slots: 8 })).toEqual({ system: 'ams', slots: 8 })
+    expect(filamentInput({ kind: 'ams', units: 3, slots: 4 })).toEqual({ system: 'ams', slots: 12 })
+    expect(filamentInput({ kind: 'single', units: 1, slots: 1 })).toEqual({ system: 'single', slots: 1 })
+    expect(filamentInput({ kind: 'none', units: 1, slots: 1 })).toEqual({ system: 'single', slots: 1 })
+    expect(filamentInput({ kind: 'mmu', units: 1, slots: 5 })).toEqual({ system: 'mmu', slots: 5 })
+    expect(filamentInput({ kind: 'other', units: 1, slots: 6 })).toEqual({ system: 'toolchanger', slots: 6 })
+  })
+})
+
