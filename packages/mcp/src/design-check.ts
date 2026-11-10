@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A built part checked against its plan: the overall size, each named hole, the feature count, a closed body and the
-// thinnest wall the nozzle can print. The comparison is pure; the facts about the body come from body-facts.ts. Plans
-// wait in a registry under their planId until design.check reads them. Only zod here, so any package can import the
+// A built part checked against its plan: the overall size, each named hole, the feature count, a closed body, the
+// thinnest wall the nozzle can print and, for a planned hook with a lip, a tip that rises. The comparison is pure; the facts about the body come from body-facts.ts. Plans
+// wait in a registry under their planId until design.check reads them. Only zod and hook-lip.ts (which imports nothing)
+// here, so any package can import the
 // plan and result shapes.
 import { SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
+import { LIP_RISE_MM } from './hook-lip'
 
 /** The largest size a plan takes, in its own units. */
 export const PLAN_SIZE_MAX = 10_000
@@ -95,6 +97,12 @@ export interface BodyFacts {
   fit?: FitFacts | undefined
   /** Why the gaps were not measured, when the fit check failed. */
   fitWhy?: string | undefined
+  /**
+   * Read only for a plan with a hook and a lip (hasHookLip), from the part's upright stem (hook-lip.ts): how far the
+   * hook's tip rises above the hook's lowest point toward its end, in mm, or null when nothing reaches out past the
+   * stem. Absent when it was not read, or when the part has no upright round stem to read a hook from.
+   */
+  hookTipRiseMm?: number | null | undefined
 }
 
 type V3 = [number, number, number]
@@ -282,6 +290,18 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
   return { name: 'feature count', want, got, pass: false }
 }
 
+/** The words of a plan's feature names, kinds and size names: "Soft lip", "lip_height" and "curved hook" give soft, lip, height, curved and hook. */
+function planWords(plan: PartPlan): Set<string> {
+  const words = plan.features.flatMap((f) => [f.name, f.kind ?? '', ...Object.keys(f.sizes)])
+  return new Set(words.flatMap((w) => w.toLowerCase().split(/[^a-z]+/)).filter(Boolean).map(single))
+}
+
+/** Whether a plan has a hook with a lip: a hook in its features and a lip in their names, kinds or sizes. */
+export function hasHookLip(plan: PartPlan): boolean {
+  const words = planWords(plan)
+  return words.has('hook') && words.has('lip')
+}
+
 /**
  * Checks a body against its plan. Inch plans are compared in mm; the tolerances are in mm. The overall size is
  * compared axis by axis, since z is the print height: x and y swapped passes (the part turned on the bed prints the
@@ -290,6 +310,7 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
  * a count or an angle among them (@slicerx/contracts/size-kind) never fails an item, in mm or inches. `together` marks a
  * plan whose pieces print together without printInPlace naming them (printsTogether): its planned gaps are held to
  * `limits` too.
+ * A plan with a hook and a lip (hasHookLip) holds the hook's tip to a rise of LIP_RISE_MM when the body's hook was read.
  */
 export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, limits?: FitLimits, together = false): CheckResult {
   const scale = plan.units === 'in' ? MM_PER_IN : 1
@@ -337,6 +358,16 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
     const gaps = plannedGaps(plan, gapLimits)
     const under = gaps.filter((g) => !g.pass)
     if (gaps.length) items.push({ name: 'planned gaps', want: `every gap the plan sets ${gapLimitsText(gapLimits)}`, got: under.length ? under.map((g) => g.text).join('; ') : gaps.map((g) => g.text).join(', '), pass: !under.length })
+  }
+  // a hook with a lip ends in a tip that rises, so what hangs on it does not slide off the end
+  if (hasHookLip(plan) && body.hookTipRiseMm !== undefined) {
+    const rise = body.hookTipRiseMm
+    items.push({
+      name: 'hook lip',
+      want: `the hook's tip rises at least ${mm(LIP_RISE_MM)} above the hook's lowest point toward its end`,
+      got: rise === null ? 'no hook reaches out past the stem' : `rises ${mm(Math.max(0, rise))}`,
+      pass: rise !== null && rise >= LIP_RISE_MM,
+    })
   }
 
   return { pass: items.every((i) => i.pass), items }

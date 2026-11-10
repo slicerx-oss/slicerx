@@ -4,11 +4,13 @@
 // them), whether each part is closed (welded by position, as geom.info and the slicer read it), its round holes (the
 // inner loops of its flat faces, as geom.faces finds them, each measured with the engine's hole finder as geom.measure
 // and geom.hole do), its feature steps with the planned feature each was tagged with, and its thinnest wall (a ray
-// from each facet inward to the far side, through a grid of the facets, within a budget).
+// from each facet inward to the far side, through a grid of the facets, within a budget) and, when asked, the hook on
+// its upright stem (hook-lip.ts).
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import type { BodyFacts, FitLimits } from './design-check'
 import { fitFacts } from './fit-facts'
+import { hookOn, surfacePoints } from './hook-lip'
 
 type V3 = [number, number, number]
 type Mesh = Pick<HistoryMesh, 'positions' | 'indices'>
@@ -22,8 +24,11 @@ const len = (a: V3): number => Math.hypot(a[0], a[1], a[2])
 const vertex = (m: Mesh, i: number): V3 => [m.positions[i * 3] ?? 0, m.positions[i * 3 + 1] ?? 0, m.positions[i * 3 + 2] ?? 0]
 const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3] ?? 0), vertex(m, m.indices[t * 3 + 1] ?? 0), vertex(m, m.indices[t * 3 + 2] ?? 0)]
 
-/** The facts about the design's body now; with `fit`, the limits of a print-in-place plan, its pieces and gaps too. */
-export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits): Promise<BodyFacts> {
+/**
+ * The facts about the design's body now; with `fit`, the limits of a print-in-place plan, its pieces and gaps too, and
+ * with `hook`, how far the hook on its upright stem rises at its tip.
+ */
+export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean } = {}): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
   // closed as geom.info and the slicer read it: corners at the same point of the part's own positions are one vertex,
   // whatever their indices
@@ -75,7 +80,15 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     minWallMm: wall.mm,
     ...(wall.why ? { minWallWhy: wall.why } : {}),
     ...gaps,
+    ...(opts.hook ? hookFacts(world) : {}),
   }
+}
+
+/** The hook's tip rise on the part's upright stem, or nothing when the part has no such stem to read it from. */
+function hookFacts(world: readonly Mesh[]): Pick<BodyFacts, 'hookTipRiseMm'> {
+  const read = hookOn(surfacePoints(world))
+  if (read.found === 'no stem') return {}
+  return { hookTipRiseMm: read.found === 'hook' ? Math.round(read.riseMm * 100) / 100 : null }
 }
 
 /** The size of the bounds of the meshes together, zero with no triangles. */

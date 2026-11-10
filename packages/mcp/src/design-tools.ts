@@ -8,7 +8,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { assumptionsInput, createPlanRegistry, designCheck, FIX_ROUNDS, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
+import { assumptionsInput, createPlanRegistry, designCheck, FIX_ROUNDS, hasHookLip, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -557,11 +557,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'read',
     description:
-      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), and that its thinnest wall is at least twice the nozzle. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material; gap sizes in the plan too), and is checked only after slicerx_geom_fit_check has run on the design as it is now, over the planned pieces; until then the check is refused and uses no check. A plan the person made in the mimir tab whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer, approved or declined. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), that its thinnest wall is at least twice the nozzle and, when the plan has a hook with a lip, that the hook's tip rises at least 3 mm above its lowest point toward its end. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material; gap sizes in the plan too), and is checked only after slicerx_geom_fit_check has run on the design as it is now, over the planned pieces; until then the check is refused and uses no check. A plan the person made in the mimir tab whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer, approved or declined. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
     localDescription:
       'After a planned part\'s last feature, check it against its plan (planId): size, holes, a step or more tagged with each planned feature, closed body, thinnest wall. A plan with printInPlace also gets pieces and gaps (gap sizes in the plan too), only after geom.fit_check has run on the design as it is now. Fix failed items once and check again; on stop, stop building and tell the person what is off. Give design when asked. More: kb.search "design check".',
     input: z.object({
@@ -592,7 +592,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const together = entry.origin === 'card' && printsTogether(entry.plan)
       // the run's machine material, nozzle and layer height under the host's own, as design.plan holds the plan to
       const limits = entry.plan.printInPlace || together ? runFitLimits(ctx?.context, { ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() }) : undefined
-      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined)
+      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined, { hook: hasHookLip(entry.plan) })
       const result = designCheck(entry.plan, body, nozzleMm, limits, together)
       const failed = result.items.filter((x) => !x.pass)
       const which = `${d.name} (${d.id}, ${how})`
