@@ -2,10 +2,10 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T19:35:42.026Z",
+ "capturedAt": "2026-11-10T06:28:07.255Z",
  "steps": [
   {
-   "text": "I'll show the dimensions first. The wall, floor, and honeycomb cell sizes are my guesses, so please check them.",
+   "text": "1. Confirm the sizes on the dimension sheet (80 mm across, 100 mm tall, with guessed wall, floor and cell sizes).\n2. Plan the cup's features (hexagon body, hollow with floor, honeycomb cutouts) and build them in steps.\n3. Check the built part against the plan.\n4. Slice the plate on the P1S (needs your OK to slice).\n5. Send to the printer (needs your OK to queue, then start).\n\nStarting with the sizes.",
    "calls": [
     {
      "name": "pilot.sheet",
@@ -26,11 +26,11 @@
          ],
          [
           20,
-          34.64
+          34.641
          ],
          [
           -20,
-          34.64
+          34.641
          ],
          [
           -40,
@@ -38,70 +38,155 @@
          ],
          [
           -20,
-          -34.64
+          -34.641
          ],
          [
           20,
-          -34.64
+          -34.641
          ]
         ],
         "from": 0,
-        "to": 100
+        "to": 100,
+        "holes": [
+         [
+          [
+           37.712,
+           0
+          ],
+          [
+           18.856,
+           32.641
+          ],
+          [
+           -18.856,
+           32.641
+          ],
+          [
+           -37.712,
+           0
+          ],
+          [
+           -18.856,
+           -32.641
+          ],
+          [
+           18.856,
+           -32.641
+          ]
+         ]
+        ]
        }
       ],
       "dims": [
        {
-        "key": "across",
-        "label": "Width across corners",
+        "key": "across_corners",
+        "label": "Hexagon across corners",
         "value": 80,
-        "min": 1,
-        "max": 1000,
         "unit": "mm",
         "source": "asked",
-        "note": "Confirm: corners or flats"
+        "at": {
+         "a": [
+          -40,
+          0,
+          0
+         ],
+         "b": [
+          40,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -12,
+          0
+         ]
+        }
        },
        {
         "key": "height",
-        "label": "Height",
+        "label": "Cup height",
         "value": 100,
-        "min": 1,
-        "max": 1000,
         "unit": "mm",
-        "source": "asked"
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          100
+         ],
+         "off": [
+          -50,
+          0,
+          0
+         ]
+        }
        },
        {
         "key": "wall",
         "label": "Side wall thickness",
         "value": 2,
-        "min": 0.4,
-        "max": 50,
         "unit": "mm",
-        "source": "guess"
+        "source": "guess",
+        "note": "Enough for a PLA cup; the honeycomb cuts leave ribs between cells",
+        "at": {
+         "a": [
+          40,
+          0,
+          100
+         ],
+         "b": [
+          37.712,
+          0,
+          100
+         ],
+         "off": [
+          0,
+          0,
+          5
+         ]
+        }
        },
        {
         "key": "floor",
         "label": "Floor thickness",
         "value": 3,
-        "min": 0.4,
-        "max": 50,
         "unit": "mm",
-        "source": "guess"
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          3
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        }
        },
        {
-        "key": "cell",
-        "label": "Honeycomb cell size (across flats)",
-        "value": 12,
-        "min": 2,
-        "max": 200,
+        "key": "cell_across_flats",
+        "label": "Honeycomb cell across flats",
+        "value": 8,
         "unit": "mm",
-        "source": "guess"
+        "source": "guess",
+        "note": "Open cells on each flat face"
        },
        {
         "key": "rib",
-        "label": "Honeycomb rib width",
+        "label": "Honeycomb rib between cells",
         "value": 2,
-        "min": 0.4,
-        "max": 50,
         "unit": "mm",
         "source": "guess"
        }
@@ -111,6 +196,236 @@
    ]
   },
   {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. row 5 (Honeycomb cell across flats) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle; row 6 (Honeycomb rib between cells) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle. Send it again with them.\"}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Hexagon pen cup",
+      "views": [
+       "top",
+       "front",
+       "iso"
+      ],
+      "part": [
+       {
+        "plane": "xy",
+        "points": [
+         [
+          40,
+          0
+         ],
+         [
+          20,
+          34.641
+         ],
+         [
+          -20,
+          34.641
+         ],
+         [
+          -40,
+          0
+         ],
+         [
+          -20,
+          -34.641
+         ],
+         [
+          20,
+          -34.641
+         ]
+        ],
+        "from": 0,
+        "to": 100,
+        "holes": [
+         [
+          [
+           37.712,
+           0
+          ],
+          [
+           18.856,
+           32.641
+          ],
+          [
+           -18.856,
+           32.641
+          ],
+          [
+           -37.712,
+           0
+          ],
+          [
+           -18.856,
+           -32.641
+          ],
+          [
+           18.856,
+           -32.641
+          ]
+         ]
+        ]
+       }
+      ],
+      "dims": [
+       {
+        "key": "across_corners",
+        "label": "Hexagon across corners",
+        "value": 80,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -40,
+          0,
+          0
+         ],
+         "b": [
+          40,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -12,
+          0
+         ]
+        }
+       },
+       {
+        "key": "height",
+        "label": "Cup height",
+        "value": 100,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          100
+         ],
+         "off": [
+          -50,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Side wall thickness",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Enough for a PLA cup; the honeycomb cuts leave ribs between cells",
+        "at": {
+         "a": [
+          40,
+          0,
+          100
+         ],
+         "b": [
+          37.712,
+          0,
+          100
+         ],
+         "off": [
+          0,
+          0,
+          5
+         ]
+        }
+       },
+       {
+        "key": "floor",
+        "label": "Floor thickness",
+        "value": 3,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          3
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "cell_across_flats",
+        "label": "Honeycomb cell across flats",
+        "value": 8,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Open cells on each flat face",
+        "at": {
+         "a": [
+          -4,
+          34.641,
+          60
+         ],
+         "b": [
+          4,
+          34.641,
+          60
+         ],
+         "off": [
+          0,
+          4,
+          0
+         ]
+        }
+       },
+       {
+        "key": "rib",
+        "label": "Honeycomb rib between cells",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          34.641,
+          30
+         ],
+         "b": [
+          2,
+          34.641,
+          30
+         ],
+         "off": [
+          0,
+          4,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"across_corners\":80,\"height\":100,\"wall\":2,\"floor\":3,\"cell_across_flats\":8,\"rib\":2},\"changed\":[]}}"
+   ],
    "calls": [
     {
      "name": "design.plan",
@@ -119,7 +434,7 @@
       "units": "mm",
       "features": [
        {
-        "name": "Hex body",
+        "name": "Hexagon body",
         "kind": "extrude",
         "sizes": {
          "across_corners": 80,
@@ -127,42 +442,45 @@
         }
        },
        {
-        "name": "Pen cavity",
+        "name": "Cup cavity",
         "kind": "cut",
         "sizes": {
          "wall": 2,
-         "floor": 3
+         "floor": 3,
+         "height": 100
         }
        },
        {
-        "name": "Honeycomb windows",
+        "name": "Honeycomb cuts",
         "kind": "cut",
         "sizes": {
-         "cell_across_flats": 12,
+         "cell_across_flats": 8,
          "rib": 2
         }
        }
       ],
       "overall": {
-       "x": 80,
-       "y": 69.28,
+       "x": 69.28,
+       "y": 80,
        "z": 100
       },
       "assumptions": [
-       "80 mm is across corners (circumradius 40 mm); flats are 69.28 mm",
-       "Open top, 3 mm floor, 2 mm side walls",
-       "Honeycomb cells are cut straight through both side walls on the flat faces, in a staggered grid, with a 2 mm rib between cells",
-       "Cells that would break through the bottom band are left out, keeping a solid base band"
+       "Across corners is 80 mm, so across flats is 69.3 mm.",
+       "Open top, flat hexagonal bottom 3 mm thick.",
+       "Honeycomb hex cells, 8 mm across flats with 2 mm ribs, cut straight through each of the six flat side walls, in a regular grid.",
+       "Cells stay clear of the floor and the top rim."
       ],
       "questions": [
-       "Is 80 mm across corners or across flats? Assumed corners.",
-       "Cell size and rib width are guesses; confirm or change in Model."
+       "Is 80 mm meant across corners (assumed) or across flats?"
       ]
      }
     }
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_1\",\"accepted\":true}}"
+   ],
    "calls": [
     {
      "name": "design.new",
@@ -174,42 +492,45 @@
      "name": "geom.extrude",
      "args": {
       "design": "Hexagon pen cup",
+      "distance_mm": 100,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Hexagon pen cup",
+      "feature": "Hexagon body",
       "shape": {
        "type": "polygon",
        "sides": 6,
        "diameterMm": 80,
        "fit": "circumscribed"
       },
-      "distance_mm": 100,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Hex body"
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "d1",
-      "shape": {
-       "type": "polygon",
-       "sides": 6,
-       "diameterMm": 80,
-       "fit": "circumscribed"
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 0
       },
-      "distance_mm": 100,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Hex body"
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
      }
     }
    ]
   },
   {
-   "text": "The polygon came out with 80 mm across flats, not corners. I'll undo it and rebuild with the inscribed fit.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Started Hexagon pen cup (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Polygon extrude 100 mm. The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Polygon extrude 100 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":100,\"unit\":\"mm\"},\"feature\":\"Hexagon body\",\"state\":\"done\"},\"minMm\":[-46.188,-40,0],\"sizeMm\":[92.376,80,100],\"volumeMm3\":554256.271,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":20,\"minMm\":[-46.188,-40,0],\"sizeMm\":[92.376,80,100],\"volumeMm3\":554256.271}],\"placedMm\":[128,128],\"landed\":\"The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+   ],
    "calls": [
     {
      "name": "design.undo",
@@ -221,30 +542,112 @@
      "name": "geom.extrude",
      "args": {
       "design": "d1",
-      "shape": {
-       "type": "polygon",
-       "sides": 6,
-       "diameterMm": 80,
-       "fit": "inscribed"
-      },
       "distance_mm": 100,
       "extent": "oneSide",
       "operation": "new",
-      "name": "Hex body"
+      "name": "Hexagon pen cup",
+      "feature": "Hexagon body",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           40,
+           0
+          ],
+          [
+           20,
+           34.641
+          ],
+          [
+           -20,
+           34.641
+          ],
+          [
+           -40,
+           0
+          ],
+          [
+           -20,
+           -34.641
+          ],
+          [
+           20,
+           -34.641
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
      }
     }
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Polygon extrude 100 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[],\"placedMm\":[128,128]}}",
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 100 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q802\",\"name\":\"Sketch extrude 100 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":100,\"unit\":\"mm\"},\"feature\":\"Hexagon body\",\"state\":\"done\"},\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":415692.032,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":20,\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":415692.032}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
      "name": "geom.extrude",
      "args": {
       "design": "d1",
+      "distance_mm": 97,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Hexagon pen cup",
+      "feature": "Cup cavity",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           37.712,
+           0
+          ],
+          [
+           18.856,
+           32.641
+          ],
+          [
+           -18.856,
+           32.641
+          ],
+          [
+           -37.712,
+           0
+          ],
+          [
+           -18.856,
+           -32.641
+          ],
+          [
+           18.856,
+           -32.641
+          ]
+         ]
+        }
+       ]
+      },
       "frame": {
        "origin": [
-        128,
-        128,
+        0,
+        0,
         100
        ],
        "normal": [
@@ -252,26 +655,3835 @@
         0,
         1
        ]
-      },
-      "shape": {
-       "type": "polygon",
-       "sides": 6,
-       "diameterMm": 75.38,
-       "fit": "inscribed"
-      },
-      "distance_mm": 97,
-      "extent": "oneSide",
-      "operation": "cut",
-      "part": 0,
-      "name": "Pen cavity"
+      }
      }
     }
    ]
   },
   {
-   "text": "The cavity is cut and the wall volume checks out. Next I'll cut the honeycomb windows, one flat face at a time, each a staggered 12 mm cell grid with 2 mm ribs."
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 2, Sketch cut 97 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q803\",\"name\":\"Sketch cut 97 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":97,\"unit\":\"mm\"},\"feature\":\"Cup cavity\",\"state\":\"done\"},\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":57483.431,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":488,\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":57483.431}],\"placedMm\":[128,128]}}"
+   ],
+   "text": "The cup body and its 3 mm floor are built: an 80 mm across-corners hexagon, 100 mm tall, hollowed to a 2 mm wall. The honeycomb cutouts are still to do, and I'm keeping this turn short to get them in cleanly. Next I'll cut an 8 mm cell pattern with 2 mm ribs through each of the six flat walls, then check the part against the plan. After that I'll slice on the P1S for your OK, and queue and start it only when you approve."
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "distance_mm": 4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Hexagon pen cup",
+      "feature": "Honeycomb cuts",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           4.62,
+           20
+          ],
+          [
+           2.31,
+           24
+          ],
+          [
+           -2.31,
+           24
+          ],
+          [
+           -4.62,
+           20
+          ],
+          [
+           -2.31,
+           16
+          ],
+          [
+           2.31,
+           16
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           30
+          ],
+          [
+           2.31,
+           34
+          ],
+          [
+           -2.31,
+           34
+          ],
+          [
+           -4.62,
+           30
+          ],
+          [
+           -2.31,
+           26
+          ],
+          [
+           2.31,
+           26
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           40
+          ],
+          [
+           2.31,
+           44
+          ],
+          [
+           -2.31,
+           44
+          ],
+          [
+           -4.62,
+           40
+          ],
+          [
+           -2.31,
+           36
+          ],
+          [
+           2.31,
+           36
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           50
+          ],
+          [
+           2.31,
+           54
+          ],
+          [
+           -2.31,
+           54
+          ],
+          [
+           -4.62,
+           50
+          ],
+          [
+           -2.31,
+           46
+          ],
+          [
+           2.31,
+           46
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           60
+          ],
+          [
+           2.31,
+           64
+          ],
+          [
+           -2.31,
+           64
+          ],
+          [
+           -4.62,
+           60
+          ],
+          [
+           -2.31,
+           56
+          ],
+          [
+           2.31,
+           56
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           70
+          ],
+          [
+           2.31,
+           74
+          ],
+          [
+           -2.31,
+           74
+          ],
+          [
+           -4.62,
+           70
+          ],
+          [
+           -2.31,
+           66
+          ],
+          [
+           2.31,
+           66
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           80
+          ],
+          [
+           2.31,
+           84
+          ],
+          [
+           -2.31,
+           84
+          ],
+          [
+           -4.62,
+           80
+          ],
+          [
+           -2.31,
+           76
+          ],
+          [
+           2.31,
+           76
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           25
+          ],
+          [
+           10.97,
+           29
+          ],
+          [
+           6.35,
+           29
+          ],
+          [
+           4.04,
+           25
+          ],
+          [
+           6.35,
+           21
+          ],
+          [
+           10.97,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           35
+          ],
+          [
+           10.97,
+           39
+          ],
+          [
+           6.35,
+           39
+          ],
+          [
+           4.04,
+           35
+          ],
+          [
+           6.35,
+           31
+          ],
+          [
+           10.97,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           45
+          ],
+          [
+           10.97,
+           49
+          ],
+          [
+           6.35,
+           49
+          ],
+          [
+           4.04,
+           45
+          ],
+          [
+           6.35,
+           41
+          ],
+          [
+           10.97,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           55
+          ],
+          [
+           10.97,
+           59
+          ],
+          [
+           6.35,
+           59
+          ],
+          [
+           4.04,
+           55
+          ],
+          [
+           6.35,
+           51
+          ],
+          [
+           10.97,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           65
+          ],
+          [
+           10.97,
+           69
+          ],
+          [
+           6.35,
+           69
+          ],
+          [
+           4.04,
+           65
+          ],
+          [
+           6.35,
+           61
+          ],
+          [
+           10.97,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           75
+          ],
+          [
+           10.97,
+           79
+          ],
+          [
+           6.35,
+           79
+          ],
+          [
+           4.04,
+           75
+          ],
+          [
+           6.35,
+           71
+          ],
+          [
+           10.97,
+           71
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           85
+          ],
+          [
+           10.97,
+           89
+          ],
+          [
+           6.35,
+           89
+          ],
+          [
+           4.04,
+           85
+          ],
+          [
+           6.35,
+           81
+          ],
+          [
+           10.97,
+           81
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           15
+          ],
+          [
+           -6.35,
+           19
+          ],
+          [
+           -10.97,
+           19
+          ],
+          [
+           -13.28,
+           15
+          ],
+          [
+           -10.97,
+           11
+          ],
+          [
+           -6.35,
+           11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           25
+          ],
+          [
+           -6.35,
+           29
+          ],
+          [
+           -10.97,
+           29
+          ],
+          [
+           -13.28,
+           25
+          ],
+          [
+           -10.97,
+           21
+          ],
+          [
+           -6.35,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           35
+          ],
+          [
+           -6.35,
+           39
+          ],
+          [
+           -10.97,
+           39
+          ],
+          [
+           -13.28,
+           35
+          ],
+          [
+           -10.97,
+           31
+          ],
+          [
+           -6.35,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           45
+          ],
+          [
+           -6.35,
+           49
+          ],
+          [
+           -10.97,
+           49
+          ],
+          [
+           -13.28,
+           45
+          ],
+          [
+           -10.97,
+           41
+          ],
+          [
+           -6.35,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           55
+          ],
+          [
+           -6.35,
+           59
+          ],
+          [
+           -10.97,
+           59
+          ],
+          [
+           -13.28,
+           55
+          ],
+          [
+           -10.97,
+           51
+          ],
+          [
+           -6.35,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           65
+          ],
+          [
+           -6.35,
+           69
+          ],
+          [
+           -10.97,
+           69
+          ],
+          [
+           -13.28,
+           65
+          ],
+          [
+           -10.97,
+           61
+          ],
+          [
+           -6.35,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           75
+          ],
+          [
+           -6.35,
+           79
+          ],
+          [
+           -10.97,
+           79
+          ],
+          [
+           -13.28,
+           75
+          ],
+          [
+           -10.97,
+           71
+          ],
+          [
+           -6.35,
+           71
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        30.866,
+        17.8205,
+        0
+       ],
+       "normal": [
+        0.866,
+        0.5,
+        0
+       ],
+       "u": [
+        -0.5,
+        0.866,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 3, Sketch cut 4 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q804\",\"name\":\"Sketch cut 4 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":4,\"unit\":\"mm\"},\"feature\":\"Honeycomb cuts\",\"state\":\"done\"},\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":55171.126,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":3458,\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":55171.126}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "distance_mm": 4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Hexagon pen cup",
+      "feature": "Honeycomb cuts",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           4.62,
+           20
+          ],
+          [
+           2.31,
+           24
+          ],
+          [
+           -2.31,
+           24
+          ],
+          [
+           -4.62,
+           20
+          ],
+          [
+           -2.31,
+           16
+          ],
+          [
+           2.31,
+           16
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           30
+          ],
+          [
+           2.31,
+           34
+          ],
+          [
+           -2.31,
+           34
+          ],
+          [
+           -4.62,
+           30
+          ],
+          [
+           -2.31,
+           26
+          ],
+          [
+           2.31,
+           26
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           40
+          ],
+          [
+           2.31,
+           44
+          ],
+          [
+           -2.31,
+           44
+          ],
+          [
+           -4.62,
+           40
+          ],
+          [
+           -2.31,
+           36
+          ],
+          [
+           2.31,
+           36
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           50
+          ],
+          [
+           2.31,
+           54
+          ],
+          [
+           -2.31,
+           54
+          ],
+          [
+           -4.62,
+           50
+          ],
+          [
+           -2.31,
+           46
+          ],
+          [
+           2.31,
+           46
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           60
+          ],
+          [
+           2.31,
+           64
+          ],
+          [
+           -2.31,
+           64
+          ],
+          [
+           -4.62,
+           60
+          ],
+          [
+           -2.31,
+           56
+          ],
+          [
+           2.31,
+           56
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           70
+          ],
+          [
+           2.31,
+           74
+          ],
+          [
+           -2.31,
+           74
+          ],
+          [
+           -4.62,
+           70
+          ],
+          [
+           -2.31,
+           66
+          ],
+          [
+           2.31,
+           66
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           80
+          ],
+          [
+           2.31,
+           84
+          ],
+          [
+           -2.31,
+           84
+          ],
+          [
+           -4.62,
+           80
+          ],
+          [
+           -2.31,
+           76
+          ],
+          [
+           2.31,
+           76
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           25
+          ],
+          [
+           10.97,
+           29
+          ],
+          [
+           6.35,
+           29
+          ],
+          [
+           4.04,
+           25
+          ],
+          [
+           6.35,
+           21
+          ],
+          [
+           10.97,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           35
+          ],
+          [
+           10.97,
+           39
+          ],
+          [
+           6.35,
+           39
+          ],
+          [
+           4.04,
+           35
+          ],
+          [
+           6.35,
+           31
+          ],
+          [
+           10.97,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           45
+          ],
+          [
+           10.97,
+           49
+          ],
+          [
+           6.35,
+           49
+          ],
+          [
+           4.04,
+           45
+          ],
+          [
+           6.35,
+           41
+          ],
+          [
+           10.97,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           55
+          ],
+          [
+           10.97,
+           59
+          ],
+          [
+           6.35,
+           59
+          ],
+          [
+           4.04,
+           55
+          ],
+          [
+           6.35,
+           51
+          ],
+          [
+           10.97,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           65
+          ],
+          [
+           10.97,
+           69
+          ],
+          [
+           6.35,
+           69
+          ],
+          [
+           4.04,
+           65
+          ],
+          [
+           6.35,
+           61
+          ],
+          [
+           10.97,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           75
+          ],
+          [
+           10.97,
+           79
+          ],
+          [
+           6.35,
+           79
+          ],
+          [
+           4.04,
+           75
+          ],
+          [
+           6.35,
+           71
+          ],
+          [
+           10.97,
+           71
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           85
+          ],
+          [
+           10.97,
+           89
+          ],
+          [
+           6.35,
+           89
+          ],
+          [
+           4.04,
+           85
+          ],
+          [
+           6.35,
+           81
+          ],
+          [
+           10.97,
+           81
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           15
+          ],
+          [
+           -6.35,
+           19
+          ],
+          [
+           -10.97,
+           19
+          ],
+          [
+           -13.28,
+           15
+          ],
+          [
+           -10.97,
+           11
+          ],
+          [
+           -6.35,
+           11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           25
+          ],
+          [
+           -6.35,
+           29
+          ],
+          [
+           -10.97,
+           29
+          ],
+          [
+           -13.28,
+           25
+          ],
+          [
+           -10.97,
+           21
+          ],
+          [
+           -6.35,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           35
+          ],
+          [
+           -6.35,
+           39
+          ],
+          [
+           -10.97,
+           39
+          ],
+          [
+           -13.28,
+           35
+          ],
+          [
+           -10.97,
+           31
+          ],
+          [
+           -6.35,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           45
+          ],
+          [
+           -6.35,
+           49
+          ],
+          [
+           -10.97,
+           49
+          ],
+          [
+           -13.28,
+           45
+          ],
+          [
+           -10.97,
+           41
+          ],
+          [
+           -6.35,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           55
+          ],
+          [
+           -6.35,
+           59
+          ],
+          [
+           -10.97,
+           59
+          ],
+          [
+           -13.28,
+           55
+          ],
+          [
+           -10.97,
+           51
+          ],
+          [
+           -6.35,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           65
+          ],
+          [
+           -6.35,
+           69
+          ],
+          [
+           -10.97,
+           69
+          ],
+          [
+           -13.28,
+           65
+          ],
+          [
+           -10.97,
+           61
+          ],
+          [
+           -6.35,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           75
+          ],
+          [
+           -6.35,
+           79
+          ],
+          [
+           -10.97,
+           79
+          ],
+          [
+           -13.28,
+           75
+          ],
+          [
+           -10.97,
+           71
+          ],
+          [
+           -6.35,
+           71
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        35.641,
+        0
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ],
+       "u": [
+        -1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 4, Sketch cut 4 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smuo69q805\",\"name\":\"Sketch cut 4 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":4,\"unit\":\"mm\"},\"feature\":\"Honeycomb cuts\",\"state\":\"done\"},\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":52842.627,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":5406,\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":52842.627}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "distance_mm": 4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Hexagon pen cup",
+      "feature": "Honeycomb cuts",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           4.62,
+           20
+          ],
+          [
+           2.31,
+           24
+          ],
+          [
+           -2.31,
+           24
+          ],
+          [
+           -4.62,
+           20
+          ],
+          [
+           -2.31,
+           16
+          ],
+          [
+           2.31,
+           16
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           30
+          ],
+          [
+           2.31,
+           34
+          ],
+          [
+           -2.31,
+           34
+          ],
+          [
+           -4.62,
+           30
+          ],
+          [
+           -2.31,
+           26
+          ],
+          [
+           2.31,
+           26
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           40
+          ],
+          [
+           2.31,
+           44
+          ],
+          [
+           -2.31,
+           44
+          ],
+          [
+           -4.62,
+           40
+          ],
+          [
+           -2.31,
+           36
+          ],
+          [
+           2.31,
+           36
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           50
+          ],
+          [
+           2.31,
+           54
+          ],
+          [
+           -2.31,
+           54
+          ],
+          [
+           -4.62,
+           50
+          ],
+          [
+           -2.31,
+           46
+          ],
+          [
+           2.31,
+           46
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           60
+          ],
+          [
+           2.31,
+           64
+          ],
+          [
+           -2.31,
+           64
+          ],
+          [
+           -4.62,
+           60
+          ],
+          [
+           -2.31,
+           56
+          ],
+          [
+           2.31,
+           56
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           70
+          ],
+          [
+           2.31,
+           74
+          ],
+          [
+           -2.31,
+           74
+          ],
+          [
+           -4.62,
+           70
+          ],
+          [
+           -2.31,
+           66
+          ],
+          [
+           2.31,
+           66
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           80
+          ],
+          [
+           2.31,
+           84
+          ],
+          [
+           -2.31,
+           84
+          ],
+          [
+           -4.62,
+           80
+          ],
+          [
+           -2.31,
+           76
+          ],
+          [
+           2.31,
+           76
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           25
+          ],
+          [
+           10.97,
+           29
+          ],
+          [
+           6.35,
+           29
+          ],
+          [
+           4.04,
+           25
+          ],
+          [
+           6.35,
+           21
+          ],
+          [
+           10.97,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           35
+          ],
+          [
+           10.97,
+           39
+          ],
+          [
+           6.35,
+           39
+          ],
+          [
+           4.04,
+           35
+          ],
+          [
+           6.35,
+           31
+          ],
+          [
+           10.97,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           45
+          ],
+          [
+           10.97,
+           49
+          ],
+          [
+           6.35,
+           49
+          ],
+          [
+           4.04,
+           45
+          ],
+          [
+           6.35,
+           41
+          ],
+          [
+           10.97,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           55
+          ],
+          [
+           10.97,
+           59
+          ],
+          [
+           6.35,
+           59
+          ],
+          [
+           4.04,
+           55
+          ],
+          [
+           6.35,
+           51
+          ],
+          [
+           10.97,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           65
+          ],
+          [
+           10.97,
+           69
+          ],
+          [
+           6.35,
+           69
+          ],
+          [
+           4.04,
+           65
+          ],
+          [
+           6.35,
+           61
+          ],
+          [
+           10.97,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           75
+          ],
+          [
+           10.97,
+           79
+          ],
+          [
+           6.35,
+           79
+          ],
+          [
+           4.04,
+           75
+          ],
+          [
+           6.35,
+           71
+          ],
+          [
+           10.97,
+           71
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           85
+          ],
+          [
+           10.97,
+           89
+          ],
+          [
+           6.35,
+           89
+          ],
+          [
+           4.04,
+           85
+          ],
+          [
+           6.35,
+           81
+          ],
+          [
+           10.97,
+           81
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           15
+          ],
+          [
+           -6.35,
+           19
+          ],
+          [
+           -10.97,
+           19
+          ],
+          [
+           -13.28,
+           15
+          ],
+          [
+           -10.97,
+           11
+          ],
+          [
+           -6.35,
+           11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           25
+          ],
+          [
+           -6.35,
+           29
+          ],
+          [
+           -10.97,
+           29
+          ],
+          [
+           -13.28,
+           25
+          ],
+          [
+           -10.97,
+           21
+          ],
+          [
+           -6.35,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           35
+          ],
+          [
+           -6.35,
+           39
+          ],
+          [
+           -10.97,
+           39
+          ],
+          [
+           -13.28,
+           35
+          ],
+          [
+           -10.97,
+           31
+          ],
+          [
+           -6.35,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           45
+          ],
+          [
+           -6.35,
+           49
+          ],
+          [
+           -10.97,
+           49
+          ],
+          [
+           -13.28,
+           45
+          ],
+          [
+           -10.97,
+           41
+          ],
+          [
+           -6.35,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           55
+          ],
+          [
+           -6.35,
+           59
+          ],
+          [
+           -10.97,
+           59
+          ],
+          [
+           -13.28,
+           55
+          ],
+          [
+           -10.97,
+           51
+          ],
+          [
+           -6.35,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           65
+          ],
+          [
+           -6.35,
+           69
+          ],
+          [
+           -10.97,
+           69
+          ],
+          [
+           -13.28,
+           65
+          ],
+          [
+           -10.97,
+           61
+          ],
+          [
+           -6.35,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           75
+          ],
+          [
+           -6.35,
+           79
+          ],
+          [
+           -10.97,
+           79
+          ],
+          [
+           -13.28,
+           75
+          ],
+          [
+           -10.97,
+           71
+          ],
+          [
+           -6.35,
+           71
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        -30.866,
+        17.8205,
+        0
+       ],
+       "normal": [
+        -0.866,
+        0.5,
+        0
+       ],
+       "u": [
+        -0.5,
+        -0.866,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 5, Sketch cut 4 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smuo69q806\",\"name\":\"Sketch cut 4 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":4,\"unit\":\"mm\"},\"feature\":\"Honeycomb cuts\",\"state\":\"done\"},\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":50530.328,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":7992,\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":50530.328}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "distance_mm": 4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Hexagon pen cup",
+      "feature": "Honeycomb cuts",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           4.62,
+           20
+          ],
+          [
+           2.31,
+           24
+          ],
+          [
+           -2.31,
+           24
+          ],
+          [
+           -4.62,
+           20
+          ],
+          [
+           -2.31,
+           16
+          ],
+          [
+           2.31,
+           16
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           30
+          ],
+          [
+           2.31,
+           34
+          ],
+          [
+           -2.31,
+           34
+          ],
+          [
+           -4.62,
+           30
+          ],
+          [
+           -2.31,
+           26
+          ],
+          [
+           2.31,
+           26
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           40
+          ],
+          [
+           2.31,
+           44
+          ],
+          [
+           -2.31,
+           44
+          ],
+          [
+           -4.62,
+           40
+          ],
+          [
+           -2.31,
+           36
+          ],
+          [
+           2.31,
+           36
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           50
+          ],
+          [
+           2.31,
+           54
+          ],
+          [
+           -2.31,
+           54
+          ],
+          [
+           -4.62,
+           50
+          ],
+          [
+           -2.31,
+           46
+          ],
+          [
+           2.31,
+           46
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           60
+          ],
+          [
+           2.31,
+           64
+          ],
+          [
+           -2.31,
+           64
+          ],
+          [
+           -4.62,
+           60
+          ],
+          [
+           -2.31,
+           56
+          ],
+          [
+           2.31,
+           56
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           70
+          ],
+          [
+           2.31,
+           74
+          ],
+          [
+           -2.31,
+           74
+          ],
+          [
+           -4.62,
+           70
+          ],
+          [
+           -2.31,
+           66
+          ],
+          [
+           2.31,
+           66
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           80
+          ],
+          [
+           2.31,
+           84
+          ],
+          [
+           -2.31,
+           84
+          ],
+          [
+           -4.62,
+           80
+          ],
+          [
+           -2.31,
+           76
+          ],
+          [
+           2.31,
+           76
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           25
+          ],
+          [
+           10.97,
+           29
+          ],
+          [
+           6.35,
+           29
+          ],
+          [
+           4.04,
+           25
+          ],
+          [
+           6.35,
+           21
+          ],
+          [
+           10.97,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           35
+          ],
+          [
+           10.97,
+           39
+          ],
+          [
+           6.35,
+           39
+          ],
+          [
+           4.04,
+           35
+          ],
+          [
+           6.35,
+           31
+          ],
+          [
+           10.97,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           45
+          ],
+          [
+           10.97,
+           49
+          ],
+          [
+           6.35,
+           49
+          ],
+          [
+           4.04,
+           45
+          ],
+          [
+           6.35,
+           41
+          ],
+          [
+           10.97,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           55
+          ],
+          [
+           10.97,
+           59
+          ],
+          [
+           6.35,
+           59
+          ],
+          [
+           4.04,
+           55
+          ],
+          [
+           6.35,
+           51
+          ],
+          [
+           10.97,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           65
+          ],
+          [
+           10.97,
+           69
+          ],
+          [
+           6.35,
+           69
+          ],
+          [
+           4.04,
+           65
+          ],
+          [
+           6.35,
+           61
+          ],
+          [
+           10.97,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           75
+          ],
+          [
+           10.97,
+           79
+          ],
+          [
+           6.35,
+           79
+          ],
+          [
+           4.04,
+           75
+          ],
+          [
+           6.35,
+           71
+          ],
+          [
+           10.97,
+           71
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           85
+          ],
+          [
+           10.97,
+           89
+          ],
+          [
+           6.35,
+           89
+          ],
+          [
+           4.04,
+           85
+          ],
+          [
+           6.35,
+           81
+          ],
+          [
+           10.97,
+           81
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           15
+          ],
+          [
+           -6.35,
+           19
+          ],
+          [
+           -10.97,
+           19
+          ],
+          [
+           -13.28,
+           15
+          ],
+          [
+           -10.97,
+           11
+          ],
+          [
+           -6.35,
+           11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           25
+          ],
+          [
+           -6.35,
+           29
+          ],
+          [
+           -10.97,
+           29
+          ],
+          [
+           -13.28,
+           25
+          ],
+          [
+           -10.97,
+           21
+          ],
+          [
+           -6.35,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           35
+          ],
+          [
+           -6.35,
+           39
+          ],
+          [
+           -10.97,
+           39
+          ],
+          [
+           -13.28,
+           35
+          ],
+          [
+           -10.97,
+           31
+          ],
+          [
+           -6.35,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           45
+          ],
+          [
+           -6.35,
+           49
+          ],
+          [
+           -10.97,
+           49
+          ],
+          [
+           -13.28,
+           45
+          ],
+          [
+           -10.97,
+           41
+          ],
+          [
+           -6.35,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           55
+          ],
+          [
+           -6.35,
+           59
+          ],
+          [
+           -10.97,
+           59
+          ],
+          [
+           -13.28,
+           55
+          ],
+          [
+           -10.97,
+           51
+          ],
+          [
+           -6.35,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           65
+          ],
+          [
+           -6.35,
+           69
+          ],
+          [
+           -10.97,
+           69
+          ],
+          [
+           -13.28,
+           65
+          ],
+          [
+           -10.97,
+           61
+          ],
+          [
+           -6.35,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           75
+          ],
+          [
+           -6.35,
+           79
+          ],
+          [
+           -10.97,
+           79
+          ],
+          [
+           -13.28,
+           75
+          ],
+          [
+           -10.97,
+           71
+          ],
+          [
+           -6.35,
+           71
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        -30.866,
+        -17.8205,
+        0
+       ],
+       "normal": [
+        -0.866,
+        -0.5,
+        0
+       ],
+       "u": [
+        0.5,
+        -0.866,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 6, Sketch cut 4 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smuo69q807\",\"name\":\"Sketch cut 4 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":4,\"unit\":\"mm\"},\"feature\":\"Honeycomb cuts\",\"state\":\"done\"},\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":48218.045,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":9912,\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":48218.045}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "distance_mm": 4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Hexagon pen cup",
+      "feature": "Honeycomb cuts",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           4.62,
+           20
+          ],
+          [
+           2.31,
+           24
+          ],
+          [
+           -2.31,
+           24
+          ],
+          [
+           -4.62,
+           20
+          ],
+          [
+           -2.31,
+           16
+          ],
+          [
+           2.31,
+           16
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           30
+          ],
+          [
+           2.31,
+           34
+          ],
+          [
+           -2.31,
+           34
+          ],
+          [
+           -4.62,
+           30
+          ],
+          [
+           -2.31,
+           26
+          ],
+          [
+           2.31,
+           26
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           40
+          ],
+          [
+           2.31,
+           44
+          ],
+          [
+           -2.31,
+           44
+          ],
+          [
+           -4.62,
+           40
+          ],
+          [
+           -2.31,
+           36
+          ],
+          [
+           2.31,
+           36
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           50
+          ],
+          [
+           2.31,
+           54
+          ],
+          [
+           -2.31,
+           54
+          ],
+          [
+           -4.62,
+           50
+          ],
+          [
+           -2.31,
+           46
+          ],
+          [
+           2.31,
+           46
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           60
+          ],
+          [
+           2.31,
+           64
+          ],
+          [
+           -2.31,
+           64
+          ],
+          [
+           -4.62,
+           60
+          ],
+          [
+           -2.31,
+           56
+          ],
+          [
+           2.31,
+           56
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           70
+          ],
+          [
+           2.31,
+           74
+          ],
+          [
+           -2.31,
+           74
+          ],
+          [
+           -4.62,
+           70
+          ],
+          [
+           -2.31,
+           66
+          ],
+          [
+           2.31,
+           66
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           80
+          ],
+          [
+           2.31,
+           84
+          ],
+          [
+           -2.31,
+           84
+          ],
+          [
+           -4.62,
+           80
+          ],
+          [
+           -2.31,
+           76
+          ],
+          [
+           2.31,
+           76
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           25
+          ],
+          [
+           10.97,
+           29
+          ],
+          [
+           6.35,
+           29
+          ],
+          [
+           4.04,
+           25
+          ],
+          [
+           6.35,
+           21
+          ],
+          [
+           10.97,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           35
+          ],
+          [
+           10.97,
+           39
+          ],
+          [
+           6.35,
+           39
+          ],
+          [
+           4.04,
+           35
+          ],
+          [
+           6.35,
+           31
+          ],
+          [
+           10.97,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           45
+          ],
+          [
+           10.97,
+           49
+          ],
+          [
+           6.35,
+           49
+          ],
+          [
+           4.04,
+           45
+          ],
+          [
+           6.35,
+           41
+          ],
+          [
+           10.97,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           55
+          ],
+          [
+           10.97,
+           59
+          ],
+          [
+           6.35,
+           59
+          ],
+          [
+           4.04,
+           55
+          ],
+          [
+           6.35,
+           51
+          ],
+          [
+           10.97,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           65
+          ],
+          [
+           10.97,
+           69
+          ],
+          [
+           6.35,
+           69
+          ],
+          [
+           4.04,
+           65
+          ],
+          [
+           6.35,
+           61
+          ],
+          [
+           10.97,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           75
+          ],
+          [
+           10.97,
+           79
+          ],
+          [
+           6.35,
+           79
+          ],
+          [
+           4.04,
+           75
+          ],
+          [
+           6.35,
+           71
+          ],
+          [
+           10.97,
+           71
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           85
+          ],
+          [
+           10.97,
+           89
+          ],
+          [
+           6.35,
+           89
+          ],
+          [
+           4.04,
+           85
+          ],
+          [
+           6.35,
+           81
+          ],
+          [
+           10.97,
+           81
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           15
+          ],
+          [
+           -6.35,
+           19
+          ],
+          [
+           -10.97,
+           19
+          ],
+          [
+           -13.28,
+           15
+          ],
+          [
+           -10.97,
+           11
+          ],
+          [
+           -6.35,
+           11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           25
+          ],
+          [
+           -6.35,
+           29
+          ],
+          [
+           -10.97,
+           29
+          ],
+          [
+           -13.28,
+           25
+          ],
+          [
+           -10.97,
+           21
+          ],
+          [
+           -6.35,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           35
+          ],
+          [
+           -6.35,
+           39
+          ],
+          [
+           -10.97,
+           39
+          ],
+          [
+           -13.28,
+           35
+          ],
+          [
+           -10.97,
+           31
+          ],
+          [
+           -6.35,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           45
+          ],
+          [
+           -6.35,
+           49
+          ],
+          [
+           -10.97,
+           49
+          ],
+          [
+           -13.28,
+           45
+          ],
+          [
+           -10.97,
+           41
+          ],
+          [
+           -6.35,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           55
+          ],
+          [
+           -6.35,
+           59
+          ],
+          [
+           -10.97,
+           59
+          ],
+          [
+           -13.28,
+           55
+          ],
+          [
+           -10.97,
+           51
+          ],
+          [
+           -6.35,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           65
+          ],
+          [
+           -6.35,
+           69
+          ],
+          [
+           -10.97,
+           69
+          ],
+          [
+           -13.28,
+           65
+          ],
+          [
+           -10.97,
+           61
+          ],
+          [
+           -6.35,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           75
+          ],
+          [
+           -6.35,
+           79
+          ],
+          [
+           -10.97,
+           79
+          ],
+          [
+           -13.28,
+           75
+          ],
+          [
+           -10.97,
+           71
+          ],
+          [
+           -6.35,
+           71
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        -35.641,
+        0
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 7, Sketch cut 4 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smuo69q808\",\"name\":\"Sketch cut 4 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":4,\"unit\":\"mm\"},\"feature\":\"Honeycomb cuts\",\"state\":\"done\"},\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":45889.565,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":11954,\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":45889.565}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "distance_mm": 4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "target": "Hexagon pen cup",
+      "feature": "Honeycomb cuts",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           4.62,
+           20
+          ],
+          [
+           2.31,
+           24
+          ],
+          [
+           -2.31,
+           24
+          ],
+          [
+           -4.62,
+           20
+          ],
+          [
+           -2.31,
+           16
+          ],
+          [
+           2.31,
+           16
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           30
+          ],
+          [
+           2.31,
+           34
+          ],
+          [
+           -2.31,
+           34
+          ],
+          [
+           -4.62,
+           30
+          ],
+          [
+           -2.31,
+           26
+          ],
+          [
+           2.31,
+           26
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           40
+          ],
+          [
+           2.31,
+           44
+          ],
+          [
+           -2.31,
+           44
+          ],
+          [
+           -4.62,
+           40
+          ],
+          [
+           -2.31,
+           36
+          ],
+          [
+           2.31,
+           36
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           50
+          ],
+          [
+           2.31,
+           54
+          ],
+          [
+           -2.31,
+           54
+          ],
+          [
+           -4.62,
+           50
+          ],
+          [
+           -2.31,
+           46
+          ],
+          [
+           2.31,
+           46
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           60
+          ],
+          [
+           2.31,
+           64
+          ],
+          [
+           -2.31,
+           64
+          ],
+          [
+           -4.62,
+           60
+          ],
+          [
+           -2.31,
+           56
+          ],
+          [
+           2.31,
+           56
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           70
+          ],
+          [
+           2.31,
+           74
+          ],
+          [
+           -2.31,
+           74
+          ],
+          [
+           -4.62,
+           70
+          ],
+          [
+           -2.31,
+           66
+          ],
+          [
+           2.31,
+           66
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           4.62,
+           80
+          ],
+          [
+           2.31,
+           84
+          ],
+          [
+           -2.31,
+           84
+          ],
+          [
+           -4.62,
+           80
+          ],
+          [
+           -2.31,
+           76
+          ],
+          [
+           2.31,
+           76
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           25
+          ],
+          [
+           10.97,
+           29
+          ],
+          [
+           6.35,
+           29
+          ],
+          [
+           4.04,
+           25
+          ],
+          [
+           6.35,
+           21
+          ],
+          [
+           10.97,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           35
+          ],
+          [
+           10.97,
+           39
+          ],
+          [
+           6.35,
+           39
+          ],
+          [
+           4.04,
+           35
+          ],
+          [
+           6.35,
+           31
+          ],
+          [
+           10.97,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           45
+          ],
+          [
+           10.97,
+           49
+          ],
+          [
+           6.35,
+           49
+          ],
+          [
+           4.04,
+           45
+          ],
+          [
+           6.35,
+           41
+          ],
+          [
+           10.97,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           55
+          ],
+          [
+           10.97,
+           59
+          ],
+          [
+           6.35,
+           59
+          ],
+          [
+           4.04,
+           55
+          ],
+          [
+           6.35,
+           51
+          ],
+          [
+           10.97,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           65
+          ],
+          [
+           10.97,
+           69
+          ],
+          [
+           6.35,
+           69
+          ],
+          [
+           4.04,
+           65
+          ],
+          [
+           6.35,
+           61
+          ],
+          [
+           10.97,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           75
+          ],
+          [
+           10.97,
+           79
+          ],
+          [
+           6.35,
+           79
+          ],
+          [
+           4.04,
+           75
+          ],
+          [
+           6.35,
+           71
+          ],
+          [
+           10.97,
+           71
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           13.28,
+           85
+          ],
+          [
+           10.97,
+           89
+          ],
+          [
+           6.35,
+           89
+          ],
+          [
+           4.04,
+           85
+          ],
+          [
+           6.35,
+           81
+          ],
+          [
+           10.97,
+           81
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           15
+          ],
+          [
+           -6.35,
+           19
+          ],
+          [
+           -10.97,
+           19
+          ],
+          [
+           -13.28,
+           15
+          ],
+          [
+           -10.97,
+           11
+          ],
+          [
+           -6.35,
+           11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           25
+          ],
+          [
+           -6.35,
+           29
+          ],
+          [
+           -10.97,
+           29
+          ],
+          [
+           -13.28,
+           25
+          ],
+          [
+           -10.97,
+           21
+          ],
+          [
+           -6.35,
+           21
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           35
+          ],
+          [
+           -6.35,
+           39
+          ],
+          [
+           -10.97,
+           39
+          ],
+          [
+           -13.28,
+           35
+          ],
+          [
+           -10.97,
+           31
+          ],
+          [
+           -6.35,
+           31
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           45
+          ],
+          [
+           -6.35,
+           49
+          ],
+          [
+           -10.97,
+           49
+          ],
+          [
+           -13.28,
+           45
+          ],
+          [
+           -10.97,
+           41
+          ],
+          [
+           -6.35,
+           41
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           55
+          ],
+          [
+           -6.35,
+           59
+          ],
+          [
+           -10.97,
+           59
+          ],
+          [
+           -13.28,
+           55
+          ],
+          [
+           -10.97,
+           51
+          ],
+          [
+           -6.35,
+           51
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           65
+          ],
+          [
+           -6.35,
+           69
+          ],
+          [
+           -10.97,
+           69
+          ],
+          [
+           -13.28,
+           65
+          ],
+          [
+           -10.97,
+           61
+          ],
+          [
+           -6.35,
+           61
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -4.04,
+           75
+          ],
+          [
+           -6.35,
+           79
+          ],
+          [
+           -10.97,
+           79
+          ],
+          [
+           -13.28,
+           75
+          ],
+          [
+           -10.97,
+           71
+          ],
+          [
+           -6.35,
+           71
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        30.866,
+        -17.8205,
+        0
+       ],
+       "normal": [
+        0.866,
+        -0.5,
+        0
+       ],
+       "u": [
+        0.5,
+        0.866,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 8, Sketch cut 4 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Hexagon pen cup\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smuo69q809\",\"name\":\"Sketch cut 4 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":4,\"unit\":\"mm\"},\"feature\":\"Honeycomb cuts\",\"state\":\"done\"},\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":43577.261,\"parts\":[{\"index\":0,\"name\":\"Hexagon pen cup\",\"slot\":1,\"triangles\":14620,\"minMm\":[-40,-34.641,0],\"sizeMm\":[80,69.282,100],\"volumeMm3\":43577.261}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_1",
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Hexagon pen cup (d1, tied to the plan) matches plan plan_1: all 4 checks pass\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Hexagon pen cup\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.6,\"pass\":true,\"items\":[{\"name\":\"overall size\",\"want\":\"69.28 x 80 x 100 mm\",\"got\":\"80 x 69.28 x 100 mm (x and y swapped: turned on the bed, it prints the same)\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"3 features, each built by a step tagged with its name\",\"got\":\"8 steps for 3 features (Honeycomb cuts 6)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 1.2 mm (twice the 0.6 mm nozzle)\",\"got\":\"1.98 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":80,\"y\":69.282,\"z\":100},\"holes\":[],\"features\":8,\"steps\":[\"Sketch extrude 100 mm\",\"Sketch cut 97 mm\",\"Sketch cut 4 mm\",\"Sketch cut 4 mm\",\"Sketch cut 4 mm\",\"Sketch cut 4 mm\",\"Sketch cut 4 mm\",\"Sketch cut 4 mm\"],\"tags\":[\"Hexagon body\",\"Cup cavity\",\"Honeycomb cuts\",\"Honeycomb cuts\",\"Honeycomb cuts\",\"Honeycomb cuts\",\"Honeycomb cuts\",\"Honeycomb cuts\"],\"stepIds\":[\"smuo69q802\",\"smuo69q803\",\"smuo69q804\",\"smuo69q805\",\"smuo69q806\",\"smuo69q807\",\"smuo69q808\",\"smuo69q809\"],\"watertight\":true,\"minWallMm\":1.981}}}"
+   ],
+   "text": "The pen cup is built and passes all four plan checks. It's an 80 mm across-corners hexagon, 100 mm tall, with a 2 mm side wall and a 3 mm floor. Six rows of 8 mm honeycomb cells, 2 mm ribs, are cut through each flat wall. The walls are watertight and the thinnest wall is 1.98 mm.\n\nThe guessed values are the 2 mm wall, 3 mm floor, 8 mm cells and 2 mm ribs. I also took 80 mm as across corners, so across flats is 69.3 mm. If you meant across flats, tell me and I'll rebuild it. I have not sliced or sent it to the P1S. Say the word when you want that."
   }
  ],
  "defaultAnswer": true,
- "tabTools": true
+ "tabTools": true,
+ "samePart": true,
+ "planGoesOn": true
 }

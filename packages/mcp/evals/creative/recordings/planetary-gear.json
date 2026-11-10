@@ -2,22 +2,198 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T19:25:30.270Z",
+ "capturedAt": "2026-11-10T06:37:44.827Z",
  "steps": [
   {
-   "text": "I'll start with the dimension sheet. You gave the 70 mm outer size and 10 mm thickness. The module, tooth counts and clearances are my picks, so I'll mark them as guesses for you to confirm or edit.",
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Planetary gear set",
+      "units": "mm",
+      "overall": {
+       "x": 70,
+       "y": 70,
+       "z": 10
+      },
+      "printInPlace": [
+       "Sun gear",
+       "Planet 1",
+       "Planet 2",
+       "Planet 3",
+       "Ring gear",
+       "Carrier"
+      ],
+      "features": [
+       {
+        "name": "Ring gear",
+        "kind": "extrude",
+        "sizes": {
+         "outer_diameter": 70,
+         "pitch_diameter": 64,
+         "teeth": 32,
+         "module": 2,
+         "thickness": 10
+        }
+       },
+       {
+        "name": "Sun gear",
+        "kind": "extrude",
+        "sizes": {
+         "pitch_diameter": 24,
+         "teeth": 12,
+         "module": 2,
+         "thickness": 10
+        }
+       },
+       {
+        "name": "Planet gears",
+        "kind": "extrude",
+        "count": 3,
+        "sizes": {
+         "pitch_diameter": 20,
+         "teeth": 10,
+         "module": 2,
+         "thickness": 10,
+         "bore_diameter": 4,
+         "center_distance": 22
+        }
+       },
+       {
+        "name": "Carrier",
+        "kind": "extrude",
+        "sizes": {
+         "plate_diameter": 60,
+         "thickness": 3,
+         "pin_diameter": 4,
+         "pin_count": 3
+        }
+       }
+      ],
+      "assumptions": [
+       "Module 2 mm, 20 degree pressure angle, so the ring has 32 internal teeth, the sun 12 and each planet 10.",
+       "Ring outer diameter 70 mm is the overall size; the ring is the outer part of the set.",
+       "Planets sit at 22 mm center distance, equally spaced on a carrier that holds them.",
+       "Gaps set by the fit rule for PLA on a 0.4 mm nozzle."
+      ],
+      "questions": [
+       "Should the carrier arm be included, or only the four gears?"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Approved as shown. Moving pieces need gaps of at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers) on this printer.\",\"result\":{\"planId\":\"plan_1\",\"accepted\":true,\"gaps\":{\"sideMm\":0.3,\"verticalMm\":0.4}}}"
+   ],
+   "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Planetary gear set"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Started Planetary gear set (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
+   ],
+   "text": "The plan is approved, and the design is started as \"Planetary gear set\" (design d1).\n\nThe plan uses module 2 with 20 degree pressure angle: a ring of 32 internal teeth (70 mm outer), a sun of 12 teeth, and three planets of 10 teeth at 22 mm center distance, all 10 mm thick. Gaps are 0.3 mm side to side and 0.4 mm above and below, set for PLA on the 0.4 mm nozzle. The carrier is in the plan as a 60 mm plate with three 4 mm pins, which is my assumption, so tell me if you want only the four gears.\n\nNext I'll build the ring, sun, planets and carrier one feature at a time, then run the fit check and the plan check before slicing for the P1S."
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "d1",
+      "feature": "Ring gear",
+      "name": "Ring gear",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 70,
+        "heightMm": 10
+       }
+      ],
+      "subtract": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 67.6,
+        "heightMm": 12
+       }
+      ]
+     }
+    },
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "d1",
+      "feature": "Sun gear",
+      "name": "Sun gear",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 19,
+        "heightMm": 10
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"blocked\":true,\"message\":\"Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.\"}",
+    "{\"ok\":false,\"blocked\":true,\"message\":\"Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.\"}"
+   ],
    "calls": [
     {
      "name": "pilot.sheet",
      "args": {
-      "title": "Planetary gear set",
+      "title": "Planetary gear set sizes",
       "views": [
        "top",
        "front",
+       "side",
        "iso"
       ],
       "part": [
        {
+        "kind": "extrude",
         "plane": "xy",
         "points": [
          [
@@ -43,200 +219,312 @@
       ],
       "dims": [
        {
-        "key": "ring_od",
-        "label": "Ring gear outer diameter",
+        "key": "ring_outer_d",
+        "label": "Ring outer diameter",
         "value": 70,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
           -35,
-          0,
+          -36,
           0
          ],
          "b": [
           35,
-          0,
+          -36,
           0
          ],
          "off": [
           0,
-          -12,
+          -4,
           0
          ]
         }
        },
        {
-        "key": "thickness",
-        "label": "Gear thickness",
+        "key": "ring_thickness",
+        "label": "Thickness, all gears",
         "value": 10,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
-          35,
+          36,
           0,
           0
          ],
          "b": [
-          35,
+          36,
           0,
           10
          ],
          "off": [
-          6,
+          4,
           0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "module",
-        "label": "Module (tooth size)",
-        "value": 2,
-        "unit": "mm",
-        "source": "guess",
-        "note": "Sets tooth size; ring pitch diameter = module x 30 = 60 mm",
-        "at": {
-         "a": [
-          -30,
-          0,
-          0
-         ],
-         "b": [
-          30,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          -22,
-          0
-         ]
-        }
-       },
-       {
-        "key": "ring_teeth",
-        "label": "Ring gear teeth",
-        "value": 30,
-        "unit": "mm",
-        "source": "guess",
-        "note": "Count, not mm",
-        "at": {
-         "a": [
-          -30,
-          0,
-          0
-         ],
-         "b": [
-          30,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          30,
           0
          ]
         }
        },
        {
         "key": "sun_teeth",
-        "label": "Sun gear teeth",
-        "value": 10,
-        "unit": "mm",
+        "label": "Sun teeth",
+        "value": 12,
+        "unit": "count",
         "source": "guess",
-        "note": "Count, not mm",
         "at": {
          "a": [
-          -10,
+          0,
           0,
           0
          ],
          "b": [
-          10,
+          9,
           0,
           0
          ],
          "off": [
           0,
-          -30,
+          -6,
           0
          ]
         }
        },
        {
         "key": "planet_teeth",
-        "label": "Planet gear teeth (each of 3)",
+        "label": "Planet teeth (each of 3)",
         "value": 10,
-        "unit": "mm",
+        "unit": "count",
         "source": "guess",
-        "note": "Count, not mm. Ring = sun + 2 x planet",
         "at": {
          "a": [
-          -10,
+          22,
           0,
           0
          ],
          "b": [
+          22,
           10,
-          0,
           0
          ],
          "off": [
           0,
-          -40,
+          -8,
           0
          ]
         }
        },
        {
-        "key": "pressure_angle",
-        "label": "Pressure angle",
-        "value": 20,
-        "unit": "deg",
+        "key": "module",
+        "label": "Module",
+        "value": 2,
+        "unit": "mm",
         "source": "guess",
-        "note": "Standard involute angle",
         "at": {
-         "c": [
-          0,
-          0,
+         "a": [
+          -35,
+          35,
           0
          ],
-         "from": [
-          1,
+         "b": [
+          -30,
+          35,
+          0
+         ],
+         "off": [
           0,
+          4,
           0
-         ],
-         "to": [
-          0.5,
-          0.866,
-          0
-         ],
-         "r": 8
+         ]
         }
        },
        {
-        "key": "mesh_clearance",
-        "label": "Print-in-place clearance (tooth tips and backlash)",
-        "value": 0.3,
+        "key": "ring_rim",
+        "label": "Ring rim wall behind teeth",
+        "value": 1.2,
         "unit": "mm",
         "source": "guess",
-        "note": "Gap so the gears turn free after printing",
         "at": {
          "a": [
+          35,
           0,
+          0
+         ],
+         "b": [
+          33.8,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          4,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"dims.2.unit: Invalid option: expected one of \\\"mm\\\"|\\\"deg\\\"|\\\"%\\\"\",\"dims.3.unit: Invalid option: expected one of \\\"mm\\\"|\\\"deg\\\"|\\\"%\\\"\"]}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Planetary gear set sizes",
+      "views": [
+       "top",
+       "front",
+       "side",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          -35,
+          -35
+         ],
+         [
+          35,
+          -35
+         ],
+         [
+          35,
+          35
+         ],
+         [
+          -35,
+          35
+         ]
+        ],
+        "from": 0,
+        "to": 10
+       }
+      ],
+      "dims": [
+       {
+        "key": "ring_outer_d",
+        "label": "Ring outer diameter",
+        "value": 70,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -35,
+          -36,
+          0
+         ],
+         "b": [
+          35,
+          -36,
+          0
+         ],
+         "off": [
+          0,
+          -4,
+          0
+         ]
+        }
+       },
+       {
+        "key": "thickness",
+        "label": "Thickness, all gears",
+        "value": 10,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          36,
+          0,
+          0
+         ],
+         "b": [
+          36,
           0,
           10
          ],
-         "b": [
+         "off": [
+          4,
           0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "sun_teeth",
+        "label": "Sun teeth",
+        "value": 12,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          9,
           0,
           0
          ],
          "off": [
-          -8,
           0,
+          -6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "module",
+        "label": "Module",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          -35,
+          35,
+          0
+         ],
+         "b": [
+          -30,
+          35,
+          0
+         ],
+         "off": [
+          0,
+          4,
+          0
+         ]
+        }
+       },
+       {
+        "key": "ring_rim",
+        "label": "Ring rim wall behind teeth",
+        "value": 1.2,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          35,
+          0,
+          0
+         ],
+         "b": [
+          33.8,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          4,
           0
          ]
         }
@@ -247,270 +535,123 @@
    ]
   },
   {
-   "text": "The sheet is confirmed. Next I'll set out the build plan for the three gears.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"ring_outer_d\":70,\"thickness\":10,\"sun_teeth\":12,\"module\":2,\"ring_rim\":1.2,\"clearance\":0.3,\"clearance_vertical\":0.4},\"changed\":[]}}"
+   ],
    "calls": [
     {
-     "name": "design.plan",
+     "name": "geom.build",
      "args": {
-      "part": "Planetary gear set (ring, sun, 3 planets)",
-      "units": "mm",
-      "features": [
+      "design": "d1",
+      "feature": "Ring gear",
+      "name": "Ring gear",
+      "slot": 1,
+      "solids": [
        {
-        "name": "Ring gear",
-        "kind": "extrude",
-        "sizes": {
-         "outer_diameter": 70,
-         "thickness": 10,
-         "internal_pitch_diameter": 60,
-         "internal_tip_diameter": 56,
-         "internal_root_diameter": 65
-        }
-       },
-       {
-        "name": "Sun gear",
-        "kind": "extrude",
-        "sizes": {
-         "pitch_diameter": 20,
-         "tip_diameter": 24,
-         "root_diameter": 17.5,
-         "thickness": 10
-        }
-       },
-       {
-        "name": "Planet gears (x3)",
-        "kind": "extrude",
-        "sizes": {
-         "pitch_diameter": 20,
-         "tip_diameter": 24,
-         "root_diameter": 17.5,
-         "thickness": 10,
-         "center_radius_from_sun": 20,
-         "count": 3
-        }
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 70,
+        "heightMm": 10
        }
       ],
-      "assumptions": [
-       "Module 2 mm, 20 degree pressure angle, ring 30 teeth, sun 10, three planets of 10 teeth (sun + 2 x planet = ring)",
-       "Tooth profiles are straight-flank approximations of involute teeth, built from closed polylines",
-       "Radial clearance of 0.3 mm between planet tips and ring roots, and backlash at each mesh, so the set prints free",
-       "Planets sit 120 degrees apart at 20 mm from the sun center",
-       "Gears are separate bodies on the bed, laid flat, 10 mm thick",
-       "No carrier arm: the planets are free-floating, as the request lists only sun, planets and ring"
-      ],
-      "questions": [
-       "Do you want a carrier arm and planet pins so the planets stay in place in the print?",
-       "Should the sun get a bore for a shaft, and what diameter?"
+      "subtract": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 67.6,
+        "heightMm": 12
+       }
       ]
      }
     }
    ]
   },
   {
-   "text": "The plan is approved. I'll build the ring first: the outer circle with its inner bore, then the internal teeth.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 1, Add Ring gear. The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Add Ring gear\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Ring gear\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":2586.298,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":1204,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":2586.298}],\"placedMm\":[128,128],\"landed\":\"The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+   ],
    "calls": [
     {
-     "name": "design.new",
-     "args": {
-      "name": "Planetary gear set"
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Planetary gear set",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "type": "circle",
-         "center": [
-          0,
-          0
-         ],
-         "diameterMm": 70
-        },
-        {
-         "type": "circle",
-         "center": [
-          0,
-          0
-         ],
-         "diameterMm": 65
-        }
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Ring gear"
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
       "design": "d1",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "type": "circle",
-         "center": [
-          0,
-          0
+      "feature": "Ring gear",
+      "name": "Ring tooth",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "prism",
+        "points": [
+         [
+          34,
+          -1.4
          ],
-         "diameterMm": 70
-        },
-        {
-         "type": "circle",
-         "center": [
-          0,
-          0
+         [
+          30,
+          -0.9
          ],
-         "diameterMm": 65
-        }
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Ring gear"
-     }
-    }
-   ]
-  },
-  {
-   "text": "The ring body is in. Next I'll make one internal tooth as its own part so I can copy it around the ring.",
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "d1",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           28,
-           -1
-          ],
-          [
-           28,
-           1
-          ],
-          [
-           32.8,
-           1.9
-          ],
-          [
-           32.8,
-           -1.9
-          ]
+         [
+          30,
+          0.9
+         ],
+         [
+          34,
+          1.4
          ]
-        }
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Ring tooth"
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 10
+       }
+      ]
      }
     }
    ]
   },
   {
-   "text": "The tooth landed at the bed origin, not on the ring, because the ring was moved when it was placed. I'll remove that step and place the tooth at the ring's center.",
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    },
-    {
-     "name": "geom.info",
-     "args": {
-      "design": "d1"
-     }
-    }
-   ]
-  },
-  {
-   "text": "The ring's center is now at (160.5, 175.45). I'll place the tooth from that point.",
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "d1",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           28,
-           -1
-          ],
-          [
-           28,
-           1
-          ],
-          [
-           32.8,
-           1.9
-          ],
-          [
-           32.8,
-           -1.9
-          ]
-         ]
-        }
-       ]
-      },
-      "frame": {
-       "origin": [
-        160.5,
-        175.45,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Ring tooth"
-     }
-    }
-   ]
-  },
-  {
-   "text": "The tooth sits on the ring's inner edge. Next I'll copy it 30 times around the ring center.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 2, Add Ring tooth\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q802\",\"name\":\"Add Ring tooth\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Ring gear\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":2678.298,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":1204,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":2586.298},{\"index\":1,\"name\":\"Ring tooth\",\"slot\":1,\"triangles\":12,\"minMm\":[-1.4,30,0],\"sizeMm\":[2.8,4,10],\"volumeMm3\":92}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
      "name": "geom.array",
      "args": {
       "design": "d1",
+      "feature": "Ring gear",
       "part": 1,
       "spec": {
        "kind": "circular",
-       "count": 30,
+       "count": 32,
        "center": [
-        160.5,
-        175.45,
+        0,
+        0,
         0
-       ],
-       "axis": [
-        0,
-        0,
-        1
        ]
       },
       "merge": true
@@ -519,12 +660,15 @@
    ]
   },
   {
-   "text": "The 30 teeth are merged into one body. Now I'll join them to the ring.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Arrayed 32 copies: step 3, Array of 32, merged\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q803\",\"name\":\"Array of 32, merged\",\"op\":\"array.merged\",\"part\":1,\"feature\":\"Ring gear\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5530.299,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":1204,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":2586.298},{\"index\":1,\"name\":\"Ring tooth\",\"slot\":1,\"triangles\":384,\"minMm\":[-34,-34,0],\"sizeMm\":[68,68,10],\"volumeMm3\":2944.001}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
      "name": "geom.boolean",
      "args": {
       "design": "d1",
+      "feature": "Ring gear",
       "op": "union",
       "part": 0,
       "with_parts": [
@@ -535,103 +679,100 @@
    ]
   },
   {
-   "text": "The ring is joined into one body. The planned sun and planet root diameter of 17.5 mm was a mistake in my plan: a 20 mm pitch gear with 2 mm addendum and 2.5 mm dedendum has a root diameter of 15 mm. I'll build the sun at 15 mm root and 24 mm tip, and mention the correction at the end.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Union: step 4, Join 1 part\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smuo69q804\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":0,\"feature\":\"Ring gear\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
       "design": "d1",
-      "shape": {
-       "type": "circle",
-       "diameterMm": 15
-      },
-      "frame": {
-       "origin": [
-        100,
-        175.45,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Sun gear"
+      "feature": "Sun gear",
+      "name": "Sun gear",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 19,
+        "heightMm": 10
+       }
+      ]
      }
     },
     {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
       "design": "d1",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           7,
-           -1.8
-          ],
-          [
-           7,
-           1.8
-          ],
-          [
-           12,
-           1
-          ],
-          [
-           12,
-           -1
-          ]
+      "feature": "Sun gear",
+      "name": "Sun tooth",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "prism",
+        "points": [
+         [
+          9,
+          -1.5
+         ],
+         [
+          14,
+          -1.2
+         ],
+         [
+          14,
+          1.2
+         ],
+         [
+          9,
+          1.5
          ]
-        }
-       ]
-      },
-      "frame": {
-       "origin": [
-        100,
-        175.45,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Sun tooth"
+        ],
+        "origin": [
+         0,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 10
+       }
+      ]
      }
     }
    ]
   },
   {
-   "text": "The sun body and one tooth are in. I'll copy the tooth 10 times and join it to the sun.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 5, Add Sun gear\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smuo69q805\",\"name\":\"Add Sun gear\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Sun gear\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":8128.492,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":188,\"minMm\":[-9.5,-9.5,0],\"sizeMm\":[19,19,10],\"volumeMm3\":2827.197}],\"placedMm\":[128,128]}}",
+    "{\"ok\":true,\"summary\":\"Built: step 6, Add Sun tooth\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smuo69q806\",\"name\":\"Add Sun tooth\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Sun gear\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":8263.492,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":188,\"minMm\":[-9.5,-9.5,0],\"sizeMm\":[19,19,10],\"volumeMm3\":2827.197},{\"index\":2,\"name\":\"Sun tooth\",\"slot\":1,\"triangles\":12,\"minMm\":[-1.5,9,0],\"sizeMm\":[3,5,10],\"volumeMm3\":135}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
      "name": "geom.array",
      "args": {
       "design": "d1",
+      "feature": "Sun gear",
       "part": 2,
       "spec": {
        "kind": "circular",
-       "count": 10,
+       "count": 12,
        "center": [
-        100,
-        175.45,
+        0,
+        0,
         0
-       ],
-       "axis": [
-        0,
-        0,
-        1
        ]
       },
       "merge": true
@@ -640,11 +781,15 @@
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Arrayed 12 copies: step 7, Array of 12, merged\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smuo69q807\",\"name\":\"Array of 12, merged\",\"op\":\"array.merged\",\"part\":2,\"feature\":\"Sun gear\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":9748.492,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":188,\"minMm\":[-9.5,-9.5,0],\"sizeMm\":[19,19,10],\"volumeMm3\":2827.197},{\"index\":2,\"name\":\"Sun tooth\",\"slot\":1,\"triangles\":144,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":1620}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
      "name": "geom.boolean",
      "args": {
       "design": "d1",
+      "feature": "Sun gear",
       "op": "union",
       "part": 1,
       "with_parts": [
@@ -655,161 +800,117 @@
    ]
   },
   {
-   "text": "The sun is complete. Next I'll make one planet at a holding position off to the side, then copy it into three planets.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Union: step 8, Join 1 part\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smuo69q808\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":1,\"feature\":\"Sun gear\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":9588.252,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
       "design": "d1",
-      "shape": {
-       "type": "circle",
-       "diameterMm": 15
-      },
-      "frame": {
-       "origin": [
-        60,
-        175.45,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Planet gear"
+      "feature": "Planet gears",
+      "name": "Planet 1",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         22,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 15,
+        "heightMm": 10
+       }
+      ],
+      "subtract": [
+       {
+        "type": "cylinder",
+        "origin": [
+         22,
+         0,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 4,
+        "heightMm": 12
+       }
+      ]
      }
     },
     {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
       "design": "d1",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           67,
-           -1.8
-          ],
-          [
-           67,
-           1.8
-          ],
-          [
-           72,
-           1
-          ],
-          [
-           72,
-           -1
-          ]
+      "feature": "Planet gears",
+      "name": "Planet tooth",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "prism",
+        "points": [
+         [
+          7.5,
+          -1.5
+         ],
+         [
+          11.5,
+          -1.1
+         ],
+         [
+          11.5,
+          1.1
+         ],
+         [
+          7.5,
+          1.5
          ]
-        }
-       ]
-      },
-      "frame": {
-       "origin": [
-        60,
-        175.45,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Planet tooth"
+        ],
+        "origin": [
+         22,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 10
+       }
+      ]
      }
     }
    ]
   },
   {
-   "text": "The planet tooth was placed with absolute coordinates inside a frame that is already offset, so it landed at x 127. I'll undo that step and redo it with relative points.",
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "d1",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           7,
-           -1.8
-          ],
-          [
-           7,
-           1.8
-          ],
-          [
-           12,
-           1
-          ],
-          [
-           12,
-           -1
-          ]
-         ]
-        }
-       ]
-      },
-      "frame": {
-       "origin": [
-        60,
-        175.45,
-        0
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Planet tooth"
-     }
-    }
-   ]
-  },
-  {
-   "text": "The planet tooth is now at the right place. I'll copy it around the planet center and join it to the planet body.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 9, Add Planet 1\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smuo69q809\",\"name\":\"Add Planet 1\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":11225.292,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":640,\"minMm\":[14.5,-7.5,0],\"sizeMm\":[15,15,10],\"volumeMm3\":1637.04}],\"placedMm\":[128,128]}}",
+    "{\"ok\":true,\"summary\":\"Built: step 10, Add Planet tooth\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smuo69q80a\",\"name\":\"Add Planet tooth\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":11329.292,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":640,\"minMm\":[14.5,-7.5,0],\"sizeMm\":[15,15,10],\"volumeMm3\":1637.04},{\"index\":3,\"name\":\"Planet tooth\",\"slot\":1,\"triangles\":12,\"minMm\":[20.5,7.5,0],\"sizeMm\":[3,4,10],\"volumeMm3\":104}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
      "name": "geom.array",
      "args": {
       "design": "d1",
+      "feature": "Planet gears",
       "part": 3,
       "spec": {
        "kind": "circular",
        "count": 10,
        "center": [
-        60,
-        175.45,
+        22,
+        0,
         0
-       ],
-       "axis": [
-        0,
-        0,
-        1
        ]
       },
       "merge": true
@@ -818,29 +919,155 @@
    ]
   },
   {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Arrayed 10 copies: step 11, Array of 10, merged\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":11,\"lastStep\":{\"index\":11,\"id\":\"smuo69q80b\",\"name\":\"Array of 10, merged\",\"op\":\"array.merged\",\"part\":3,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":12265.292,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":640,\"minMm\":[14.5,-7.5,0],\"sizeMm\":[15,15,10],\"volumeMm3\":1637.04},{\"index\":3,\"name\":\"Planet tooth\",\"slot\":1,\"triangles\":120,\"minMm\":[10.723,-11.5,0],\"sizeMm\":[22.554,23,10],\"volumeMm3\":1040}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
      "name": "geom.boolean",
      "args": {
       "design": "d1",
+      "feature": "Planet gears",
       "op": "union",
       "part": 2,
       "with_parts": [
        3
       ]
      }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"The step did not go through: sx-geom boolean: boolean: the result is unsafe at mesh storage precision (intersecting faces); change the cut or placement. The design is unchanged.. The cut or join left faces that line up or slivers. For a cut, extend the cutting shape about 0.05 mm past the faces it meets; for a join, overlap the bodies about 0.05 mm rather than letting faces just touch. Try again once, and tell the person in plain words if it still fails; never quote the engine text.\"}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
+     }
     },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Array of 10, merged\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smuo69q80a\",\"name\":\"Add Planet tooth\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":11329.292,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":640,\"minMm\":[14.5,-7.5,0],\"sizeMm\":[15,15,10],\"volumeMm3\":1637.04},{\"index\":3,\"name\":\"Planet tooth\",\"slot\":1,\"triangles\":12,\"minMm\":[20.5,7.5,0],\"sizeMm\":[3,4,10],\"volumeMm3\":104}],\"placedMm\":[128,128]}}",
+    "{\"ok\":true,\"summary\":\"Removed Add Planet tooth\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smuo69q809\",\"name\":\"Add Planet 1\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":11225.292,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":640,\"minMm\":[14.5,-7.5,0],\"sizeMm\":[15,15,10],\"volumeMm3\":1637.04}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "d1",
+      "feature": "Planet gears",
+      "name": "Planet tooth",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "prism",
+        "points": [
+         [
+          6.8,
+          -2
+         ],
+         [
+          11.5,
+          -1.1
+         ],
+         [
+          11.5,
+          1.1
+         ],
+         [
+          6.8,
+          2
+         ]
+        ],
+        "origin": [
+         22,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "heightMm": 10
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 10, Add Planet tooth\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smuo69q80d\",\"name\":\"Add Planet tooth\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":11370.992,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":640,\"minMm\":[14.5,-7.5,0],\"sizeMm\":[15,15,10],\"volumeMm3\":1637.04},{\"index\":3,\"name\":\"Planet tooth\",\"slot\":1,\"triangles\":12,\"minMm\":[20,6.8,0],\"sizeMm\":[4,4.7,10],\"volumeMm3\":145.7}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
     {
      "name": "geom.array",
      "args": {
       "design": "d1",
+      "feature": "Planet gears",
+      "part": 3,
+      "spec": {
+       "kind": "circular",
+       "count": 10,
+       "center": [
+        22,
+        0,
+        0
+       ]
+      },
+      "merge": true
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Arrayed 10 copies: step 11, Array of 10, merged\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":11,\"lastStep\":{\"index\":11,\"id\":\"smuo69q80e\",\"name\":\"Array of 10, merged\",\"op\":\"array.merged\",\"part\":3,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":12682.292,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":640,\"minMm\":[14.5,-7.5,0],\"sizeMm\":[15,15,10],\"volumeMm3\":1637.04},{\"index\":3,\"name\":\"Planet tooth\",\"slot\":1,\"triangles\":120,\"minMm\":[10.723,-11.5,0],\"sizeMm\":[22.554,23,10],\"volumeMm3\":1457}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.boolean",
+     "args": {
+      "design": "d1",
+      "feature": "Planet gears",
+      "op": "union",
+      "part": 2,
+      "with_parts": [
+       3
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Union: step 12, Join 1 part\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":12,\"lastStep\":{\"index\":12,\"id\":\"smuo69q80f\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":2,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":12446.88,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":4248,\"minMm\":[10.723,-11.5,0],\"sizeMm\":[22.554,23,10],\"volumeMm3\":2858.628}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.array",
+     "args": {
+      "design": "d1",
+      "feature": "Planet gears",
       "part": 2,
       "spec": {
-       "kind": "linear",
+       "kind": "circular",
        "count": 3,
-       "step": [
+       "center": [
         0,
-        -30,
+        0,
         0
        ]
       },
@@ -850,7 +1077,187 @@
    ]
   },
   {
-   "text": "All four gears are built: the ring, the sun and three planets. I'll check the design against the plan.",
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Arrayed 3 separate copies: step 13, Array of 3, separate\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":13,\"lastStep\":{\"index\":13,\"id\":\"smuo69q80g\",\"name\":\"Array of 3, separate\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":18164.136,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":4248,\"minMm\":[10.723,-11.5,0],\"sizeMm\":[22.554,23,10],\"volumeMm3\":2858.628},{\"index\":3,\"name\":\"Planet 1 2\",\"slot\":1,\"triangles\":4248,\"minMm\":[-22.552,7.575,0],\"sizeMm\":[23.104,22.955,10],\"volumeMm3\":2858.628},{\"index\":4,\"name\":\"Planet 1 3\",\"slot\":1,\"triangles\":4248,\"minMm\":[-22.552,-30.53,0],\"sizeMm\":[23.104,22.955,10],\"volumeMm3\":2858.628}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "d1",
+      "feature": "Carrier",
+      "name": "Carrier",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         10.4
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 60,
+        "heightMm": 3
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         22,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 3.6,
+        "heightMm": 13.4
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         -11,
+         19.053,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 3.6,
+        "heightMm": 13.4
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         -11,
+         -19.053,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 3.6,
+        "heightMm": 13.4
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 14, Add Carrier\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":14,\"lastStep\":{\"index\":14,\"id\":\"smuo69q80h\",\"name\":\"Add Carrier\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Carrier\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,13.4],\"volumeMm3\":26935.511,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":4248,\"minMm\":[10.723,-11.5,0],\"sizeMm\":[22.554,23,10],\"volumeMm3\":2858.628},{\"index\":3,\"name\":\"Planet 1 2\",\"slot\":1,\"triangles\":4248,\"minMm\":[-22.552,7.575,0],\"sizeMm\":[23.104,22.955,10],\"volumeMm3\":2858.628},{\"index\":4,\"name\":\"Planet 1 3\",\"slot\":1,\"triangles\":4248,\"minMm\":[-22.552,-30.53,0],\"sizeMm\":[23.104,22.955,10],\"volumeMm3\":2858.628},{\"index\":5,\"name\":\"Carrier\",\"slot\":1,\"triangles\":452,\"minMm\":[-30,-30,0],\"sizeMm\":[60,60,13.4],\"volumeMm3\":8771.375}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "d1",
+      "layer_height_mm": 0.2,
+      "material": "PLA"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"2 pieces; 9 gaps under the limit: Ring gear and Planet 1 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"result\":{\"design\":\"d1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":2,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Ring gear\"},{\"body\":1,\"part\":1,\"name\":\"Sun gear\"},{\"body\":2,\"part\":2,\"name\":\"Planet 1\"},{\"body\":3,\"part\":3,\"name\":\"Planet 1 2\"},{\"body\":4,\"part\":4,\"name\":\"Planet 1 3\"},{\"body\":5,\"part\":5,\"name\":\"Carrier\"}],\"gaps\":[{\"bodies\":[0,2],\"names\":[\"Ring gear\",\"Planet 1\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[30.12,0.769,0],\"to\":[30.12,0.769,0]},{\"bodies\":[0,3],\"names\":[\"Ring gear\",\"Planet 1 2\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[-21.85,20.577,0],\"to\":[-21.85,20.577,0]},{\"bodies\":[0,4],\"names\":[\"Ring gear\",\"Planet 1 3\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[-6.735,-29.248,0],\"to\":[-6.735,-29.248,0]},{\"bodies\":[1,2],\"names\":[\"Sun gear\",\"Planet 1\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[14,-1.2,0],\"to\":[14,-1.2,0]},{\"bodies\":[1,3],\"names\":[\"Sun gear\",\"Planet 1 2\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[-5.961,12.724,0],\"to\":[-5.961,12.724,0]},{\"bodies\":[1,4],\"names\":[\"Sun gear\",\"Planet 1 3\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[-5.961,-12.724,0],\"to\":[-5.961,-12.724,0]},{\"bodies\":[3,5],\"names\":[\"Planet 1 2\",\"Carrier\"],\"kind\":\"horizontal\",\"direction\":\"xy\",\"gap_mm\":0.181,\"limit_mm\":0.3,\"verdict\":\"binds\",\"from\":[-12.498,20.349,0.157],\"to\":[-12.36,20.232,0.157]},{\"bodies\":[2,5],\"names\":[\"Planet 1\",\"Carrier\"],\"kind\":\"horizontal\",\"direction\":\"xy\",\"gap_mm\":0.181,\"limit_mm\":0.3,\"verdict\":\"binds\",\"from\":[22,-1.981,0],\"to\":[22,-1.8,0]},{\"bodies\":[4,5],\"names\":[\"Planet 1 3\",\"Carrier\"],\"kind\":\"horizontal\",\"direction\":\"xy\",\"gap_mm\":0.182,\"limit_mm\":0.3,\"verdict\":\"binds\",\"from\":[-9.198,-18.229,4.856],\"to\":[-9.363,-18.305,4.856]},{\"bodies\":[0,5],\"names\":[\"Ring gear\",\"Carrier\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[27.716,-11.481,10],\"to\":[27.716,-11.481,10.4]},{\"bodies\":[1,5],\"names\":[\"Sun gear\",\"Carrier\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[-9.176,-2.459,10],\"to\":[-9.176,-2.459,10.4]}],\"warnings\":[\"Ring gear and Planet 1 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Ring gear and Planet 1 2 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Ring gear and Planet 1 3 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Sun gear and Planet 1 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Sun gear and Planet 1 2 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Sun gear and Planet 1 3 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Planet 1 2 and Carrier are 0.18 mm apart side by side at (-12.5, 20.3, 0.2); moving pieces need 0.3 mm or more\",\"Planet 1 and Carrier are 0.18 mm apart side by side at (22, -2, 0); moving pieces need 0.3 mm or more\",\"Planet 1 3 and Carrier are 0.18 mm apart side by side at (-9.2, -18.2, 4.9); moving pieces need 0.3 mm or more\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
+     }
+    },
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "d1",
+      "feature": "Carrier",
+      "name": "Carrier",
+      "slot": 1,
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         10.4
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 60,
+        "heightMm": 3
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         22,
+         0,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 3,
+        "heightMm": 13.4
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         -11,
+         19.053,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 3,
+        "heightMm": 13.4
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         -11,
+         -19.053,
+         0
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 3,
+        "heightMm": 13.4
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Add Carrier\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":13,\"lastStep\":{\"index\":13,\"id\":\"smuo69q80g\",\"name\":\"Array of 3, separate\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Planet gears\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":18164.136,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":4248,\"minMm\":[10.723,-11.5,0],\"sizeMm\":[22.554,23,10],\"volumeMm3\":2858.628},{\"index\":3,\"name\":\"Planet 1 2\",\"slot\":1,\"triangles\":4248,\"minMm\":[-22.552,7.575,0],\"sizeMm\":[23.104,22.955,10],\"volumeMm3\":2858.628},{\"index\":4,\"name\":\"Planet 1 3\",\"slot\":1,\"triangles\":4248,\"minMm\":[-22.552,-30.53,0],\"sizeMm\":[23.104,22.955,10],\"volumeMm3\":2858.628}],\"placedMm\":[128,128]}}",
+    "{\"ok\":true,\"summary\":\"Built: step 14, Add Carrier\",\"result\":{\"design\":\"d1\",\"name\":\"Planetary gear set\",\"exact\":false,\"steps\":14,\"lastStep\":{\"index\":14,\"id\":\"smuo69q80i\",\"name\":\"Add Carrier\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Carrier\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,13.4],\"volumeMm3\":26839.163,\"parts\":[{\"index\":0,\"name\":\"Ring gear\",\"slot\":1,\"triangles\":6308,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,10],\"volumeMm3\":5301.295},{\"index\":1,\"name\":\"Sun gear\",\"slot\":1,\"triangles\":1488,\"minMm\":[-14,-14,0],\"sizeMm\":[28,28,10],\"volumeMm3\":4286.957},{\"index\":2,\"name\":\"Planet 1\",\"slot\":1,\"triangles\":4248,\"minMm\":[10.723,-11.5,0],\"sizeMm\":[22.554,23,10],\"volumeMm3\":2858.628},{\"index\":3,\"name\":\"Planet 1 2\",\"slot\":1,\"triangles\":4248,\"minMm\":[-22.552,7.575,0],\"sizeMm\":[23.104,22.955,10],\"volumeMm3\":2858.628},{\"index\":4,\"name\":\"Planet 1 3\",\"slot\":1,\"triangles\":4248,\"minMm\":[-22.552,-30.53,0],\"sizeMm\":[23.104,22.955,10],\"volumeMm3\":2858.628},{\"index\":5,\"name\":\"Carrier\",\"slot\":1,\"triangles\":428,\"minMm\":[-30,-30,0],\"sizeMm\":[60,60,13.4],\"volumeMm3\":8675.027}],\"placedMm\":[128,128]}}"
+   ],
    "calls": [
     {
      "name": "design.check",
@@ -862,9 +1269,29 @@
    ]
   },
   {
-   "text": "I built the planetary set as four separate bodies, but it is not ready to print yet.\n\n- **Built:** a ring gear (70 mm outer diameter, 10 mm thick, 30 internal teeth), a sun (10 teeth) and three planets (10 teeth each, 120 degrees apart). The module is 2 mm with a 20 degree pressure angle, both my guesses.\n- **Not yet built:** the 0.3 mm print clearance from the sheet is not in the teeth, so the gears are at nominal size and may bind when printed. The teeth are straight-sided approximations, not true involutes.\n- **Plan error:** my plan listed the sun and planet root diameter as 17.5 mm. The correct value for this gear is 15 mm, so I built 15 mm.\n- **Check:** the plan check fails on feature count, 13 build steps against the 3 planned features. The bodies are closed and the thinnest wall is 2.15 mm, so this is a bookkeeping mismatch, not a geometry fault.\n- **Missing for print-in-place:** there is no carrier arm, so the planets have nothing holding them in place. Nothing has been arranged, sliced or sent to the printer.\n\nShould I add the 0.3 mm clearance and a carrier arm with planet pins before I arrange and slice?"
+   "seen": [
+    "{\"ok\":false,\"summary\":\"Nothing was checked. Planetary gear set prints in place, so its gaps are looked at first: run the fit check on the design Planetary gear set as it is now, with every planned piece, fix any gap it flags, then check again.\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "d1",
+      "layer_height_mm": 0.2,
+      "material": "PLA"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"2 pieces; 6 gaps under the limit: Ring gear and Planet 1 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"result\":{\"design\":\"d1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":2,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Ring gear\"},{\"body\":1,\"part\":1,\"name\":\"Sun gear\"},{\"body\":2,\"part\":2,\"name\":\"Planet 1\"},{\"body\":3,\"part\":3,\"name\":\"Planet 1 2\"},{\"body\":4,\"part\":4,\"name\":\"Planet 1 3\"},{\"body\":5,\"part\":5,\"name\":\"Carrier\"}],\"gaps\":[{\"bodies\":[0,2],\"names\":[\"Ring gear\",\"Planet 1\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[30.12,0.769,0],\"to\":[30.12,0.769,0]},{\"bodies\":[0,3],\"names\":[\"Ring gear\",\"Planet 1 2\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[-21.85,20.577,0],\"to\":[-21.85,20.577,0]},{\"bodies\":[0,4],\"names\":[\"Ring gear\",\"Planet 1 3\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[-6.735,-29.248,0],\"to\":[-6.735,-29.248,0]},{\"bodies\":[1,2],\"names\":[\"Sun gear\",\"Planet 1\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[14,-1.2,0],\"to\":[14,-1.2,0]},{\"bodies\":[1,3],\"names\":[\"Sun gear\",\"Planet 1 2\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[-5.961,12.724,0],\"to\":[-5.961,12.724,0]},{\"bodies\":[1,4],\"names\":[\"Sun gear\",\"Planet 1 3\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"from\":[-5.961,-12.724,0],\"to\":[-5.961,-12.724,0]},{\"bodies\":[0,5],\"names\":[\"Ring gear\",\"Carrier\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[27.716,-11.481,10],\"to\":[27.716,-11.481,10.4]},{\"bodies\":[1,5],\"names\":[\"Sun gear\",\"Carrier\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[-9.176,-2.459,10],\"to\":[-9.176,-2.459,10.4]},{\"bodies\":[2,5],\"names\":[\"Planet 1\",\"Carrier\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[15.695,-4.061,10],\"to\":[15.695,-4.061,10.4]},{\"bodies\":[3,5],\"names\":[\"Planet 1 2\",\"Carrier\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[-4.331,15.623,10],\"to\":[-4.331,15.623,10.4]},{\"bodies\":[4,5],\"names\":[\"Planet 1 3\",\"Carrier\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[-11.364,-11.562,10],\"to\":[-11.364,-11.562,10.4]}],\"warnings\":[\"Ring gear and Planet 1 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Ring gear and Planet 1 2 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Ring gear and Planet 1 3 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Sun gear and Planet 1 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Sun gear and Planet 1 2 touch, 0.0 mm; moving pieces need 0.3 mm or more\",\"Sun gear and Planet 1 3 touch, 0.0 mm; moving pieces need 0.3 mm or more\"]}}"
+   ],
+   "text": "The build is finished through the carrier, but the part does not pass the plan check yet, so I've stopped there.\n\n**What's built (design d1):** a 70 mm ring with 32 internal teeth, a 12-tooth sun, three 10-tooth planets at 22 mm center distance, and a carrier plate with three pins. The carrier pins are 3 mm in 4 mm planet bores, which clears the 0.3 mm side gap.\n\n**What fails:** the fit check still shows all three planets fused to the ring and to the sun. The teeth are simplified trapezoids that are not phased to mesh, so they collide where they should have clearance. I also set the ring rim to 1.2 mm behind the teeth, which keeps the 70 mm outer size, and the carrier raises the overall height to 13.4 mm, not 10 mm.\n\n**How do you want to go on?** I can either rebuild the tooth profiles as true involutes with proper phasing (a larger rebuild of the ring, sun and planets), or keep the current teeth and thin them so they clear, which will look less like a real gear and may not mesh smoothly."
   }
  ],
  "defaultAnswer": true,
- "tabTools": true
+ "tabTools": true,
+ "samePart": true,
+ "planGoesOn": true
 }
