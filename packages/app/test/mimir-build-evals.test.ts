@@ -765,11 +765,11 @@ describe('build eval scoring', () => {
   })
 
   it('knows which recorded replays disagree: their last check failed and the scorer passes them', () => {
-    // twisted-vase failed its last check live too. phone-stand-lip's and coat-hook's last check failed live on the
-    // minimum wall (0.23 and 0.45 mm) while the scorer passes them. cable-clip left this list when the scorer read its
-    // 0.41 mm floor as design.check does
+    // twisted-vase failed its last check live too. coat-hook's last check failed live on the minimum wall (0.45 mm)
+    // while the scorer passes it. cable-clip left this list when the scorer read its 0.41 mm floor as design.check does,
+    // and phone-stand-lip when the scorer read its 0.23 mm wedge as design.check does
     const disagree = BUILD_CASES.filter((c) => loadRecording(c.id)?.score.verdict === 'disagree').map((c) => c.id)
-    expect(disagree).toEqual(['twisted-vase', 'phone-stand-lip', 'coat-hook'])
+    expect(disagree).toEqual(['twisted-vase', 'coat-hook'])
   })
 
   it('prices a live run on Haiku or Sonnet 5.5 and refuses a model with no price', () => {
