@@ -240,6 +240,30 @@ jobs:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
       - run: pnpm test:scripts
 
+  # The tests that replay recorded geometry engine replies, with no engine built (scripts/ci/replay-fixtures.sh). The web
+  # job runs them live, so a recording that no longer matches the calls a test makes shows only here. No wasm build:
+  # about the time of the install and these files.
+  replay:
+    needs: detect
+    if: needs.detect.outputs.node == 'true' && needs.detect.outputs.queued != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/replay-fixtures.sh
+        env:
+          SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
+      - if: always()
+        run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
+        env:
+          SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
+
   rust:
     needs: detect
     # Also in a duplicate run, whose detect is skipped (the concurrency comment above): a skipped matrix job reports as

@@ -32,7 +32,8 @@ interface GeomExports {
 }
 
 const wasmPath = process.env['SX_GEOM_WASM'] ?? join(__dirname, '..', '..', 'geom', 'wasm', 'pkg', 'sx_geom_wasm.wasm')
-export const liveEngine = existsSync(wasmPath)
+// SX_GEOM_REPLAY=1 replays the recordings even with an engine built, so they are checked against the code as it is.
+export const liveEngine = process.env['SX_GEOM_REPLAY'] !== '1' && existsSync(wasmPath)
 
 async function wasmEngine(record: (r: Recorded) => void): Promise<EngineCall> {
   const { instance } = (await WebAssembly.instantiate(readFileSync(wasmPath), {})) as unknown as { instance: WebAssembly.Instance }
