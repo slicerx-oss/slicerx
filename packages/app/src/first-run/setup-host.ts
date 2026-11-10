@@ -7,7 +7,7 @@
 // Secrets arrive inside the connection, reach a keychain or nowhere, and are never returned or kept.
 import type { Host, PrinterInfo } from '@slicerx/contracts'
 import { connectionMethod, modelById, searchModels, brandById, type ConnectionId } from '@slicerx/printer-catalog'
-import { parseAddress } from './printer-form'
+import { parseAddress, type HandFilament } from './printer-form'
 import { addHandPrinter, isExportOnly, LEGACY_SETUP_KEY, type HandPrinter } from '../lib/hand-printers'
 import { get, set } from '../state/store'
 import { bridgeConnector, connectBridge } from '../link/bridge'
@@ -59,7 +59,9 @@ export function setupHostFor(host: Host): AppSetupHost {
         keepNozzles(printerId, input)
         return { printerId }
       }
-      const added = await (await ready()).addPrinter(input)
+      // the bridge's printer reports its own filament units; the wizard's choice is for a printer saved by hand
+      const { filament: _picked, ...bridged } = input
+      const added = await (await ready()).addPrinter(bridged)
       // The host's list changed: the picker and Printers read it again.
       set((s) => ({ linkEpoch: s.linkEpoch + 1 }))
       keepNozzles(added.printerId, input)
@@ -79,7 +81,7 @@ export function keepNozzles(printerId: string, input: { nozzleMm: number; nozzle
 }
 
 /** A hand-added printer as the store keeps it: the model and brand from the catalog, and the address without its code. */
-export function handRecord(input: { profileId: string; name?: string; connection?: { family: string; address: string; serial?: string } }): Omit<HandPrinter, 'id'> {
+export function handRecord(input: { profileId: string; name?: string; connection?: { family: string; address: string; serial?: string }; filament?: HandFilament | undefined }): Omit<HandPrinter, 'id'> {
   const model = modelById(input.profileId)
   const fs = model?.filamentSystem
   const c = input.connection
@@ -95,7 +97,8 @@ export function handRecord(input: { profileId: string; name?: string; connection
     vendor: (model && brandById(model.brand)?.name) ?? 'Custom',
     model: model?.name ?? (input.name?.trim() || input.profileId),
     nozzleCount: model?.nozzleCount ?? 1,
-    ...(fs === 'ams' || fs === 'mmu' || fs === 'toolchanger' ? { filamentSystem: fs } : {}),
+    // the wizard's filament system and slots over the catalog's: a single spool picked on an AMS model has none
+    ...(input.filament ? (input.filament.system === 'single' ? {} : { filamentSystem: input.filament.system, slotCount: input.filament.slots }) : fs === 'ams' || fs === 'mmu' || fs === 'toolchanger' ? { filamentSystem: fs } : {}),
     ...(c && c.family !== 'export' ? { connection: { family: c.family, address: c.address, needsSecret, ...(c.serial ? { serial: c.serial } : {}) } } : {}),
   }
 }

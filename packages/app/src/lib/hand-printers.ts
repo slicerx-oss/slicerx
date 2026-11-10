@@ -4,7 +4,7 @@
 // printer bridge was there to keep its access code. They live in the app store and join the host's
 // printers, so the printer picker, Printers and the slice profile see them like any other printer.
 // They take no jobs: Print exports the G-code for USB or an SD card.
-import type { PrinterConnection, PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/contracts'
+import type { FilamentSlot, PrinterConnection, PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import type { HandPrinter } from '../state/prefs'
 import { get, set } from '../state/store'
 
@@ -25,11 +25,21 @@ function info(h: HandPrinter): PrinterInfo {
   return { id: h.id, name: h.name, vendor: h.vendor, model: h.model, plugin: EXPORT_PLUGIN, nozzleCount: h.nozzleCount, ...(h.filamentSystem ? { filamentSystem: h.filamentSystem } : {}) }
 }
 
-function status(id: string): PrinterStatus {
-  return { printerId: id, state: 'idle', nozzles: [], slots: [], cameraAvailable: false, updatedAt: new Date(0).toISOString() }
+const hand = (id: string) => get().handPrinters.find((h) => h.id === id)
+
+/**
+ * The slots picked in setup, empty and in order: an AMS unit's by letter and place ("A1" to "A4", then "B1"), any other
+ * unit's by number. None for a single spool, or a printer added before setup kept its slots.
+ */
+export function handSlots(h: Pick<HandPrinter, 'filamentSystem' | 'slotCount'>): FilamentSlot[] {
+  const n = h.filamentSystem && h.slotCount ? h.slotCount : 0
+  return Array.from({ length: n }, (_, i) => ({ id: h.filamentSystem === 'ams' ? `${String.fromCharCode(65 + Math.floor(i / 4))}${(i % 4) + 1}` : String(i + 1) }))
 }
 
-const hand = (id: string) => get().handPrinters.find((h) => h.id === id)
+function status(id: string): PrinterStatus {
+  const h = hand(id)
+  return { printerId: id, state: 'idle', nozzles: [], slots: h ? handSlots(h) : [], cameraAvailable: false, updatedAt: new Date(0).toISOString() }
+}
 
 function noJobs(id: string): never {
   throw new Error(`${hand(id)?.name ?? id} has no connection. Export the G-code and copy it to the printer.`)

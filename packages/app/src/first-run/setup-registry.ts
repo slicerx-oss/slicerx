@@ -3,6 +3,7 @@
 // The printer setup host registry, kept apart from setup-host.ts so the shell (link/bridge.ts)
 // does not carry the setup screens' form and the printer catalog before anyone opens them.
 import { tunnelProblemOf, type Host, type PrinterConnection, type PrinterHardware, type PrinterSetupHost, type PrinterState, type TunnelProblem } from '@slicerx/contracts'
+import type { HandFilament } from './printer-form'
 
 export type TestStepId = 'reach' | 'sign_in' | 'read_state' | 'read_temperatures'
 export const TEST_STEPS: readonly { id: TestStepId; label: string }[] = [
@@ -97,7 +98,11 @@ export interface AppSetupHost extends PrinterSetupHost {
   probe?(host: string, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<FoundPrinter[]>
   testConnection(connection: PrinterConnection, onStep?: (steps: TestStep[]) => void, opts?: { signal?: AbortSignal; trustFingerprint?: string }): Promise<TestOutcome>
   /** `credentialKept: 'session'`: the system keychain refused the code, so it lasts until the app closes. */
-  addPrinter(input: { profileId: string; nozzleMm: number; nozzles?: number[]; connection?: PrinterConnection; name?: string }): Promise<{ printerId: string; credentialKept?: 'session' }>
+  /**
+   * `filament`: the filament system and slots picked in the wizard, kept on a printer saved by hand (one no printer
+   * bridge keeps), whose slots the app shows from it. A printer a bridge keeps reports its own.
+   */
+  addPrinter(input: { profileId: string; nozzleMm: number; nozzles?: number[]; connection?: PrinterConnection; name?: string; filament?: HandFilament }): Promise<{ printerId: string; credentialKept?: 'session' }>
   /**
    * A new Obico address for a printer already reached through Obico: the tunnel host and its `user:password`. Only the
    * host and the stored access change. Absent when the bridge cannot take one.
