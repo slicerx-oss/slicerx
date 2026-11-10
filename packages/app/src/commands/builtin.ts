@@ -3,7 +3,8 @@
 // Commands from every workspace, registered at launch so Cmd+K and Pilot see
 // them before a workspace has loaded. Workspace modules stay lazy.
 import type { CommandSpec, EasySettings, Host, SmartLayerMode, SpeedPreset, SupportMode } from '@slicerx/contracts'
-import { goalEasy } from '../adapters/config'
+import { goalEasy, goalShows } from '../adapters/config'
+import { goalSubtitle } from '../lib/estimate-line'
 import { confirmDiscard } from '../project/unsaved'
 import { gcodeView, pickGcodeFile, setGcodePanel } from '../workspaces/preview/gcode-file'
 import { cancelSlice, clearPlate, exportGcode, loadDefaultPlate, loadDemoModel, openModelFiles, removeSelected, slicePlate } from '../state/actions'
@@ -43,6 +44,16 @@ const hasJob = () => {
   return s.plate.length > 0 || s.plates.length > 1 || s.plates.some((p) => p.objects.length > 0) || s.projectSettings !== null || s.projectPrinter !== null
 }
 const sliced = () => get().slice.status === 'done'
+
+const GOAL_NAMES: readonly [Exclude<Goal, 'custom'>, string][] = [['draft', 'Draft'], ['standard', 'Standard'], ['fine', 'Fine'], ['strong', 'Strong']]
+
+/** A Goal command's title: "Goal: Strong (6 walls)", with what the goal gives on the printer in use (goalShows). */
+export function goalTitle(goal: Exclude<Goal, 'custom'>, name: string, goalValues?: Parameters<typeof goalShows>[1]): string {
+  const sub = goalSubtitle(goal, goalShows(goal, goalValues))
+  const what = [sub, goal === 'draft' ? 'fastest' : ''].filter(Boolean).join(', ')
+  return `Goal: ${name}${what ? ` (${what})` : ''}`
+}
+
 /** A slice whose plate can print: no strike in it, and not from before objects were moved too close or too tall by object. */
 const exportable = () => sliced() && printBlock(get()) === null
 
@@ -91,9 +102,19 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     { id: 'slice-cancel', title: 'Cancel slicing', section: 'slice', keywords: ['stop', 'abort'], enabled: () => get().slice.status === 'running', run: cancelSlice },
     { id: 'export-gcode', title: 'Export G-code', section: 'slice', keywords: ['save', 'download', 'file'], shortcut: 'Mod+Shift+E', workspace: 'prepare', enabled: exportable, run: () => exportGcode(host) },
   )
-  const goals: [Exclude<Goal, 'custom'>, string][] = [['draft', 'Draft (0.28 mm, fastest)'], ['standard', 'Standard (0.20 mm)'], ['fine', 'Fine (0.12 mm)'], ['strong', 'Strong (5 walls, 35% infill)']]
-  for (const [goal, label] of goals) {
-    out.push({ id: `goal-${goal}`, title: `Goal: ${label}`, section: 'settings', keywords: ['quality', 'preset', 'layer height', goal], workspace: 'prepare', tool: { permission: 'slice' }, run: () => setEasy(goalEasy(goal), goal) })
+  for (const [goal, name] of GOAL_NAMES) {
+    out.push({
+      id: `goal-${goal}`,
+      // read when the palette lists it, from the same values as the Goal tile's subtitle, so the two always agree
+      get title() {
+        return goalTitle(goal, name, get().profile?.goalValues)
+      },
+      section: 'settings',
+      keywords: ['quality', 'preset', 'layer height', goal],
+      workspace: 'prepare',
+      tool: { permission: 'slice' },
+      run: () => setEasy(goalEasy(goal), goal),
+    })
   }
   const speeds: [SpeedPreset, string][] = [['quality', 'Quality (50%)'], ['balanced', 'Balanced (100%)'], ['fast', 'Fast (124%)'], ['fastest', 'Fastest (166%)']]
   for (const [speed, label] of speeds) {

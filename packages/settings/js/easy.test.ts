@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { EASY_GOALS, EASY_DEFAULTS } from '@slicerx/contracts/settings'
 import type { EasySettings, PrintConfig } from '@slicerx/contracts/settings'
 import cases from '../fixtures/easy-cases.json'
-import { EASY_MAP, applyEasy, defaultWallGenerator, easyControlFor, goalEasy, layerConfig, matchGoal } from './easy'
+import { EASY_MAP, applyEasy, defaultWallGenerator, easyControlFor, goalEasy, layerConfig, matchGoal, strengthOutcome } from './easy'
 
 interface Case {
   name: string
@@ -73,5 +73,16 @@ describe("SlicerX's preset defaults on a printer layer", () => {
   it('give other printers aegis walls', () => {
     expect(layerConfig({ printer_model: 'Original Prusa MK4S', wall_generator: 'arachne' }, easy, new Set())['wall_generator']).toBe('aegis')
     expect(layerConfig({ printer_model: 'Elegoo Centauri Carbon', wall_generator: 'classic' }, easy, new Set())['wall_generator']).toBe('aegis')
+  })
+})
+
+describe('what the Strength control sets', () => {
+  it('reads the walls and infill from the rules a slice applies', () => {
+    expect(strengthOutcome(0)).toEqual({ walls: 2, infill: 10 })
+    expect(strengthOutcome(100)).toEqual({ walls: 6, infill: 40 })
+    // SlicerX's own Strong goal
+    expect(strengthOutcome(goalEasy('strong').strength)).toEqual({ walls: 5, infill: 35 })
+    const cfg = applyEasy(goalEasy('strong'), {} as PrintConfig)
+    expect([cfg['wall_loops'], cfg['sparse_infill_density']]).toEqual([5, 35])
   })
 })

@@ -68,3 +68,27 @@ describe('command registry', () => {
     expect(perKeystroke).toBeLessThan(16)
   })
 })
+
+describe('the Goal commands', () => {
+  it('name what each goal gives exactly as the Goal tiles do, from the printer in use', async () => {
+    const { set } = await import('../src/state/store')
+    const { goalEasy, goalShows } = await import('../src/adapters/config')
+    const { goalSubtitle } = await import('../src/lib/estimate-line')
+    const { strengthOutcome } = await import('@slicerx/settings/easy')
+    const strong = () => builtinCommands(host, []).find((c) => c.id === 'goal-strong')!
+    set({ profile: null })
+    // SlicerX's own Strong: its walls come from the Strength rule at the goal's strength, the number a slice gets
+    const own = strengthOutcome(goalEasy('strong').strength)
+    expect(own).toEqual({ walls: 5, infill: 35 })
+    expect(strong().title).toBe(`Goal: Strong (${goalSubtitle('strong', goalShows('strong'))})`)
+    expect(strong().title).toBe('Goal: Strong (5 walls)')
+    // a printer whose own Strong preset prints 6 walls: the tile and the command both say so, read when listed
+    const cmd = strong()
+    const goalValues = { draft: { layer_height: 0.24 }, standard: { layer_height: 0.2 }, fine: { layer_height: 0.12 }, strong: { layer_height: 0.2, wall_loops: 6 } }
+    set({ profile: { goalValues } as never })
+    expect(goalSubtitle('strong', goalShows('strong', goalValues))).toBe('6 walls')
+    expect(cmd.title).toBe('Goal: Strong (6 walls)')
+    expect(builtinCommands(host, []).find((c) => c.id === 'goal-draft')!.title).toBe('Goal: Draft (0.24 mm, fastest)')
+    set({ profile: null })
+  })
+})

@@ -254,6 +254,15 @@ export function goalEasy(goal: EasyGoal): EasySettings {
   return { ...EASY_MAP.goals[goal] }
 }
 
+/**
+ * The walls and infill percent the Strength control sets at `strength` (0 to 100), read from the same rules applyEasy
+ * runs, so a label that names them (the Strong goal, the slider's ends) never drifts from what a slice gets.
+ */
+export function strengthOutcome(strength: number): { walls: number; infill: number } {
+  const out = applyEasy({ ...EASY_MAP.goals.standard, strength }, {} as PrintConfig, new Set(['strength']))
+  return { walls: num(firstOf(out['wall_loops'])), infill: num(firstOf(out['sparse_infill_density'])) }
+}
+
 function alias(name: string, v: string): string {
   return EASY_MAP.controls[name]?.aliases?.[v] ?? v
 }
