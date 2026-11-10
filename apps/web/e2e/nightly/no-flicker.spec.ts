@@ -125,7 +125,9 @@ async function start(page: Page, workspace: 'prepare' | 'preview'): Promise<void
     else await appReady(page)
     const at = loads
     // The example plate waits for Slice plate at launch, so setup slices it the way a person would.
-    await page.getByRole('button', { name: 'Slice plate', exact: true }).first().click()
+    // A covered or replaced Slice plate button gets a time limit, so a stuck setup fails with a reason (issue 2154)
+    // instead of retrying until the whole step is stopped.
+    await page.getByRole('button', { name: 'Slice plate', exact: true }).first().click({ timeout: 30_000 })
     await sliced(page, () => loads !== at || networkDropped(page) !== undefined)
     await settle(page)
     const what = networkDropped(page)

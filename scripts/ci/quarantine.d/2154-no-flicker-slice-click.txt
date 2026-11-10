@@ -1,0 +1,1 @@
+moving a part and the slice after it change the Prepare view once | subydoo-ci | 2026-11-10 | https://github.com/slicerx-oss/slicerx/issues/2154 | stalls at the Slice plate click in setup and ran past the 300 s GPU timing step in most merge groups from about 18:55 UTC on 2026-11-10; the click now fails after 30 s
