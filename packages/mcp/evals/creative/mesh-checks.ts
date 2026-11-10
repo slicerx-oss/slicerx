@@ -3,6 +3,7 @@
 // Mesh checks for the creative prompt set, in plain TypeScript over the parts a design tool added, so they run
 // without the geometry engine: closed shells, body count, thinnest wall, bed fit and the gap between moving bodies.
 import type { MeshPart } from '@slicerx/contracts'
+import { WALL_BUDGET, minWall as wallFromEvery, type WallBudget } from '../../src/body-facts'
 
 type V3 = [number, number, number]
 
@@ -248,10 +249,31 @@ function rayHit(o: V3, d: V3, a: V3, b: V3, c: V3): number {
 }
 
 export interface WallReport {
-  /** The thinnest wall found, as the low percentile of the samples (single corner rays do not decide it), mm. */
+  /**
+   * The thinnest wall found, mm: from every facet with design.check's wall read (wallFromEvery, held to LEAVING), so a
+   * pinch over a small area counts; for a part too dense for that, the low percentile of the area-weighted samples.
+   */
   minWallMm: number
   samples: number
+  /** every facet, or sampled for a part too dense to read every facet of */
+  how?: 'every facet' | 'sampled'
 }
+
+/**
+ * Which parts have every facet read: the ones design.check reads (WALL_BUDGET's facet cap), with more time, so a slow
+ * machine reads the same wall. A finer mesh than that has sub-millimeter ledges and sharp rims whose rays read
+ * almost nothing though the wall is whole, and design.check does not read it either: it is sampled.
+ */
+const EVERY_FACET: WallBudget = { maxFacets: WALL_BUDGET.maxFacets, maxMs: 60_000 }
+
+/**
+ * The cosine over which a ray must leave through the far facet to read a wall here, stricter than design.check's. A
+ * ray that leaves almost along the far face starts next to an edge where two faces meet at near a right angle, like
+ * the rim of a tube cut at a slant: it reads how near the facet's center is to that edge (0.07 to 0.3 mm on the
+ * recorded spouts, leaving at cosines of 0.10 to 0.2), not a wall. A real thin floor, such as the cable clip's 0.41
+ * mm between its countersink and its bore, leaves at about 0.5.
+ */
+const LEAVING = 0.3
 
 /** Low percentile of the thickness samples that counts as the wall: thin regions win, one stray corner ray does not. */
 const WALL_PERCENTILE = 0.02
@@ -261,6 +283,10 @@ const WALL_PERCENTILE = 0.02
  * run), a ray goes straight in and the distance to where it leaves the material is the local thickness.
  */
 export function minWall(parts: MeshPart[], maxSamples = 600): WallReport {
+  // every facet first, the way design.check reads the wall, so a pinch that no sample lands on is still found
+  const facets = parts.reduce((n, p) => n + Math.floor(p.indices.length / 3), 0)
+  const every = facets ? wallFromEvery(parts, EVERY_FACET, undefined, LEAVING) : { mm: null }
+  if (every.mm !== null) return { minWallMm: every.mm, samples: facets, how: 'every facet' }
   const thick: number[] = []
   for (const part of parts) {
     const w = weld(part)
@@ -304,7 +330,7 @@ export function minWall(parts: MeshPart[], maxSamples = 600): WallReport {
   if (!thick.length) return { minWallMm: 0, samples: 0 }
   thick.sort((x, y) => x - y)
   const at = Math.min(thick.length - 1, Math.floor(thick.length * WALL_PERCENTILE))
-  return { minWallMm: Math.round((thick[at] ?? 0) * 1000) / 1000, samples: thick.length }
+  return { minWallMm: Math.round((thick[at] ?? 0) * 1000) / 1000, samples: thick.length, how: 'sampled' }
 }
 
 // ---------------------------------------------------------------------------

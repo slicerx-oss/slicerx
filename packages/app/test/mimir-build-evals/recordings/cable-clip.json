@@ -2688,9 +2688,9 @@
   }
  ],
  "score": {
-  "pass": true,
-  "verdict": "disagree",
-  "geometry": true,
+  "pass": false,
+  "verdict": "fail",
+  "geometry": false,
   "built": true,
   "refused": false,
   "extra": 0,
@@ -2698,7 +2698,7 @@
    "ops": true,
    "watertight": true,
    "bodies": true,
-   "minWall": true,
+   "minWall": false,
    "bedFit": true,
    "sizes": true
   }

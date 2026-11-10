@@ -261,9 +261,10 @@ const MAX_ENTRIES = 4_000_000
  * The thinnest wall: from the center of every facet a ray goes in, against its outward normal, to the first facet of
  * the same part it meets on the far side. The shortest such distance over every part. Each part's facets sit in a
  * uniform grid, so a ray only tests the facets of the cells it passes through. Over the budget (too many facets, or too
- * long) the reading is null with why "part too dense".
+ * long) the reading is null with why "part too dense". A far facet counts when the ray leaves through it at a cosine
+ * over `leaving` to its normal (GRAZE unless given).
  */
-export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now()): WallReading {
+export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now(), leaving = GRAZE): WallReading {
   const facets = meshes.reduce((n, m) => n + Math.floor(m.indices.length / 3), 0)
   if (facets > budget.maxFacets) return { mm: null, why: TOO_DENSE }
   const start = now()
@@ -271,7 +272,7 @@ export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGE
   if (late()) return { mm: null, why: TOO_DENSE }
   let best = Infinity
   for (const m of meshes) {
-    const r = partWall(m, best, late)
+    const r = partWall(m, best, late, leaving)
     if (r === null) return { mm: null, why: TOO_DENSE }
     best = r
   }
@@ -293,7 +294,7 @@ function shareEdge(tri: Float64Array, a: number, b: number): boolean {
 }
 
 /** The thinnest wall of one part, no more than `bestSoFar`; null when `late` says the time ran out. */
-function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | null {
+function partWall(m: Mesh, bestSoFar: number, late: () => boolean, leaving: number): number | null {
   const tris = Math.floor(m.indices.length / 3)
   if (tris === 0) return bestSoFar
   // every facet's corners, nine numbers each
@@ -430,7 +431,7 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | nul
         // a facet sharing an edge with this one is its neighbor on the same surface, never the far side of a wall
         if (d > 1e-6 && d < hit && !shareEdge(tri, b, f * 9)) {
           hit = d
-          leaves = facing(tri, f * 9, d0, d1, d2) > GRAZE
+          leaves = facing(tri, f * 9, d0, d1, d2) > leaving
         }
       }
       const exit = Math.min(t0, t1, t2)

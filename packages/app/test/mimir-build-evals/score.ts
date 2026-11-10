@@ -361,9 +361,10 @@ function boxAndLid(parts: MeshPart[]): { bodies: Body[]; box: Body; lid: Body } 
  * and one over the other, so it neither fuses to the box nor binds. The gap is read from each corner and edge middle of
  * either body straight across to the faces of the other (nearestGaps).
  */
-export function lidCheck(m: PilotMachine, parts: MeshPart[]): Check {
+export function lidCheck(m: PilotMachine, parts: MeshPart[], stated: LidStated = 'assembled'): Check {
   const found = boxAndLid(parts)
   if ('why' in found) return { pass: false, detail: found.why }
+  if (stated === 'apart') return lidApart(found)
   const { box, lid } = found
   const a = nearestGaps(lid.tri, box.tri, LID_REACH_MM)
   const b = nearestGaps(box.tri, lid.tri, LID_REACH_MM)
@@ -386,6 +387,43 @@ export function lidCheck(m: PilotMachine, parts: MeshPart[]): Check {
   // only edges and corners face each other (knuckles side by side at a slant): the nearest gap is held as a side gap
   if (!judged.length) judged.push({ mm: mm3(near), where: 'from', fit: need(mm3(near), 'xy'), pass: need(mm3(near + FACET_MM), 'xy').outcome === 'slides' })
   return { pass: judged.every((g) => g.pass), detail: judged.map((g) => `lid ${g.mm} mm ${g.where} the box (want ${g.fit.suggestedGapMm} mm or more${g.pass && g.fit.outcome !== 'slides' ? `; within ${FACET_MM} mm counts, as facets of a round face` : ''})`).join(', ') }
+}
+
+/** How the run's plan says the lid prints: on its hinge (the default), or laid apart to be put on after. */
+export type LidStated = 'assembled' | 'apart'
+
+/** Words of an assumption that put the lid apart from its box to print. */
+const APART_WORDS = /\b(apart|beside the box|next to the box|separately|side by side|laid flat)\b/i
+
+/**
+ * How the run's last plan says its lid prints: apart when printInPlace is false or an assumption puts it apart,
+ * otherwise assembled on its hinge.
+ */
+export function lidStated(events: readonly PilotEvent[]): LidStated {
+  let said: LidStated = 'assembled'
+  const ok = new Set(events.flatMap((e) => (e.type === 'tool_result' && e.ok !== false ? [e.callId] : [])))
+  for (const e of events) {
+    if (e.type !== 'tool_call' || e.tool !== 'design.plan' || !ok.has(e.callId)) continue
+    const plan = e.input as { printInPlace?: unknown; assumptions?: unknown } | null
+    const assumed = Array.isArray(plan?.assumptions) && plan.assumptions.some((a) => typeof a === 'string' && APART_WORDS.test(a))
+    said = plan?.printInPlace === false || (!Array.isArray(plan?.printInPlace) && assumed) ? 'apart' : 'assembled'
+  }
+  return said
+}
+
+/** How far a lid printed apart stands from its box at least, mm. */
+const APART_MM = 2
+/** How far above the lowest point of the part a body may start and still rest on the bed, mm. */
+const ON_BED_MM = 0.05
+
+/** A lid stated as printed apart: a piece of its own, at least APART_MM from the box, and every body on the bed. */
+function lidApart({ bodies, box, lid }: { bodies: Body[]; box: Body; lid: Body }): Check {
+  const near = Math.min(nearestGaps(lid.tri, box.tri, APART_MM).near, nearestGaps(box.tri, lid.tri, APART_MM).near)
+  if (Number.isFinite(near)) return { pass: false, detail: `the lid is planned apart but comes within ${Math.round(near * 1000) / 1000} mm of the box (want ${APART_MM} mm or more)` }
+  const bed = Math.min(...bodies.map((b) => b.min[2]!))
+  const up = bodies.filter((b) => b.min[2]! > bed + ON_BED_MM)
+  if (up.length) return { pass: false, detail: `the lid is planned apart, but ${up.length} of ${bodies.length} bodies do not rest on the bed (lowest ${Math.round((up[0]!.min[2]! - bed) * 100) / 100} mm up)` }
+  return { pass: true, detail: `the lid lies apart, ${APART_MM} mm or more from the box, and every body rests on the bed` }
 }
 
 /**
@@ -578,9 +616,10 @@ function nearLine(b: Body, at: V3, dir: V3, reach: number): Float64Array {
  * around the lid's own pin, or one separate pin runs inside both a knuckle of the box and a knuckle of the lid. A lid
  * laid apart, with no pin, or with a pin through one part only, fails.
  */
-export function hingeCheck(parts: MeshPart[]): Check {
+export function hingeCheck(parts: MeshPart[], stated: LidStated = 'assembled', m?: PilotMachine): Check {
   const found = boxAndLid(parts)
   if ('why' in found) return { pass: false, detail: found.why }
+  if (stated === 'apart') return pinMates(found, m)
   const { bodies, box, lid } = found
   const axes = hingeAxes(bodies, box, lid)
   if (!axes.length) return { pass: false, detail: 'no pin and no knuckle bore to read a hinge from' }
@@ -635,6 +674,40 @@ export function hingeCheck(parts: MeshPart[]): Check {
   const r = (v: number) => Math.round(v * 10) / 10
   const held = best.held ? `held by ${best.pin}` : best.pin === 'no pin' ? 'no pin runs through the knuckles' : best.pin
   return { pass: best.held, detail: `${along(best)}: the box wraps it over ${r(best.box)} mm and the lid over ${r(best.lid)} mm, ${held}` }
+}
+
+/** How much bigger than its pin a bore may be, mm across the gap, and still hold a hinge rather than rattle. */
+const LOOSE_MM = 1
+
+/**
+ * A hinge whose lid prints apart: a separate pin (a rod among the bodies) that slides into a round bore of the box and
+ * a round bore of the lid, each bore wider than the pin by the side gap the fit rule says a sliding fit needs and by no
+ * more than LOOSE_MM. A lid with no pin, or a pin that fits only one part, cannot be put on its hinge.
+ */
+function pinMates({ bodies, box, lid }: { bodies: Body[]; box: Body; lid: Body }, m?: PilotMachine): Check {
+  const pins = bodies
+    .filter((b) => b !== box && b !== lid)
+    .flatMap((b) => {
+      const [thin, wide, long] = [0, 1, 2].map((k) => b.max[k]! - b.min[k]!).sort((x, y) => x - y) as [number, number, number]
+      return long >= ROD_MM && wide <= ROD_SHARE * long && thin > 0 ? [wide] : []
+    })
+  if (!pins.length) return { pass: false, detail: 'the lid is planned apart but no separate pin was built, so nothing joins it to the box' }
+  const bores = (b: Body) => {
+    const n = b.tri.length / 3
+    return holeLoops({ positions: Array.from(b.tri), indices: Array.from({ length: n }, (_, i) => i) }).map((h) => h.diameterMm)
+  }
+  const [inBox, inLid] = [bores(box), bores(lid)]
+  const slides = (pin: number, bore: number) => {
+    const gap = (bore - pin) / 2
+    if (gap <= 0 || gap > LOOSE_MM) return false
+    if (!m) return true
+    return assessFit({ gapMm: gap + FACET_MM, feature: 'print_in_place', direction: 'xy', layerHeight: m.nozzle / 2, lineWidth: m.nozzle * 1.05, nozzle: m.nozzle, material: m.material }).outcome === 'slides'
+  }
+  const r = (v: number) => Math.round(v * 100) / 100
+  const fits = pins.find((p) => inBox.some((d) => slides(p, d)) && inLid.some((d) => slides(p, d)))
+  if (fits !== undefined) return { pass: true, detail: `a ${r(fits)} mm pin slides into a bore of the box and a bore of the lid` }
+  const where = (ds: number[]) => (ds.length ? ds.map((d) => `${r(d)} mm`).join(', ') : 'none')
+  return { pass: false, detail: `the lid is planned apart, but no pin (${pins.map((p) => `${r(p)} mm`).join(', ')}) slides into both a bore of the box (${where(inBox)}) and one of the lid (${where(inLid)})` }
 }
 
 /** One design.check call of a run, as its results row keeps it: the plan it checked, and how it came out. */
@@ -732,8 +805,9 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   const shown = groups.length > 1 ? groups.map((g) => g.join(' by ')).join(', ') : sizeOf(run.parts).join(' by ')
   out.sizes = { pass: off.length === 0, detail: `${shown} mm${off.length ? `; off: ${off.map((s) => `${s.axis} ${side(s.axis)} (want ${s.minMm} to ${s.maxMm})`).join(', ')}` : ''}` }
   if (c.hook) out.hook = hookCheck(c.hook, run.parts)
-  if (c.lid) out.lid = lidCheck(c.machine, run.parts)
-  if (c.lid) out.hinge = hingeCheck(run.parts)
+  const stated = lidStated(run.events)
+  if (c.lid) out.lid = lidCheck(c.machine, run.parts, stated)
+  if (c.lid) out.hinge = hingeCheck(run.parts, stated, c.machine)
   out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : []), ...(out.lid ? [out.lid] : []), ...(out.hinge ? [out.hinge] : [])].every((x) => x.pass)
   out.pass = out.geometry && turns.pass
   out.verdict = verdictOf(out, claim)
