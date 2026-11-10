@@ -508,6 +508,24 @@ fn contact_part(hang: &Shapes, w: i32) -> Shapes {
         .collect()
 }
 
+/// The part of overhang `hang` that support standing only on the bed can hold up: what is not over the part's
+/// footprint `below`. An island the part cuts keeps only what is left wide enough for a column (1.5 support lines
+/// `w`, as [`open`]); an island clear of the part stays whole, so the thin strips under a slope still stack.
+/// Otherwise the grid would stretch a sliver at the part's edge into a full cell of support around the part,
+/// where nothing hangs over the bed.
+fn reachable(hang: &Shapes, below: &Shapes, w: i32) -> Shapes {
+    let mut out: Shapes = Vec::new();
+    for island in hang {
+        let one = vec![island.clone()];
+        if perimeters::intersection(&one, below).is_empty() {
+            out.push(island.clone());
+        } else {
+            out.extend(open(&perimeters::difference(&one, below), w));
+        }
+    }
+    out
+}
+
 /// [`columns`] with the layer each column starts on given per overhang: `starts[i]` lists the
 /// overhang layers whose column begins on layer `i`. With `landing`, also returns, per layer, the
 /// part of its top surface that columns from above come down on.
@@ -535,14 +553,19 @@ pub(crate) fn columns_from(
     let xy = units(cfg.xy_distance);
     let empty: Shapes = Vec::new();
     let model = |i: usize| models.get(i).unwrap_or(&empty);
-    // Where support may stand when it must reach the bed: not under the part.
+    // Where support may stand when it must reach the bed: not under the part. `under` is the part's own
+    // footprint below each layer, without the clearance: what an overhang starting there has no way down past.
     let mut allowed: Vec<Option<Shapes>> = Vec::new();
+    let mut under: Vec<Shapes> = Vec::new();
     if cfg.on_build_plate_only {
         let mut shadow: Shapes = Vec::new();
+        let mut footprint: Shapes = Vec::new();
         for i in 0..n {
             allowed.push(Some(shadow.clone()));
+            under.push(footprint.clone());
             let grown = perimeters::offset(model(i), xy);
             shadow = perimeters::union_all(&[&shadow, &grown]);
+            footprint = perimeters::union_all(&[&footprint, model(i)]);
         }
     }
     let mut out: Vec<SupportLayer> = vec![SupportLayer::default(); n];
@@ -551,7 +574,10 @@ pub(crate) fn columns_from(
     let mut rest: Vec<Shapes> = vec![Vec::new(); n];
     let mut column: Shapes = Vec::new();
     for i in (0..n).rev() {
-        let fresh = starting(i);
+        let fresh = match under.get(i) {
+            Some(below) if !below.is_empty() => reachable(&starting(i), below, w),
+            _ => starting(i),
+        };
         if !fresh.is_empty() {
             column = perimeters::union_all(&[&column, &fresh]);
         }
@@ -1421,6 +1447,55 @@ mod grid_tests {
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shapes {
         let p = |x: f64, y: f64| IntPoint::new(units(x), units(y));
         vec![vec![vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)]]]
+    }
+
+    /// Support from the bed only under a 40 x 20 mm cap from 13 to 15 mm on a 10 mm pillar, which stands on a 3 mm
+    /// slab from `slab_x0` to `slab_x1` (the cap spans 0 to 40), at 0.2 mm layers: per layer, the support printed.
+    fn plate_only_mushroom(slab_x0: f64, slab_x1: f64) -> Vec<Shapes> {
+        let models: Vec<Shapes> = (0..75)
+            .map(|i| match i {
+                0..15 => rect(slab_x0, 0.0, slab_x1, 20.0),
+                15..65 => rect(15.0, 0.0, 25.0, 20.0),
+                _ => rect(0.0, 0.0, 40.0, 20.0),
+            })
+            .collect();
+        let thickness = vec![0.2; models.len()];
+        let none: Vec<Shapes> = vec![Vec::new(); models.len()];
+        let cfg = SupportConfig {
+            on_build_plate_only: true,
+            ..SupportConfig::default()
+        };
+        plan(&models, &thickness, &cfg, units(0.42), &none, &none, [20.0, 10.0])
+            .into_iter()
+            .map(|l| perimeters::union_all(&[&l.base, &l.interface]))
+            .collect()
+    }
+
+    #[test]
+    fn plate_only_support_skips_an_overhang_the_part_covers_below() {
+        // The slab spans the cap: nothing under the cap reaches the bed, so no support at all, not even a ring
+        // around the slab where the grid would round the cap's edge out to whole cells.
+        let layers = plate_only_mushroom(0.0, 40.0);
+        assert!(layers.iter().all(Vec::is_empty));
+        // A 0.5 mm rim past the slab is narrower than a support column.
+        let layers = plate_only_mushroom(0.5, 39.5);
+        assert!(layers.iter().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn plate_only_support_still_holds_the_rim_past_the_part() {
+        // A 30 mm slab under the 40 mm cap: the 5 mm rims reach the bed and get support from the bed up.
+        let layers = plate_only_mushroom(5.0, 35.0);
+        let on = |x: f64, y: f64, l: &Shapes| point_in(l, units(x), units(y));
+        assert!(on(2.0, 10.0, &layers[5]) && on(38.0, 10.0, &layers[5]));
+        assert!(on(2.0, 10.0, &layers[60]) && on(38.0, 10.0, &layers[60]));
+        // Nothing beside the slab's long sides, where only the covered part of the cap hangs above.
+        let beside = |l: &Shapes| {
+            [10.0, 20.0, 30.0]
+                .iter()
+                .any(|&x| on(x, -1.0, l) || on(x, 21.0, l))
+        };
+        assert!(!layers.iter().any(beside));
     }
 
     #[test]
