@@ -126,12 +126,13 @@ describe('opening a tool', () => {
 })
 
 describe('the full engine', () => {
-  it('is there at once with a host engine (the desktop app)', () => {
+  it('is there with a host engine (the desktop app), without a call', async () => {
     const call = vi.fn(async () => true)
     setGeomProvider({ call } as unknown as GeomProvider)
     warmFullEngine()
+    // The geometry client loads on demand, so it settles a moment after the call.
+    await vi.waitFor(() => expect(fullEngine()).toBe('ready'))
     expect(call).not.toHaveBeenCalled()
-    expect(fullEngine()).toBe('ready')
   })
 
   it('loads the full module once when Design asks, before any call needs it', async () => {

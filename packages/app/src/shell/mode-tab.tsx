@@ -7,7 +7,7 @@
 // every build while it is on; a host that cannot slice shows mimir and Model.
 import { Icon } from '@slicerx/ui'
 import { useRef } from 'react'
-import { useFullEngine, warmFullEngine } from '../geom/full-engine'
+import { prefetchFullEngine, useFullEngine, warmFullEngine } from '../geom/full-engine'
 import { hostSlices, useMimirOn, useModelMode } from '../state/model-mode'
 import { setModelMode, useApp, type ModelMode } from '../state/store'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
@@ -46,8 +46,15 @@ export function ModeTabs() {
         aria-label={m.label}
         aria-busy={model && loading ? true : undefined}
         onClick={() => setModelMode(m.mode)}
-        // A pointer resting on Model starts the full geometry engine before the click.
-        onPointerEnter={model ? () => (rest.current = setTimeout(warmFullEngine, 250)) : undefined}
+        // A pointer resting on Model starts the full geometry engine before the click; its code is fetched on arrival.
+        onPointerEnter={
+          model
+            ? () => {
+                prefetchFullEngine()
+                rest.current = setTimeout(warmFullEngine, 250)
+              }
+            : undefined
+        }
         onPointerLeave={model ? () => clearTimeout(rest.current) : undefined}
       >
         <Icon name={m.icon} />

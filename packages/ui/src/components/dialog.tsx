@@ -3,6 +3,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { Button } from './button'
+import { holding, holdKeysForDialogs } from './dialog-hold'
+
+// Also installed by the theme provider at startup, so it is first on the window however late this module loads.
+holdKeysForDialogs()
 
 export interface DialogProps {
   open: boolean
@@ -28,22 +32,6 @@ export interface DialogProps {
    */
   focusPanel?: boolean
   children?: ReactNode
-}
-
-// The required dialogs on screen. While one is open it holds the keyboard. The listener is the first on the window in
-// the capture phase (added when this module loads, before any shortcut handler), so no handler sees a key: Tab, Enter
-// and Space still move between and press the dialog's own buttons, since their default actions stay.
-const holding = new Set<HTMLDialogElement>()
-if (typeof window !== 'undefined') {
-  const hold = (e: KeyboardEvent) => {
-    if (holding.size === 0) return
-    e.stopImmediatePropagation()
-    const inside = [...holding].some((d) => e.target instanceof Node && d.contains(e.target))
-    // Escape would ask the browser to close the dialog, and Chromium closes it anyway on a second press.
-    if (e.key === 'Escape' || !inside) e.preventDefault()
-  }
-  window.addEventListener('keydown', hold, true)
-  window.addEventListener('keyup', hold, true)
 }
 
 /**
