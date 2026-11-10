@@ -890,7 +890,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale and twist_deg taper and turn it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
