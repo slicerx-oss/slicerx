@@ -19,6 +19,7 @@ export interface ScoreChecks {
   bedFit?: boolean
   sizes?: boolean
   hook?: boolean
+  lid?: boolean
 }
 
 /** The parts of a score a replay must match. `pass` is the scorer's alone; `verdict` adds what the run said of its part. */
@@ -34,7 +35,7 @@ export interface ScoreSummary {
 
 export function summarize(s: CaseScore): ScoreSummary {
   const checks: ScoreChecks = { ops: s.ops.pass }
-  for (const k of ['watertight', 'bodies', 'minWall', 'bedFit', 'sizes', 'hook'] as const) if (s[k]) checks[k] = s[k]!.pass
+  for (const k of ['watertight', 'bodies', 'minWall', 'bedFit', 'sizes', 'hook', 'lid'] as const) if (s[k]) checks[k] = s[k]!.pass
   return { pass: s.pass, verdict: s.verdict, geometry: s.geometry, built: s.built, refused: s.refused, extra: s.extra, checks }
 }
 

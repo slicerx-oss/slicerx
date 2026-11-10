@@ -258,7 +258,7 @@ describe('build eval scoring', () => {
     const wide = summarize(scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 130, 110, 4)]))
     expect(wide.geometry).toBe(false)
     expect(wide.checks).toMatchObject({ watertight: true, bodies: true, minWall: true, bedFit: true, sizes: false })
-    expect(Object.keys(wide.checks).sort()).toEqual(['bedFit', 'bodies', 'ops', 'sizes', 'watertight'].concat('minWall').sort())
+    expect(Object.keys(wide.checks).sort()).toEqual(['bedFit', 'bodies', 'lid', 'minWall', 'ops', 'sizes', 'watertight'])
     // a case with a hook adds the hook; a run that built nothing has no part checks
     expect(summarize(scored('cable-hook', [box(0, 0, 0, 40, 40, 5)])).checks.hook).toBe(false)
     const none = summarize(scored('hinged-box', []))
@@ -374,6 +374,50 @@ describe('build eval scoring', () => {
     expect(held.detail).toMatch(/leg hangs 25 mm below the top of the hook/)
     const stub = hookCheck(c.hook!, [plate, rod, bar])
     expect(stub, stub.detail).toMatchObject({ pass: false })
+  })
+
+  it('holds a cable hook to the height of its bend: a hook that turns over at the top of its rise is too short', () => {
+    const c = BUILD_CASES.find((x) => x.id === 'cable-hook')!
+    const plate = box(0, 0, 0, 40, 40, 5)
+    const rod = box(15, 15, 5, 25, 25, 65)
+    // the bend rises 20 mm over the rod before it comes down: 90 mm tall
+    const up = scored('cable-hook', [plate, rod, box(15, 15, 65, 25, 25, 90), box(15, 15, 80, 65, 25, 90), box(55, 15, 50, 65, 25, 90)])
+    expect(up.sizes, up.sizes?.detail).toMatchObject({ pass: true })
+    // turned over at 65 mm, it stands 70 mm (a run kept 65 by 40 by 70)
+    const flat = scored('cable-hook', [plate, rod, box(15, 15, 60, 65, 25, 70), box(55, 15, 35, 65, 25, 70)])
+    expect(flat.sizes?.detail).toMatch(/z 70 \(want 80 to 100\)/)
+    expect(c.sizes.find((x) => x.axis === 'z')).toEqual({ axis: 'z', minMm: 80, maxMm: 100 })
+  })
+
+  it('holds a hinged box to its height closed: a lid stacked on top past the knuckles is too tall', () => {
+    // the 80 by 50 by 35 box, its lid 0.4 mm over its rim
+    const closed = scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 0, 35.4, 80, 50, 37.4)])
+    expect(closed.sizes, closed.sizes?.detail).toMatchObject({ pass: true })
+    // a lid touching the top of the 35 mm box and standing 12 mm (a run kept 80 by 50 by 47)
+    const stacked = scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 0, 35, 80, 50, 47)])
+    expect(stacked.sizes?.detail).toMatch(/z 47 \(want 33 to 45\)/)
+  })
+
+  it('reads a hinged lid as joined only when it sits on its box at a gap that prints apart', () => {
+    const lid = (parts: MeshPart[]) => scored('hinged-box', parts).lid!
+    const base = box(0, 0, 0, 80, 50, 35)
+    // 0.4 mm over the rim: the fit rule's gap for one face printed over another with a 0.4 mm nozzle
+    expect(lid([base, box(0, 0, 35.4, 80, 50, 37.4)])).toEqual({ pass: true, detail: 'lid 0.4 mm over the box (want 0.4 mm or more)' })
+    // 0.39 mm over a level rim is under it: only a round face drawn as facets gets the fit check's 0.02 mm
+    expect(lid([base, box(0, 0, 35.39, 80, 50, 37.39)]).pass).toBe(false)
+    // 0.2 mm over it fuses
+    expect(lid([base, box(0, 0, 35.2, 80, 50, 37.2)])).toEqual({ pass: false, detail: 'lid 0.2 mm over the box (want 0.4 mm or more)' })
+    // a lid flat on the rim prints as one piece with it
+    expect(lid([base, box(0, 0, 35, 80, 50, 37)])).toEqual({ pass: false, detail: 'the lid touches the box, so they print as one piece' })
+    // a lid printed open, 0.3 mm beside the box's back, passes side by side, where the rule wants 0.3 mm
+    expect(lid([base, box(0, 50.3, 0, 80, 100, 10)])).toEqual({ pass: true, detail: 'lid 0.3 mm beside the box (want 0.3 mm or more)' })
+    // laid flat 10 mm in front of it, nothing joins the lid to the box (a run kept Base and Lid so, with no pin)
+    expect(lid([base, box(0, 60, 0, 80, 110, 4)])).toEqual({ pass: false, detail: 'the lid lies apart from the box (nothing within 2 mm), so no hinge joins them' })
+    // a box alone, or with only a pin beside it, has no lid of its own
+    expect(lid([base])).toEqual({ pass: false, detail: 'one body: the lid is not a piece of its own, so it cannot open' })
+    expect(lid([base, box(0, 50.5, 33, 76, 52.5, 35)])).toEqual({ pass: false, detail: 'no lid: no other body is near the size of the box, so the lid is part of the box or missing' })
+    // the lid's check is part of the geometry
+    expect(scored('hinged-box', [base, box(0, 60, 0, 80, 110, 4)]).geometry).toBe(false)
   })
 
   // a round column from z0 to z1 around (cx, cy), r0 across at the bottom and r1 at the top, with a bore `wall` mm in
@@ -570,7 +614,7 @@ describe('build eval scoring', () => {
 
 const line = (id: string, r: CaseRun, usd?: number, model?: string): string => {
   const s = r.score
-  const checks = [s.ops, s.watertight, s.bodies, s.minWall, s.bedFit, s.sizes, s.hook].map((c, i) => (c ? `${['ops', 'closed', 'bodies', 'wall', 'bed', 'size', 'hook'][i]} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')).filter(Boolean)
+  const checks = [s.ops, s.watertight, s.bodies, s.minWall, s.bedFit, s.sizes, s.hook, s.lid].map((c, i) => (c ? `${['ops', 'closed', 'bodies', 'wall', 'bed', 'size', 'hook', 'lid'][i]} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')).filter(Boolean)
   const said = s.claim.said ? `  says ${s.claim.said} (${s.claim.from === 'check' ? 'last design.check' : 'reply'})` : ''
   return `${(s.verdict === 'fail' && s.refused ? 'REFUSED' : s.verdict.toUpperCase()).padEnd(8)} ${id.padEnd(16)} turns ${s.turns.pass ? 'ok' : 'FAIL'} (${s.turns.detail})  ${checks.join('  ')}${said}${model ? `  ${model}` : ''}${usd === undefined ? '' : `  $${usd.toFixed(3)}`}${r.error ? `  error: ${r.error}` : ''}`
 }
@@ -636,7 +680,7 @@ describe.runIf(live)('live build evals', () => {
     const out = process.env['SX_MIMIR_EVAL_OUT']
     if (out) {
       const at = new Date().toISOString()
-      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
+      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, lid: r.run.score.lid?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
     }
   })
   for (const c of cases) {

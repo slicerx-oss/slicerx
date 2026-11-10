@@ -2,13 +2,16 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Scores one build eval run on two counts. Geometry: the steps a good build uses ran, the part is one closed solid (or
 // the bodies the case allows), its walls print, it fits the bed and its main sizes are near the request, read on each
-// body or assembly rather than on the plate, since parts are laid out apart to print. Turns: the
+// body or assembly rather than on the plate, since parts are laid out apart to print; a hook holds what hangs on it,
+// and a hinged lid sits on its box at a gap that prints apart. Turns: the
 // person sends one message, confirms the dimension sheet once and presses Go on the plan once (once for each part
 // when the message asks for separate parts); any other answer, question card or nudge is an extra turn, and one extra
 // turn fails the run however good the part is. The run's verdict is pass or fail from those checks alone, or disagree
 // when what the run says of its own part (its last design.check result, else its reply) contradicts them.
-import type { MeshPart, PilotEvent } from '@slicerx/contracts'
-import { bedFit, bodyBoxes, bodyCount, closure, minWall, type BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
+import type { MeshPart, PilotEvent, PilotMachine } from '@slicerx/contracts'
+import { assessFit } from '@slicerx/pilot/evals'
+import { bedFit, bodyBoxes, bodyCount, bodyTriangles, closure, minWall, type BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
+import { hookOn, least, LIP_RISE_MM, most, surfacePoints, type V3 } from '../../../mcp/src/hook-lip'
 import type { BuildCase, HookSpec, OpMatch, SizeCheck } from './cases'
 
 export interface Check {
@@ -180,87 +183,12 @@ export function assemblySizes(parts: readonly MeshPart[]): [number, number, numb
   return [...groups.values()].map((g) => [0, 1, 2].map((k) => Math.round((g.max[k]! - g.min[k]!) * 10) / 10) as [number, number, number])
 }
 
-type V3 = [number, number, number]
-type Ring = { z: number; c: [number, number]; r: number }
-
-/** Sectors around the stem's axis that a ring of its side must reach, so a hook reaching out one side is not read as stem. */
-const SECTORS = 12
-/** Height of each ring read off the stem, mm: more than the spacing of surfacePoints along a long side (up to 60 a side). */
-const RING_MM = 5
-
-/**
- * The stem read from the part itself, whatever made it (a loft, a revolve, an extrude): rings of its outer side at
- * each height around a vertical axis through the middle of the part halfway up. A ring's radius is the median of its
- * farthest points in each sector, so a hook or arm on one side does not widen it; the stem is the run of round rings
- * that go all the way round and are no wider than half again its width halfway up, which leaves out a wide base under
- * it and whatever stands on its top. `hollow` when its side has a bore inside it halfway up. Null when there is no such column.
- */
-function stemOf(pts: readonly V3[]): { rings: Ring[]; hollow: boolean } | null {
-  const z0 = least(pts, (q) => q[2])
-  const z1 = most(pts, (q) => q[2])
-  const h = z1 - z0
-  if (h < 20) return null
-  const mid = pts.filter((q) => q[2] > z0 + 0.4 * h && q[2] < z0 + 0.6 * h)
-  if (!mid.length) return null
-  const c: [number, number] = [(least(mid, (q) => q[0]) + most(mid, (q) => q[0])) / 2, (least(mid, (q) => q[1]) + most(mid, (q) => q[1])) / 2]
-  const d = (q: V3) => Math.hypot(q[0] - c[0], q[1] - c[1])
-  const sector = (q: V3) => Math.min(SECTORS - 1, Math.floor(((Math.atan2(q[1] - c[1], q[0] - c[0]) + Math.PI) / (2 * Math.PI)) * SECTORS))
-  // each ring: the median of the farthest point in each sector, or null when a sector has none
-  const bins = Math.ceil(h / RING_MM)
-  const far: number[][] = Array.from({ length: bins }, () => new Array<number>(SECTORS).fill(-1))
-  for (const q of pts) {
-    const b = Math.min(bins - 1, Math.floor((q[2] - z0) / RING_MM))
-    const k = sector(q)
-    far[b]![k] = Math.max(far[b]![k]!, d(q))
-  }
-  // a ring is round: its lower and upper quartile sectors agree, so an arm out one side does not spoil it, while a
-  // part across the axis (an arm laid over the stem's top) is not read as stem
-  const radius = far.map((f) => {
-    if (f.some((r) => r < 0)) return null
-    const o = [...f].sort((a, b) => a - b)
-    return o[(3 * SECTORS) / 4 - 1]! <= o[SECTORS / 4 - 1]! * 1.25 ? o[SECTORS / 2]! : null
-  })
-  const half = Math.floor(bins / 2)
-  const width = radius[half]
-  if (width == null) return null
-  const isStem = (r: number | null) => r !== null && r <= width * 1.5
-  let lo = half
-  let hi = half
-  while (lo > 0 && isStem(radius[lo - 1]!)) lo--
-  while (hi < bins - 1 && isStem(radius[hi + 1]!)) hi++
-  // the end rings are cut through by the base's top and the stem's own top: read the rings inside them
-  const rings: Ring[] = []
-  for (let b = Math.min(lo + 1, hi); b <= Math.max(hi - 1, lo); b++) rings.push({ z: z0 + (b + 0.5) * RING_MM, c, r: radius[b]! })
-  if (rings.length < 2) return null
-  // a bore: points of the side well inside the stem's outer radius, all the way round, halfway up
-  const ring = pts.filter((q) => Math.floor((q[2] - z0) / RING_MM) === half)
-  const inner = new Set(ring.filter((q) => d(q) < width - 1 && d(q) > 0.5).map(sector))
-  return { rings, hollow: inner.size === SECTORS }
-}
-
-/** Points over every triangle of the parts, about 1.5 mm apart, so a long straight side is read along its length too. */
-function surfacePoints(parts: readonly MeshPart[]): V3[] {
-  const out: V3[] = []
-  for (const p of parts) {
-    const at = (i: number): V3 => [p.positions[i * 3]!, p.positions[i * 3 + 1]!, p.positions[i * 3 + 2]!]
-    for (let t = 0; t + 2 < p.indices.length; t += 3) {
-      const [a, b, c] = [at(p.indices[t]!), at(p.indices[t + 1]!), at(p.indices[t + 2]!)]
-      const edge = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), Math.hypot(c[0] - a[0], c[1] - a[1], c[2] - a[2]), Math.hypot(c[0] - b[0], c[1] - b[1], c[2] - b[2]))
-      const n = Math.min(60, Math.max(1, Math.ceil(edge / 1.5)))
-      for (let i = 0; i <= n; i++) for (let j = 0; i + j <= n; j++) out.push([0, 1, 2].map((k) => a[k]! + ((b[k]! - a[k]!) * i) / n + ((c[k]! - a[k]!) * j) / n) as V3)
-    }
-  }
-  return out
-}
 const round1 = (v: number): number => Math.round(v * 10) / 10
-/** The largest and smallest of `of` over `xs`, without spreading a large array into arguments. */
-const most = <T,>(xs: readonly T[], of: (x: T) => number): number => xs.reduce((m, x) => Math.max(m, of(x)), -Infinity)
-const least = <T,>(xs: readonly T[], of: (x: T) => number): number => xs.reduce((m, x) => Math.min(m, of(x)), Infinity)
 
 /**
- * Whether the part's hook holds what hangs on it (cases.ts HookSpec). lip reads the stem from the part itself (stemOf),
- * so a revolved, lofted or extruded stem is judged by its shape, and says whether it tapers and is hollow; leg reads the
- * rod from the part itself.
+ * Whether the part's hook holds what hangs on it (cases.ts HookSpec). lip reads the stem from the part itself (hookOn,
+ * the reading design.check holds a planned hook's lip to), so a revolved, lofted or extruded stem is judged by its
+ * shape, and says whether it tapers and is hollow; leg reads the rod from the part itself.
  */
 export function hookCheck(spec: HookSpec, parts: readonly MeshPart[]): Check {
   const pts = surfacePoints(parts)
@@ -280,38 +208,170 @@ export function hookCheck(spec: HookSpec, parts: readonly MeshPart[]): Check {
     const want = spec.rodMm + 5
     return { pass: leg >= want, detail: `leg hangs ${round1(leg)} mm below the top of the hook (want ${want} mm or more)` }
   }
-  const stem = stemOf(pts)
-  if (!stem) return { pass: false, detail: 'no round column to read the stem from' }
-  const rings = stem.rings
-  const bottom = rings[0]!
-  const top = rings.at(-1)!
-  // the stem's outer radius at a height, between its profiles and held at the ends
-  const radius = (z: number): number => {
-    if (z <= bottom.z) return bottom.r
-    for (let k = 1; k < rings.length; k++) if (z <= rings[k]!.z) return rings[k - 1]!.r + ((rings[k]!.r - rings[k - 1]!.r) * (z - rings[k - 1]!.z)) / (rings[k]!.z - rings[k - 1]!.z)
-    return top.r
+  const read = hookOn(pts)
+  if (read.found === 'no stem') return { pass: false, detail: 'no round column to read the stem from' }
+  if (read.found === 'no hook') return { pass: false, detail: 'nothing reaches out past the stem' }
+  const { stem, side, riseMm } = read
+  const lip = riseMm >= LIP_RISE_MM
+  const shape = `stem ${stem.bottomMm > stem.topMm ? 'tapers' : 'runs'} from ${stem.bottomMm} to ${stem.topMm} mm across, ${stem.hollow ? 'hollow' : 'solid'}`
+  return { pass: side && lip, detail: `${shape}; ${side ? 'leaves the stem side below its top' : 'meets the stem only at its top'}; tip ${lip ? 'rises' : 'rises only'} ${round1(riseMm)} mm above the hook's lowest point near the end (want ${LIP_RISE_MM} mm or more)` }
+}
+
+/** How near a lid must come to its box to be joined to it by a hinge, mm: past this it lies apart. */
+const LID_REACH_MM = 2
+/**
+ * How flat a face lies for the gap across it to be one over the other, as its normal's upward share (about 25 degrees
+ * off level): a slanted face, such as a chamfered lip, is held to the side gap, since its layers step past each other.
+ */
+const FLAT = 0.9
+/** A face this level is flat, not a facet near the top of a round face (a knuckle or a pin lying down). */
+const LEVEL = 0.999
+/**
+ * How far under its limit a gap may measure and still clear it, mm, as the fit check takes it: side by side, and over
+ * a round face, facets sit a little inside the round they are drawn for. A gap over a level face gets none.
+ */
+const FACET_MM = 0.02
+/** How square to a face a gap runs to count as straight across it: the cosine to its normal, about 11 degrees off. */
+const SQUARE = 0.98
+/** The smallest share of the box's largest side (its two largest sizes multiplied) a lid's largest side has. */
+const LID_FACE_SHARE = 0.25
+
+/** The point of triangle `tri[at]` (nine numbers) nearest p (Ericson, Real-Time Collision Detection 5.1.5). */
+function nearestOnTriangle(p: V3, tri: Float64Array, at: number): V3 {
+  const a: V3 = [tri[at]!, tri[at + 1]!, tri[at + 2]!]
+  const b: V3 = [tri[at + 3]!, tri[at + 4]!, tri[at + 5]!]
+  const c: V3 = [tri[at + 6]!, tri[at + 7]!, tri[at + 8]!]
+  const sub = (u: V3, v: V3): V3 => [u[0] - v[0], u[1] - v[1], u[2] - v[2]]
+  const dot = (u: V3, v: V3): number => u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+  const along = (o: V3, u: V3, t: number): V3 => [o[0] + u[0] * t, o[1] + u[1] * t, o[2] + u[2] * t]
+  const ab = sub(b, a)
+  const ac = sub(c, a)
+  const ap = sub(p, a)
+  const d1 = dot(ab, ap)
+  const d2 = dot(ac, ap)
+  if (d1 <= 0 && d2 <= 0) return a
+  const bp = sub(p, b)
+  const d3 = dot(ab, bp)
+  const d4 = dot(ac, bp)
+  if (d3 >= 0 && d4 <= d3) return b
+  const vc = d1 * d4 - d3 * d2
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return along(a, ab, d1 / (d1 - d3))
+  const cp = sub(p, c)
+  const d5 = dot(ab, cp)
+  const d6 = dot(ac, cp)
+  if (d6 >= 0 && d5 <= d6) return c
+  const vb = d5 * d2 - d1 * d6
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return along(a, ac, d2 / (d2 - d6))
+  const va = d3 * d6 - d5 * d4
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return along(b, sub(c, b), (d4 - d3) / (d4 - d3 + (d5 - d6)))
+  const denom = 1 / (va + vb + vc)
+  const v = vb * denom
+  const w = vc * denom
+  return [a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w]
+}
+
+/**
+ * How near the faces of `from` come to those of `to`, mm, from each corner and edge middle of `from` within `reach`:
+ * the nearest of all (`near`), and the smallest gap straight across a face of `to` (along its normal), side by side
+ * (a face that stands or slants) and one over the other (a face that lies flat, FLAT). A gap at a slant past a face's edge (a lid's lip
+ * past the rim's corner) counts only toward `near`, since the faces on either side of it have their own gaps. `level`
+ * is the smallest gap over a face that lies dead level, as against one on the top of a round face drawn as facets. Infinity for what no point comes within reach of.
+ */
+function nearestGaps(from: Float64Array, to: Float64Array, reach: number): { near: number; side: number; over: number; level: number } {
+  // the triangles of `to` in a grid of `reach` cells, each in every cell its box (grown by reach) crosses
+  const cell = (v: number) => Math.floor(v / reach)
+  const grid = new Map<string, number[]>()
+  for (let t = 0; t < to.length; t += 9) {
+    const lo = [0, 1, 2].map((k) => cell(Math.min(to[t + k]!, to[t + 3 + k]!, to[t + 6 + k]!) - reach))
+    const hi = [0, 1, 2].map((k) => cell(Math.max(to[t + k]!, to[t + 3 + k]!, to[t + 6 + k]!) + reach))
+    for (let i = lo[0]!; i <= hi[0]!; i++) for (let j = lo[1]!; j <= hi[1]!; j++) for (let k = lo[2]!; k <= hi[2]!; k++) {
+      const key = `${i},${j},${k}`
+      const list = grid.get(key)
+      if (list) list.push(t)
+      else grid.set(key, [t])
+    }
   }
-  const d = (q: V3) => Math.hypot(q[0] - top.c[0], q[1] - top.c[1])
-  const hook = pts.filter((q) => q[2] > bottom.z + 5 && d(q) > radius(q[2]) + 1.5)
-  if (!hook.length) return { pass: false, detail: 'nothing reaches out past the stem' }
-  const side = hook.some((q) => q[2] < top.z - 3 && d(q) < radius(q[2]) + 6)
-  // the top of the hook along its reach: a lip is a tip that rises again past the lowest top in the outer half
-  const near = least(hook, d)
-  const far = most(hook, d)
-  const tops = new Map<number, number>()
-  for (const q of hook) {
-    const r = d(q)
-    if (r < (near + far) / 2) continue
-    const bin = Math.floor(r / 2)
-    tops.set(bin, Math.max(tops.get(bin) ?? -Infinity, q[2]))
+  // a face's unit normal
+  const normal = (t: number): V3 | null => {
+    const e1 = [0, 1, 2].map((k) => to[t + 3 + k]! - to[t + k]!)
+    const e2 = [0, 1, 2].map((k) => to[t + 6 + k]! - to[t + k]!)
+    const n: V3 = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!]
+    const l = Math.hypot(n[0], n[1], n[2])
+    return l > 1e-12 ? [n[0] / l, n[1] / l, n[2] / l] : null
   }
-  // the top at the very end of the reach against the lowest top on the way out to it
-  const tip = tops.get(Math.floor(far / 2)) ?? -Infinity
-  const rise = tip - Math.min(...tops.values())
-  const lip = rise >= 3
-  const across = (r: number) => Math.round(2 * r)
-  const shape = `stem ${across(bottom.r) > across(top.r) ? 'tapers' : 'runs'} from ${across(bottom.r)} to ${across(top.r)} mm across, ${stem.hollow ? 'hollow' : 'solid'}`
-  return { pass: side && lip, detail: `${shape}; ${side ? 'leaves the stem side below its top' : 'meets the stem only at its top'}; tip ${lip ? 'rises' : 'rises only'} ${round1(rise)} mm above the hook's lowest point near the end (want 3 mm or more)` }
+  let near = Infinity
+  let side = Infinity
+  let over = Infinity
+  let level = Infinity
+  const seen = new Set<string>()
+  const probe = (p: V3) => {
+    const id = `${p[0]},${p[1]},${p[2]}`
+    if (seen.has(id)) return
+    seen.add(id)
+    for (const t of grid.get(`${cell(p[0])},${cell(p[1])},${cell(p[2])}`) ?? []) {
+      const q = nearestOnTriangle(p, to, t)
+      const d: V3 = [p[0] - q[0], p[1] - q[1], p[2] - q[2]]
+      const dist = Math.hypot(d[0], d[1], d[2])
+      if (dist > reach) continue
+      near = Math.min(near, dist)
+      // straight across the face: the gap runs along its normal, not at a slant past its edge
+      const n = normal(t)
+      if (!n || Math.abs(d[0] * n[0] + d[1] * n[1] + d[2] * n[2]) < SQUARE * dist) continue
+      if (Math.abs(n[2]) >= LEVEL) level = Math.min(level, dist)
+      if (Math.abs(n[2]) >= FLAT) over = Math.min(over, dist)
+      else side = Math.min(side, dist)
+    }
+  }
+  for (let t = 0; t < from.length; t += 9) {
+    const c: V3[] = [0, 1, 2].map((j) => [from[t + j * 3]!, from[t + j * 3 + 1]!, from[t + j * 3 + 2]!] as V3)
+    for (let j = 0; j < 3; j++) {
+      const [a, b] = [c[j]!, c[(j + 1) % 3]!]
+      probe(a)
+      probe([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2])
+    }
+  }
+  return { near, side, over, level }
+}
+
+/**
+ * Whether the box's lid is joined to it and can open (cases.ts LidSpec): the largest body is the box and the next
+ * largest whose largest side is near the box's is its lid; the lid must be a piece of its own, come within LID_REACH_MM of the box (a lid laid apart has no
+ * hinge joining them), and keep the gap the fit rule says a print in place joint needs on this machine, side by side
+ * and one over the other, so it neither fuses to the box nor binds. The gap is read from each corner and edge middle of
+ * either body straight across to the faces of the other (nearestGaps).
+ */
+export function lidCheck(m: PilotMachine, parts: MeshPart[]): Check {
+  const bodies = bodyTriangles(parts).sort((a, b) => b.volumeMm3 - a.volumeMm3)
+  if (bodies.length < 2) return { pass: false, detail: 'one body: the lid is not a piece of its own, so it cannot open' }
+  const box = bodies[0]!
+  // the lid covers the box: a pin or a loose knuckle is a rod or a stub, far smaller across its two largest sides
+  const face = (b: { min: V3; max: V3 }) => {
+    const [, m, l] = [0, 1, 2].map((k) => b.max[k]! - b.min[k]!).sort((x, y) => x - y)
+    return m! * l!
+  }
+  const lid = bodies.slice(1).find((b) => face(b) >= LID_FACE_SHARE * face(box))
+  if (!lid) return { pass: false, detail: 'no lid: no other body is near the size of the box, so the lid is part of the box or missing' }
+  const a = nearestGaps(lid.tri, box.tri, LID_REACH_MM)
+  const b = nearestGaps(box.tri, lid.tri, LID_REACH_MM)
+  const near = Math.min(a.near, b.near)
+  const side = Math.min(a.side, b.side)
+  const over = Math.min(a.over, b.over)
+  if (!Number.isFinite(near)) return { pass: false, detail: `the lid lies apart from the box (nothing within ${LID_REACH_MM} mm), so no hinge joins them` }
+  if (near < 0.0005) return { pass: false, detail: 'the lid touches the box, so they print as one piece' }
+  const need = (gapMm: number, direction: 'xy' | 'z') => assessFit({ gapMm, feature: 'print_in_place', direction, layerHeight: m.nozzle / 2, lineWidth: m.nozzle * 1.05, nozzle: m.nozzle, material: m.material })
+  const mm3 = (v: number) => Math.round(v * 1000) / 1000
+  const level = Math.min(a.level, b.level)
+  // over: a level face is held to the limit itself, a round one within FACET_MM of it; beside: within FACET_MM
+  const judged: { mm: number; where: string; fit: ReturnType<typeof need>; pass: boolean }[] = []
+  if (Number.isFinite(over)) {
+    const fit = need(mm3(over), 'z')
+    const levelOk = !Number.isFinite(level) || need(mm3(level), 'z').outcome === 'slides'
+    judged.push({ mm: mm3(over), where: 'over', fit, pass: levelOk && need(mm3(over + FACET_MM), 'z').outcome === 'slides' })
+  }
+  if (Number.isFinite(side)) judged.push({ mm: mm3(side), where: 'beside', fit: need(mm3(side), 'xy'), pass: need(mm3(side + FACET_MM), 'xy').outcome === 'slides' })
+  // only edges and corners face each other (knuckles side by side at a slant): the nearest gap is held as a side gap
+  if (!judged.length) judged.push({ mm: mm3(near), where: 'from', fit: need(mm3(near), 'xy'), pass: need(mm3(near + FACET_MM), 'xy').outcome === 'slides' })
+  return { pass: judged.every((g) => g.pass), detail: judged.map((g) => `lid ${g.mm} mm ${g.where} the box (want ${g.fit.suggestedGapMm} mm or more${g.pass && g.fit.outcome !== 'slides' ? `; within ${FACET_MM} mm counts, as facets of a round face` : ''})`).join(', ') }
 }
 
 /**
@@ -414,6 +474,7 @@ export interface CaseScore {
   bedFit?: Check
   sizes?: Check
   hook?: Check
+  lid?: Check
   geometry: boolean
   extra: number
   turns: Check
@@ -462,7 +523,8 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   const shown = groups.length > 1 ? groups.map((g) => g.join(' by ')).join(', ') : sizeOf(run.parts).join(' by ')
   out.sizes = { pass: off.length === 0, detail: `${shown} mm${off.length ? `; off: ${off.map((s) => `${s.axis} ${side(s.axis)} (want ${s.minMm} to ${s.maxMm})`).join(', ')}` : ''}` }
   if (c.hook) out.hook = hookCheck(c.hook, run.parts)
-  out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : [])].every((x) => x.pass)
+  if (c.lid) out.lid = lidCheck(c.machine, run.parts)
+  out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : []), ...(out.lid ? [out.lid] : [])].every((x) => x.pass)
   out.pass = out.geometry && turns.pass
   out.verdict = verdictOf(out, claim)
   return out

@@ -196,6 +196,20 @@ export function bodyBoxes(parts: MeshPart[]): { min: V3; max: V3; hull: [number,
   })
 }
 
+/**
+ * Each separate solid body across all parts as its own triangles (nine numbers each: three corners), with its volume
+ * and bounding box, mm.
+ */
+export function bodyTriangles(parts: MeshPart[]): { volumeMm3: number; min: V3; max: V3; tri: Float64Array }[] {
+  const { welded, bodies } = split(parts)
+  return bodies.map((b) => {
+    const w = welded[b.part]!
+    const tri = new Float64Array(b.tris.length * 9)
+    b.tris.forEach((t, i) => corners(w, t).forEach((p, j) => tri.set(p, i * 9 + j * 3)))
+    return { volumeMm3: b.volumeMm3, min: b.min, max: b.max, tri }
+  })
+}
+
 /** The convex hull of points in a plane, counterclockwise (monotone chain). */
 function hull2(pts: [number, number][]): [number, number][] {
   const s = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1])
