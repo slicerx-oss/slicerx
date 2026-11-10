@@ -37,7 +37,7 @@ import { planChoiceCard } from './plan-card'
 import { partHandlers } from './part-actions'
 import { MEMORY_CARDS } from './remember-chip'
 import { RUN_APPROVAL_CARDS, runCard, runChoiceCard } from './run-cards'
-import { cardWaits, openChoice, openSheetCard } from './card-waits'
+import { cardWaits, openChoice, openSheetCard, waitingCards } from './card-waits'
 import { PHONE_REFUSALS, setPhoneCards, syncPhoneQuestion } from './phone-answers'
 import { paneApprovalCards, setPhoneApprovals, syncPhoneApprovals } from './phone-approvals'
 import './mimir.css'
@@ -107,6 +107,17 @@ export function emptyNote(slices: boolean): string {
   return slices ? `${parts} Ask it to slice, tune settings or check a printer too.` : parts
 }
 
+/**
+ * Whether a press in the conversation stops the chat following the reply. A button pressed while a reply is still
+ * going (a question card's answer or its Cancel, a sheet's Confirm, an approval) answers what is on screen, and the reply
+ * it starts appears under it: following that reply would scroll the button out from under the pointer. The chat follows
+ * again when the reply puts up a new card for the person (the next question, a size sheet, an approval), once the person
+ * scrolls back to the end, or when they send a message. A press with no reply going changes nothing.
+ */
+export function pressHoldsChat(target: EventTarget | null, running: boolean): boolean {
+  return running && target instanceof Element && target.closest('button:not(:disabled)') !== null
+}
+
 /** Stands in while the tab sets up its model: nothing to run, and the composer does not send. */
 const SETTING_UP: Pilot = {
   tools: () => [],
@@ -153,9 +164,17 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const notice = useCloudNoticeDue() && transcript.turns.length === 0
   // every message goes through here, so the read-back lines the person's words up with mimir's runs
   const stick = useRef(true)
+  // the cards waiting when a press stopped the chat following the reply, or null while nothing holds it
+  const held = useRef<ReadonlySet<string> | null>(null)
+  const hold = (target: EventTarget | null): void => {
+    if (!pressHoldsChat(target, running.current)) return
+    stick.current = false
+    held.current = new Set(waitingCards(shown.current))
+  }
   const send = (text: string, files: readonly PilotAttachment[] = []): void => {
     if (ready === null || notice) return
     stick.current = true
+    held.current = null
     noteMessage(sessionId, text, files)
     run.run(text, files.length ? { attachments: [...files] } : {})
   }
@@ -293,9 +312,14 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     anchor.current = at ? { el: at, top: at.getBoundingClientRect().top } : null
     setFold(folds)
   }, [folds, fold])
-  // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
+  // Follows the stream while the reader is at the bottom; leaves them be once they scroll up or press a button in it.
   useLayoutEffect(() => {
     const el = body.current
+    // a new card for the person ends a press's hold: the chat goes on to it, as it would have without the press
+    if (held.current && waitingCards(transcript).some((id) => !held.current!.has(id))) {
+      held.current = null
+      stick.current = true
+    }
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [transcript])
   // and when the chat itself gets shorter, as it does under a phone's drawing
@@ -445,9 +469,16 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           onScroll={(e) => {
             const el = e.currentTarget
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+            held.current = null
           }}
-          onPointerDown={(e) => (pressed.current = e.target as Element)}
-          onKeyDown={(e) => (pressed.current = e.target as Element)}
+          onPointerDown={(e) => {
+            pressed.current = e.target as Element
+            hold(e.target)
+          }}
+          onKeyDown={(e) => {
+            pressed.current = e.target as Element
+            if (e.key === 'Enter' || e.key === ' ') hold(e.target)
+          }}
         >
           {notice ? (
             <div className="mimir-notice">
