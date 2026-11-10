@@ -14,6 +14,7 @@ import { useMore } from '../../shell/more'
 import { beginLiveEdit } from '../../state/live-edit'
 import { get, markStale, set, shownSlice, useApp, type Goal } from '../../state/store'
 import { plateLayerHeightConflict, useOneLayerHeight } from '../../plate/object-settings'
+import { SleipnirCapLine } from '../../plate/sleipnir-cap'
 import { scopeValue, setScopedMany, type SettingsScope } from '../../plate/scope'
 import { easyGroups } from '../../plate/easy-groups'
 import { useScope } from './scope-bar'
@@ -265,6 +266,8 @@ export function EasySettingsPanel() {
           </span>
         </div>
       ) : null}
+      {/* sleipnir's thickest layer is below the layer height: the plate's, so not in the selection's scope */}
+      {scoped || ownProfile ? null : <SleipnirCapLine testId="easy-sleipnir-cap" />}
       {costNote ? (
         <p className="support-line" role="status">
           <Icon name="alert" />

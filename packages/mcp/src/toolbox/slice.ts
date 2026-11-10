@@ -4,6 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
+import { smartLayerCapNote } from '../smart-layer-cap'
 import { BED_TYPE_OPTIONS, bedTypeByName, gcodeLabel, printerForProfile, printerProfile, type BedType } from '@slicerx/settings'
 import type { ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
@@ -448,6 +449,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   if (result.plate_count && args.plate === undefined) notices.push({ code: 'other_plates', message: `${basename(modelPath)} has ${result.plate_count} plates; sliced plate ${result.plate}. Pass plate to slice another.` })
   for (const n of notices) result.warnings.push(n.message)
   if (layerNote) result.warnings.push(layerNote)
+  const capNote = smartLayerCapNote(config, args.overrides)
+  if (capNote) result.warnings.push(capNote)
   const lines = [
     `${result.model.name}${result.plate ? `, plate ${result.plate}` : ''}: ${result.layer_count} layers, ${result.time_text}, ${result.filament_g} g (${(result.filament_mm / 1000).toFixed(2)} m) [engine ${result.engine}]`,
     ...(result.filaments.length > 1 ? [`Filaments: ${result.filaments.map((f) => `slot ${f.slot} ${f.filament_g} g`).join(', ')}`] : []),
