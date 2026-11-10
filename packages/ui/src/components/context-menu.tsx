@@ -13,6 +13,14 @@ import { Menu, MenuHeading, MenuItem, MenuSeparator, placeAt } from './menu'
 export const LONG_PRESS_MS = 500
 /** A press that moves farther than this is a drag or a scroll, not a long press, px. */
 export const LONG_PRESS_SLOP = 8
+/**
+ * A timer or a frame that runs this long late, ms, ran after a long task: the browser may still be handing the page
+ * finger moves made meanwhile, and they can take a few frames more to arrive. So once the page has been busy, a press
+ * counts as held only after frames have run on time for this long again.
+ */
+const LATE_FRAME_MS = 100
+/** The most a busy page holds a long press back past its half second, ms. */
+const HOLD_WAIT_MAX_MS = 1000
 
 export interface MenuPoint {
   x: number
@@ -54,7 +62,7 @@ export interface LongPressBind {
  * element that also handles `onContextMenu`, and `cancel` when that handler runs so the two never both open it.
  */
 export function useLongPress(fire: (target: HTMLElement, point: MenuPoint) => void): { bind: LongPressBind; cancel: () => void } {
-  const press = useRef<{ from: MenuPoint; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const press = useRef<{ from: MenuPoint; t0: number; timer: ReturnType<typeof setTimeout>; held?: () => void } | null>(null)
   const fired = useRef(false)
   const latest = useRef(fire)
   latest.current = fire
@@ -74,20 +82,45 @@ export function useLongPress(fire: (target: HTMLElement, point: MenuPoint) => vo
       const target = e.currentTarget
       const from = { x: e.clientX, y: e.clientY }
       window.addEventListener('scroll', cancel, true)
-      press.current = {
+      const p: NonNullable<typeof press.current> = {
         from,
+        t0: performance.now(),
         timer: setTimeout(() => {
-          press.current = null
-          window.removeEventListener('scroll', cancel, true)
-          fired.current = true
-          latest.current(target, from)
+          // The browser hands a moving finger to the page once a frame, so a busy page can still hold a move made
+          // before now: the press counts as held on the next frame, or at the lift if that comes first (it comes after
+          // those moves), unless a move has ended it by then. After a long task the moves can take a few frames more,
+          // so the hold waits until frames have run on time for a while. A drag on a slider while the page is busy
+          // drawing stays a drag.
+          if (press.current !== p) return
+          p.held = () => {
+            if (press.current !== p) return
+            press.current = null
+            window.removeEventListener('scroll', cancel, true)
+            fired.current = true
+            latest.current(target, from)
+          }
+          const start = performance.now()
+          let last = start
+          // when the page last ran late; a timer that runs late ran after a long task, which is just when moves wait
+          let busy = start - p.t0 > LONG_PRESS_MS + LATE_FRAME_MS ? start : -Infinity
+          const settle = (): void => {
+            if (press.current !== p) return
+            const now = performance.now()
+            if (now - last > LATE_FRAME_MS) busy = now
+            last = now
+            if (now - busy < LATE_FRAME_MS && now - start < HOLD_WAIT_MAX_MS) requestAnimationFrame(settle)
+            else p.held?.()
+          }
+          requestAnimationFrame(settle)
         }, LONG_PRESS_MS),
       }
+      press.current = p
     },
     onPointerMove: (e) => {
       if (press.current && !pressStays(press.current.from, { x: e.clientX, y: e.clientY })) cancel()
     },
-    onPointerUp: cancel,
+    // a lift while the hold waits on a frame comes after any moves before it, so the press was held
+    onPointerUp: () => (press.current?.held ? press.current.held() : cancel()),
     onPointerCancel: cancel,
     onClickCapture: (e) => {
       if (!fired.current) return
