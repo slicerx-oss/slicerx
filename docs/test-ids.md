@@ -85,11 +85,13 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-target` | The printer and spool pick in the conversation, when what the person said and their notes do not settle it: each online printer with its loaded spools, and None of these; `data-picked` holds the picked answer's id once there is one |
 | `mimir-target-spool` | One loaded spool on `mimir-target`, with its swatch and words; a tap picks that printer and spool (`aria-pressed` once picked) |
 | `mimir-target-note` | The status line on `mimir-target`: empty until it has something to say, such as "Nothing picked. Ask mimir again." when an answer no longer lands |
-| `mimir-plan-card` | A part plan in the conversation (design.plan): its features and sizes before anything is built; `data-plan-id` holds the planId and `data-picked` the answer once there is one |
+| `mimir-plan-card` | A part plan in the conversation (design.plan): its features and sizes before anything is built; `data-plan-id` holds the planId and `data-picked` the answer once there is one. A change the build asks to make to an approved plan shows on one too, with `data-amends` |
 | `mimir-plan-feature` | One planned feature on `mimir-plan-card`, with its sizes |
 | `mimir-plan-status` | The plan card's status beside its buttons: waiting, approved (with a check) or sent back for changes |
 | `mimir-plan-change` | Not yet on a waiting plan card: mimir changes the plan before it builds |
 | `mimir-plan-go` | Go on a waiting plan card: mimir builds the part to the plan |
+| `mimir-plan-why` | On a plan change card (`data-amends` holds the approved plan's planId): why the build asks to change the plan |
+| `mimir-plan-was` | Beside a size on a plan change card: the value the approved plan has |
 | `mimir-send` | The send card in place of the approval card for mimir's own printer.queue: the printer, each filament's slot, the time, the grams and the file; `data-request-id` is the request, `data-state` is off, ready, approved or closed |
 | `mimir-send-bed` | The bed tick on `mimir-send`, unchecked on every card; Print stays off until it is ticked |
 | `danger-mimir-send-print` | Print on `mimir-send`: on only with the tick, a passing preflight, a fresh slice, an idle or finished printer and a request that has not expired. It starts a print, so the agent bridge refuses it |
