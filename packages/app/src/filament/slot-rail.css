@@ -52,8 +52,10 @@
 .slot-line-fix { flex: none; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
 .slot-line-fix:hover { text-decoration: underline; }
 .slot-rail-empty { display: flex; align-items: center; gap: 10px; font-size: var(--fs-md); color: var(--muted); }
-.fil-head { display: inline-flex; align-items: center; gap: 6px; }
-.fil-total { font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--muted); white-space: nowrap; }
+/* the header's total shrinks before it reaches the title: a narrow pane ends it with an ellipsis, its tip has it whole */
+[data-section="filament"] > .sx-block-h:has(> button.sx-block-toggle) > .sx-block-aside { max-width: calc(100% - 8.5rem); }
+.fil-head { display: flex; justify-content: flex-end; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.fil-total { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--muted); white-space: nowrap; }
 .fil-flat { display: grid; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
 /* Swap colors, opened from the Filament options menu. */
 .fil-swap-pop { min-width: 300px; padding: 10px 12px; }

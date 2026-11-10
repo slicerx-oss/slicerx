@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { estimateLine, goalEstimate, goalSubtitle, partCount, slicedIn, triangles } from '../src/lib/estimate-line'
+import { filamentChanges, estimateLine, goalEstimate, goalSubtitle, partCount, slicedIn, triangles } from '../src/lib/estimate-line'
 
 const done = (stats: { timeS: number; filamentG: number[]; cost: number; toolChanges: number }, warnings = 0, stale = false) => ({
   result: { stats: { filamentMm: [], ...stats }, warnings: Array.from({ length: warnings }, () => ({ code: 'thin_wall' as const, message: 'thin' })) },
@@ -11,8 +11,11 @@ const done = (stats: { timeS: number; filamentG: number[]; cost: number; toolCha
 describe('the footer line', () => {
   it('reads time, grams and cost, and shows changes only on a multi-color plate', () => {
     expect(estimateLine(done({ timeS: 5760, filamentG: [148], cost: 2.1, toolChanges: 0 }))).toEqual({ time: '1h 36m', grams: '148.0 g', cost: '$2.10', changes: null, warnings: null, stale: false })
-    expect(estimateLine(done({ timeS: 600, filamentG: [10, 5, 0], cost: 0, toolChanges: 1 }))).toMatchObject({ cost: null, changes: '1 change' })
-    expect(estimateLine(done({ timeS: 600, filamentG: [10, 5], cost: 1, toolChanges: 4 }))?.changes).toBe('4 changes')
+    expect(estimateLine(done({ timeS: 600, filamentG: [10, 5, 0], cost: 0, toolChanges: 1 }))).toMatchObject({ cost: null, changes: '1 filament change' })
+    expect(estimateLine(done({ timeS: 600, filamentG: [10, 5], cost: 1, toolChanges: 4 }))?.changes).toBe('4 filament changes')
+    // said in full, so it never reads like the Expert settings' "1 changed"
+    expect(filamentChanges(1)).toBe('1 filament change')
+    expect(filamentChanges(0)).toBe('0 filament changes')
   })
 
   it('hides warnings at zero and counts them otherwise', () => {

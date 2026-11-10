@@ -17,6 +17,14 @@ export interface EstimateLine {
   stale: boolean
 }
 
+/**
+ * A slice's filament changes in words, "1 filament change" or "4 filament changes": said in full, so the count never
+ * reads like the edited settings' "1 changed".
+ */
+export function filamentChanges(n: number): string {
+  return `${n} filament ${n === 1 ? 'change' : 'changes'}`
+}
+
 export function estimateLine(done: { result: Pick<SliceResult, 'stats' | 'warnings'>; stale: boolean } | null): EstimateLine | null {
   if (!done) return null
   const { stats, warnings } = done.result
@@ -27,7 +35,7 @@ export function estimateLine(done: { result: Pick<SliceResult, 'stats' | 'warnin
     time: formatDuration(stats.timeS),
     grams: formatGrams(grams),
     cost: cost === NOT_ESTIMATED ? null : cost,
-    changes: used > 1 ? `${stats.toolChanges} ${stats.toolChanges === 1 ? 'change' : 'changes'}` : null,
+    changes: used > 1 ? filamentChanges(stats.toolChanges) : null,
     warnings: warnings.length ? `${warnings.length} ${warnings.length === 1 ? 'warning' : 'warnings'}` : null,
     stale: done.stale,
   }
