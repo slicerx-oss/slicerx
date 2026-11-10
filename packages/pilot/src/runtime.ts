@@ -1185,7 +1185,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // engine's text with how to try again
     const plain = out.ok === false ? plainEngine(out.summary, tool.name) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
-    if (plain) result.detail = plain.raw
+    if (plain) {
+      result.title = plain.title
+      result.detail = plain.raw
+    }
     if (out.output !== undefined) result.output = out.output
     // a part started with no design argument lands in a design the result names: the sheet holds for that one
     const landed = (out.output as { design?: unknown } | undefined)?.design

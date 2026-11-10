@@ -62,7 +62,8 @@ export const stepWords: StepWords = (row) => {
   if (w === null) return null
   const design = /^(design|geom)\./.test(row.tool)
   const base = w ?? (design ? GENERIC : { ...OTHER, done: row.summary ?? OTHER.done })
-  if (row.state === 'bad') return { ...base, done: row.summary ?? 'That step failed' }
+  // the summary under it says why, so the title never says it again
+  if (row.state === 'bad') return { ...base, done: row.title ?? 'Step failed' }
   const verb = row.tool === 'geom.extrude' ? row.summary?.split(':')[0] : undefined
   return verb && EXTRUDED[verb] ? { ...base, done: EXTRUDED[verb] } : base
 }
