@@ -376,6 +376,19 @@ describe('minWall', () => {
     expect(minWall([lid]).mm).toBeCloseTo(1.102, 3)
   })
 
+  const fixture = (name: string) => JSON.parse(gunzipSync(readFileSync(join(__dirname, 'fixtures', name))).toString('utf8')) as { positions: number[]; indices: number[] }
+
+  it('the slanted tip of a swept spout reads its 1.6 mm wall, not how near the rim facets sit to the bore', () => {
+    // the top 9 mm of a spout a build left: a tube cut at a slant, its bore swept with its own taper. The rays in from
+    // the cut beside the rim leave along the bore at cosines of 0.10 to 0.2 and read a few hundredths of a millimeter
+    expect(minWall([fixture('spout-tip.json.gz')]).mm).toBeCloseTo(1.334, 3)
+  })
+
+  it('the 0.41 mm floor of a cable clip, between its countersink and its bore, still reads 0.41 mm', () => {
+    // its rays leave the floor through the bore at a cosine of 0.52: a real wall, too thin for a 0.4 mm nozzle
+    expect(minWall([fixture('cable-clip-floor.json.gz')]).mm).toBeCloseTo(0.406, 3)
+  })
+
   it('a needle facet on the rim of a bore that narrows to the top does not read the rim as a wall a hair thick', () => {
     // a stem 2 mm thick around a bore 36 mm across at the foot and 18 mm at the top, as a loft cut leaves it, with a
     // needle facet along the bore's top edge: a ray down from it leaves the solid a few thousandths in, grazing the
@@ -393,15 +406,16 @@ describe('minWall', () => {
     return taperedTube({ foot: [9 + spread, 9 + spread + wall], top: [9, 9 + wall], height: 50, sides: 48, needle: 0.01 })
   }
 
-  it('reads the stem by its walls when the bore leans 4 degrees, under the lean a ray grazes at', () => {
-    // a ray grazes a face it meets at under about 5.7 degrees: the needle's ray down measures no wall
+  it('reads the stem by its walls when the bore leans 4 or 12 degrees, under the lean a ray grazes at', () => {
+    // a ray grazes a face it meets at under about 17.5 degrees: the needle's ray down measures no wall
     expect(minWall([leaning(4)]).mm).toBeGreaterThan(1.8)
+    expect(minWall([leaning(12)]).mm).toBeGreaterThan(1.8)
   })
 
-  it('counts the needle when the bore leans 7 degrees, past the lean a ray grazes at', () => {
-    // at 7 degrees the ray meets the bore's side squarely enough to count: the rim reads a hair thick, as any wall that
+  it('counts the needle when the bore leans 20 degrees, past the lean a ray grazes at', () => {
+    // at 20 degrees the ray meets the bore's side squarely enough to count: the rim reads a hair thick, as any wall that
     // leans that much from a ray does
-    expect(minWall([leaning(7)]).mm).toBeLessThan(0.2)
+    expect(minWall([leaning(20)]).mm).toBeLessThan(0.2)
   })
 
   it('still reads a real 0.3 mm wall as thin beside a bore that leans, needle and all', () => {

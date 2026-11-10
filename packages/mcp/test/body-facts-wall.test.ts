@@ -3,7 +3,8 @@
 // The thinnest wall design.check reads skips what booleans leave where faces meet: a facet folded under its neighbor,
 // a needle with no reliable normal and a speck far smaller than a nozzle. A live Pi 5 case read 0.001 mm and a headphone
 // stand 0 mm from such facets, so both failed "minimum wall" though their walls were 1.1 mm and more, and mimir could
-// not call either finished. A planter with 3 mm walls read 0.025 mm the same way, from a needle at a drain hole rim.
+// not call either finished. A planter with 3 mm walls read 0.025 mm the same way, from a needle at a drain hole rim,
+// and a swept spout with a 1.6 mm wall read 0.067 mm from the rays beside its slanted tip, which leave along the bore.
 import { describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
 
@@ -79,6 +80,31 @@ describe('the thinnest wall', () => {
     // each facet's ray starts at its center, so the reading is the wedge's thickness two thirds of the way to the edge,
     // 0.4 x (1 - 2/3): thin, as a knife edge is, and far under twice a 0.4 mm nozzle
     expect(minWall([mesh(tris)]).mm).toBeCloseTo(0.133, 3)
+  })
+
+  // a facet's ray goes down from (5, 1.67, 0) and meets a far face `depth` under it, leaving through that face at cosine
+  // `cos`: the face stands near upright, as the bore does beside the slanted rim of a swept spout
+  const slant = (cos: number, depth: number): V[] => {
+    const sin = Math.sqrt(1 - cos * cos)
+    const at: V = [5, 5 / 3, -depth]
+    const p = (a: number, b: number): V => [at[0] + b * cos, at[1] + a, at[2] + b * sin]
+    return [p(-10, -10), p(10, -10), p(0, 10)]
+  }
+  // a second facet over FAR, beyond the slanted face's reach, whose ray reads a 3 mm wall
+  const beside: V[] = [[20, 0, 0], [30, 0, 0], [25, 5, 0]]
+
+  it('a ray leaving almost along a near upright face, as beside the slanted rim of a spout, reads no wall there', () => {
+    // the spout's tip cut: its rays read 0.07 to 0.3 mm leaving through the bore at cosines of 0.10 to 0.2
+    const top: V[] = [[0, 0, 0], [10, 0, 0], [5, 5, 0]]
+    expect(minWall([mesh([top, slant(0.15, 0.27), beside, FAR])]).mm).toBeCloseTo(3, 3)
+    expect(minWall([mesh([top, slant(0.25, 0.3), beside, FAR])]).mm).toBeCloseTo(3, 3)
+  })
+
+  it('a ray leaving a thin floor at a slant, as between a countersink and a bore, still reads the floor', () => {
+    // the cable clip's 0.41 mm floor leaves at a cosine of 0.52
+    const top: V[] = [[0, 0, 0], [10, 0, 0], [5, 5, 0]]
+    expect(minWall([mesh([top, slant(0.52, 0.41), beside, FAR])]).mm).toBeCloseTo(0.41, 3)
+    expect(minWall([mesh([top, slant(0.35, 0.41), beside, FAR])]).mm).toBeCloseTo(0.41, 3)
   })
 })
 
