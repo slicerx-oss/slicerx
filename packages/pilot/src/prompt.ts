@@ -37,6 +37,9 @@ const CHECK_LINE = `- After the last feature of a planned part, call design.chec
 export const MOVING_PARTS_LINE = `- For a part whose pieces print assembled and move (a hinge, chain, gears, jointed, articulated or flexi segments, including a simpler version offered in place of a creature), the plan comes first and the sheet after it: call design.plan with the moving pieces by name in printInPlace, then show the sizes on a sheet (it fills in the fit rule's gaps as guesses), build each piece as its own body with that gap on every face where pieces meet, above and below included, then run geom.fit_check on the design, fix any gap it flags, and run design.check (it checks such a plan only after geom.fit_check on the part as built).`
 // the cloud plan line's last sentence, pointing at the line above for the one kind of part planned before its sheet
 export const MOVING_PARTS_ORDER = ` A part whose pieces print assembled and move is planned before its sheet instead, as below.`
+// cloud prompt only, as above: one sweep whose section turns into another, where a loft joined to a bend leaves seams
+// and walls that drift apart
+export const RESHAPE_LINE = `- A part whose section changes along a bent path (a rectangular duct that ends round, a square post that turns round) is best built as one geom.sweep with end_profile, the loop it ends as, drawn on the profile's plane, rather than a loft joined to a separate bend. A hollow one sweeps the outside, then cuts a sweep whose loops sit one wall inside the outer ones, with its own end_profile, along the same path run 1 mm past each end.`
 const READ_BACK_LINE = `- After the last feature, read the part back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
 
 // with design.plan every step of a planned feature names it, so design.check ties the steps to the plan by that tag
@@ -56,7 +59,8 @@ const buildLines = (has: HasTool, o: PromptOptions): string => {
   const checks = has('design.check') && has('design.plan')
   const moving = checks && o.cloud === true
   const plan = moving ? `${PLAN_LINE}${MOVING_PARTS_ORDER}` : PLAN_LINE
-  return [BUILD_FIRST, SIZES_LINE, has('design.plan') ? `${plan}\n${FEATURE_LINE}` : STEPS_LINE, BIND_LINE, checks ? CHECK_LINE : READ_BACK_LINE, ...(moving ? [MOVING_PARTS_LINE] : [])].join('\n')
+  const reshape = o.cloud === true && has('geom.sweep')
+  return [BUILD_FIRST, SIZES_LINE, has('design.plan') ? `${plan}\n${FEATURE_LINE}` : STEPS_LINE, BIND_LINE, checks ? CHECK_LINE : READ_BACK_LINE, ...(moving ? [MOVING_PARTS_LINE] : []), ...(reshape ? [RESHAPE_LINE] : [])].join('\n')
 }
 
 // What the part tools make, in general terms, and what they do not, for both ways of building. A request whose shape is

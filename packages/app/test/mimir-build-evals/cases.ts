@@ -277,4 +277,18 @@ export const BUILD_CASES: BuildCase[] = [
       { axis: 'z', minMm: 30, maxMm: 110 },
     ],
   },
+  // a sweep whose section changes along its path: a rectangular duct that ends round
+  {
+    id: 'duct-transition',
+    title: 'Rectangular to round duct',
+    prompt: 'A duct from a 100 by 50 mm rectangle to a 100 mm round outlet over a 90 degree bend, with a 2 mm wall, open at both ends.',
+    machine: P1S,
+    ops: ['geom.sweep'],
+    bodies: [1, 1],
+    sizes: [
+      // the 100 mm across both ends, plus the bend, whichever way it lies on the bed
+      { axis: 'xy', minMm: 95, maxMm: 256 },
+      { axis: 'z', minMm: 45, maxMm: 256 },
+    ],
+  },
 ]

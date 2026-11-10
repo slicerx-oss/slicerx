@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { DISMISSED_LINE, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { DISMISSED_LINE, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 
@@ -209,8 +209,8 @@ describe('the skill playbooks in the prompt', () => {
 
 describe('the line for parts that move', () => {
   const all = (): boolean => true
-  /** The cloud prompt less its two cloud-only parts: the line for parts that move and the plan line's pointer to it. */
-  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '')
+  /** The cloud prompt less its cloud-only parts: the line for parts that move, the plan line's pointer to it and the line for a sweep that changes shape. */
+  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(`\n${RESHAPE_LINE}`, '')
 
   it('is one line, in the cloud prompt only, after the check line', () => {
     expect(MOVING_PARTS_LINE).not.toContain('\n')
@@ -265,7 +265,19 @@ describe('the line for parts that move', () => {
       const cloud = systemPrompt('full', has, '', { cloud: true })
       expect(cloud).not.toContain(MOVING_PARTS_LINE)
       expect(cloud).not.toContain(MOVING_PARTS_ORDER)
-      expect(cloud).toBe(systemPrompt('full', has))
+      expect(asLocal(cloud)).toBe(systemPrompt('full', has))
     }
+  })
+})
+
+describe('the line for a sweep that changes shape', () => {
+  it('is one line in the cloud prompt only, and only with geom.sweep', () => {
+    expect(RESHAPE_LINE).not.toContain('\n')
+    expect(RESHAPE_LINE).toContain('one geom.sweep with end_profile')
+    expect(RESHAPE_LINE).toContain('rather than a loft joined to a separate bend')
+    const cloud = systemPrompt('cad', () => true, '', { cloud: true })
+    expect(cloud.split(RESHAPE_LINE)).toHaveLength(2)
+    expect(systemPrompt('cad', () => true)).not.toContain(RESHAPE_LINE)
+    expect(systemPrompt('cad', (n) => n !== 'geom.sweep', '', { cloud: true })).not.toContain(RESHAPE_LINE)
   })
 })
