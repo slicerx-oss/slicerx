@@ -768,10 +768,10 @@ describe('build eval scoring', () => {
     // twisted-vase failed its last check live too. phone-stand-lip's last check passed live and fails in the replay on
     // the feature count, which now wants each step tied to a planned feature (a replay does not compare a check's words
     // with the recording's). cable-clip left this list when the scorer read its 0.41 mm floor as design.check does.
-    // watering-spout's check failed live on a 0.07 mm wall read beside the spout's slanted tip, where its wall is 1.6 mm,
-    // and the scorer passes it
+    // watering-spout left it when design.check read the wall at the spout's slanted tip as a whole wall (1.334 mm), so
+    // its replayed check passes as the scorer does
     const disagree = BUILD_CASES.filter((c) => loadRecording(c.id)?.score.verdict === 'disagree').map((c) => c.id)
-    expect(disagree).toEqual(['twisted-vase', 'phone-stand-lip', 'watering-spout'])
+    expect(disagree).toEqual(['twisted-vase', 'phone-stand-lip'])
   })
 
   it('prices a live run on Haiku or Sonnet 5.5 and refuses a model with no price', () => {
