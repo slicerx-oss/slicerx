@@ -5,7 +5,7 @@
 // falling back to SlicerX's. The desktop shell opens only the pages its capabilities allow
 // (editionPages in the edition config); a refused or failed open shows the link to copy.
 import { editionLinks } from '@slicerx/edition-config'
-import { webUiUrl } from '@slicerx/printer-catalog'
+import type { webUiUrl } from '@slicerx/printer-catalog'
 import { currentEdition } from '../edition'
 import { toast } from '../state/store'
 
@@ -52,7 +52,10 @@ export function registerPrinterPageOpener(open: ((url: string) => Promise<void>)
  * from the saved printer. Anything else, such as a host off the local network, is refused before it leaves the app.
  */
 export async function openPrinterPage(url: string): Promise<void> {
-  const page = printerPage(url)
+  // The printer catalog loads on first use, so it stays out of the startup shell; the printer cards and the HUD
+  // that offer this page have loaded it already.
+  const catalog = await import('@slicerx/printer-catalog')
+  const page = printerPage(url, catalog.webUiUrl)
   if (!page) {
     toast("That printer's address is not on your local network, so its page was not opened.", 'warn')
     return
@@ -62,7 +65,7 @@ export async function openPrinterPage(url: string): Promise<void> {
 }
 
 /** The address as a browser reads it, when that is a printer page as `webUiUrl` builds one: http or https, a local host, a plain path. */
-function printerPage(url: string): string | null {
+function printerPage(url: string, lanUrl: typeof webUiUrl): string | null {
   let u: URL
   try {
     u = new URL(url)
@@ -73,7 +76,7 @@ function printerPage(url: string): string | null {
   if (!scheme || u.username || u.password || u.search || u.hash) return null
   const host = u.hostname.replace(/^\[|\]$/g, '')
   const port = u.port ? Number(u.port) : scheme === 'https' ? 443 : 80
-  return webUiUrl(host, port, u.pathname, scheme) === u.href ? u.href : null
+  return lanUrl(host, port, u.pathname, scheme) === u.href ? u.href : null
 }
 
 /** The link as the shell compares it with its allow list (allowPattern): parsed, so `https://a.example` gains its `/`. */
