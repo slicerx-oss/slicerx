@@ -3,8 +3,10 @@
 // Starts a bridge build of the desktop app for a gate run, connects the running-app MCP server (packages/app-bridge)
 // to it over stdio, and stops the app by its process id. The same on Windows, macOS and Linux. The connection file
 // with the per-run token lives in a temporary folder, never in the report folder, and goes when the run ends.
+// Crash reports stay on this computer: the app writes them into the run's own profile and never sends them, and the
+// gate copies any left at the end into the report folder.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -67,9 +69,62 @@ export async function waitForFile(file, { timeoutMs, gone = () => false, everyMs
 }
 
 /**
+ * The environment a gate run starts the app with. `fresh` is the run's profile folder. The bridge listens on a port of
+ * its own and writes its connection file to `tokenFile`. Crash reports go to the profile's own crash-reports folder and
+ * are never sent (SX_CRASH_REPORTS_DIR and SX_CRASH_REPORTS_LOCAL, read by the shell's crash.rs), so a report from a
+ * run the gate stopped neither reaches the public bug channel nor carries over to the next run on the machine.
+ */
+export function appEnv({ base = process.env, extraEnv = {}, tokenFile, fresh, platform = process.platform }) {
+  const env = { ...base, ...extraEnv, SX_AGENT_BRIDGE_PORT: '0', SX_AGENT_BRIDGE_TOKEN_FILE: tokenFile, SX_CRASH_REPORTS_LOCAL: '1', SX_CRASH_REPORTS_DIR: crashDir(fresh) }
+  // A fresh profile shows first run and reads nothing of anyone's own app state. Windows keeps the web profile where
+  // WEBVIEW2_USER_DATA_FOLDER says; Linux keeps the app's data and WebKitGTK's under the XDG folders. macOS has no
+  // such switch: there the bridge build's own data folder is used as it is (docs/release-gate.md).
+  if (platform === 'win32') env.WEBVIEW2_USER_DATA_FOLDER = join(fresh, 'webview2')
+  else if (platform === 'linux') {
+    env.XDG_DATA_HOME = join(fresh, 'data')
+    env.XDG_CONFIG_HOME = join(fresh, 'config')
+    env.XDG_CACHE_HOME = join(fresh, 'cache')
+  }
+  return env
+}
+
+/** Where the app started on the profile `fresh` writes its crash reports. */
+export function crashDir(fresh) {
+  return join(fresh, 'crash-reports')
+}
+
+/**
+ * Copies the crash reports the app left in `from` into `<out>/crash-reports`, and returns each one's file and title,
+ * oldest first by name. The app writes them as crash-<time>-<pid>-<n>.json (crash.rs).
+ */
+export function keepCrashReports(from, out) {
+  let names
+  try {
+    names = readdirSync(from).filter((n) => /^crash-.*\.json$/.test(n)).sort()
+  } catch {
+    return []
+  }
+  if (!names.length) return []
+  const to = join(out, 'crash-reports')
+  mkdirSync(to, { recursive: true })
+  return names.map((file) => {
+    copyFileSync(join(from, file), join(to, file))
+    let title = ''
+    try {
+      title = String(JSON.parse(readFileSync(join(from, file), 'utf8')).title ?? '')
+    } catch {
+      // a half-written file is kept as it is, without a title
+    }
+    return { file, title }
+  })
+}
+
+/**
  * Starts the app with the bridge on a free port and a fresh web profile (unless `profile` names one to reuse), and
  * waits up to `waitS` seconds for its connection file. `extraEnv` adds variables for the app (scenario w's watch timings). Returns
  * { pid, tokenFile, env, stop, stderr }, where `env` is the environment the app got, without the token file's path.
+ * `stop({ crashesTo })` stops the app, copies the crash reports it left into that report folder, and resolves to
+ * { stopped, crashes }.
  */
 export async function startApp({ app, profile, log, extraEnv = {}, waitS = START_WAIT_S }) {
   const exe = appExecutable(app)
@@ -77,24 +132,15 @@ export async function startApp({ app, profile, log, extraEnv = {}, waitS = START
   if (runningCopies(exe) > 0) throw new Error(`${exe} is already running; quit it first (the app is single-instance)`)
   const work = mkdtempSync(join(tmpdir(), 'sx-gate-'))
   const tokenFile = join(work, 'agent-bridge.json')
-  const env = { ...process.env, ...extraEnv, SX_AGENT_BRIDGE_PORT: '0', SX_AGENT_BRIDGE_TOKEN_FILE: tokenFile }
   const fresh = profile ? resolve(profile) : join(work, 'profile')
-  // A fresh profile shows first run and reads nothing of anyone's own app state. Windows keeps the web profile where
-  // WEBVIEW2_USER_DATA_FOLDER says; Linux keeps the app's data and WebKitGTK's under the XDG folders. macOS has no
-  // such switch: there the bridge build's own data folder is used as it is (docs/release-gate.md).
-  if (win) env.WEBVIEW2_USER_DATA_FOLDER = join(fresh, 'webview2')
-  else if (process.platform === 'linux') {
-    env.XDG_DATA_HOME = join(fresh, 'data')
-    env.XDG_CONFIG_HOME = join(fresh, 'config')
-    env.XDG_CACHE_HOME = join(fresh, 'cache')
-  }
+  const env = appEnv({ extraEnv, tokenFile, fresh })
   const child = spawn(exe, [], { env, stdio: ['ignore', 'ignore', 'pipe'], detached: false })
   let stderr = ''
   child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-8000)))
   log?.(`started ${exe} as pid ${child.pid}`)
   const started = Date.now()
   await waitForFile(tokenFile, { timeoutMs: waitS * 1000, gone: () => child.exitCode !== null || child.signalCode !== null })
-  const stop = async () => {
+  const stop = async ({ crashesTo } = {}) => {
     // Stopped by its own process id, never by name.
     if (child.exitCode === null && child.signalCode === null) {
       if (win) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
@@ -107,8 +153,10 @@ export async function startApp({ app, profile, log, extraEnv = {}, waitS = START
     for (let i = 0; i < 20 && child.exitCode === null && child.signalCode === null; i++) await sleep(250)
     const stopped = child.exitCode !== null || child.signalCode !== null
     rmSync(tokenFile, { force: true })
+    // kept before the profile goes, so a stop the gate caused (a timeout, a kill) shows in the report
+    const crashes = crashesTo ? keepCrashReports(crashDir(fresh), crashesTo) : []
     if (!profile) rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
-    return stopped
+    return { stopped, crashes }
   }
   if (!existsSync(tokenFile)) {
     await stop()

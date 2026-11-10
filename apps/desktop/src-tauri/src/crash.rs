@@ -5,6 +5,10 @@
 //! the files at its next start (`crash_take`), queues them as bug reports and acknowledges them
 //! (`crash_ack`), which deletes them. `crash_take` also counts page loads, so the page can tell
 //! that it reloaded within one run of the shell. On Windows the web view's own reload keys are off.
+//!
+//! Test runs (the release gate) set `SX_CRASH_REPORTS_DIR` to a folder of their own, so a report never outlives the run
+//! that wrote it, and `SX_CRASH_REPORTS_LOCAL=1`, which `crash_take` passes to the page: reports are still written, but
+//! the page never sends or acknowledges them, so they stay in that folder for the run to read.
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -51,6 +55,8 @@ pub struct Taken {
     reports: Vec<NativeCrash>,
     page_loads: u32,
     os: String,
+    /// `SX_CRASH_REPORTS_LOCAL=1`: keep every report on this computer, send none.
+    local_only: bool,
 }
 
 fn now_ms() -> u64 {
@@ -59,17 +65,38 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
-/// Where panics before `set_dir` land, and where the next launch also looks.
+/// The folder a test run names in `SX_CRASH_REPORTS_DIR`: an absolute path, else none.
+fn dir_from(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    value.map(PathBuf::from).filter(|p| p.is_absolute())
+}
+
+/// Whether `SX_CRASH_REPORTS_LOCAL` keeps reports on this computer: only the exact value `1` does.
+fn local_from(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
+fn env_dir() -> Option<PathBuf> {
+    dir_from(std::env::var_os("SX_CRASH_REPORTS_DIR"))
+}
+
+/// Where panics before `set_dir` land, and where the next launch also looks. A test run's own folder replaces both.
 fn fallback_dir() -> PathBuf {
-    std::env::temp_dir().join("slicerx-crash-reports")
+    env_dir().unwrap_or_else(|| std::env::temp_dir().join("slicerx-crash-reports"))
 }
 
 fn dir() -> PathBuf {
     DIR.get().cloned().unwrap_or_else(fallback_dir)
 }
 
-/// The reports folder in the app data folder. Called from setup, once the identifier is known.
+/// The reports folder in the app data folder, or a test run's own (`SX_CRASH_REPORTS_DIR`). Called from setup, once
+/// the identifier is known.
 pub fn set_dir(app: &AppHandle) {
+    if let Some(d) = env_dir() {
+        if std::fs::create_dir_all(&d).is_ok() {
+            let _ = DIR.set(d);
+        }
+        return;
+    }
     if let Ok(base) = app.path().app_data_dir() {
         let d = base.join("crash-reports");
         if std::fs::create_dir_all(&d).is_ok() {
@@ -307,6 +334,7 @@ pub fn crash_take(page_load: bool, commit: Option<String>) -> Taken {
         reports: read_reports(&dirs()),
         page_loads,
         os: os_description(),
+        local_only: local_from(std::env::var("SX_CRASH_REPORTS_LOCAL").ok().as_deref()),
     }
 }
 
@@ -460,6 +488,19 @@ mod tests {
         let old = read_reports(std::slice::from_ref(&d));
         assert_eq!((old[0].version.as_str(), old[0].commit.as_str()), ("", ""));
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_test_run_names_its_own_folder_and_keeps_reports_local() {
+        let abs = std::env::temp_dir().join("sx-gate-run").join("crash-reports");
+        assert_eq!(dir_from(Some(abs.clone().into_os_string())), Some(abs));
+        // a relative path would land wherever the app was started from, so it is ignored
+        assert_eq!(dir_from(Some("crash-reports".into())), None);
+        assert_eq!(dir_from(None), None);
+        assert!(local_from(Some("1")));
+        for v in [None, Some(""), Some("0"), Some("true"), Some("yes")] {
+            assert!(!local_from(v), "{v:?}");
+        }
     }
 
     #[test]

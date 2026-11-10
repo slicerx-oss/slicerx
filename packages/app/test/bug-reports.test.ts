@@ -4,6 +4,7 @@ import { neutralEdition, type EditionConfig } from '@slicerx/edition-config'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { logLine, logTail, resetLog } from '../src/bugs/log'
 import { enqueue, flush, queued, supabaseSender, type Sender } from '../src/bugs/outbox'
+import type { NativeCrashes } from '../src/bugs/crash'
 import { finishReport, LIMITS, osFromUserAgent, rpcArgs, type RawReport } from '../src/bugs/report'
 import { buildManualReport, reportBody } from '../src/bugs/report-dialog'
 import { fingerprint, isIPv6, normalizeFrame, scrub, sha256Hex, topFrames } from '../src/bugs/scrub'
@@ -428,6 +429,44 @@ describe('automatic crash reports', () => {
     third.stop()
     third.reports.registerCrashHost(null)
     third.reports.resetBugReports()
+  })
+
+  it('stay on this computer in a test run that asks for it, even in a pre-alpha build', async () => {
+    localStorage.clear()
+    vi.resetModules()
+    const reports = await import('../src/bugs/reports')
+    const outbox = await import('../src/bugs/outbox')
+    const store = await import('../src/state/store')
+    store.set({ crashReports: true, printerId: null, workspace: 'prepare' })
+    reports.resetBugReports()
+    // a crash an earlier run queued is held, not sent
+    outbox.enqueue(finishReport({ kind: 'crash', title: 'Error: from an earlier run', body: 'Automatic crash report.', stack: 'at a (x.js:1:1)', logTail: '', appVersion: '0.2.17 desktop', commit: 'c4b5d1c1', os: 'Windows', printer: null }))
+    const panic = { file: 'crash-1-1-1.json', source: 'webview' as const, title: "The web view's page process exited", stack: '', at: 1, version: '0.2.17', commit: 'c4b5d1c1' }
+    const acked: string[][] = []
+    let answer: (v: NativeCrashes) => void = () => undefined
+    reports.registerCrashHost({ take: () => new Promise<NativeCrashes>((r) => (answer = r)), ack: async (files) => void acked.push(files), testPanic: async () => {} })
+    const sent: string[] = []
+    const sender: Sender = async (r) => {
+      sent.push(r.title)
+      return { ok: true, id: 'x' }
+    }
+    const edition = { ...neutralEdition(), release: { stage: 'pre-alpha' as const } }
+    const host = { kind: 'desktop', build: { version: '0.2.17', commit: 'c4b5d1c1', sourceUrl: '' } } as never
+    const stop = reports.startBugReports(host, edition)
+    // a crash before the shell answers waits for it
+    const error = new Error('Cannot read the plate')
+    window.dispatchEvent(new ErrorEvent('error', { error, message: error.message }))
+    answer({ reports: [panic], pageLoads: 2, os: 'Windows 10.0.26200 (x86_64)', localOnly: true })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(reports.crashReportsOn()).toBe(false)
+    // nothing new is queued, the shell's file stays for the run to read, and the earlier crash is kept unsent
+    expect(outbox.queued().map((q) => q.report.title)).toEqual(['Error: from an earlier run'])
+    expect(acked).toEqual([])
+    expect(await outbox.flush(sender, (r) => (r.kind === 'manual' ? true : reports.crashReportsOn()))).toMatchObject({ sent: 0 })
+    expect(sent).toEqual([])
+    stop()
+    reports.registerCrashHost(null)
+    reports.resetBugReports()
   })
 
   it('stamp a shell crash with the version and commit that crashed, and hand the shell this page\'s commit', async () => {

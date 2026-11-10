@@ -83,8 +83,10 @@ async function main() {
     }
     awake = null
     if (app) {
-      const stopped = await app.stop()
+      const { stopped, crashes } = await app.stop({ crashesTo: opts.out })
       log(`stopped the app, pid ${app.pid}${stopped ? '' : ' (it did not exit)'}`)
+      // the app kept these on this computer (never sent); they are in the report folder for whoever reads the run
+      if (crashes.length) result.notes.push(mask(`the app left ${crashes.length} crash report${crashes.length === 1 ? '' : 's'}, kept in crash-reports/ and not sent: ${crashes.map((c) => `${c.file}${c.title ? ` (${c.title})` : ''}`).join(', ')}`))
       app = null
     }
   }

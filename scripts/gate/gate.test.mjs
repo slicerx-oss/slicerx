@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { inflateRawSync } from 'node:zlib'
-import { freePort, START_WAIT_S, waitForFile } from './lib/app.mjs'
+import { appEnv, freePort, keepCrashReports, START_WAIT_S, waitForFile } from './lib/app.mjs'
 import { coaster3mf } from './lib/coaster.mjs'
 import { fontFailures } from './scenarios/vault.mjs'
 import { options } from './lib/options.mjs'
@@ -235,6 +235,40 @@ describe('the wait for the app to start', () => {
     assert.ok(Date.now() - started >= 50)
     assert.equal(await waitForFile(file, { timeoutMs: 60_000, everyMs: 10, gone: () => true }), false)
     rmSync(d, { recursive: true, force: true })
+  })
+})
+
+describe('crash reports in a gate run', () => {
+  const tokenFile = join(tmpdir(), 'sx-gate-x', 'agent-bridge.json')
+  it('start the app with them kept on this computer, in the run\'s own folder, on every platform', () => {
+    for (const platform of ['win32', 'darwin', 'linux']) {
+      const fresh = join(tmpdir(), `sx-gate-${platform}`, 'profile')
+      // a variable from outside (or an extra one) cannot turn sending back on
+      const env = appEnv({ base: { PATH: '/bin', SX_CRASH_REPORTS_LOCAL: '0' }, extraEnv: { SX_CRASH_REPORTS_LOCAL: '0' }, tokenFile, fresh, platform })
+      assert.equal(env.SX_CRASH_REPORTS_LOCAL, '1', platform)
+      assert.equal(env.SX_CRASH_REPORTS_DIR, join(fresh, 'crash-reports'), platform)
+      assert.equal(env.SX_AGENT_BRIDGE_TOKEN_FILE, tokenFile)
+      assert.equal(env.PATH, '/bin')
+    }
+    assert.equal(appEnv({ base: {}, tokenFile, fresh: 'p', platform: 'win32' }).WEBVIEW2_USER_DATA_FOLDER, join('p', 'webview2'))
+    assert.equal(appEnv({ base: {}, tokenFile, fresh: 'p', platform: 'linux' }).XDG_DATA_HOME, join('p', 'data'))
+    assert.equal(appEnv({ base: {}, tokenFile, fresh: 'p', platform: 'darwin' }).XDG_DATA_HOME, undefined)
+  })
+  it('the app left are copied into the report folder with their titles', () => {
+    const from = mkdtempSync(join(tmpdir(), 'sx-gate-crash-'))
+    const out = mkdtempSync(join(tmpdir(), 'sx-gate-out-'))
+    assert.deepEqual(keepCrashReports(join(from, 'missing'), out), [])
+    assert.deepEqual(keepCrashReports(from, out), [])
+    writeFileSync(join(from, 'crash-2-9-0.json'), JSON.stringify({ source: 'webview', title: "The web view's page process exited", stack: '', at: 2 }))
+    writeFileSync(join(from, 'crash-1-9-0.json'), '{"source":"panic","title":"Rust panic: bo')
+    writeFileSync(join(from, 'notes.txt'), 'not a report')
+    assert.deepEqual(keepCrashReports(from, out), [
+      { file: 'crash-1-9-0.json', title: '' },
+      { file: 'crash-2-9-0.json', title: "The web view's page process exited" },
+    ])
+    assert.deepEqual(readdirSync(join(out, 'crash-reports')).sort(), ['crash-1-9-0.json', 'crash-2-9-0.json'])
+    rmSync(from, { recursive: true, force: true })
+    rmSync(out, { recursive: true, force: true })
   })
 })
 
