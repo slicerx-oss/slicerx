@@ -852,6 +852,13 @@ export const stalePlanNote = (part: string, card = false): string =>
  */
 export const FIX_ROUNDS = 1
 
+/**
+ * What a failed check says while its plan's fix round is open: that this check is not the last, what to change and to
+ * check again, so a reply does not stop on the first miss. It names no tool, as the mimir card's step row shows it too.
+ */
+export const fixRoundOpen = (planId: string): string =>
+  `This is not the last check: the plan has one fix round, and it is open. Fix each failed item now (change the part until it has what the plan wants, or, for a planned size the build cannot keep, change the plan with amends), then check plan ${planId} again. Do not stop or ask the person yet; only a second failed check ends the building.`
+
 /** Plans kept at most for each origin; putting one more drops the one of that origin put longest ago. */
 export const MAX_PLANS = 50
 

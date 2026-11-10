@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_design_check` 1.11.0 (past 1.10.0, the place a side touch is) says in its summary, when a check fails and the plan's fix round is still open, that this is not the last check: fix each failed item (the part to what the plan wants, or a planned size the build cannot keep with `amends`), check the plan again, and stop only after a second failed check. Before, a first failed check listed the failed items and nothing more, and a client could read it as the end of the build. The result's fields, a passing check, the second failed check (with `stop`) and a miss that keeps the fix round are unchanged.

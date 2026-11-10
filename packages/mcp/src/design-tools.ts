@@ -8,7 +8,7 @@ import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { assumptionsInput, createPlanRegistry, designCheck, FIX_ROUNDS, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, partPlanSchema, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
+import { assumptionsInput, createPlanRegistry, designCheck, FIX_ROUNDS, fixRoundOpen, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, partPlanSchema, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -559,7 +559,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.10.0',
+    version: '1.11.0',
     source: 'command',
     permission: 'read',
     description:
@@ -606,7 +606,10 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       // a miss only on how a part of several pieces is named is not the part's fault: once per plan it keeps the fix round
       if (failed.length === 1 && isNamingMiss(failed[0]!) && plans.waiveNaming(entry.plan.planId, open)) return { summary: `${summary}. This miss does not use the fix round.`, output }
       const failedChecks = plans.checked(entry.plan.planId, result.pass, open)
-      if (result.pass || failedChecks <= FIX_ROUNDS) return { summary, output }
+      if (result.pass) return { summary, output }
+      // the first miss: the fix round is open, said in the result itself, since a bare list of failed items read as the
+      // end of the build and the reply stopped there instead of fixing them
+      if (failedChecks <= FIX_ROUNDS) return { summary: `${summary}. ${fixRoundOpen(entry.plan.planId)}`, output }
       // the second miss: one fix round was the limit, so mimir stops here and says what is off
       const stop = `The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan ${entry.plan.planId} again returns this same result.`
       const last = { summary: `${summary}. ${stop}`, output: { ...output, stop } }
