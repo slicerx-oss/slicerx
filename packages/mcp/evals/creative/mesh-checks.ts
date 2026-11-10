@@ -250,7 +250,7 @@ function rayHit(o: V3, d: V3, a: V3, b: V3, c: V3): number {
 
 export interface WallReport {
   /**
-   * The thinnest wall found, mm: from every facet with design.check's wall read (wallFromEvery, held to LEAVING), so a
+   * The thinnest wall found, mm: from every facet with design.check's wall read (wallFromEvery), so a
    * pinch over a small area counts; for a part too dense for that, the low percentile of the area-weighted samples.
    */
   minWallMm: number
@@ -266,15 +266,6 @@ export interface WallReport {
  */
 const EVERY_FACET: WallBudget = { maxFacets: WALL_BUDGET.maxFacets, maxMs: 60_000 }
 
-/**
- * The cosine over which a ray must leave through the far facet to read a wall here, stricter than design.check's. A
- * ray that leaves almost along the far face starts next to an edge where two faces meet at near a right angle, like
- * the rim of a tube cut at a slant: it reads how near the facet's center is to that edge (0.07 to 0.3 mm on the
- * recorded spouts, leaving at cosines of 0.10 to 0.2), not a wall. A real thin floor, such as the cable clip's 0.41
- * mm between its countersink and its bore, leaves at about 0.5.
- */
-const LEAVING = 0.3
-
 /** Low percentile of the thickness samples that counts as the wall: thin regions win, one stray corner ray does not. */
 const WALL_PERCENTILE = 0.02
 
@@ -285,7 +276,7 @@ const WALL_PERCENTILE = 0.02
 export function minWall(parts: MeshPart[], maxSamples = 600): WallReport {
   // every facet first, the way design.check reads the wall, so a pinch that no sample lands on is still found
   const facets = parts.reduce((n, p) => n + Math.floor(p.indices.length / 3), 0)
-  const every = facets ? wallFromEvery(parts, EVERY_FACET, undefined, LEAVING) : { mm: null }
+  const every = facets ? wallFromEvery(parts, EVERY_FACET) : { mm: null }
   if (every.mm !== null) return { minWallMm: every.mm, samples: facets, how: 'every facet' }
   const thick: number[] = []
   for (const part of parts) {

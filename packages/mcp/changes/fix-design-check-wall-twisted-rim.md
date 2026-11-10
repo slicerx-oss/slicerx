@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_design_check` 1.12.0 (from 1.11.0) reads the whole wall at the open top of a twisted vase. Before, rays from the top face left through the facets that lean in just under the rim and read 0.89 mm of a 2 mm wall. A far face now counts as the other side of a wall only when it faces back against the face the ray starts from: the cosine between their normals must be under -0.49, where it was under -0.3 before. A thin floor still reads: a 0.41 mm floor between a countersink and a bore meets its far face at -0.52 and fails. A real wall whose two faces meet less squarely than about 61 degrees from straight back is no longer measured there.
