@@ -118,6 +118,14 @@ export function pressHoldsChat(target: EventTarget | null, running: boolean): bo
   return running && target instanceof Element && target.closest('button:not(:disabled)') !== null
 }
 
+/**
+ * The pill at the foot of the chat: Sizes while a size sheet waits scrolled out of view, else New reply below while a
+ * press holds the chat with the reply going on under the fold, else none.
+ */
+export function chatPill(sheetAway: boolean, replyBelow: boolean): 'sizes' | 'reply' | null {
+  return sheetAway ? 'sizes' : replyBelow ? 'reply' : null
+}
+
 /** Stands in while the tab sets up its model: nothing to run, and the composer does not send. */
 const SETTING_UP: Pilot = {
   tools: () => [],
@@ -170,6 +178,19 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     if (!pressHoldsChat(target, running.current)) return
     stick.current = false
     held.current = new Set(waitingCards(shown.current))
+  }
+  // While a press holds the chat and the reply goes on under the fold, a pill says so; it takes the reader to the end.
+  const [below, setBelow] = useState(false)
+  const readBelow = (): void => {
+    const el = body.current
+    setBelow(held.current !== null && !!el && el.scrollHeight - el.scrollTop - el.clientHeight > 1)
+  }
+  const toEnd = (): void => {
+    const el = body.current
+    held.current = null
+    stick.current = true
+    setBelow(false)
+    if (el) el.scrollTop = el.scrollHeight
   }
   const send = (text: string, files: readonly PilotAttachment[] = []): void => {
     if (ready === null || notice) return
@@ -321,6 +342,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       stick.current = true
     }
     if (el && stick.current) el.scrollTop = el.scrollHeight
+    readBelow()
   }, [transcript])
   // and when the chat itself gets shorter, as it does under a phone's drawing
   useEffect(() => {
@@ -328,6 +350,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     if (!el) return
     const ro = new ResizeObserver(() => {
       if (stick.current) el.scrollTop = el.scrollHeight
+      readBelow()
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -397,6 +420,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     // to the first assumed size, else the first size
     ;(rec.querySelector<HTMLElement>('[data-guess] input') ?? rec.querySelector<HTMLElement>('input'))?.focus({ preventScroll: true })
   }
+  const pill = chatPill(waiting !== null && away, below)
   // A file dragged anywhere over the chat can be dropped onto the message.
   const [dropping, setDropping] = useState(false)
   const files = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
@@ -470,6 +494,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             const el = e.currentTarget
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
             held.current = null
+            setBelow(false)
           }}
           onPointerDown={(e) => {
             pressed.current = e.target as Element
@@ -499,10 +524,15 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             </div>
           )}
         </div>
-        {waiting && away ? (
+        {pill === 'sizes' ? (
           <button type="button" className="mimir-sizes-pill sx-overlay" data-testid="mimir-sizes-pill" onClick={toSizes}>
             <Icon name="tolerance" size={16} />
             <span>Sizes</span>
+            <Icon name="chevron-down" size={14} />
+          </button>
+        ) : pill === 'reply' ? (
+          <button type="button" className="mimir-sizes-pill sx-overlay" data-testid="mimir-reply-pill" onClick={toEnd}>
+            <span>New reply below</span>
             <Icon name="chevron-down" size={14} />
           </button>
         ) : null}

@@ -17,7 +17,7 @@ vi.mock('../src/workspaces/mimir/session', async (orig) => ({ ...(await orig<typ
 
 const { HostContext } = await import('../src/host')
 const { set } = await import('../src/state/store')
-const { MimirChat, pressHoldsChat } = await import('../src/workspaces/mimir/mimir-panes')
+const { chatPill, MimirChat, pressHoldsChat } = await import('../src/workspaces/mimir/mimir-panes')
 
 Element.prototype.scrollTo ??= () => undefined
 Element.prototype.scrollIntoView ??= () => undefined
@@ -83,6 +83,40 @@ describe('a press in the mimir chat', () => {
     expect(log.scrollTop).toBe(at)
   })
 
+  it('says a reply goes on under the fold, and its pill takes the reader to the end and follows again', async () => {
+    const { log, chip } = await cardAtEnd()
+    expect(screen.queryByTestId('mimir-reply-pill')).toBeNull()
+    const at = log.scrollTop
+    fireEvent.pointerDown(chip)
+    fireEvent.click(chip)
+    const pill = await screen.findByTestId('mimir-reply-pill', {}, { timeout: 5000 })
+    expect(pill.textContent).toBe('New reply below')
+    expect(log.scrollTop).toBe(at)
+    fireEvent.click(pill)
+    expect(log.scrollTop).toBe(log.scrollHeight - log.clientHeight)
+    await waitFor(() => expect(screen.queryByTestId('mimir-reply-pill')).toBeNull())
+  })
+
+  it('drops the pill once the reader scrolls to the end', async () => {
+    const { log, chip } = await cardAtEnd()
+    fireEvent.pointerDown(chip)
+    fireEvent.click(chip)
+    await screen.findByTestId('mimir-reply-pill', {}, { timeout: 5000 })
+    log.scrollTop = log.scrollHeight
+    fireEvent.scroll(log)
+    await waitFor(() => expect(screen.queryByTestId('mimir-reply-pill')).toBeNull())
+  })
+
+  it('shows no pill for a press while nothing is below the fold', async () => {
+    const { log, chip } = await cardAtEnd({ text: 'Ok.' })
+    // a chat taller than its content: the short reply fits under the card
+    Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => 200 })
+    fireEvent.pointerDown(chip)
+    fireEvent.click(chip)
+    await waitFor(() => expect(log.textContent).toContain('Ok.'), { timeout: 5000 })
+    expect(screen.queryByTestId('mimir-reply-pill')).toBeNull()
+  })
+
   it('goes on to the next card the reply puts up for the person', async () => {
     const { log, chip } = await cardAtEnd({ text: 'Looking up its size. It is about 80 mm across, so here are the sizes to check.', calls: [SHEET] })
     const at = log.scrollTop
@@ -92,6 +126,13 @@ describe('a press in the mimir chat', () => {
     // the sheet waits at the end of the chat, and the chat is there with it
     await waitFor(() => expect(log.scrollTop).toBe(log.scrollHeight - log.clientHeight))
     expect(log.scrollTop).toBeGreaterThan(at)
+  })
+
+  it('leaves the foot of the chat to the Sizes pill while a sheet waits out of view', () => {
+    expect(chatPill(true, true)).toBe('sizes')
+    expect(chatPill(true, false)).toBe('sizes')
+    expect(chatPill(false, true)).toBe('reply')
+    expect(chatPill(false, false)).toBeNull()
   })
 
   it('holds the chat only for a button pressed while a reply is going', () => {
