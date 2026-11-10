@@ -291,6 +291,34 @@ fn runs_vertical(p: V3, q: V3) -> bool {
     v[2].abs() > v[0].m_hypot(v[1])
 }
 
+/// the closest pair of points of two bodies however far apart, and whether they cross or one holds the other
+pub(crate) fn closest(a: &TriMesh, b: &TriMesh) -> Option<(f64, V3, V3, bool)> {
+    let (ba, bb) = (a.bounds()?, b.bounds()?);
+    // two corners found by walking nearest corner to nearest corner bound the gap from above, so the search keeps
+    // only the triangles that can beat them
+    let nearest = |m: &TriMesh, to: V3| {
+        m.positions.iter().copied().min_by(|x, y| {
+            let d2 = |v: V3| {
+                let d = vec3::sub(v, to);
+                vec3::dot(d, d)
+            };
+            d2(*x).total_cmp(&d2(*y))
+        })
+    };
+    let mut q = bb.center();
+    let mut p = q;
+    for _ in 0..4 {
+        p = nearest(a, q)?;
+        q = nearest(b, p)?;
+    }
+    let reach = vec3::len(vec3::sub(p, q)) * (1.0 + 1e-9) + 1e-9;
+    // bodies that touch or cross are settled in a thin band first, where few triangle pairs are tried
+    [reach.min(0.05), reach]
+        .into_iter()
+        .find_map(|r| closest_pairs(a, b, &ba, &bb, r, false).into_iter().next())
+        .map(|c| (c.d, c.p, c.q, c.fused))
+}
+
 /// the closest pair of points of two bodies within `reach`, or the pair where they touch
 #[cfg(test)]
 fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Option<Closest> {

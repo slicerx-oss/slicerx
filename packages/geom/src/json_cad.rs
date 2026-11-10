@@ -17,6 +17,7 @@ use crate::fit::{self, FitOptions};
 #[cfg(feature = "holes")]
 use crate::hole::{self, Hole, HoleSpec};
 use crate::import::auto::{self, AutoOptions};
+use crate::interference;
 #[cfg(feature = "cad")]
 use crate::json::base64_decode;
 use crate::json::{
@@ -177,6 +178,7 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "import.auto" => import_auto_op(req, enc, files),
         "import.selfIntersections" => self_crossing_op(req, enc, files),
         "fit.check" => fit_op(req, files),
+        "interference" => interference_op(req, files),
         #[cfg(feature = "cad")]
         "face.push" => push_op(req, enc, files),
         #[cfg(feature = "cad")]
@@ -657,6 +659,12 @@ fn self_crossing_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<
         auto::SelfCrossing::Fixed(r) => json!({ "crossing": true, "mesh": enc.mesh(&r) }),
         auto::SelfCrossing::Left => json!({ "crossing": true }),
     })
+}
+
+fn interference_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
+    let a = item_field(req, "a", files)?.world();
+    let b = item_field(req, "b", files)?.world();
+    to_value(&interference::interference(&a, &b)?)
 }
 
 fn fit_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
@@ -1310,6 +1318,24 @@ mod tests {
         assert!((d["value"].as_f64().unwrap() - 16.0).abs() < 1e-6, "{d}");
         assert_eq!(d["changed"], true);
         assert!(d["measurement"]["from"].is_array());
+    }
+
+    #[test]
+    fn interference_takes_two_placed_meshes() {
+        let out = run(
+            "interference",
+            &json!({ "a": cube([0.0; 3], 10.0), "b": { "mesh": cube([0.0; 3], 10.0), "transform": translate([10.3, 0.0, 0.0]) } }),
+        );
+        assert_eq!(out["interferes"], false, "{out}");
+        assert!((out["clearanceMm"].as_f64().unwrap() - 0.3).abs() < 1e-9, "{out}");
+        let out = run(
+            "interference",
+            &json!({ "a": cube([0.0; 3], 10.0), "b": { "mesh": cube([0.0; 3], 10.0), "transform": translate([8.0, 0.0, 0.0]) } }),
+        );
+        assert!(
+            (out["overlapMm3"].as_f64().unwrap() - 200.0).abs() < 1e-6,
+            "{out}"
+        );
     }
 
     #[test]

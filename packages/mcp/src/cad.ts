@@ -1444,23 +1444,45 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const measure = defineTool({
     name: 'geom.measure',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
-      'Measure a model or a design as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. Pick a face by a point on it and its outward normal, as slicerx_geom_faces lists them; snap_mm snaps the pick to an edge or a corner that close, to measure from an edge. With --app, measure a design in the open project, in world coordinates.',
-    input: z.object({ model: modelOrDesign, design: designArg.optional(), step: stepArg, a: faceRef, b: faceRef.optional(), snap_mm: z.number().min(0).max(5).default(0).describe('Snap to an edge or corner within this distance, mm') }),
+      'Measure a model or a design as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. Pick a face by a point on it and its outward normal, as slicerx_geom_faces lists them; snap_mm snaps the pick to an edge or a corner that close, to measure from an edge. With --app, measure a design in the open project, in world coordinates. With "section" in place of "a", cut a design\'s part at a plane (a point on it and its normal) for the cross section: its area in mm2, outline length in mm and outline loops in world mm, to check a wall, bore or lip before calling a part done. Round faces are flat facets, so a circle\'s area reads up to about 0.1 percent under the true circle. A part that is not closed, or a plane that misses it, is refused.',
+    input: z.object({
+      model: modelOrDesign,
+      design: designArg.optional(),
+      step: stepArg,
+      a: faceRef.optional().describe('The face or point to measure; required unless section is given'),
+      b: faceRef.optional(),
+      snap_mm: z.number().min(0).max(5).default(0).describe('Snap to an edge or corner within this distance, mm'),
+      section: z
+        .object({
+          part: z.number().int().min(0).default(0).describe('The part, by index; default 0'),
+          plane: z.object({ origin: vec3.describe('A point on the plane, mm'), normal: vec3.describe('The plane normal; any length') }),
+        })
+        .optional()
+        .describe("A design's part cut at a plane, in place of a and b"),
+    }),
     async run(i) {
+      if (i.section) {
+        if (!i.design) throw new ToolInputError('section: give a design; a section is of a design\'s part')
+        if (i.a || i.b) throw new ToolInputError('section: give either section or a and b, not both')
+        if (i.step !== undefined) throw new ToolInputError('section: a section is of the design as it is now; leave out step')
+        return sectionOf(designOf(i.design), i.section.part, i.section.plane)
+      }
+      if (!i.a) throw new ToolInputError('a: give the face to measure (a point on it and its normal), or a section')
+      const pickA = i.a
       oneOf(i)
       let feature: (f: z.infer<typeof faceRef>) => Promise<unknown>
       let measureCall: (req: Record<string, unknown>) => Promise<Record<string, unknown>>
       let readGuard: (() => ReturnType<typeof manifestOf>) | undefined
       if (i.design) {
         const d = designOf(i.design)
-        const reference = i.a.topology ?? i.b?.topology
+        const reference = pickA.topology ?? i.b?.topology
         if (reference) {
           if (i.step !== undefined) throw new ToolInputError('A live topology reference cannot select a historical step.')
-          if (i.a.topology) pickIn(d, i.a)
+          if (pickA.topology) pickIn(d, pickA)
           if (i.b?.topology) pickIn(d, i.b)
           readGuard = () => checkedManifest(d.id, reference.revision)
           readGuard()
@@ -1481,12 +1503,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         }
         measureCall = (req) => engine('measure', req)
       } else {
-        if (i.a.topology || i.b?.topology) throw new ToolInputError('Topology references require a live design.', 'not_supported')
+        if (pickA.topology || i.b?.topology) throw new ToolInputError('Topology references require a live design.', 'not_supported')
         const stlPath = await path(i.model!)
         feature = async (f) => (await call('measure.feature', { mesh: { stlPath }, pick: await pick(stlPath, f), snapMm: i.snap_mm }))['feature']
         measureCall = (req) => call('measure', req)
       }
-      const a = await feature(i.a)
+      const a = await feature(pickA)
       const b = i.b ? await feature(i.b) : undefined
       const m = await measureCall({ a, ...(b !== undefined ? { b } : {}) })
       const topology = readGuard?.()
@@ -1552,6 +1574,91 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           bodies: fit.bodies.map((b, k) => ({ body: k, part: b.part, name: b.name })),
           gaps,
           warnings,
+        },
+      }
+    },
+  })
+
+  /** A design's part in world coordinates once it is closed; an open one is refused in plain words. */
+  const closedPart = (d: Design, k: number, arg: string): { positions: number[]; indices: number[] } => {
+    const p = d.parts[k]
+    if (!p) throw new ToolInputError(`${arg}: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+    const c = partClosure(p)
+    if (!c.watertight) throw new ToolInputError(`${arg}: part ${k}${p.name ? ` (${p.name})` : ''} is not closed (${notClosedWords(c)}), so it has no inside to measure; repair it first (slicerx_geom_repair)`, 'invalid_input')
+    const w = bakeMesh(p, d.transform)
+    return { positions: Array.from(w.positions), indices: Array.from(w.indices) }
+  }
+  /** At most this many loop points come back; a bigger section gives its area and counts only. */
+  const SECTION_POINTS = 4000
+
+  /** A design's part cut at a plane: the area, outline length and loops in world mm, or a refusal in plain words. */
+  const sectionOf = async (d: Design, part: number, plane: { origin: V3; normal: V3 }): Promise<ToolOutput> => {
+    if (Math.hypot(...plane.normal) < 1e-9) throw new ToolInputError('section.plane.normal: give a direction, not zeros')
+    const mesh = closedPart(d, part, 'section.part')
+    const name = d.parts[part]!.name
+    const label = `part ${part}${name ? ` (${name})` : ''}`
+    const r = await engine('section', { mesh, plane: { point: plane.origin, normal: plane.normal } })
+    const polys = (r['polygons'] as { outer: [number, number][]; holes: [number, number][][] }[] | undefined) ?? []
+    if (!polys.length) throw new ToolInputError(`section.plane: the plane does not cut ${label}; give a point inside the part`, 'invalid_input')
+    const f = r['frame'] as { origin: V3; u: V3; v: V3 }
+    const at = ([x, y]: [number, number]): V3 => [0, 1, 2].map((k) => r3n(f.origin[k]! + f.u[k]! * x + f.v[k]! * y)) as V3
+    const points = polys.reduce((n, q) => n + q.outer.length + q.holes.reduce((m, h) => m + h.length, 0), 0)
+    const area = r3n(Number(r['areaMm2'] ?? 0))
+    const holes = polys.reduce((n, q) => n + q.holes.length, 0)
+    const regions = `${polys.length} ${polys.length === 1 ? 'region' : 'regions'}${holes ? ` with ${holes} ${holes === 1 ? 'hole' : 'holes'}` : ''}`
+    return {
+      summary: `Section of ${label}: ${area} mm2 in ${regions}`,
+      output: {
+        section: {
+          design: d.id,
+          part,
+          area_mm2: area,
+          outline_mm: r3n(Number(r['seamLengthMm'] ?? 0)),
+          regions: polys.length,
+          holes,
+          ...(points <= SECTION_POINTS
+            ? { loops: polys.map((q) => ({ outer: q.outer.map(at), holes: q.holes.map((h) => h.map(at)) })) }
+            : { loop_points: points, loops_left_out: `over ${SECTION_POINTS} points; the area and counts stand` }),
+        },
+      },
+    }
+  }
+
+  const interference = defineTool({
+    name: 'geom.interference',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      "Whether two parts of a design interfere: the volume they share in mm3, or when they do not, the clearance between them (the smallest distance between their surfaces, mm) with the closest points. Use it to check a pin in its hole, a lid on its box or a hinge gap by measurement. A shared volume under 0.001 mm3 counts as touching (clearance 0). The clearance is exact on the triangles: round faces are flat facets, so a gap beside a curve reads up to about 0.02 mm under the modeled one. Refuses a part that is not closed.",
+    input: z.object({
+      design: designArg,
+      a: z.number().int().min(0).describe('The first part, by index'),
+      b: z.number().int().min(0).describe('The second part, by index'),
+    }),
+    async run(i) {
+      const d = designOf(i.design)
+      if (i.a === i.b) throw new ToolInputError('b: give a different part from a; a part does not interfere with itself')
+      const r = await engine('interference', { a: { mesh: closedPart(d, i.a, 'a') }, b: { mesh: closedPart(d, i.b, 'b') } })
+      const label = (k: number): string => `part ${k}${d.parts[k]!.name ? ` (${d.parts[k]!.name})` : ''}`
+      const interferes = r['interferes'] === true
+      const overlap = r3n(Number(r['overlapMm3'] ?? 0))
+      const clearance = r3n(Number(r['clearanceMm'] ?? 0))
+      const summary = interferes
+        ? `${label(i.a)} and ${label(i.b)} interfere: they share ${overlap} mm3`
+        : clearance > 0
+          ? `${label(i.a)} and ${label(i.b)} clear each other by ${clearance} mm`
+          : `${label(i.a)} and ${label(i.b)} touch (clearance 0)`
+      return {
+        summary,
+        output: {
+          design: d.id,
+          a: i.a,
+          b: i.b,
+          interferes,
+          overlap_mm3: overlap,
+          clearance_mm: clearance,
+          ...(Array.isArray(r['from']) ? { from: (r['from'] as V3).map(r3n), to: (r['to'] as V3).map(r3n) } : {}),
         },
       }
     },
@@ -1751,5 +1858,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     }
   }
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, traceImage, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, fitCheck, shell, holeTool] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, traceImage, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, fitCheck, interference, shell, holeTool] as PilotTool<never>[]
 }

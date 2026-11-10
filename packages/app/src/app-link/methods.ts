@@ -154,6 +154,7 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.info': 'read',
   'geom.measure': 'read',
   'geom.fit_check': 'read',
+  'geom.interference': 'read',
   'geom.cut': 'edit',
   'geom.split': 'edit',
   'geom.mirror': 'edit',

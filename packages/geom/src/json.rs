@@ -59,6 +59,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("import.auto", ""),
     ("import.selfIntersections", ""),
     ("fit.check", ""),
+    ("interference", ""),
     ("face.push", "cad"),
     ("face.push.preview", "cad"),
     ("sketch.check", "cad"),
