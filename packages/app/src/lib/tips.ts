@@ -121,6 +121,6 @@ export const OPTION_TIPS: Readonly<Record<string, { title: string; body: string;
   'smart_layer.sleipnir': {
     title: 'sleipnir',
     demo: 'sleipnir',
-    body: 'sleipnir changes the layer height as the part goes up: thinner layers on curves and slopes where steps would show, and your layer height everywhere else. On multi-color plates it keeps layers fixed where colors change, so it adds no filament changes.',
+    body: 'sleipnir changes the layer height as the part goes up: thinner layers on curves and slopes where steps would show, and your layer height elsewhere, up to half the nozzle width. On multi-color plates it keeps layers fixed where colors change, so it adds no filament changes.',
   },
 }
