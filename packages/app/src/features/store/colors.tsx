@@ -7,7 +7,7 @@
 import type { ListingColors } from '@slicerx/contracts'
 import { useId, useState } from 'react'
 import { Icon, Switch, tipAttrs } from '@slicerx/ui'
-import { Swatch } from '@slicerx/app'
+import { Swatch } from '../../parts'
 import { COLOR_NAME_MAX, MAX_LISTING_COLORS } from '@slicerx/store/validate'
 import { addColor, moveColor, removeColor, setPartAms, updateColor, type ColorDraft } from './colors-edit'
 

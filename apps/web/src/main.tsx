@@ -79,8 +79,12 @@ if (__SX_FEATURE_CONNECT__) {
     shellStarted ? shellBridge(() => Promise.resolve(shellStarted), relay) : typeof shellFails === 'string' ? shellBridge(failedStart, relay) : browserBridge(testHubUrl(pagePort ?? __SX_TEST_HUB_PORT__), relay),
   )
   // Phone access keeps its identity and pairings sealed in this browser (features/phone/sealed.ts).
-  const { setPairStorage, sealedPairStores, browserDocStore } = await import('@slicerx/app')
-  setPairStorage({ ...sealedPairStores(browserDocStore()), name: 'SlicerX in the browser', kind: 'web' })
+  // The sealing code loads when the bridge first connects, not before the first screen.
+  const { setPairStorage } = await import('@slicerx/app')
+  setPairStorage(async () => {
+    const { sealedPairStores, browserDocStore } = await import('@slicerx/app/features/phone/sealed')
+    return { ...sealedPairStores(browserDocStore()), name: 'SlicerX in the browser', kind: 'web' }
+  })
 }
 
 // The AI clients' marks identify them in "Connect your AI agent"; unaltered, never implying endorsement.

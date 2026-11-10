@@ -6,6 +6,7 @@
 // own pairing host must not attach to the relay for them, or two programs would answer one route.
 // Off by default.
 import { useSyncExternalStore } from 'react'
+import { relayTokensLoaded } from './relay-tokens'
 
 export interface RemoteQuota {
   tier: 'account' | 'anonymous'
@@ -331,3 +332,7 @@ export function quotaText(q: RemoteQuota): string {
   const reset = new Date(q.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   return `${gb(q.used)} of ${gb(q.cap)} used this month, resets ${reset}. ${q.connections} of ${q.maxConnections} connections.`
 }
+
+/** The two calls the app entries make (relay-tokens.ts keeps them until this module is here). */
+export type RemoteTokens = { configureRelayTokens: typeof configureRelayTokens; pushAccountToken: typeof pushAccountToken }
+relayTokensLoaded({ configureRelayTokens, pushAccountToken })

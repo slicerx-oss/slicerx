@@ -19,6 +19,22 @@ describe('startup imports', () => {
     })
   }
 
+  // The entry's package index is awaited before the first screen, so everything it re-exports rides in the startup code
+  // (about 9 KB gzip for the phone pairing code, LayerArt and Swatch, the preset import and the shell's CPU answer).
+  it('index.ts leaves the phone pairing code, LayerArt, Swatch, the preset import and the CPU answer to their own paths', () => {
+    const text = readFileSync(join(src, 'index.ts'), 'utf8')
+      .split('\n')
+      .filter((l) => l.startsWith('export'))
+      .join('\n')
+    for (const heavy of ['features/phone/remote', 'features/phone/wire', 'features/phone/sealed', "'./parts'", 'first-run/preset-import', 'link/watch-support']) expect(text).not.toContain(heavy)
+    expect(text).toContain('features/phone/relay-tokens')
+    expect(text).toContain('features/phone/pair-slot')
+  })
+
+  it('the connection code reads the phone pairing storage through its slot, which may hold a loader', () => {
+    expect(readFileSync(join(src, 'link/bridge.ts'), 'utf8')).toMatch(/await pairStorageReady\(\)/)
+  })
+
   it('lib/links.ts loads the printer catalog on first use', () => {
     const text = readFileSync(join(src, 'lib/links.ts'), 'utf8')
     expect(text).toMatch(/await import\('@slicerx\/printer-catalog'\)/)

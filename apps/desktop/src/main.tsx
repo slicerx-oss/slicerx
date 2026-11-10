@@ -3,7 +3,8 @@
 // First: Zod must be jitless before any module makes a schema (packages/app/src/zod-jitless.ts).
 import '@slicerx/app/zod-jitless'
 import type { AppFeature, EditionHost } from '@slicerx/contracts'
-import { editionLogo, registerCrashHost, registerShellArch, registerStepWasm, setCurrentEdition, setPrefsMirror, SlicerXApp, startGeomFor } from '@slicerx/app'
+import { editionLogo, registerCrashHost, registerStepWasm, setCurrentEdition, setPrefsMirror, SlicerXApp, startGeomFor } from '@slicerx/app'
+import { registerShellArch } from '@slicerx/app/link/watch-support'
 import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -92,8 +93,11 @@ if (__SX_FEATURE_CONNECT__) {
   const [{ setBridgeConnector }, { shellBridge }, { invoke }] = await Promise.all([import('@slicerx/app'), import('@slicerx/web/host/link'), import('./host/invoke')])
   setBridgeConnector(shellBridge(() => invoke<{ url: string; code: string; hubKey: string }>('link_start'), editionFromBuild().backend.relay))
   // Phone access keeps its identity and pairings sealed by the shell, with a key in the system keychain.
-  const [{ setPairStorage, sealedPairStores }, { tauriDocStore }] = await Promise.all([import('@slicerx/app'), import('./host/pair-doc')])
-  setPairStorage({ ...sealedPairStores(tauriDocStore()), name: `${editionFromBuild().brand.name} on this computer`, kind: 'desktop' })
+  const { setPairStorage } = await import('@slicerx/app')
+  setPairStorage(async () => {
+    const [{ sealedPairStores }, { tauriDocStore }] = await Promise.all([import('@slicerx/app/features/phone/sealed'), import('./host/pair-doc')])
+    return { ...sealedPairStores(tauriDocStore()), name: `${editionFromBuild().brand.name} on this computer`, kind: 'desktop' }
+  })
 }
 
 // The AI clients' marks identify them in "Connect your AI agent"; unaltered, never implying endorsement.
@@ -137,7 +141,7 @@ if (__SX_FEATURE_PILOT__) {
 
 // First run can bring presets over from the slicers installed on this computer.
 {
-  const [{ registerPresetImport }, { createTauriPresetImport }] = await Promise.all([import('@slicerx/app'), import('./host/presets')])
+  const [{ registerPresetImport }, { createTauriPresetImport }] = await Promise.all([import('@slicerx/app/first-run/preset-import'), import('./host/presets')])
   registerPresetImport(() => createTauriPresetImport())
 }
 

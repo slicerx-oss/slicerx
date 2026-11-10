@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // First run: the user presets of an installed OrcaSlicer, Bambu Studio or PrusaSlicer, listed and read by the
 // shell (src-tauri/src/presets.rs). The webview names a slicer, never a path of its own.
-import type { PresetImportHost } from '@slicerx/app'
+import type { PresetImportHost } from '@slicerx/app/first-run/preset-import'
 import { invoke } from './invoke'
 
 export function createTauriPresetImport(): PresetImportHost {
