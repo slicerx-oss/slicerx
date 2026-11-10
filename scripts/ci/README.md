@@ -40,6 +40,11 @@ the suite on half the shards (six desktop, two phone), every test still included
 change: `e2e` and `rust-tests` pass when what they gather was not needed. When to add the label is in CONTRIBUTING.md,
 "What CI runs".
 
+The `replay` job runs the app and MCP test files that replay recorded geometry engine replies (`useGeomEngine`) with no
+engine built (`scripts/ci/replay-fixtures.sh`, `SX_GEOM_REPLAY=1`). The `web` job builds the engine and runs those tests
+live, so only `replay` reads the recordings: a change to the engine calls a test makes needs its fixture recorded again
+(`SX_GEOM_RECORD=1` with the engine built), or `replay` fails. It is not a required check.
+
 A label event starts its own run (the concurrency comment in `ci.yml`). A run for a label that adds nothing (any label
 but `full-ci`, or `full-ci` already on the pull request when it opened) skips every job except `rust`, which starts
 and skips its steps, so its required matrix name `rust (ubuntu-latest)` still reports, as passed, and the gate

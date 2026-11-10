@@ -26,14 +26,20 @@ interface GeomExports {
 /**
  * Whether the geometry engine module at `path` is built. A test that needs it skips without it, except on CI (CI=true):
  * the web job builds both modules before the tests, so there a missing one fails the file instead of skipping it.
+ * SX_GEOM_REPLAY=1 takes every module as missing: tests replay their recorded replies and the live ones skip, so the
+ * recordings are checked against the code as it is (the replay job in .github/workflows/ci.yml).
  */
 export function wasmBuilt(path: string | URL): boolean {
+  if (replayOnly()) return false
   if (existsSync(path)) return true
   if (process.env['CI'] === 'true') {
     throw new Error(`CI=true but there is no geometry engine at ${String(path)}: build it with packages/geom/wasm/scripts/build.sh`)
   }
   return false
 }
+
+/** Whether this run replays recordings only (SX_GEOM_REPLAY=1), whatever is built. */
+export const replayOnly = (): boolean => process.env['SX_GEOM_REPLAY'] === '1'
 
 export const wasmPath = process.env['SX_GEOM_WASM'] ?? join(__dirname, '..', '..', 'geom', 'wasm', 'pkg', 'sx_geom_wasm.wasm')
 export const liveEngine = wasmBuilt(wasmPath)
