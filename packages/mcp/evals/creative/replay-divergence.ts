@@ -14,8 +14,11 @@ export interface RecordedStep extends ScriptStepData {
 }
 
 // ids the app makes from the time and a counter: designs and objects (obj_...), plans (plan_...), volumes and plates,
-// steps (s...) and dimensions (d...), each with at least one digit. They change every run, so they never count.
-export const MADE_ID = /\b(?:obj|plan|vol|plate)_[0-9a-z~]+\b|\b[sd](?=[0-9a-z]*\d)[0-9a-z]{9,}\b/g
+// steps (s...) and dimensions (d...). A step or dimension id in running text needs a digit, so a long word is not
+// read as one; as the value of an id, sketch or step field it needs none, since the time and counter in base 36 can
+// be all letters, and a sketch id missed there kept the recording's id in the next call. They change every run, so they
+// never count.
+export const MADE_ID = /\b(?:obj|plan|vol|plate)_[0-9a-z~]+\b|\b[sd](?=[0-9a-z]*\d)[0-9a-z]{9,}\b|(?<="(?:id|sketch|step)":")[sd][0-9a-z]{9,}(?=")/g
 
 /** The tool results after the last assistant message: what the model read just before this reply. */
 export function toolResultsSeen(messages: readonly LlmMessage[]): string[] {
