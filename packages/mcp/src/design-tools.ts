@@ -17,6 +17,7 @@ import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason
 import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
 import { meshStats } from './mesh'
 import { movedStep, sizedStep } from './step-reshape'
+import { FORMS_MAX, partForms } from './part-form'
 
 type V3 = [number, number, number]
 
@@ -260,6 +261,7 @@ export function designSummary(d: Design): Record<string, unknown> {
     return { index: i, name: p.name, slot: p.slot, triangles: s.triangles, minMm: s.minMm, sizeMm: s.bboxMm, volumeMm3: r3(s.volumeMm3), ...(painted ? { paintedTriangles: painted } : {}) }
   })
   const all = d.parts.length ? meshStats(soup(d.parts.map((p) => bakeMesh(p, d.transform)))) : null
+  const forms = partForms(d)
   const last = d.history.steps.length ? stepRow(d, d.history.steps.length - 1) : null
   return {
     design: d.id,
@@ -270,6 +272,8 @@ export function designSummary(d: Design): Record<string, unknown> {
     ...(all ? { minMm: all.minMm, sizeMm: all.bboxMm } : {}),
     volumeMm3: r3(parts.reduce((s, p) => s + p.volumeMm3, 0)),
     parts,
+    // how each part was made and how it looks, so a plain block reads as one (part-form.ts)
+    ...(forms.length ? { forms, ...(d.parts.length > FORMS_MAX ? { formsMore: `and ${d.parts.length - FORMS_MAX} more parts` } : {}) } : {}),
     ...(d.stl ? { stlPath: d.stl } : {}),
     ...(d.history.ended ? { ended: d.history.ended } : {}),
     ...(d.placed ? { placedMm: d.placed } : {}),
