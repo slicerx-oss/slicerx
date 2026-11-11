@@ -10,11 +10,8 @@
 // sketch is recorded where the sketch is stored (recordedOn), so no change of owner, undo or redo rewrites a frame.
 // Every offset comes from what the store holds, so any number of hosts, and the app's own tools, read the same.
 import type { SketchItem, Timeline } from './design'
-import { direction, IDENTITY, invert, multiply, point, type History, type Mat4, type PaintTarget, type SolidSpec, type StepParams } from './model'
+import { BED_FRAME, direction, IDENTITY, invert, multiply, point, type History, type Mat4, type PaintTarget, type SolidSpec, type StepParams } from './model'
 import type { ArraySpec, EdgeRef, FaceFrame, Vec3 } from './types'
-
-/** The bed as a plane: what a step or sketch with no frame is drawn on. */
-export const BED_FRAME: FaceFrame = { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
 
 /** A move by `v`, mm. */
 export const translation = (v: readonly [number, number, number]): Mat4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, v[0], v[1], v[2], 1]

@@ -397,6 +397,9 @@ export function hasFaceOn(mesh: Pick<HistoryMesh, 'positions' | 'indices'>, t: M
   return false
 }
 
+/** The plane a shape with no frame is drawn on: the bed, in world coordinates. */
+export const BED_FRAME: FaceFrame = { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+
 /**
  * The end face a step leaves, in the part's local frame: the moved face of a push, the far cap of a
  * one-sided extrude. Later steps that were placed on it follow it when this step's distance changes.
@@ -408,11 +411,13 @@ export function capOf(s: Step): { point: Vec3; normal: Vec3; distanceMm: number;
     const n = unit(p.normal)
     return { point: point(inv, [p.at[0] + n[0] * p.distanceMm, p.at[1] + n[1] * p.distanceMm, p.at[2] + n[2] * p.distanceMm]), normal: unit(direction(inv, n)), distanceMm: p.distanceMm, sign: 1 }
   }
-  if (p.op === 'shape.extrude' && p.frame && (p.spec.extent ?? 'oneSide') === 'oneSide') {
+  if (p.op === 'shape.extrude' && (p.spec.extent ?? 'oneSide') === 'oneSide') {
+    // with no frame the shape stands on the bed, as a design's first body does
+    const f = p.frame ?? BED_FRAME
     const sign = (p.spec.operation === 'cut') !== Boolean(p.spec.flip) ? -1 : 1
-    const n = unit(p.frame.normal)
+    const n = unit(f.normal)
     const d = sign * p.spec.distanceMm
-    return { point: point(inv, [p.frame.origin[0] + n[0] * d, p.frame.origin[1] + n[1] * d, p.frame.origin[2] + n[2] * d]), normal: unit(direction(inv, n)), distanceMm: p.spec.distanceMm, sign }
+    return { point: point(inv, [f.origin[0] + n[0] * d, f.origin[1] + n[1] * d, f.origin[2] + n[2] * d]), normal: unit(direction(inv, n)), distanceMm: p.spec.distanceMm, sign }
   }
   return null
 }
