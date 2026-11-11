@@ -113,7 +113,7 @@ export function tidyPlan<P extends PartPlan>(plan: P): P {
   return { ...plan, features: plan.features.map(({ kinds, ...f }) => (kinds && Object.keys(kinds).length ? { ...f, kinds } : f)) }
 }
 
-export const checkItemSchema = z.object({ name: z.string(), want: z.string(), got: z.string(), pass: z.boolean() })
+export const checkItemSchema = z.object({ name: z.string(), want: z.string(), got: z.string(), pass: z.boolean(), warning: z.string().optional() })
 export const checkResultSchema = z.object({ pass: z.boolean(), items: z.array(checkItemSchema) })
 export type CheckItem = z.infer<typeof checkItemSchema>
 export type CheckResult = z.infer<typeof checkResultSchema>
@@ -142,6 +142,12 @@ export interface BodyFacts {
   minWallMm: number | null
   /** Why the wall was not measured, when that was on purpose: "part too dense" past the measuring budget. */
   minWallWhy?: string | undefined
+  /**
+   * The thinnest reading under twice the nozzle taken within two nozzle widths of a sharp outward edge or a point (the
+   * rim of a flared body cut flat at a line, a pointed end), where its ray started, when it is thinner than
+   * minWallMm. minWallMm leaves such readings out: the taper of an edge is not a wall.
+   */
+  minWallTip?: { mm: number; at: [number, number, number] } | undefined
   /** The pieces and the gaps between them, read only for a print-in-place plan. */
   fit?: FitFacts | undefined
   /** Why the gaps were not measured, when the fit check failed. */
@@ -518,9 +524,7 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
 
   items.push(featureItem(plan.features.map((f) => f.name), body))
   items.push({ name: 'watertight', want: 'closed', got: body.watertight ? 'closed' : openWords(body.openWhy), pass: body.watertight })
-  const wall = minWallFor(nozzle)
-  const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'
-  items.push({ name: 'minimum wall', want: `at least ${mm(wall)} (twice the ${mm(nozzle)} nozzle)`, got: body.minWallMm === null ? unmeasured : mm(body.minWallMm), pass: body.minWallMm !== null && body.minWallMm >= wall - 1e-6 })
+  items.push(wallItem(body, nozzle))
   if (plan.printInPlace) items.push(...fitItems(plan.printInPlace, body))
   // the gaps the plan sets, held to the same limits as the gaps measured; a plan whose pieces print together without
   // naming them (printsTogether) gets this item alone, as it names no pieces to measure
@@ -545,6 +549,27 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   if (floor && body.floor) items.push(floorItem(floor, body.floor))
 
   return { pass: items.every((i) => i.pass), items }
+}
+
+/**
+ * The minimum wall: the thinnest wall away from sharp edges and points against twice the nozzle. Thinner readings
+ * within two nozzle widths of a sharp outward edge or a point are the edge's taper, which the slicer drops or prints as
+ * a thin line, so they warn with where they are and never fail the part; a real thin wall elsewhere still fails.
+ */
+function wallItem(body: BodyFacts, nozzle: number): CheckItem {
+  const wall = minWallFor(nozzle)
+  const want = `at least ${mm(wall)} (twice the ${mm(nozzle)} nozzle)`
+  const tip = body.minWallTip
+  const tipWarning = tip
+    ? `${mm(tip.mm)} within ${mm(wall)} of a sharp edge or point near (${tip.at.map(r2).join(', ')}), left out of the minimum wall: the slicer prints that taper thin or drops it. Thicken it only when that edge has to be strong`
+    : undefined
+  if (body.minWallMm === null) {
+    const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'
+    if (tip) return { name: 'minimum wall', want, got: `${mm(tip.mm)} at a sharp edge or point only`, pass: true, warning: tipWarning }
+    return { name: 'minimum wall', want, got: unmeasured, pass: false }
+  }
+  const pass = body.minWallMm >= wall - 1e-6
+  return { name: 'minimum wall', want, got: mm(body.minWallMm), pass, ...(pass && tipWarning ? { warning: tipWarning } : {}) }
 }
 
 /**

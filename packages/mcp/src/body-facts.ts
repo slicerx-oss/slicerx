@@ -31,7 +31,7 @@ const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3
  * `hook`, how far the hook on its upright stem rises at its tip, and with `floor`, where each part's cavity opens
  * through its bottom (holes up to `floor.plannedHoleMm` across left out, as the plan's own).
  */
-export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; floor?: { plannedHoleMm: number } } = {}): Promise<BodyFacts> {
+export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; nozzleMm?: number; floor?: { plannedHoleMm: number } } = {}): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
   // closed as geom.info and the slicer read it: corners at the same point of the part's own positions are one vertex,
   // whatever their indices
@@ -61,7 +61,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
       holes.push({ part, at: loop.at, axis: loop.axis, diameterMm })
     }
   }
-  const wall = minWall(world, checkWallBudget())
+  const wall = minWall(world, checkWallBudget(), undefined, undefined, opts.nozzleMm)
   const shaping = d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint')
   let gaps: Pick<BodyFacts, 'fit' | 'fitWhy'> = {}
   if (fit)
@@ -82,6 +82,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     ...(watertight ? {} : { openWhy: notClosedWords(open) }),
     minWallMm: wall.mm,
     ...(wall.why ? { minWallWhy: wall.why } : {}),
+    ...(wall.tip ? { minWallTip: wall.tip } : {}),
     ...gaps,
     ...(opts.hook ? hookFacts(world) : {}),
     ...(opts.floor ? { floor: floorFacts(world, d.parts.map((p) => p.name), opts.floor.plannedHoleMm) } : {}),
@@ -276,11 +277,22 @@ export function checkWallBudget(): WallBudget {
   return env === '1' ? { ...WALL_BUDGET, maxMs: Infinity } : WALL_BUDGET
 }
 
-/** The thinnest wall, in mm, or null with the reason when it was not measured (null alone: no ray met a far side). */
+/**
+ * The thinnest wall, in mm, or null with the reason when it was not measured (null alone: no ray met a far side). `mm`
+ * leaves out readings under the floor between faces that meet within that floor of the ray's start, a taper
+ * (tapers in partWall); the thinnest
+ * of those is `tip`, with where its ray started, when it is thinner than `mm`.
+ */
 export interface WallReading {
   mm: number | null
   why?: string
+  tip?: { mm: number; at: V3 }
 }
+
+/** The nozzle minWall reads tips for when it is given none: a tip zone and a floor of two nozzle widths. */
+const WALL_NOZZLE_MM = 0.4
+/** A taper's faces close to this share of the gap the ray read within the zone (tapers in partWall). */
+const TAPER_CLOSE = 0.8
 
 const TOO_DENSE = 'part too dense'
 /** Grid cells per part at most, and facet entries over all cells (a facet is listed in each cell its bounds cross). */
@@ -295,19 +307,25 @@ const MAX_ENTRIES = 4_000_000
  * ray starts from: the cosine between their two normals is under -`opposed` (OPPOSED unless given). Needles, specks and
  * flat patches narrower than LEDGE_MM across measure no wall.
  */
-export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now(), opposed = OPPOSED): WallReading {
+export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now(), opposed = OPPOSED, nozzleMm = WALL_NOZZLE_MM): WallReading {
   const facets = meshes.reduce((n, m) => n + Math.floor(m.indices.length / 3), 0)
   if (facets > budget.maxFacets) return { mm: null, why: TOO_DENSE }
   const start = now()
   const late = (): boolean => now() - start > budget.maxMs
   if (late()) return { mm: null, why: TOO_DENSE }
-  let best = Infinity
-  for (const m of meshes) {
-    const r = partWall(m, best, late, opposed)
-    if (r === null) return { mm: null, why: TOO_DENSE }
-    best = r
-  }
-  return { mm: Number.isFinite(best) ? Math.round(best * 1000) / 1000 : null }
+  const nozzle = Number.isFinite(nozzleMm) && nozzleMm > 0 ? nozzleMm : WALL_NOZZLE_MM
+  const read: PartReading = { best: Infinity, tip: Infinity, tipAt: [0, 0, 0] }
+  for (const m of meshes) if (!partWall(m, read, late, opposed, 2 * nozzle)) return { mm: null, why: TOO_DENSE }
+  const r3 = (v: number): number => Math.round(v * 1000) / 1000
+  const tip = read.tip < read.best ? { tip: { mm: r3(read.tip), at: read.tipAt.map((v) => Math.round(v * 100) / 100) as V3 } } : {}
+  return { mm: Number.isFinite(read.best) ? r3(read.best) : null, ...tip }
+}
+
+/** The thinnest wall away from tips so far, and the thinnest reading under the floor at a tip, with where its ray started. */
+interface PartReading {
+  best: number
+  tip: number
+  tipAt: V3
 }
 
 /** A facet whose doubled area is under this share of its longest edge squared is a needle (about a 0.06 degree corner). */
@@ -334,10 +352,14 @@ function shareEdge(tri: Float64Array, a: number, b: number): boolean {
   return same >= 2
 }
 
-/** The thinnest wall of one part, no more than `bestSoFar`; null when `late` says the time ran out. */
-function partWall(m: Mesh, bestSoFar: number, late: () => boolean, opposed: number): number | null {
+/**
+ * Reads one part's thinnest wall into `read`, keeping what is thinner there already; false when `late` says the time
+ * ran out. `zone` is both the floor and the tip zone: a reading under it whose faces meet within it of the
+ * ray's start (tapers) is a tip, kept apart from the wall.
+ */
+function partWall(m: Mesh, read: PartReading, late: () => boolean, opposed: number, zone: number): boolean {
   const tris = Math.floor(m.indices.length / 3)
-  if (tris === 0) return bestSoFar
+  if (tris === 0) return true
   // every facet's corners, nine numbers each
   const tri = new Float64Array(tris * 9)
   const lo = [Infinity, Infinity, Infinity]
@@ -420,9 +442,9 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, opposed: numb
   const tested = new Int32Array(tris).fill(-1)
   // whether each facet's flat patch is narrower than LEDGE_MM: 0 not measured yet, 1 narrow, 2 wide
   const flat = new Int8Array(tris)
-  let best = bestSoFar
+  let best = read.best
   for (let t = 0; t < tris; t++) {
-    if ((t & 255) === 0 && late()) return null
+    if ((t & 255) === 0 && late()) return false
     const b = t * 9
     const e10 = tri[b + 3]! - tri[b]!
     const e11 = tri[b + 4]! - tri[b + 1]!
@@ -462,6 +484,7 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, opposed: numb
     const dt1 = d1 !== 0 ? cs1 / Math.abs(d1) : Infinity
     const dt2 = d2 !== 0 ? cs2 / Math.abs(d2) : Infinity
     let hit = Infinity
+    let hitFacet = -1
     // whether the nearest facet met so far faces back against this one, as the far side of a wall does
     let faces = true
     for (;;) {
@@ -474,6 +497,7 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, opposed: numb
         // a facet sharing an edge with this one is its neighbor on the same surface, never the far side of a wall
         if (d > 1e-6 && d < hit && !shareEdge(tri, b, f * 9)) {
           hit = d
+          hitFacet = f
           // the ray runs along this facet's normal turned in, so the far facet's normal against the ray is the cosine
           // between the two normals with its sign turned
           faces = facing(tri, f * 9, d0, d1, d2) > opposed
@@ -501,9 +525,63 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean, opposed: numb
     // from beside the rim of a tube cut at a slant, or from the top face of an open rim over facets that lean in under
     // it, the ray reads how near it starts to that edge. None is a wall. Nor is a reading from a flat patch narrower
     // than LEDGE_MM across (asked only of a reading that would win).
-    if (faces && hit < best && !narrow(t)) best = hit
+    // A reading under the floor between faces that meet within the zone of its start is a taper, not a wall:
+    // the rim of a flared body cut flat at a line, a pointed end. It is kept as the tip apart from the wall,
+    // so a real thin wall away from any edge still fails while a sharp rim only warns (asked only of a reading that
+    // would win: the tip matters only while the wall away from tips holds the floor).
+    if (faces && (hit < best || (best >= zone && hit < read.tip)) && !narrow(t)) {
+      if (hit < zone && tapers(hitFacet, d0, d1, d2, hit, o0, o1, o2)) {
+        if (hit < read.tip) {
+          read.tip = hit
+          read.tipAt = [o0, o1, o2]
+        }
+      } else if (hit < best) best = hit
+    }
   }
-  return best
+  read.best = best
+  return true
+
+  /**
+   * Whether the reading `hit` along the unit ray `(d0, d1, d2)` (against the start facet's outward normal), started at
+   * `(x, y, z)`, to the far facet `far` is a taper's. Two things make it one. The two facets' planes meet within the
+   * zone of the start: faces at an angle theta meet hit / tan(theta) away, so a 0.4 mm wall with a 2 degree draft meets
+   * 11 mm away and is a wall, while a flared side cut flat meets its cut a hair away. And the part has a corner within
+   * the zone where the faces have closed in: no farther from either plane than TAPER_CLOSE of the gap the ray read (the
+   * corners of the rim where they meet). A thin floor whose far face only leans toward a meeting line the floor never
+   * reaches (a countersink over a floor cut off by its bore) has no such corner, and stays a wall.
+   */
+  function tapers(far: number, d0: number, d1: number, d2: number, hit: number, x: number, y: number, z: number): boolean {
+    if (far < 0) return false
+    const n = unitNormal(tri, far * 9)
+    // the start facet's outward normal is -d; the faces' angle theta has cos theta = -(-d . n) = d . n
+    const cos = d0 * n[0] + d1 * n[1] + d2 * n[2]
+    if (cos >= 1 - 1e-9) return false
+    const tan = Math.sqrt(1 - cos * cos) / Math.max(cos, 1e-9)
+    if (hit / tan > zone) return false
+    const h: V3 = [x + d0 * hit, y + d1 * hit, z + d2 * hit]
+    // a corner's gap to the far plane and to the start plane, each against the start's (inside the solid is positive)
+    const farGap = TAPER_CLOSE * hit * cos
+    const startGap = TAPER_CLOSE * hit
+    const r = zone + pad
+    const [a0, z0] = [cell(x - r, 0, cs0, n0), cell(x + r, 0, cs0, n0)]
+    const [a1, z1] = [cell(y - r, 1, cs1, n1), cell(y + r, 1, cs1, n1)]
+    const [a2, z2] = [cell(z - r, 2, cs2, n2), cell(z + r, 2, cs2, n2)]
+    for (let c2 = a2; c2 <= z2; c2++)
+      for (let c1 = a1; c1 <= z1; c1++)
+        for (let c0 = a0; c0 <= z0; c0++) {
+          const c = (c2 * n1 + c1) * n0 + c0
+          for (let q = start[c]!; q < start[c + 1]!; q++)
+            for (let j = 0; j < 3; j++) {
+              const at = items[q]! * 9 + j * 3
+              const [px, py, pz] = [tri[at]!, tri[at + 1]!, tri[at + 2]!]
+              if (Math.hypot(px - x, py - y, pz - z) > zone) continue
+              const toFar = n[0] * (h[0] - px) + n[1] * (h[1] - py) + n[2] * (h[2] - pz)
+              const toStart = -(d0 * (x - px) + d1 * (y - py) + d2 * (z - pz))
+              if (toFar <= farGap && toStart <= startGap) return true
+            }
+        }
+    return false
+  }
 
   /**
    * Whether facet `seed` lies in a flat patch narrower than LEDGE_MM across. The patch is the facets reached edge to edge
