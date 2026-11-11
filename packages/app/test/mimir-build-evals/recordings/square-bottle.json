@@ -1,0 +1,1027 @@
+{
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-11T03:03:37.129Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Square bottle",
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          -35,
+          -35
+         ],
+         [
+          35,
+          -35
+         ],
+         [
+          35,
+          35
+         ],
+         [
+          -35,
+          35
+         ]
+        ],
+        "from": 0,
+        "to": 120
+       },
+       {
+        "kind": "loft",
+        "plane": "xy",
+        "smooth": true,
+        "sections": [
+         {
+          "at": 120,
+          "points": [
+           [
+            -35,
+            -35
+           ],
+           [
+            35,
+            -35
+           ],
+           [
+            35,
+            35
+           ],
+           [
+            -35,
+            35
+           ]
+          ]
+         },
+         {
+          "at": 150,
+          "d": 30
+         }
+        ]
+       },
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          -15,
+          0
+         ],
+         [
+          15,
+          0
+         ]
+        ],
+        "from": 150,
+        "to": 175
+       }
+      ],
+      "dims": [
+       {
+        "key": "body_width",
+        "label": "Square body width",
+        "value": 70,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -35,
+          -35,
+          0
+         ],
+         "b": [
+          35,
+          -35,
+          0
+         ],
+         "off": [
+          0,
+          -12,
+          0
+         ]
+        }
+       },
+       {
+        "key": "body_height",
+        "label": "Body height, bed to top of blend",
+        "value": 150,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -40,
+          -35,
+          0
+         ],
+         "b": [
+          -40,
+          -35,
+          150
+         ],
+         "off": [
+          -6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "neck_diameter",
+        "label": "Neck outer diameter",
+        "value": 30,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -15,
+          0,
+          175
+         ],
+         "b": [
+          15,
+          0,
+          175
+         ],
+         "off": [
+          0,
+          -6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "neck_height",
+        "label": "Neck height above blend",
+        "value": 25,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          18,
+          0,
+          150
+         ],
+         "b": [
+          18,
+          0,
+          175
+         ],
+         "off": [
+          4,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Wall thickness",
+        "value": 2,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          35,
+          35,
+          0
+         ],
+         "b": [
+          37,
+          35,
+          0
+         ],
+         "off": [
+          0,
+          6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "blend_height",
+        "label": "Shoulder blend height, square to round",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Part of the 150 mm body height; the square section runs 120 mm below it"
+       }
+      ],
+      "views": [
+       "front",
+       "iso"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"part.2.points: part 3 (extrude) needs points: [[x, y], ...] in mm, 3 or more\"]}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Square bottle",
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          -35,
+          -35
+         ],
+         [
+          35,
+          -35
+         ],
+         [
+          35,
+          35
+         ],
+         [
+          -35,
+          35
+         ]
+        ],
+        "from": 0,
+        "to": 120
+       },
+       {
+        "kind": "loft",
+        "plane": "xy",
+        "smooth": true,
+        "sections": [
+         {
+          "at": 120,
+          "points": [
+           [
+            -35,
+            -35
+           ],
+           [
+            35,
+            -35
+           ],
+           [
+            35,
+            35
+           ],
+           [
+            -35,
+            35
+           ]
+          ]
+         },
+         {
+          "at": 150,
+          "d": 30
+         },
+         {
+          "at": 175,
+          "d": 30
+         }
+        ]
+       }
+      ],
+      "dims": [
+       {
+        "key": "body_width",
+        "label": "Square body width",
+        "value": 70,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -35,
+          -35,
+          0
+         ],
+         "b": [
+          35,
+          -35,
+          0
+         ],
+         "off": [
+          0,
+          -12,
+          0
+         ]
+        }
+       },
+       {
+        "key": "body_height",
+        "label": "Body height, bed to top of blend",
+        "value": 150,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -40,
+          -35,
+          0
+         ],
+         "b": [
+          -40,
+          -35,
+          150
+         ],
+         "off": [
+          -6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "neck_diameter",
+        "label": "Neck outer diameter",
+        "value": 30,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -15,
+          0,
+          175
+         ],
+         "b": [
+          15,
+          0,
+          175
+         ],
+         "off": [
+          0,
+          -6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "neck_height",
+        "label": "Neck height above blend",
+        "value": 25,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          18,
+          0,
+          150
+         ],
+         "b": [
+          18,
+          0,
+          175
+         ],
+         "off": [
+          4,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Wall thickness",
+        "value": 2,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          35,
+          35,
+          0
+         ],
+         "b": [
+          37,
+          35,
+          0
+         ],
+         "off": [
+          0,
+          6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "blend_height",
+        "label": "Shoulder blend height, square to round",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Part of the 150 mm body height; the square section runs 120 mm below it"
+       }
+      ],
+      "views": [
+       "front",
+       "iso"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. row 6 (Shoulder blend height, square to round) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle. Send it again with them.\"}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Square bottle",
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          -35,
+          -35
+         ],
+         [
+          35,
+          -35
+         ],
+         [
+          35,
+          35
+         ],
+         [
+          -35,
+          35
+         ]
+        ],
+        "from": 0,
+        "to": 120
+       },
+       {
+        "kind": "loft",
+        "plane": "xy",
+        "smooth": true,
+        "sections": [
+         {
+          "at": 120,
+          "points": [
+           [
+            -35,
+            -35
+           ],
+           [
+            35,
+            -35
+           ],
+           [
+            35,
+            35
+           ],
+           [
+            -35,
+            35
+           ]
+          ]
+         },
+         {
+          "at": 150,
+          "d": 30
+         },
+         {
+          "at": 175,
+          "d": 30
+         }
+        ]
+       }
+      ],
+      "dims": [
+       {
+        "key": "body_width",
+        "label": "Square body width",
+        "value": 70,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -35,
+          -35,
+          0
+         ],
+         "b": [
+          35,
+          -35,
+          0
+         ],
+         "off": [
+          0,
+          -12,
+          0
+         ]
+        }
+       },
+       {
+        "key": "body_height",
+        "label": "Body height, bed to top of blend",
+        "value": 150,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -40,
+          -35,
+          0
+         ],
+         "b": [
+          -40,
+          -35,
+          150
+         ],
+         "off": [
+          -6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "neck_diameter",
+        "label": "Neck outer diameter",
+        "value": 30,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -15,
+          0,
+          175
+         ],
+         "b": [
+          15,
+          0,
+          175
+         ],
+         "off": [
+          0,
+          -6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "neck_height",
+        "label": "Neck height above blend",
+        "value": 25,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          18,
+          0,
+          150
+         ],
+         "b": [
+          18,
+          0,
+          175
+         ],
+         "off": [
+          4,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Wall thickness",
+        "value": 2,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          35,
+          35,
+          0
+         ],
+         "b": [
+          37,
+          35,
+          0
+         ],
+         "off": [
+          0,
+          6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "blend_height",
+        "label": "Shoulder blend height, square to round",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          35,
+          -35,
+          120
+         ],
+         "b": [
+          35,
+          -35,
+          150
+         ],
+         "off": [
+          8,
+          0,
+          0
+         ]
+        },
+        "note": "Part of the 150 mm body height; the square section runs 120 mm below it"
+       }
+      ],
+      "views": [
+       "front",
+       "iso"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"body_width\":70,\"body_height\":150,\"neck_diameter\":30,\"neck_height\":25,\"wall\":2,\"blend_height\":30},\"changed\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Square bottle",
+      "units": "mm",
+      "features": [
+       {
+        "name": "Square body",
+        "kind": "extrude",
+        "sizes": {
+         "width": 70,
+         "depth": 70,
+         "height": 120
+        }
+       },
+       {
+        "name": "Shoulder blend",
+        "kind": "loft",
+        "sizes": {
+         "from_width": 70,
+         "to_diameter": 30,
+         "height": 30
+        }
+       },
+       {
+        "name": "Neck",
+        "kind": "extrude",
+        "sizes": {
+         "diameter": 30,
+         "height": 25
+        }
+       },
+       {
+        "name": "Shell",
+        "kind": "shell",
+        "sizes": {
+         "wall": 2
+        }
+       }
+      ],
+      "overall": {
+       "x": 70,
+       "y": 70,
+       "z": 175
+      },
+      "assumptions": [
+       "Body height 150 mm runs from the bed to the top of the blend; the square section is 120 mm and the blend 30 mm.",
+       "Total height 175 mm: 150 mm body plus 25 mm neck.",
+       "Closed flat bottom 2 mm thick; top open at the neck end.",
+       "Shoulder is a smooth loft from the square to the 30 mm circle."
+      ],
+      "questions": [
+       "Should the 30 mm neck be a smooth continuation or a sharp step at the top of the blend?"
+      ],
+      "reason": "Multi-feature bottle: square body, smooth shoulder, neck, and a 2 mm shell open at the top."
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"reason: give a reason only with amends, to change an approved plan. The engine refused this step. Read why, then change the step or build it another way. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
+   ],
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Square bottle",
+      "units": "mm",
+      "features": [
+       {
+        "name": "Square body",
+        "kind": "extrude",
+        "sizes": {
+         "width": 70,
+         "depth": 70,
+         "height": 120
+        }
+       },
+       {
+        "name": "Shoulder blend",
+        "kind": "loft",
+        "sizes": {
+         "from_width": 70,
+         "to_diameter": 30,
+         "height": 30
+        }
+       },
+       {
+        "name": "Neck",
+        "kind": "extrude",
+        "sizes": {
+         "diameter": 30,
+         "height": 25
+        }
+       },
+       {
+        "name": "Shell",
+        "kind": "shell",
+        "sizes": {
+         "wall": 2
+        }
+       }
+      ],
+      "overall": {
+       "x": 70,
+       "y": 70,
+       "z": 175
+      },
+      "assumptions": [
+       "Body height 150 mm runs from the bed to the top of the blend; the square section is 120 mm and the blend 30 mm.",
+       "Total height 175 mm: 150 mm body plus 25 mm neck.",
+       "Closed flat bottom 2 mm thick; top open at the neck end.",
+       "Shoulder is a smooth loft from the square to the 30 mm circle."
+      ],
+      "questions": [
+       "Should the 30 mm neck be a smooth continuation or a sharp step at the top of the blend?"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mwbjaf1o25gup\",\"accepted\":true}}"
+   ],
+   "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Square bottle"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "Square bottle",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 70,
+       "heightMm": 70
+      },
+      "distance_mm": 120,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Bottle",
+      "feature": "Square body"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Started Square bottle (obj_mwbjag91d8)\",\"result\":{\"design\":\"obj_mwbjag91d8\",\"name\":\"Square bottle\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Rectangle extrude 120 mm. The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"obj_mwbjag91d8\",\"name\":\"Square bottle\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smwbjag951\",\"name\":\"Rectangle extrude 120 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":120,\"unit\":\"mm\"},\"feature\":\"Square body\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,120],\"volumeMm3\":588000,\"parts\":[{\"index\":0,\"name\":\"Bottle\",\"slot\":1,\"triangles\":12,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,120],\"volumeMm3\":588000}],\"placedMm\":[128,128],\"landed\":\"The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.loft",
+     "args": {
+      "design": "Square bottle",
+      "operation": "join",
+      "part": 0,
+      "smooth": true,
+      "feature": "Shoulder blend",
+      "profiles": [
+       {
+        "frame": {
+         "origin": [
+          0,
+          0,
+          120
+         ],
+         "normal": [
+          0,
+          0,
+          1
+         ]
+        },
+        "loops": [
+         {
+          "points": [
+           [
+            -35,
+            -35
+           ],
+           [
+            35,
+            -35
+           ],
+           [
+            35,
+            35
+           ],
+           [
+            -35,
+            35
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "frame": {
+         "origin": [
+          0,
+          0,
+          150
+         ],
+         "normal": [
+          0,
+          0,
+          1
+         ]
+        },
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 30
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 2, Smooth loft, 2 profiles\",\"result\":{\"design\":\"obj_mwbjag91d8\",\"name\":\"Square bottle\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smwbjaic82\",\"name\":\"Smooth loft, 2 profiles\",\"op\":\"sketch.loft\",\"part\":0,\"feature\":\"Shoulder blend\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,150],\"volumeMm3\":662949.955,\"parts\":[{\"index\":0,\"name\":\"Bottle\",\"slot\":1,\"triangles\":9424,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,150],\"volumeMm3\":662949.955}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "Square bottle",
+      "frame": {
+       "origin": [
+        0,
+        0,
+        150
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 30
+      },
+      "distance_mm": 25,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "feature": "Neck"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 3, Circle extrude 25 mm\",\"result\":{\"design\":\"obj_mwbjag91d8\",\"name\":\"Square bottle\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smwbjajlb3\",\"name\":\"Circle extrude 25 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":25,\"unit\":\"mm\"},\"feature\":\"Neck\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,175],\"volumeMm3\":680613.854,\"parts\":[{\"index\":0,\"name\":\"Bottle\",\"slot\":1,\"triangles\":9010,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,175],\"volumeMm3\":680613.854}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.shell",
+     "args": {
+      "design": "Square bottle",
+      "part": 0,
+      "wall_mm": 2,
+      "open": [
+       {
+        "at": [
+         0,
+         0,
+         175
+        ],
+        "normal": [
+         0,
+         0,
+         1
+        ]
+       }
+      ],
+      "feature": "Shell"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Shelled: step 4, Shell, 2 mm walls, 1 open face\",\"result\":{\"design\":\"obj_mwbjag91d8\",\"name\":\"Square bottle\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smwbjakxx4\",\"name\":\"Shell, 2 mm walls, 1 open face\",\"op\":\"shell\",\"part\":0,\"value\":{\"label\":\"Wall\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Shell\",\"state\":\"done\"},\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,175],\"volumeMm3\":94132.376,\"parts\":[{\"index\":0,\"name\":\"Bottle\",\"slot\":1,\"triangles\":583320,\"minMm\":[-35,-35,0],\"sizeMm\":[70,70,175],\"volumeMm3\":94132.376}],\"placedMm\":[128,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_mwbjaf1o25gup",
+      "design": "obj_mwbjag91d8"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Square bottle (obj_mwbjag91d8, tied to the plan) matches plan plan_mwbjaf1o25gup: all 4 checks pass\",\"result\":{\"planId\":\"plan_mwbjaf1o25gup\",\"design\":\"obj_mwbjag91d8\",\"designName\":\"Square bottle\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"overall size\",\"want\":\"70 x 70 x 175 mm\",\"got\":\"70 x 70 x 175 mm\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"4 features, each built by a step tagged with its name\",\"got\":\"4 steps for 4 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1.71 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":70,\"y\":70,\"z\":175},\"holes\":[],\"features\":4,\"steps\":[\"Rectangle extrude 120 mm\",\"Smooth loft, 2 profiles\",\"Circle extrude 25 mm\",\"Shell, 2 mm walls, 1 open face\"],\"tags\":[\"Square body\",\"Shoulder blend\",\"Neck\",\"Shell\"],\"stepIds\":[\"smwbjag951\",\"smwbjaic82\",\"smwbjajlb3\",\"smwbjakxx4\"],\"watertight\":true,\"minWallMm\":1.707}}}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.report",
+     "args": {
+      "title": "Square bottle designed and checked",
+      "rows": [
+       [
+        "Size",
+        "70 x 70 mm square body, 150 mm to top of blend, 30 mm round neck, 175 mm total"
+       ],
+       [
+        "Walls",
+        "2 mm shell, closed flat bottom, open neck top"
+       ],
+       [
+        "Check",
+        "Plan passed: size, four features, watertight, thinnest wall 1.7 mm"
+       ],
+       [
+        "Not yet",
+        "Not sliced or sent to the P1S"
+       ]
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Square bottle designed and checked\",\"result\":{\"shown\":true}}"
+   ],
+   "text": "I built the bottle in a new design called \"Square bottle\" and it passed the plan check. It is 70 x 70 mm square, 175 mm tall overall, with a smooth shoulder into a 30 mm round neck. It has a 2 mm shell, a closed flat bottom and an open top.\n\nI took the 150 mm body height as running from the bed to the top of the blend, so the square section is 120 mm, the blend 30 mm and the neck 25 mm on top. The 30 mm blend height was my guess; the sheet you confirmed shows it that way. If you meant the square section itself to be 150 mm, with the neck added on top, tell me and I'll rebuild it.\n\nThe thinnest wall measures 1.7 mm, a little under 2 mm, likely in the curved shoulder where the shell is approximate. The plan's minimum is 0.8 mm, so it passes.\n\nNothing is sliced or sent to the P1S yet. Say the word and I'll slice it for PLA on the P1S."
+  }
+ ],
+ "score": {
+  "pass": true,
+  "verdict": "pass",
+  "geometry": true,
+  "built": true,
+  "refused": false,
+  "extra": 0,
+  "checks": {
+   "ops": true,
+   "watertight": true,
+   "bodies": true,
+   "minWall": true,
+   "bedFit": true,
+   "sizes": true
+  }
+ }
+}
