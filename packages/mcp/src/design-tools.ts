@@ -16,6 +16,7 @@ import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
 import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
 import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
 import { meshStats } from './mesh'
+import { movedStep, sizedStep } from './step-reshape'
 
 type V3 = [number, number, number]
 
@@ -398,12 +399,28 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       suppressed: z.boolean().optional(),
       label: z.string().max(120).optional().describe('A name for the step; empty for the one made from its numbers'),
       feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
+      size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
+      move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a deck raised 6 mm. Copies a pattern made of it follow'),
     }),
     async run(i) {
       const d = designs.get(i.design)
       const k = stepIndex(d, i.step)
       const s = d.history.steps[k]!
       let next: Step = s
+      const said: string[] = []
+      if (i.size) {
+        const r = sizedStep(s, i.size.axis, i.size.mm)
+        if (typeof r === 'string') throw new ToolInputError(r)
+        const { bind: _bind, ...unbound } = next
+        next = { ...unbound, params: r.params }
+        said.push(`${r3(r.was)} mm to ${r3(i.size.mm)} mm along ${i.size.axis}`)
+      }
+      if (i.move) {
+        const r = movedStep(next, i.move as [number, number, number], d.transform)
+        if (typeof r === 'string') throw new ToolInputError(`move: ${r}`)
+        next = { ...next, params: r }
+        said.push(`moved by [${i.move.map(r3).join(', ')}] mm`)
+      }
       if (i.value !== undefined) {
         const most = EDIT_MAX[s.params.op]
         if (most !== undefined && Math.abs(i.value) > most) throw new ToolInputError(`value: at most ${most} for this step, as its tool takes`)
@@ -428,7 +445,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       await replayChange(designs, d, { ...d.history, steps: d.history.steps.map((x, j) => (j === k ? clean : x)) })
       const rows = d.history.steps.map((_, j) => stepRow(d, j))
       const broken = rows.filter((r) => r['state'] === 'broken')
-      return { ok: broken.length === 0, summary: `Edited step ${k + 1}, ${stepName(clean)}${broken.length ? `; step ${String(broken[0]!['index'])} broke: ${String(broken[0]!['message'] ?? '')}` : ''}`, output: { ...designSummary(d), steps: rows } }
+      return { ok: broken.length === 0, summary: `Edited step ${k + 1}, ${stepName(clean)}${said.length ? `: ${said.join(', ')}` : ''}${broken.length ? `; step ${String(broken[0]!['index'])} broke: ${String(broken[0]!['message'] ?? '')}` : ''}`, output: { ...designSummary(d), steps: rows } }
     },
   })
 
