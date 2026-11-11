@@ -196,7 +196,7 @@ describe('design.put_plan names sizes under the floors', () => {
   it('keeps the client plan as given and says which size is too small and what the floor is', async () => {
     const plans = createPlanRegistry()
     const t = designToolset(host, {}, { plans, nozzleMm: () => 0.4 }).find((x) => x.name === 'design.put_plan')!
-    expect(t.version).toBe('1.5.0')
+    expect(t.version).toBe('1.6.0')
     const given = { planId: 'box-1', ...hingedBox }
     const out = await t.run(t.input.parse({ plan: given }) as never, { context: { machine: p1s } } as unknown as ToolContext)
     expect(plans.get('box-1')?.plan.features[2]?.sizes).toEqual({ pin_diameter: 3, gap: 0.3, vertical_gap: 0.3 })

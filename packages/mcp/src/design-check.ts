@@ -90,7 +90,7 @@ export const partPlanSchema = z.object({
   features: z.array(feature).max(30),
   overall: z.object({ x: size, y: size, z: size }).optional(),
   /** Each row is `count` holes of one diameter (default 1), such as four 3.4 mm motor screw holes. */
-  holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1') })).max(60).optional(),
+  holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1'), recess: z.literal(true).optional().describe('A blind recess that does not go through, such as a porthole dent or a window inset: checked by its feature step, since a dent in a curved side reads as no hole') })).max(60).optional(),
   assumptions: z.array(text(200)).max(ASSUMPTIONS_MAX + 1),
   questions: z.array(text(200)).max(6),
   /**
@@ -537,6 +537,11 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
     const all = [...found, ...surplus].map((f) => f.diameterMm)
     const got = all.length ? `${holeSizes(all)} diameter${notes.length ? ` (${notes.join(', ')})` : ''}` : count === 1 ? 'no hole' : 'no holes'
     const pass = short === 0 && surplus.length === 0 && found.every((f) => Math.abs(f.diameterMm - want) <= HOLE_MM)
+    // a recess (a dent that does not go through) on a curved side reads as no hole: its feature step stands for it
+    if (hole.recess && !pass && !found.length && !surplus.length) {
+      items.push({ name: hole.name, want: `${count === 1 ? '' : `${count} x `}${mm(want)} diameter recess`, got: 'not measured: a recess is checked by its feature step', pass: true, warning: 'not measured as a hole; look over the recesses on the part' })
+      continue
+    }
     items.push({ name: hole.name, want: `${count === 1 ? '' : `${count} x `}${mm(want)} diameter`, got, pass })
   }
   // a plan that lists its holes has no others; one without the list says nothing about holes
