@@ -111,7 +111,12 @@ describe('the plan card', () => {
       detail: 'display',
       flat: ['Body'],
       proportions: 'stated: a 30 cm desk tray',
-      repeats: [],
+      repeats: ['slots'],
+      // a display plan has its colors, its levels and enough features (plan-detail.ts)
+      features: [...BOX.features, ...['Pen cup', 'Card slot', 'Phone stand', 'Drawer', 'Drawer pull', 'Feet (array)'].map((name) => ({ name, kind: name === 'Feet (array)' ? 'array' : 'extrude', sizes: { width: 10 } }))],
+      colors: { Body: 'walnut' },
+      real: [],
+      tiers: { Body: ['Body'] },
     }
     const { result } = await shown(organizer)
     const detail = screen.getByTestId('mimir-plan-detail')

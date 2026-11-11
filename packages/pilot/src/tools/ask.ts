@@ -79,7 +79,7 @@ const outline = z.array(xy)
 const plane = z.enum(['xy', 'xz', 'yz'])
 const at = z
   .object({ a: xyz.optional(), b: xyz.optional(), off: xyz.optional(), c: xyz.optional(), from: xyz.optional(), to: xyz.optional(), r: num.optional() })
-  .describe('Where the size sits, in the part\'s mm, Z up. A length: a and b its ends, off the move out to draw it (left out, the drawing moves it off the part itself), e.g. {"a":[0,0,0],"b":[80,0,0],"off":[0,-10,0]}. An angle: corner c, directions from and to, arc radius r. Every row of a sheet of several sizes needs it but a count.')
+  .describe('Where the size sits, in the part\'s mm, Z up. A length: a and b its ends, off the move out to draw it, e.g. {"a":[0,0,0],"b":[80,0,0]}. An angle: corner c, directions from and to, arc radius r.')
 const solid = z
   .object({
     kind: z.enum(['extrude', 'revolve', 'sweep', 'loft']).optional(),
@@ -200,7 +200,7 @@ const dim = z.object({
   kind: z.enum(SIZE_KINDS).optional(),
   min: num.optional(),
   max: num.optional(),
-  source: z.enum(['asked', 'lookup', 'photo', 'guess']).describe('asked: the person said it; lookup: from a page (give sourceTitle, and sourceUrl when the lookup gave one); photo: measured from their photo; guess: your best guess'),
+  source: z.enum(['asked', 'lookup', 'photo', 'guess']).describe('asked: the person said it; lookup: from a page (give sourceTitle and sourceUrl); photo: measured from their photo; guess: your best guess'),
   sourceTitle: z.string().min(1).max(80).optional(),
   sourceUrl: z.url({ protocol: /^https?$/ }).optional(),
   note: z.string().max(160).optional(),
@@ -257,7 +257,7 @@ export function sheetTool(): PilotTool<never> {
         title: z.string().min(2).max(60),
         views: z.array(z.enum(['front', 'top', 'side', 'iso'])).min(1).max(4).default(['top', 'front', 'side', 'iso']),
         dims: z.array(dim).min(1).max(30),
-        part: z.array(solid).optional().describe('The new part as it will be built, needed for a sheet of several sizes unless design names a built one'),
+        part: z.array(solid).optional(),
         design: z.string().min(1).max(80).optional().describe('Id of a built design the sheet shows; at is then in its coordinates'),
         fits: z.boolean().optional().describe('A size must fit something the person has: only then the sheet waits for a confirm'),
       })

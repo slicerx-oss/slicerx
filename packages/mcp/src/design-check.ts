@@ -90,7 +90,7 @@ export const partPlanSchema = z.object({
   features: z.array(feature).max(30),
   overall: z.object({ x: size, y: size, z: size }).optional(),
   /** Each row is `count` holes of one diameter (default 1), such as four 3.4 mm motor screw holes. */
-  holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1'), recess: z.literal(true).optional().describe('A blind recess that does not go through, such as a porthole dent or a window inset: checked by its feature step, since a dent in a curved side reads as no hole') })).max(60).optional(),
+  holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1'), recess: z.boolean().optional() })).max(60).optional(),
   assumptions: z.array(text(200)).max(ASSUMPTIONS_MAX + 1),
   questions: z.array(text(200)).max(6),
   /**

@@ -40,11 +40,6 @@ export const DETAIL_LINE: Record<DetailLevel, string> = {
 
 const text = (max: number) => z.string().trim().min(1).max(max)
 
-/** A scale as a plan gives it: 1:N. */
-const SCALE_RE = /^1\s*:\s*\d+(\.\d+)?$/
-/** The units a real size may come in, and each in mm. */
-const REAL_UNITS = ['mm', 'cm', 'm', 'in', 'ft'] as const
-const MM_OF: Record<(typeof REAL_UNITS)[number], number> = { mm: 1, cm: 10, m: 1000, in: 25.4, ft: 304.8 }
 /**
  * How far a planned size may sit from its real size at scale, as a factor either way. A display model rounds and
  * thickens small parts so they print, so a round upright or a wheel 30 percent over scale passes; twice the scale does not.
@@ -62,34 +57,37 @@ export const planDetailFields = {
   proportions: text(200).optional().describe('Display and fine: where the proportions come from, a lookup or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"'),
   repeats: z.array(text(60)).max(8).optional().describe('Display and fine: the real object\'s repeated details (windows, slats, vents), each built by a pattern; an empty list when it has none'),
   colors: z
-    .array(z.object({ feature: text(60), color: text(40) }))
-    .max(40)
+    .record(text(60), text(40))
     .optional()
-    .describe('Display and fine: each feature\'s color as the real thing is painted, such as {"feature": "Lower hull", "color": "red"}. A body the real thing paints in two or more colors (a waterline, a stripe, a trim line, a roof over its walls) is split at its line into one feature per color, each listed with its own'),
-  scale: z.string().trim().regex(SCALE_RE, 'scale is 1:N, such as 1:25').optional().describe('Display and fine: the model\'s scale against the real thing, 1:N, such as "1:25"'),
+    .describe('Display and fine: each feature\'s color as the real thing is painted, by feature name, such as {"Lower hull": "red"}. A body the real thing paints in two or more colors (a waterline, a stripe, a trim line) is split at its line into one feature per color'),
+  scale: z
+    .union([z.number().positive(), z.string().trim().regex(/^1\s*:\s*\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
+    .optional()
+    .describe('Display and fine: N of the scale 1:N against the real thing, such as 25 ("1:25" is taken too)'),
   real: z
-    .array(z.object({ feature: text(60), size: text(40), value: z.number().positive(), unit: z.enum(REAL_UNITS) }))
+    // each field checked by the refine, so a local model's shorter list can leave the whole field out (tab-tools.ts)
+    .array(z.object({ feature: text(60).optional(), size: text(40).optional(), mm: z.number().positive().optional() }).refine((r) => r.feature !== undefined && r.size !== undefined && r.mm !== undefined, 'each real size gives feature, size and mm'))
     .max(40)
     .optional()
-    .describe('Display and fine: the real thing\'s sizes that the lookup or the stated source gives, each tied to the feature size it sets, such as {"feature": "Body", "size": "length", "value": 4.2, "unit": "m"}: the main body\'s length and more, and every part the source gives a size for. Each is held to scale. An empty list when the source gives none'),
+    .describe('Display and fine: the real sizes the lookup or the stated source gives, in mm at full size, each tied to the feature size it sets, such as {"feature": "Body", "size": "length", "mm": 4200}: the main body\'s and each part\'s it gives. Each is held to scale. An empty list when it gives none'),
   tiers: z
-    .array(z.object({ body: text(60), levels: z.array(text(60)).min(1).max(12) }))
-    .max(8)
+    .record(text(60), z.array(text(60)).min(1).max(12))
     .optional()
-    .describe('Display and fine: for each flat-sided main body, its levels from the bottom up, each a planned feature: a body the real thing builds in steps or stories (a deckhouse, a stepped roof, a tower, a tiered stand) lists each level; a single block lists only itself'),
+    .describe('Display and fine: each flat-sided main body\'s levels from the bottom up, each a planned feature, such as {"Deckhouse": ["Lower deck", "Upper deck"]}: a body the real thing builds in steps or stories lists each level, a single block only itself'),
 }
 
-/** The same fields with no descriptions, for a local model's shorter tool list: they take exactly what the full ones take. */
+/**
+ * The level's first fields with no descriptions, for a local model's shorter tool list: they take exactly what the full
+ * ones take. colors, scale, real and tiers are left out of what a local model is shown (tab-tools.ts), to keep a build
+ * turn's room; none of them has a required field or a fixed value, the tool still takes them, and a display plan without
+ * them is refused with what to send.
+ */
 export const bareDetailFields = {
   detail: z.enum(DETAIL_LEVELS).optional(),
   curved: z.array(z.string()).optional(),
   flat: z.array(z.string()).optional(),
   proportions: z.string().optional(),
   repeats: z.array(z.string()).optional(),
-  colors: z.array(z.object({ feature: z.string(), color: z.string() })).optional(),
-  scale: z.string().optional(),
-  real: z.array(z.object({ feature: z.string(), size: z.string(), value: z.number(), unit: z.enum(REAL_UNITS) })).optional(),
-  tiers: z.array(z.object({ body: z.string(), levels: z.array(z.string()) })).optional(),
 }
 
 /** A plan as the detail rules read it. */
@@ -100,10 +98,10 @@ interface DetailPlan {
   flat?: readonly string[] | undefined
   proportions?: string | undefined
   repeats?: readonly string[] | undefined
-  colors?: readonly { feature: string; color: string }[] | undefined
-  scale?: string | undefined
-  real?: readonly { feature: string; size: string; value: number; unit: (typeof REAL_UNITS)[number] }[] | undefined
-  tiers?: readonly { body: string; levels: readonly string[] }[] | undefined
+  colors?: Readonly<Record<string, string>> | undefined
+  scale?: number | string | undefined
+  real?: readonly { feature?: string | undefined; size?: string | undefined; mm?: number | undefined }[] | undefined
+  tiers?: Readonly<Record<string, readonly string[]>> | undefined
   overall?: { x: number; y: number; z: number } | undefined
 }
 
@@ -159,21 +157,21 @@ export function detailProblem(plan: DetailPlan): string | null {
   const least = featuresFloor(plan, level)
   if (plan.features.length < least.count)
     problems.push(`features: a ${name} plan of this object has at least ${least.count} features (${least.why}); this one has ${plan.features.length}. Add the real thing's parts you left out: each color band as its own feature, the parts that stand on the main body, and its smaller details, each repeated one built once and patterned`)
-  if (!plan.colors?.length) problems.push(`colors: give each feature's color as the real thing is painted, such as {"feature": "Lower hull", "color": "red"}; a body painted in two colors is split at its line into two features`)
+  const colors = Object.entries(plan.colors ?? {})
+  if (!colors.length) problems.push(`colors: give each feature's color as the real thing is painted, such as {"Lower hull": "red"}; a body painted in two colors is split at its line into two features`)
   else {
-    const colorsOf = new Map<string, Set<string>>()
-    for (const c of plan.colors) {
-      if (!feature(c.feature)) {
-        problems.push(`colors: ${c.feature} is not a planned feature; name the feature the color is on`)
+    const colored = new Set<string>()
+    for (const [name, color] of colors) {
+      const f = feature(name)
+      if (!f) {
+        problems.push(`colors: ${name} is not a planned feature; name the feature the color is on`)
         continue
       }
-      const k = c.feature.trim().toLowerCase()
-      colorsOf.set(k, (colorsOf.get(k) ?? new Set()).add(c.color.trim().toLowerCase()))
+      colored.add(name.trim().toLowerCase())
+      if (TWO_COLORS.test(color)) problems.push(`colors: ${f.name} is ${color.trim()}; split it at its color line into one feature per color, so each prints in its own filament`)
     }
-    for (const [k, set] of colorsOf)
-      if (set.size > 1) problems.push(`colors: ${feature(k)!.name} is ${[...set].join(' and ')}; split it at its color line into one feature per color, so each prints in its own filament`)
     for (const n of [...(plan.curved ?? []), ...(plan.flat ?? [])])
-      if (feature(n) && !colorsOf.has(n.trim().toLowerCase())) problems.push(`colors: say what color ${n} is`)
+      if (feature(n) && !colored.has(n.trim().toLowerCase())) problems.push(`colors: say what color ${n} is`)
   }
   problems.push(...scaleProblems(plan, feature), ...massProblems(plan, feature), ...tierProblems(plan, feature))
   if (!plan.proportions?.trim()) problems.push(`proportions: say where the proportions come from, a lookup (web.lookup) or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"`)
@@ -183,15 +181,11 @@ export function detailProblem(plan: DetailPlan): string | null {
   return problems.length ? `A ${name} plan was not shown. ${problems.join('. ')}. ${DETAIL_HELP}` : null
 }
 
+/** A color that names two or more: "red and black", "red/black", "red, white". */
+const TWO_COLORS = /\band\b|[/,&+]/i
+
 type FeatureOf = (name: string) => DetailPlan['features'][number] | undefined
 const r1 = (v: number): number => Math.round(v * 10) / 10
-
-/** N of a 1:N scale, or null when there is none. */
-export function scaleOf(scale: string | undefined): number | null {
-  if (!scale || !SCALE_RE.test(scale.trim())) return null
-  const n = Number(scale.split(':')[1])
-  return n > 0 ? n : null
-}
 
 /**
  * Each real size against its planned size at scale (proportions from the source): a planned size more than SCALE_SLACK
@@ -201,26 +195,27 @@ export function scaleOf(scale: string | undefined): number | null {
 function scaleProblems(plan: DetailPlan, feature: FeatureOf): string[] {
   if (plan.real === undefined) return ['real: list the real sizes the lookup or the stated source gives (the main body\'s length, and each part it gives a size for), each with the feature size it sets, so the plan is held to them at scale; an empty list when it gives none']
   if (!plan.real.length) return []
-  const n = scaleOf(plan.scale)
-  if (n === null) return ['scale: give the scale the real sizes are held to, as 1:N']
+  const n = typeof plan.scale === 'string' ? Number(plan.scale.split(':')[1]) : plan.scale
+  if (!n) return ['scale: give N of the scale 1:N the real sizes are held to, such as 25']
   const out: string[] = []
   const bodies = new Set([...(plan.curved ?? []), ...(plan.flat ?? [])].map((b) => b.trim().toLowerCase()))
-  if (bodies.size && !plan.real.some((r) => bodies.has(r.feature.trim().toLowerCase()))) out.push('real: give a main body\'s real size too (its length), so the scale is set by the thing itself')
+  if (bodies.size && !plan.real.some((r) => bodies.has((r.feature ?? '').trim().toLowerCase()))) out.push('real: give a main body\'s real size too (its length), so the scale is set by the thing itself')
   for (const r of plan.real) {
-    const f = feature(r.feature)
+    const [name, size, mm] = [r.feature ?? '', r.size ?? '', r.mm ?? 0]
+    const f = feature(name)
     if (!f) {
-      out.push(`real: ${r.feature} is not a planned feature`)
+      out.push(`real: ${name} is not a planned feature`)
       continue
     }
-    const key = Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === r.size.trim().toLowerCase())
+    const key = Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === size.trim().toLowerCase())
     if (!key) {
-      out.push(`real: ${f.name} has no size named ${r.size}; tie the real size to one of its sizes (${Object.keys(f.sizes).join(', ')})`)
+      out.push(`real: ${f.name} has no size named ${size}; tie the real size to one of its sizes (${Object.keys(f.sizes).join(', ')})`)
       continue
     }
-    const want = (r.value * MM_OF[r.unit]) / n
+    const want = mm / n
     const got = f.sizes[key]!
     if (want > 0 && (got > want * SCALE_SLACK || got < want / SCALE_SLACK))
-      out.push(`${f.name} ${key} is ${r1(got)} mm, ${r1(got / want)} times the ${r1(want)} mm its real ${r.value} ${r.unit} gives at ${plan.scale}; size it from the real one`)
+      out.push(`${f.name} ${key} is ${r1(got)} mm, ${r1(got / want)} times the ${r1(want)} mm its real ${r1(mm)} mm gives at 1:${n}; size it from the real one`)
   }
   return out
 }
@@ -259,13 +254,14 @@ function massProblems(plan: DetailPlan, feature: FeatureOf): string[] {
  */
 function tierProblems(plan: DetailPlan, feature: FeatureOf): string[] {
   const out: string[] = []
-  const stated = new Map((plan.tiers ?? []).map((t) => [t.body.trim().toLowerCase(), t]))
+  const tiers = Object.entries(plan.tiers ?? {})
+  const stated = new Set(tiers.map(([body]) => body.trim().toLowerCase()))
   for (const b of plan.flat ?? [])
     if (feature(b) && !stated.has(b.trim().toLowerCase()))
       out.push(`tiers: give the levels of ${b} from the bottom up; a body the real thing builds in steps or stories (a deckhouse, a stepped roof, a tower) lists each level as its own feature, a single block lists only itself`)
-  for (const t of plan.tiers ?? []) {
-    if (!feature(t.body)) out.push(`tiers: ${t.body} is not a planned feature`)
-    for (const l of t.levels) if (!feature(l)) out.push(`tiers: ${l}, a level of ${t.body}, is not a planned feature; plan each level as its own feature`)
+  for (const [body, levels] of tiers) {
+    if (!feature(body)) out.push(`tiers: ${body} is not a planned feature`)
+    for (const l of levels) if (!feature(l)) out.push(`tiers: ${l}, a level of ${body}, is not a planned feature; plan each level as its own feature`)
   }
   return out
 }
