@@ -124,6 +124,10 @@ export async function openSignedOut(s) {
   }, { timeoutMs: 60_000, everyMs: 500 })
   s.check('Reopen brings the changed plate back alone', !back.timedOut, back.value?.plate.objects.map((o) => `${o.name} (${o.vaultListing ?? 'not from the Vault'})`))
   s.check('the plate comes back with its change (the object still left out of the print)', back.value?.plate.objects.length === second.state.plate.objects.length && back.value?.plate.objects.every((o) => o.printable === false), back.value?.plate.objects.map((o) => ({ name: o.name, printable: o.printable })))
+  // The note says the project was opened again, not that a file was added.
+  const reopenedNote = await s.waitFor('open-note-text', 'visible', 15_000, ' again')
+  const reopenedText = (await s.one('open-note-text'))?.text ?? ''
+  s.check('the note says the project was opened again, not added', reopenedNote && /^Opened .+ again/.test(reopenedText) && !/^Added /.test(reopenedText), reopenedText)
   await s.shot('reopened', 'Reopen: Cable clip back, still left out of the print')
 
   // Clear the plate still asks first on a plate with unsaved changes (the reopened plate comes back unsaved): Save

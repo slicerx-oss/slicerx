@@ -194,7 +194,8 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
       set({ projectFile: opts.restore.file })
       if (opts.restore.dirty) markDirty()
     }
-    if (!told) openNote(`Added ${name}`)
+    // A kept project brought back (Reopen, Recent projects) was opened before, so it says so rather than Added.
+    if (!told) openNote(opts.restore ? `Opened ${name} again` : `Added ${name}`)
   } catch (e) {
     scope?.finish(false)
     // A newer open took over: it says what it opened.
