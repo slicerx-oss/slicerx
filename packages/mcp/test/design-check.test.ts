@@ -130,6 +130,19 @@ describe('designCheck', () => {
     for (const bad of [0, -1, 1.5, 61, '4']) expect(row(bad), String(bad)).toBe(false)
   })
 
+  it('a reading thin only at a sharp edge or point warns where it is and passes; a thin wall away from it still fails', () => {
+    const tip = { mm: 0.04, at: [25.04, -12.99, 10] as [number, number, number] }
+    const r = designCheck(bracket, { ...built, minWallMm: 0.88, minWallTip: tip }, 0.4)
+    expect(r.pass).toBe(true)
+    const wall = r.items.at(-1)!
+    expect(wall).toMatchObject({ name: 'minimum wall', got: '0.88 mm', pass: true })
+    expect(wall.warning).toContain('0.04 mm within 0.8 mm of a sharp edge or point near (25.04, -12.99, 10)')
+    // a real thin wall elsewhere still fails, tip or not
+    const thin = designCheck(bracket, { ...built, minWallMm: 0.5, minWallTip: tip }, 0.4)
+    expect(failed(thin)).toEqual(['minimum wall'])
+    expect(thin.items.at(-1)!.warning).toBeUndefined()
+  })
+
   it('a wall that was not measured fails, and says why when it was on purpose', () => {
     const r = designCheck(bracket, { ...built, minWallMm: null }, 0.4)
     expect(failed(r)).toEqual(['minimum wall'])
@@ -447,10 +460,15 @@ describe('minWall', () => {
     expect(minWall([leaning(20)]).mm).toBeGreaterThan(1.8)
   })
 
-  it('counts the needle when the bore leans 35 degrees, past the lean a far face must face back by', () => {
+  it('counts the needle when the bore leans 35 degrees, past the lean a far face must face back by, as the rim\'s taper', () => {
     // at 35 degrees the bore's side faces back against the needle squarely enough to count (-0.57): the rim reads a
-    // hair thick, as any wall that leans that much from a ray does
-    expect(minWall([leaning(35)]).mm).toBeLessThan(0.2)
+    // hair thick, as any wall that leans that much from a ray does. The top and the bore meet right there, so it is the
+    // rim's taper, a tip that warns. The wall is then the top face read down to the bore, which leans away under it
+    // (0.96 mm from the facets nearest the bore), over the floor of two nozzle widths, so the part passes
+    const r = minWall([leaning(35)])
+    expect(r.tip!.mm).toBeLessThan(0.2)
+    expect(r.mm).toBeGreaterThan(0.8)
+    expect(r.mm).toBeLessThan(1.8)
   })
 
   it('still reads a real 0.3 mm wall as thin beside a bore that leans, needle and all', () => {

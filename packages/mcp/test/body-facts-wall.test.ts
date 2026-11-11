@@ -188,3 +188,88 @@ function box(x: number, y: number, z: number) {
   return mesh(quads.flatMap(([a, b, c, d]) => [[v(a!), v(b!), v(c!)], [v(a!), v(c!), v(d!)]]))
 }
 
+
+/**
+ * A closed prism along x, `length` long, of the convex section `yz` (y, z points in order), each side facing out.
+ * A model's hull cut flat at its waterline is such a section: wider at the cut than below it.
+ */
+function prism(yz: [number, number][], length: number) {
+  const cy = yz.reduce((s, p) => s + p[0], 0) / yz.length
+  const cz = yz.reduce((s, p) => s + p[1], 0) / yz.length
+  const out = (t: V[]): V[] => {
+    const [a, b, c] = t as [V, V, V]
+    const n = [(b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]), (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]), (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])]
+    const m = [(a[0] + b[0] + c[0]) / 3 - length / 2, (a[1] + b[1] + c[1]) / 3 - cy, (a[2] + b[2] + c[2]) / 3 - cz]
+    return n[0]! * m[0]! + n[1]! * m[1]! + n[2]! * m[2]! >= 0 ? t : [a, c, b]
+  }
+  const tris: V[][] = []
+  // in 0.4 mm slices along x, as a model's facets near a cut rim are small
+  const xs: number[] = []
+  for (let x = 0; x < length - 1e-9; x += 0.4) xs.push(Math.round(x * 10) / 10)
+  xs.push(length)
+  for (let k = 0; k < yz.length; k++)
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const [p, q, a, b] = [yz[k]!, yz[(k + 1) % yz.length]!, xs[i]!, xs[i + 1]!]
+      tris.push(out([[a, p[0], p[1]], [b, p[0], p[1]], [b, q[0], q[1]]]), out([[a, p[0], p[1]], [b, q[0], q[1]], [a, q[0], q[1]]]))
+    }
+  for (let k = 1; k + 1 < yz.length; k++)
+    for (const x of [0, length]) tris.push(out([[x, yz[0]![0], yz[0]![1]], [x, yz[k]![0], yz[k]![1]], [x, yz[k + 1]![0], yz[k + 1]![1]]]))
+  return mesh(tris)
+}
+
+/** A section 4 mm wide at its bottom and 14 mm at its flat top 5 mm up, the top cut in 0.1 mm strips toward each rim. */
+function flaredSection(): [number, number][] {
+  const top: [number, number][] = []
+  for (let y = 7; y >= -7 + 1e-9; y -= 0.1) top.push([Math.round(y * 10) / 10, 5])
+  return [[-2, 0], [2, 0], ...top, [-7, 5]]
+}
+
+describe('the thinnest wall at a sharp edge or point', () => {
+  it('a hull cut flat at its waterline, flaring out to the cut, reads its body, and its knife rim only as a tip', () => {
+    // the top's rays near each rim meet the flared side a hair under it, as in a ship split at its waterline that read
+    // 0.04 mm: thin only at the rim, where the side and the cut meet at 45 degrees
+    const r = minWall([prism(flaredSection(), 40)])
+    expect(r.mm!).toBeGreaterThanOrEqual(0.8)
+    expect(r.tip!.mm).toBeLessThan(0.8)
+    expect(Math.abs(r.tip!.at[1])).toBeGreaterThan(6.2)
+    expect(r.tip!.at[2]).toBeCloseTo(5, 1)
+  })
+
+  it('a cone coming to a point reads its body, and the point only as a tip', () => {
+    // 30 degrees each side of its axis, in rings 0.2 mm apart toward the point, so the rays near it read under 0.8 mm
+    const tris: V[][] = []
+    const n = 24
+    const H = 8
+    const r = (h: number) => (H - h) * Math.tan(Math.PI / 6)
+    const ring = (h: number, k: number): V => [r(h) * Math.cos((2 * Math.PI * k) / n), r(h) * Math.sin((2 * Math.PI * k) / n), h]
+    const hs: number[] = []
+    for (let h = 0; h < H - 2; h += 1) hs.push(h)
+    for (let h = H - 2; h < H - 0.1; h += 0.2) hs.push(Math.round(h * 100) / 100)
+    for (let i = 0; i + 1 < hs.length; i++)
+      for (let k = 0; k < n; k++) {
+        const [a, b, c, d] = [ring(hs[i]!, k), ring(hs[i]!, k + 1), ring(hs[i + 1]!, k + 1), ring(hs[i + 1]!, k)]
+        tris.push([a, b, c], [a, c, d])
+      }
+    const last = hs[hs.length - 1]!
+    for (let k = 0; k < n; k++) tris.push([ring(last, k), ring(last, k + 1), [0, 0, H]], [[0, 0, 0], ring(0, k + 1), ring(0, k)])
+    const w = minWall([mesh(tris)])
+    expect(w.mm!).toBeGreaterThanOrEqual(0.8)
+    expect(w.tip!.mm).toBeLessThan(0.8)
+    expect(w.tip!.at[2]).toBeGreaterThan(H - 0.8)
+  })
+
+  it('a real thin wall away from any sharp edge still reads thin: a plate, a strip, and a 0.4 mm skin on a flared hull', () => {
+    expect(minWall([box(20, 20, 0.4)]).mm).toBeCloseTo(0.4, 3)
+    expect(minWall([box(20, 2, 0.4)]).mm).toBeCloseTo(0.4, 3)
+    // the flared section, 0.4 mm tall: thin everywhere, not only at its rim
+    const skin: [number, number][] = flaredSection().map(([y, z]) => [y, z === 5 ? 0.4 : 0])
+    const r = minWall([prism(skin, 40)])
+    expect(r.mm!).toBeLessThan(0.8)
+  })
+
+  it('takes the tip zone from the nozzle: two nozzle widths', () => {
+    // with a 0.2 mm nozzle the floor and the zone are 0.4 mm, so the rim's readings over 0.4 mm count as wall
+    const r = minWall([prism(flaredSection(), 40)], undefined, undefined, undefined, 0.2)
+    expect(r.tip === undefined || r.tip.mm < 0.4).toBe(true)
+  })
+})
