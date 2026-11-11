@@ -78,7 +78,11 @@ describe('an H3C project with its own tools', () => {
     expect(out.hotends?.filaments.map((f) => [f.slot, f.tool, f.tpu_tool])).toEqual([[1, 1, false], [2, 3, false], [3, 7, false], [4, 8, true]])
     const gcode = readFileSync(out.gcode_path, 'utf8')
     expect(gcode).toMatch(/^; filament_type = PLA;PLA;PLA;TPU$/m)
-    // Each filament change is a T command for that filament, and all four print.
-    expect(new Set(gcode.match(/^T\d+$/gm))).toEqual(new Set(['T0', 'T1', 'T2', 'T3']))
+    // Each filament change is a T command for that filament, and all four print. The printer's own end G-code then
+    // selects T65535 once, last, to pull the filament back to the AMS, as the printer's stock output does.
+    const selects = gcode.match(/^T\d+$/gm) ?? []
+    expect(new Set(selects.slice(0, -1))).toEqual(new Set(['T0', 'T1', 'T2', 'T3']))
+    expect(selects.at(-1)).toBe('T65535')
+    expect(gcode).toMatch(/^M620 S65535\nT65535\nM621 S65535$/m)
   })
 })
