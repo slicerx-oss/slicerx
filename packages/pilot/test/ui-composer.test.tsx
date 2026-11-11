@@ -213,5 +213,25 @@ describe('sending while it is off', () => {
     rerender(<Off onSend={onSend} offNote="Connect a model above to send this." sendOff={false} />)
     expect(screen.queryByTestId('mimir-composer-off-note')).toBeNull()
   })
+
+  it('does not bring the line back by itself after the box empties or sending was on', () => {
+    const onSend = vi.fn()
+    const note = 'Connect a model above to send this.'
+    const { rerender } = render(<Off onSend={onSend} offNote={note} />)
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: 'A hook' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(screen.getByTestId('mimir-composer-off-note')).toBeTruthy()
+    // emptied, then typed again: quiet until Enter is pressed again
+    fireEvent.change(box, { target: { value: '' } })
+    fireEvent.change(box, { target: { value: 'A hook for a bike' } })
+    expect(screen.queryByTestId('mimir-composer-off-note')).toBeNull()
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(screen.getByTestId('mimir-composer-off-note').textContent).toBe(note)
+    // sending on, then off again with the same text: quiet again
+    rerender(<Off onSend={onSend} offNote={note} sendOff={false} />)
+    rerender(<Off onSend={onSend} offNote={note} />)
+    expect(screen.queryByTestId('mimir-composer-off-note')).toBeNull()
+  })
 })
 
