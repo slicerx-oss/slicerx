@@ -22,6 +22,10 @@ describe('the line for a follow-up on a built design', () => {
     expect(FOLLOWUP_LINE).toContain('a patterned detail at its source step, and the copies follow; never a push on each copy')
   })
 
+  it('recolors the band the words name, and lets the person pick when they name none', () => {
+    expect(FOLLOWUP_LINE).toContain('A recolor of a part already painted in bands goes on the band the words name (the bottom: a height band; the whole part: paint.preview with whole) and says which it took')
+  })
+
   it('ends the reply on what changed, with no question and no offer to slice or print', () => {
     expect(FOLLOWUP_LINE).toContain('The reply to a follow-up ends with what changed, in a few words: never a question, and no offer to slice or print')
   })

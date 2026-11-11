@@ -5,7 +5,7 @@
 // in words a person uses (sx-geom paint.select): the part, faces facing a direction, a height band, a point grown
 // into a region, or one state for another. Read-back gives each painted state's area and regions.
 import { stepName, type DesignHost, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import { designArg, designSummary, faceAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
@@ -70,6 +70,35 @@ const meshOf = (p: HistoryMesh) => ({ positions: Array.from(p.positions), indice
  * The paint tools on any design host: the server's own designs, or the app's plate, where the mimir tab paints. They
  * need only what every host has: its designs, a step added to one, and its geometry engine.
  */
+const r1 = (n: number): number => Math.round(n * 10) / 10
+
+/**
+ * The band a person means, picked on a one-tap question: each band painted on the part by height (named by its plan
+ * feature when it has one), the part outside a single band, and the whole part. Null when the part has no band by
+ * height to offer.
+ */
+async function pickBand(d: Design, part: number, state: number, ask: NonNullable<ToolContext['ask']>): Promise<{ target: PaintTarget; label: string } | null> {
+  type Height = Extract<PaintTarget, { kind: 'height' }>
+  const bands = d.history.steps.flatMap((s, k) => (s.part === part && !s.suppressed && (!d.status[k] || d.status[k]!.state === 'done') && s.params.op === 'paint' && s.params.layer === 'color' && s.params.target.kind === 'height' ? [{ t: s.params.target as Height, feature: s.feature }] : []))
+  if (!bands.length) return null
+  const words = (t: Height): string => (t.below !== undefined ? `Below ${r1(t.below)} mm` : t.above !== undefined ? `Above ${r1(t.above)} mm` : `From ${r1(t.from ?? 0)} to ${r1(t.to ?? 0)} mm`)
+  const choices: { label: string; target: PaintTarget }[] = []
+  for (const b of bands) {
+    const label = b.feature ? `${b.feature} (${words(b.t).toLowerCase()})` : words(b.t)
+    if (!choices.some((c) => JSON.stringify(c.target) === JSON.stringify(b.t))) choices.push({ label, target: b.t })
+  }
+  // the rest of the part, when one band has one edge
+  const one = bands.length === 1 ? bands[0]!.t : null
+  if (one && one.below !== undefined && one.above === undefined) choices.push({ label: `Above ${r1(one.below)} mm`, target: { kind: 'height', above: one.below } })
+  if (one && one.above !== undefined && one.below === undefined) choices.push({ label: `Below ${r1(one.above)} mm`, target: { kind: 'height', below: one.above } })
+  choices.push({ label: 'All of it', target: { kind: 'part' } })
+  const name = d.parts[part]!.name
+  const picked = await ask({ title: 'Paint', question: `Paint which part of ${name} in filament ${state}?`, choices: choices.map((c, k) => ({ id: `band:${k}`, label: c.label })) })
+  const at = Number(picked.id.replace(/^band:/, ''))
+  const c = choices[at]
+  return c ? { target: c.target, label: c.label } : null
+}
+
 export function paintTools(designs: DesignHost): PilotTool<never>[] {
   const engine = (op: string, request: unknown) => designs.call(op, request)
   const previews = new Map<string, Preview>()
@@ -106,10 +135,12 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       view: z.enum(['fit', 'iso', 'top', 'front']).default('fit'),
       size: z.number().int().min(64).max(2048).optional(),
       image: z.boolean().default(false),
+      whole: z.boolean().optional().describe('With target part on a part already painted in bands: true when the person said the whole part ("the whole hull", "all of it"); without it the person picks the band on a one-tap question'),
     }),
-    async run(i) {
+    async run(i, ctx) {
       const d = designs.get(i.design)
       let target = storedTarget(i.target)
+      let took = ''
       let part = i.part ?? -1
       if (target.kind === 'seed') {
         // The seed's face, kept by its key as push steps keep theirs, and the part it is on.
@@ -120,10 +151,15 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       if (part >= d.parts.length) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
       const parts = part === -1 ? d.parts.map((_, k) => k) : [part]
       // a color asked for on a part already painted in bands goes on one band, the one the person most likely means
-      if (i.layer === 'color' && target.kind === 'part') {
+      if (i.layer === 'color' && target.kind === 'part' && !i.whole) {
         // a part with any band: a state of its own, or the asked color over part of it (the rest its own filament)
         const banded = (await regions(d, 'color')).filter((r) => parts.includes(r.part) && r.states.some((s) => s.state !== i.state || s.triangles < d.parts[r.part]!.indices.length / 3))
-        if (banded.length) {
+        // one part with bands painted by height: the person picks the band on a one-tap question
+        const picked = banded.length === 1 && parts.length === 1 && ctx?.ask ? await pickBand(d, parts[0]!, i.state, ctx.ask) : null
+        if (picked) {
+          target = picked.target
+          took = picked.label
+        } else if (banded.length) {
           const said = banded.map((r) => {
             const bands = r.states.map((s) => `filament ${s.state} over ${Math.round(s.areaMm2)} mm2`)
             return `${d.parts[r.part]!.name} is painted in bands: ${bands.join(', ')}, and the rest in its own filament`
@@ -152,7 +188,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       const pic = await picture(d, i.layer, (k) => expected[k] ?? d.parts[k]?.paint?.[i.layer], i.view, i.view === 'fit' ? focus : undefined, i.size, i.image)
       const area = Math.round(rows.reduce((a, r) => a + r.selectedAreaMm2, 0) * 100) / 100
       return {
-        summary: `Preview ${id}: ${stepName({ params })}, ${area} mm2 on ${rows.length} part${rows.length === 1 ? '' : 's'}. Apply with slicerx_paint_apply.`,
+        summary: `${took ? `The person picked ${took.toLowerCase()}. ` : ''}Preview ${id}: ${stepName({ params })}, ${area} mm2 on ${rows.length} part${rows.length === 1 ? '' : 's'}. Apply with slicerx_paint_apply.`,
         output: { preview: id, step: stepName({ params }), areaMm2: area, parts: rows, picture: pic.summary },
         ...(pic.images ? { images: pic.images } : {}),
       }
