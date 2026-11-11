@@ -10,6 +10,7 @@ import { createPlanRegistry } from './design-check'
 import { designTools, type DesignFiles, type DesignToolOptions } from './design-tools'
 import { ToolInputError } from './errors'
 import { modelingTools, type ModelingFiles } from './modeling-tools'
+import { filamentTools, withNewFilaments, type FilamentList } from './tab-filaments'
 import { mimirTabTools, type CardPlans } from './tab-tools'
 
 export { appValueInputs, type AppValuesResult } from './app-values'
@@ -17,6 +18,7 @@ export { brimEditInput, brimReadInput } from './brim-input'
 export { layerProfileEditInput, layerProfileReadInput } from './layer-profile-input'
 export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, FIX_ROUNDS, MAX_PLANS, nozzleOr, partPlanSchema, PLAN_SIZE_MAX, PlanOwnedError, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanOrigin, type PlanRegistry } from './design-check'
 export type { DesignToolOptions } from './design-tools'
+export { FILAMENT_TOOLS, filamentTools, SLOT_TOOLS, withNewFilaments, type FilamentList, type FilamentPatch, type TabFilament } from './tab-filaments'
 export { createCardPlans, mimirTabTools, PartPlanSchema, PLAN_CHANGE, PLAN_GO, PLAN_KEEP, planChoiceId, PlanInputSchema, samePlan, type CardPlans, type PlanAnswer, type PlanInput } from './tab-tools'
 // the print-in-place gap rule design.check and geom.fit_check use: limits by direction, the way a gap runs, and whether it clears
 export { clearsFitLimit, FIT_TOLERANCE_MM, fitDirection, fitLimitFor, fitLimits, fitVerdict, type FitDirection, type FitProfile } from './fit-facts'
@@ -65,13 +67,19 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
  * design toolset with no files. design.check reads the card's plans and holds walls to `nozzleMm`; the part built after
  * an approved plan ties to it (withPlanTies), so design.check checks that design, and design.plan refuses a second plan of a part built from one. The app's tab and the creative eval
  * both make their tools here, so the eval offers what the tab offers. `newPlanId` names each plan (default random).
+ * `filaments` (the open project's) adds project.add_filament and project.set_filament, and part makers given a slot past
+ * the last filament add it.
  */
-export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string } = {}): PilotTool<never>[] {
+export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string; filaments?: FilamentList } = {}): PilotTool<never>[] {
   // design.plan names the gaps design.check holds a print-in-place part to: the same nozzle, layer height and material
   const fitProfile = () => ({ ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })
   const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile, designs: () => host.list() })
-  return card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true })))
+  const tools = card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true })))
+  // the open project's filaments, where the host has them: the part makers add the ones their slot is past, and two
+  // tools add and set them
+  return opts.filaments ? [...withNewFilaments(tools, opts.filaments), ...filamentTools(opts.filaments)] : tools
 }
+
 
 export { appUnitInputs, type AppUnits } from './app-units'
 export { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, storedTarget } from './app-paint-input'
