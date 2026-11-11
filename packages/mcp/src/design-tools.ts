@@ -413,7 +413,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const list = defineTool({
     name: 'design.list',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description: 'The designs open on this server, with their parts, sizes and step counts.',
