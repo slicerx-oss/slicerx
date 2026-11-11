@@ -21,7 +21,7 @@ export interface AmendChange {
   to: number
 }
 
-type Sized = Pick<PartPlan, 'part' | 'units' | 'features' | 'overall' | 'holes'>
+type Sized = Pick<PartPlan, 'part' | 'units' | 'features' | 'overall' | 'holes' | 'openFaces'>
 
 const sameKeys = (a: object, b: object): boolean => {
   const ka = Object.keys(a).sort()
@@ -32,7 +32,7 @@ const sameKeys = (a: object, b: object): boolean => {
 /**
  * What keeps `next` from being an amend of `old`, or null: an amend keeps the part, its units, each feature (name,
  * kind, the sizes it has and what each measures, in order), whether it has an overall size, and each row of holes
- * (name and count). Only the numbers change.
+ * (name and count), and its open faces. Only the numbers change.
  */
 export function amendShapeProblem(old: Sized, next: Sized): string | null {
   const only = 'an amend changes sizes only'
@@ -49,6 +49,7 @@ export function amendShapeProblem(old: Sized, next: Sized): string | null {
   const nh = next.holes ?? []
   const oh = old.holes ?? []
   if (nh.length !== oh.length || nh.some((h, i) => h.name !== oh[i]!.name || (h.count ?? 1) !== (oh[i]!.count ?? 1))) return `holes: ${only}; the plan keeps its rows of holes, by name and count`
+  if (JSON.stringify(next.openFaces ?? null) !== JSON.stringify(old.openFaces ?? null)) return `openFaces: ${only}; ${old.openFaces ? 'the plan keeps its openFaces as they are' : 'leave out openFaces'}`
   return null
 }
 

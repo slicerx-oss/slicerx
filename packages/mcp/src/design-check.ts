@@ -27,6 +27,50 @@ const feature = z
 export const ASSUMPTIONS_MAX = 12
 export const assumptionsInput = z.array(text(200)).max(ASSUMPTIONS_MAX)
 
+/** The faces of a piece a plan can name as open, as the piece prints: top and bottom along z, front and back along y, left and right along x. */
+export const OPEN_FACES = ['top', 'bottom', 'front', 'back', 'left', 'right'] as const
+export type OpenFace = (typeof OPEN_FACES)[number]
+
+/** One piece's open faces: each named once, and never all six. */
+const openPiece = z
+  .object({
+    piece: text(80).describe('The piece: the part itself by its part name, or a piece printInPlace names'),
+    faces: z.array(z.enum(OPEN_FACES, { error: (i) => `${JSON.stringify(i.input)} is no face; a face is ${OPEN_FACES.join(', ')}` })).min(1, { error: 'name at least one open face, or leave the piece out of openFaces' }).describe('Its open faces, as it prints: top, bottom, front, back, left or right'),
+  })
+  .superRefine((o, ctx) => {
+    const twice = o.faces.filter((f, i) => o.faces.indexOf(f) !== i)
+    if (twice.length) ctx.addIssue({ code: 'custom', path: ['faces'], message: `openFaces names ${[...new Set(twice)].join(', ')} of ${o.piece} more than once; name each open face once` })
+    else if (o.faces.length === OPEN_FACES.length) ctx.addIssue({ code: 'custom', path: ['faces'], message: `openFaces names all six faces of ${o.piece} open, which leaves no part; name only the faces meant to be open, such as top for a cup` })
+  })
+
+/**
+ * The faces meant to be open, by piece, such as the open top of a holder or cup: each piece once. Kept on the plan for
+ * later checks to read; a plan without it says nothing about open faces. Which pieces exist is the plan's to say
+ * (openFacesProblem).
+ */
+export const openFacesInput = z
+  .array(openPiece)
+  .min(1, { error: 'openFaces is empty; leave it out when no face is open' })
+  .max(30)
+  .superRefine((list, ctx) => {
+    const seen = new Set<string>()
+    for (const [i, o] of list.entries()) {
+      if (seen.has(o.piece)) ctx.addIssue({ code: 'custom', path: [i, 'piece'], message: `openFaces names ${o.piece} more than once; give each piece one entry with all its open faces` })
+      seen.add(o.piece)
+    }
+  })
+
+/**
+ * Why a plan's openFaces names a piece the plan does not have, or null: each piece is the part (its part name) or one
+ * printInPlace names.
+ */
+export function openFacesProblem(plan: Pick<PartPlan, 'part' | 'printInPlace' | 'openFaces'>): string | null {
+  const pieces = [plan.part, ...(plan.printInPlace || [])]
+  const missing = (plan.openFaces ?? []).map((o) => o.piece).filter((p) => !pieces.includes(p))
+  if (!missing.length) return null
+  return `openFaces: ${missing.join(', ')} ${missing.length === 1 ? 'is no piece' : 'are no pieces'} of this plan; name the part (${plan.part})${plan.printInPlace ? ' or a piece printInPlace names' : ''}`
+}
+
 /**
  * A part as planned before it is built. Every size is in `units`, except a count or an angle among a feature's sizes
  * (the kind its kinds entry states, else kindOf in @slicerx/contracts/size-kind), which no inch plan converts. The
@@ -55,6 +99,10 @@ export const partPlanSchema = z.object({
     .union([z.array(text(60)).min(2).max(30), z.literal(false)])
     .optional()
     .describe('Pieces that print assembled and move, by name (such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8); false if they print separately'),
+  /** The faces meant to be open (openFacesInput); design.put_plan takes it, the mimir tab's card leaves it out. */
+  openFaces: openFacesInput
+    .optional()
+    .describe('The faces meant to be open, by piece, such as [{ "piece": "Pen cup", "faces": ["top"] }] for a cup open at the top; leave it out when no face is open'),
 })
 export type PartPlan = z.infer<typeof partPlanSchema>
 
