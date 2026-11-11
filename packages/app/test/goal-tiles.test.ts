@@ -7,7 +7,10 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { goalConfig, goalEasy, resolveConfig } from '../src/adapters/config'
+import { goalConfig, goalEasy, resolveConfig, setProfileLayer } from '../src/adapters/config'
+import { builtinCommands } from '../src/commands/builtin'
+import type { Host } from '@slicerx/contracts'
+import { stockLayer } from '@slicerx/settings'
 import { goalEdits, goalEditsTip, nearestGoal } from '../src/lib/goal-edits'
 import { get, set, type AppState } from '../src/state/store'
 import { EasySettingsPanel } from '../src/workspaces/prepare/easy-settings'
@@ -38,6 +41,7 @@ beforeEach(() => {
 afterEach(() => {
   root.unmount()
   el.remove()
+  setProfileLayer(null, [])
   set({ settingsMode: initial.settingsMode, goal: initial.goal, goalBase: initial.goalBase, overrides: initial.overrides, easy: initial.easy, easyTouched: initial.easyTouched, profile: initial.profile, slice: initial.slice })
 })
 
@@ -133,6 +137,51 @@ describe('the Goal tiles', () => {
     expect(checked()).toEqual(['slice-goal-fine'])
     expect(dot('fine')).toBeNull()
     expect(chip()).toBeNull()
+  })
+})
+
+describe('Strong shows one number of walls everywhere', () => {
+  // The printer's Strong tier is the only source: the Goal tile, the palette's Goal command, the Strength row and the
+  // walls a Strong slice gets all read it, so none can say 5 while another says 6.
+  const palette = () => builtinCommands({} as Host, []).find((c) => c.id === 'goal-strong')!.title
+  const strengthRow = () => el.querySelector<HTMLElement>('#easy-strength')?.getAttribute('aria-valuetext') ?? null
+
+  const profileOf = (printerId: string, layer: NonNullable<Awaited<ReturnType<typeof stockLayer>>>, tier: 'standard' | 'strong') =>
+    ({ printerId, nozzle: layer.nozzle, nozzles: layer.nozzles, nozzleFrom: 'choice', tier, source: layer.source, shippedGcode: layer.shippedGcode, gcodeKeys: layer.gcodeKeys, limits: layer.limits, goalValues: layer.goalValues }) as const
+
+  it.each([
+    ['bambu-a1', 6],
+    ['prusa-mk4s', 5],
+    ['voron-2.4-300', 5],
+  ])('on %s the tile, the palette and the slice all say %i walls', async (printerId, walls) => {
+    set({ settingsMode: 'advanced' })
+    // On Standard, the usual start: Strong is read from the tier's numbers, not from the layer in use
+    const onStandard = (await stockLayer({ printerId, tier: 'standard', slots: [] }))!
+    const tier = Number(onStandard.goalValues.strong['wall_loops'])
+    expect(tier).toBe(walls)
+    setProfileLayer(onStandard.values, [])
+    set({ goal: 'standard', goalBase: 'standard', easy: goalEasy('standard'), easyTouched: [], overrides: {}, profile: profileOf(printerId, onStandard, 'standard') })
+    mount()
+    expect(tile('strong')?.querySelector('.goal-sub')?.textContent).toBe(`${tier} walls`)
+    expect(palette()).toBe(`Goal: Strong (${tier} walls)`)
+    // Picking Strong builds the layer of the Strong tier: the slice, the Strength row, the tile and the palette keep agreeing
+    const onStrong = (await stockLayer({ printerId, tier: 'strong', slots: [] }))!
+    expect(onStrong.goalValues.strong['wall_loops']).toBe(onStandard.goalValues.strong['wall_loops'])
+    setProfileLayer(onStrong.values, [])
+    flushSync(() => set({ goal: 'strong', goalBase: 'strong', easy: goalEasy('strong'), easyTouched: [], overrides: {}, profile: profileOf(printerId, onStrong, 'strong') }))
+    expect(Number(resolveConfig(get().easy, get().overrides)['wall_loops'])).toBe(tier)
+    expect(strengthRow()).toContain(`${tier} walls`)
+    expect(tile('strong')?.querySelector('.goal-sub')?.textContent).toBe(`${tier} walls`)
+    expect(palette()).toBe(`Goal: Strong (${tier} walls)`)
+  })
+
+  it('without a printer all of them say what SlicerX\'s own Strong gives', () => {
+    set({ settingsMode: 'advanced', goal: 'strong', goalBase: 'strong', easy: goalEasy('strong') })
+    mount()
+    const own = Number(goalConfig('strong')['wall_loops'])
+    expect(tile('strong')?.querySelector('.goal-sub')?.textContent).toBe(`${own} walls`)
+    expect(palette()).toBe(`Goal: Strong (${own} walls)`)
+    expect(strengthRow()).toContain(`${own} walls`)
   })
 })
 
