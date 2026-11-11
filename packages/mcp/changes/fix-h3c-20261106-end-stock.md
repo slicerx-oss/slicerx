@@ -1,0 +1,3 @@
+### Fixed
+
+- A Bambu Lab H3C project saved with the printer maker's newer end G-code (dated 20261106, which also turns fan P10 off at the end) now counts as the H3C's stock end G-code. `slicerx_slice_file`, `slicerx_estimate_file` and `slicerx_arrange_file` with `project_settings: true` slice it in the default `project_gcode: "review"` mode and say so in `project_gcode` ("The project's end G-code matches the stock Bambu Lab H3C end G-code."). Before, the call was refused with `project_gcode_review` and a two-line diff. `slicerx_review_script` answers `exact` for that text, with `stockVersion` `2.9.1 20261106`. The end G-code `machine:bambu-h3c` writes is unchanged. No tool's input or answer shape changes, so no tool version moves.

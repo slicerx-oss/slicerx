@@ -155,3 +155,23 @@ describe('a project with its own G-code', () => {
     expect(r.changes.map((c) => [c.label, c.slot, c.flags.map((f) => f.code)])).toEqual([['filament start G-code (filament 2)', 1, ['cold_extrusion']]])
   })
 })
+
+describe("the Bambu Lab H3C maker's later end G-code", () => {
+  const h3c = printerConfig('bambu-h3c') as unknown as Record<string, string>
+  // The end SlicerX ships (the maker's 20261028 text) with the maker's later two-line change: a new date line and fan
+  // P10 off after the remote part cooling fan.
+  const later = h3c['machine_end_gcode']!
+    .replace(';===== 20261028 ;=====', ';===== 20261106 ;=====')
+    .replace('M106 P2 S0 ; turn off remote part cooling fan\n', 'M106 P2 S0 ; turn off remote part cooling fan\nM106 P10 S0 ; turn off remote part cooling1 fan\n')
+
+  it('is the text the maker ships', () => {
+    expect(gcodeFingerprint(later)).toBe('2f9a3f918af1f8f66678164fb171444e')
+  })
+
+  it('is stock for the H3C and kept without asking', () => {
+    expect(isStockGcode('bambu-h3c', 'machine_end_gcode', later)).toBe(true)
+    const r = reviewProjectGcode({ project: { machine_end_gcode: later }, profile: h3c, model: 'bambu-h3c' })
+    expect(r.changes).toEqual([])
+    expect(r.kept.map((k) => [k.key, k.match])).toEqual([['machine_end_gcode', 'stock']])
+  })
+})

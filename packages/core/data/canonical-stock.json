@@ -956,6 +956,18 @@
       },
       "key": "machine_end_gcode",
       "source": "BambuStudio",
+      "version": "2.9.1 20261106",
+      "exactFingerprint": "adc318714b626211120110d1adb4beefb68679da1cf258f37a05b504d6493ca9",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "8214ad27167d2186b9eca4ef6778cf4dee4807edd06c7fca2deea73b337c0900"
+    },
+    {
+      "identity": {
+        "model": "bambu-h3c",
+        "firmware": "marlin"
+      },
+      "key": "machine_end_gcode",
+      "source": "BambuStudio",
       "version": "2.9.1",
       "exactFingerprint": "de585869dd4e2852f72876a3aeff91efd767980d371f74f83e3d189f67e1a475",
       "canonicalVersion": 1,

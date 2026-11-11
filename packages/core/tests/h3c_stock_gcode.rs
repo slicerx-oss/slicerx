@@ -503,3 +503,33 @@ fn no_move_leaves_the_bed_but_the_makers_own_fixed_points() {
         }
     }
 }
+
+#[test]
+fn the_makers_later_end_is_known_stock() {
+    // The shipped end (the maker's 20261028 text) with the maker's later two-line change: a new date line and fan P10
+    // off after the remote part cooling fan. The stock script table must know it as the maker's text.
+    let f = family();
+    let end = f["end"]
+        .as_str()
+        .unwrap()
+        .replacen(";===== 20261028 ;=====", ";===== 20261106 ;=====", 1)
+        .replacen(
+            "M106 P2 S0 ; turn off remote part cooling fan\n",
+            "M106 P2 S0 ; turn off remote part cooling fan\nM106 P10 S0 ; turn off remote part cooling1 fan\n",
+            1,
+        );
+    assert_eq!(
+        sx_core::script_review::exact_fingerprint(&end),
+        "adc318714b626211120110d1adb4beefb68679da1cf258f37a05b504d6493ca9",
+        "not the maker's later end"
+    );
+    let input: sx_core::script_review::ReviewInput = serde_json::from_value(json!({
+        "selected": { "model": "bambu-h3c", "firmware": "marlin" },
+        "key": "machine_end_gcode",
+        "text": end,
+    }))
+    .unwrap();
+    let review = sx_core::script_review::review_known(&input).unwrap();
+    assert_eq!(review.decision, "exact", "{review:?}");
+    assert_eq!(review.reason, "stock_equivalent");
+}
