@@ -287,22 +287,25 @@ describe('finished sketches in the design tools', () => {
     expect(over.sketches).toHaveLength(0)
   })
 
-  it('takes splines in every sketch tool, checked against the loops of slicerx_geom_revolve', () => {
+  it('takes splines and ellipses in every sketch tool, checked against the loops of slicerx_geom_revolve', () => {
     const tools = designToolset({ ...NO_ENGINE_HOST, get: () => ({}) as Design })
     const tool = (name: string) => tools.find((t) => t.name === name)!
     const seg = { start: [0, 0], segments: [{ type: 'spline', points: [[5, 5]], to: [10, 0] }, { type: 'line', to: [0, 0] }] }
     const closed = { type: 'spline', points: [[0, 0], [10, 0], [5, 8]] }
     const bad = { start: [0, 0], segments: [{ type: 'curve', to: [1, 1] }] }
     const inputs: [string, string, (l: unknown[]) => unknown][] = [
-      ['geom.sketch_check', '1.1.0', (l) => ({ loops: l })],
-      ['geom.sketch_edit', '1.1.0', (l) => ({ loops: l, op: 'intersect' })],
-      ['geom.extrude', '1.9.0', (l) => ({ shape: { type: 'sketch', loops: l }, distance_mm: 2 })],
-      ['geom.revolve', '1.8.0', (l) => ({ loops: l, axis: { point: [0, 0], direction: [0, 1] } })],
-      ['design.sketch', '1.3.0', (l) => ({ loops: l })],
+      ['geom.sketch_check', '1.2.0', (l) => ({ loops: l })],
+      ['geom.sketch_edit', '1.2.0', (l) => ({ loops: l, op: 'intersect' })],
+      ['geom.extrude', '1.10.0', (l) => ({ shape: { type: 'sketch', loops: l }, distance_mm: 2 })],
+      ['geom.revolve', '1.9.0', (l) => ({ loops: l, axis: { point: [0, 0], direction: [0, 1] } })],
+      ['design.sketch', '1.4.0', (l) => ({ loops: l })],
     ]
+    const ellipse = { type: 'ellipse', center: [5, 2], widthMm: 6, heightMm: 3, angleDeg: 30 }
     for (const [name, version, input] of inputs) {
       expect(tool(name).version, name).toBe(version)
       expect(tool(name).input.safeParse(input([seg, closed])).success, name).toBe(true)
+      expect(tool(name).input.safeParse(input([ellipse])).success, name).toBe(true)
+      expect(tool(name).input.safeParse(input([{ ...ellipse, heightMm: 0 }])).success, name).toBe(false)
       expect(tool(name).input.safeParse(input([bad])).success, name).toBe(false)
     }
     expect(tool('geom.extrude').input.safeParse({ shape: { type: 'circle', diameterMm: 4 }, frame: { origin: [0, 0, 0] }, distance_mm: 2 }).success).toBe(false)

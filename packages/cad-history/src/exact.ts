@@ -100,7 +100,8 @@ export function rigidFrame(m: Mat4): { origin: Vec3; u: Vec3; normal: Vec3 } | n
 
 /** A piece of a kernel loop: a line to `to`, or an arc to it around `center` (sweep counterclockwise positive). */
 type Piece = { to: Vec2; center?: Vec2; sweepDeg?: number }
-type Loop = { points: Vec2[] } | { center: Vec2; diameterMm: number } | { start: Vec2; segments: Piece[] }
+type Ellipse = { center: Vec2; widthMm: number; heightMm: number; angleDeg: number }
+type Loop = { points: Vec2[] } | { center: Vec2; diameterMm: number } | Ellipse | { start: Vec2; segments: Piece[] }
 type Profile = { outer: Loop; holes: Loop[] }
 
 /** The same loop the other way round, each arc swept back. */
@@ -116,6 +117,13 @@ function reversed(start: Vec2, segments: Piece[]): Piece[] {
 /** A kernel loop as a ring of points, each arc in pieces of at most 5 degrees. */
 function ring(l: Loop): Vec2[] {
   if ('points' in l) return l.points
+  if ('widthMm' in l) {
+    const [a, b, t] = [l.widthMm / 2, l.heightMm / 2, (l.angleDeg * Math.PI) / 180]
+    return Array.from({ length: 72 }, (_, i): Vec2 => {
+      const [x, y] = [a * Math.cos((i * Math.PI) / 36), b * Math.sin((i * Math.PI) / 36)]
+      return [l.center[0] + x * Math.cos(t) - y * Math.sin(t), l.center[1] + x * Math.sin(t) + y * Math.cos(t)]
+    })
+  }
   if ('center' in l) {
     const r = l.diameterMm / 2
     return Array.from({ length: 72 }, (_, i): Vec2 => [l.center[0] + r * Math.cos((i * Math.PI) / 36), l.center[1] + r * Math.sin((i * Math.PI) / 36)])
@@ -194,6 +202,8 @@ async function loops(call: Call, shape: Shape | FreeShape, placement: { center?:
       const segments = l.segments.map((g) => ({ to: at(g.to), ...(g.center ? { center: at(g.center), sweepDeg: flipV ? -g.sweepDeg! : g.sweepDeg! } : {}) }))
       return { start, segments: flipV ? reversed(start, segments) : segments }
     }
+    // turned with the placement, and mirrored with the frame
+    if ('widthMm' in l) return { center: at(l.center), widthMm: l.widthMm, heightMm: l.heightMm, angleDeg: (flipV ? -1 : 1) * (l.angleDeg + (placement.rotationDeg ?? 0)) }
     return { center: at(l.center), diameterMm: l.diameterMm }
   }
   let profiles: Profile[]
@@ -205,6 +215,8 @@ async function loops(call: Call, shape: Shape | FreeShape, placement: { center?:
     }
   } else if (shape.type === 'circle') {
     profiles = [{ outer: { center: [0, 0], diameterMm: shape.diameterMm }, holes: [] }]
+  } else if (shape.type === 'ellipse') {
+    profiles = [{ outer: { center: [0, 0], widthMm: shape.widthMm, heightMm: shape.heightMm, angleDeg: 0 }, holes: [] }]
   } else if (shape.type === 'rectangle' && !shape.cornerRadiusMm) {
     const w = shape.widthMm / 2
     const h = shape.heightMm / 2

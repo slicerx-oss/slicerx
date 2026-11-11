@@ -196,9 +196,10 @@ export function projectionsOut(k: SketchItem): Record<string, unknown>[] {
 
 /** The kinds of curve in some loops, for a summary: "1 circle, 4 lines". */
 export function curveWords(loops: readonly SketchLoop[]): string {
-  const n = { circle: 0, line: 0, arc: 0, spline: 0 }
+  const n = { circle: 0, ellipse: 0, line: 0, arc: 0, spline: 0 }
   for (const l of loops) {
     if ('type' in l && l.type === 'circle') n.circle++
+    else if ('type' in l && l.type === 'ellipse') n.ellipse++
     else if ('type' in l && l.type === 'spline') n.spline++
     else if ('segments' in l) for (const s of l.segments) n[s.type]++
     else if ('points' in l) n.line += Math.max(0, l.points.length - 1)

@@ -12,9 +12,9 @@ import { arcThrough, dist, segStart, toLoops, type Entity, type Sketch, type V2 
 // points this close are one, mm (the drawing keeps 6 decimals)
 const TOL = 1e-5
 
-/** Every point of an entity a constraint can name: a circle's center; a chain's start, corners, ends, arc centers and spline points. */
+/** Every point of an entity a constraint can name: a circle's or ellipse's center; a chain's start, corners, ends, arc centers and spline points. */
 export function pointRefs(e: Entity, i: number): SketchPointRef[] {
-  if (e.kind === 'circle') return [{ e: i, at: 'center' }]
+  if (e.kind === 'circle' || e.kind === 'ellipse') return [{ e: i, at: 'center' }]
   // a closed chain's start is its last segment's end
   const out: SketchPointRef[] = e.closed ? [] : [{ e: i, at: 'start' }]
   e.segs.forEach((s, seg) => {
@@ -32,6 +32,7 @@ function curveOf(sketch: Sketch, r: SketchCurveRef): { ends: [V2, V2] | null; on
   const e = sketch[r.e]
   if (!e) return null
   if (e.kind === 'circle') return r.seg === 0 ? { ends: null, on: { circle: e.center, r: e.diameterMm / 2 } } : null
+  if (e.kind === 'ellipse') return null
   const s = e.segs[r.seg]
   if (!s) return null
   const a = segStart(e, r.seg)
@@ -54,7 +55,7 @@ function offLine(p: V2, [a, b]: [V2, V2]): number {
 }
 
 function curveRefs(e: Entity, i: number): SketchCurveRef[] {
-  return e.kind === 'circle' ? [{ e: i, seg: 0 }] : e.segs.map((_, seg) => ({ e: i, seg }))
+  return e.kind === 'chain' ? e.segs.map((_, seg) => ({ e: i, seg })) : [{ e: i, seg: 0 }]
 }
 
 const isLineish = (k: Carrier): boolean => 'line' in k

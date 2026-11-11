@@ -67,6 +67,7 @@ export function shapeAt(sketch: Sketch, pick: { e: number; seg: number } | null)
   const x = sketch[pick.e]
   if (!x || x.construction) return null
   if (x.kind === 'circle') return { kind: 'circle', e: pick.e }
+  if (x.kind === 'ellipse') return null
   if (isRect(sketch, pick.e)) return { kind: 'rect', e: pick.e }
   return x.segs[pick.seg]?.kind === 'line' ? { kind: 'line', e: pick.e, seg: pick.seg } : null
 }
@@ -132,6 +133,7 @@ export function seeded(sketch: Sketch, shape: BoxShape, key: BoxKey, value: numb
     if (shape.kind === 'circle' && value > 0) out[shape.e] = { ...x, diameterMm: round(value) }
     return out
   }
+  if (x.kind === 'ellipse') return out
   const pts: V2[] = [x.start, ...x.segs.map((s) => s.to)]
   const move = (i: number, d: V2) => {
     pts[i] = [round(pts[i]![0] + d[0]), round(pts[i]![1] + d[1])]
@@ -211,6 +213,7 @@ export function allShapes(sketch: Sketch): BoxShape[] {
   sketch.forEach((x, e) => {
     if (x.construction) return
     if (x.kind === 'circle') return void out.push({ kind: 'circle', e })
+    if (x.kind === 'ellipse') return
     if (isRect(sketch, e)) return void out.push({ kind: 'rect', e })
     x.segs.forEach((s, seg) => s.kind === 'line' && out.push({ kind: 'line', e, seg }))
   })

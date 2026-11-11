@@ -5,7 +5,7 @@
 // corners are one solver point and an arc is its center, start and end. Old sketches have no constraints and load
 // as free geometry.
 import type { SketchConstraint, SketchCurveRef, SketchPointRef } from '@slicerx/cad-history'
-import { arcThrough, type Entity, type V2 } from './sketch-model'
+import { arcThrough, ellipseAxisEnd, type Entity, type V2 } from './sketch-model'
 
 export type { SketchConstraint, SketchCurveRef, SketchPointRef }
 
@@ -90,6 +90,8 @@ export function toSolver(sketch: readonly Entity[], constraints: readonly Sketch
       entities.push({ type: 'circle', center: c, radius: e.diameterMm / 2 })
       return
     }
+    // an ellipse takes point constraints at its center; its size and turn stay as drawn
+    if (e.kind === 'ellipse') return void add(e.center, `${i}:center`)
     const start = add(e.start, `${i}:start`)
     let from = start
     e.segs.forEach((s, k) => {
@@ -175,6 +177,7 @@ export function fromSolver(sketch: readonly Entity[], solved: Pick<Solved, 'poin
       const r = k === undefined ? null : solved.radii[k]
       return { ...e, center: at(`${i}:center`, e.center), diameterMm: r ? round(2 * r) : e.diameterMm }
     }
+    if (e.kind === 'ellipse') return { ...e, center: at(`${i}:center`, e.center) }
     const start = at(`${i}:start`, e.start)
     let from = start
     const segs = e.segs.map((s, k) => {
@@ -230,6 +233,7 @@ export function curveStates(sketch: readonly Entity[], constraints: readonly Ske
       out.set(`${i}:0`, state([map.point.get(`${i}:center`)!], k))
       return
     }
+    if (e.kind === 'ellipse') return void out.set(`${i}:0`, state([map.point.get(`${i}:center`)!]))
     e.segs.forEach((s, k) => {
       const a = map.point.get(k === 0 ? `${i}:start` : `${i}:to:${k - 1}`)!
       const b = map.point.get(`${i}:to:${k}`)!
@@ -319,7 +323,7 @@ function pointOf(sketch: readonly Entity[], r: SketchPointRef): V2 | null {
   if (r.e === -1) return [0, 0]
   const e = sketch[r.e]
   if (!e) return null
-  if (e.kind === 'circle') return r.at === 'center' ? e.center : null
+  if (e.kind === 'circle' || e.kind === 'ellipse') return r.at === 'center' ? e.center : null
   if (r.at === 'start') return e.start
   if (r.at === 'to') return e.segs[r.seg]?.to ?? null
   if (r.at === 'point') {
@@ -522,6 +526,7 @@ function middleOf(sketch: readonly Entity[], r: SketchCurveRef): V2 | null {
   const e = sketch[r.e]
   if (!e) return null
   if (e.kind === 'circle') return [e.center[0], e.center[1] + e.diameterMm / 2]
+  if (e.kind === 'ellipse') return ellipseAxisEnd(e, 1)
   const s = e.segs[r.seg]
   if (!s) return null
   if (s.kind === 'arc') return s.through

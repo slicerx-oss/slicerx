@@ -53,7 +53,7 @@ interface PickedFace {
 
 // The typed shapes this tool places, plus the filled outline of an SVG file. Free sketches have their own tool.
 type ShapeType = Shape['type'] | 'svg'
-const SHAPE_NAMES: Record<ShapeType, string> = { rectangle: 'Rectangle', circle: 'Circle', slot: 'Slot', polygon: 'Polygon', text: 'Text', svg: 'SVG outline' }
+const SHAPE_NAMES: Record<ShapeType, string> = { rectangle: 'Rectangle', circle: 'Circle', ellipse: 'Ellipse', slot: 'Slot', polygon: 'Polygon', text: 'Text', svg: 'SVG outline' }
 
 function readFont(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -76,6 +76,7 @@ function shapeEdit(): { index: number; entryId: string; part: number; face: Pick
   const f: Record<string, string> = { x: String(p.placement?.center?.[0] ?? 0), y: String(p.placement?.center?.[1] ?? 0), turn: String(p.placement?.rotationDeg ?? 0), distance: String(p.spec.distanceMm) }
   if (sh.type === 'rectangle') Object.assign(f, { width: String(sh.widthMm), height: String(sh.heightMm), corner: String(sh.cornerRadiusMm ?? 0) })
   if (sh.type === 'slot') Object.assign(f, { width: String(sh.lengthMm), height: String(sh.widthMm) })
+  if (sh.type === 'ellipse') Object.assign(f, { width: String(sh.widthMm), height: String(sh.heightMm) })
   if (sh.type === 'circle') f['diameter'] = String(sh.diameterMm)
   if (sh.type === 'polygon') Object.assign(f, { sides: String(sh.sides), diameter: String(sh.diameterMm) })
   if (sh.type === 'text') Object.assign(f, { text: sh.text, size: String(sh.sizeMm) })
@@ -164,6 +165,8 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
         return { type, widthMm: num(width), heightMm: num(height), ...(num(corner) > 0 ? { cornerRadiusMm: num(corner) } : {}) }
       case 'circle':
         return pos(diameter) ? { type, diameterMm: num(diameter) } : 'The diameter must be more than 0 mm.'
+      case 'ellipse':
+        return pos(width) && pos(height) ? { type, widthMm: num(width), heightMm: num(height) } : 'Width and height must be more than 0 mm.'
       case 'slot':
         if (!pos(width) || !pos(height)) return 'Length and width must be more than 0 mm.'
         return num(width) > num(height) ? { type, lengthMm: num(width), widthMm: num(height) } : 'A slot is longer than it is wide.'

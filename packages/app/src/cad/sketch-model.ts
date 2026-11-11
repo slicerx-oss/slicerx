@@ -17,7 +17,9 @@ export type Seg = { kind: 'line'; to: V2 } | { kind: 'arc'; to: V2; through: V2 
  */
 export interface Chain { kind: 'chain'; start: V2; segs: Seg[]; closed: boolean; smooth?: true; construction?: boolean }
 export interface Circle { kind: 'circle'; center: V2; diameterMm: number; construction?: boolean }
-export type Entity = Chain | Circle
+/** Full axis lengths; the width axis is turned angleDeg counterclockwise from the plane's X. */
+export interface Ellipse { kind: 'ellipse'; center: V2; widthMm: number; heightMm: number; angleDeg: number; construction?: boolean }
+export type Entity = Chain | Circle | Ellipse
 export type Sketch = readonly Entity[]
 
 const EPS = 1e-6
@@ -43,6 +45,7 @@ export function toLoops(sketch: Sketch): SketchLoop[] {
   return sketch.map((e): SketchLoop => {
     const c = e.construction ? { construction: true as const } : {}
     if (e.kind === 'circle') return { type: 'circle', center: e.center, diameterMm: e.diameterMm, ...c }
+    if (e.kind === 'ellipse') return { type: 'ellipse', center: e.center, widthMm: e.widthMm, heightMm: e.heightMm, ...(e.angleDeg ? { angleDeg: e.angleDeg } : {}), ...c }
     if (e.smooth) return { type: 'spline', points: [e.start, ...(e.segs[0]?.kind === 'spline' ? e.segs[0].points : [])], ...c }
     return { start: e.start, segments: e.segs.map((s) => (s.kind === 'line' ? { type: 'line' as const, to: s.to } : s.kind === 'spline' ? { type: 'spline' as const, points: s.points, to: s.to } : { type: 'arc' as const, to: s.to, through: s.through })), ...c }
   })
@@ -78,6 +81,24 @@ function arcPoints(a: V2, m: V2, b: V2): V2[] {
   return out
 }
 
+/** The end of an ellipse's width axis (`which` 0) or height axis (1), on its positive side. */
+export function ellipseAxisEnd(e: Ellipse, which: 0 | 1): V2 {
+  const t = (e.angleDeg * Math.PI) / 180 + (which ? Math.PI / 2 : 0)
+  const r = (which ? e.heightMm : e.widthMm) / 2
+  return [e.center[0] + r * Math.cos(t), e.center[1] + r * Math.sin(t)]
+}
+
+function ellipsePoints(e: Ellipse): V2[] {
+  const t = (e.angleDeg * Math.PI) / 180
+  const out: V2[] = []
+  for (let i = 0; i < 64; i++) {
+    const x = (e.widthMm / 2) * Math.cos((i / 64) * 2 * Math.PI)
+    const y = (e.heightMm / 2) * Math.sin((i / 64) * 2 * Math.PI)
+    out.push([e.center[0] + x * Math.cos(t) - y * Math.sin(t), e.center[1] + x * Math.sin(t) + y * Math.cos(t)])
+  }
+  return out
+}
+
 function circlePoints(center: V2, r: number): V2[] {
   const out: V2[] = []
   for (let i = 0; i < 64; i++) out.push([center[0] + r * Math.cos((i / 64) * 2 * Math.PI), center[1] + r * Math.sin((i / 64) * 2 * Math.PI)])
@@ -99,6 +120,7 @@ export function segPath(c: Chain, i: number, room = RING_POINTS - 1): V2[] {
 /** An entity as polylines to draw: one per segment for a chain, one closed ring for a circle. */
 export function entityPaths(e: Entity): { points: V2[]; closed?: boolean; seg: number }[] {
   if (e.kind === 'circle') return [{ points: circlePoints(e.center, e.diameterMm / 2), closed: true, seg: 0 }]
+  if (e.kind === 'ellipse') return [{ points: ellipsePoints(e), closed: true, seg: 0 }]
   // the ring counts its start and each segment's points after it, as the engine counts them
   let used = 1
   return e.segs.map((_, i) => {
@@ -108,9 +130,9 @@ export function entityPaths(e: Entity): { points: V2[]; closed?: boolean; seg: n
   })
 }
 
-export type HandleRef = { e: number; at: 'start' } | { e: number; at: 'to' | 'through'; seg: number } | { e: number; at: 'point'; seg: number; i: number } | { e: number; at: 'center' | 'rim' }
+export type HandleRef = { e: number; at: 'start' } | { e: number; at: 'to' | 'through'; seg: number } | { e: number; at: 'point'; seg: number; i: number } | { e: number; at: 'center' | 'rim' | 'rim2' }
 
-/** Every point a drag can move: chain ends and corners, arc middles, circle centers and a rim point. */
+/** Every point a drag can move: chain ends and corners, arc middles, circle centers and a rim point, an ellipse's center and the ends of its axes. */
 export function handles(sketch: Sketch): { refs: HandleRef[]; points: V2[] } {
   const refs: HandleRef[] = []
   const points: V2[] = []
@@ -118,6 +140,11 @@ export function handles(sketch: Sketch): { refs: HandleRef[]; points: V2[] } {
     if (e.kind === 'circle') {
       refs.push({ e: i, at: 'center' }, { e: i, at: 'rim' })
       points.push(e.center, [e.center[0] + e.diameterMm / 2, e.center[1]])
+      return
+    }
+    if (e.kind === 'ellipse') {
+      refs.push({ e: i, at: 'center' }, { e: i, at: 'rim' }, { e: i, at: 'rim2' })
+      points.push(e.center, ellipseAxisEnd(e, 0), ellipseAxisEnd(e, 1))
       return
     }
     refs.push({ e: i, at: 'start' })
@@ -147,6 +174,13 @@ export function moveHandle(sketch: Sketch, ref: HandleRef, p: V2): Entity[] {
   return sketch.map((e, i): Entity => {
     if (i !== ref.e) return e
     if (e.kind === 'circle') return ref.at === 'center' ? { ...e, center: p } : ref.at === 'rim' ? { ...e, diameterMm: Math.max(0.01, round(2 * dist(e.center, p))) } : e
+    // the width axis's end sets its size and turn; the height axis's end its size only
+    if (e.kind === 'ellipse') {
+      if (ref.at === 'center') return { ...e, center: p }
+      const size = Math.max(0.01, round(2 * dist(e.center, p)))
+      if (ref.at === 'rim') return { ...e, widthMm: size, angleDeg: round((Math.atan2(p[1] - e.center[1], p[0] - e.center[0]) * 180) / Math.PI) }
+      return ref.at === 'rim2' ? { ...e, heightMm: size } : e
+    }
     if (ref.at === 'start') {
       const segs = e.closed && e.segs.length ? e.segs.map((s, k) => (k === e.segs.length - 1 ? { ...s, to: p } : s)) : e.segs
       return { ...e, start: p, segs }
@@ -165,7 +199,7 @@ export function deleteSegment(sketch: Sketch, e: number, seg: number): Entity[] 
   const out: Entity[] = []
   sketch.forEach((x, i) => {
     if (i !== e) return void out.push(x)
-    if (x.kind === 'circle' || x.smooth) return
+    if (x.kind === 'circle' || x.kind === 'ellipse' || x.smooth) return
     const c = x.construction ? { construction: true } : {}
     if (x.closed) {
       if (x.segs.length <= 1) return
@@ -237,7 +271,7 @@ export function sketchTargets(sketch: Sketch, skip?: HandleRef): SnapTargets {
   const points: { at: V2; kind: 'vertex' | 'midpoint' | 'center' }[] = [{ at: [0, 0], kind: 'vertex' }]
   const edges: { a: V2; b: V2 }[] = []
   sketch.forEach((e, i) => {
-    if (e.kind === 'circle') {
+    if (e.kind === 'circle' || e.kind === 'ellipse') {
       if (!(skip?.e === i && skip.at === 'center')) points.push({ at: e.center, kind: 'center' })
       return
     }
@@ -831,6 +865,11 @@ export function fromLoops(loops: readonly SketchLoop[]): Entity[] | null {
       out.push({ kind: 'circle', center: pt(l.center[0], l.center[1]), diameterMm: l.diameterMm, ...k })
       continue
     }
+    if ('type' in l && l.type === 'ellipse') {
+      if (!Array.isArray(l.center) || typeof l.widthMm !== 'number' || typeof l.heightMm !== 'number') return null
+      out.push({ kind: 'ellipse', center: pt(l.center[0], l.center[1]), widthMm: l.widthMm, heightMm: l.heightMm, angleDeg: l.angleDeg ?? 0, ...k })
+      continue
+    }
     if ('type' in l && l.type === 'spline') {
       if (!Array.isArray(l.points)) return null
       const [first, ...rest] = l.points
@@ -919,6 +958,7 @@ export function pickedText(sketch: Sketch, picked: { e: number; seg: number } | 
   const e = picked ? sketch[picked.e] : undefined
   if (!e || !picked) return ''
   if (e.kind === 'circle') return `Circle, diameter ${f(e.diameterMm)} ${u}`
+  if (e.kind === 'ellipse') return `Ellipse, ${f(e.widthMm)} by ${f(e.heightMm)} ${u}`
   const s = e.segs[picked.seg]
   if (!s) return ''
   const from = segStart(e, picked.seg)

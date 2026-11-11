@@ -628,7 +628,7 @@ export function onFlatFace(p: Vec3, face: FlatFace, tol = 0.01): { inside: boole
 
 const n2 = (v: number) => String(Math.round(v * 100) / 100)
 
-const SHAPE_WORDS: Record<string, string> = { rectangle: 'Rectangle', circle: 'Circle', slot: 'Slot', polygon: 'Polygon', text: 'Text', svg: 'SVG outline', sketch: 'Sketch' }
+const SHAPE_WORDS: Record<string, string> = { rectangle: 'Rectangle', circle: 'Circle', slot: 'Slot', ellipse: 'Ellipse', polygon: 'Polygon', text: 'Text', svg: 'SVG outline', sketch: 'Sketch' }
 
 /** A step in a few plain words, such as "Pull 5 mm", "Hole 6 mm" or "Sketch extrude 12 mm". */
 /** A step's name: the one the person gave it, or one made from what it does. */

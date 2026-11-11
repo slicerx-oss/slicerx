@@ -256,17 +256,19 @@ const segment = z
   .describe('{"type":"line","to":[u,v]}, {"type":"line","lengthMm":l,"angleDeg":a}, {"type":"line","lengthMm":l,"turnDeg":t}, {"type":"arc","center":[u,v],"sweepDeg":s}, {"type":"arc","to":[u,v],"through":[u,v]}, {"type":"arc","to":[u,v],"radiusMm":r,"clockwise"?:b,"large"?:b}, {"type":"arc","radiusMm":r,"sweepDeg":s} (tangent), or {"type":"spline","points":[[u,v],...],"to":[u,v]} (smooth, within 0.005 mm)')
 
 const circleLoop = z.object({ type: z.literal('circle'), center: vec2, diameterMm: z.number().positive() })
+const ellipseLoop = z.object({ type: z.literal('ellipse'), center: vec2, widthMm: z.number().positive(), heightMm: z.number().positive(), angleDeg: z.number().min(-360).max(360).optional() })
 const chainLoop = z.object({ start: vec2, segments: z.array(segment).min(1).max(512) })
 const splineLoop = z.object({ type: z.literal('spline'), points: z.array(vec2).max(4096) })
 const pointsLoop = z.object({ points: z.array(vec2).min(3).max(4096) })
 const loop = z
   .union([
     circleLoop,
+    ellipseLoop,
     chainLoop,
     splineLoop,
     pointsLoop,
   ])
-  .describe('A closed loop: {"points":[[u,v],...]}, {"type":"spline","points":[[u,v],...]}, {"type":"circle","center":[u,v],"diameterMm":d}, or {"start":[u,v],"segments":[...]}. A loop inside another is a hole')
+  .describe('A closed loop: {"points":[[u,v],...]}, {"type":"spline","points":[[u,v],...]}, {"type":"circle","center":[u,v],"diameterMm":d}, {"type":"ellipse","center":[u,v],"widthMm":w,"heightMm":h,"angleDeg":a} (the width turned a degrees from u), or {"start":[u,v],"segments":[...]}. A loop inside another is a hole')
 
 const loops = z.array(loop).min(1).max(256)
 
@@ -276,11 +278,12 @@ type Frame = z.infer<typeof frameSchema>
 // The sketch tools other than slicerx_geom_revolve parse their loops and frame with the same schemas but advertise
 // only a one-line shape: spelling the schemas out in each tool would cost a small local model's context several
 // times over. Each loop is read by the form its keys name, so an error names the field (loops.2.segments.0.to).
-const LOOP_FORMS = 'a loop is {points}, {type: "circle", center, diameterMm}, {type: "spline", points} or {start, segments}'
+const LOOP_FORMS = 'a loop is {points}, {type: "circle", center, diameterMm}, {type: "ellipse", center, widthMm, heightMm, angleDeg}, {type: "spline", points} or {start, segments}'
 function formOf(v: unknown): z.ZodType | null {
   if (!v || typeof v !== 'object') return null
   const type = (v as { type?: unknown }).type
   if (type === 'circle') return circleLoop
+  if (type === 'ellipse') return ellipseLoop
   if (type === 'spline') return splineLoop
   if (type !== undefined) return null
   if ('start' in v) return chainLoop
@@ -306,7 +309,7 @@ const loopsRef = z
     })
     return out
   })
-  .describe('Closed loops, as {points: [[u,v],...]}, {type: "circle", center, diameterMm}, {type: "spline", points} or {start, segments: [{type: line | arc | spline, to, ...}]}; one inside another is a hole')
+  .describe('Closed loops, as {points: [[u,v],...]}, {type: "circle", center, diameterMm}, {type: "ellipse", center, widthMm, heightMm, angleDeg}, {type: "spline", points} or {start, segments: [{type: line | arc | spline, to, ...}]}; one inside another is a hole')
 const frameRef = z
   .unknown()
   .transform((v, ctx): Frame => {
@@ -352,12 +355,13 @@ const shape = z
     z.object({ type: z.literal('rectangle'), widthMm: z.number().positive(), heightMm: z.number().positive(), cornerRadiusMm: z.number().min(0).optional() }),
     z.object({ type: z.literal('circle'), diameterMm: z.number().positive() }),
     z.object({ type: z.literal('slot'), lengthMm: z.number().positive(), widthMm: z.number().positive() }),
+    z.object({ type: z.literal('ellipse'), widthMm: z.number().positive(), heightMm: z.number().positive() }).describe('widthMm along placement x before rotationDeg turns it'),
     z.object({ type: z.literal('polygon'), sides: z.number().int().min(3).max(256), diameterMm: z.number().positive(), fit: z.enum(['inscribed', 'circumscribed']).optional() }),
     z.object({ type: z.literal('text'), text: z.string().min(1).max(200), sizeMm: z.number().positive(), letterSpacingMm: z.number().optional(), lineSpacing: z.number().positive().optional(), align: z.enum(['left', 'center', 'right']).optional() }),
     z.object({ type: z.literal('sketch'), loops: loopsRef }),
     z.object({ type: z.literal('svg'), svg: z.string().min(1).max(2_000_000), widthMm: z.number().positive(), toleranceMm: z.number().positive().optional() }),
   ])
-  .describe('What to extrude, in the plane: rectangle, circle, slot, polygon or text centered on placement.center, a free sketch of closed loops (as typed), or SVG artwork scaled to widthMm')
+  .describe('What to extrude, in the plane: rectangle, circle, slot, ellipse, polygon or text centered on placement.center, a free sketch of closed loops (as typed), or SVG artwork scaled to widthMm')
 
 const operation = z.enum(['new', 'join', 'cut']).default('new').describe('new: a separate body; join: add to target; cut: remove from target')
 /** The filament a new body prints in, as geom.build takes it. */
@@ -706,7 +710,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const edgePick = defineTool({
     name: 'geom.edge_pick',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'read',
     description:
@@ -732,7 +736,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const sketchCheck = defineTool({
     name: 'geom.sketch_check',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which are holes, the filled area, and each problem with its loop and segment.',
@@ -767,11 +771,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const sketchEdit = defineTool({
     name: 'geom.sketch_edit',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
-      'Edit sketch loops and get them back (loops and segments from 0, `from` naming each result\'s source loops): intersect lists crossings, trim takes off the piece around a point, extend runs an open end on to the next curve, mirror and pattern add copies; intersect, trim and extend refuse splines.',
+      'Edit sketch loops and get them back (loops and segments from 0, `from` naming each result\'s source loops): intersect lists crossings, trim takes off the piece around a point, extend runs an open end on to the next curve, mirror and pattern add copies; intersect, trim and extend refuse splines and ellipses.',
     input: z.object({
       loops: loopsRef,
       op: z.enum(['intersect', 'trim', 'extend', 'mirror', 'pattern']),
@@ -822,7 +826,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.9.0',
+    version: '1.10.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -873,7 +877,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.8.0',
+    version: '1.9.0',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -936,7 +940,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.6.0',
+    version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -988,7 +992,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.9.0',
+    version: '1.10.0',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale, twist_deg and end_profile taper, turn and reshape it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
@@ -1061,7 +1065,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const sketch = defineTool({
     name: 'design.sketch',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. With design, the frame is in that design's own coordinates, as its other tools take them. Without, it is in the plate's while no design was moved onto the bed; after that it is the only design's, or name the design.`,
@@ -1434,7 +1438,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const fillet = defineTool({
     name: 'geom.fillet',
-    version: '1.4.1',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1457,7 +1461,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const chamfer = defineTool({
     name: 'geom.chamfer',
-    version: '1.4.1',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description:
