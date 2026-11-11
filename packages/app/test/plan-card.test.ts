@@ -103,6 +103,39 @@ describe('the plan card', () => {
     expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Waiting for your go')
   })
 
+  it('names the detail level in plain words, and the person can change it before Go', async () => {
+    // a desk organizer at display detail: flat-sided, its slots arrayed
+    const organizer: PlanInput = {
+      ...BOX,
+      part: 'desk organizer',
+      detail: 'display',
+      flat: ['Body'],
+      proportions: 'stated: a 30 cm desk tray',
+      repeats: [],
+    }
+    const { result } = await shown(organizer)
+    const detail = screen.getByTestId('mimir-plan-detail')
+    expect(within(detail).getByText('Detail')).toBeTruthy()
+    expect(detail.textContent).toContain('Real proportions, curved bodies through smooth sections, repeated details patterned')
+    // the levels read as words, never the plan's own values
+    expect(within(detail).getByText('Display model')).toBeTruthy()
+    expect(detail.textContent).not.toMatch(/\b(display|fine|basic)\b/)
+    fireEvent.click(screen.getByTestId('mimir-plan-detail-basic'))
+    await waitFor(() => expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Your changes go with Go'))
+    expect(screen.getByTestId('mimir-plan-detail').textContent).toContain('Simple shapes, quick to build')
+    fireEvent.click(screen.getByTestId('mimir-plan-go'))
+    const out = (await result()).output as { accepted: boolean; edits: PartPlan }
+    expect(out.accepted).toBe(true)
+    expect(out.edits.detail).toBe('basic')
+    // answered, the level is a plain value
+    expect(within(screen.getByTestId('mimir-plan-detail')).getByText('Basic')).toBeTruthy()
+  })
+
+  it('shows no detail row for a plan that names no level', async () => {
+    await shown()
+    expect(screen.queryByTestId('mimir-plan-detail')).toBeNull()
+  })
+
   it('shows inches when the plan is in inches', async () => {
     await shown({ ...BOX, units: 'in', features: [{ name: 'Plate', sizes: { width: 3.5 } }], overall: undefined, holes: undefined } as PlanInput)
     expect(screen.getByText('Sizes in inches')).toBeTruthy()

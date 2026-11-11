@@ -69,6 +69,10 @@ export interface PromptOptions {
   cloud?: boolean | undefined
 }
 
+// cloud prompt only, as above: a model of a real thing is planned at the plan card's display detail by default, its
+// curved bodies lofted through sections and its repeated details patterned, each step named for what it is.
+export const DETAIL_LINE = `- A model of a real thing (a ship, a car, a plane, a house) named without sizes is planned at display detail unless the person asks for something simple or detailed: a ship hull, car body or fuselage is a series of sections, so loft it, and repeated details are built once and patterned, with steps named for what they are ("Hull (loft)", "Window rows (array)").`
+
 /**
  * Prompt text a local model gets as well as a cloud one. Text not wrapped in local() reaches cloud turns only, so a new
  * line costs a local model's build turn nothing unless it is marked here on purpose; the local prompt is pinned word for
@@ -106,6 +110,7 @@ const buildLines = (has: HasTool): Piece[] => {
     local(BUILD_FIRST),
     local(SIZES_LINE),
     has('pilot.ask') && has('parts.lookup') && FAMILY_LINE,
+    has('design.plan') && DETAIL_LINE,
     ...(has('design.plan') ? [[local(PLAN_LINE), checks && MOVING_PARTS_ORDER], local(FEATURE_LINE)] : [local(STEPS_LINE)]),
     has('design.plan') && assembledLine(has),
     local(BIND_LINE),

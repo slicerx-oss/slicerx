@@ -87,6 +87,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-target-note` | The status line on `mimir-target`: empty until it has something to say, such as "Nothing picked. Ask mimir again." when an answer no longer lands |
 | `mimir-plan-card` | A part plan in the conversation (design.plan): its features and sizes before anything is built; `data-plan-id` holds the planId and `data-picked` the answer once there is one. A change the build asks to make to an approved plan shows on one too, with `data-amends` |
 | `mimir-plan-feature` | One planned feature on `mimir-plan-card`, with its sizes |
+| `mimir-plan-detail` | The detail level on `mimir-plan-card` (`data-detail` holds basic, display or fine), with a line saying what it means |
+| `mimir-plan-detail-basic`, `mimir-plan-detail-display`, `mimir-plan-detail-fine` | The level options on a waiting plan card: picking one changes the level the plan goes with on Go |
 | `mimir-plan-status` | The plan card's status beside its buttons: waiting, approved (with a check) or sent back for changes |
 | `mimir-plan-change` | Not yet on a waiting plan card: mimir changes the plan before it builds |
 | `mimir-plan-go` | Go on a waiting plan card: mimir builds the part to the plan |

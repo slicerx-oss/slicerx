@@ -9,6 +9,7 @@
 import { createCardPlans } from '@slicerx/mcp/toolset'
 import { mimirPlans } from './plans'
 
+export { DETAIL_LABEL, DETAIL_LEVELS, DETAIL_LINE, type DetailLevel } from '@slicerx/mcp/toolset'
 export { PartPlanSchema, PLAN_CHANGE, PLAN_GO, PLAN_KEEP, PLAN_SIZE_MAX, planChoiceId, PlanInputSchema, samePlan, type PartPlan, type PlanAnswer, type PlanInput } from '@slicerx/mcp/toolset'
 
 /** The tab's card plans, over the window's registry. */

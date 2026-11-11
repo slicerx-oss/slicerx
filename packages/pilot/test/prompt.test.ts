@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { ASSEMBLED_LINE, assembledLine, DISMISSED_LINE, FAMILY_LINE, local, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { ASSEMBLED_LINE, assembledLine, DETAIL_LINE, DISMISSED_LINE, FAMILY_LINE, local, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 import { turnSet, turnSetTools } from '../src/turnsets'
@@ -244,7 +244,7 @@ describe('the line for parts that move', () => {
   const all = (): boolean => true
   /** The cloud prompt less its cloud-only parts: the line for parts that move, the plan line's pointer to it, the line for a sweep that changes shape and the line for a family. */
   // the line for things made of colored parts names only the tools offered, so it is taken out by its start
-  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '')
+  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '')
 
   it('is one line, in the cloud prompt only, after the check line', () => {
     expect(MOVING_PARTS_LINE).not.toContain('\n')
@@ -300,6 +300,20 @@ describe('the line for parts that move', () => {
       expect(cloud).not.toContain(MOVING_PARTS_LINE)
       expect(cloud).not.toContain(MOVING_PARTS_ORDER)
       expect(asLocal(cloud)).toBe(systemPrompt('full', has))
+    }
+  })
+})
+
+describe('the line for a model of a real thing', () => {
+  it('is one line in the cloud prompt only, with design.plan, and says display is the default and how curved bodies are built', () => {
+    expect(DETAIL_LINE).not.toContain('\n')
+    expect(DETAIL_LINE).toContain('planned at display detail unless the person asks for something simple or detailed')
+    expect(DETAIL_LINE).toContain('a ship hull, car body or fuselage is a series of sections, so loft it')
+    expect(DETAIL_LINE).toContain('"Window rows (array)"')
+    for (const scope of ['full', 'cad'] as const) {
+      expect(systemPrompt(scope, () => true, '', { cloud: true }).split(DETAIL_LINE)).toHaveLength(2)
+      expect(systemPrompt(scope, () => true)).not.toContain(DETAIL_LINE)
+      expect(systemPrompt(scope, (n) => n !== 'design.plan', '', { cloud: true })).not.toContain(DETAIL_LINE)
     }
   })
 })
@@ -379,10 +393,10 @@ describe('the lines a local model gets', () => {
     for (const scope of ['full', 'cad'] as const) {
       const cloud = systemPrompt(scope, () => true, '', { cloud: true }).split('\n')
       const local = systemPrompt(scope, () => true).split('\n')
-      const cloudOnly = new Set([FAMILY_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, assembledLine(() => true)])
+      const cloudOnly = new Set([FAMILY_LINE, DETAIL_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, assembledLine(() => true)])
       // every local line is a cloud line, in the same order, the plan line less its pointer to the moving parts line
       expect(cloud.filter((l) => !cloudOnly.has(l)).map((l) => l.replace(MOVING_PARTS_ORDER, ''))).toEqual(local)
-      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength(4)
+      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength(5)
     }
   })
 
