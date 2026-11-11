@@ -133,7 +133,7 @@ describe('a local input', () => {
       version: '1.0.0',
       description: 'A tool with a field only cloud models are told of.',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.object({ part: z.string(), amends: z.string().optional() }),
       localInput: z.object({ part: z.string() }),
       async run(i) {

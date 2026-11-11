@@ -8,7 +8,7 @@ import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, 
 import { geomStuckMessage } from '@slicerx/contracts/geom-limits'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '../src/index'
+import { createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, type ScriptStep } from '../src/index'
 import { plainEngine } from '../src/engine-words'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
@@ -76,7 +76,7 @@ function failing(name: string, text: string) {
     version: '1',
     description: 'A modeling step',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({}),
     async run() {
       throw new Error(text)

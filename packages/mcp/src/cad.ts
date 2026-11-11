@@ -1643,7 +1643,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.fit_check',
     version: '1.1.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       "Measure the gaps between a design's bodies for print-in-place parts (hinges, pins, chains): every pair that touches or sits closer than the printer keeps open, how many separate pieces print, and per gap fuses, binds or slides. Limits come from the nozzle, layer height and material. slicerx_design_check of a plan with printInPlace waits for this check on the design as it is now.",
     input: z.object({
@@ -1750,7 +1750,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     name: 'geom.interference',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       "Whether two parts of a design interfere: the volume they share in mm3, or when they do not, the clearance between them (the smallest distance between their surfaces, mm) with the closest points. Use it to check a pin in its hole, a lid on its box or a hinge gap by measurement. A shared volume under 0.001 mm3 counts as touching (clearance 0). The clearance is exact on the triangles: round faces are flat facets, so a gap beside a curve reads up to about 0.02 mm under the modeled one. Refuses a part that is not closed.",
     input: z.object({

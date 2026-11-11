@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, sheetTool, type ScriptStep } from '../src/index'
 import { PLAN_AGAIN_NOTE } from '../src/runtime'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 import { clearanceProfileOf, gapRows } from '../skills/fit_check/clearance'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
@@ -19,7 +19,7 @@ const plan = defineTool({
   name: 'design.plan',
   version: '1.0.0',
   source: 'command',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   description: 'test',
   input: z.object({ part: z.string(), printInPlace: z.array(z.string()).min(2).optional() }),
   async run(i) {
@@ -34,7 +34,7 @@ const stub = (name: string) =>
     name,
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'test',
     input: z.object({}).passthrough(),
     async run() {
@@ -64,7 +64,7 @@ async function replies(steps: ScriptStep[], answer: Record<string, number>) {
     name: 'geom.extrude',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'test',
     input: z.object({}).passthrough(),
     async run() {
@@ -225,7 +225,7 @@ describe('the gaps on a print-in-place sheet', () => {
         name,
         version: '1.0.0',
         source: 'command',
-        permission: 'read',
+        permission: 'read', hints: READ_ONLY,
         description: 'test',
         input: z.object({}).passthrough(),
         async run() {
@@ -292,7 +292,7 @@ describe('the gaps on a print-in-place sheet', () => {
       name: 'geom.extrude',
       version: '1.0.0',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       description: 'test',
       input: z.object({}).passthrough(),
       async run(i: { name?: string }) {
@@ -359,7 +359,7 @@ describe('the gaps on a print-in-place sheet', () => {
     const ran: string[] = []
     let n = 0
     const tool = (name: string, run: (i: Record<string, unknown>) => Record<string, unknown>, permission: 'read' | 'slice' = 'read') =>
-      defineTool({ name, version: '1.0.0', source: 'command', permission, description: 'test', input: z.object({}).passthrough(), async run(i: Record<string, unknown>) { return { summary: 'Done', output: run(i) } } }) as PilotTool<never>
+      defineTool({ name, version: '1.0.0', source: 'command', permission, hints: { readOnly: permission === 'read' }, description: 'test', input: z.object({}).passthrough(), async run(i: Record<string, unknown>) { return { summary: 'Done', output: run(i) } } }) as PilotTool<never>
     const tools = [
       sheetTool(),
       opts.plan ?? plan,
@@ -586,7 +586,7 @@ describe('the gaps on a print-in-place sheet', () => {
       name: 'design.plan',
       version: '1.0.0',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       description: 'test',
       input: z.object({ part: z.string(), printInPlace: z.array(z.string()).min(2).optional() }),
       async run() {

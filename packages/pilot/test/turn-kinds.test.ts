@@ -8,11 +8,11 @@
 import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTransport, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createPilot, DEFAULT_CONFIG, defineTool, type PilotTool, type Toolset } from '../src/index'
+import { createPilot, DEFAULT_CONFIG, READ_ONLY, defineTool, type PilotTool, type Toolset } from '../src/index'
 import { LOAD_TOOLS_TOOL, MAX_PINNED, pinnedFor, SAFETY_TOOLS, SEND_TOOLS, stickyCapTools, stickyToolsets, turnKind, turnNeeds, type StickyToolsets, type TurnKind } from '../src/toolsets'
 
 const tool = (name: string, toolset: Toolset, run: () => { summary: string; output?: unknown } = () => ({ summary: `${name} ran` })): PilotTool<never> =>
-  defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', toolset, input: z.object({}).passthrough(), run: async () => run() }) as PilotTool<never>
+  defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', hints: READ_ONLY, toolset, input: z.object({}).passthrough(), run: async () => run() }) as PilotTool<never>
 
 const PRINTER_BASE = ['diagnose', 'check_print', 'printer_setup', 'printer_add', 'printer.history', 'printer.resume', ...SEND_TOOLS, ...SAFETY_TOOLS]
 
