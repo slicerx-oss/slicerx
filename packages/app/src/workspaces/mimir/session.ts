@@ -18,6 +18,7 @@ import { useEdition } from '../../edition'
 import { projectExportHost } from '../../export/actions'
 import { geom } from '../../geom/client'
 import { useHost } from '../../host'
+import { appFilaments } from '../../filament/tab-filaments'
 import { fitProfileFor } from '../../plate/fit-profile'
 import { guardedPrinters } from '../../plate/guard'
 import { sendLedger } from '../../plate/send-ledger'
@@ -118,7 +119,7 @@ export function toolsFor(loader: Loader): PilotTool<never>[] {
   if (tools.length === 0) {
     tabHost?.dispose()
     tabHost = appDesignHost(loader)
-    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()) })
+    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments })
   }
   return tools
 }

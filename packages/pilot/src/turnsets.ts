@@ -44,6 +44,12 @@ const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.me
 const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'design.sketch_svg', 'design.sketch_project', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces', 'geom.hole_edit'])
 
 /**
+ * The project's filaments: shaping a part carries them beside the rest of the project in app. Not in build, whose turn
+ * fills a local model's context nearly to the brim; calling one loads its set.
+ */
+const FILAMENTS: ReadonlySet<string> = new Set(['project.add_filament', 'project.set_filament'])
+
+/**
  * Sending a sliced plate: which printer and spools, the printers' list and state, and the send. In app as well as
  * print, so slicing and sending a plate takes one set.
  */
@@ -75,6 +81,7 @@ const isDesign = (t: GroupedTool): boolean => toolGroupOf(t) === 'design' && (t.
  */
 export function turnSetsOf(t: GroupedTool): ReadonlySet<TurnSet> | 'every' {
   if (EVERY_TURN.has(t.name)) return 'every'
+  if (FILAMENTS.has(t.name)) return new Set<TurnSet>(['shape', 'app'])
   const sets = new Set<TurnSet>()
   if (BUILD.has(t.name)) sets.add('build')
   if (SHAPE.has(t.name)) sets.add('shape')

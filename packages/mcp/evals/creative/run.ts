@@ -10,7 +10,8 @@ import { modelById } from '@slicerx/printer-catalog'
 import printerModels from '@slicerx/settings/printer-models.json' with { type: 'json' }
 import { PLAN_LEFT_CODE, SAME_PART, type LlmClient, type LlmMessage, type ToolHost } from '@slicerx/pilot'
 import { assessFit, createEvalEnv, createScriptedClient, noteApprovals, type EvalHosts, type ScriptStepData } from '@slicerx/pilot/evals'
-import { createCardPlans, createPlanRegistry, tabToolset } from '../../src/toolset'
+import { defaultFilament, listFilaments, type FilamentSetup } from '../../src/filaments'
+import { createCardPlans, createPlanRegistry, tabToolset, type FilamentList } from '../../src/toolset'
 import { headlessDesignHost, plainBed } from './design-host'
 import { bedFit, bodyCount, closure, minWall, movingGaps, type BuildVolume, type GapReport } from './mesh-checks'
 import type { CreativePrompt } from './prompts'
@@ -163,7 +164,7 @@ export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHos
   const bed: Bed = v.shape === 'circular' ? { widthMm: v.diameter, depthMm: v.diameter, heightMm: v.z, round: true } : { widthMm: v.x, depthMm: v.y, heightMm: v.z }
   const designs = headlessDesignHost(engine, { changed, bed: (id) => plainBed(bed, () => designs.list().filter((d) => d.id !== id && d.parts.length).map((d) => ({ parts: d.parts, transform: movedBy(d.transform, d.placed) }))) })
   let plans = 0
-  const tools = tabToolset(designs, createCardPlans(createPlanRegistry()), { nozzleMm: () => p.machine.nozzle, newPlanId: () => `plan_${++plans}` })
+  const tools = tabToolset(designs, createCardPlans(createPlanRegistry()), { nozzleMm: () => p.machine.nozzle, newPlanId: () => `plan_${++plans}`, filaments: evalFilaments(designs) })
   const env = createEvalEnv({ client, machine: p.machine, objects: [], hosts: () => hosts, tools, tab: { slices: tab.slices, edition: tab.edition ?? CREATIVE_TAB.edition, ...(tab.commands ? { commands: [...tab.commands] } : {}) } })
   project = env.project
   return { ...env, designs, tools }
@@ -440,4 +441,28 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   if (replayCheck.diverged) error = replayCheck.diverged
   if (error) run.error = error
   return run
+}
+
+/**
+ * The project's filaments as the app's rail counts them: those set, and as many more as the highest filament a design's
+ * part prints in, each PLA in the default color for its number until set.
+ */
+function evalFilaments(designs: { list(): readonly Pick<Design, 'parts'>[] }): FilamentList {
+  const setup: Record<number, FilamentSetup> = {}
+  const list = () => {
+    const set = listFilaments(setup, 'PLA')
+    const used = Math.max(set.length, ...designs.list().flatMap((d) => d.parts.map((part) => part.slot)))
+    return Array.from({ length: used }, (_, i) => {
+      const f = set[i] ?? { slot: i + 1, ...defaultFilament(i + 1, 'PLA') }
+      return { slot: i + 1, type: f.type, color: f.color }
+    })
+  }
+  return {
+    list,
+    add: (slot, patch) => void (setup[slot] = { ...defaultFilament(slot, 'PLA'), ...patch }),
+    set: (slot, patch) => {
+      const cur = list()[slot - 1] ?? { ...defaultFilament(slot, 'PLA') }
+      setup[slot] = { type: patch.type ?? cur.type, color: patch.color ?? cur.color }
+    },
+  }
 }
