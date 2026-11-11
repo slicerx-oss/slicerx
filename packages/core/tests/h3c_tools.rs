@@ -3,12 +3,12 @@
 //! The Bambu Lab H3C: one extruder that holds nine hotends, each with its own filament path. Each filament the
 //! plate prints with takes a hotend of its own, so a change between filaments is a hotend swap: it costs the
 //! printer's hotend change time (`machine_hotend_change_time`, else its switch time) and flushes nothing. The
-//! hotend ids reach the change G-code in the variables the maker's G-code reads (`next_hotend`, `next_nozzle_id`,
-//! `nozzle_diameter_at_nozzle_id`). A 2.85 mm TPU filament prints on the TPU hotend (tool 8 by the presets), and an
+//! hotends reach the change G-code as the nozzle ids the maker's G-code reads (`next_nozzle_id`,
+//! `nozzle_diameter_at_nozzle_id`); the hotend ids (`next_hotend`) stay -1, as the printer's stock output writes them. A 2.85 mm TPU filament prints on the TPU hotend (tool 8 by the presets), and an
 //! object on that hotend prints with the TPU hotend's process values when the settings list them per variant.
 //!
-//! The printer is the stock H3C from resolved/bambu-lab.json. Its family G-code is not in gcode.json yet, so these
-//! tests give it a start and a change G-code of a few comment lines that print the ids.
+//! The printer is the stock H3C from resolved/bambu-lab.json. These tests give it a start and a change G-code of a few
+//! comment lines that print the ids; `h3c_stock_gcode.rs` slices it with the maker's own G-code.
 
 #![allow(
     clippy::cast_precision_loss,
@@ -175,12 +175,12 @@ fn start(g: &str) -> String {
 fn each_filament_prints_on_a_hotend_of_its_own_and_flushes_nothing() {
     let run = slice(h3c(3), &[1, 2, 3]).unwrap();
     let g = gcode(&run);
-    assert_eq!(start(&g), "f0 h0 n0 d0.4");
+    assert_eq!(start(&g), "f0 h-1 n0 d0.4");
     let cs = changes(&g);
     assert!(cs.len() >= 40, "{} changes", cs.len());
     for c in &cs {
-        // Filament n (0-based) is hotend n, and its nozzle id is the same.
-        assert_eq!(c.hotend, c.filament, "{c:?}");
+        // Filament n (0-based) is hotend n, as its nozzle id; the hotend ids stay -1.
+        assert_eq!(c.hotend, (-1, -1), "{c:?}");
         assert_eq!(c.nozzle, c.filament, "{c:?}");
         assert_eq!(c.size, 0.4, "{c:?}");
         // Each hotend keeps its own filament: no flush at any change.
@@ -204,7 +204,7 @@ fn a_two_point_eight_five_tpu_takes_the_tpu_hotend() {
         // give the TPU285 volume type.
         let hotend = |f: i64| [0, 7, 1][usize::try_from(f).unwrap()];
         assert_eq!(
-            ch.hotend,
+            ch.nozzle,
             (hotend(ch.filament.0), hotend(ch.filament.1)),
             "{ch:?}"
         );
@@ -245,7 +245,7 @@ fn a_tool_picked_by_hand_is_kept() {
     for ch in changes(&g) {
         let hotend = |f: i64| [4, 2, 0][usize::try_from(f).unwrap()];
         assert_eq!(
-            ch.hotend,
+            ch.nozzle,
             (hotend(ch.filament.0), hotend(ch.filament.1)),
             "{ch:?}"
         );

@@ -1661,6 +1661,9 @@ struct Shared<'c> {
     filaments: Vec<Vec<std::sync::OnceLock<std::borrow::Cow<'c, PrintConfig>>>>,
     /// The fixed seconds of each layer's tool changes in order (`change_times`).
     change_fixed: Vec<Vec<f64>>,
+    /// On a printer whose hotends are its tools ([`crate::nozzles::hotend_tools`]): per filament (0-based), the
+    /// layer index and path index of the last path it prints, or none when it prints nothing. Empty on other printers.
+    last_use: Vec<Option<(u32, usize)>>,
 }
 
 impl<'c> Shared<'c> {
@@ -1677,6 +1680,11 @@ impl<'c> Shared<'c> {
                 .collect(),
             change_fixed: if out.tool_count > 1 {
                 change_times(out, base)
+            } else {
+                Vec::new()
+            },
+            last_use: if crate::nozzles::hotend_tools(base) {
+                last_use(out, slots)
             } else {
                 Vec::new()
             },
@@ -1951,6 +1959,22 @@ fn settle_units(
             }
         }
     }
+}
+
+/// Per filament (0-based, `slots` of them), the layer index and path index of the last path it prints.
+fn last_use(out: &SliceOutput, slots: usize) -> Vec<Option<(u32, usize)>> {
+    let mut last = vec![None; slots];
+    for l in &out.layers {
+        for (pi, p) in l.paths.iter().enumerate() {
+            if let Some(slot) = last.get_mut(usize::from(p.tool.max(1) - 1)) {
+                let here = (l.index, pi);
+                if slot.is_none_or(|s: (u32, usize)| s < here) {
+                    *slot = Some(here);
+                }
+            }
+        }
+    }
+    last
 }
 
 fn emit_layer(
@@ -2266,6 +2290,24 @@ fn emit_layer(
     }
     // The nozzle temperatures the layer's start sets, in order.
     let mut start_temps: Vec<i64> = Vec::new();
+    // On a printer whose hotends are its tools, a temperature at the start of a layer goes to a filament's hotend in the
+    // form the printer's own start G-code uses (`M104 I<filament> S<temperature>`), and only to a filament that still
+    // prints from this layer on: one whose hotend was turned off after its last use stays off.
+    let hotend_temp = |b: &mut Vec<u8>, slot: u8, t: i64| -> bool {
+        if shared.last_use.is_empty() {
+            return false;
+        }
+        let still = shared
+            .last_use
+            .get(usize::from(slot.max(1) - 1))
+            .copied()
+            .flatten()
+            .is_some_and(|last| last.0 >= l.index);
+        if still {
+            let _ = writeln!(b, "M104 I{} S{t}", slot.max(1) - 1);
+        }
+        true
+    };
     // One nozzle that the filaments share takes one plain temperature for the filament in it, not one per filament.
     let one_nozzle = out.tool_count > 1 && shared_nozzle_temps(c, flavor) && !resume_first;
     // Settings a height range changes, written when they differ from the layer below.
@@ -2278,14 +2320,16 @@ fn emit_layer(
         #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
         if t != t_prev && !one_nozzle {
             start_temps.push(t);
-            temperature_line(
-                b,
-                flavor,
-                t as f64,
-                false,
-                (out.tool_count > 1).then(|| slot - 1),
-                "",
-            );
+            if !hotend_temp(b, slot, t) {
+                temperature_line(
+                    b,
+                    flavor,
+                    t as f64,
+                    false,
+                    (out.tool_count > 1).then(|| slot - 1),
+                    "",
+                );
+            }
         }
         let pa = c.pressure_advance_for(slot);
         if e_units(pa) != e_units(prev.pressure_advance_for(slot)) {
@@ -2307,14 +2351,16 @@ fn emit_layer(
             #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
             if first != usual && !one_nozzle {
                 start_temps.push(usual);
-                temperature_line(
-                    b,
-                    flavor,
-                    usual as f64,
-                    false,
-                    (out.tool_count > 1).then(|| slot - 1),
-                    "",
-                );
+                if !hotend_temp(b, slot, usual) {
+                    temperature_line(
+                        b,
+                        flavor,
+                        usual as f64,
+                        false,
+                        (out.tool_count > 1).then(|| slot - 1),
+                        "",
+                    );
+                }
             }
         }
         let slots = layer_slots(l);
@@ -3034,7 +3080,8 @@ fn emit_layer(
                         #[allow(clippy::cast_precision_loss, reason = "tool indexes are small")]
                         ctx.set_num(k, v as f64);
                     }
-                    // One extruder whose hotends are its tools (the H3C): the hotends the two filaments print on.
+                    // One extruder whose hotends are its tools (the H3C): the hotends the two filaments print on, as
+                    // nozzle ids. The hotend ids stay -1 ([`crate::customgcode::context`]).
                     if crate::nozzles::hotend_tools(c) {
                         let hotend = |f: i64| {
                             let slot = u8::try_from(f.max(0) + 1).unwrap_or(1);
@@ -3043,9 +3090,7 @@ fn emit_layer(
                             h
                         };
                         for (k, v) in [
-                            ("current_hotend", hotend(prev)),
                             ("current_nozzle_id", hotend(prev)),
-                            ("next_hotend", hotend(next)),
                             ("next_nozzle_id", hotend(next)),
                         ] {
                             ctx.set_num(k, v);
@@ -3167,6 +3212,14 @@ fn emit_layer(
                         }
                     }
                     push_lines(b, &text);
+                    // On a printer whose hotends are its tools, a filament that prints nothing more after this change
+                    // has its hotend's heater turned off, in the form the printer's own start G-code addresses a
+                    // filament's hotend with (`M104 I<filament> S<temperature>`).
+                    if let Some(&Some(last)) = usize::try_from(prev).ok().and_then(|i| shared.last_use.get(i))
+                        && last < (l.index, pi)
+                    {
+                        let _ = writeln!(b, "M104 I{prev} S0");
+                    }
                     // A change template that sets an acceleration of its own leaves it in effect: the next travel
                     // writes its own again.
                     if change_lifted && crate::motion::sets_accel(&text) {
