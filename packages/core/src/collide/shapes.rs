@@ -36,11 +36,13 @@ pub(crate) struct Changer {
 }
 
 impl Changer {
-    /// The stops of a change from tool `from` to `to` (0-based); a change kept once stands for all.
+    /// The stops of a change from tool `from` to `to` (0-based); a change kept once stands for all. A change between
+    /// two filaments on one tool (the H3C's shared hotend) is `0-0` where the file has one, the swap at the chute.
     pub(crate) fn route(&self, from: usize, to: usize) -> &[Stop] {
         let key = format!("{from}-{to}");
         let find = |k: &str| self.routes.iter().find(|(r, _)| r == k);
         find(&key)
+            .or_else(|| find("0-0").filter(|_| from == to))
             .or_else(|| find("0-1"))
             .map_or(&[], |(_, s)| s.as_slice())
     }
@@ -189,5 +191,27 @@ mod tests {
         // the U1's dock stops are behind the bed
         assert!(ch.route(0, 2).iter().any(|s| s.station && s.y > 300.0));
         assert!(machine(Some("nobody"), None).changer.is_none());
+    }
+
+    #[test]
+    fn the_h3c_docks_at_the_front_rack_by_hotend_and_leaves_by_the_chute() {
+        let h3c = machine(None, Some("Bambu Lab H3C"));
+        assert_eq!(h3c.heads.len(), 1);
+        let ch = h3c.changer.expect("the H3C swaps PrintTools at its rack");
+        // every pair of its nine hotends has a route, each through a dock in front of the bed and the chute behind it
+        for from in 0..9 {
+            for to in (0..9).filter(|&t| t != from) {
+                let r = ch.route(from, to);
+                assert!(r.iter().any(|s| s.station && s.y < 0.0), "{from}-{to}");
+                assert!(r.iter().any(|s| !s.station && s.y > 320.0), "{from}-{to}");
+            }
+        }
+        // the docks are 36 mm apart: hotend 4's is the middle one, hotend 5's the next to its right
+        let dock_x = |from, to| ch.route(from, to).iter().rfind(|s| s.station).map(|s| s.x);
+        assert_eq!(dock_x(0, 4), Some(165.0));
+        assert_eq!(dock_x(0, 5), Some(201.0));
+        // two filaments on one hotend swap at the chute, with no dock
+        let same = ch.route(3, 3);
+        assert!(!same.is_empty() && same.iter().all(|s| !s.station && s.y > 260.0));
     }
 }

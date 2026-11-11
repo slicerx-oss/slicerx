@@ -40,6 +40,7 @@ export function namesOf(plate: readonly { id: string; name: string }[]): Names {
 export function stationOf(printerId: string | null | undefined): string {
   const id = printerId ?? ''
   if (id.startsWith('bambu-h2c')) return 'hotend rack'
+  if (id.startsWith('bambu-h3c')) return 'tool rack'
   if (id === 'snapmaker-u1' || id.startsWith('prusa-xl')) return 'tool dock'
   if (id.startsWith('ultimaker-s')) return 'switch bay'
   return id.startsWith('bambu-') ? 'purge chute' : 'tool changer'
