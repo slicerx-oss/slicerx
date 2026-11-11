@@ -228,10 +228,12 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
  */
 function projectGcodeReview(project: string, printer: { id: string | undefined; name: string | undefined }, changes: GcodeChange[], scriptReviews: ExtraLayers['scriptReviews'] = []): ToolInputError {
   const summary = projectGcodeSummary(project, printer.name)
+  // Only the engine's reviews of the scripts in question: text the stock table kept is not, whatever the engine says.
+  const reviewed = scriptReviews.filter((r) => changes.some((c) => c.key === r.key && c.slot === r.slot))
   return new ToolInputError(projectGcodeMessage(summary), 'project_gcode_review', {
     project,
     summary,
-    ...(scriptReviews.length ? { script_reviews: scriptReviews.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}),
+    ...(reviewed.length ? { script_reviews: reviewed.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}),
     ...(printer.id ? { printer: printer.id } : {}),
     approvable: changes.every((c) => c.approvable),
     changes: changes.map((c) => ({ key: c.key, ...(c.slot !== undefined ? { slot: c.slot } : {}), label: c.label, added: c.added, removed: c.removed, approvable: c.approvable, fingerprint: c.fingerprint, flags: c.flags, diff: c.unified })),

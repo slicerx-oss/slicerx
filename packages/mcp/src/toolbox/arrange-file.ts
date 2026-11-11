@@ -8,7 +8,7 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'arrange_file',
     title: 'Arrange the parts of a plate',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',

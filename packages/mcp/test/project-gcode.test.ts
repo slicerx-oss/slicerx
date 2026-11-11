@@ -4,6 +4,7 @@
 // flagged lines for a person to see, and no tool call can approve it. The project is made from SlicerX's own A1 profile.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { ScriptReview, ScriptReviewInput } from '@slicerx/contracts'
 import { printerConfig } from '@slicerx/settings'
 import { describe, expect, it } from 'vitest'
 import { resolveSliceConfig } from '../src/config'
@@ -183,6 +184,61 @@ describe("an H3C project with the maker's later end G-code", () => {
       expect(r.isError, text(r)).toBeFalsy()
       expect(text(r)).toMatch(/The project's end G-code matches the stock Bambu Lab H3C end G-code\./)
       expect(readFileSync(data<Summary>(r).gcode_path, 'utf8')).toMatch(/^M106 P10 S0 ; turn off remote part cooling1 fan/m)
+    } finally {
+      await h.client.close()
+    }
+  })
+})
+
+/** The H3C's stock end G-code with one line of the maker's own added: a change the stock table does not cover. */
+const H3C_EDITED_END = `${H3C_LATER_END}; my own end line\n`
+
+/** An H3C project as the maker's app saves it, with an edited end G-code and two filaments' plain start and end G-code. */
+function h3cProject(dir: string, name: string): string {
+  const path = join(dir, name)
+  writeFileSync(
+    path,
+    writeZip([
+      { name: '3D/3dmodel.model', data: MODEL },
+      {
+        name: 'Metadata/project_settings.config',
+        data: JSON.stringify({
+          printer_settings_id: 'Bambu Lab H3C 0.4 nozzle',
+          printer_model: 'Bambu Lab H3C',
+          gcode_flavor: 'marlin',
+          filament_type: ['PLA', 'PLA'],
+          machine_end_gcode: H3C_EDITED_END,
+          filament_start_gcode: ['; filament start gcode\n', '; filament start gcode\n'],
+          filament_end_gcode: ['; filament end gcode \n', '; filament end gcode \n'],
+        }),
+      },
+    ]),
+  )
+  return path
+}
+
+/** The engine's catalog answer for each script: no stock entry for filament G-code, the end G-code changed. */
+const engineReview = async (inputs: ScriptReviewInput[]): Promise<ScriptReview[]> =>
+  inputs.map((input) => ({ schemaVersion: 1, decision: 'review', reason: input.key.startsWith('filament_') ? 'stock_version_unknown' : 'script_changed', identity: { model: 'bambu-h3c', firmware: 'marlin' }, source: null, stockVersion: null, fingerprint: null, ignored: [] }))
+
+type Reviewed = { error: { code: string; details?: { changes: { key: string; slot?: number }[]; script_reviews?: { key: string; slot?: number; reason: string }[] } } }
+
+describe('an H3C project whose only change is its end G-code', () => {
+  it("lists only the engine's review of the end G-code with the refusal, not the stock filament G-code", async () => {
+    const h = await connect()
+    try {
+      h.ctx.slicer!.reviewScripts = engineReview
+      const model = h3cProject(h.dir, 'edited-end.3mf')
+      // The printer profile in the call: the engine reviews only the filament G-code, which the profile does not set.
+      const named = data<Reviewed>(await h.call('slicerx_slice_file', { model, project_settings: true, profiles: ['machine:bambu-h3c'] })).error
+      expect(named.code).toBe('project_gcode_review')
+      expect(named.details!.changes.map((c) => c.key)).toEqual(['machine_end_gcode'])
+      expect(named.details!.script_reviews).toBeUndefined()
+      // The printer named for the engine alone: it reviews every script, and only the end G-code's review comes back.
+      const chosen = data<Reviewed>(await h.call('slicerx_slice_file', { model, project_settings: true, script_printer: { model: 'bambu-h3c', firmware: 'marlin' } })).error
+      expect(chosen.code).toBe('project_gcode_review')
+      expect(chosen.details!.changes.map((c) => c.key)).toEqual(['machine_end_gcode'])
+      expect(chosen.details!.script_reviews).toEqual([expect.objectContaining({ key: 'machine_end_gcode', reason: 'script_changed' })])
     } finally {
       await h.client.close()
     }
