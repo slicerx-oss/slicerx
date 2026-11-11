@@ -8,7 +8,7 @@
 // The marks go into the next slice as layer G-code.
 import { rightClickWords, useCoarsePointer } from '../../lib/phone-layout'
 import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator, Range, Textarea, tipAttrs, type IconName } from '@slicerx/ui'
-import { useLongPress } from '@slicerx/ui/context-menu'
+import { inOwnTree, useLongPress } from '@slicerx/ui/context-menu'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
 import { resolveSlots } from '../../filament/slots'
 import { Swatch } from '../../parts'
@@ -483,6 +483,8 @@ export function LayerTrack({ id, n, top, layerZ, onChange, onJump, onKeyDown }: 
       {...press.bind}
       onContextMenu={(e) => {
         e.preventDefault()
+        // a right click inside the marks menu, which sits in a portal, is not one on the track
+        if (!inOwnTree(e)) return
         press.cancel()
         openAt(e.clientX, e.clientY)
       }}
