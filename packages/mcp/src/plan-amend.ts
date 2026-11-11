@@ -47,7 +47,7 @@ export function amendShapeProblem(old: Sized, next: Sized, o: { asked?: boolean 
   for (const [i, j] of kept.entries()) {
     const f = next.features[j]!
     const o = old.features[i]!
-    if ((f.kind ?? '') !== (o.kind ?? '')) return `features: ${only}; feature ${i + 1} stays "${o.name}", a ${o.kind ?? 'feature'}`
+    if ((f.kind ?? '') !== (o.kind ?? '')) return `features: ${only}; feature ${i + 1} stays "${o.name}"`
     if (!sameKeys(f.sizes, o.sizes)) return `features: ${only}; ${o.name} keeps the sizes ${Object.keys(o.sizes).join(', ') || 'it has (none)'}`
     if (JSON.stringify(Object.entries(f.kinds ?? {}).sort()) !== JSON.stringify(Object.entries(o.kinds ?? {}).sort())) return `features: ${only}; ${o.name} keeps its kinds`
   }
