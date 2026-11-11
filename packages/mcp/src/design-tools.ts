@@ -33,6 +33,37 @@ export const featureArg = z.string().max(60).optional().describe('The plan featu
 /** `opts` with the planned feature a modeling tool was given, for the host's add; a blank one is none. */
 export const withFeature = <T extends object>(feature: string | undefined, opts?: T): (T & { feature?: string }) | undefined => (feature?.trim() ? { ...(opts ?? ({} as T)), feature: feature.trim() } : opts)
 
+/** The plans a modeling tool reads to name a new part after the print-in-place piece it builds. */
+export type PiecePlans = Pick<PlanRegistry, 'tiedTo' | 'get'>
+
+/**
+ * The name a new part of design `d` takes when it builds a print-in-place piece: a plan tied to the design whose
+ * printInPlace names a piece exactly as `feature` (the plan feature the step builds) gives the part that piece's name,
+ * so design.check finds the piece under the plan's name. Undefined keeps the name given: no feature, no tied plan
+ * naming it (or tied plans naming it two ways), a name given that is already one of that plan's pieces, or another
+ * part of the design that has the piece's name already.
+ */
+export function pieceNameFor(plans: PiecePlans | undefined, d: HostDesign, feature: string | undefined, given: string | undefined): string | undefined {
+  const key = (s: string): string => s.trim().toLowerCase()
+  const f = feature?.trim()
+  if (!plans || !f) return undefined
+  const found = new Map<string, string>()
+  for (const id of plans.tiedTo(d.id)) {
+    const e = plans.get(id)
+    const pieces = e && !e.stale && !e.superseded ? e.plan.printInPlace : undefined
+    if (!Array.isArray(pieces)) continue
+    if (given !== undefined && pieces.some((p) => key(p) === key(given))) return undefined
+    for (const p of pieces) if (key(p) === key(f)) found.set(key(p), p.trim())
+  }
+  if (found.size !== 1) return undefined
+  const piece = [...found.values()][0]!
+  if (d.parts.some((p) => key(p.name) === key(piece))) return undefined
+  return piece
+}
+
+/** What a tool's summary adds when it named a new part after its plan's piece. */
+export const pieceNameNote = (piece: string, given: string | undefined): string => `. The new part is named ${piece}, as the plan names that print-in-place piece${given !== undefined ? `, in place of ${given}` : ''}`
+
 /** The files the design tools read and write. The app has none: its designs open and save with the project. */
 export interface DesignFiles {
   /** The parts of a model (an STL path, URL or sample: name) to start a design from. */

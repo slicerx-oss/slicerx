@@ -13,6 +13,7 @@ import { z } from 'zod'
 import type { DesignHost } from '@slicerx/cad-history'
 import { productName } from '@slicerx/contracts'
 import { modelingTools } from './modeling-tools'
+import type { PiecePlans } from './design-tools'
 import { checkReadable, resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
 import { looksZipped, refuseVaultFile } from './vault'
@@ -111,7 +112,7 @@ export function geomEngine(bin: string, timeoutMs = 5 * 60_000): (op: string, re
   return (op, request) => runGeom(bin, op, request, undefined, timeoutMs)
 }
 
-export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefined }): PilotTool<never>[] {
+export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefined; plans?: PiecePlans | undefined }): PilotTool<never>[] {
   const call = geomCaller(deps)
   // sx-geom reads STL only; a 3MF would be read as a binary STL with nonsense counts.
   const stlOnly = (path: string): { stlPath: string } => {
@@ -263,5 +264,5 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
     },
   })
 
-  return [...modelingTools({ files: { call, mesh: meshOut }, designs: deps.designs }), orient, calibration, resume, layers, render, paintRegions] as PilotTool<never>[]
+  return [...modelingTools({ files: { call, mesh: meshOut }, designs: deps.designs, plans: deps.plans }), orient, calibration, resume, layers, render, paintRegions] as PilotTool<never>[]
 }

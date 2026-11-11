@@ -17,7 +17,7 @@ import { gapMm, gapSentence, nozzleOr } from './design-check'
 import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
 import type { PlanRegistry } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
-import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, partAt, partsAt, replayChange, type Design } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, partAt, partsAt, pieceNameFor, pieceNameNote, replayChange, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import type { AppLinkCaller } from './app-route'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
@@ -491,7 +491,7 @@ export function imageTooLarge(bytes: number): ToolInputError {
   return new ToolInputError(`image: the file is ${kb(bytes)}, over the 30 MB a trace takes. Export it smaller first.`)
 }
 
-export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; /** The layer height and material the part prints with, for geom.fit_check; half the nozzle and PLA without them. */ fitProfile?: (() => FitProfile) | undefined; /** Where geom.fit_check records each run, so design.check of a print-in-place plan knows the gaps were looked at. */ plans?: Pick<PlanRegistry, 'fitChecked'> | undefined; sketchVia?: SketchVia }): PilotTool<never>[] {
+export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; /** The layer height and material the part prints with, for geom.fit_check; half the nozzle and PLA without them. */ fitProfile?: (() => FitProfile) | undefined; /** Where geom.fit_check records each run, so design.check of a print-in-place plan knows the gaps were looked at; a new body's piece name comes from its plans too (pieceNameFor). */ plans?: Pick<PlanRegistry, 'fitChecked' | 'tiedTo' | 'get'> | undefined; sketchVia?: SketchVia }): PilotTool<never>[] {
   const call = deps.files.call
   const path = (model: string): Promise<string> => deps.files.path(model)
   const triangles = (stlPath: string): Tri[] => soupTriangles(deps.files.stl(stlPath))
@@ -500,6 +500,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     return deps.designs.get(id)
   }
   const designs = (): DesignHost => deps.designs!
+  /** A new body's name when it builds a print-in-place piece of the design's plan (pieceNameFor); undefined keeps the one given. */
+  const newPiece = (d: Design, i: { operation: string; feature?: string | undefined; name?: string | undefined }): string | undefined => (i.operation === 'new' ? pieceNameFor(deps.plans, d, i.feature, i.name) : undefined)
+  /** A step's answer that says so when its new body took the plan's piece name. */
+  const pieceNamed = (out: { summary: string; output: Record<string, unknown> }, piece: string | undefined, given: string | undefined) => (piece ? { ...out, summary: `${out.summary}${pieceNameNote(piece, given)}` } : out)
   const readImage = (p: string): Uint8Array => {
     if (!deps.files.image) throw new ToolInputError('image: this server reads no files; pass the image as base64', 'not_supported')
     return deps.files.image(p)
@@ -809,7 +813,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -844,9 +848,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const frame = k ? k.frame : frameOf(f)
         const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
-        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: i.name })
+        const piece = newPiece(d, i)
+        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: piece ?? i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
-        return stepOut(d, verb)
+        return pieceNamed(stepOut(d, verb), piece, i.name)
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch extrudes on a design; give its id as design')
       if (!i.shape) throw new ToolInputError('shape: give the shape to extrude')
@@ -857,7 +862,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.6.0',
+    version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -884,9 +889,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const frame = k ? k.frame : frameOf(i.frame)
         const drawn = k ? k.loops : i.loops
         if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
-        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: i.name })
+        const piece = newPiece(d, i)
+        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: piece ?? i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
-        return stepOut(d, 'Revolved')
+        return pieceNamed(stepOut(d, 'Revolved'), piece, i.name)
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch revolves on a design; give its id as design')
       if (!i.loops) throw new ToolInputError('loops: give the loops to revolve')
@@ -917,7 +923,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -944,9 +950,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
         const profiles = i.sketches ? i.sketches.map((id) => finished(id, d.id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
-        const params: StepParams = loftParams({ profiles, ...loftOpts, operation: i.operation, name: i.name })
+        const piece = newPiece(d, i)
+        const params: StepParams = loftParams({ profiles, ...loftOpts, operation: i.operation, name: piece ?? i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
-        return stepOut(d, verb)
+        return pieceNamed(stepOut(d, verb), piece, i.name)
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
       const profiles = i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, plane(f.frame)))
@@ -966,7 +973,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale, twist_deg and end_profile taper, turn and reshape it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
@@ -1023,9 +1030,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops!, ...(prof?.open ? { open: true } : {}) }
         const j = i.path_sketch ? finished(i.path_sketch, d.id) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points, ...smooth } : { frame: frameOf(qf), loops: pathLoops! }
-        const params: StepParams = sweepParams({ profile, path, thicken: th, ...law, ...morph, operation: i.operation, name: i.name })
+        const piece = newPiece(d, i)
+        const params: StepParams = sweepParams({ profile, path, thicken: th, ...law, ...morph, operation: i.operation, name: piece ?? i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
-        return stepOut(d, verb)
+        return pieceNamed(stepOut(d, verb), piece, i.name)
       }
       if (i.profile_sketch || i.path_sketch) throw new ToolInputError(`${i.profile_sketch ? 'profile_sketch' : 'path_sketch'}: finished sketches sweep on a design; give its id as design`)
       const path = points ? { points, ...smooth } : { ...plane(qf), loops: pathLoops }

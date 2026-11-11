@@ -1,0 +1,601 @@
+{
+  "steps": [
+    {
+      "text": "Here's the plan for the hinged box. Steps 1 to 4 are design work and need no approval. Printing (steps 5 and 6) only happens if you ask for it.\n\n1. Plan the box: base, lid, and a 3 mm pin hinge along the back edge.\n2. Confirm the sizes on a dimension sheet.\n3. Build the base, the lid, and the hinge knuckles and pin.\n4. Check the part against the plan and the print-in-place gaps.\n5. Slice on your P1S (PLA, 0.4 nozzle) when you ask.\n6. Send to the printer, which needs your OK.",
+      "calls": [
+        {
+          "name": "design.plan",
+          "args": {
+            "part": "Hinged box with lid",
+            "units": "mm",
+            "features": [
+              {
+                "name": "Base shell",
+                "kind": "extrude",
+                "sizes": {
+                  "length": 80,
+                  "width": 50,
+                  "height": 25,
+                  "wall": 2
+                }
+              },
+              {
+                "name": "Lid shell",
+                "kind": "extrude",
+                "sizes": {
+                  "length": 80,
+                  "width": 50,
+                  "height": 10,
+                  "wall": 2
+                }
+              },
+              {
+                "name": "Hinge knuckles",
+                "kind": "extrude",
+                "sizes": {
+                  "knuckle_outer_diameter": 7,
+                  "gap": 0.4
+                }
+              },
+              {
+                "name": "Hinge pin",
+                "kind": "extrude",
+                "sizes": {
+                  "pin_diameter": 3
+                }
+              }
+            ],
+            "assumptions": [
+              "Overall closed size is 80 x 50 x 35 mm: base 25 mm tall plus lid 10 mm tall.",
+              "Walls are 2 mm on the base and lid.",
+              "Pin hinge runs along the full back edge (the 80 mm side), with the pin as a separate rod through the knuckles.",
+              "Pin diameter 3 mm and knuckle outer diameter 7 mm are guesses, not from a source.",
+              "Print-in-place gap of 0.4 mm suits PLA on a 0.4 mm nozzle."
+            ],
+            "questions": [
+              "Should the lid be closed on top, or open with a lip that sits inside the base?",
+              "Do you want the pin to print as part of the assembly, or as a separate piece?"
+            ],
+            "printInPlace": [
+              "Base shell",
+              "Lid shell"
+            ],
+            "reason": "Pin hinge along the back edge, print-in-place lid and base."
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "design.plan",
+          "args": {
+            "part": "Hinged box with lid",
+            "units": "mm",
+            "features": [
+              {
+                "name": "Base shell",
+                "kind": "extrude",
+                "sizes": {
+                  "length": 80,
+                  "width": 50,
+                  "height": 25,
+                  "wall": 2
+                }
+              },
+              {
+                "name": "Lid shell",
+                "kind": "extrude",
+                "sizes": {
+                  "length": 80,
+                  "width": 50,
+                  "height": 10,
+                  "wall": 2
+                }
+              },
+              {
+                "name": "Hinge knuckles",
+                "kind": "extrude",
+                "sizes": {
+                  "knuckle_outer_diameter": 7,
+                  "gap": 0.4
+                }
+              },
+              {
+                "name": "Hinge pin",
+                "kind": "extrude",
+                "sizes": {
+                  "pin_diameter": 3
+                }
+              }
+            ],
+            "assumptions": [
+              "Overall closed size is 80 x 50 x 35 mm: base 25 mm tall plus lid 10 mm tall.",
+              "Walls are 2 mm on the base and lid.",
+              "Pin hinge runs along the full back edge (the 80 mm side), with the pin as a separate rod through the knuckles.",
+              "Pin diameter 3 mm and knuckle outer diameter 7 mm are guesses, not from a source.",
+              "Print-in-place gap of 0.4 mm suits PLA on a 0.4 mm nozzle."
+            ],
+            "questions": [
+              "Should the lid be closed on top, or open with a lip that sits inside the base?",
+              "Do you want the pin to print as part of the assembly, or as a separate piece?"
+            ],
+            "printInPlace": [
+              "Base shell",
+              "Lid shell"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "text": "The plan is approved. Next, the dimension sheet with every size, so you can confirm or change them.",
+      "calls": [
+        {
+          "name": "pilot.sheet",
+          "args": {
+            "title": "Hinged box sizes",
+            "views": [
+              "top",
+              "front",
+              "side",
+              "iso"
+            ],
+            "part": [
+              {
+                "kind": "extrude",
+                "plane": "xy",
+                "points": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    80,
+                    0
+                  ],
+                  [
+                    80,
+                    50
+                  ],
+                  [
+                    0,
+                    50
+                  ]
+                ],
+                "from": 0,
+                "to": 25
+              },
+              {
+                "kind": "extrude",
+                "plane": "xy",
+                "points": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    80,
+                    0
+                  ],
+                  [
+                    80,
+                    50
+                  ],
+                  [
+                    0,
+                    50
+                  ]
+                ],
+                "from": 27,
+                "to": 35
+              }
+            ],
+            "dims": [
+              {
+                "key": "length",
+                "label": "Overall length",
+                "value": 80,
+                "unit": "mm",
+                "source": "asked",
+                "at": {
+                  "a": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "b": [
+                    80,
+                    0,
+                    0
+                  ],
+                  "off": [
+                    0,
+                    -10,
+                    0
+                  ]
+                }
+              },
+              {
+                "key": "width",
+                "label": "Overall width",
+                "value": 50,
+                "unit": "mm",
+                "source": "asked",
+                "at": {
+                  "a": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "b": [
+                    0,
+                    50,
+                    0
+                  ],
+                  "off": [
+                    -10,
+                    0,
+                    0
+                  ]
+                }
+              },
+              {
+                "key": "total_height",
+                "label": "Closed height",
+                "value": 35,
+                "unit": "mm",
+                "source": "asked",
+                "at": {
+                  "a": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "b": [
+                    0,
+                    0,
+                    35
+                  ],
+                  "off": [
+                    -10,
+                    0,
+                    0
+                  ]
+                }
+              },
+              {
+                "key": "wall",
+                "label": "Wall thickness",
+                "value": 2,
+                "unit": "mm",
+                "source": "asked",
+                "at": {
+                  "a": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "b": [
+                    2,
+                    0,
+                    0
+                  ],
+                  "off": [
+                    0,
+                    -5,
+                    0
+                  ]
+                }
+              },
+              {
+                "key": "base_height",
+                "label": "Base height",
+                "value": 25,
+                "unit": "mm",
+                "source": "guess",
+                "at": {
+                  "a": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "b": [
+                    0,
+                    0,
+                    25
+                  ],
+                  "off": [
+                    -15,
+                    0,
+                    0
+                  ]
+                },
+                "note": "Lid is 10 mm, so total is 35 mm."
+              },
+              {
+                "key": "pin_diameter",
+                "label": "Hinge pin diameter",
+                "value": 3,
+                "unit": "mm",
+                "source": "guess",
+                "at": {
+                  "a": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "b": [
+                    3,
+                    0,
+                    0
+                  ],
+                  "off": [
+                    0,
+                    -15,
+                    0
+                  ]
+                },
+                "note": "Guess; common for a small pin hinge."
+              },
+              {
+                "key": "knuckle_outer_diameter",
+                "label": "Knuckle outer diameter",
+                "value": 7,
+                "unit": "mm",
+                "source": "guess",
+                "at": {
+                  "a": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "b": [
+                    7,
+                    0,
+                    0
+                  ],
+                  "off": [
+                    0,
+                    -20,
+                    0
+                  ]
+                },
+                "note": "Guess; keeps 2 mm around the 3 mm pin."
+              },
+              {
+                "key": "hinge_gap",
+                "label": "Print gap at the hinge",
+                "value": 0.4,
+                "unit": "mm",
+                "source": "guess",
+                "at": {
+                  "a": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "b": [
+                    0,
+                    0,
+                    0.4
+                  ],
+                  "off": [
+                    -20,
+                    0,
+                    0
+                  ]
+                },
+                "note": "Matches the 0.4 mm vertical gap the plan requires for PLA."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "text": "The sizes are confirmed. Now I'll build the base first.",
+      "calls": [
+        {
+          "name": "design.new",
+          "args": {
+            "name": "Hinged box"
+          }
+        },
+        {
+          "name": "geom.build",
+          "args": {
+            "design": "Hinged box",
+            "name": "Base",
+            "feature": "Base shell",
+            "solids": [
+              {
+                "type": "box",
+                "min": [
+                  0,
+                  0,
+                  0
+                ],
+                "max": [
+                  80,
+                  50,
+                  25
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "geom.shell",
+          "args": {
+            "design": "d1",
+            "part": 0,
+            "feature": "Base shell",
+            "wall_mm": 2,
+            "open": [
+              {
+                "at": [
+                  40,
+                  50,
+                  25
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "geom.build",
+          "args": {
+            "design": "d1",
+            "name": "Lid",
+            "feature": "Lid shell",
+            "solids": [
+              {
+                "type": "box",
+                "min": [
+                  0,
+                  60,
+                  0
+                ],
+                "max": [
+                  80,
+                  110,
+                  10
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "text": "The lid is solid, so I'll hollow it with its open face up, then add the hinge knuckles and pin.",
+      "calls": [
+        {
+          "name": "geom.shell",
+          "args": {
+            "design": "d1",
+            "part": 1,
+            "feature": "Lid shell",
+            "wall_mm": 2,
+            "open": [
+              {
+                "at": [
+                  40,
+                  85,
+                  10
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "geom.build",
+          "args": {
+            "design": "d1",
+            "name": "Hinge knuckles",
+            "feature": "Hinge knuckles",
+            "solids": [
+              {
+                "type": "cylinder",
+                "origin": [
+                  0,
+                  50,
+                  23
+                ],
+                "axis": [
+                  1,
+                  0,
+                  0
+                ],
+                "diameterMm": 7,
+                "heightMm": 80
+              },
+              {
+                "type": "cylinder",
+                "origin": [
+                  0,
+                  110,
+                  3.5
+                ],
+                "axis": [
+                  1,
+                  0,
+                  0
+                ],
+                "diameterMm": 7,
+                "heightMm": 80
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "text": "The base, lid, and knuckles are built. I'll add the pin, then run the fit and plan checks.",
+      "calls": [
+        {
+          "name": "geom.build",
+          "args": {
+            "design": "d1",
+            "name": "Hinge pin",
+            "feature": "Hinge pin",
+            "solids": [
+              {
+                "type": "cylinder",
+                "origin": [
+                  0,
+                  50,
+                  23
+                ],
+                "axis": [
+                  1,
+                  0,
+                  0
+                ],
+                "diameterMm": 3,
+                "heightMm": 80
+              }
+            ]
+          }
+        },
+        {
+          "name": "geom.fit_check",
+          "args": {
+            "design": "d1",
+            "layer_height_mm": 0.2,
+            "material": "PLA"
+          }
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "name": "design.check",
+          "args": {
+            "planId": "plan_1",
+            "design": "d1"
+          }
+        }
+      ]
+    },
+    {
+      "text": "The box is partly built, but the hinge is not finished, so the part is not done.\n\n**What's in the design:** the base is an 80 x 50 x 25 mm tray with 2 mm walls, and the lid is an 80 x 50 x 10 mm tray with 2 mm walls, laid beside it on the bed. The hinge knuckles and a 3 mm pin are there too. The sizes you confirmed are in the plan, and the pin, knuckle, and 0.4 mm gap sizes are my guesses.\n\n**What fails:** the hinge is fused solid, so the lid cannot swing. The base, the knuckles, the pin, and the lid all touch at zero gap, and the plan needs at least 0.3 mm side by side and 0.4 mm above or below between moving pieces. My first build fused the hinge pieces together instead of separating them, and I used the one fix round on the check without fixing it. I stopped there rather than try again blind.\n\n**Next step:** I can rebuild just the hinge so the knuckles belong to each half, with a 0.4 mm clearance between the lid and base knuckles and the pin running through the bore. Should I rebuild it that way, or would you rather print the lid and base as two separate pieces with no pin?"
+    }
+  ]
+}
