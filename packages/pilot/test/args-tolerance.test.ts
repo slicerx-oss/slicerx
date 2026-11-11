@@ -48,6 +48,27 @@ describe('arguments local models get wrong', () => {
     expect(out[2]?.summary).toMatch(/^Invalid arguments: name/)
   })
 
+  it('lets a tool fill in arguments it keeps before they are checked', async () => {
+    const seen: unknown[] = []
+    const kept = { part: 'Desk organizer', features: ['Tray'] }
+    const plan = defineTool({
+      name: 'test.plan',
+      version: '1.0.0',
+      source: 'plugin',
+      permission: 'read',
+      description: 'test',
+      input: z.object({ part: z.string(), features: z.array(z.string()), asked: z.string().optional() }),
+      fill: (raw) => ((raw as { features?: unknown }).features === undefined ? { ...kept, ...(raw as object) } : raw),
+      async run(i) {
+        seen.push(i)
+        return { summary: 'ok' }
+      },
+    }) as PilotTool<never>
+    const out = await results([{ calls: [{ name: 'test.plan', args: { asked: 'add a drawer' } }] }], [plan])
+    expect(out.map((r) => r.ok)).toEqual([true])
+    expect(seen).toEqual([{ part: 'Desk organizer', features: ['Tray'], asked: 'add a drawer' }])
+  })
+
   it('printer_setup takes the connection object printer_test takes', async () => {
     const out = await results([{ calls: [{ name: 'printer_setup', args: { brand: 'Bambu Lab', model: 'P1S', nozzleMm: 0.4, skipLook: true, connection: { family: 'bambu-lan', address: '192.168.1.40', serial: '01P00A123456789' } } }] }])
     expect(out[0]?.ok).toBe(true)
