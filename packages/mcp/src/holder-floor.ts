@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Whether a part that holds something (a vase, cup, planter or bottle) has a floor, read from its mesh alone: just above
-// its lowest face, horizontal rays cross the part, and where one crosses air between the part's own walls and a
-// vertical line there meets no face from the bottom to the top, the cavity opens through the bottom. design.check
-// (body-facts.ts) and the build eval scorer read it the same way. Imports nothing, so the scorer can use it as is.
+// its lowest face, horizontal rays cross the part, and where one crosses air between the part's own walls, walled in
+// across the ray too, and a vertical line there meets no face from the bottom to the top, the cavity opens through the
+// bottom. design.check (body-facts.ts) and the build eval scorer read it the same way. Imports nothing, so the scorer
+// can use it as is.
 
 type V3 = [number, number, number]
 
@@ -100,6 +101,8 @@ function partFloor(m: FloorMesh, part: number, planned: number): { faceZ: number
         // air with a face above or below it is a recess under a floor, or a pocket: the cavity does not open there
         if (!throughLine(tri, mid[0], mid[1])) continue
         const across = acrossRun(tri, band, mid, n, reach)
+        // air with no wall on one side across the ray is outside the part, between separate bodies: no cavity there
+        if (across === null) continue
         if (planned > 0 && along <= planned + HOLE_SLACK_MM && across <= planned + HOLE_SLACK_MM) continue
         const from: V3 = [o[0] + d[0] * t0, o[1] + d[1] * t0, z]
         const to: V3 = [o[0] + d[0] * t1, o[1] + d[1] * t1, z]
@@ -146,8 +149,11 @@ function airRuns(tri: Float64Array, band: readonly number[], o: V3, d: V3): [num
   return runs
 }
 
-/** How wide the air around `p` is across the ray (along `n`), mm: from the nearest face one way to the nearest the other. */
-function acrossRun(tri: Float64Array, band: readonly number[], p: V3, n: V3, reach: number): number {
+/**
+ * How wide the air around `p` is across the ray (along `n`), mm: from the nearest face one way to the nearest the other.
+ * Null when no face is met one way or the other: the air is not walled in across the ray.
+ */
+function acrossRun(tri: Float64Array, band: readonly number[], p: V3, n: V3, reach: number): number | null {
   let ahead = reach
   let behind = reach
   const back: V3 = [-n[0], -n[1], 0]
@@ -157,7 +163,7 @@ function acrossRun(tri: Float64Array, band: readonly number[], p: V3, n: V3, rea
     const b = rayHit(p, back, tri, f * 9)
     if (b > 0 && b < behind) behind = b
   }
-  return ahead + behind
+  return ahead < reach && behind < reach ? ahead + behind : null
 }
 
 /** Whether the vertical line through (x, y) meets no facet anywhere: the part is open there from its bottom to its top. */

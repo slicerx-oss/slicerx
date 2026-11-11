@@ -145,7 +145,35 @@ describe('the plans that set a floor', () => {
   })
 })
 
+/** Closed upright prisms in one mesh, each `sides` corners at radius `r` around its (x, y), from z 0 to `h`: separate bodies. */
+function uprights(at: [number, number][], o: { sides?: number; r?: number; h?: number } = {}): FloorMesh {
+  const { sides = 8, r = 3, h = 15 } = o
+  return meshOf((add, tri) => {
+    for (const [x, y] of at) {
+      const lo = ring(sides, r, 0.1, 0).map(([a, b, c]) => add([a + x, b + y, c]))
+      const hi = ring(sides, r, 0.1, h).map(([a, b, c]) => add([a + x, b + y, c]))
+      const cl = add([x, y, 0])
+      const ch = add([x, y, h])
+      for (let i = 0; i < sides; i++) {
+        const j = (i + 1) % sides
+        tri(lo[i]!, lo[j]!, hi[j]!)
+        tri(lo[i]!, hi[j]!, hi[i]!)
+        tri(cl, lo[j]!, lo[i]!)
+        tri(ch, hi[i]!, hi[j]!)
+      }
+    }
+  })
+}
+
 describe('where a cavity opens through the bottom', () => {
+  it('reads no opening between separate bodies in one part, with nothing either side of the air across the ray', () => {
+    // two uprights side by side, and a row of four 22 mm apart: air between them, but no wall around it
+    expect(allOpenings(floorOpenings([uprights([[0, 0], [10, 0]])]))).toEqual([])
+    expect(allOpenings(floorOpenings([uprights([[0, 0], [22, 0], [44, 0], [66, 0]], { r: 2.75, h: 15.8 })]))).toEqual([])
+    // the open tube still reads open: its cavity has walls all round
+    expect(allOpenings(floorOpenings([vase({ floor: 0 })])).length).toBe(1)
+  })
+
   it('finds the open bottom of a twisted tube, and none under a floor or a recessed foot', () => {
     const tube = floorOpenings([vase({ floor: 0 })])
     const open = allOpenings(tube)
