@@ -80,10 +80,12 @@ split the same way into `core-a` and `core-b`, and the desktop shell's clippy an
 `apt-install.sh` installs Ubuntu packages so a hosted job gets by without the package mirror when it can. Packages
 already on the runner are left out. The .deb files come from a cache kept with `actions/cache`, keyed on the runner
 image (`ImageOS` and `ImageVersion`), and `dpkg` installs them with no network: the files of packages not yet
-installed, and upgrades newer than the installed version. Otherwise it asks the mirror: `apt-get update` cut off after
-60 s, once more on a fallback mirror when it fails (`SX_APT_FALLBACK`, by default `mirrors.edge.kernel.org`), then up
-to three `apt-get install` tries of 150 s each. With no lists from either mirror it stops in about 2 minutes with one
-line, since the install could only time out. `apt-desktop-libs.sh` (the desktop shell's libraries) and
+installed, and upgrades newer than the installed version. Otherwise it asks the mirror, with apt reading only the
+image's Ubuntu pockets and package lists of its own, so another repository the image lists cannot fail the update and
+nothing under `/etc/apt` changes: `apt-get update` from the runner's mirrors cut off after 60 s, once more on the
+fallback mirror alone when it fails (`SX_APT_FALLBACK`, by default `mirrors.edge.kernel.org`), then up to three
+`apt-get install` tries of 150 s each. With no lists from either mirror it stops in about 2 minutes with one line,
+since the install could only time out. `apt-desktop-libs.sh` (the desktop shell's libraries) and
 `playwright-chromium.sh` (Chromium for the browser tests, in place of `playwright install --with-deps`, which runs
 `apt-get update` every time) go through it. `playwright-chromium.sh` asks Playwright which of its system packages are
 missing (a simulated install, no network) and installs only those; on a self-hosted runner it installs only the

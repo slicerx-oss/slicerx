@@ -32,7 +32,8 @@ const STUBS = {
   // apt-get logs its call; APT_UPDATE_FAIL and APT_INSTALL_FAIL are how many updates or installs fail first
   'apt-get': [
     'echo "apt-get $*" >> "$STATE/log"',
-    // apt-seed.sh: the sources its private configuration names, as each call saw them
+    // the sources each call read: apt-install.sh names its own list with -o, apt-seed.sh through APT_CONFIG
+    'for a in "$@"; do case $a in Dir::Etc::sourcelist=*) cp "${a#*=}" "$STATE/sources"; cat "${a#*=}" >> "$STATE/sources.all" ;; esac; done',
     'if [ -n "${APT_CONFIG:-}" ]; then grep -h "^deb" "$(awk -F\\" "/^Dir::Etc::sourcelist /{print \\$2}" "$APT_CONFIG")" > "$STATE/sources"; fi',
     'n() { c=$(cat "$STATE/$1" 2>/dev/null || echo 0); echo $((c + 1)) > "$STATE/$1"; [ "$c" -lt "${2:-0}" ]; }',
     'case " $* " in',
@@ -69,7 +70,7 @@ function deb(dir, pkg, version) {
 
 function run(root, script, args, env = {}) {
   const r = spawnSync('bash', [join(here, script), ...args], {
-    env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, STATE: root, HOME: root, SX_APT_ETC: join(root, 'etc'), ...env },
+    env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, STATE: root, HOME: root, SX_APT_ETC: join(root, 'etc'), SX_APT_SUITE: 'noble', ...env },
     encoding: 'utf8',
   })
   const log = existsSync(join(root, 'log')) ? readFileSync(join(root, 'log'), 'utf8').trim().split('\n').filter(Boolean) : []
@@ -109,21 +110,37 @@ describe('apt-install.sh', () => {
     assert.equal(r.status, 0, r.out)
     assert.equal(r.log.length, 2, r.log.join('\n'))
     assert.match(r.log[0], /update --error-on=any$/)
-    assert.match(r.log[1], new RegExp(`Dir::Cache::archives=${cache.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')} install -f -y --no-install-recommends a$`))
+    assert.ok(r.log[1].includes(` Dir::Cache::archives=${cache} `), r.log[1])
+    assert.match(r.log[1], / install -f -y --no-install-recommends a$/)
     assert.ok(existsSync(join(cache, 'partial')))
+    // with no mirror list on the runner, the Ubuntu hosts for the runner's release
+    assert.match(readFileSync(join(root, 'sources'), 'utf8'), /^deb \[signed-by=\S+\] http:\/\/archive\.ubuntu\.com\/ubuntu noble main restricted universe multiverse$/m)
   })
 
-  it('tries the fallback mirror once when the update fails, and installs from it', () => {
+  it("reads only the Ubuntu pockets, from the runner's mirrors and then the fallback alone, and edits nothing under /etc/apt", () => {
     const root = setup()
     const etc = join(root, 'etc')
     mkdirSync(join(etc, 'sources.list.d'), { recursive: true })
-    writeFileSync(join(etc, 'apt-mirrors.txt'), 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://archive.ubuntu.com/ubuntu/\tpriority:2\n')
-    writeFileSync(join(etc, 'sources.list.d', 'ubuntu.sources'), 'Types: deb\nURIs: http://security.ubuntu.com/ubuntu/\nSuites: noble-security\n')
+    const mirrors = 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\n'
+    const ubuntu = 'Types: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble noble-updates\n'
+    const other = 'deb [arch=amd64] https://packages.microsoft.com/ubuntu/24.04/prod noble main\n'
+    writeFileSync(join(etc, 'apt-mirrors.txt'), mirrors)
+    writeFileSync(join(etc, 'sources.list.d', 'ubuntu.sources'), ubuntu)
+    writeFileSync(join(etc, 'sources.list.d', 'microsoft-prod.list'), other)
     const r = run(root, 'apt-install.sh', ['a'], { APT_UPDATE_FAIL: '1' })
     assert.equal(r.status, 0, r.out)
     assert.deepEqual(r.log.map((l) => l.split(' ').slice(-1)[0]), ['--error-on=any', '--error-on=any', 'a'])
-    assert.equal(readFileSync(join(etc, 'apt-mirrors.txt'), 'utf8').split('\n')[0], 'http://mirrors.edge.kernel.org/ubuntu/')
-    assert.match(readFileSync(join(etc, 'sources.list.d', 'ubuntu.sources'), 'utf8'), /^URIs: http:\/\/mirrors\.edge\.kernel\.org\/ubuntu\/$/m)
+    for (const l of r.log) assert.match(l, / -o Dir::Etc::sourceparts=\S+ -o Dir::State::Lists=\S+ /)
+    const all = readFileSync(join(root, 'sources.all'), 'utf8').trim().split('\n')
+    assert.equal(all.length, 12, all.join('\n'))
+    const pockets = (host) => ['noble', 'noble-updates', 'noble-backports', 'noble-security'].map((s) => `deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] ${host} ${s} main restricted universe multiverse`)
+    // the first update, the second (the fallback alone), and the install with the second's lists
+    assert.deepEqual(all.slice(0, 4), pockets(`mirror+file:${etc}/apt-mirrors.txt`))
+    assert.deepEqual(all.slice(4, 8), pockets('http://mirrors.edge.kernel.org/ubuntu'))
+    assert.deepEqual(all.slice(8), pockets('http://mirrors.edge.kernel.org/ubuntu'))
+    assert.equal(readFileSync(join(etc, 'apt-mirrors.txt'), 'utf8'), mirrors)
+    assert.equal(readFileSync(join(etc, 'sources.list.d', 'ubuntu.sources'), 'utf8'), ubuntu)
+    assert.equal(readFileSync(join(etc, 'sources.list.d', 'microsoft-prod.list'), 'utf8'), other)
   })
 
   it('takes an upgrade the cache holds for an installed package, as apt would for the asked ones', () => {
