@@ -33,6 +33,13 @@ const CASES: readonly (readonly [string, string, RegExp])[] = [
   ['geom.sweep', 'thicken: a 3 mm outward shell runs into itself where parts of the surface are closer than that; use a thinner shell or move those parts apart', /fold into itself/],
   // edge.rs: too many fillets at a corner
   ['geom.fillet', 'edges: the corner at (20.000, 10.000, 5.000) joins more than three fillets; leave some of its edges out', /rounded edges/],
+  // edge.rs: edges on and along rounds the tool does not take
+  ['geom.fillet', 'edges: edge 1: the picked face is curved. Pick the edge from the flat face on its other side', /Picking the edges again from that flat face/],
+  ['geom.chamfer', 'edges: edges 1 and 2 meet along a round; pick both from the flat face they share', /Picking the edges again from that flat face/],
+  ['design.edit_step', 'The step did not go through: edges: edges 3, 4 and 5 meet at one point along a round; pick each edge once. The design is unchanged.', /Picking each edge once/],
+  ['geom.fillet', 'edges: edge 1: both faces along this edge are curved. Fillet and chamfer need a flat face on one side', /cannot follow that edge/],
+  ['geom.fillet', 'edges: edge 2: the angle between the faces changes along the round the edge runs into', /cannot follow that edge/],
+  ['geom.chamfer', 'The step did not go through: edges: edge 1: the edge ends at a curved face it does not run into smoothly. The design is unchanged.', /cannot follow that edge/],
   // edge.rs, shell.rs, cad-history replay.ts: the pick moved
   ['geom.fillet', 'edges: edge 2 moved with the face beside it and is not there any more; pick it again', /Picking it again/],
   ['geom.shell', 'open: a face to open is not on a face of the body; pick it again', /Picking it again/],
