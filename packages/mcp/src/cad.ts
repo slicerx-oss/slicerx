@@ -809,7 +809,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.6.0',
+    version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description:

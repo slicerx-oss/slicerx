@@ -577,7 +577,8 @@ fn ends(spec: &ExtrudeSpec) -> Result<(f64, f64)> {
     if a > b {
         std::mem::swap(&mut a, &mut b);
     }
-    // joins start a hair inside the body and cuts a hair outside, so the boolean never meets the face
+    // joins start a hair inside the body and cuts a hair outside, so the boolean never meets the face; a join
+    // keeps that hair only where it lies in the body (see `seated`)
     if spec.extent == Extent::OneSide {
         if a == 0.0 && spec.operation == Operation::Join {
             a = -OVERLAP_MM;
@@ -755,15 +756,60 @@ pub fn extrude_pattern(
             tool = body(frame, shape, at, font, spec, a2, b2)?;
         }
     }
-    if let Some(p) = pattern {
-        // Overlapping copies join into one tool, so the body changes once.
-        let copies: Vec<TriMesh> = pattern_transforms(frame, p)?
-            .iter()
-            .map(|m| xform::transformed(&tool, m))
-            .collect();
-        tool = boolean::boolean(&copies, &[], BoolOp::Union, &BooleanOptions::default())?.0;
+    tool = patterned(tool, frame, pattern)?;
+    if let (Operation::Join, Some(t)) = (spec.operation, target)
+        && a == -OVERLAP_MM
+    {
+        let span = |lo: f64, hi: f64| patterned(body(frame, shape, at, font, spec, lo, hi)?, frame, pattern);
+        tool = seated(tool, t, &frame.checked()?, span, b)?;
     }
     apply(tool, spec.operation, target)
+}
+
+/// `tool` repeated by `pattern` when there is one. Overlapping copies join into one tool, so the body changes once.
+fn patterned(tool: TriMesh, frame: &FaceFrame, pattern: Option<&Pattern>) -> Result<TriMesh> {
+    let Some(p) = pattern else {
+        return Ok(tool);
+    };
+    let copies: Vec<TriMesh> = pattern_transforms(frame, p)?
+        .iter()
+        .map(|m| xform::transformed(&tool, m))
+        .collect();
+    Ok(boolean::boolean(&copies, &[], BoolOp::Union, &BooleanOptions::default())?.0)
+}
+
+/// A join's `tool`, which reaches `OVERLAP_MM` behind its face, with that overlap kept only where it is needed. The
+/// overlap keeps the boolean off a face of `target` that the start face sits on, so it stays only inside the body
+/// there. A start face on no face of the body (in air, or crossing the body) needs none, and where it hangs in air
+/// (a cap over a gap to another part) the join starts on its plane, so the gap below it stays exactly as asked.
+/// `span` makes the tool between two heights above the face frame `f`, and `b` is the far end.
+fn seated(
+    tool: TriMesh,
+    target: &TriMesh,
+    f: &Frame,
+    span: impl Fn(f64, f64) -> Result<TriMesh>,
+    b: f64,
+) -> Result<TriMesh> {
+    let opts = BooleanOptions::default();
+    let slab = span(-OVERLAP_MM, 0.0)?;
+    if !flush(target, &slab, f, 0.0) {
+        return span(0.0, b);
+    }
+    let (inside, _) = boolean::boolean(
+        std::slice::from_ref(&slab),
+        std::slice::from_ref(target),
+        BoolOp::Intersection,
+        &opts,
+    )?;
+    let whole = slab.volume();
+    if (whole - inside.volume()).abs() <= 1e-6 * whole {
+        return Ok(tool);
+    }
+    let above = span(0.0, b)?;
+    if inside.triangles.is_empty() {
+        return Ok(above);
+    }
+    Ok(boolean::boolean(&[above], &[inside], BoolOp::Union, &opts)?.0)
 }
 
 /// True when the end cap of `tool` at height `h` above the face frame `f` lies on a face of `target`: some
@@ -1551,6 +1597,85 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("widthMm")
+        );
+    }
+
+    #[test]
+    fn a_join_starts_on_its_plane_where_it_hangs_in_air() {
+        // a 4 mm pin to z 10 and a 12 mm cap joined to its top, 2 mm tall, over a rotor whose top is 0.4 mm below
+        let pin = build::box_mesh([-2.0, -2.0, 0.0], [2.0, 2.0, 10.0]);
+        let cap = Shape::Rectangle {
+            width_mm: 12.0,
+            height_mm: 12.0,
+            corner_radius_mm: 0.0,
+        };
+        let join = ExtrudeSpec {
+            distance_mm: 2.0,
+            operation: Operation::Join,
+            ..ExtrudeSpec::default()
+        };
+        let top = FaceFrame::for_normal([0.0, 0.0, 10.0], [0.0, 0.0, 1.0]).unwrap();
+        let r = extrude(&top, &cap, &Placement::default(), None, &join, Some(&pin)).unwrap();
+        assert!(
+            r.report.touches && r.report.watertight && r.report.shells == 1,
+            "{:?}",
+            r.report
+        );
+        assert!(
+            (r.report.volume_change_mm3 - 288.0).abs() < 1e-6,
+            "{:?}",
+            r.report
+        );
+        // the cap's underside past the pin is at z 10, so the 0.4 mm gap to the rotor stays 0.4 mm
+        let rotor = build::box_mesh([3.0, -6.0, 6.0], [6.0, 6.0, 9.6]);
+        assert!((crate::fit::gap_mm(&r.mesh, &rotor) - 0.4).abs() < 1e-9);
+        let low = r
+            .mesh
+            .positions
+            .iter()
+            .filter(|p| p[0].abs() > 2.0 + 1e-9 || p[1].abs() > 2.0 + 1e-9)
+            .map(|p| p[2])
+            .fold(f64::INFINITY, f64::min);
+        assert!((low - 10.0).abs() < 1e-9, "{low}");
+        // a collar whose start face crosses the pin, on no face of it, starts on its plane too
+        let across = FaceFrame::for_normal([0.0, 0.0, 8.0], [0.0, 0.0, 1.0]).unwrap();
+        let r = extrude(&across, &cap, &Placement::default(), None, &join, Some(&pin)).unwrap();
+        assert!(r.report.touches && r.report.shells == 1, "{:?}", r.report);
+        assert!((r.tool.bounds().unwrap().min[2] - 8.0).abs() < 1e-9);
+        assert!(
+            (r.report.volume_change_mm3 - 256.0).abs() < 1e-6,
+            "{:?}",
+            r.report
+        );
+        // a cap whose start face is 0.4 mm over the pin adds a body of its own, 0.4 mm clear of it
+        let over = FaceFrame::for_normal([0.0, 0.0, 10.4], [0.0, 0.0, 1.0]).unwrap();
+        let r = extrude(&over, &cap, &Placement::default(), None, &join, Some(&pin)).unwrap();
+        assert!(
+            matches!(r.report.miss, Some(Miss::Apart { gap_mm }) if (gap_mm - 0.4).abs() < 1e-9),
+            "{:?}",
+            r.report
+        );
+        assert!((r.tool.bounds().unwrap().min[2] - 10.4).abs() < 1e-9);
+        // a boss whose start face sits wholly on the body keeps its overlap and fuses as one body
+        let plate = build::box_mesh([-10.0, -10.0, 0.0], [10.0, 10.0, 5.0]);
+        let face = FaceFrame::for_normal([0.0, 0.0, 5.0], [0.0, 0.0, 1.0]).unwrap();
+        let boss = Shape::Circle { diameter_mm: 8.0 };
+        let r = extrude(&face, &boss, &Placement::default(), None, &join, Some(&plate)).unwrap();
+        assert!(
+            r.report.touches && r.report.watertight && r.report.shells == 1,
+            "{:?}",
+            r.report
+        );
+        assert!((r.tool.bounds().unwrap().min[2] - (5.0 - OVERLAP_MM)).abs() < 1e-9);
+        let area: f64 = profile(&boss, &Placement::default(), None)
+            .unwrap()
+            .iter()
+            .map(Polygon::area)
+            .sum();
+        assert!(
+            (r.report.volume_change_mm3 - 2.0 * area).abs() < 1e-6,
+            "{:?}",
+            r.report
         );
     }
 }
