@@ -317,6 +317,16 @@ describe('what the built card says the turn did', () => {
     expect(partTitle({ id: 'b', name: 'Box with lid', kind: 'part', sizeMm: [1, 1, 1], built: true, updated: true })).toBe('Box with lid updated')
   })
 
+  it('says how many parts a design of several was made with, and Part created for one', () => {
+    const row = (parts: number) => ({ id: 'r', tool: 'geom.build', args: '', state: 'ok', summary: '', output: { design: 'lamp', name: 'Desk lamp', sizeMm: [60, 60, 148], parts: Array.from({ length: parts }, () => ({})) } }) as never
+    expect(builtPart(row(3))).toMatchObject({ id: 'lamp', parts: 3 })
+    expect(partTitle(builtPart(row(3))!)).toBe('3 parts created')
+    expect(builtPart(row(1))!.parts).toBeUndefined()
+    expect(partTitle(builtPart(row(1))!)).toBe('Part created')
+    // an update names the design, however many parts it has
+    expect(partTitle({ ...builtPart(row(3))!, updated: true })).toBe('Desk lamp updated')
+  })
+
   it('an undo that leaves the design empty shows no card', () => {
     render(<TranscriptView transcript={designTurn([['design.undo', true, summary(null, 0)]], true)} showThinking={false} approvals={approvals} parts={handlers()} />)
     expect(screen.queryByTestId('mimir-part')).toBeNull()

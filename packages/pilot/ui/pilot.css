@@ -385,6 +385,8 @@
 .sx-pilot .lookup-rec-s:hover{text-decoration:underline}
 /* buttons hold the top line, so a status that wraps or shortens never moves them */
 .sx-pilot .sheet-rec-foot{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:28px}
+/* the assumed values take the whole width over the buttons and wrap, never cut off mid word, at every width */
+.sx-pilot .sheet-rec-foot:has(>.lookup-rec-s[data-assumed]){flex-wrap:wrap;justify-content:flex-end}
 .sx-pilot .sheet-rec-foot .lookup-rec-s{min-width:0;color:var(--t-mute);text-decoration:none}
 .sx-pilot .sheet-rec-foot .lookup-rec-s[data-assumed]{color:var(--orange)}
 .sx-pilot .sheet-rec-foot .sx-btn{flex:none}
@@ -392,6 +394,7 @@
 .sx-pilot .sheet-rec-foot .lookup-rec-s{flex:1;padding-top:5px;line-height:18px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .sx-pilot .sheet-rec-foot:has(.sx-btn[data-testid="mimir-sheet-confirm"]) .lookup-rec-s{min-height:41px;box-sizing:border-box}
 .sx-pilot .sheet-rec-foot .lookup-rec-s{flex:1;padding-top:5px;line-height:18px}
+.sx-pilot .sheet-rec-foot>.lookup-rec-s[data-assumed]{flex:1 0 100%;display:block;-webkit-line-clamp:unset;overflow:visible}
 /* part card: the part a reply made, flat in the transcript like the choice card. Air around it from the turn's gap. */
 .sx-pilot .part-card{display:flex;flex-direction:column;gap:var(--s-2);padding:var(--s-3) var(--s-4);border:1px solid var(--surface-line);border-radius:var(--r-md);background:var(--surface-card);max-width:68ch}
 .sx-pilot .part-row{display:flex;align-items:center;gap:var(--s-3)}
