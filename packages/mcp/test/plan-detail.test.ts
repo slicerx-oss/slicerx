@@ -24,6 +24,9 @@ const boat: PlanInput = {
   curved: ['Lower hull', 'Upper hull'],
   flat: ['Cabin'],
   proportions: 'lookup: a 6 m launch, 2.2 m beam, scaled 1:40',
+  scale: '1:40',
+  real: [{ feature: 'Lower hull', size: 'length', value: 6, unit: 'm' }, { feature: 'Cabin', size: 'length', value: 2, unit: 'm' }],
+  tiers: [{ body: 'Cabin', levels: ['Cabin', 'Cabin roof'] }],
   repeats: ['portholes', 'rail posts'],
   colors: [
     { feature: 'Lower hull', color: 'red' },
@@ -57,6 +60,8 @@ const car: PlanInput = {
   detail: 'display',
   curved: ['Body'],
   proportions: 'stated: a hatchback about 4 m long, 1.8 m wide, 1.5 m tall, scaled 1:43',
+  scale: '1:43',
+  real: [{ feature: 'Body', size: 'length', value: 4, unit: 'm' }, { feature: 'Wheels', size: 'diameter', value: 0.6, unit: 'm' }],
   repeats: ['wheels', 'headlights'],
   colors: [
     { feature: 'Body', color: 'red' },
@@ -88,6 +93,9 @@ const house: PlanInput = {
   detail: 'display',
   flat: ['Walls', 'Roof'],
   proportions: 'stated: a two story house 10 m wide, 8 m deep, scaled 1:100',
+  scale: '1:100',
+  real: [{ feature: 'Walls', size: 'width', value: 10, unit: 'm' }],
+  tiers: [{ body: 'Walls', levels: ['Walls'] }, { body: 'Roof', levels: ['Roof'] }],
   repeats: ['windows', 'steps'],
   colors: [
     { feature: 'Walls', color: 'white' },
@@ -186,6 +194,33 @@ describe('detailProblem: the rules are about the object', () => {
     expect(detailProblem({ ...house, colors: [...house.colors!, { feature: 'Garden', color: 'green' }] })).toContain('colors: Garden is not a planned feature')
   })
 
+  it('holds each real size to scale, and refuses a part far off the size its real one gives', () => {
+    const big = withFeature(car, 'Wheels', { sizes: { diameter: 30, width: 6, count: 2 } })
+    expect(detailProblem(big)).toContain('Wheels diameter is 30 mm, 2.2 times the 14 mm its real 0.6 m gives at 1:43; size it from the real one')
+    // a third over scale passes: a display model thickens small parts so they print
+    expect(detailProblem(withFeature(car, 'Wheels', { sizes: { diameter: 18, width: 6, count: 2 } }))).toBeNull()
+    expect(detailProblem({ ...car, scale: undefined })).toContain('scale: give the scale the real sizes are held to, as 1:N')
+    expect(detailProblem({ ...car, real: undefined })).toContain('real: list the real sizes the lookup or the stated source gives')
+    expect(detailProblem({ ...car, real: [], scale: undefined })).toBeNull()
+    expect(detailProblem({ ...house, real: [{ feature: 'Door', size: 'width', value: 1, unit: 'm' }] })).toContain("real: give a main body's real size too")
+    expect(detailProblem({ ...house, real: [{ feature: 'Walls', size: 'span', value: 10, unit: 'm' }] })).toContain('real: Walls has no size named span')
+    expect(partPlanSchema.shape.scale.safeParse('25').success).toBe(false)
+  })
+
+  it('refuses a part wider than the main body or taller than the whole model, with no source to check it against', () => {
+    const plan = { ...car, real: [], scale: undefined, overall: { x: 93, y: 42, z: 35 } }
+    expect(detailProblem(withFeature(plan, 'Wheels', { sizes: { diameter: 50, width: 6, count: 2 } }))).toContain("Wheels is 50 mm wide, more than the main body's 42 mm")
+    expect(detailProblem(withFeature(plan, 'Spoiler', { sizes: { width: 36, height: 40, depth: 6 } }))).toContain("Spoiler is 40 mm tall, more than the whole model's 35 mm height")
+    expect(detailProblem(plan)).toBeNull()
+  })
+
+  it('wants each flat-sided main body\'s levels, each a planned feature', () => {
+    expect(detailProblem({ ...house, tiers: undefined })).toContain('tiers: give the levels of Walls from the bottom up')
+    expect(detailProblem({ ...house, tiers: [{ body: 'Walls', levels: ['Ground floor', 'Upper floor'] }, { body: 'Roof', levels: ['Roof'] }] })).toContain('tiers: Ground floor, a level of Walls, is not a planned feature')
+    // a curved body states no levels
+    expect(detailProblem(car)).toBeNull()
+  })
+
   it('names a body built by a feature the plan does not have', () => {
     expect(detailProblem({ ...house, flat: ['Shell'] })).toContain('flat: Shell is not a planned feature')
   })
@@ -235,7 +270,7 @@ describe('design.plan with a detail level', () => {
     const put = designToolset({} as DesignHost, {}, { plans: createPlanRegistry() }).find((t) => t.name === 'design.put_plan')!
     const planShape = (put.input as unknown as { shape: { plan: { shape: Record<string, unknown> } } }).shape.plan.shape
     expect(Object.keys(planShape)).not.toContain('detail')
-    expect(Object.keys(planShape)).not.toContain('colors')
+    for (const k of ['colors', 'scale', 'real', 'tiers']) expect(Object.keys(planShape)).not.toContain(k)
     expect(Object.keys(partPlanSchema.shape)).toContain('detail')
   })
 })
