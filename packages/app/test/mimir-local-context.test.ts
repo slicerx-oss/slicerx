@@ -213,7 +213,10 @@ describe('the mimir tab on a local model', () => {
     expect(sent.messages[0]!.content).not.toContain(RESHAPE_LINE)
     expect(cloud.messages[0]!.content).toContain(FAMILY_LINE)
     expect(sent.messages[0]!.content).not.toContain(FAMILY_LINE)
-    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(MOVING_PARTS_ORDER, ''))
+    // a thing made of colored parts is built assembled: the cloud prompt says so, the local one has no room for it
+    expect(cloud.messages[0]!.content).toContain('- A thing made of parts in different colors')
+    expect(sent.messages[0]!.content).not.toContain('parts in different colors')
+    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(/\n- A thing made of parts in different colors[^\n]*/, ''))
     // each prompt is pinned to its own text, so a wording change that moves the local prompt, and its budget, is made on purpose
     expect(sent.messages[0]!.content, 'the local prompt (packages/pilot/test/fixtures/mimir-prompt-local.txt)').toBe(LOCAL_PROMPT)
     expect(cloud.messages[0]!.content, 'the cloud prompt (packages/pilot/test/fixtures/mimir-prompt-cloud.txt)').toBe(CLOUD_PROMPT)

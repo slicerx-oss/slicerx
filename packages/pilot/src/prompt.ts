@@ -44,6 +44,18 @@ export const MOVING_PARTS_ORDER = ` A part whose pieces print assembled and move
 // cloud prompt only, as above: one sweep whose section turns into another, where a loft joined to a bend leaves seams
 // and walls that drift apart
 export const RESHAPE_LINE = `- A part whose section changes along a bent path (a rectangular duct that ends round, a square post that turns round) is best built as one geom.sweep with end_profile, the loop it ends as, drawn on the profile's plane, rather than a loft joined to a separate bend. A hollow one sweeps the outside, then cuts a sweep whose loops sit one wall inside the outer ones, with its own end_profile, along the same path run 1 mm past each end.`
+// cloud prompt only, as above: a thing made of colored parts. Without it the model read a request to color it as a
+// kit of slabs laid apart in one design, which design.check then failed on its assembled overall size, and went on to
+// split and lay out parts nobody asked to have apart. The tools it names are only those the model is offered.
+export const ASSEMBLED_LINE = `- A thing made of parts in different colors (a ship, a rocket, a two color tag) is one design, built assembled as it looks finished: one part per color, each on the filament of its color, touching where they meet, never a kit of pieces laid apart. Plan and check it as that one assembled model. Painting it means putting each part on the filament of its color. Do not split it into objects or lay its parts out on the plate unless the person asks for that.`
+export const assembledLine = (has: HasTool): string => {
+  const slot = has('geom.build') ? ' (slot on geom.build)' : ''
+  const set = has('project.set_filament') ? ' Set those filaments\' colors with project.set_filament.' : ''
+  const split = has('project.split_objects') ? ' (then project.split_objects)' : ''
+  return ASSEMBLED_LINE.replace('each on the filament of its color,', `each on the filament of its color${slot},`)
+    .replace('on the filament of its color. Do', `on the filament of its color.${set} Do`)
+    .replace(/asks for that\.$/, `asks for that${split}.`)
+}
 const READ_BACK_LINE = `- After the last feature, read the part back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
 
 // with design.plan every step of a planned feature names it, so design.check ties the steps to the plan by that tag
@@ -65,7 +77,8 @@ const buildLines = (has: HasTool, o: PromptOptions): string => {
   const plan = moving ? `${PLAN_LINE}${MOVING_PARTS_ORDER}` : PLAN_LINE
   const reshape = o.cloud === true && has('geom.sweep')
   const family = o.cloud === true && has('pilot.ask') && has('parts.lookup')
-  return [BUILD_FIRST, SIZES_LINE, ...(family ? [FAMILY_LINE] : []), has('design.plan') ? `${plan}\n${FEATURE_LINE}` : STEPS_LINE, BIND_LINE, checks ? CHECK_LINE : READ_BACK_LINE, ...(moving ? [MOVING_PARTS_LINE] : []), ...(reshape ? [RESHAPE_LINE] : [])].join('\n')
+  const assembled = o.cloud === true && has('design.plan')
+  return [BUILD_FIRST, SIZES_LINE, ...(family ? [FAMILY_LINE] : []), has('design.plan') ? `${plan}\n${FEATURE_LINE}` : STEPS_LINE, ...(assembled ? [assembledLine(has)] : []), BIND_LINE, checks ? CHECK_LINE : READ_BACK_LINE, ...(moving ? [MOVING_PARTS_LINE] : []), ...(reshape ? [RESHAPE_LINE] : [])].join('\n')
 }
 
 // What the part tools make, in general terms, and what they do not, for both ways of building. A request whose shape is
@@ -163,8 +176,11 @@ export const systemPrompt = (scope: PilotScope = 'full', has: HasTool = ALL_TOOL
 // without a print stops at the part.
 const printRunLines = (has: HasTool): string => {
   const slice = has('app.slice') ? 'app.slice' : 'slice the plate'
-  const only = '\n- Print only when asked: a part alone ends with the part.'
-  if (!has('printer.queue')) return `${only}\n- For a request to make and print a part, design it, then ${slice}, then offer to save the file so the person can print it. Nothing here reaches a printer.`
+  // a wish about how a part will print or look is not a request to print: read as one, it sent runs to run.target, a
+  // slice and the queue, ending on an approval card or an error nobody asked for (test/prompt.test.ts has such wishes)
+  const calls = ['run.target', 'app.slice', 'slice', 'printer.queue'].filter(has)
+  const only = `\n- Print only when asked: a part alone ends with the part.${calls.length ? ` Call ${calls.length === 1 ? calls[0] : `${calls.slice(0, -1).join(', ')} or ${calls[calls.length - 1]}`} only when the person asks to slice or print;` : ' Slice only when the person asks to slice or print;'} a wish about how it will print or look is not a request to print.`
+  if (!has('printer.queue')) return `\n- For a request to make and print a part, design it, then ${slice}, then offer to save the file so the person can print it. Nothing here reaches a printer.${only}`
   const target = has('run.target') ? 'run.target for the printer and spool, then ' : ''
   const lines = [
     `- For a request to make and print a part, in order: design it (as above), then ${target}${slice}, then printer.queue. Say the step list first.`,
@@ -172,7 +188,7 @@ const printRunLines = (has: HasTool): string => {
   ]
   // the offer comes after the send, since a no to the chip ends the run
   if (has('run.target') && has('memory.remember')) lines.push('- If run.target says picked, offer once after the send to remember the choice with memory.remember; the app asks with its chip.')
-  return `${only}\n${lines.join('\n')}`
+  return `\n${lines.join('\n')}${only}`
 }
 
 /** The whole app: designing parts, slicing, settings and printers, in one conversation. */
@@ -183,7 +199,7 @@ How to work:
 ${partLines(has, o)}
 ${PARTS_LINE}
 - For a failed or odd print, give the most likely cause and its fix first, then at most one clarifying question. Never answer with only a question.
-- For a job request ("12 PETG brackets by Friday"), call kb.intent for settings targets, check printers and spools, then orient, arrange and slice before proposing a print.${printRunLines(has)}
+- For a print job the person asks for ("print 12 PETG brackets by Friday"), call kb.intent for settings targets, check printers and spools, then orient, arrange and slice before proposing a print.${printRunLines(has)}
 - "Current machine" is the printer selected in the app: use it for printer-specific advice without asking, and say so ("your A1, as selected"). With none selected, assume none.
 - Answer the question asked; call printer or fleet status tools only when it is about the printers' current state.
 - The app itself shows settings diffs and runs the send preflight, risk warnings, spool checks and overnight readiness. Never repeat those; explain one only when asked.${newProjectLine(has)}
