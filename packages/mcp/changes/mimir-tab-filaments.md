@@ -1,0 +1,4 @@
+### Changed
+
+- `slicerx_geom_extrude` 1.9.0 (from 1.8.0), `slicerx_geom_revolve` 1.8.0 (from 1.7.0), `slicerx_geom_loft` 1.6.0 (from 1.5.0) and `slicerx_geom_sweep` 1.9.0 (from 1.8.0) take `slot`: with a design and `operation` new, the filament the new part prints in, from 1, as `slicerx_geom_build` takes it. The design keeps it, so an undo, a redo and a reopened project keep the part in that filament. A `slot` on a join or a cut, or without a design, is refused, since a join or cut changes a part that keeps its own filament.
+- `slicerx_geom_emboss` 1.4.0 (from 1.3.0) takes `slot` and `name`: with a design, raised text with a `slot` is a part of its own in that filament, standing on the face (white letters on a black tag), named `name` or "Text" and the text. Debossed text with a `slot` is refused, since a pocket has no filament of its own.
