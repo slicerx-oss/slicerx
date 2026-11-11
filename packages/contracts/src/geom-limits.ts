@@ -98,6 +98,7 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string?]>> = {
   'thread.apply': ['model', 'Thread'],
   shell: ['model', 'Shell'],
   mirror: ['model', 'Mirror'],
+  pattern: ['model', 'Pattern'],
   'parts.add': ['model', 'Add parts'],
   'parts.order': ['model', 'Reorder parts'],
   'brep.box': ['model', 'Solid shape'],

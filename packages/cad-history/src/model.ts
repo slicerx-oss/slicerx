@@ -6,7 +6,7 @@
 // local mesh and that transform gives the same result wherever the object has moved since. No
 // React, no store and no engine calls in here, so the geometry worker can load it too.
 import type { PrimitiveSpec } from '@slicerx/contracts'
-import { copyCount, type Pattern } from './pattern'
+import { copyCount, MAX_STEP_COPIES, stepCopyCount, type Pattern, type StepPattern } from './pattern'
 import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchConstraint, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from './types'
 
 export type { EdgeRef, Mat4, PrimitiveSpec }
@@ -83,6 +83,12 @@ export type StepParams =
   /** The part mirrored through a plane (world at the step's transform); copy keeps it and joins the mirror image to it. */
   | { op: 'mirror'; plane: { point: Vec3; normal: Vec3 }; copy: boolean }
   | { op: 'paint'; layer: PaintLayer; state: number; target: PaintTarget; maxDepth?: number }
+  /**
+   * Earlier steps on the part done again elsewhere on it, as one step (pattern.ts): in a row or grid, around an axis,
+   * or as their mirror image through a plane (world at the step's transform). `steps` are their ids, in the order
+   * they run; each copy runs every one of them again, moved.
+   */
+  | { op: 'pattern'; steps: string[]; spec: StepPattern }
 
 export type StepOp = StepParams['op']
 
@@ -697,6 +703,10 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
       return p.copy ? 'Mirror copy' : 'Mirror'
     case 'paint':
       return paintName(p)
+    case 'pattern': {
+      const n = `${p.steps.length} step${p.steps.length === 1 ? '' : 's'}`
+      return p.spec.kind === 'mirror' ? `Mirror of ${n}` : `Pattern of ${stepCopyCount(p.spec)}, ${n}`
+    }
   }
 }
 
@@ -758,6 +768,8 @@ export function mainNumber(p: StepParams): { label: string; value: number; unit:
       if (p.target.kind === 'height' && p.target.below !== undefined) return { label: 'Below', value: p.target.below, unit: 'mm' }
       if (p.target.kind === 'height' && p.target.above !== undefined) return { label: 'Above', value: p.target.above, unit: 'mm' }
       return null
+    case 'pattern':
+      return p.spec.kind === 'mirror' ? null : { label: 'Copies', value: p.spec.count, unit: '', min: 2 }
     case 'subtract': {
       const s = p.solids.length === 1 ? p.solids[0]! : null
       if (s?.type === 'cylinder') return { label: 'Diameter', value: s.diameterMm, unit: 'mm', min: 0 }
@@ -803,6 +815,12 @@ export function withNumber(p: StepParams, v: number): StepParams | string {
       if (p.target.kind === 'height' && p.target.below !== undefined) return { ...p, target: { ...p.target, below: v } }
       if (p.target.kind === 'height' && p.target.above !== undefined) return { ...p, target: { ...p.target, above: v } }
       return 'This step has no number to change.'
+    case 'pattern': {
+      if (p.spec.kind === 'mirror') return 'This step has no number to change.'
+      if (!Number.isInteger(v) || v < 2) return 'A pattern has at least 2 copies.'
+      const n = v * (p.spec.kind === 'linear' ? (p.spec.count2 ?? 1) : 1)
+      return n > MAX_STEP_COPIES ? `A pattern of steps has at most ${MAX_STEP_COPIES} copies; this one would have ${n}.` : { ...p, spec: { ...p.spec, count: v } }
+    }
     case 'subtract': {
       const s = p.solids.length === 1 ? p.solids[0]! : null
       if (!(v > 0) || !s) return 'The size must be more than 0 mm.'

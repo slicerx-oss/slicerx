@@ -143,6 +143,8 @@ export function movedParams(p: StepParams, m: Mat4): StepParams {
       return { ...p, plane: { point: point(m, p.plane.point), normal: direction(m, p.plane.normal) } }
     case 'paint':
       return { ...p, target: movedTarget(p.target, m) }
+    case 'pattern':
+      return { ...p, spec: p.spec.kind === 'mirror' ? { ...p.spec, plane: { point: point(m, p.spec.plane.point), normal: direction(m, p.spec.plane.normal) } } : movedArray(p.spec, m) }
     // parts.add keeps its parts in the object's own frame; the rest hold no place
     default:
       return p

@@ -6,6 +6,7 @@ import { productName } from '@slicerx/contracts/brand'
 import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
 import { pinnedOlder, type PlaceOf } from './design-frame'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC, SKETCH_ANCHORS } from './file'
+import { MAX_STEPS_REPEATED, stepPatternProblem, type StepPattern } from './pattern'
 import { idNumber, MAX_PROJECTION, type Projection, type ProjectSource } from './project'
 import { followField, keepsArrayOf, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
@@ -182,6 +183,24 @@ function paramsOk(p: Record<string, unknown>): boolean {
       return vec3(p['buildVolumeMm']) && (p['buildVolumeMm'] as number[]).every((n) => n > 0) && (p['marginMm'] === undefined || isNum(p['marginMm']))
     case 'mirror':
       return planeOk(p['plane']) && typeof p['copy'] === 'boolean'
+    case 'pattern':
+      return Array.isArray(p['steps']) && p['steps'].length > 0 && p['steps'].length <= MAX_STEPS_REPEATED && p['steps'].every((id) => typeof id === 'string' && id.length > 0 && id.length <= 200) && stepPatternOk(p['spec'])
+    default:
+      return false
+  }
+}
+
+/** A pattern step's copies: a row or grid, a circle or a mirror plane, each with what it needs (stepPatternProblem). */
+function stepPatternOk(v: unknown): boolean {
+  if (!obj(v)) return false
+  const opt = (k: string) => v[k] === undefined || vec3(v[k])
+  switch (v['kind']) {
+    case 'mirror':
+      return planeOk(v['plane']) && stepPatternProblem(v as StepPattern) === null
+    case 'linear':
+      return isNum(v['count']) && vec3(v['step']) && (v['count2'] === undefined || isNum(v['count2'])) && opt('step2') && stepPatternProblem(v as StepPattern) === null
+    case 'circular':
+      return isNum(v['count']) && vec3(v['center']) && opt('axis') && (v['angleDeg'] === undefined || isNum(v['angleDeg'])) && (v['rotateCopies'] === undefined || v['rotateCopies'] === true) && stepPatternProblem(v as StepPattern) === null
     default:
       return false
   }

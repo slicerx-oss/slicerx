@@ -6,9 +6,10 @@
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, MovedFace, Vec3 } from './types'
-import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, newSlot, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
+import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
+import { repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { EXACT_FELL_BACK, exactStep, meshed, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
@@ -527,6 +528,70 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   return out
 }
 
+/** A step's params for a copy a pattern makes: without the face and edge keys, which name the original's faces. */
+function copyParams(p: StepParams): StepParams {
+  const q = unkeyed(p)
+  if (q.op !== 'paint' || q.target.kind !== 'seed' || !q.target.faceKey) return q
+  const { faceKey: _key, ...target } = q.target
+  return { ...q, target }
+}
+
+/**
+ * A pattern step: the steps it repeats (from `earlier`, the steps before it) run again for each copy, at their
+ * transform moved by the copy's move, so each lands where the copy is, with no value of theirs rewritten. Copies get
+ * their own ids, so the faces they make get keys of their own; what they find or note is the pattern's.
+ */
+async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false, solids?: Solids, strict = false): Promise<Flat[]> {
+  const p = s.params
+  if (p.op !== 'pattern') return parts
+  const byId = new Map(earlier.map((x) => [x.id, x]))
+  const sources = p.steps.map((id) => byId.get(id))
+  if (sources.some((x) => !x)) throw new Broken('A step this pattern repeats is gone or comes after it; pick the steps again.')
+  const live = (sources as Step[]).filter((x) => !x.suppressed)
+  for (const x of live) {
+    const why = repeatProblem(x) ?? (x.part !== s.part ? 'A pattern repeats steps on the part it works on; a step it names works on another part.' : null)
+    if (why) throw new Broken(why)
+  }
+  const why = stepPatternProblem(p.spec)
+  if (why) throw new Broken(why)
+  if (!live.length) {
+    found.notes[s.id] = 'The steps this pattern repeats are turned off, so it repeats nothing.'
+    return parts
+  }
+  const notes: string[] = []
+  const toWorld = s.transform
+  const fromWorld = invert(s.transform)
+  let out = parts
+  for (const [k, move] of stepCopyMoves(p.spec).entries()) {
+    // the copy's move in the part's own frame, undone at each step's transform: the step then lands moved by it
+    const back = invert(multiply(fromWorld, multiply(move, toWorld)))
+    for (const [j, x] of live.entries()) {
+      const copy: Step = { id: `${s.id}#${k + 2}.${j + 1}`, part: x.part, transform: multiply(x.transform, back), params: copyParams(x.params) }
+      try {
+        out = await runStep(call, copy, out, fonts, moved, gone, found, exact, solids, strict)
+      } catch (e) {
+        if ((e as { name?: string }).name === 'AbortError') throw e
+        throw new Broken(`Copy ${k + 2}: ${e instanceof Error ? e.message : String(e)}`)
+      } finally {
+        const note = found.notes[copy.id]
+        if (note && note !== EXACT_FELL_BACK && !notes.includes(note)) notes.push(note)
+        delete found.notes[copy.id]
+        delete found.keys[copy.id]
+        delete moved[copy.id]
+        gone.delete(copy.id)
+        const fell = found.fellBack.indexOf(copy.id)
+        if (fell >= 0) {
+          found.fellBack.splice(fell, 1)
+          if (!found.fellBack.includes(s.id)) found.fellBack.push(s.id)
+          if (!notes.includes(EXACT_FELL_BACK)) notes.push(EXACT_FELL_BACK)
+        }
+      }
+    }
+  }
+  if (notes.length) found.notes[s.id] = notes.join(' ')
+  return out
+}
+
 type PartsParams = Extract<StepParams, { op: 'boolean' | 'plane.cut' | 'split' | 'mirror' }>
 
 const unit3 = (v: Vec3): Vec3 => {
@@ -687,7 +752,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
     }
     if (o.yieldStep) await o.yieldStep(s)
     try {
-      parts = await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
+      parts = s.params.op === 'pattern' ? await patternStep(call, s, effective.slice(0, i), parts, fonts, moved, gone, found, req.exact, solids, !!history.exact) : await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
       const note = found.notes[s.id]
       status[i] = note ? { state: 'done', note } : { state: 'done' }
       const had = keysOf(s.params)

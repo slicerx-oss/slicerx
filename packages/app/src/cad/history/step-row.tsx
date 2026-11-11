@@ -238,8 +238,8 @@ function NumberEdit({ label, unit, value, onApply }: { label: string; unit: stri
     <div className="cad-step-edit">
       <label>
         <span className="sx-small sx-muted">{label}</span>
-        <input className="sx-input" data-mono data-size="sm" value={text} aria-label={`${label} in ${shownUnit}`} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && apply()} />
-        <span className="sx-small sx-muted">{shownUnit}</span>
+        <input className="sx-input" data-mono data-size="sm" value={text} aria-label={shownUnit ? `${label} in ${shownUnit}` : label} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && apply()} />
+        {shownUnit ? <span className="sx-small sx-muted">{shownUnit}</span> : null}
       </label>
       {note ? <p className="cad-note"><Icon name="alert" size={13} /> {note}</p> : null}
     </div>
