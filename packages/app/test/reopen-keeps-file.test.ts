@@ -112,6 +112,18 @@ describe('Reopen after a plate was replaced', () => {
     expect(save).toHaveBeenCalledTimes(1)
   })
 
+  it('says the project was opened again, not added, and a first open still says Added', async () => {
+    await openBracket()
+    expect(get().openNote?.text).toBe('Added bracket.sx3mf')
+    set((s) => ({ plate: [...s.plate, entry('clip', 60)] }))
+    await replaceAndReopen(['bracket', 'clip'])
+    await vi.waitFor(() => expect(get().openNote?.text).toBe('Opened bracket.sx3mf again'))
+    expect(get().openNote?.text).not.toMatch(/^Added /)
+    // A model added onto the plate as it is keeps its note.
+    await openModelBytes(host, 'tower.sx3mf', design('tower'))
+    expect(get().openNote?.text).toBe('Added tower.sx3mf')
+  })
+
   it('a recent project stored before Reopen kept the file opens as before: no file, clean', async () => {
     await openBracket()
     set((s) => ({ plate: [...s.plate, entry('clip', 60)] }))
