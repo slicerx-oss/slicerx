@@ -60,6 +60,10 @@ describe.each(LAYOUTS)('an H3C project with a TPU285-only filament, %s', (layout
     expect(out.hotends?.filaments.map((f) => [f.slot, f.tool, f.tpu_tool, f.tpu285])).toEqual([[1, 1, false, false], [2, 3, false, false], [3, 7, false, false], [4, 8, true, true]])
     const gcode = readFileSync(out.gcode_path, 'utf8')
     expect(gcode).toMatch(/^; filament_type = PLA;PLA;PLA;TPU$/m)
-    expect(new Set(gcode.match(/^T\d+$/gm))).toEqual(new Set(['T0', 'T1', 'T2', 'T3']))
+    // a T command per filament change, all four filaments, then the end G-code's T65535 once, last, to unload
+    const selects = gcode.match(/^T\d+$/gm) ?? []
+    expect(new Set(selects.slice(0, -1))).toEqual(new Set(['T0', 'T1', 'T2', 'T3']))
+    expect(selects.at(-1)).toBe('T65535')
+    expect(gcode).toMatch(/^M620 S65535\nT65535\nM621 S65535$/m)
   })
 })
