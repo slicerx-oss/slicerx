@@ -61,7 +61,7 @@ export const planDetailFields = {
     .optional()
     .describe('Display and fine: each feature\'s color as the real thing is painted, by feature name, such as {"Lower hull": "red"}. A body the real thing paints in two or more colors (a waterline, a stripe, a trim line) is split at its line into one feature per color'),
   scale: z
-    .union([z.number().positive(), z.string().trim().regex(/^1\s*:\s*\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
+    .union([z.number().positive(), z.string().trim().regex(/^(1\s*:\s*)?\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
     .optional()
     .describe('Display and fine: N of the scale 1:N against the real thing, such as 25 ("1:25" is taken too)'),
   real: z
@@ -195,7 +195,7 @@ const r1 = (v: number): number => Math.round(v * 10) / 10
 function scaleProblems(plan: DetailPlan, feature: FeatureOf): string[] {
   if (plan.real === undefined) return ['real: list the real sizes the lookup or the stated source gives (the main body\'s length, and each part it gives a size for), each with the feature size it sets, so the plan is held to them at scale; an empty list when it gives none']
   if (!plan.real.length) return []
-  const n = typeof plan.scale === 'string' ? Number(plan.scale.split(':')[1]) : plan.scale
+  const n = typeof plan.scale === 'string' ? Number(plan.scale.split(':').pop()) : plan.scale
   if (!n) return ['scale: give N of the scale 1:N the real sizes are held to, such as 25']
   const out: string[] = []
   const bodies = new Set([...(plan.curved ?? []), ...(plan.flat ?? [])].map((b) => b.trim().toLowerCase()))
