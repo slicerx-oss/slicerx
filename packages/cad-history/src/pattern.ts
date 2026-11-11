@@ -175,12 +175,12 @@ export function stepCopyMoves(p: StepPattern): Mat4[] {
 }
 
 /** The kinds of step a pattern repeats: those that add, take away or round material where they are, or paint from a point. */
-const REPEATS: ReadonlySet<string> = new Set(['face.push', 'shape.extrude', 'sketch.revolve', 'sketch.loft', 'sketch.sweep', 'subtract', 'hole.apply', 'thread.apply', 'edge.fillet', 'edge.chamfer', 'paint'])
+const REPEATS: ReadonlySet<string> = new Set(['face.push', 'shape.extrude', 'sketch.revolve', 'sketch.loft', 'sketch.sweep', 'subtract', 'hole.apply', 'thread.apply', 'edge.fillet', 'edge.chamfer', 'paint', 'pattern'])
 
 /** Why step `s` cannot be repeated by a pattern, in words, or null when it can. The pattern works on the step's part, or on every part as the step does. */
 export function repeatProblem(s: Pick<Step, 'part' | 'params'>): string | null {
   const p = s.params
-  if (!REPEATS.has(p.op)) return 'A pattern repeats steps that add, cut, round or paint material where they are: a push or pull, a join or cut, a hole, a thread, a fillet, a chamfer or paint from a point.'
+  if (!REPEATS.has(p.op)) return 'A pattern repeats steps that add, cut, round or paint material where they are: a push or pull, a join or cut, a hole, a thread, a fillet, a chamfer, paint from a point, or another pattern of those.'
   const op = p.op === 'shape.extrude' ? (p.spec.operation ?? 'new') : p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep' ? (p.operation ?? 'new') : null
   if (op === 'new') return 'A pattern repeats joins and cuts on a part; this step makes a new body, so array that part instead.'
   if (p.op === 'paint' && p.target.kind !== 'seed') return 'A pattern repeats paint from a point; this step paints by side or height, which already covers the part.'
