@@ -1,0 +1,4 @@
+### Fixed
+
+- `slicerx_geom_extrude` 1.7.0 (from 1.6.0): a one-side join whose start face is on no face of the part (hanging in air, or crossing the part) starts on its plane. Before, every one-side join reached 0.01 mm behind its plane, so a cap joined to a pin over a print-in-place part ate 0.01 mm of the gap below it (0.39 mm where 0.4 mm was asked), and a join drawn on the bed plane next to a part dipped 0.01 mm under the bed. Where the start face sits on a face of the part, the join still reaches into it by 0.01 mm and fuses as before. Such joins add 0.01 mm less height over the part of the face that is free, so `volumeMm3`, `minMm` and `sizeMm` move by that much.
+- `slicerx_geom_emboss` 1.3.0 (from 1.2.0): raised text on a design is a join on its face, so text that crosses an opening in that face (a hole or a slot) starts on the face's plane over the opening and no longer reaches 0.01 mm into it. Text wholly on the face is unchanged.
