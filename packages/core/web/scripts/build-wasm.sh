@@ -3,7 +3,7 @@
 # Copyright (C) 2026 The SlicerX contributors
 # Builds sx-wasm and copies it to pkg/ (generated, git-ignored), where
 # createWebSlicer() looks for it by default. Reports the module's gzip size against
-# its 1056 KB reference size, without failing over it.
+# its 1444 KB reference size, without failing over it.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 root=$(cd "$here/../../.." && pwd)
@@ -49,13 +49,14 @@ fi
 # gzip level 9 in node's zlib, as apps/web/scripts/bundle-size.mjs measures it
 gz=$(node -e 'console.log(require("node:zlib").gzipSync(require("node:fs").readFileSync(process.argv[1]), { level: 9 }).length)' "$pkg/sx_wasm.wasm")
 echo "pkg/sx_wasm.wasm: $(wc -c < "$pkg/sx_wasm.wasm") bytes, $gz gzip"
-# 1056 KB (1,081,344 B) is a reference size only. The browser no longer slices and the CAD-only web build doesn't
-# ship this module, so its size is reported, never a failure (owner, 2026-10-12). The geom module and the startup
-# shell keep their blocking budgets in apps/web/scripts/bundle-size.mjs.
-ref=$((1056 * 1024))
-echo "build-wasm: $gz bytes gzip, $((gz - ref)) against the 1056 KB reference"
+# 1444 KB (1,478,656 B) is a reference size only. The browser no longer slices and the CAD-only web build doesn't
+# ship this module, so its size is reported, never a failure (owner, 2026-10-12). The reference is the module's size
+# on 2026-11-11 (1,460,974 B) plus about 17 KB, so the report shows growth from there (owner, 2026-11-11; it was
+# 1056 KB before). The geom module and the startup shell keep their blocking budgets in apps/web/scripts/bundle-size.mjs.
+ref=$((1444 * 1024))
+echo "build-wasm: $gz bytes gzip, $((gz - ref)) against the 1444 KB reference"
 if [ "$gz" -gt "$ref" ]; then
-  echo "build-wasm: over the 1056 KB reference; reported only" >&2
-  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::warning title=sx_wasm size::$gz bytes gzip, $((gz - ref)) over the 1056 KB reference (report only)"
+  echo "build-wasm: over the 1444 KB reference; reported only" >&2
+  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::warning title=sx_wasm size::$gz bytes gzip, $((gz - ref)) over the 1444 KB reference (report only)"
 fi
 exit 0
