@@ -2,13 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A long press on touch stands in for a right click: about half a second, cancelled by a move or a scroll, and
 // nothing at all for a mouse. The hold counts on the frame after the half second, and after a busy stretch only once
-// frames run on time again, so a move still on its way to a busy page ends it first.
+// frames run on time again, so a move still on its way to a busy page ends it first. A lift is read by its own time, so a
+// quick tap that a busy page sees late stays a tap.
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { flushSync } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LONG_PRESS_MS, useLongPress } from '../src/components/context-menu'
+import { LONG_PRESS_MS, useContextMenu, useLongPress } from '../src/components/context-menu'
 
 const fired: Array<{ x: number; y: number }> = []
 const clicks: number[] = []
@@ -21,6 +22,13 @@ function Probe() {
 function down(el: Element, pointerType: string, x = 10, y = 10): void {
   const e = new Event('pointerdown', { bubbles: true })
   Object.assign(e, { pointerType, clientX: x, clientY: y })
+  flushSync(() => el.dispatchEvent(e))
+}
+/** The finger lifts; `at` is when it lifted by the event's own clock (the default is now), which a busy page sees late. */
+function up(el: Element, at?: number): void {
+  const e = new Event('pointerup', { bubbles: true })
+  Object.assign(e, { pointerType: 'touch' })
+  if (at !== undefined) Object.defineProperty(e, 'timeStamp', { value: at })
   flushSync(() => el.dispatchEvent(e))
 }
 function move(el: Element, x: number, y: number): void {
@@ -112,10 +120,31 @@ describe('the long press hook', () => {
   it('counts a lift that comes while the hold waits on a frame as a long press', () => {
     down(btn, 'touch', 10, 10)
     vi.advanceTimersByTime(LONG_PRESS_MS)
-    btn.dispatchEvent(new Event('pointerup', { bubbles: true }))
+    up(btn)
     expect(fired).toEqual([{ x: 10, y: 10 }])
     frame()
     expect(fired).toHaveLength(1)
+  })
+
+  it('keeps a quick tap a tap when a busy page runs the timer before the lift', () => {
+    const t0 = Date.now()
+    down(btn, 'touch', 10, 10)
+    // the page was busy past the half second: the timer runs first, then the lift made 60 ms after the press
+    vi.advanceTimersByTime(LONG_PRESS_MS)
+    up(btn, t0 + 60)
+    for (let i = 0; i < 60; i++) frame()
+    expect(fired).toEqual([])
+    flushSync(() => (btn as HTMLElement).click())
+    expect(clicks).toEqual([1])
+
+    // a lift made after the half second, seen as late, is still a long press
+    const t1 = Date.now()
+    down(btn, 'touch', 20, 20)
+    vi.advanceTimersByTime(LONG_PRESS_MS)
+    up(btn, t1 + LONG_PRESS_MS + 10)
+    expect(fired).toEqual([{ x: 20, y: 20 }])
+    flushSync(() => (btn as HTMLElement).click())
+    expect(clicks).toEqual([1])
   })
 
   it('does nothing for a mouse or a pen', () => {
@@ -146,7 +175,7 @@ describe('the long press hook', () => {
   it('cancels when the finger lifts early, and drops the click after a long press only', () => {
     down(btn, 'touch')
     vi.advanceTimersByTime(100)
-    btn.dispatchEvent(new Event('pointerup', { bubbles: true }))
+    up(btn)
     vi.advanceTimersByTime(LONG_PRESS_MS)
     expect(fired).toEqual([])
     flushSync(() => (btn as HTMLElement).click())
@@ -160,6 +189,45 @@ describe('the long press hook', () => {
     expect(clicks).toEqual([1])
     flushSync(() => (btn as HTMLElement).click())
     expect(clicks).toEqual([1, 1])
+  })
+})
+
+describe('a menu the pressed element opened', () => {
+  // The marks menu over the layer track sits in a portal, and React hands its events to the track: a press held on one
+  // of its items opened the track's own menu in its place, at the layer under the finger.
+  it('takes no long press or right click from inside a portal it renders', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const opened: Array<{ x: number; y: number } | null> = []
+    function Track() {
+      const press = useLongPress((_, at) => fired.push(at))
+      const ctx = useContextMenu()
+      opened.push(ctx.at)
+      return createElement('div', { id: 'track', ...press.bind, onContextMenu: ctx.bind.onContextMenu }, createElement('span', { id: 'own' }, 'own'), createPortal(createElement('button', { id: 'item' }, 'item'), document.body))
+    }
+    flushSync(() => createRoot(host).render(createElement(Track)))
+    const item = document.getElementById('item')!
+    down(item, 'touch', 5, 6)
+    vi.advanceTimersByTime(LONG_PRESS_MS)
+    frame()
+    up(item)
+    expect(fired).toEqual([])
+    const right = (el: Element) => {
+      const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 7, clientY: 8 })
+      flushSync(() => el.dispatchEvent(e))
+      return e
+    }
+    expect(right(item).defaultPrevented).toBe(true)
+    expect(opened.at(-1)).toBeNull()
+
+    // the element's own children still take both
+    const own = document.getElementById('own')!
+    down(own, 'touch', 5, 6)
+    vi.advanceTimersByTime(LONG_PRESS_MS)
+    frame()
+    expect(fired).toEqual([{ x: 5, y: 6 }])
+    right(own)
+    expect(opened.at(-1)).toEqual({ x: 7, y: 8 })
   })
 })
 

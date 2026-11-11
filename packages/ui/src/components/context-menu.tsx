@@ -47,10 +47,16 @@ export function pressStays(from: MenuPoint, now: MenuPoint): boolean {
   return Math.hypot(now.x - from.x, now.y - from.y) <= LONG_PRESS_SLOP
 }
 
+/** Whether an event started inside the element that handles it in the page itself, not in a portal it renders. */
+export function inOwnTree(e: { currentTarget: EventTarget | null; target: EventTarget | null }): boolean {
+  const own = e.currentTarget as Node | null
+  return !own || typeof own.contains !== 'function' || !(e.target instanceof Node) || own.contains(e.target)
+}
+
 export interface LongPressBind {
   onPointerDown: (e: PointerEvent<HTMLElement>) => void
   onPointerMove: (e: PointerEvent<HTMLElement>) => void
-  onPointerUp: () => void
+  onPointerUp: (e: PointerEvent<HTMLElement>) => void
   onPointerCancel: () => void
   /** Swallows the click that follows a long press, so lifting the finger does not also press the control. */
   onClickCapture: (e: MouseEvent<HTMLElement>) => void
@@ -62,7 +68,7 @@ export interface LongPressBind {
  * element that also handles `onContextMenu`, and `cancel` when that handler runs so the two never both open it.
  */
 export function useLongPress(fire: (target: HTMLElement, point: MenuPoint) => void): { bind: LongPressBind; cancel: () => void } {
-  const press = useRef<{ from: MenuPoint; t0: number; timer: ReturnType<typeof setTimeout>; held?: () => void } | null>(null)
+  const press = useRef<{ from: MenuPoint; t0: number; at: number; timer: ReturnType<typeof setTimeout>; held?: () => void } | null>(null)
   const fired = useRef(false)
   const latest = useRef(fire)
   latest.current = fire
@@ -76,7 +82,9 @@ export function useLongPress(fire: (target: HTMLElement, point: MenuPoint) => vo
   useEffect(() => cancel, [cancel])
   const bind: LongPressBind = {
     onPointerDown: (e) => {
-      if (e.pointerType !== 'touch') return
+      // A press inside a menu or tip this element opened (React hands a portal's events to the element that renders
+      // it) is a press on that, not on this element.
+      if (e.pointerType !== 'touch' || !inOwnTree(e)) return
       cancel()
       fired.current = false
       const target = e.currentTarget
@@ -85,6 +93,8 @@ export function useLongPress(fire: (target: HTMLElement, point: MenuPoint) => vo
       const p: NonNullable<typeof press.current> = {
         from,
         t0: performance.now(),
+        // when the finger went down, by the event's own clock: a busy page runs its handlers late, but not this
+        at: e.timeStamp,
         timer: setTimeout(() => {
           // The browser hands a moving finger to the page once a frame, so a busy page can still hold a move made
           // before now: the press counts as held on the next frame, or at the lift if that comes first (it comes after
@@ -119,8 +129,9 @@ export function useLongPress(fire: (target: HTMLElement, point: MenuPoint) => vo
     onPointerMove: (e) => {
       if (press.current && !pressStays(press.current.from, { x: e.clientX, y: e.clientY })) cancel()
     },
-    // a lift while the hold waits on a frame comes after any moves before it, so the press was held
-    onPointerUp: () => (press.current?.held ? press.current.held() : cancel()),
+    // A lift while the hold waits on a frame comes after any moves before it, so the press was held, unless the finger
+    // lifted inside the half second: a page busy past it runs the timer before a quick tap's lift, and that tap stays a tap.
+    onPointerUp: (e) => (press.current?.held && e.timeStamp - press.current.at >= LONG_PRESS_MS ? press.current.held() : cancel()),
     onPointerCancel: cancel,
     onClickCapture: (e) => {
       if (!fired.current) return
@@ -168,6 +179,8 @@ export function useContextMenu<T = HTMLElement>(open?: (target: HTMLElement, dat
     ...pressBind,
     onContextMenu: (e) => {
       e.preventDefault()
+      // a right click inside the open menu, which sits in a portal, is not one on the trigger
+      if (!inOwnTree(e)) return
       cancel()
       show(e.currentTarget, { x: e.clientX, y: e.clientY })
     },
