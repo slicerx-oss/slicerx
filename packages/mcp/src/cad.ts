@@ -693,7 +693,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const edgePick = defineTool({
     name: 'geom.edge_pick',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
@@ -1409,13 +1409,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const fillet = defineTool({
     name: 'geom.fillet',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Round straight edges where two flat faces meet, with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. Take the edges from slicerx_geom_edge_pick (its chain or loop picks several). With "design" it adds a step to the design; with a model it writes the new STL.',
+      'Round straight edges on a flat face with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. Edges along a round (a rounded rectangle\'s outline, a cone\'s base rim) become one mitered round. Take the edges from slicerx_geom_edge_pick (its chain or loop picks several). With "design" it adds a step to the design; with a model it writes the new STL.',
     localDescription:
-      'Round straight edges between flat faces to radius_mm; take the edges from geom.edge_pick. With design it adds a step; with a model, an STL. More: kb.search "modeling tools".',
+      'Round straight edges on a flat face to radius_mm, along rounds too (rounded rectangle loops, cone rims); take the edges from geom.edge_pick. With design it adds a step; with a model, an STL. More: kb.search "modeling tools".',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, part: partArg, edges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional().describe('Chord tolerance of the round, default 0.01 mm') }),
     async run(i) {
       oneOf(i)
@@ -1432,13 +1432,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const chamfer = defineTool({
     name: 'geom.chamfer',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
-      "Bevel straight edges where two flat faces meet, set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick. With \"design\" it adds a step to the design; with a model it writes the new STL.",
+      "Bevel straight edges on a flat face, along rounds too (a rounded rectangle's outline, a cone's base rim), set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick. With \"design\" it adds a step to the design; with a model it writes the new STL.",
     localDescription:
-      "Bevel straight edges between flat faces, set back distance_mm on the edge's own face and distance2_mm (optional, else distance_mm) on the other; take the edges from geom.edge_pick. With design it adds a step; with a model, an STL. More: kb.search \"modeling tools\".",
+      "Bevel straight edges on a flat face, along rounds too, set back distance_mm on the edge's own face and distance2_mm (optional, else distance_mm) on the other; take the edges from geom.edge_pick. With design it adds a step; with a model, an STL. More: kb.search \"modeling tools\".",
     input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, part: partArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
     async run(i) {
       oneOf(i)
