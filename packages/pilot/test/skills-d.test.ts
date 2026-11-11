@@ -220,6 +220,15 @@ describe('planners never claim to apply anything', () => {
     expect(env.audit.sideEffects).toEqual([])
   })
 
+  it('multicolor_assign says how to apply its plan with the paint tools', async () => {
+    const { tool, ctxFor } = setup()
+    const out = await tool('multicolor_assign').run({ regions: [{ region: 'hull below the waterline', filament: { material: 'PLA', color: 'red' }, fromZ: 0, toZ: 5 }, { region: 'hull above', filament: { material: 'PLA', color: 'black' }, fromZ: 5, toZ: 14 }] }, ctxFor('c1'))
+    const o = out.output as { howToApply: string; blocked?: unknown }
+    expect(o.howToApply).toContain('paint.preview and then paint.apply')
+    expect(o.blocked).toBeUndefined()
+    expect(JSON.stringify(out)).not.toMatch(/no paint(ing)? API/i)
+  })
+
   it('orders color changes by height and counts layers', async () => {
     const { tool, ctxFor } = setup()
     const out = await tool('multicolor_assign').run(

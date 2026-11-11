@@ -10,6 +10,7 @@ import { createPlanRegistry } from './design-check'
 import { designTools, type DesignFiles, type DesignToolOptions } from './design-tools'
 import { ToolInputError } from './errors'
 import { modelingTools, type ModelingFiles } from './modeling-tools'
+import { paintTools } from './paint'
 import { filamentTools, withNewFilaments, type FilamentList } from './tab-filaments'
 import { mimirTabTools, type CardPlans } from './tab-tools'
 
@@ -68,13 +69,14 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
  * an approved plan ties to it (withPlanTies), so design.check checks that design, and design.plan refuses a second plan of a part built from one. The app's tab and the creative eval
  * both make their tools here, so the eval offers what the tab offers. `newPlanId` names each plan (default random).
  * `filaments` (the open project's) adds project.add_filament and project.set_filament, and part makers given a slot past
- * the last filament add it.
+ * the last filament add it, and so does applying color paint in one. The paint tools are the server's, on `host`.
  */
 export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string; filaments?: FilamentList } = {}): PilotTool<never>[] {
   // design.plan names the gaps design.check holds a print-in-place part to: the same nozzle, layer height and material
   const fitProfile = () => ({ ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })
   const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile, designs: () => host.list() })
-  const tools = card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true })))
+  // paint.preview, paint.apply and paint.regions paint a design's parts as a step of its history, as on the server
+  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true }))), ...paintTools(host)]
   // the open project's filaments, where the host has them: the part makers add the ones their slot is past, and two
   // tools add and set them
   return opts.filaments ? [...withNewFilaments(tools, opts.filaments), ...filamentTools(opts.filaments)] : tools

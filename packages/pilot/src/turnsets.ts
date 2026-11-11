@@ -49,6 +49,9 @@ const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design
  */
 const FILAMENTS: ReadonlySet<string> = new Set(['project.add_filament', 'project.set_filament'])
 
+/** Painting a design's parts in filaments (a waterline, a band): with the filaments, in shape and app. */
+const PAINT: ReadonlySet<string> = new Set(['paint.preview', 'paint.apply', 'paint.regions'])
+
 /**
  * Sending a sliced plate: which printer and spools, the printers' list and state, and the send. In app as well as
  * print, so slicing and sending a plate takes one set.
@@ -58,7 +61,7 @@ const SEND: ReadonlySet<string> = new Set(['run.target', 'printer.list', 'printe
 /** What each set's tool description says it holds. */
 export const TURN_SET_WORDS: Record<TurnSet, string> = {
   build: 'start a new part: the dimension sheet, the plan, sketches extruded, revolved, lofted or swept into solids, holes, fillets, chamfers, shells, booleans, and reading the part back',
-  shape: 'shape a part further: push and pull faces, mirror, pattern, split, subtract, emboss text, cut, hollow, repair, and measure it',
+  shape: 'shape a part further: push and pull faces, mirror, pattern, split, subtract, emboss text, cut, hollow, repair, paint it in filaments, and measure it',
   edit: 'change a part already built: open it, its timeline and steps, its sketches, pick faces and edges, change its holes, undo and redo',
   app: 'slicing, settings and profiles, the project and plate, the knowledge base, the app commands, and sending a sliced plate to a printer',
   print: 'the printers: their state, history and cameras, sending, pausing and canceling prints, spools, fleets and schedules, setting printers up, and their commands',
@@ -67,7 +70,7 @@ export const TURN_SET_WORDS: Record<TurnSet, string> = {
 /** The same sets in fewer words, for the local description of pilot.tools. */
 const TURN_SET_SHORT: Record<TurnSet, string> = {
   build: 'a new part (dimension sheet, plan, sketches extruded, revolved, lofted or swept, holes, fillets, chamfers, shells, booleans, reading it back)',
-  shape: 'push and pull faces, mirror, pattern, split, subtract, emboss text, cut, hollow, repair, measure',
+  shape: 'push and pull faces, mirror, pattern, split, subtract, emboss text, cut, hollow, repair, paint, measure',
   edit: 'a built part (open it, timeline, steps, sketches, face and edge picks, undo, redo)',
   app: 'slicing, settings, profiles, project, plate, knowledge base, app commands, sending a sliced plate to a printer',
   print: 'printers (state, history, cameras, sending, pausing and canceling prints, spools, fleets, schedules, setup, commands)',
@@ -81,7 +84,7 @@ const isDesign = (t: GroupedTool): boolean => toolGroupOf(t) === 'design' && (t.
  */
 export function turnSetsOf(t: GroupedTool): ReadonlySet<TurnSet> | 'every' {
   if (EVERY_TURN.has(t.name)) return 'every'
-  if (FILAMENTS.has(t.name)) return new Set<TurnSet>(['shape', 'app'])
+  if (FILAMENTS.has(t.name) || PAINT.has(t.name)) return new Set<TurnSet>(['shape', 'app'])
   const sets = new Set<TurnSet>()
   if (BUILD.has(t.name)) sets.add('build')
   if (SHAPE.has(t.name)) sets.add('shape')

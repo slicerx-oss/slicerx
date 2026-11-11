@@ -7,7 +7,7 @@ import { withPlaced, type History } from '@slicerx/cad-history'
 import { get, set, type PlateEntry } from '../state/store'
 
 /** What a modeling job makes: the geometry and, when it changes them, the history, kept dimensions, colors and placement. */
-export type Made = Pick<PlateEntry, 'handle' | 'parts'> & Partial<Pick<PlateEntry, 'history' | 'dimensions' | 'colors' | 'transform'>>
+export type Made = Pick<PlateEntry, 'handle' | 'parts'> & Partial<Pick<PlateEntry, 'history' | 'dimensions' | 'colors' | 'transform' | 'paint'>>
 
 /**
  * A job's history with the landing moves the object has as the job writes (History.placed): a design host may have

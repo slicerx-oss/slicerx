@@ -2,7 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // multicolor_assign: plan which filament goes to which region or height band,
 // in what order the colors change, and how to keep the purge small. Planner
-// only: the core has no painting API yet, so nothing here is applied.
+// only: nothing here is applied. A design is painted with paint.preview and
+// paint.apply (a height band or faces in a filament), and its filaments set
+// with project.add_filament and project.set_filament.
 import type { Cell, SettingValue, ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { defineSkill } from '../../src/tool'
@@ -17,15 +19,15 @@ const region = z.object({
   toZ: z.number().min(0).optional().describe('Height band end in mm'),
 })
 
-const PAINT_GAP = 'The core has no painting API yet, so mimir cannot paint regions or set color changes in the project. Apply this plan by hand in the slicer, or wait for the paint API.'
+const PAINT_HOW = 'This is a plan; nothing is painted yet. On a design, paint each band or region with paint.preview and then paint.apply (a height band, or faces facing a direction, in the filament), after setting the filaments with project.add_filament and project.set_filament. On any other object, paint it with the paint brush.'
 
 export function createMulticolorAssign() {
   return defineSkill({
     name: 'multicolor_assign',
-    version: '0.1.0',
+    version: '0.2.0',
     permission: 'slice',
     description:
-      'Plan a multicolor print: which filament each region or height band gets, the order of color changes with layer numbers for height bands, whether the printer has enough slots and can feed each material, and how to cut purge waste (flush multiplier, prime tower). This is a plan only. The core has no paint API yet, so nothing is applied to the project and you must say so.',
+      'Plan a multicolor print: which filament each region or height band gets, the order of color changes with layer numbers for height bands, whether the printer has enough slots and can feed each material, and how to cut purge waste (flush multiplier, prime tower). This is a plan only and changes nothing. To color a design, paint it with paint.preview and paint.apply (a height band such as below a waterline, or faces facing a direction) after setting its filaments with project.add_filament and project.set_filament.',
     input: z.object({
       objectId: z.string().optional().describe('Object to color; defaults to the first object'),
       regions: z.array(region).min(2).max(12).describe('Each region or height band with its filament'),
@@ -95,16 +97,16 @@ export function createMulticolorAssign() {
       }
       const rows: Cell[][] = i.regions.map((r) => [oneLine(r.region, 40), `${r.filament.material} ${r.filament.color}`, r.fromZ === undefined && r.toZ === undefined ? 'painted region' : `${r.fromZ ?? 0} to ${r.toZ ?? object?.bboxMm[2] ?? '?'} mm`])
       const display: ToolDisplay[] = [
-        { kind: 'text', text: PAINT_GAP },
+        { kind: 'text', text: PAINT_HOW },
         { kind: 'table', head: ['region', 'filament', 'where'], rows },
       ]
       if (order.length) display.push({ kind: 'table', head: ['change at layer', 'height mm', 'switch to'], rows: order.map((o) => [String(o.layer), String(o.z), o.to]) })
       if (warnings.length) display.push({ kind: 'log', lines: warnings.map((text) => ({ text, tone: 'warn' as const })) })
       return {
-        summary: `Plan only, nothing applied: ${filaments.length} filaments, ${changeCount} height changes${painted.length ? `, ${painted.length} painted regions` : ''}. Applying needs the paint API`,
+        summary: `Plan only, nothing applied: ${filaments.length} filaments, ${changeCount} height changes${painted.length ? `, ${painted.length} painted regions` : ''}. Paint a design with paint.preview and paint.apply`,
         output: {
           applied: false,
-          blocked: PAINT_GAP,
+          howToApply: PAINT_HOW,
           object: object ? { id: object.id, name: object.name, bboxMm: object.bboxMm } : null,
           layerHeight: lh,
           filaments,

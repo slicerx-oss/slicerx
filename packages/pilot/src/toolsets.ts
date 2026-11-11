@@ -43,6 +43,10 @@ const BY_NAME: Record<string, Toolset> = {
   mesh_analyze: 'mesh',
   mesh_repair: 'mesh',
   multicolor_assign: 'mesh',
+  // painting a design in filaments goes with the project's filament tools (project.add_filament and set_filament)
+  'paint.preview': 'project',
+  'paint.apply': 'project',
+  'paint.regions': 'project',
   'parts.lookup': 'kb',
   material_recommend: 'kb',
   calibrate: 'calibration',

@@ -3,7 +3,8 @@
 // The open project's filaments in the mimir tab: add one after the last and change one's type or color, as the filament
 // rail and its dialog do, under the same names and inputs as the server's project.add_filament and project.set_filament.
 // Each answers with the filament and every filament of the project as the rail now shows them, and the parts on screen
-// take the new colors. The part makers that take a filament slot say when it was past the project's last filament.
+// take the new colors. The part makers that take a filament slot, and color paint, say when it was past the project's
+// last filament.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { FILAMENT_TYPES, filamentColor, filamentType, MAX_FILAMENTS } from './filaments'
@@ -105,22 +106,40 @@ export function filamentTools(filaments: FilamentList): PilotTool<never>[] {
 }
 
 /**
- * `tools` with the part makers saying when their slot was past the project's last filament: the project now has that
- * filament (and any before it it lacked), with the default type and color, and the answer names them and how to set
- * them, so the colors on screen are never left to chance.
+ * `tools` with the part makers, and a color paint step, saying when their filament was past the project's last: the
+ * project now has that filament (and any before it it lacked), with the default type and color, and the answer names
+ * them and how to set them, so the colors on screen are never left to chance. A paint preview changes nothing, so the
+ * filament is added when its preview is applied.
  */
 export function withNewFilaments(tools: readonly PilotTool<never>[], filaments: FilamentList): PilotTool<never>[] {
+  // the filament each color preview paints, by preview id, for when it is applied
+  const painting = new Map<string, number>()
   return tools.map((t) => {
-    if (!SLOT_TOOLS.has(t.name)) return t
+    if (t.name === 'paint.preview') {
+      const run = t.run.bind(t)
+      return {
+        ...t,
+        async run(input: never, ctx: Parameters<typeof t.run>[1]) {
+          const out = await run(input, ctx)
+          const i = input as { layer?: unknown; state?: unknown }
+          const id = (out.output as { preview?: unknown } | undefined)?.preview
+          if (out.ok !== false && typeof id === 'string' && i.layer === 'color' && typeof i.state === 'number' && i.state > 0) painting.set(id, i.state)
+          return out
+        },
+      }
+    }
+    if (!SLOT_TOOLS.has(t.name) && t.name !== 'paint.apply') return t
     const run = t.run.bind(t)
     return {
       ...t,
       async run(input: never, ctx: Parameters<typeof t.run>[1]) {
         const before = filaments.list().length
+        const preview = t.name === 'paint.apply' ? String((input as { preview?: unknown } | null)?.preview ?? '') : ''
         const out = await run(input, ctx)
-        const slot = (input as { slot?: unknown } | null)?.slot
+        const slot = preview ? painting.get(preview) : (input as { slot?: unknown } | null)?.slot
+        if (preview) painting.delete(preview)
         if (out.ok === false || typeof slot !== 'number' || slot <= before) return out
-        // the part already prints in it; adding it keeps it on the rail even if that part goes
+        // the part already prints in it (or is painted with it); adding it keeps it on the rail even if that part goes
         for (let s = before + 1; s <= slot; s++) filaments.add(s, {})
         const added = filaments.list().filter((f) => f.slot > before && f.slot <= slot)
         if (!added.length) return out
