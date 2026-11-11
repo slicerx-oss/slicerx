@@ -7,16 +7,19 @@
 #   scripts/ci/apt-install.sh [--cache DIR] <package>...
 #
 # 1. Packages already installed are left out; with none left there is nothing to do, and the mirror is never asked.
-# 2. With --cache, the .deb files in DIR (kept by an earlier run, restored by actions/cache) of packages not yet
-#    installed are installed with dpkg, which needs no network. When that leaves nothing missing, it is done.
-# 3. Otherwise the mirror: one apt-get update, then up to three tries of apt-get install, each cut off after 150 s, so a
-#    hung connection is dropped and retried on a new one instead of waiting out the job's limit (one runner took 27 s
-#    and another 1254 s on the same step started at the same moment). apt itself retries a failed download three times
-#    and gives up on a silent connection after 30 s. When the update fails (the runner could not reach or resolve the
-#    mirror), the update and the install are tried once more on SX_APT_FALLBACK (by default
-#    http://mirrors.edge.kernel.org/ubuntu; set it empty for none). The packages are signed by Ubuntu either way, and
-#    apt checks them. With --cache, the files it downloads are kept in DIR for the next run.
-# The time before and after each command is printed, so a stall shows which one hung.
+# 2. With --cache, the .deb files in DIR (kept by an earlier run or seeded by apt-seed.sh, restored by actions/cache)
+#    are installed with dpkg, which needs no network: those of packages not yet installed, and those newer than the
+#    installed version (the upgrades apt would make for them; never an older one). When that leaves nothing missing,
+#    it is done.
+# 3. Otherwise the mirror: apt-get update, cut off after 60 s. When it fails (the runner could not reach or resolve the
+#    mirror), the update is tried once more on SX_APT_FALLBACK (by default http://mirrors.edge.kernel.org/ubuntu; set it
+#    empty for none), also for 60 s. With lists from either, up to three tries of apt-get install, each cut off after
+#    150 s, so a hung connection is dropped and retried on a new one instead of waiting out the job's limit (one runner
+#    took 27 s and another 1254 s on the same step started at the same moment); apt itself retries a failed download
+#    three times and gives up on a silent connection after 30 s. The packages are signed by Ubuntu either way, and apt
+#    checks them. With --cache, the files it downloads are kept in DIR for the next run.
+# With no lists from either mirror the install could only time out, so it stops there, in about 2 minutes, with one
+# line saying so. The time before and after each command is printed, so a stall shows which one hung.
 #
 # A cold cache during a mirror outage still needs a mirror: it fails when the fallback cannot be reached either.
 set -uo pipefail
@@ -33,6 +36,7 @@ sudo=""
 opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30)
 stamp() { echo "$(date -u +%H:%M:%S) $*"; }
 installed() { [ "$(dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | cut -c1-2)" = ii ]; }
+installed_version() { dpkg-query -W -f='${Version}' "$1" 2>/dev/null; }
 missing() {
   local p
   for p in "$@"; do installed "$p" || echo "$p"; done
@@ -47,14 +51,14 @@ stamp "${#left[@]} of $# packages to install: ${left[*]}"
 
 if [ -n "$cache" ]; then
   mkdir -p "$cache/partial"
-  # the cached files of packages this runner does not have yet (the rest are on its image already), the newest of each
-  # when a cache kept from an older image has two
+  # the cached files of packages this runner does not have yet, or has at an older version; the newest of each when a
+  # cache kept from an older image has two
   declare -A newest=() version=()
   for f in "$cache"/*.deb; do
     [ -e "$f" ] || continue
     p=$(dpkg-deb -f "$f" Package)
     v=$(dpkg-deb -f "$f" Version)
-    installed "$p" && continue
+    installed "$p" && ! dpkg --compare-versions "$v" gt "$(installed_version "$p")" && continue
     if [ -z "${newest[$p]:-}" ] || dpkg --compare-versions "$v" gt "${version[$p]}"; then
       newest[$p]=$f
       version[$p]=$v
@@ -115,22 +119,19 @@ fall_back() {
 update() {
   stamp "apt-get update"
   # --error-on=any: a list that did not download fails the update, where apt would only warn
-  timeout 120 $sudo apt-get "${opts[@]}" update --error-on=any
+  timeout 60 $sudo apt-get "${opts[@]}" update --error-on=any
 }
 
 if update; then
   stamp "apt-get update done"
-  install && { keep; exit 0; }
+elif stamp "apt-get update failed (status $?)" && fall_back && update; then
+  stamp "apt-get update done on the fallback mirror"
 else
-  stamp "apt-get update failed (status $?)"
-  if fall_back && update; then
-    stamp "apt-get update done on the fallback mirror"
-    install && { keep; exit 0; }
-  else
-    stamp "no package lists from a mirror, trying the install on the lists the runner has"
-    install && { keep; exit 0; }
-  fi
+  keep
+  echo "apt-install: no package mirror answered (the runner's or the fallback) and the cache does not hold ${left[*]}" >&2
+  exit 1
 fi
+install && { keep; exit 0; }
 keep
 echo "apt-install: ${left[*]} did not install" >&2
 exit 1

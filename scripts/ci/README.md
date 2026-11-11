@@ -78,19 +78,30 @@ split the same way into `core-a` and `core-b`, and the desktop shell's clippy an
 ### System packages on hosted Linux
 
 `apt-install.sh` installs Ubuntu packages so a hosted job gets by without the package mirror when it can. Packages
-already on the runner are left out. Each job keeps the .deb files it downloaded with `actions/cache`, keyed on the
-runner image (`ImageOS` and `ImageVersion`), and the next run on that image installs them with `dpkg` and no network.
-Otherwise it asks the mirror: one `apt-get update`, then up to three `apt-get install` tries of 150 s each, and when
-the update fails, both once more on a fallback mirror (`SX_APT_FALLBACK`, by default `mirrors.edge.kernel.org`).
-`apt-desktop-libs.sh` (the desktop shell's libraries) and `playwright-chromium.sh` (Chromium for the browser tests, in
-place of `playwright install --with-deps`, which runs `apt-get update` every time) go through it.
-`playwright-chromium.sh` asks Playwright which of its system packages are missing (a simulated install, no network) and
-installs only those; on a self-hosted runner it installs only the browser. `apt-install.test.mjs` runs both scripts
-against stand-ins for apt, dpkg and pnpm.
+already on the runner are left out. The .deb files come from a cache kept with `actions/cache`, keyed on the runner
+image (`ImageOS` and `ImageVersion`), and `dpkg` installs them with no network: the files of packages not yet
+installed, and upgrades newer than the installed version. Otherwise it asks the mirror: `apt-get update` cut off after
+60 s, once more on a fallback mirror when it fails (`SX_APT_FALLBACK`, by default `mirrors.edge.kernel.org`), then up
+to three `apt-get install` tries of 150 s each. With no lists from either mirror it stops in about 2 minutes with one
+line, since the install could only time out. `apt-desktop-libs.sh` (the desktop shell's libraries) and
+`playwright-chromium.sh` (Chromium for the browser tests, in place of `playwright install --with-deps`, which runs
+`apt-get update` every time) go through it. `playwright-chromium.sh` asks Playwright which of its system packages are
+missing (a simulated install, no network) and installs only those; on a self-hosted runner it installs only the
+browser.
 
-During a mirror outage a warm cache, or a runner that already has every package, passes with no mirror. A cold cache
-(the first run on a new runner image, or a changed package list) still needs a mirror, and fails when neither the
-runner's mirrors nor the fallback can be reached.
+The `apt-seed` workflow fills those caches from a self-hosted Linux runner, which can reach a mirror when the hosted
+runners cannot. A hosted job on each image ci.yml uses reports its image and package status; `apt-seed.sh` on the
+self-hosted runner downloads the .deb files that image needs (resolved against its status, with apt state of its own,
+so nothing on the runner changes); and a hosted job on the same image saves them under the key the jobs restore. It
+runs daily, on a push to main that changes the package lists, and by hand. On main, its entries are in the cache scope
+every pull request and merge group reads. By hand, or with the repository variable `SX_SEED_BROWSER` set to `true`, it
+also seeds Playwright's Chromium. `apt-install.test.mjs` runs the three scripts against stand-ins for apt, dpkg and
+pnpm.
+
+During a mirror outage a seeded or warm cache, or a runner that already has every package, passes with no mirror. A
+cold cache (a hosted image newer than the last seed, or a changed package list) still needs a mirror. It fails in about
+2 minutes when neither the runner's mirrors nor the fallback can be reached. A newer hosted image first restores the
+latest entry of an older one, which installs the files that still fit.
 
 `node scripts/ci/rust-part-coverage.mjs` proves every test file of every package is in exactly one part and that the
 matrices in `ci.yml` have as many parts as the split uses. The `rust` job runs it on every pull request, so a change to
