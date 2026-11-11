@@ -98,6 +98,7 @@ Behavior:
 - Where chamfered or filleted edges meet at a corner, the pieces meet cleanly and the mesh stays watertight. Two edges meeting with the third edge left sharp give a mitered corner.
 - A fillet corner where three filleted edges meet gets a spherical patch when the three edges have the same radius, are all convex or all concave, and no two faces at the corner meet at less than 90 degrees. Any other three edge fillet corner fails in words: `edges: the corner at (x, y, z) joins three fillets this tool cannot blend; leave one of its edges out or make it a chamfer`.
 - An edge that ends against a wall stops at the wall.
+- An edge listed more than once (the same ends either way round, or the same round edge) is cut once; `notes` says so, as `edge 2 is edge 1 again and was taken once`, and `refs` still has one entry per edge asked for.
 
 Errors, all plain sentences:
 - `edges: pick at least one edge`

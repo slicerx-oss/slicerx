@@ -1434,7 +1434,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const fillet = defineTool({
     name: 'geom.fillet',
-    version: '1.4.0',
+    version: '1.4.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -1457,7 +1457,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const chamfer = defineTool({
     name: 'geom.chamfer',
-    version: '1.4.0',
+    version: '1.4.1',
     source: 'command',
     permission: 'slice',
     description:
