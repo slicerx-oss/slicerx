@@ -1,47 +1,150 @@
 {
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-11T21:41:51.075Z",
+ "capturedAt": "2026-11-11T22:56:25.024Z",
  "steps": [
   {
    "calls": [
     {
      "name": "pilot.sheet",
      "args": {
-      "title": "Rectangle-to-round duct with 90 degree bend",
+      "title": "Rectangle to round bend duct",
       "views": [
        "front",
        "side",
        "iso"
       ],
+      "part": [
+       {
+        "kind": "sweep",
+        "profile": {
+         "points": [
+          [
+           -50,
+           -25
+          ],
+          [
+           50,
+           -25
+          ],
+          [
+           50,
+           25
+          ],
+          [
+           -50,
+           25
+          ]
+         ]
+        },
+        "path": [
+         [
+          0,
+          0,
+          0
+         ],
+         [
+          0,
+          0,
+          120
+         ],
+         [
+          120,
+          0,
+          120
+         ]
+        ],
+        "round": 60,
+        "end_profile": {
+         "loops": [
+          {
+           "type": "circle",
+           "center": [
+            0,
+            0
+           ],
+           "diameterMm": 100
+          }
+         ]
+        }
+       }
+      ],
       "dims": [
        {
         "key": "inlet_width",
-        "label": "Inlet width (rectangle, Y)",
+        "label": "Inlet rectangle width (X)",
         "value": 100,
         "unit": "mm",
-        "source": "asked"
+        "source": "asked",
+        "at": {
+         "a": [
+          -50,
+          -25,
+          0
+         ],
+         "b": [
+          50,
+          -25,
+          0
+         ]
+        }
        },
        {
         "key": "inlet_height",
-        "label": "Inlet height (rectangle, Z)",
+        "label": "Inlet rectangle height (Y)",
         "value": 50,
         "unit": "mm",
-        "source": "asked"
+        "source": "asked",
+        "at": {
+         "a": [
+          50,
+          -25,
+          0
+         ],
+         "b": [
+          50,
+          25,
+          0
+         ]
+        }
        },
        {
         "key": "outlet_diameter",
-        "label": "Outlet diameter (round)",
+        "label": "Round outlet diameter",
         "value": 100,
         "unit": "mm",
-        "source": "asked"
+        "source": "asked",
+        "at": {
+         "a": [
+          120,
+          -50,
+          120
+         ],
+         "b": [
+          120,
+          50,
+          120
+         ]
+        }
        },
        {
         "key": "wall",
         "label": "Wall thickness",
         "value": 2,
         "unit": "mm",
-        "source": "asked"
+        "source": "asked",
+        "at": {
+         "a": [
+          50,
+          0,
+          0
+         ],
+         "b": [
+          48,
+          0,
+          0
+         ]
+        }
        },
        {
         "key": "bend_angle",
@@ -49,28 +152,81 @@
         "value": 90,
         "unit": "deg",
         "source": "asked",
-        "kind": "angle"
+        "at": {
+         "c": [
+          0,
+          0,
+          120
+         ],
+         "from": [
+          0,
+          0,
+          1
+         ],
+         "to": [
+          1,
+          0,
+          0
+         ],
+         "r": 30
+        }
+       },
+       {
+        "key": "inlet_leg",
+        "label": "Straight inlet leg length",
+        "value": 60,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          60
+         ]
+        }
        },
        {
         "key": "bend_radius",
         "label": "Bend centerline radius",
         "value": 60,
         "unit": "mm",
-        "source": "guess"
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          60
+         ],
+         "b": [
+          60,
+          0,
+          120
+         ]
+        }
        },
        {
-        "key": "inlet_run",
-        "label": "Straight run at inlet",
-        "value": 40,
+        "key": "outlet_leg",
+        "label": "Straight outlet leg length",
+        "value": 60,
         "unit": "mm",
-        "source": "guess"
-       },
-       {
-        "key": "outlet_run",
-        "label": "Straight run at outlet",
-        "value": 40,
-        "unit": "mm",
-        "source": "guess"
+        "source": "guess",
+        "at": {
+         "a": [
+          60,
+          0,
+          120
+         ],
+         "b": [
+          120,
+          0,
+          120
+         ]
+        }
        }
       ]
      }
@@ -79,97 +235,48 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Confirmed as shown. It showed as a list with no drawing: give part (the part as it will be built) or design on the next sheet, so each row gets its callout\",\"result\":{\"confirmed\":true,\"values\":{\"inlet_width\":100,\"inlet_height\":50,\"outlet_diameter\":100,\"wall\":2,\"bend_angle\":90,\"bend_radius\":60,\"inlet_run\":40,\"outlet_run\":40},\"changed\":[]}}"
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"inlet_width\":100,\"inlet_height\":50,\"outlet_diameter\":100,\"wall\":2,\"bend_angle\":90,\"inlet_leg\":60,\"bend_radius\":60,\"outlet_leg\":60},\"changed\":[]}}"
    ],
    "calls": [
     {
      "name": "design.plan",
      "args": {
-      "part": "Rect-to-round duct",
+      "part": "Rect to round bend duct",
       "units": "mm",
       "features": [
        {
-        "name": "Outer duct (sweep)",
+        "name": "Outer sweep (bend)",
+        "kind": "sweep",
         "sizes": {
          "inlet_width": 100,
          "inlet_height": 50,
+         "outlet_diameter": 100,
+         "inlet_leg": 60,
          "bend_radius": 60,
-         "bend_angle": 90,
-         "inlet_run": 40,
-         "outlet_run": 40,
-         "outlet_diameter": 100
-        },
-        "kind": "sweep"
+         "outlet_leg": 60,
+         "bend_angle": 90
+        }
        },
        {
-        "name": "Bore (sweep cut)",
+        "name": "Bore sweep (cut)",
+        "kind": "cut",
         "sizes": {
-         "bore_width": 96,
-         "bore_height": 46,
-         "bore_diameter": 96,
-         "wall": 2
-        },
-        "kind": "sweep cut"
+         "wall": 2,
+         "inner_width": 96,
+         "inner_height": 46,
+         "outlet_bore_diameter": 96
+        }
        }
       ],
       "assumptions": [
-       "Inlet rectangle 100 wide (Y) by 50 high (Z), centered on the path, so the 50 mm side is in the bend plane.",
-       "Path: 40 mm straight along +X, 90 degree bend of 60 mm centerline radius upward, 40 mm straight up; outlet circle faces up.",
-       "Bore is the outer shape offset inward by the 2 mm wall, open at both ends.",
-       "Overall size about 150 by 100 by 125 mm."
+       "Inlet rectangle sits on the bed (open bottom), 100 wide along X and 50 along Y, and the duct rises vertically.",
+       "The bend turns 90 degrees in the XZ plane and the outlet faces +X, horizontal.",
+       "Inlet leg, bend centerline radius and outlet leg are 60 mm each (guesses, confirmed on the sheet).",
+       "Open at both ends: no end caps; the bore is cut 1 mm past each end.",
+       "Outlet is a 100 mm round, so the section morphs from rectangle to circle along the bend."
       ],
       "questions": [
-       "Are the bend radius and straight runs right, or do you want different lengths?"
-      ],
-      "scale": "1",
-      "detail": "basic"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"scale: scale is N of 1:N, such as 25\"]}"
-   ],
-   "calls": [
-    {
-     "name": "design.plan",
-     "args": {
-      "part": "Rect-to-round duct",
-      "units": "mm",
-      "features": [
-       {
-        "name": "Outer duct (sweep)",
-        "sizes": {
-         "inlet_width": 100,
-         "inlet_height": 50,
-         "bend_radius": 60,
-         "bend_angle": 90,
-         "inlet_run": 40,
-         "outlet_run": 40,
-         "outlet_diameter": 100
-        },
-        "kind": "sweep"
-       },
-       {
-        "name": "Bore (sweep cut)",
-        "sizes": {
-         "bore_width": 96,
-         "bore_height": 46,
-         "bore_diameter": 96,
-         "wall": 2
-        },
-        "kind": "sweep cut"
-       }
-      ],
-      "assumptions": [
-       "Inlet rectangle 100 wide (Y) by 50 high (Z), centered on the path, so the 50 mm side is in the bend plane.",
-       "Path: 40 mm straight along +X, 90 degree bend of 60 mm centerline radius upward, 40 mm straight up; outlet circle faces up.",
-       "Bore is the outer shape offset inward by the 2 mm wall, open at both ends.",
-       "Overall size about 150 by 100 by 125 mm."
-      ],
-      "questions": [
-       "Are the bend radius and straight runs right, or do you want different lengths?"
+       "Should the inlet sit flat on the bed or be printed with the bend lying flat (orientation can be changed later)?"
       ],
       "detail": "basic"
      }
@@ -178,29 +285,23 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mwcn8ji52djc7\",\"accepted\":true}}"
+    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mwcpx3ai28t37\",\"accepted\":true}}"
    ],
    "calls": [
     {
      "name": "design.new",
      "args": {
-      "name": "Rect-to-round duct"
+      "name": "Rect to round bend duct"
      }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Started Rect-to-round duct (obj_mwcn8no3d8)\",\"result\":{\"design\":\"obj_mwcn8no3d8\",\"name\":\"Rect-to-round duct\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
-   ],
-   "calls": [
+    },
     {
      "name": "geom.sweep",
      "args": {
       "operation": "new",
-      "design": "obj_mwcn8no3d8",
-      "feature": "Outer duct (sweep)",
+      "design": "Rect to round bend duct",
+      "feature": "Outer sweep (bend)",
       "name": "Duct",
+      "slot": 1,
       "profile": {
        "loops": [
         {
@@ -223,162 +324,24 @@
           ]
          ]
         }
-       ],
-       "frame": {
-        "origin": [
-         0,
-         0,
-         25
-        ],
-        "normal": [
-         1,
-         0,
-         0
-        ],
-        "u": [
-         0,
-         1,
-         0
-        ],
-        "v": [
-         0,
-         0,
-         1
-        ]
-       }
-      },
-      "path": {
-       "points": [
-        [
-         0,
-         0,
-         25
-        ],
-        [
-         100,
-         0,
-         25
-        ],
-        [
-         100,
-         0,
-         125
-        ]
        ]
       },
-      "round": 60,
-      "end_profile": {
-       "loops": [
-        {
-         "type": "circle",
-         "center": [
-          0,
-          0
-         ],
-         "diameterMm": 100
-        }
-       ],
-       "frame": {
-        "origin": [
-         100,
-         0,
-         125
-        ],
-        "normal": [
-         0,
-         0,
-         1
-        ],
-        "u": [
-         1,
-         0,
-         0
-        ],
-        "v": [
-         0,
-         1,
-         0
-        ]
-       }
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"end_profile.frame: the end loop is drawn on the profile's own plane; leave its frame out. The engine refused this step. Read why, then change the step or build it another way. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
-   ],
-   "calls": [
-    {
-     "name": "geom.sweep",
-     "args": {
-      "operation": "new",
-      "design": "obj_mwcn8no3d8",
-      "feature": "Outer duct (sweep)",
-      "name": "Duct",
-      "profile": {
-       "loops": [
-        {
-         "points": [
-          [
-           -50,
-           -25
-          ],
-          [
-           50,
-           -25
-          ],
-          [
-           50,
-           25
-          ],
-          [
-           -50,
-           25
-          ]
-         ]
-        }
-       ],
-       "frame": {
-        "origin": [
-         0,
-         0,
-         25
-        ],
-        "normal": [
-         1,
-         0,
-         0
-        ],
-        "u": [
-         0,
-         1,
-         0
-        ],
-        "v": [
-         0,
-         0,
-         1
-        ]
-       }
-      },
       "path": {
        "points": [
         [
          0,
          0,
-         25
+         0
         ],
         [
-         100,
          0,
-         25
+         0,
+         120
         ],
         [
-         100,
+         120,
          0,
-         125
+         120
         ]
        ]
       },
@@ -401,181 +364,17 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Swept: step 1, Sweep, changing shape. The part was off the bed, so it moved to the plate by (53, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"obj_mwcn8no3d8\",\"name\":\"Rect-to-round duct\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smwcn8qba1\",\"name\":\"Sweep, changing shape\",\"op\":\"sketch.sweep\",\"part\":0,\"feature\":\"Outer duct (sweep)\",\"state\":\"done\"},\"minMm\":[0,-50,-12.5],\"sizeMm\":[150,100,137.5],\"volumeMm3\":1292357.29,\"parts\":[{\"index\":0,\"name\":\"Duct\",\"slot\":1,\"triangles\":2490,\"minMm\":[0,-50,-12.5],\"sizeMm\":[150,100,137.5],\"volumeMm3\":1292357.29}],\"placedMm\":[53,128],\"landed\":\"The part was off the bed, so it moved to the plate by (53, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.info",
-     "args": {
-      "design": "obj_mwcn8no3d8"
-     }
-    },
-    {
-     "name": "geom.measure",
-     "args": {
-      "design": "obj_mwcn8no3d8",
-      "snap_mm": 0,
-      "section": {
-       "part": 0,
-       "plane": {
-        "origin": [
-         0,
-         0,
-         5
-        ],
-        "normal": [
-         0,
-         0,
-         1
-        ]
-       }
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"1 part, closed\",\"result\":{\"design\":\"obj_mwcn8no3d8\",\"parts\":[{\"part\":0,\"name\":\"Duct\",\"slot\":1,\"areaMm2\":73427.44804742999,\"bounds\":{\"max\":[150,50,125],\"min\":[0,-50,-12.5]},\"components\":1,\"edges\":{\"boundaryEdges\":0,\"nonManifoldEdges\":0,\"flippedEdges\":0},\"triangles\":2490,\"vertices\":1247,\"volumeMm3\":1292357.2898885,\"watertight\":true}]}}",
-    "{\"ok\":true,\"summary\":\"Section of part 0 (Duct): 13091.344 mm2 in 1 region\",\"result\":{\"section\":{\"design\":\"obj_mwcn8no3d8\",\"part\":0,\"area_mm2\":13091.344,\"outline_mm\":449.25,\"regions\":1,\"holes\":0,\"loops\":[{\"outer\":[[0,24.109,5],[0,23.25,5],[0,18.828,5],[0,18.243,5],[0,17.859,5],[0,14.253,5],[0,11.678,5],[0,10.204,5],[0,6.232,5],[0,5.155,5],[0,4.115,5],[0,-0.676,5],[0,-1.531,5],[0,-6.094,5],[0,-7.431,5],[0,-8.768,5],[0,-10.959,5],[0,-12.014,5],[0,-13.069,5],[0,-17.202,5],[0,-19.043,5],[0,-20.063,5],[0,-26.351,5],[0,-27.091,5],[0,-29.681,5],[0,-31.226,5],[0,-34.916,5],[0,-35.869,5],[0,-42.389,5],[0,-42.781,5],[0,-47.207,5],[0,-47.422,5],[0,-47.89,5],[0,-48.945,5],[0,-50,5],[19.517,-49.602,5],[92.213,-48.326,5],[114.321,-47.924,5],[120,-47.837,5],[120.08,-47.818,5],[120.081,-47.818,5],[121.377,-47.496,5],[121.391,-47.489,5],[122.665,-47.151,5],[122.692,-47.136,5],[123.943,-46.782,5],[123.982,-46.759,5],[125.21,-46.389,5],[125.26,-46.358,5],[125.838,-45.347,5],[125.892,-45.312,5],[126.459,-44.291,5],[126.518,-44.251,5],[127.075,-43.22,5],[127.137,-43.175,5],[127.683,-42.135,5],[127.748,-42.085,5],[128.282,-41.036,5],[128.351,-40.98,5],[128.873,-39.923,5],[128.944,-39.861,5],[129.454,-38.796,5],[129.527,-38.728,5],[130.024,-37.655,5],[130.099,-37.582,5],[130.582,-36.5,5],[130.659,-36.421,5],[131.129,-35.331,5],[131.207,-35.247,5],[131.663,-34.149,5],[131.741,-34.059,5],[132.183,-32.954,5],[132.261,-32.858,5],[132.689,-31.746,5],[132.767,-31.645,5],[133.179,-30.526,5],[133.257,-30.419,5],[133.654,-29.293,5],[133.731,-29.181,5],[134.113,-28.049,5],[134.189,-27.931,5],[134.554,-26.793,5],[134.629,-26.67,5],[134.979,-25.525,5],[135.051,-25.398,5],[135.384,-24.248,5],[135.455,-24.115,5],[135.772,-22.96,5],[135.84,-22.823,5],[136.14,-21.662,5],[136.205,-21.52,5],[136.488,-20.355,5],[136.551,-20.209,5],[136.816,-19.039,5],[136.876,-18.889,5],[137.123,-17.715,5],[137.18,-17.561,5],[137.41,-16.383,5],[137.462,-16.225,5],[137.674,-15.043,5],[137.723,-14.883,5],[137.918,-13.698,5],[137.962,-13.534,5],[138.138,-12.345,5],[138.179,-12.179,5],[138.337,-10.988,5],[138.373,-10.819,5],[138.513,-9.625,5],[138.544,-9.454,5],[138.665,-8.258,5],[138.692,-8.085,5],[138.795,-6.888,5],[138.817,-6.713,5],[138.901,-5.514,5],[138.919,-5.338,5],[138.984,-4.138,5],[138.997,-3.96,5],[139.043,-2.76,5],[139.051,-2.582,5],[139.079,-1.38,5],[139.082,-1.202,5],[139.091,0,5],[139.088,0.178,5],[139.079,1.38,5],[139.072,1.558,5],[139.043,2.76,5],[139.031,2.937,5],[138.984,4.138,5],[138.967,4.315,5],[138.901,5.514,5],[138.879,5.69,5],[138.795,6.888,5],[138.768,7.062,5],[138.665,8.258,5],[138.634,8.431,5],[138.513,9.625,5],[138.476,9.796,5],[138.337,10.988,5],[138.296,11.156,5],[138.138,12.345,5],[138.093,12.511,5],[137.918,13.698,5],[137.868,13.86,5],[137.674,15.043,5],[137.621,15.203,5],[137.41,16.383,5],[137.353,16.538,5],[137.123,17.715,5],[137.063,17.867,5],[136.816,19.039,5],[136.752,19.187,5],[136.488,20.355,5],[136.421,20.499,5],[136.14,21.662,5],[136.07,21.802,5],[135.772,22.96,5],[135.699,23.095,5],[135.384,24.248,5],[135.31,24.378,5],[134.979,25.525,5],[134.902,25.651,5],[134.554,26.793,5],[134.476,26.913,5],[134.113,28.049,5],[134.034,28.164,5],[133.654,29.293,5],[133.574,29.403,5],[133.179,30.526,5],[133.098,30.63,5],[132.689,31.746,5],[132.607,31.845,5],[132.183,32.954,5],[132.102,33.047,5],[131.663,34.149,5],[131.582,34.237,5],[131.129,35.331,5],[131.049,35.413,5],[130.582,36.5,5],[130.504,36.576,5],[130.024,37.655,5],[129.947,37.725,5],[129.454,38.796,5],[129.378,38.861,5],[128.873,39.923,5],[128.8,39.983,5],[128.282,41.036,5],[128.212,41.091,5],[127.683,42.135,5],[127.616,42.184,5],[127.075,43.22,5],[127.011,43.264,5],[126.459,44.291,5],[126.4,44.329,5],[125.838,45.347,5],[125.782,45.381,5],[125.21,46.389,5],[125.16,46.418,5],[123.943,46.782,5],[123.904,46.803,5],[122.665,47.151,5],[122.638,47.164,5],[121.377,47.496,5],[121.363,47.503,5],[120.08,47.818,5],[120.079,47.819,5],[120,47.837,5],[92.213,48.326,5],[0,50,5],[0,49.66,5],[0,47.392,5],[0,46.829,5],[0,46.016,5],[0,42.887,5],[0,40.299,5],[0,39.64,5],[0,37.162,5],[0,33.942,5],[0,33.863,5],[0,33.809,5],[0,33.742,5],[0,29.656,5],[0,28.45,5],[0,27.012,5]],\"holes\":[]}]}}}"
-   ],
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "obj_mwcn8no3d8"
-     }
-    },
-    {
-     "name": "geom.sweep",
-     "args": {
-      "operation": "new",
-      "design": "obj_mwcn8no3d8",
-      "feature": "Outer duct (sweep)",
-      "name": "Duct",
-      "profile": {
-       "loops": [
-        {
-         "points": [
-          [
-           -50,
-           -25
-          ],
-          [
-           50,
-           -25
-          ],
-          [
-           50,
-           25
-          ],
-          [
-           -50,
-           25
-          ]
-         ]
-        }
-       ],
-       "frame": {
-        "origin": [
-         0,
-         0,
-         25
-        ],
-        "normal": [
-         1,
-         0,
-         0
-        ],
-        "u": [
-         0,
-         1,
-         0
-        ],
-        "v": [
-         0,
-         0,
-         1
-        ]
-       }
-      },
-      "path": {
-       "points": [
-        [
-         0,
-         0,
-         25
-        ],
-        [
-         40,
-         0,
-         25
-        ],
-        [
-         55.53,
-         0,
-         27.04
-        ],
-        [
-         70,
-         0,
-         33.04
-        ],
-        [
-         82.43,
-         0,
-         42.57
-        ],
-        [
-         91.96,
-         0,
-         55
-        ],
-        [
-         97.96,
-         0,
-         69.47
-        ],
-        [
-         100,
-         0,
-         85
-        ],
-        [
-         100,
-         0,
-         125
-        ]
-       ]
-      },
-      "end_profile": {
-       "loops": [
-        {
-         "type": "circle",
-         "center": [
-          0,
-          0
-         ],
-         "diameterMm": 100
-        }
-       ]
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Removed Sweep, changing shape\",\"result\":{\"design\":\"obj_mwcn8no3d8\",\"name\":\"Rect-to-round duct\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[],\"placedMm\":[53,128]}}",
-    "{\"ok\":true,\"summary\":\"Swept: step 1, Sweep, changing shape. The part was off the bed, so it moved to the plate by (0, 0) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"obj_mwcn8no3d8\",\"name\":\"Rect-to-round duct\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smwcn94fg2\",\"name\":\"Sweep, changing shape\",\"op\":\"sketch.sweep\",\"part\":0,\"feature\":\"Outer duct (sweep)\",\"state\":\"done\"},\"minMm\":[0,-50,-5.748],\"sizeMm\":[150,100,130.748],\"volumeMm3\":1124233.639,\"parts\":[{\"index\":0,\"name\":\"Duct\",\"slot\":1,\"triangles\":5742,\"minMm\":[0,-50,-5.748],\"sizeMm\":[150,100,130.748],\"volumeMm3\":1124233.639}],\"placedMm\":[53,128],\"landed\":\"The part was off the bed, so it moved to the plate by (0, 0) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+    "{\"ok\":true,\"summary\":\"Started Rect to round bend duct (obj_mwcpx4nyd8)\",\"result\":{\"design\":\"obj_mwcpx4nyd8\",\"name\":\"Rect to round bend duct\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":true,\"summary\":\"Swept: step 1, Sweep, changing shape. The part was off the bed, so it moved to the plate by (93, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"obj_mwcpx4nyd8\",\"name\":\"Rect to round bend duct\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smwcpx4o51\",\"name\":\"Sweep, changing shape\",\"op\":\"sketch.sweep\",\"part\":0,\"feature\":\"Outer sweep (bend)\",\"state\":\"done\"},\"minMm\":[-50,-50,0],\"sizeMm\":[170,100,170],\"volumeMm3\":1550828.743,\"parts\":[{\"index\":0,\"name\":\"Duct\",\"slot\":1,\"triangles\":2580,\"minMm\":[-50,-50,0],\"sizeMm\":[170,100,170],\"volumeMm3\":1550828.743}],\"placedMm\":[93,128],\"landed\":\"The part was off the bed, so it moved to the plate by (93, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
    ],
    "calls": [
     {
      "name": "geom.sweep",
      "args": {
       "operation": "cut",
-      "design": "obj_mwcn8no3d8",
-      "feature": "Bore (sweep cut)",
+      "design": "obj_mwcpx4nyd8",
+      "feature": "Bore sweep (cut)",
+      "part": 0,
       "profile": {
        "loops": [
         {
@@ -598,79 +397,28 @@
           ]
          ]
         }
-       ],
-       "frame": {
-        "origin": [
-         -1,
-         0,
-         25
-        ],
-        "normal": [
-         1,
-         0,
-         0
-        ],
-        "u": [
-         0,
-         1,
-         0
-        ],
-        "v": [
-         0,
-         0,
-         1
-        ]
-       }
+       ]
       },
       "path": {
        "points": [
         [
-         -1,
          0,
-         25
+         0,
+         -1
         ],
         [
-         40,
          0,
-         25
+         0,
+         120
         ],
         [
-         55.53,
+         121,
          0,
-         27.04
-        ],
-        [
-         70,
-         0,
-         33.04
-        ],
-        [
-         82.43,
-         0,
-         42.57
-        ],
-        [
-         91.96,
-         0,
-         55
-        ],
-        [
-         97.96,
-         0,
-         69.47
-        ],
-        [
-         100,
-         0,
-         85
-        ],
-        [
-         100,
-         0,
-         126
+         120
         ]
        ]
       },
+      "round": 60,
       "end_profile": {
        "loops": [
         {
@@ -689,37 +437,23 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Cut: step 2, Sweep cut, changing shape. Rect-to-round duct is off the bed, so it stays where it is. Move it onto the bed to print it.\",\"result\":{\"design\":\"obj_mwcn8no3d8\",\"name\":\"Rect-to-round duct\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smwcn9aka3\",\"name\":\"Sweep cut, changing shape\",\"op\":\"sketch.sweep\",\"part\":0,\"feature\":\"Bore (sweep cut)\",\"state\":\"done\"},\"minMm\":[0,-50,-5.748],\"sizeMm\":[150,100,130.748],\"volumeMm3\":105695.476,\"parts\":[{\"index\":0,\"name\":\"Duct\",\"slot\":1,\"triangles\":9858,\"minMm\":[0,-50,-5.748],\"sizeMm\":[150,100,130.748],\"volumeMm3\":105695.476}],\"placedMm\":[53,128],\"landed\":\"Rect-to-round duct is off the bed, so it stays where it is. Move it onto the bed to print it.\"}}"
+    "{\"ok\":true,\"summary\":\"Cut: step 2, Sweep cut, changing shape\",\"result\":{\"design\":\"obj_mwcpx4nyd8\",\"name\":\"Rect to round bend duct\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smwcpx81b2\",\"name\":\"Sweep cut, changing shape\",\"op\":\"sketch.sweep\",\"part\":0,\"feature\":\"Bore sweep (cut)\",\"state\":\"done\"},\"minMm\":[-50,-50,0],\"sizeMm\":[170,100,170],\"volumeMm3\":147210.113,\"parts\":[{\"index\":0,\"name\":\"Duct\",\"slot\":1,\"triangles\":6890,\"minMm\":[-50,-50,0],\"sizeMm\":[170,100,170],\"volumeMm3\":147210.113}],\"placedMm\":[93,128]}}"
    ],
    "calls": [
     {
      "name": "design.check",
      "args": {
-      "planId": "plan_mwcn8ji52djc7",
-      "design": "obj_mwcn8no3d8"
+      "planId": "plan_mwcpx3ai28t37",
+      "design": "obj_mwcpx4nyd8"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Rect-to-round duct (obj_mwcn8no3d8, tied to the plan) matches plan plan_mwcn8ji52djc7: all 3 checks pass\",\"result\":{\"planId\":\"plan_mwcn8ji52djc7\",\"design\":\"obj_mwcn8no3d8\",\"designName\":\"Rect-to-round duct\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"2 features, each built by a step tagged with its name\",\"got\":\"2 steps for 2 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1.78 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":150,\"y\":100,\"z\":130.748},\"holes\":[{\"diameterMm\":96.06648642268921}],\"features\":2,\"steps\":[\"Sweep, changing shape\",\"Sweep cut, changing shape\"],\"tags\":[\"Outer duct (sweep)\",\"Bore (sweep cut)\"],\"stepIds\":[\"smwcn94fg2\",\"smwcn9aka3\"],\"lofts\":[],\"watertight\":true,\"minWallMm\":1.784}}}"
+    "{\"ok\":true,\"summary\":\"Rect to round bend duct (obj_mwcpx4nyd8, tied to the plan) matches plan plan_mwcpx3ai28t37: all 3 checks pass\",\"result\":{\"planId\":\"plan_mwcpx3ai28t37\",\"design\":\"obj_mwcpx4nyd8\",\"designName\":\"Rect to round bend duct\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"2 features, each built by a step tagged with its name\",\"got\":\"2 steps for 2 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1.95 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":170,\"y\":100,\"z\":170},\"holes\":[{\"diameterMm\":96.14228592174541}],\"features\":2,\"steps\":[\"Sweep, changing shape\",\"Sweep cut, changing shape\"],\"tags\":[\"Outer sweep (bend)\",\"Bore sweep (cut)\"],\"stepIds\":[\"smwcpx4o51\",\"smwcpx81b2\"],\"lofts\":[],\"watertight\":true,\"minWallMm\":1.949}}}"
    ],
-   "calls": [
-    {
-     "name": "arrange",
-     "args": {
-      "count": 1,
-      "plates": 1
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"1 per plate on 1 plate\",\"result\":{\"plates\":[{\"plate\":1,\"copies\":1,\"bedUse\":\"23%\"}]}}"
-   ],
-   "text": "The duct is built and passes the plan check. It's a 150 by 100 by 131 mm body: a 100 by 50 mm rectangular inlet, a 90 degree bend, and a 100 mm round outlet, with a 2 mm wall and both ends open.\n\nYour sizes were confirmed as given. The bend centerline radius (60 mm) and the two straight runs (40 mm each) were my guesses, and I can change them if you have a different geometry in mind. The model is watertight, and the thinnest wall measures 1.78 mm, slightly under the 2 mm you asked for, because the rectangle-to-round transition thins the wall a little. The lower edge also dips about 6 mm below the bed plane at the inlet end, which I didn't correct; it's a small transition bulge, so check the fit before printing if the tolerance matters.\n\nI placed it on the plate but did not slice or send it. Say the word and I'll slice it for the P1S in PLA at 0.4 mm and then queue it for your approval."
+   "text": "The duct is built and checks pass: watertight, open at both ends, 2 mm wall (1.95 mm measured minimum), and a 96 mm bore. It is 170 by 100 by 170 mm overall. The rectangular inlet sits at the bottom, the duct rises 60 mm, bends 90 degrees through a 60 mm centerline radius, and exits horizontally through the 100 mm round outlet.\n\nThe 60 mm inlet leg, 60 mm bend radius and 60 mm outlet leg were my guesses, and you confirmed them on the sheet. The round outlet's underside will likely need supports when printed in this orientation. I have not sliced or sent it to the P1S. Do you want me to slice it for the P1S with PLA, or change the leg lengths or bend radius first?"
   }
  ],
  "score": {
