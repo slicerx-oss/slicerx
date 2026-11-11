@@ -1736,60 +1736,10 @@ fn relocate(mesh: &TriMesh, e: &EdgeRef) -> Option<(EdgeRef, bool)> {
     }
     let f = mesh.faces.as_ref().filter(|f| !f.keys.is_empty())?;
     let key = |t: usize| f.keys.get(f.ids[t] as usize).copied().unwrap_or(0);
-    let mut by_edge: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
-    for (t, tri) in mesh.triangles.iter().enumerate() {
-        for j in 0..3 {
-            let (u, v) = (tri[j], tri[(j + 1) % 3]);
-            by_edge.entry((u.min(v), u.max(v))).or_default().push(t);
-        }
-    }
-    let segs: Vec<(u32, u32)> = by_edge
-        .iter()
-        .filter(|(_, ts)| {
-            let [t0, t1] = ts[..] else { return false };
-            let (a, b) = (key(t0), key(t1));
-            (a == k0 && b == k1) || (a == k1 && b == k0)
-        })
-        .map(|(&uv, _)| uv)
-        .collect();
-    if segs.is_empty() {
-        return None;
-    }
-    // Runs: segments joined through shared vertices.
-    let mut parent: HashMap<u32, u32> = HashMap::new();
-    for &(u, v) in &segs {
-        parent.entry(u).or_insert(u);
-        parent.entry(v).or_insert(v);
-        let (ru, rv) = (run_root(&mut parent, u), run_root(&mut parent, v));
-        parent.insert(ru, rv);
-    }
-    let mut runs: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
-    for &(u, v) in &segs {
-        let r = run_root(&mut parent, u);
-        runs.entry(r).or_default().push((u, v));
-    }
-    let span = |run: &[(u32, u32)]| -> Option<(V3, V3, f64)> {
-        let (u, v) = *run.first()?;
-        let (p, q) = (mesh.positions[u as usize], mesh.positions[v as usize]);
-        let d = vec3::normalize(vec3::sub(q, p))?;
-        let pts = run
-            .iter()
-            .flat_map(|&(u, v)| [mesh.positions[u as usize], mesh.positions[v as usize]]);
-        let (mut lo, mut hi) = ((f64::INFINITY, p), (f64::NEG_INFINITY, p));
-        for x in pts {
-            let t = vec3::dot(vec3::sub(x, p), d);
-            if t < lo.0 {
-                lo = (t, x);
-            }
-            if t > hi.0 {
-                hi = (t, x);
-            }
-        }
-        Some((lo.1, hi.1, hi.0 - lo.0))
-    };
+    let (segs, runs) = runs_between(mesh, &key, [k0, k1])?;
     let spans: Vec<_> = runs
-        .values()
-        .filter_map(|r| span(r).map(|(a, b, l)| (a, b, l, r)))
+        .iter()
+        .filter_map(|r| span_of(mesh, r).map(|(a, b, l)| (a, b, l, r)))
         .collect();
     let &(a, b, _, run) = spans.iter().max_by(|x, y| x.2.total_cmp(&y.2))?;
     // The normal of the face `face` faced, as it is now.
@@ -1836,6 +1786,67 @@ fn relocate(mesh: &TriMesh, e: &EdgeRef) -> Option<(EdgeRef, bool)> {
         },
         spans.len() > 1,
     ))
+}
+
+/// Mesh edges, and the same edges grouped into runs.
+type Runs = (Vec<(u32, u32)>, Vec<Vec<(u32, u32)>>);
+
+/// The mesh edges between the faces keyed `keys`, and those joined into runs through shared vertices.
+fn runs_between(mesh: &TriMesh, key: &dyn Fn(usize) -> u64, [k0, k1]: [u64; 2]) -> Option<Runs> {
+    let mut by_edge: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+    for (t, tri) in mesh.triangles.iter().enumerate() {
+        for j in 0..3 {
+            let (u, v) = (tri[j], tri[(j + 1) % 3]);
+            by_edge.entry((u.min(v), u.max(v))).or_default().push(t);
+        }
+    }
+    let segs: Vec<(u32, u32)> = by_edge
+        .iter()
+        .filter(|(_, ts)| {
+            let [t0, t1] = ts[..] else { return false };
+            let (a, b) = (key(t0), key(t1));
+            (a == k0 && b == k1) || (a == k1 && b == k0)
+        })
+        .map(|(&uv, _)| uv)
+        .collect();
+    if segs.is_empty() {
+        return None;
+    }
+    // Runs: segments joined through shared vertices.
+    let mut parent: HashMap<u32, u32> = HashMap::new();
+    for &(u, v) in &segs {
+        parent.entry(u).or_insert(u);
+        parent.entry(v).or_insert(v);
+        let (ru, rv) = (run_root(&mut parent, u), run_root(&mut parent, v));
+        parent.insert(ru, rv);
+    }
+    let mut runs: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+    for &(u, v) in &segs {
+        let r = run_root(&mut parent, u);
+        runs.entry(r).or_default().push((u, v));
+    }
+    Some((segs, runs.into_values().collect()))
+}
+
+/// A run's two farthest points along its first segment, and how far apart they are.
+fn span_of(mesh: &TriMesh, run: &[(u32, u32)]) -> Option<(V3, V3, f64)> {
+    let (u, v) = *run.first()?;
+    let (p, q) = (mesh.positions[u as usize], mesh.positions[v as usize]);
+    let d = vec3::normalize(vec3::sub(q, p))?;
+    let pts = run
+        .iter()
+        .flat_map(|&(u, v)| [mesh.positions[u as usize], mesh.positions[v as usize]]);
+    let (mut lo, mut hi) = ((f64::INFINITY, p), (f64::NEG_INFINITY, p));
+    for x in pts {
+        let t = vec3::dot(vec3::sub(x, p), d);
+        if t < lo.0 {
+            lo = (t, x);
+        }
+        if t > hi.0 {
+            hi = (t, x);
+        }
+    }
+    Some((lo.1, hi.1, hi.0 - lo.0))
 }
 
 pub fn apply(
