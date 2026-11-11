@@ -884,7 +884,7 @@ fn print_layer_as_plate(
         })
         .collect();
     let changes = match &plate_layer {
-        Some((at, None)) => session.tower_turns(cfg, at, &mut turns),
+        Some((at, None)) => session.tower_turns(cfg, at, &session.plate_before(g).2, &mut turns),
         Some((at, Some(walled))) => {
             session.support_tower_turns(cfg, at, *walled, &mut turns);
             Vec::new()
