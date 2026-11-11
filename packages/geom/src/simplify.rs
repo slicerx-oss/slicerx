@@ -258,13 +258,17 @@ pub fn simplify(mesh: &TriMesh, opts: &SimplifyOptions) -> Result<(TriMesh, Simp
             }
         }
     }
-    for (&(x, y), fs) in &edge_faces {
-        if fs.len() != 1 {
-            continue;
-        }
+    // rim edges in index order, as their quadrics are summed in this order and map order differs by run and build
+    let mut rim: Vec<(u32, u32, u32)> = edge_faces
+        .iter()
+        .filter(|(_, fs)| fs.len() == 1)
+        .map(|(&(x, y), fs)| (x, y, fs[0]))
+        .collect();
+    rim.sort_unstable();
+    for (x, y, f) in rim {
         w.boundary[x as usize] = true;
         w.boundary[y as usize] = true;
-        let t = w.tris[fs[0] as usize];
+        let t = w.tris[f as usize];
         let nrm = vec3::normalize(vec3::tri_normal(
             base.positions[t[0] as usize],
             base.positions[t[1] as usize],
@@ -280,6 +284,7 @@ pub fn simplify(mesh: &TriMesh, opts: &SimplifyOptions) -> Result<(TriMesh, Simp
     }
 
     let mut heap = BinaryHeap::new();
+    // push order doesn't matter here: entries order fully, so the heap pops one sequence
     for &(x, y) in edge_faces.keys() {
         w.push(&mut heap, x, y);
     }
@@ -360,6 +365,7 @@ pub fn simplify(mesh: &TriMesh, opts: &SimplifyOptions) -> Result<(TriMesh, Simp
 mod tests {
     use super::*;
     use crate::build;
+    use crate::fm::Fm;
 
     fn max_radius_error(m: &TriMesh, center: V3, r: f64) -> f64 {
         m.positions
@@ -461,5 +467,34 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn an_open_mesh_simplifies_the_same_every_time() {
+        // a tilted cap with an uneven rim
+        let mut s = build::uv_sphere([0.3, -0.7, 0.1], 10.0, 30, 40);
+        for p in &mut s.positions {
+            p[0] += 0.37 * p[2].m_sin() + 0.11 * p[1];
+        }
+        s.triangles
+            .retain(|t| t.iter().any(|&i| s.positions[i as usize][2] < 7.3));
+        let o = SimplifyOptions {
+            target_ratio: Some(0.3),
+            ..SimplifyOptions::default()
+        };
+        let bits = |m: &TriMesh| {
+            (
+                m.positions
+                    .iter()
+                    .flatten()
+                    .map(|x| x.to_bits())
+                    .collect::<Vec<_>>(),
+                m.triangles.clone(),
+            )
+        };
+        let first = bits(&simplify(&s, &o).unwrap().0);
+        for _ in 0..16 {
+            assert_eq!(bits(&simplify(&s, &o).unwrap().0), first);
+        }
     }
 }
