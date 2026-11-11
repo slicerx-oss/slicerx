@@ -196,6 +196,54 @@ export function soup(parts: readonly Pick<HistoryMesh, 'positions' | 'indices'>[
 export const slug = (s: string): string => s.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'design'
 const r3 = (v: number): number => Math.round(v * 1000) / 1000
 
+/** A part's span along world axis `a` (0 x, 1 y, 2 z), or null for no part. */
+function partSpan(d: Design, part: number, a: number): [number, number] | null {
+  const p = d.parts[part]
+  if (!p) return null
+  const m = bakeMesh(p, d.transform)
+  let lo = Infinity
+  let hi = -Infinity
+  for (let n = a; n < m.positions.length; n += 3) {
+    lo = Math.min(lo, m.positions[n]!)
+    hi = Math.max(hi, m.positions[n]!)
+  }
+  return hi > lo ? [lo, hi] : null
+}
+
+type PaintParams = Extract<Step['params'], { op: 'paint' }>
+
+/** A paint step's target moved by `world` mm, as what it painted moved. */
+function movedPaint(p: PaintParams, world: [number, number, number], transform: Mat4): PaintParams {
+  void transform
+  const t = p.target
+  if (t.kind === 'height') {
+    const out: typeof t = { kind: 'height' }
+    for (const k of ['below', 'above', 'from', 'to'] as const) if (t[k] !== undefined) out[k] = t[k]! + world[2]
+    return { ...p, target: out }
+  }
+  if (t.kind === 'seed') return { ...p, target: { ...t, point: [t.point[0] + world[0], t.point[1] + world[1], t.point[2] + world[2]] } }
+  if (t.kind === 'direction' && t.pick && typeof t.pick === 'object') return { ...p, target: { ...t, pick: { nearest: [t.pick.nearest[0] + world[0], t.pick.nearest[1] + world[1], t.pick.nearest[2] + world[2]] } } }
+  return p
+}
+
+/** A paint step's target stretched along axis `a` as the part's span there went from `was` to `now`, from its low end. */
+function stretchedPaint(p: PaintParams, a: number, was: [number, number], now: [number, number]): PaintParams {
+  const k = (now[1] - now[0]) / (was[1] - was[0])
+  const at = (v: number): number => now[0] + (v - was[0]) * k
+  const t = p.target
+  if (t.kind === 'height' && a === 2) {
+    const out: typeof t = { kind: 'height' }
+    for (const key of ['below', 'above', 'from', 'to'] as const) if (t[key] !== undefined) out[key] = at(t[key]!)
+    return { ...p, target: out }
+  }
+  if (t.kind === 'seed') {
+    const point = [...t.point] as [number, number, number]
+    point[a] = at(point[a]!)
+    return { ...p, target: { ...t, point } }
+  }
+  return p
+}
+
 /** The reader's notes as the app's open note says them: a whole sentence as it is, the rest after "Not everything in the file was read:". */
 function notesLine(notes: readonly string[]): string {
   const whole = notes.filter((n) => /^[A-Z].*[.!?]$/s.test(n))
@@ -442,7 +490,23 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         next = i.feature.trim() ? { ...rest, feature: i.feature.trim() } : rest
       }
       const { broken: _b, ...clean } = next
+      // the part's span along the axis a size or move works on, before the change, for the paint on it to follow
+      const axisOf = i.size ? ({ x: 0, y: 1, z: 2 } as const)[i.size.axis] : 2
+      const spanBefore = i.size ? partSpan(d, s.part, axisOf) : null
       await replayChange(designs, d, { ...d.history, steps: d.history.steps.map((x, j) => (j === k ? clean : x)) })
+      // paint laid on the part after this step follows what it painted: a move shifts it, a size stretches it
+      const later = d.history.steps.map((x, j) => ({ x, j })).filter(({ x, j }) => j > k && x.part === s.part && x.params.op === 'paint' && !x.suppressed)
+      if (later.length && (i.move || i.size)) {
+        const spanAfter = i.size ? partSpan(d, s.part, axisOf) : null
+        const follow = (x: Step): Step => {
+          if (x.params.op !== 'paint') return x
+          if (i.move) return { ...x, params: movedPaint(x.params, i.move as [number, number, number], d.transform) }
+          return spanBefore && spanAfter ? { ...x, params: stretchedPaint(x.params, axisOf, spanBefore, spanAfter) } : x
+        }
+        const steps = d.history.steps.map((x, j) => (later.some((l) => l.j === j) ? follow(x) : x))
+        await replayChange(designs, d, { ...d.history, steps })
+        said.push('the paint on it follows')
+      }
       const rows = d.history.steps.map((_, j) => stepRow(d, j))
       const broken = rows.filter((r) => r['state'] === 'broken')
       return { ok: broken.length === 0, summary: `Edited step ${k + 1}, ${stepName(clean)}${said.length ? `: ${said.join(', ')}` : ''}${broken.length ? `; step ${String(broken[0]!['index'])} broke: ${String(broken[0]!['message'] ?? '')}` : ''}`, output: { ...designSummary(d), steps: rows } }
