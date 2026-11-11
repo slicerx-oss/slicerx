@@ -11728,14 +11728,53 @@ impl SliceSession {
     /// the change and the fill of the depth the purges left. Without a tower (`at.tower` None) only the flush into
     /// infill is planned. Returns a single nozzle's moves around each change that lay no bead
     /// ([`crate::tower::unloads`]).
+    /// Whether the wipe after a change into `next` starts with the nozzle wipe over the tower (`prime_tower_skip_points`),
+    /// and `holds` (the filament each hotend holds) updated for the turn into `next`, a change or not (the layer's first
+    /// filament is in its hotend too, the print's first one from the start G-code). On a tower whose hotends arrive primed
+    /// ([`crate::tower::Tower::is_primed`], the H3C) the nozzle wipe is there to shed what a flush leaves on the tip: a
+    /// change into a hotend that holds another filament flushes it into the chute first and keeps the nozzle wipe. A
+    /// hotend that already holds the new filament, or holds nothing yet, flushes nothing; it primes its own filament
+    /// at the start of the first row, onto the tower, so it skips the nozzle wipe. It keeps it when the filament cools
+    /// before the tower (`filament_cooling_before_tower`, whose reheat the nozzle wipe carries) or with
+    /// `prime_tower_flat_ironing` (whose square spiral it draws). Every other tower keeps the nozzle wipe.
+    fn change_scrapes(
+        &self,
+        cfg: &PrintConfig,
+        tower: &crate::tower::Tower,
+        holds: &mut Vec<u8>,
+        next: u8,
+        change: bool,
+    ) -> bool {
+        let Some(map) = self
+            .nozzle_map
+            .as_ref()
+            .filter(|_| tower.is_primed() && next != 0)
+        else {
+            return true;
+        };
+        let h = map.nozzle_of(next);
+        if holds.len() <= h {
+            holds.resize(h + 1, 0);
+        }
+        let flushes = holds.get(h).is_some_and(|&was| was != 0 && was != next);
+        if let Some(slot) = holds.get_mut(h) {
+            *slot = next;
+        }
+        !change
+            || flushes
+            || crate::tower::per_slot_raw(cfg, "filament_cooling_before_tower", next, 0.0) > 0.0
+            || crate::tower::flag(cfg, "prime_tower_flat_ironing")
+    }
+
     pub(crate) fn tower_turns<W: TowerTurn>(
         &self,
         cfg: &PrintConfig,
         at: &TowerLayer,
+        held: &[u8],
         works: &mut [W],
     ) -> Vec<crate::tower::ChangeMoves> {
         if let Some(t) = at.tower.as_ref().filter(|t| t.is_type1()) {
-            self.type1_tower_turns(cfg, at, t, works);
+            self.type1_tower_turns(cfg, at, t, held, works);
             return Vec::new();
         }
         let TowerLayer {
@@ -11941,6 +11980,7 @@ impl SliceSession {
         cfg: &PrintConfig,
         at: &TowerLayer,
         tower: &crate::tower::Tower,
+        held: &[u8],
         works: &mut [W],
     ) {
         #[derive(Clone, Copy, PartialEq, Eq)]
@@ -12033,11 +12073,14 @@ impl SliceSession {
         let mut current = start;
         let mut wall_slot: Option<(usize, usize)> = None;
         let mut wipe_starts: Vec<(f64, f64)> = Vec::new();
+        // What each hotend holds as the layer's changes go, on a printer whose hotends are its tools.
+        let mut holds = held.to_vec();
         for i in 0..works.len() {
             let Some(next_tool) = works.get(i).map(TowerTurn::tool) else {
                 continue;
             };
             let change = current != 0 && next_tool != current;
+            let scrape = self.change_scrapes(cfg, tower, &mut holds, next_tool, change);
             let purge = change.then(|| crate::tower::change_purge(cfg, self.tool_count, current, next_tool));
             let k = block_index(next_tool);
             let base = block_range(k).0;
@@ -12076,10 +12119,13 @@ impl SliceSession {
                     && let Some(u) = used.get_mut(k)
                 {
                     let contact = !first && plan.contact(order_at as usize, cat(next_tool));
-                    if lead.is_none() && !contact {
+                    if lead.is_none() && !contact && scrape {
                         wipe_starts.push(tower.row_start(base + *u));
                     }
-                    let (path, rows) = tower.purge_lead(v, h, first, base + *u, lead, contact);
+                    let (mut path, rows) = tower.purge_lead(v, h, first, base + *u, lead, contact);
+                    if !scrape && let Some(row) = path.first_mut() {
+                        row.nozzle_wipe = false;
+                    }
                     *u += rows;
                     work.tower().extend(path);
                     if let Some(l) = last_into.get_mut(k) {
@@ -12276,7 +12322,8 @@ impl SliceSession {
                 tower,
                 order_at: layer,
             };
-            out.tower_changes = self.tower_turns(cfg, &at, &mut works);
+            let held = out.held_before.clone();
+            out.tower_changes = self.tower_turns(cfg, &at, &held, &mut works);
             if self.plate_tools.is_some() {
                 out.turns = turn_rooms(&works, cfg.line_width, at.h);
             }

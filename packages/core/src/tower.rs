@@ -903,6 +903,12 @@ impl Tower {
     }
 
     /// True for a type 1 (Bambu Lab) tower.
+    /// A type 1 tower on a printer whose hotends are its tools (the H3C): the hotend a change brings in has carried its
+    /// own filament.
+    pub(crate) fn is_primed(&self) -> bool {
+        self.primed
+    }
+
     pub(crate) fn is_type1(&self) -> bool {
         self.type1
     }

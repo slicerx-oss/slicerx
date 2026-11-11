@@ -497,3 +497,47 @@ fn a_hotend_swap_wipes_the_filaments_prime_volume_on_the_tower() {
         "wipe {quartile:.1} mm3 of {wipes:?}"
     );
 }
+
+/// For each change (its line from the change G-code above), whether the wipe after it starts with the nozzle wipe: the
+/// travel forward over the row start at 4 mm/s (`F240`) before the next change.
+fn scrapes(g: &str) -> Vec<(Change, bool)> {
+    let mut out: Vec<(Change, bool)> = Vec::new();
+    for l in g.lines() {
+        if l.starts_with("; H3C change ") {
+            out.extend(changes(l).into_iter().map(|c| (c, false)));
+        } else if l.starts_with("G1 ")
+            && l.ends_with(" F240")
+            && let Some(last) = out.last_mut()
+        {
+            last.1 = true;
+        }
+    }
+    out
+}
+
+#[test]
+fn a_hotend_that_holds_its_filament_skips_the_nozzle_wipe_and_a_flushing_change_keeps_it() {
+    // Each filament on a hotend of its own: no change flushes, so no wipe starts with the nozzle wipe.
+    let mut c = h3c(3);
+    c.insert("enable_prime_tower".into(), json!(true));
+    let all = scrapes(&gcode(&slice(c.clone(), &[1, 2, 3]).unwrap()));
+    assert!(all.len() >= 40, "{} changes", all.len());
+    assert!(all.iter().all(|(ch, s)| ch.flush == 0.0 && !s), "{all:?}");
+    // Filaments 1 and 3 share hotend 0 by hand: a change into a hotend that holds the other filament flushes into
+    // the chute and keeps the nozzle wipe, every other change skips it.
+    let mut shared = c.clone();
+    shared.insert("filament_map_mode".into(), json!("Manual"));
+    shared.insert("filament_nozzle_map".into(), json!([0, 1, 0]));
+    let mg = gcode(&slice(shared, &[1, 2, 3]).unwrap());
+    let mixed = scrapes(&mg);
+    assert!(mixed.iter().any(|(ch, _)| ch.flush > 0.0), "{mixed:?}");
+    assert!(mixed.iter().any(|(ch, _)| ch.flush == 0.0), "{mixed:?}");
+    for (ch, s) in &mixed {
+        assert_eq!(*s, ch.flush > 0.0, "{ch:?}");
+    }
+    // A filament that cools before the tower keeps the nozzle wipe, which carries its reheat.
+    let mut cools = c;
+    cools.insert("filament_cooling_before_tower".into(), json!([10, 10, 10]));
+    let kept = scrapes(&gcode(&slice(cools, &[1, 2, 3]).unwrap()));
+    assert!(kept.iter().all(|(_, s)| *s), "{kept:?}");
+}
