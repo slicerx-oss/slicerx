@@ -248,10 +248,13 @@ export function replayGeom(file: string, recorded?: Replies) {
 /**
  * Writes `recorded` to `file` (gzip when `compressed`). A run that recorded no call writes nothing, so a test file that
  * makes no engine calls, or shares a fixture with one that does, cannot wipe it. Returns whether it wrote.
+ * A project archive in a request is written as its files (`unzipped`), the form a replay compares anyway: its deflated
+ * bytes, as an object of index keys, are about twelve times the archive and barely pack, where its files' text packs small.
  */
 export function writeRecording(file: string, recorded: Replies, compressed: boolean): boolean {
   if (Object.values(recorded).every((list) => list.length === 0)) return false
-  const json = `${JSON.stringify(recorded)}\n`
+  const kept = Object.fromEntries(Object.entries(recorded).map(([k, list]) => [k, list.map((r) => ({ ...r, request: unzipped(r.request) }))]))
+  const json = `${JSON.stringify(kept)}\n`
   writeFileSync(file, compressed ? gzipSync(json) : json)
   return true
 }

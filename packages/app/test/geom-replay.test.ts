@@ -192,6 +192,22 @@ describe('writing a recording', () => {
     rmSync(d, { recursive: true })
   })
 
+  it('writes a project archive in a request as its files, and replays it against the live bytes', async () => {
+    const d = dir()
+    const file = join(d, 'x.json')
+    const model = { name: '3D/3dmodel.model', data: `<model>${'<vertex x="1" y="2" z="3"/>'.repeat(40)}</model>` }
+    const bytes = await zipCompressed([model])
+    const request = JSON.parse(JSON.stringify({ data: { bytes } })) as unknown
+    writeRecording(file, { t: [{ op: 'format.read3mf', request, reply: { ok: true } }] }, false)
+    const written = JSON.parse(readFileSync(file, 'utf8')) as { t: { request: unknown }[] }
+    expect(written.t[0]!.request).toEqual({ data: { bytes: { zip: { [model.name]: model.data } } } })
+    const r = replayGeom(file)
+    r.start('t')
+    expect(await r.call('format.read3mf', { data: { bytes: zip([model]) } })).toEqual({ ok: true })
+    expect(r.stale).toEqual([])
+    rmSync(d, { recursive: true })
+  })
+
   it('leaves the fixture alone when the run recorded no calls', () => {
     const d = dir()
     const file = join(d, 'x.json')
