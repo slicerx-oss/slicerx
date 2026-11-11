@@ -76,6 +76,28 @@ const REFUSALS: readonly Refusal[] = [
     hint: `The size does not fit the part: a fillet, chamfer, wall or move is bigger than the faces or body it meets. When the text gives the most that fits, use a bit less than that; otherwise try about half. ${NEVER_QUOTE}`,
   },
   {
+    // edge.rs: an edge on a round taken from the curved side, or edges along a round taken from different faces
+    test: /picked face is curved\. Pick the edge from the flat face|meet along a round; pick both from the flat face they share/i,
+    title: 'Picked on a curve',
+    shown: 'Fillet and chamfer take an edge from the flat face beside it, so the step was not made. Picking the edges again from that flat face fixes it.',
+    hint: `The edges were picked from a curved face, or from different faces where they meet along a round. Pick them again with geom.edge_pick on the flat face they share and send its loop or chain. ${NEVER_QUOTE}`,
+  },
+  {
+    // edge.rs: the same point of a round named by more than two picked edges
+    test: /meet at one point along a round; pick each edge once/i,
+    title: 'Edge picked twice',
+    shown: 'Some edges were picked more than once where they meet along a curve, so the step was not made. Picking each edge once fixes it.',
+    hint: `The edges list repeats an edge along a round. Send each edge once (an edge pick's loop or chain already lists each once). ${NEVER_QUOTE}`,
+  },
+  {
+    // edge.rs: an edge the round tool cannot follow: both faces curved, an angle that changes along a round, or an
+    // edge that ends square or at a slant against a curved face
+    test: /both faces along this edge are curved|angle between the faces changes along the round|ends at a curved face it does not run into smoothly/i,
+    title: 'Edge not rounded',
+    shown: 'Fillet and chamfer cannot follow that edge where it meets a curved face, so the step was not made. Try other edges, or round the corner in the sketch before it is extruded.',
+    hint: `This edge runs into or between curved faces in a way fillet and chamfer do not follow yet. Leave it out, or round that corner in the sketch before extruding it. ${NEVER_QUOTE}`,
+  },
+  {
     // edge.rs: a corner where three or more rounded edges meet
     test: /joins (more than )?three fillets/i,
     title: 'Too many fillets',
