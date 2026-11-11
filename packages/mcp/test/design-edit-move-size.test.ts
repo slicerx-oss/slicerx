@@ -83,4 +83,15 @@ describe('design.edit_step size and move', () => {
     const moved = await call('slicerx_design_edit_step', { design: d, step: 2, move: [0, 0, 3] })
     expect(text(moved.r)).toMatch(/move: .*no place of its own/)
   })
+
+  it('names a chimney a new upper story sinks into, and lifting its step clears it', async () => {
+    const { ok } = await start()
+    const d = (await ok('slicerx_design_new', { name: 'House' })).output.design
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 60, heightMm: 40 }, distance_mm: 30, name: 'Walls' })
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 8, heightMm: 8 }, frame: { origin: [0, 0, 30], normal: [0, 0, 1] }, placement: { center: [15, 8] }, distance_mm: 12, operation: 'new', name: 'Chimney' })
+    const story = await ok('slicerx_geom_extrude', { design: d, part: 0, shape: { type: 'rectangle', widthMm: 50, heightMm: 30 }, frame: { origin: [0, 0, 30], normal: [0, 0, 1] }, distance_mm: 6, operation: 'join', name: 'Upper story' })
+    expect(story.summary).toContain('Chimney stood on Walls and is now 6 mm inside it: lift it with design.edit_step move [0, 0, 6] on step 2, the step that made it')
+    const lifted = await ok('slicerx_design_edit_step', { design: d, step: 2, move: [0, 0, 6] })
+    expect(r1(lifted.output.parts[1]!.minMm[2])).toBe(36)
+  })
 })

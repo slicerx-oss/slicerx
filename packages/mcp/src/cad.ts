@@ -13,6 +13,7 @@ import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, 
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { notClosedWords, partClosure, type Closure } from './closure'
+import { partBoxes, sunkNote } from './sunk'
 import { gapMm, gapSentence, nozzleOr } from './design-check'
 import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
 import type { PlanRegistry } from './design-check'
@@ -865,8 +866,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
         const piece = newPiece(d, i)
         const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: piece ?? i.name, slot: i.slot })
+        const on = i.operation === 'join' ? (part ?? 0) : -1
+        const before = on >= 0 ? partBoxes(d) : []
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
-        return pieceNamed(stepOut(d, verb), piece, i.name)
+        const out = pieceNamed(stepOut(d, verb), piece, i.name)
+        const sunk = on >= 0 ? sunkNote(d, on, before) : ''
+        return sunk ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${sunk}` } : out
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch extrudes on a design; give its id as design')
       if (!i.shape) throw new ToolInputError('shape: give the shape to extrude')
