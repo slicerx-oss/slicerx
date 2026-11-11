@@ -4,12 +4,11 @@
 // paint step in the design's history, so it replays, saves and undoes the way the app's history does. Targets are
 // in words a person uses (sx-geom paint.select): the part, faces facing a direction, a height band, a point grown
 // into a region, or one state for another. Read-back gives each painted state's area and regions.
-import { stepName, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
+import { stepName, type DesignHost, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { designArg, designSummary, type Design, type Designs } from './design'
-import { faceAt } from './design-tools'
-import { ToolInputError } from './models'
+import { designArg, designSummary, faceAt, type Design } from './design-tools'
+import { ToolInputError } from './errors'
 import { layerArg, paintState, targetArg, storedTarget } from './paint-target'
 
 type V3 = [number, number, number]
@@ -65,8 +64,34 @@ function boundsOf(regions: Region[]): { min: V3; max: V3 } | undefined {
 
 const meshOf = (p: HistoryMesh) => ({ positions: Array.from(p.positions), indices: Array.from(p.indices) })
 
-export function paintTools(designs: Designs): PilotTool<never>[] {
-  const engine = designs.deps.engine
+/** How close a height band's edge comes to its height, mm: under half the finest layer, so a band starts and ends on its layers. */
+export const BAND_EDGE_MM = 0.04
+/** The depths a height band splits triangles to when none is given: never coarser than before, at most the engine's. */
+const BAND_DEPTH = { min: 6, max: 10 }
+
+/**
+ * How finely a height band splits the parts' triangles at its edges, when the caller gives no depth: each level halves
+ * a triangle's height, so the tallest triangle splits until its pieces are BAND_EDGE_MM tall. A hull side one
+ * triangle tall (14 mm) at depth 6 put the edge up to 0.22 mm off, a whole extra layer of the band's color.
+ */
+export function bandDepth(parts: readonly HistoryMesh[], transform: readonly number[]): number {
+  let tallest = 0
+  const z = (p: HistoryMesh, v: number) => transform[2]! * p.positions[v * 3]! + transform[6]! * p.positions[v * 3 + 1]! + transform[10]! * p.positions[v * 3 + 2]! + transform[14]!
+  for (const p of parts)
+    for (let t = 0; t + 2 < p.indices.length; t += 3) {
+      const a = z(p, p.indices[t]!), b = z(p, p.indices[t + 1]!), c = z(p, p.indices[t + 2]!)
+      tallest = Math.max(tallest, Math.max(a, b, c) - Math.min(a, b, c))
+    }
+  const depth = tallest > 0 ? Math.ceil(Math.log2(tallest / BAND_EDGE_MM)) : BAND_DEPTH.min
+  return Math.min(BAND_DEPTH.max, Math.max(BAND_DEPTH.min, depth))
+}
+
+/**
+ * The paint tools on any design host: the server's own designs, or the app's plate, where the mimir tab paints. They
+ * need only what every host has: its designs, a step added to one, and its geometry engine.
+ */
+export function paintTools(designs: DesignHost): PilotTool<never>[] {
+  const engine = (op: string, request: unknown) => designs.call(op, request)
   const previews = new Map<string, Preview>()
   let seq = 0
 
@@ -86,7 +111,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
@@ -97,7 +122,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
       state: paintState().describe('For color the filament slot, 1 to 32 (1 is the first); 0 clears paint'),
       target: targetArg,
       part: z.number().int().min(0).optional().describe('Paint one part, from 0; absent: every part (a seed paints the part under its point)'),
-      max_depth: z.number().int().min(0).max(10).optional().describe('How finely a height band splits triangles at its edges; 6 when left out'),
+      max_depth: z.number().int().min(0).max(10).optional().describe('How finely a height band splits triangles at its edges, each level halving them; left out, deep enough that the edge is within 0.04 mm of its height (6 to 10)'),
       view: z.enum(['fit', 'iso', 'top', 'front']).default('fit'),
       size: z.number().int().min(64).max(2048).optional(),
       image: z.boolean().default(false),
@@ -114,14 +139,16 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
       }
       if (part >= d.parts.length) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
       const parts = part === -1 ? d.parts.map((_, k) => k) : [part]
-      const params: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target, ...(i.max_depth !== undefined ? { maxDepth: i.max_depth } : {}) }
+      // a height band's edge lands on its height (the step keeps the depth, so a replay paints the same)
+      const maxDepth = i.max_depth ?? (target.kind === 'height' ? bandDepth(parts.map((k) => d.parts[k]!), d.transform) : undefined)
+      const params: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target, ...(maxDepth !== undefined ? { maxDepth } : {}) }
       const expected: Record<number, Texts> = {}
       const rows: { part: number; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[] }[] = []
       for (const k of parts) {
         const p = d.parts[k]!
         const before = p.paint?.[i.layer]
         const { faceKey: _key, ...asked } = target as PaintTarget & { faceKey?: number }
-        const r = (await engine('paint.select', { mesh: meshOf(p), transform: d.transform, paint: before ?? {}, state: i.state, target: asked, ...(i.max_depth !== undefined ? { maxDepth: i.max_depth } : {}) })) as { changed: Record<string, string>; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[] }
+        const r = (await engine('paint.select', { mesh: meshOf(p), transform: d.transform, paint: before ?? {}, state: i.state, target: asked, ...(maxDepth !== undefined ? { maxDepth } : {}) })) as { changed: Record<string, string>; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[] }
         expected[k] = merged(before, r.changed)
         if (r.changedTriangles || r.selectedAreaMm2) rows.push({ part: k, changedTriangles: r.changedTriangles, selectedAreaMm2: r.selectedAreaMm2, regionCount: r.regionCount, regions: r.regions })
       }

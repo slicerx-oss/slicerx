@@ -10,6 +10,7 @@ import { brandAccent } from '../edition'
 import { get, markStale, set, toast, type PlateEntry } from '../state/store'
 import { colorsFor } from './commit'
 import { cancelEdit, runReplay, toPart, withStatus } from './history/ops'
+import { paintOf } from './history/paint'
 import { newStep, withLast, type UndoStep } from '../plate/history'
 import { followBodies } from './project-sketch'
 
@@ -131,7 +132,10 @@ export async function updateSketch(host: Loader, id: string, s: SketchBody, o: {
     if (!r.parts.length) throw new Error(`${entry.name} would have no solid left with this sketch.`)
     const parts = r.parts.map(toPart)
     const handle = await host.loadParts(entry.name, parts)
-    views.set(b, { ...entry, handle, parts, colors: colorsFor(parts.length, entry.colors, brandAccent()), history: { ...h, steps: withStatus(h.steps, r.status, r.found) } })
+    // the history's paint steps paint the new parts; paint brushed on outside the history no longer fits them
+    const { paint: _old, ...kept } = entry
+    const paint = paintOf(r.parts)
+    views.set(b, { ...kept, handle, parts, colors: colorsFor(parts.length, entry.colors, brandAccent()), ...(paint ? { paint } : {}), history: { ...h, steps: withStatus(h.steps, r.status, r.found) } })
   }
   const commit = () => set((st) => ({ timeline: t, plate: st.plate.map((e) => views.get(e.id) ?? e) }))
   if (o.join) withLast(commit)

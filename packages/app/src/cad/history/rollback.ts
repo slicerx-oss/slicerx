@@ -9,6 +9,7 @@ import { brandAccent } from '../../edition'
 import { colorsFor } from '../commit'
 import { get, markStale, set, type AppState, type PlateEntry, type Rollback } from '../../state/store'
 import { cancelEdit, runReplay, toPart, withStatus } from './ops'
+import { paintOf } from './paint'
 
 type Loader = { loadParts(name: string, parts: PlateEntry['parts']): Promise<MeshHandle> }
 
@@ -52,7 +53,8 @@ export async function rollTo(host: Loader, marker: number): Promise<void> {
       const parts = r.parts.map(toPart)
       const handle = await host.loadParts(at.entry.name, parts)
       const { paint: _p, instanceOf: _i, ...rest } = at.entry
-      views.set(b.id, { ...rest, handle, parts, colors: colorsFor(parts.length, at.entry.colors, brandAccent()), history: { ...h, steps: withStatus(h.steps, r.status, r.found) } })
+      const paint = paintOf(r.parts)
+      views.set(b.id, { ...rest, handle, parts, colors: colorsFor(parts.length, at.entry.colors, brandAccent()), ...(paint ? { paint } : {}), history: { ...h, steps: withStatus(h.steps, r.status, r.found) } })
     }
   }
   set((s) => {

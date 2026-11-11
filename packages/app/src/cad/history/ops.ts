@@ -20,6 +20,7 @@ import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
 import { opensDesign } from '../../workspaces/design/shelf-tools'
 import { historyPart } from '@slicerx/cad-history/mesh-part'
+import { paintOf } from './paint'
 import { toolError } from '../op-preview'
 import { stepNumber } from './step-number'
 import { followBodies } from '../project-sketch'
@@ -122,6 +123,8 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     const handle = await host.loadParts(current.name, parts)
     if (ac.signal.aborted) throw abortError()
     const history: History = { ...next, steps: withStatus(next.steps, r.status, r.found) }
+    // the paint the history's paint steps leave; paint brushed on outside the history goes, as with any step
+    const paint = paintOf(r.parts)
     const { instanceOf: _was, paint: _paint, ...rest } = current
     const entry: PlateEntry = { ...rest, handle, parts, colors: colorsFor(parts.length, current.colors, brandAccent()), history }
     const dimensions = (await followDimensions(entry, pushMoves(current.history, history, r.moved, current.transform))).dimensions ?? entry.dimensions
@@ -144,7 +147,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
       // the landing moves are the object's as it is now (a landing elsewhere may have moved it while this ran), plus
       // this commit's own
       const placed = moved ? moved.placed : latest.history?.placed
-      return { handle, parts, history: withPlaced(history, placed), colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
+      return { handle, parts, history: withPlaced(history, placed), colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(paint ? { paint } : {}), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
     }, { exactReplay: next.exact === true })
     if (!(step ? step.write(write) : write())) throw abortError()
     committed?.()

@@ -245,6 +245,8 @@ describe('toolsets', () => {
     expect(toolsetOf(t('kb.search', { toolset: 'core' }))).toBe('core')
     expect(toolsetOf(t('geom.extrude'))).toBe('cad')
     expect(toolsetOf(t('design.new'))).toBe('cad')
+    // painting a design in filaments goes with the project's filament tools
+    for (const n of ['paint.preview', 'paint.apply', 'paint.regions', 'project.add_filament']) expect(toolsetOf(t(n))).toBe('project')
     expect(toolsetOf(t('kb.filament'))).toBe('kb')
     expect(toolsetOf(t('web.lookup'))).toBe('kb')
     expect(toolsetOf(t('printer.queue'))).toBe('printers')

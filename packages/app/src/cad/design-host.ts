@@ -37,6 +37,7 @@ import { fromLoops, toLoops } from './sketch-model'
 import { bodyRevisions } from './body-revisions'
 import { placeOf } from './sketch-place'
 import { ownWaiting, projectGeneration, setWaiting } from './waiting'
+import { paintOf, withPaint } from './history/paint'
 import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -47,6 +48,14 @@ export class DesignNotFound extends Error {
 }
 
 let seq = 0
+/** The paint a replay's parts carry, as a plate object's own. */
+const withReplayPaint = (parts: Parameters<typeof paintOf>[0]): Pick<PlateEntry, 'paint'> => {
+  const paint = paintOf(parts)
+  return paint ? { paint } : {}
+}
+
+const withoutPaint = ({ paint: _p, ...rest }: PlateEntry): PlateEntry => rest
+
 const newId = () => `obj_${Date.now().toString(36)}d${(++seq).toString(36)}`
 
 /** A design host on the app's plate, and how to let it go (dispose). */
@@ -74,7 +83,8 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       history,
       transform: designFrame(e.transform, history),
       ...(history.placed ? { placed: [...history.placed] as [number, number] } : {}),
-      parts: e.parts,
+      // each part with its paint, so the paint tools paint over what is there and read it back
+      parts: withPaint(e),
       status: history.steps.map((s) => (s.broken !== undefined ? { state: 'broken', message: s.broken } : { state: 'done' })),
       madeBy: {},
       redo: redo.get(e.id) ?? [],
@@ -180,7 +190,8 @@ export function appDesignHost(loader: Loader): AppDesignHost {
           const parts = base.map(toPart)
           const handle = await loader.loadParts(d.name, parts)
           guard?.()
-          set((s) => ({ plate: s.plate.map((p) => (p.id === d.id ? { ...p, handle, parts, history: d.history } : p)) }))
+          // the base parts' own paint, and none of what the undone steps painted
+          set((s) => ({ plate: s.plate.map((p) => (p.id === d.id ? { ...withoutPaint(p), handle, parts, history: d.history, ...withReplayPaint(base) } : p)) }))
         }
         markStale()
       }
@@ -344,6 +355,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
         colors: [brandAccent()],
         transform: landedAt,
         history: withPlaced(history, placed),
+        ...withReplayPaint(r.parts),
         ...(moved && 'dxMm' in moved ? { landedAt: [...landedAt] } : {}),
         ...(applied.length && step ? { roomMoves: { step, moves: applied.map((a) => ({ id: a.id, from: [...a.from], to: [...a.to] })), built: [...transform], ...(history.placed ? { placed: history.placed } : {}) } } : {}),
       }
