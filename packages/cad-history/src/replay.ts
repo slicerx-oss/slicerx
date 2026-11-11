@@ -568,6 +568,17 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
     for (const [j, x] of live.entries()) {
       const copy: Step = { id: `${s.id}#${k + 2}.${j + 1}`, part: x.part, transform: multiply(x.transform, back), params: copyParams(x.params) }
       try {
+        if (x.params.op === 'pattern') {
+          // a pattern of a pattern (a row of vents mirrored to the other side): the inner pattern's own steps run
+          // again moved by this copy, then the inner pattern runs on them, moved too
+          const inner = x.params
+          const tag = `#${k + 2}.${j + 1}`
+          const own = new Set(inner.steps)
+          const movedEarlier = earlier.map((e) => (own.has(e.id) ? { ...e, id: `${e.id}${tag}`, transform: multiply(e.transform, back), params: copyParams(e.params) } : e))
+          for (const e of movedEarlier) if (e.id.endsWith(tag) && !e.suppressed) out = await runStep(call, e, out, fonts, moved, gone, found, exact, solids, strict)
+          out = await patternStep(call, { ...copy, params: { ...inner, steps: inner.steps.map((id) => `${id}${tag}`) } }, movedEarlier, out, fonts, moved, gone, found, exact, solids, strict)
+          continue
+        }
         out = await runStep(call, copy, out, fonts, moved, gone, found, exact, solids, strict)
       } catch (e) {
         if ((e as { name?: string }).name === 'AbortError') throw e
