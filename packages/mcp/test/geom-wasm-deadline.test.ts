@@ -3,14 +3,14 @@
 // The Node geometry host ends a call that runs too long or is canceled, even one stuck in a synchronous engine call,
 // and the next call gets a fresh engine. The engine here is a stand-in module made below: an operation whose name
 // starts with "b" (build) spins forever, one starting with "t" (trap) traps, one starting with "j" (junk) answers half
-// a reply, and every other one answers {"ok":true} at once.
+// a reply, and every other one answers {"ok":true} at once. A call that traps says why and ends its engine.
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { runPrompt } from '../evals/creative/run'
-import { createGeomWasm } from '@slicerx/pilot/node'
+import { createGeomWasm, trapMessage } from '@slicerx/pilot/node'
 
 const uleb = (n: number): number[] => {
   const out: number[] = []
@@ -113,10 +113,16 @@ describe('the Node geometry host', () => {
     await expect(after).resolves.toEqual({ ok: true })
   })
 
-  it('fails a call whose engine traps, and the next call gets a fresh engine', async () => {
+  it('fails a call whose engine traps, says why, and the next call gets a fresh engine', async () => {
     const geom = createGeomWasm({ wasm })
-    await expect(geom.run('trap', {})).rejects.toThrow(/^sx-geom trap: /)
+    // the stand-in keeps no panic, as when its memory could not grow; its memory is two pages
+    await expect(geom.run('trap', {})).rejects.toThrow(/^sx-geom trap: the engine ran out of memory at 0\.1 MB; try the step again$/)
     await expect(geom.run('info', {})).resolves.toEqual({ ok: true })
+  })
+
+  it('names the panic a trap came from when the engine kept one', () => {
+    expect(trapMessage('panicked at packages/geom/src/boolean.rs:12:5:\nbad loop', 3_473_408)).toBe('the engine stopped on an internal error: panicked at packages/geom/src/boolean.rs:12:5: bad loop')
+    expect(trapMessage('', 3_473_408)).toBe('the engine ran out of memory at 3.3 MB; try the step again')
   })
 
   it('fails a call whose reply does not read, and the next call still runs', async () => {

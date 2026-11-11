@@ -23,6 +23,24 @@ export interface GeomExports {
   geom_out_files?(): number
   geom_out_file_ptr?(n: number): number
   geom_out_file_len?(n: number): number
+  /** The message of the panic that ended the last call in a trap, empty when none did. */
+  geom_panic_ptr?(): number
+  geom_panic_len?(): number
+}
+
+/**
+ * A call that trapped. The module is left as it stopped (its state still borrowed), so every later call on it traps
+ * too: the worker loads the engine again (geom-worker.ts).
+ */
+export class EngineTrap extends Error {}
+
+/**
+ * What a trapped call says. A panic aborts the engine, which traps as `unreachable`; the engine keeps the panic's
+ * message and place. A trap with no panic kept is an allocation the browser refused: the memory could not grow.
+ */
+export function trapMessage(panic: string, memoryBytes: number): string {
+  if (panic) return `The geometry engine stopped on an internal error: ${panic.replace(/\s+/g, ' ').trim()}`
+  return `The geometry engine ran out of memory at ${(memoryBytes / 2 ** 20).toFixed(1)} MB; try the step again`
 }
 
 /**
@@ -134,12 +152,19 @@ function plainArrays(v: unknown): unknown {
  * buffers read back as typed arrays. Throws the engine's message when the call fails.
  */
 export function callEngine(x: GeomExports, op: string, request: unknown): unknown {
-  const files = { n: 0 }
-  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(rawMeshes(x, rawData(x, request, files), files))))}`)
-  const at = x.geom_input(bytes.length)
-  new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
-  const code = x.geom_call()
   const text = (ptr: number, len: number) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len))
+  let code: number
+  try {
+    const files = { n: 0 }
+    const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(rawMeshes(x, rawData(x, request, files), files))))}`)
+    const at = x.geom_input(bytes.length)
+    new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
+    code = x.geom_call()
+  } catch (err) {
+    if (!(err instanceof WebAssembly.RuntimeError)) throw err
+    const panic = x.geom_panic_len?.() ? text(x.geom_panic_ptr!(), x.geom_panic_len()) : ''
+    throw new EngineTrap(trapMessage(panic, x.memory.buffer.byteLength))
+  }
   if (code === 0) {
     const answer = JSON.parse(text(x.geom_out_ptr(), x.geom_out_len())) as unknown
     return (x.geom_out_files?.() ?? 0) > 0 ? rawOut(x, answer) : answer

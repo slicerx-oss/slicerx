@@ -6,7 +6,9 @@
 //! for the input buffer with `geom_input(len)`, writes the operation name, a
 //! zero byte and the request JSON into linear memory, then calls `geom_call`.
 //! On success (0) the response JSON is at `geom_out_ptr` and `geom_out_len`;
-//! otherwise (1) the message is at `geom_error_ptr` and `geom_error_len`. The
+//! otherwise (1) the message is at `geom_error_ptr` and `geom_error_len`. A
+//! panic aborts, which traps as `unreachable`; its message and place are then at
+//! `geom_panic_ptr` and `geom_panic_len`, and the module must be loaded again. The
 //! operation names are `sx_geom::json::operations()`, the ones this build has, listed by `geom_ops`.
 //! Meshes travel in the flat form (`positions`, `indices`), as base64 STL, or in
 //! the raw binary form (`rawPath`, `TriMesh::from_raw`): JS reserves a buffer with
@@ -33,6 +35,35 @@ struct State {
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
+    /// The last panic's message and place, kept for the host to read after the trap it ends in.
+    static PANIC: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Keeps a panic's message, since a panic aborts and traps as `unreachable` with no text of its own.
+fn keep_panics() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let before = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            PANIC.with(|p| {
+                if let Ok(mut p) = p.try_borrow_mut() {
+                    *p = info.to_string().into_bytes();
+                }
+            });
+            before(info);
+        }));
+    });
+}
+
+/// The message of the panic that ended the last call in a trap; empty when none has.
+#[unsafe(no_mangle)]
+pub extern "C" fn geom_panic_ptr() -> u32 {
+    PANIC.with(|p| ptr(&p.borrow()))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn geom_panic_len() -> u32 {
+    PANIC.with(|p| len(&p.borrow()))
 }
 
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
@@ -115,6 +146,7 @@ pub extern "C" fn geom_error_len() -> u32 {
 /// Returns 0 on success, 1 on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn geom_call() -> u32 {
+    keep_panics();
     let result = with(|s| {
         let split = s
             .input
@@ -265,6 +297,18 @@ mod tests {
         // A flat call writes none.
         assert_eq!(geom_out_files(), 0);
         assert_eq!(geom_out_file_len(0), 0);
+    }
+
+    #[test]
+    fn keeps_a_panics_message_and_place_for_the_host() {
+        assert_eq!(geom_panic_len(), 0);
+        keep_panics();
+        let knuckle = 3;
+        assert!(std::panic::catch_unwind(|| panic!("knuckle {knuckle} failed")).is_err());
+        let kept = PANIC.with(|p| String::from_utf8(p.borrow().clone()).unwrap());
+        assert!(kept.contains("knuckle 3 failed"), "{kept}");
+        assert!(kept.contains("lib.rs"), "{kept}");
+        assert_eq!(geom_panic_len() as usize, kept.len());
     }
 
     fn geom_call_missing_name() -> u32 {
