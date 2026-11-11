@@ -247,8 +247,8 @@ pub fn plane_cut(mesh: &TriMesh, plane: &Plane, opts: &CutOptions) -> Result<Cut
     };
     report.below_volume_mm3 = below.volume();
     report.above_volume_mm3 = above.volume();
-    report.below_edges = below.edge_report();
-    report.above_edges = above.edge_report();
+    report.below_edges = below.stored_edge_report();
+    report.above_edges = above.stored_edge_report();
     Ok(CutResult {
         below,
         above,

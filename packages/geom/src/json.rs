@@ -369,7 +369,7 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             } else {
                 crate::remesh::remesh_flat(&m, &crate::remesh::RemeshOptions::default())
             };
-            let e = out.edge_report();
+            let e = out.stored_edge_report();
             Ok(json!({
                 "mesh": enc.mesh(&out),
                 "changed": out != m,
@@ -382,7 +382,7 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             let m = mesh_field(req, "mesh", files)?;
             let opts: simplify::SimplifyOptions = field_or_default(req, "options")?;
             let (out, report) = simplify::simplify(&m, &opts)?;
-            let e = out.edge_report();
+            let e = out.stored_edge_report();
             Ok(json!({
                 "mesh": enc.mesh(&out),
                 "report": to_value(&report)?,
@@ -470,7 +470,7 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
                 "parts": m.parts.iter().map(|p| json!({
                     "name": p.name, "color": p.color, "slot": p.slot,
                     "areaMm2": p.area_mm2, "mesh": enc.mesh(&p.mesh),
-                    "watertight": p.mesh.edge_report().is_watertight(),
+                    "watertight": p.mesh.stored_edge_report().is_watertight(),
                 })).collect::<Vec<_>>(),
                 "slotColors": m.slot_colors,
                 "sizeMm": m.size_mm,
@@ -849,7 +849,7 @@ fn convex_pieces(specs: &[SolidSpec]) -> Result<Vec<convex::ConvexSolid>> {
 }
 
 pub(crate) fn mesh_report(m: &TriMesh, enc: MeshOut) -> Value {
-    let e = m.edge_report();
+    let e = m.stored_edge_report();
     json!({
         "mesh": enc.mesh(m),
         "shells": m.components().len(),
@@ -862,7 +862,7 @@ pub(crate) fn mesh_report(m: &TriMesh, enc: MeshOut) -> Value {
 }
 
 fn info(m: &TriMesh) -> Value {
-    let e = m.edge_report();
+    let e = m.stored_edge_report();
     json!({
         "vertices": m.positions.len(),
         "triangles": m.triangles.len(),
