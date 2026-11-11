@@ -275,8 +275,12 @@ describe('planLimits', () => {
   const accepted = JSON.stringify({ ok: true, result: { accepted: true } })
   const plan = (n: number) => ({ name: 'design.plan', arguments: JSON.stringify({ features: Array.from({ length: n }, (_, k) => ({ name: `F${k}` })) }) })
 
+  it('a 6-feature plan gets 5 steps a feature and 20 more', () => {
+    expect(planLimits(plan(6), accepted, { step: 2, calls: 3 })).toEqual({ steps: 52, calls: 103 })
+  })
+
   it('a 30-feature plan raises steps to 120 and calls to 240 at most', () => {
-    expect(planLimits(plan(30), accepted, { step: 0, calls: 0 })).toEqual({ steps: 102, calls: 204 })
+    expect(planLimits(plan(30), accepted, { step: 0, calls: 0 })).toEqual({ steps: 120, calls: 240 })
     expect(planLimits(plan(30), accepted, { step: 30, calls: 100 })).toEqual({ steps: 120, calls: 240 })
   })
 
