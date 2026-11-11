@@ -73,8 +73,24 @@ part 1 saves the cache, so parts that end together do not race for the key.
 
 On hosted Linux (a pull request, or the queue with `RUST_TESTS_ON_PC` set to `false`) sx-core's other test files are
 split the same way into `core-a` and `core-b`, and the desktop shell's clippy and tests are the `desktop` part, with
-`apt-desktop-libs.sh` installing its libraries (one `apt-get update`, then up to three `apt-get install` tries of
-150 s each). The `core` part on the self-hosted runners stays whole.
+`apt-desktop-libs.sh` installing its libraries. The `core` part on the self-hosted runners stays whole.
+
+### System packages on hosted Linux
+
+`apt-install.sh` installs Ubuntu packages so a hosted job gets by without the package mirror when it can. Packages
+already on the runner are left out. Each job keeps the .deb files it downloaded with `actions/cache`, keyed on the
+runner image (`ImageOS` and `ImageVersion`), and the next run on that image installs them with `dpkg` and no network.
+Otherwise it asks the mirror: one `apt-get update`, then up to three `apt-get install` tries of 150 s each, and when
+the update fails, both once more on a fallback mirror (`SX_APT_FALLBACK`, by default `mirrors.edge.kernel.org`).
+`apt-desktop-libs.sh` (the desktop shell's libraries) and `playwright-chromium.sh` (Chromium for the browser tests, in
+place of `playwright install --with-deps`, which runs `apt-get update` every time) go through it.
+`playwright-chromium.sh` asks Playwright which of its system packages are missing (a simulated install, no network) and
+installs only those; on a self-hosted runner it installs only the browser. `apt-install.test.mjs` runs both scripts
+against stand-ins for apt, dpkg and pnpm.
+
+During a mirror outage a warm cache, or a runner that already has every package, passes with no mirror. A cold cache
+(the first run on a new runner image, or a changed package list) still needs a mirror, and fails when neither the
+runner's mirrors nor the fallback can be reached.
 
 `node scripts/ci/rust-part-coverage.mjs` proves every test file of every package is in exactly one part and that the
 matrices in `ci.yml` have as many parts as the split uses. The `rust` job runs it on every pull request, so a change to

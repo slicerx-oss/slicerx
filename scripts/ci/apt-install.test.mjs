@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// apt-install.sh and playwright-chromium.sh against stand-ins for apt-get, dpkg, sudo and pnpm, so each path runs with
+// no package mirror and nothing installed: packages already there, a warm cache of .deb files, a cold cache with the
+// mirror up, a mirror that cannot be reached (and the fallback mirror), and Playwright's list of missing packages.
+import { strict as assert } from 'node:assert'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+const STUBS = {
+  sudo: 'exec "$@"',
+  sleep: ':',
+  // the packages listed in $STATE/installed are installed
+  'dpkg-query': 'p=${@: -1}; grep -qx "$p" "$STATE/installed" 2>/dev/null && printf "ii " || exit 1',
+  // a stand-in .deb is a text file of "Field: value" lines
+  'dpkg-deb': 'grep "^$3: " "$2" | cut -d" " -f2-',
+  dpkg: [
+    'if [ "$1" = --compare-versions ]; then [ "$2" != "$4" ] && [ "$(printf "%s\\n%s\\n" "$2" "$4" | sort -V | tail -1)" = "$2" ]; exit; fi',
+    'shift; echo "dpkg -i $(for f in "$@"; do grep "^Package: " "$f" | cut -d" " -f2-; grep "^Version: " "$f" | cut -d" " -f2-; done | paste -sd" ")" >> "$STATE/log"',
+    'for f in "$@"; do grep "^Package: " "$f" | cut -d" " -f2- >> "$STATE/installed"; done',
+  ].join('\n'),
+  // apt-get logs its call; APT_UPDATE_FAIL and APT_INSTALL_FAIL are how many updates or installs fail first
+  'apt-get': [
+    'echo "apt-get $*" >> "$STATE/log"',
+    'n() { c=$(cat "$STATE/$1" 2>/dev/null || echo 0); echo $((c + 1)) > "$STATE/$1"; [ "$c" -lt "${2:-0}" ]; }',
+    'case " $* " in',
+    '  *" update "*) n updates "${APT_UPDATE_FAIL:-0}" && exit 100; exit 0 ;;',
+    '  *" install "*) n installs "${APT_INSTALL_FAIL:-0}" && exit 100',
+    '    seen=0; for a in "$@"; do [ $seen = 1 ] && case $a in -*) ;; *) echo "$a" >> "$STATE/installed" ;; esac; [ "$a" = install ] && seen=1; done; exit 0 ;;',
+    'esac',
+  ].join('\n'),
+  // playwright through pnpm: the report in $STATE/report for a dry run
+  pnpm: [
+    'echo "pnpm $*" >> "$STATE/log"',
+    'case " $* " in *" --dry-run "*) cat "$STATE/report"; exit "${PW_DRY_STATUS:-0}" ;; esac',
+  ].join('\n'),
+}
+
+function setup({ installed = [], report = '' } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'apt-install-'))
+  const bin = join(root, 'bin')
+  mkdirSync(bin)
+  for (const [name, body] of Object.entries(STUBS)) {
+    writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${body}\n`)
+    chmodSync(join(bin, name), 0o755)
+  }
+  writeFileSync(join(root, 'installed'), installed.map((p) => `${p}\n`).join(''))
+  writeFileSync(join(root, 'report'), report)
+  return root
+}
+
+function deb(dir, pkg, version) {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${pkg}_${version}_amd64.deb`), `Package: ${pkg}\nVersion: ${version}\n`)
+}
+
+function run(root, script, args, env = {}) {
+  const r = spawnSync('bash', [join(here, script), ...args], {
+    env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, STATE: root, HOME: root, SX_APT_ETC: join(root, 'etc'), ...env },
+    encoding: 'utf8',
+  })
+  const log = existsSync(join(root, 'log')) ? readFileSync(join(root, 'log'), 'utf8').trim().split('\n').filter(Boolean) : []
+  return { status: r.status, out: r.stdout + r.stderr, log }
+}
+
+describe('apt-install.sh', () => {
+  it('asks no mirror when every package is installed', () => {
+    const root = setup({ installed: ['a', 'b'] })
+    const r = run(root, 'apt-install.sh', ['--cache', join(root, 'cache'), 'a', 'b'])
+    assert.equal(r.status, 0, r.out)
+    assert.deepEqual(r.log, [])
+    assert.match(r.out, /all 2 packages are installed already/)
+  })
+
+  it('installs from a warm cache with no mirror, the newest file of each package', () => {
+    const root = setup({ installed: ['c'] })
+    const cache = join(root, 'cache')
+    deb(cache, 'a', '1.0')
+    deb(cache, 'a', '1.2')
+    deb(cache, 'b', '2.0')
+    deb(cache, 'c', '9.0')
+    const r = run(root, 'apt-install.sh', ['--cache', cache, 'a', 'b', 'c'])
+    assert.equal(r.status, 0, r.out)
+    assert.equal(r.log.length, 1, r.log.join('\n'))
+    assert.match(r.log[0], /^dpkg -i /)
+    assert.match(r.log[0], /\ba 1\.2\b/)
+    assert.match(r.log[0], /\bb 2\.0\b/)
+    assert.doesNotMatch(r.log[0], /\ba 1\.0\b|\bc 9\.0\b/)
+    assert.match(r.out, /installed from the cache, with no mirror/)
+  })
+
+  it('downloads into the cache on a cold one when the mirror answers', () => {
+    const root = setup()
+    const cache = join(root, 'cache')
+    const r = run(root, 'apt-install.sh', ['--cache', cache, 'a'])
+    assert.equal(r.status, 0, r.out)
+    assert.equal(r.log.length, 2, r.log.join('\n'))
+    assert.match(r.log[0], /update --error-on=any$/)
+    assert.match(r.log[1], new RegExp(`Dir::Cache::archives=${cache.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')} install -f -y --no-install-recommends a$`))
+    assert.ok(existsSync(join(cache, 'partial')))
+  })
+
+  it('tries the fallback mirror once when the update fails, and installs from it', () => {
+    const root = setup()
+    const etc = join(root, 'etc')
+    mkdirSync(join(etc, 'sources.list.d'), { recursive: true })
+    writeFileSync(join(etc, 'apt-mirrors.txt'), 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://archive.ubuntu.com/ubuntu/\tpriority:2\n')
+    writeFileSync(join(etc, 'sources.list.d', 'ubuntu.sources'), 'Types: deb\nURIs: http://security.ubuntu.com/ubuntu/\nSuites: noble-security\n')
+    const r = run(root, 'apt-install.sh', ['a'], { APT_UPDATE_FAIL: '1' })
+    assert.equal(r.status, 0, r.out)
+    assert.deepEqual(r.log.map((l) => l.split(' ').slice(-1)[0]), ['--error-on=any', '--error-on=any', 'a'])
+    assert.equal(readFileSync(join(etc, 'apt-mirrors.txt'), 'utf8').split('\n')[0], 'http://mirrors.edge.kernel.org/ubuntu/')
+    assert.match(readFileSync(join(etc, 'sources.list.d', 'ubuntu.sources'), 'utf8'), /^URIs: http:\/\/mirrors\.edge\.kernel\.org\/ubuntu\/$/m)
+  })
+
+  it('fails after three installs when no mirror answers, saying which packages', () => {
+    const root = setup()
+    mkdirSync(join(root, 'etc'))
+    const r = run(root, 'apt-install.sh', ['a', 'b'], { APT_UPDATE_FAIL: '9', APT_INSTALL_FAIL: '9' })
+    assert.equal(r.status, 1)
+    assert.equal(r.log.filter((l) => / install /.test(l)).length, 3)
+    assert.match(r.out, /apt-install: a b did not install/)
+  })
+})
+
+describe('playwright-chromium.sh', () => {
+  it('runs no apt when Playwright finds every system package installed', () => {
+    const root = setup({ report: 'All system dependencies are installed.\n' })
+    const r = run(root, 'playwright-chromium.sh', [])
+    assert.equal(r.status, 0, r.out)
+    assert.deepEqual(r.log, ['pnpm --filter @slicerx/web exec playwright install chromium', 'pnpm --filter @slicerx/web exec playwright install-deps --dry-run chromium'])
+  })
+
+  it('installs only the packages Playwright lists as missing, and keeps the list with the cache', () => {
+    const root = setup({ report: 'Missing system dependencies (2):\n  fonts-wqy-zenhei\n  xvfb\n' })
+    const r = run(root, 'playwright-chromium.sh', [], { PW_DRY_STATUS: '1' })
+    assert.equal(r.status, 0, r.out)
+    assert.match(r.log.at(-1) ?? '', /install -f -y --no-install-recommends fonts-wqy-zenhei xvfb$/)
+    assert.equal(readFileSync(join(root, '.cache', 'sx-apt', 'playwright', 'packages.txt'), 'utf8'), 'fonts-wqy-zenhei\nxvfb\n')
+  })
+
+  it('uses the kept list when Playwright cannot make one, and installs as --with-deps did with none', () => {
+    const failed = "Error: 'apt-get install -s' exited with code 100\n"
+    const kept = setup({ report: failed })
+    const cache = join(kept, '.cache', 'sx-apt', 'playwright')
+    deb(cache, 'xvfb', '2:21.1')
+    writeFileSync(join(cache, 'packages.txt'), 'xvfb\n')
+    let r = run(kept, 'playwright-chromium.sh', [], { PW_DRY_STATUS: '1' })
+    assert.equal(r.status, 0, r.out)
+    assert.match(r.log.at(-1) ?? '', /^dpkg -i xvfb 2:21\.1$/)
+    const none = setup({ report: failed })
+    r = run(none, 'playwright-chromium.sh', [], { PW_DRY_STATUS: '1' })
+    assert.equal(r.status, 0, r.out)
+    assert.equal(r.log.at(-1), 'pnpm --filter @slicerx/web exec playwright install-deps chromium')
+  })
+
+  it('installs only the browser on a self-hosted runner', () => {
+    const root = setup({ report: 'Missing system dependencies (1):\n  xvfb\n' })
+    const r = run(root, 'playwright-chromium.sh', [], { RUNNER_ENVIRONMENT: 'self-hosted' })
+    assert.equal(r.status, 0, r.out)
+    assert.deepEqual(r.log, ['pnpm --filter @slicerx/web exec playwright install chromium'])
+  })
+})
+

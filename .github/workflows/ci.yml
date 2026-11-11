@@ -225,12 +225,21 @@ jobs:
       - run: sh packages/geom/wasm/scripts/build.sh
       # Chromium for the unit tests that lay out in a real browser (packages/ui setting-row-browser.test.tsx).
       - id: pw
-        run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+          echo "image=${ImageOS:-none}-${ImageVersion:-none}" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
+      # the system packages Chromium needs, as .deb files per runner image, so a warm cache installs them with no
+      # package mirror (scripts/ci/playwright-chromium.sh)
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/sx-apt/playwright
+          key: apt-playwright-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          restore-keys: apt-playwright-
+      - run: bash scripts/ci/playwright-chromium.sh
       - run: pnpm -r exec bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
@@ -533,10 +542,21 @@ jobs:
       # frontend. Its clippy and tests, bridge included, ride on core-a on a self-hosted runner (which has the system
       # libraries), and are the desktop part on a hosted one, which installs them. A placeholder page is enough to
       # compile it. Warm, this adds about a minute and a half to core-a.
+      # the libraries as .deb files per runner image, so a warm cache installs them with no package mirror
+      - if: matrix.part == 'desktop'
+        id: apt-image
+        run: echo "image=${ImageOS:-none}-${ImageVersion:-none}" >> "$GITHUB_OUTPUT"
+      - if: matrix.part == 'desktop'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sx-apt/desktop
+          key: apt-desktop-${{ steps.apt-image.outputs.image }}-${{ hashFiles('scripts/ci/apt-desktop-libs.sh') }}
+          restore-keys: apt-desktop-
       - if: matrix.part == 'desktop'
         name: Linux system libraries for the desktop shell
-        # Some hosted runners stall on the package mirror for 10 minutes or more. The script cuts each try off and
-        # retries, and fails here before the job's limit (scripts/ci/apt-desktop-libs.sh).
+        # Some hosted runners stall on the package mirror for 10 minutes or more, or cannot reach it at all. The script
+        # installs from the cache when it can; otherwise it cuts each try off, retries, tries a fallback mirror, and
+        # fails here before the job's limit (scripts/ci/apt-install.sh).
         timeout-minutes: 10
         run: bash scripts/ci/apt-desktop-libs.sh
       - if: matrix.part == 'desktop' || (matrix.part == 'core-a' && runner.environment != 'github-hosted')
@@ -665,6 +685,16 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      # the libraries as .deb files per runner image, so a warm cache installs them with no package mirror
+      - if: runner.os == 'Linux'
+        id: apt-image
+        run: echo "image=${ImageOS:-none}-${ImageVersion:-none}" >> "$GITHUB_OUTPUT"
+      - if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sx-apt/desktop
+          key: apt-desktop-${{ steps.apt-image.outputs.image }}-${{ hashFiles('scripts/ci/apt-desktop-libs.sh') }}
+          restore-keys: apt-desktop-
       - name: Linux system libraries
         if: runner.os == 'Linux'
         timeout-minutes: 10
@@ -1037,17 +1067,23 @@ jobs:
           chmod +x "$RUNNER_TEMP/sx-cli/sx"
           echo "SX_CLI_BIN=$RUNNER_TEMP/sx-cli/sx" >> "$GITHUB_ENV"
       - id: pw
-        run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+          echo "image=${ImageOS:-none}-${ImageVersion:-none}" >> "$GITHUB_OUTPUT"
       - if: runner.environment != 'self-hosted'
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      # the project runner's system packages are installed once by its admin; two jobs running apt at once collide
-      - run: |
-          deps="--with-deps"
-          [ "$RUNNER_ENVIRONMENT" = self-hosted ] && deps=""
-          pnpm --filter @slicerx/web exec playwright install $deps chromium
+      - if: runner.environment != 'self-hosted'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sx-apt/playwright
+          key: apt-playwright-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          restore-keys: apt-playwright-
+      # the project runner's system packages are installed once by its admin, so the script installs only the browser
+      # there; two jobs running apt at once collide
+      - run: bash scripts/ci/playwright-chromium.sh
       - name: Build the MCP runtime used by desktop link tests
         if: matrix.project == 'desktop'
         run: |
@@ -1151,12 +1187,19 @@ jobs:
           chmod +x "$RUNNER_TEMP/sx-cli/sx"
           echo "SX_CLI_BIN=$RUNNER_TEMP/sx-cli/sx" >> "$GITHUB_ENV"
       - id: pw
-        run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+          echo "image=${ImageOS:-none}-${ImageVersion:-none}" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/sx-apt/playwright
+          key: apt-playwright-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          restore-keys: apt-playwright-
+      - run: bash scripts/ci/playwright-chromium.sh
       # One retry per failing test, decided by the results as in e2e-shard.
       - run: pnpm --filter @slicerx/web exec playwright test --project=desktop e2e/journeys --grep @smoke --grep-invert @gpu --workers=1 --retries=1 --reporter=list,json --trace=retain-on-failure || echo "playwright exited $?"
         env:
@@ -1450,7 +1493,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: cargo build -p sx-cli --release
-      - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
+      - id: pw
+        run: |
+          echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+          echo "image=${ImageOS:-none}-${ImageVersion:-none}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/sx-apt/playwright
+          key: apt-playwright-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          restore-keys: apt-playwright-
+      - run: bash scripts/ci/playwright-chromium.sh
       # One pack of the integrator kit, as npm would publish its packages, for the three checks below.
       - run: node scripts/pack-integrator-kit.mjs "$RUNNER_TEMP/kit"
       # The integrator sample, installed from packed tarballs the way an outside app gets the packages.
