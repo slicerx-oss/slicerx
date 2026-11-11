@@ -1800,7 +1800,7 @@ fn runs_between(mesh: &TriMesh, key: &dyn Fn(usize) -> u64, [k0, k1]: [u64; 2]) 
             by_edge.entry((u.min(v), u.max(v))).or_default().push(t);
         }
     }
-    let segs: Vec<(u32, u32)> = by_edge
+    let mut segs: Vec<(u32, u32)> = by_edge
         .iter()
         .filter(|(_, ts)| {
             let [t0, t1] = ts[..] else { return false };
@@ -1809,6 +1809,8 @@ fn runs_between(mesh: &TriMesh, key: &dyn Fn(usize) -> u64, [k0, k1]: [u64; 2]) 
         })
         .map(|(&uv, _)| uv)
         .collect();
+    // sorted, and runs in the order of their first segment: map order differs between runs and builds
+    segs.sort_unstable();
     if segs.is_empty() {
         return None;
     }
@@ -1820,12 +1822,17 @@ fn runs_between(mesh: &TriMesh, key: &dyn Fn(usize) -> u64, [k0, k1]: [u64; 2]) 
         let (ru, rv) = (run_root(&mut parent, u), run_root(&mut parent, v));
         parent.insert(ru, rv);
     }
-    let mut runs: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+    let mut slot: HashMap<u32, usize> = HashMap::new();
+    let mut runs: Vec<Vec<(u32, u32)>> = Vec::new();
     for &(u, v) in &segs {
         let r = run_root(&mut parent, u);
-        runs.entry(r).or_default().push((u, v));
+        let i = *slot.entry(r).or_insert_with(|| {
+            runs.push(Vec::new());
+            runs.len() - 1
+        });
+        runs[i].push((u, v));
     }
-    Some((segs, runs.into_values().collect()))
+    Some((segs, runs))
 }
 
 /// A run's two farthest points along its first segment, and how far apart they are.
@@ -2778,5 +2785,24 @@ mod tests {
             }
         }
         assert!(ok >= 5 && refused >= 3, "ok {ok} refused {refused}");
+    }
+
+    #[test]
+    fn runs_between_two_faces_come_back_in_one_order() {
+        let m = build::cylinder(&Frame::WORLD, 6.0, 0.0, 4.0, 48);
+        let f = crate::faces::recognize(&m);
+        let key = |t: usize| u64::from(f.ids[t]) + 1;
+        let top = m.triangles.iter().position(|&t| m.normal(t)[2] > 0.0).unwrap();
+        let side = m
+            .triangles
+            .iter()
+            .position(|&t| m.normal(t)[2].abs() < 1e-9)
+            .unwrap();
+        let ks = [key(top), key(side)];
+        let first = runs_between(&m, &key, ks).unwrap();
+        assert_eq!(first.0.len(), 48);
+        for _ in 0..16 {
+            assert_eq!(runs_between(&m, &key, ks).unwrap(), first);
+        }
     }
 }
