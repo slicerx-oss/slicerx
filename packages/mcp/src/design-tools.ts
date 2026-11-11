@@ -8,7 +8,7 @@ import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { assumptionsInput, createPlanRegistry, designCheck, FIX_ROUNDS, hasHookLip, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
+import { assumptionsInput, createPlanRegistry, designCheck, FIX_ROUNDS, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, partPlanSchema, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -620,13 +620,13 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'read',
     description:
-      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace. Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with, and underFloors: each size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless the pieces print in place, with pin and bore when it runs around a pin; a wall or pin under two nozzle lines; a hole under the nozzle), with the floor and why, and unstated when a plan with a hinge or a pin piece does not say whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption), or says both. The plan is kept as given; put it again with the floor to build to it. Once its part is built, a size the build cannot keep is changed with amends (its planId) and reason (why, required): sizes only, once per fix round and never after the stop result; the plan keeps its design and fix round, and the result gives its revision and each change.',
+      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and, when a piece is meant to be open (the top of a cup, holder or vase), its open faces in openFaces: the piece (the part name, or a piece printInPlace names) and its faces as it prints (top, bottom, front, back, left or right, each once, never all six). Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with, and underFloors: each size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless the pieces print in place, with pin and bore when it runs around a pin; a wall or pin under two nozzle lines; a hole under the nozzle), with the floor and why, and unstated when a plan with a hinge or a pin piece does not say whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption), or says both. The plan is kept as given; put it again with the floor to build to it. Once its part is built, a size the build cannot keep is changed with amends (its planId) and reason (why, required): sizes only, once per fix round and never after the stop result; the plan keeps its design and fix round, and the result gives its revision and each change.',
     input: z.object({
-      plan: partPlanSchema.extend({ assumptions: assumptionsInput }).describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
+      plan: partPlanSchema.extend({ assumptions: assumptionsInput }).describe('The part plan: planId, part, units, features, optional overall, holes, printInPlace and openFaces, assumptions and questions'),
       design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
       amends: z.string().trim().min(1).max(64).optional().describe("To change your built plan's sizes: its planId, the same as plan.planId; once per fix round"),
       reason: z.string().max(AMEND_REASON_MAX).optional().describe('With amends: why the build changes the plan'),
@@ -636,12 +636,15 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const fit = () => planFloors(runFitLimits(ctx?.context, { ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() }))
       if (i.amends !== undefined) return amendPlan(i.plan, i.amends, i.reason, i.design, fit)
       if (i.reason !== undefined) throw new ToolInputError('reason: give a reason only with amends, to change a plan of yours')
+      const faces = openFacesProblem(i.plan)
+      if (faces) throw new ToolInputError(faces)
       // a tie names a design that exists (get refuses one that does not)
       const tied = i.design ? designs.get(i.design) : undefined
       plans.put(i.plan, tied?.id, 'client')
       const p = i.plan
       const holes = (p.holes ?? []).reduce((n, h) => n + (h.count ?? 1), 0)
-      const shape = [plural(p.features.length, 'feature'), ...(holes ? [plural(holes, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : [])].join(', ')
+      const open = (p.openFaces ?? []).map((o) => `${o.piece} open at the ${o.faces.join(' and ')}`)
+      const shape = [plural(p.features.length, 'feature'), ...(holes ? [plural(holes, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : []), ...open].join(', ')
       // sizes under the printer's floors are named, not changed: the client's plan is its own
       const under = underFloors(p, fit())
       const floors = underText(under, p.units)
@@ -657,6 +660,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           features: p.features.length,
           holes,
           ...(unstated ? { unstated } : {}),
+          ...(p.openFaces ? { openFaces: p.openFaces } : {}),
           underFloors: under.map(underOut),
         },
       }

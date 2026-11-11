@@ -16,8 +16,11 @@ import { floorText, jointProblem, planFloors, raiseToFloors, underFloors, underL
 
 export { PLAN_SIZE_MAX, type PartPlan }
 
-/** A part's plan as the card takes it: the shared shape (design-check.ts, which design.check reads), with one feature at least. */
-export const PartPlanSchema = partPlanSchema.extend({ features: partPlanSchema.shape.features.min(1) })
+/**
+ * A part's plan as the card takes it: the shared shape (design-check.ts, which design.check reads), with one feature at
+ * least, and without openFaces, which only design.put_plan takes for now.
+ */
+export const PartPlanSchema = partPlanSchema.extend({ features: partPlanSchema.shape.features.min(1) }).omit({ openFaces: true })
 
 /** What mimir sends: the plan without its id, which the tool gives it, and with no room for the card's own line. */
 export const PlanInputSchema = PartPlanSchema.omit({ planId: true }).extend({ assumptions: assumptionsInput })
