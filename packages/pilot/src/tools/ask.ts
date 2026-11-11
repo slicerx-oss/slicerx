@@ -249,7 +249,7 @@ export function sheetTool(): PilotTool<never> {
     source: 'command',
     permission: 'read',
     description:
-      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on). Set fits when a size must fit something the person has or something the part holds (a shelf it clamps, a phone it carries, a screw it takes), where a wrong size wastes a print: that sheet waits for them to confirm or edit. Without fits (a display model, a part at its default size) the sheet shows and you build with its sizes at once; the person changes one after. A sheet of a part already built (design) waits for them too. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess, and kind count or angle for a row that is a count or an angle. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
+      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on). Set fits when a size must fit something the person has or something the part holds (a shelf it clamps, a phone it carries, a screw it takes), where a wrong size wastes a print: that sheet waits for them to confirm or edit. Without fits (a display model, a part at its default size) the sheet shows and you build with its sizes at once; the person changes one after. A sheet of a part already built (design) waits for them too. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess, and kind count or angle for a row that is a count or an angle. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them. With neither, the sheet draws the design this run is building, every part as assembled, or before anything is built shows the sizes as a list with no drawing and no callouts. A row: {"key": "length", "label": "Length", "value": 80, "unit": "mm", "source": "guess", "at": {"a": [0, 0, 0], "b": [80, 0, 0]}}; a count takes unit mm and kind count.',
     localDescription:
       'Before building a part, show a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance). Use it whenever a size matters and you are unsure. Give each its best value, unit, source and kind for a count or angle. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at. New part: part, its solids as built (hollow walls as outline plus hole, lid beside base), never stand-in boxes. Built part: design, its id.',
     input: z
@@ -270,13 +270,15 @@ export function sheetTool(): PilotTool<never> {
     args: (i) => `"${i.title}", ${i.dims.length} sizes`,
     async run(i, ctx) {
       if (!ctx.sheet) return { ok: false, summary: 'Nobody here can confirm a sheet' }
-      // the person edits sizes on the drawing, so a sheet of several sizes needs the part to draw, and a place on it for
-      // every row, so each row has its callout
-      if (i.dims.length > 1 && !i.part?.length && !i.design) return { ok: false, inputRefused: true, summary: 'Not shown: a sheet of several sizes needs part: [solid, ...], the part as it will be built (each solid an extrude {"plane", "points", "from", "to"}, or a revolve, sweep or loft for a round, bent or tapered body), or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
+      // a sheet that names no part draws the design the run is building, whole, with every part as assembled; with
+      // none built yet, it shows as a list of sizes with no drawing rather than going back
+      const current = !i.part?.length && !i.design ? ctx.currentDesign?.() : undefined
+      if (current && (!ctx.sheetDesign || ctx.sheetDesign(current))) i = { ...i, design: current }
+      const drawn = !!i.part?.length || !!i.design
       // a design that is not on the plate would show the sheet with no drawing, so mimir hears of it instead
       if (i.design && ctx.sheetDesign && !ctx.sheetDesign(i.design)) return { ok: false, inputRefused: true, summary: `Not shown: no built design ${i.design} on the plate; use the design id geom.info gives, or give part instead.` }
       // a count (windows: 4) is no length on the part, so it shows in the list with no callout
-      const unplaced = i.dims.length > 1 ? i.dims.flatMap((d, n) => (d.at || kindOf(d.key, d.kind) === 'count' ? [] : [unplacedRow(d, n)])) : []
+      const unplaced = i.dims.length > 1 && drawn ? i.dims.flatMap((d, n) => (d.at || kindOf(d.key, d.kind) === 'count' ? [] : [unplacedRow(d, n)])) : []
       if (unplaced.length) return { ok: false, inputRefused: true, summary: `Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. ${unplaced.join('; ')}. Send it again with them.` }
       const answer = await ctx.sheet(sheetOf(i))
       // words written while it waited set it aside: they are the person's answer, as for a dismissed question
@@ -294,7 +296,9 @@ export function sheetTool(): PilotTool<never> {
       // nobody was asked: the sizes stand as shown, and the person changes one after
       if (answer.auto) return { summary: `Shown; build with these sizes now (it fits nothing the person has, so it does not wait). Say the size in the reply; the person can change it after`, output: answer }
       const n = answer.changed.length
-      return { summary: n ? `Confirmed, ${n} size${n === 1 ? '' : 's'} changed` : 'Confirmed as shown', output: answer }
+      // a list with no drawing reaches the person, but each row's callout needs the part: the next sheet gives it
+      const listed = !drawn && i.dims.length > 1 ? `. It showed as a list with no drawing: give part (the part as it will be built) or design on the next sheet, so each row gets its callout` : ''
+      return { summary: (n ? `Confirmed, ${n} size${n === 1 ? '' : 's'} changed` : 'Confirmed as shown') + listed, output: answer }
     },
   }) as PilotTool<never>
 }

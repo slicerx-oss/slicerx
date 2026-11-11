@@ -107,6 +107,8 @@ export interface ToolContext {
   sheet?(sheet: Omit<PilotSheet, 'id'>): Promise<PilotSheetAnswer>
   /** True when a built design with this id is there for a sheet to draw; absent where the host has no plate. */
   sheetDesign?(id: string): boolean
+  /** The design this chat's run is building, the last it started, when it has one: a sheet that names no part draws it whole. */
+  currentDesign?(): string | undefined
   /** Ties the last sheet's rows to the steps they set; false when this run showed no sheet. */
   bindSheet?(design: string, binds: PilotSheetBind[]): boolean
   /** The chat's print run; present only when the host keeps print runs. */
