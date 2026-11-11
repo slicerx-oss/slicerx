@@ -119,6 +119,18 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       }
       if (part >= d.parts.length) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
       const parts = part === -1 ? d.parts.map((_, k) => k) : [part]
+      // a color asked for on a part already painted in bands goes on one band, the one the person most likely means
+      if (i.layer === 'color' && target.kind === 'part') {
+        // a part with any band: a state of its own, or the asked color over part of it (the rest its own filament)
+        const banded = (await regions(d, 'color')).filter((r) => parts.includes(r.part) && r.states.some((s) => s.state !== i.state || s.triangles < d.parts[r.part]!.indices.length / 3))
+        if (banded.length) {
+          const said = banded.map((r) => {
+            const bands = r.states.map((s) => `filament ${s.state} over ${Math.round(s.areaMm2)} mm2`)
+            return `${d.parts[r.part]!.name} is painted in bands: ${bands.join(', ')}, and the rest in its own filament`
+          })
+          throw new ToolInputError(`target: ${said.join('; ')}. Painting the whole part would cover every band: paint the band the person most likely means with a height target (below the waterline of a hull, such as {"kind":"height","below":4}) and say which band you took; if two bands fit equally, ask with two choices`)
+        }
+      }
       // a height band's edge lands on its height (the step keeps the depth, so a replay paints the same)
       const maxDepth = i.max_depth ?? (target.kind === 'height' ? bandDepth(parts.map((k) => d.parts[k]!), d.transform) : undefined)
       const params: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target, ...(maxDepth !== undefined ? { maxDepth } : {}) }
