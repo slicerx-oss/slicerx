@@ -19,7 +19,6 @@ import { liveEngine } from './geom-engine'
  */
 const ELSEWHERE: Record<string, string> = {
   'gear-pair': 'not captured again yet: two live runs stopped at their cost cap before the model finished',
-  'flexi-dragon': 'not captured again yet: it named a step by its number as text, which design.edit_step refused then and takes now',
 }
 
 // the replays build real geometry, so they run where the engine is built (the web job), and skip on the replay job
