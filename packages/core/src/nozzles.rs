@@ -277,6 +277,13 @@ pub(crate) fn check_hotends(cfg: &PrintConfig, map: &Map, usage: &Usage) -> crat
     Ok(())
 }
 
+/// A printer with several extruders, one of which takes its hotends from a rack (the H2C: the left nozzle, and six
+/// hotends for the right extruder): the filament map's `nozzle` gives each filament its hotend.
+pub(crate) fn hotend_rack(cfg: &PrintConfig) -> bool {
+    let ext = extruders(cfg);
+    ext > 1 && nozzle_counts(cfg, ext).iter().any(|&c| c > 1)
+}
+
 /// Nozzles each extruder can hold (`extruder_max_nozzle_count`; the H2C's right extruder takes six).
 fn nozzle_counts(cfg: &PrintConfig, extruders: usize) -> Vec<usize> {
     #[allow(

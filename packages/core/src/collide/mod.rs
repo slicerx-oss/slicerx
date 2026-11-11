@@ -505,8 +505,9 @@ pub(crate) struct Model {
     /// The extruder of each filament slot, 0-based.
     extruder_of: Vec<usize>,
     /// The changer's tool of each filament slot, 0-based, which picks the route of a change
-    /// ([`Changer::route`]): the hotend on a printer whose hotends are its tools (the H3C), as the filament map puts
-    /// each filament on one, else the slot itself.
+    /// ([`Changer::route`]): the hotend the filament map puts the filament on, on a printer whose hotends are its tools
+    /// (the H3C) or that takes hotends from a rack (the H2C: its left nozzle 0, the rack's hotends from 1), else the
+    /// slot itself.
     dock_of: Vec<usize>,
     changer: Option<Changer>,
     lift_mm: f64,
@@ -623,10 +624,10 @@ impl Model {
             || (0..64).map(|t| t.min(heads.len().saturating_sub(1))).collect(),
             |m| m.extruder.iter().map(|&e| usize::from(e)).collect(),
         );
-        // The H3C's routes go by hotend: a change docks the PrintTool of the hotend the old filament prints on and
+        // The H3C's and the H2C's routes go by hotend: a change parks the hotend the old filament prints on and
         // picks the one the new filament prints on, wherever their slots are.
         let dock_of = match map {
-            Some(m) if crate::nozzles::hotend_tools(config) => {
+            Some(m) if crate::nozzles::hotend_tools(config) || crate::nozzles::hotend_rack(config) => {
                 m.nozzle.iter().map(|&h| usize::from(h)).collect()
             }
             _ => (0..64).collect(),
