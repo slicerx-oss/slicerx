@@ -231,6 +231,10 @@ describe('the mimir tab on a local model', () => {
     // projecting edges into a sketch edits a part already built; a new part never starts with it
     expect(build).not.toContain('design__sketch_project')
     expect(await tools('Make the base thicker', 'A 30 mm cube with a fillet')).toContain('design__sketch_project')
+    // saving a note is never a step of a new part, so its turn leaves it out; shaping and editing it keep it
+    expect(build).not.toContain('memory__remember')
+    expect(build).toContain('memory__recall')
+    expect(await tools('Make the base thicker', 'A 30 mm cube with a fillet')).toContain('memory__remember')
     expect(build.some((n) => n.startsWith('app__') || n.startsWith('printer__') || n.startsWith('settings__'))).toBe(false)
     const app = await tools('Slice the plate and send it to my printer')
     expect(app).toEqual(expect.arrayContaining(['app__slice', 'printer__queue', 'settings__get', 'settings__apply', 'pilot__tools']))

@@ -273,7 +273,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * `out` (the schema toolSpec publishes) without the keywords that tell a model nothing about what the tool takes, read
  * against `inp`, the same schema as zod writes it for the tool's input. Dropped: the safe integer range zod gives an
  * integer with no bounds of its own; `additionalProperties: {}` (any value, as with no keyword); `propertyNames` of
- * plain strings (every JSON key is one); and `additionalProperties: false` on an object whose input form leaves it
+ * plain strings (every JSON key is one); `minLength: 1` (a string that is not empty, which no model sends on purpose,
+ * and the tool still refuses one); and `additionalProperties: false` on an object whose input form leaves it
  * open, since the tool strips unknown keys there rather than refusing them. A strict object keeps it. The type beside a
  * const goes too, since the const is the one value taken, and so does the string type beside an enum of strings, since
  * the enum lists every value taken. A tuple of one kind is written as the plain array it equals (sameTuple). Everything
@@ -287,6 +288,7 @@ function leanSchema(out: unknown, inp: unknown): unknown {
     if ((k === 'maximum' && v === Number.MAX_SAFE_INTEGER) || (k === 'minimum' && v === Number.MIN_SAFE_INTEGER)) continue
     if (k === 'additionalProperties' && isRecord(v) && Object.keys(v).length === 0) continue
     if (k === 'propertyNames' && isRecord(v) && Object.keys(v).length === 1 && v.type === 'string') continue
+    if (k === 'minLength' && v === 1) continue
     if (k === 'additionalProperties' && v === false && i?.type === 'object' && !('additionalProperties' in i)) continue
     if (k === 'type' && 'const' in out) continue
     if (k === 'type' && v === 'string' && Array.isArray(out.enum) && out.enum.length > 0 && out.enum.every((e) => typeof e === 'string')) continue
