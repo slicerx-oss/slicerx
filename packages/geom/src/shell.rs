@@ -496,11 +496,13 @@ fn prism(w: &TriMesh, faces: &Faces, f: u32, n: V3, out: f64, inward: f64) -> Tr
             *edges.entry((p, q)).or_insert(0) += 1;
         }
     }
-    let outline: Vec<(u32, u32)> = edges
+    // sorted: map order differs between runs and builds
+    let mut outline: Vec<(u32, u32)> = edges
         .keys()
         .filter(|(p, q)| !edges.contains_key(&(*q, *p)))
         .copied()
         .collect();
+    outline.sort_unstable();
     for (p, q) in outline {
         let (a, b) = (at(&mut m, p), at(&mut m, q));
         m.triangles.push([a.1, b.1, b.0]);
@@ -846,5 +848,16 @@ mod tests {
         ];
         let e = shell(&m, &every, 2.0, &o()).unwrap_err().to_string();
         assert!(e.contains("every face"), "{e}");
+    }
+
+    #[test]
+    fn a_face_prism_is_built_the_same_every_time() {
+        let m = build::cylinder(&Frame::WORLD, 6.0, 0.0, 4.0, 48);
+        let f = faces::recognize(&m);
+        let t = m.triangles.iter().position(|&t| m.normal(t)[2] > 0.0).unwrap();
+        let first = prism(&m, &f, f.ids[t], [0.0, 0.0, 1.0], 1.0, 2.0);
+        for _ in 0..16 {
+            assert_eq!(prism(&m, &f, f.ids[t], [0.0, 0.0, 1.0], 1.0, 2.0), first);
+        }
     }
 }

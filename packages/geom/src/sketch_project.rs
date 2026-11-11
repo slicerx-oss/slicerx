@@ -367,8 +367,11 @@ fn face_rings(mesh: &TriMesh, face: &FaceRef) -> Result<Vec<Vec<V3>>> {
             }
         }
     }
+    // sides in key order, so a corner two rings touch is walked the same way on every run and build
+    let mut sides: Vec<(V3, V3)> = sides.into_values().collect();
+    sides.sort_unstable_by_key(|&(a, b)| (pkey(a), pkey(b)));
     let mut next: HashMap<[u64; 3], Vec<(V3, V3)>> = HashMap::new();
-    for &(a, b) in sides.values() {
+    for (a, b) in sides {
         next.entry(pkey(a)).or_default().push((a, b));
     }
     let mut rings = Vec::new();
@@ -1120,5 +1123,37 @@ mod tests {
         assert!(fit(&[[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]], true).is_none());
         let l = fit(&[[0.0, 0.0], [5.0, 1e-7], [10.0, 0.0], [5.0, -1e-7]], true);
         assert!(l.is_none_or(|l| !l.segments.is_empty()));
+    }
+
+    #[test]
+    fn a_face_whose_rings_touch_at_a_corner_walks_the_same_every_time() {
+        // two triangles of one face that meet only at the origin
+        let mesh = TriMesh {
+            positions: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                [-1.0, -1.0, 0.0],
+            ],
+            triangles: vec![[0, 1, 2], [0, 3, 4]],
+            faces: Some(Faces {
+                ids: vec![0, 0],
+                table: vec![faces::Surface::Plane {
+                    normal: [0.0, 0.0, 1.0],
+                    offset: 0.0,
+                }],
+                keys: vec![],
+            }),
+        };
+        let face = FaceRef {
+            at: [0.7, 0.3, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            key: None,
+        };
+        let first = face_rings(&mesh, &face).unwrap();
+        for _ in 0..16 {
+            assert_eq!(face_rings(&mesh, &face).unwrap(), first);
+        }
     }
 }
