@@ -1217,6 +1217,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         emit({ type: 'sheet', sheet })
       })
     if (opts.sheetDesign) ctx.sheetDesign = opts.sheetDesign
+    ctx.currentDesign = () => runPart.get(sessionId)?.findLast((p) => p.body)?.id
     ctx.bindSheet = (design, binds) => {
       const sheet = lastSheet.get(sessionId)
       if (!sheet) return false

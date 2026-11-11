@@ -85,10 +85,30 @@ describe('pilot.sheet', () => {
     expect(width.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('row 4 (Width) needs at') })
   })
 
-  it('refuses a sheet of several sizes with no part to draw, and keeps a one-row sheet', async () => {
-    const none = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims: DIMS } }] }], () => ({}))
-    expect(none.some((e) => e.type === 'sheet')).toBe(false)
-    expect(none.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('needs part') })
+  it('draws the design the run is building, whole, when a sheet names no part or design', async () => {
+    const seen: Omit<PilotSheet, 'id'>[] = []
+    const ctx = (current: string | undefined, onPlate: boolean) => ({
+      sheet: async (sh: Omit<PilotSheet, 'id'>) => (seen.push(sh), { confirmed: true, values: {}, changed: [] }),
+      currentDesign: () => current,
+      sheetDesign: () => onPlate,
+    })
+    const tool = sheetTool()
+    const input = tool.input.parse({ title: 'Desk lamp', dims: DIMS })
+    const drawn = await tool.run(input as never, ctx('obj_lamp', true) as never)
+    expect(seen[0]!.design).toBe('obj_lamp')
+    expect(drawn.summary).toBe('Confirmed as shown')
+    // a design that is not on the plate draws nothing, so the sizes show as a list, and the reply says what to send
+    const listed = await tool.run(tool.input.parse({ title: 'Desk lamp', dims: DIMS.map(({ at: _at, ...d }) => d) }) as never, ctx('obj_gone', false) as never)
+    expect(seen[1]!.design).toBeUndefined()
+    expect(listed.summary).toContain('It showed as a list with no drawing: give part (the part as it will be built) or design on the next sheet')
+  })
+
+  it('shows a sheet of several sizes with nothing to draw as a list, and keeps a one-row sheet', async () => {
+    const none = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims: DIMS.map(({ at: _at, ...d }) => d) } }] }], () => ({}))
+    const shown = none.find((e) => e.type === 'sheet') as { sheet: PilotSheet } | undefined
+    expect(shown).toBeDefined()
+    expect(shown!.sheet.part).toBeUndefined()
+    expect(shown!.sheet.design).toBeUndefined()
     const one = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Bore', dims: [DIMS[1]] } }] }], () => ({}))
     expect(one.some((e) => e.type === 'sheet')).toBe(true)
   })
@@ -122,10 +142,6 @@ describe('pilot.sheet', () => {
 
     it('names a row whose place is missing a coordinate', async () => {
       expect(await refusal({ dims: [dims[0], { ...dims[1], at: { a: [0, 0, 0], b: [16, 0] } }], part: PART })).toContain('row 2 (Bore) needs at: {"a": [x, y, z], "b": [x, y, z], "off": [x, y, z]} in mm')
-    })
-
-    it('says what part takes when a sheet of several sizes has none', async () => {
-      expect(await refusal({ dims })).toContain('needs part: [solid, ...]')
     })
 
     it('names a sweep profile with neither d nor points', async () => {
