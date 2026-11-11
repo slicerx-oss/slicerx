@@ -5,7 +5,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, multiply, point, stepName, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
-import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, type Design } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, type Design, type PiecePlans } from './design-tools'
 import { ToolInputError } from './errors'
 import { modelArg, vec3, type GeomCall } from './args'
 
@@ -40,7 +40,7 @@ const designOrModel = (i: { model?: string | undefined; design?: string | undefi
 
 const partArg = z.number().int().min(0).optional().describe('With a design: the part to work on, from 0; absent: every part')
 
-export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost | undefined }): PilotTool<never>[] {
+export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost | undefined; /** The plans a new part's piece name comes from (pieceNameFor). */ plans?: PiecePlans | undefined }): PilotTool<never>[] {
   const call = deps.files.call
   const meshOut = deps.files.mesh
   const designOf = (id: string): [DesignHost, Design] => {
@@ -312,7 +312,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const build = defineTool({
     name: 'geom.build',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,
@@ -331,9 +331,12 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         // The mesh goes in the design's own frame, as the history keeps a part.
         const inv = invert(d.transform)
         const shape = i.subtract?.length || i.solids.length !== 1 ? undefined : primitiveOf(i.solids[0]!, inv)
-        const part: HistoryMesh = { name: i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices, ...(shape ? { primitive: shape } : {}) }
+        // a part that builds a print-in-place piece of the design's plan takes the plan's name for it
+        const piece = pieceNameFor(deps.plans, d, i.feature, i.name)
+        const part: HistoryMesh = { name: piece ?? i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices, ...(shape ? { primitive: shape } : {}) }
         await ds.add(d, -1, { op: 'parts.add', parts: [part], label: `Add ${part.name}` }, undefined, withFeature(i.feature))
-        return added(d, 'Built')
+        const built = added(d, 'Built')
+        return piece ? { ...built, summary: `${built.summary}${pieceNameNote(piece, i.name)}` } : built
       }
       const out = await call('build', { solids: i.solids, ...(i.subtract ? { subtract: i.subtract } : {}) })
       return { summary: `Built a model from ${i.solids.length} solid${i.solids.length === 1 ? '' : 's'}`, output: out }
