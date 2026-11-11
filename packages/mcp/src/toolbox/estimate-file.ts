@@ -8,7 +8,7 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'estimate_file',
     title: 'Estimate print time and filament',
-    version: '1.12.0',
+    version: '1.13.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',
