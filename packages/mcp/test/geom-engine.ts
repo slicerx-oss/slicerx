@@ -2,21 +2,20 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The engine for design tests. With a built engine (packages/geom/wasm/pkg/sx_geom_wasm.wasm, or SX_GEOM_WASM) calls
 // run in the real wasm, the build the app loads; without one they replay replies recorded from it in
-// fixtures/<name>.json.gz (gzipped: meshes compress about 4 to 1), keyed by test, so the tests run anywhere. SX_GEOM_RECORD=1 with a built engine records again.
+// fixtures/<name>.json.gz, keyed by test, so the tests run anywhere. SX_GEOM_RECORD=1 with a built engine records again,
+// packed: each long number array (a mesh's positions, indices, face ids) once, as binary (packReplies); a fixture recorded
+// whole before that still replays as it is.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { dirname, join } from 'node:path'
 import { clearReplayCache, type EngineCall } from '@slicerx/cad-history'
+import { packReplies, unpackReplies } from './geom-replies-pack'
+export { PACKED_FORMAT, packReplies, unpackReplies } from './geom-replies-pack'
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'
 
-export interface Recorded {
-  op: string
-  /** A hash of the request without its key salt; requests carry whole meshes, so the file keeps only this. */
-  request: string
-  reply?: unknown
-  error?: string
-}
+export type { Recorded } from './geom-replies-pack'
+import type { Recorded } from './geom-replies-pack'
 
 interface GeomExports {
   memory: WebAssembly.Memory
@@ -177,13 +176,13 @@ export function replayEngine(fixture: string, replies: Record<string, Recorded[]
 }
 
 /**
- * Writes `recorded` to `fixture` as gzip. A run that recorded no call writes nothing, so a test file that makes no engine
+ * Writes `recorded` to `fixture` as gzip, packed (packReplies). A run that recorded no call writes nothing, so a test file that makes no engine
  * calls, or shares a fixture with one that does, cannot wipe it. Returns whether it wrote.
  */
 export function writeRecording(fixture: string, recorded: Record<string, Recorded[]>): boolean {
   if (Object.values(recorded).every((list) => list.length === 0)) return false
   mkdirSync(dirname(fixture), { recursive: true })
-  writeFileSync(fixture, gzipSync(`${JSON.stringify(recorded)}\n`, { level: 9 }))
+  writeFileSync(fixture, gzipSync(`${JSON.stringify(packReplies(recorded))}\n`, { level: 9 }))
   return true
 }
 
@@ -195,7 +194,7 @@ export function useGeomEngine(name: string): { engine: EngineCall } {
   const fixture = join(__dirname, 'fixtures', `${name}.json.gz`)
   const record = liveEngine && process.env['SX_GEOM_RECORD'] === '1'
   const recorded: Record<string, Recorded[]> = {}
-  const replies: Record<string, Recorded[]> = !liveEngine && existsSync(fixture) ? (JSON.parse(gunzipSync(readFileSync(fixture)).toString('utf8')) as Record<string, Recorded[]>) : {}
+  const replies: Record<string, Recorded[]> = !liveEngine && existsSync(fixture) ? unpackReplies(JSON.parse(gunzipSync(readFileSync(fixture)).toString('utf8'))) : {}
   const replay = liveEngine ? undefined : replayEngine(fixture, replies)
   const out: { engine: EngineCall } = { engine: () => Promise.reject(new Error('the engine is set in beforeAll')) }
   beforeAll(async () => {
