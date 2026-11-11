@@ -1048,6 +1048,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: 'Arguments were not valid JSON' })
       return { message: JSON.stringify({ ok: false, error: 'Arguments were not valid JSON.' }), stop: false }
     }
+    if (tool.fill) parsedJson = tool.fill(parsedJson)
     let parsed = tool.input.safeParse(parsedJson)
     // Local models often send null for a field they mean to leave out. Only when the call fails as
     // sent, try it once more without the nulls, so a tool that gives null a meaning still gets it.

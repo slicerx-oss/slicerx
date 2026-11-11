@@ -125,6 +125,29 @@ describe('design.plan with amends for a change the person asked for', () => {
     await expect(t.run('design.plan', { ...organizer, features: organizer.features.slice(0, 1), amends: 'plan_1', asked: 'add a drawer' })).rejects.toThrow(/keeps every planned feature/)
   })
 
+  it('changes how a planned feature is made when the person asks (a curved tray lofted, not extruded)', async () => {
+    const t = tab()
+    await t.approve(organizer)
+    const lofted = { ...organizer, features: organizer.features.map((f) => (f.name === 'Tray' ? { ...f, kind: 'loft', sizes: { ...f.sizes, sections: 5 }, kinds: { sections: 'count' as const } } : f)) }
+    const out = await t.run('design.plan', { ...lofted, amends: 'plan_1', asked: 'make the tray curved' })
+    expect(t.cards).toEqual(['Plan'])
+    expect(out.summary).toBe('Plan changed as asked (revision 2): Tray made by loft, not extrude. Build to it as changed')
+    expect(t.card.plans.get('plan_1')!.plan.features[0]).toMatchObject({ name: 'Tray', kind: 'loft', sizes: { sections: 5 } })
+  })
+
+  it('takes the approved plan when an asked change sends only the person\'s words', async () => {
+    const t = tab()
+    await t.approve(organizer)
+    const plan = tabToolset(boxHost(), t.card, { nozzleMm: () => machine.nozzle }).find((x) => x.name === 'design.plan')!
+    const filled = plan.fill!({ amends: 'plan_1', asked: 'add more pen cups' }) as PlanInput
+    expect(filled.features.map((f) => f.name)).toEqual(['Tray', 'Pen cups'])
+    const out = await t.run('design.plan', filled)
+    expect(out.ok).not.toBe(false)
+    expect(out.summary).toBe('The plan stays as approved; make the change the person asked for in the design, then add any new feature to the plan with amends and asked')
+    // a call with a plan body, or a first plan, is left as sent
+    expect(plan.fill!({ part: 'Box' })).toEqual({ part: 'Box' })
+  })
+
   it('lets a build amend add a feature too, on its card', async () => {
     const t = tab()
     await t.approve(organizer)

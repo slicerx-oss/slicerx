@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendAdded, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
+import { AMEND_REASON_MAX, amendAdded, amendChanges, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
 import { DETAIL_HELP, DETAIL_LEVELS, detailProblem, FEATURES_FLOOR, LONG_EXTRA, LONG_RATIO, SECTIONS_FLOOR } from './plan-detail'
 import { floorText, jointProblem, planFloors, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
 
@@ -273,6 +273,15 @@ export function createCardPlans(plans: PlanRegistry) {
       input: PlanToolInputSchema,
       // a local model plans and builds; changing an approved plan is for a cloud model, whose context holds its rules
       localInput: LocalPlanInputSchema,
+      // a change the person asked for, sent with only their words, takes the approved plan as its body
+      fill: (raw) => {
+        const r = raw as Record<string, unknown> | null
+        if (!r || typeof r !== 'object' || typeof r['amends'] !== 'string' || typeof r['asked'] !== 'string' || r['features'] !== undefined) return raw
+        const kept = planById(r['amends'])
+        if (!kept) return raw
+        const { planId: _p, ...body } = kept
+        return { ...body, ...r }
+      },
       args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}${i.amends ? `, amends ${i.amends}` : ''}`,
       async run(i, ctx) {
         if (!ctx.ask) return { ok: false, summary: 'Nobody here can approve a plan' }
@@ -397,10 +406,10 @@ export function createCardPlans(plans: PlanRegistry) {
     if (entry.stale || entry.superseded) throw new ToolInputError('amends: the person changed sizes since that plan was approved; make a new plan with the sizes they set')
     if (!entry.design) throw new ToolInputError("amends: the plan's part is not built yet; build to the plan")
     const was = entry.plan
-    const shape = amendShapeProblem(was, i)
+    const shape = amendShapeProblem(was, i, { asked: true })
     if (shape) throw new ToolInputError(shape)
     const { plan, raised } = raiseToFloors({ ...amendedSizes(was, i), planId }, floors)
-    if (!amendChanges(was, plan).length && !amendAdded(was, plan).length) return { ok: false, summary: `Nothing changed: the plan already has these sizes. Make the change the person asked for in the design`, output: { planId, accepted: false } satisfies PlanAnswer }
+    if (!amendChanges(was, plan).length && !amendAdded(was, plan).length && !amendKinds(was, plan).length) return { summary: 'The plan stays as approved; make the change the person asked for in the design, then add any new feature to the plan with amends and asked', output: { planId, accepted: true, revision: entry.revision ?? 1, changes: [] } satisfies PlanAnswer }
     plans.put(plan, entry.design, 'card')
     const revision = plans.asked(planId, words)
     const changes = amendChanges(was, plan)
@@ -435,7 +444,7 @@ export type CardPlans = ReturnType<typeof createCardPlans>
 
 /** What an amend changed, in plain words: each size, then each feature it added. */
 function changedText(was: PartPlan, now: PartPlan): string {
-  return [...amendChanges(was, now).map((c) => changeText(c, now.units)), ...amendAdded(was, now).map((n) => `added ${n}`)].join(', ')
+  return [...amendKinds(was, now), ...amendChanges(was, now).map((c) => changeText(c, now.units)), ...amendAdded(was, now).map((n) => `added ${n}`)].join(', ')
 }
 
 /** A raised size as design.plan's answer gives it. */

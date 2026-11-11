@@ -36,12 +36,14 @@ const sameKeys = (a: object, b: object): boolean => {
  * names), whether it has an overall size, and each row of holes (name and count), and its open faces. Only the numbers
  * change, and features may be added.
  */
-export function amendShapeProblem(old: Sized, next: Sized): string | null {
+export function amendShapeProblem(old: Sized, next: Sized, o: { asked?: boolean } = {}): string | null {
   const only = 'an amend changes sizes only'
   if (next.part !== old.part) return `part: ${only}; the part stays "${old.part}"`
   if (next.units !== old.units) return `units: ${only}; the plan stays in ${old.units}`
   const kept = keptFeatures(old, next)
   if (!kept) return `features: an amend keeps every planned feature, in order, and may add features under new names; the plan has ${old.features.map((f) => f.name).join(', ')}`
+  // a change the person asked for may change how a planned feature is made (its kind and the sizes that drive it)
+  if (o.asked) return amendRestProblem(old, next)
   for (const [i, j] of kept.entries()) {
     const f = next.features[j]!
     const o = old.features[i]!
@@ -49,6 +51,12 @@ export function amendShapeProblem(old: Sized, next: Sized): string | null {
     if (!sameKeys(f.sizes, o.sizes)) return `features: ${only}; ${o.name} keeps the sizes ${Object.keys(o.sizes).join(', ') || 'it has (none)'}`
     if (JSON.stringify(Object.entries(f.kinds ?? {}).sort()) !== JSON.stringify(Object.entries(o.kinds ?? {}).sort())) return `features: ${only}; ${o.name} keeps its kinds`
   }
+  return amendRestProblem(old, next)
+}
+
+/** The rest of amendShapeProblem: the overall size, the rows of holes and the open faces stay as they are. */
+function amendRestProblem(old: Sized, next: Sized): string | null {
+  const only = 'an amend changes sizes only'
   if (Boolean(next.overall) !== Boolean(old.overall)) return `overall: ${only}; ${old.overall ? 'keep' : 'leave out'} the overall size`
   const nh = next.holes ?? []
   const oh = old.holes ?? []
@@ -80,13 +88,21 @@ export function amendAdded(old: Sized, next: Sized): string[] {
   return next.features.filter((f) => !names.has(f.name)).map((f) => f.name)
 }
 
+/** The planned features whose kind `next` changes, as "Tray made by loft, not extrude". */
+export function amendKinds(old: Sized, next: Sized): string[] {
+  return old.features.flatMap((f) => {
+    const n = next.features.find((x) => x.name === f.name)
+    return n && (n.kind ?? '') !== (f.kind ?? '') ? [`${f.name} made by ${n.kind ?? 'another feature'}, not ${f.kind ?? 'what it was'}`] : []
+  })
+}
+
 /** `old` with the sizes of `next` and the features it adds (amendShapeProblem says it is an amend): its assumptions and questions stay as they are. */
 export function amendedSizes<P extends PartPlan>(old: P, next: Sized): P {
   const out = structuredClone(old)
   const was = new Map(out.features.map((f) => [f.name, f]))
   out.features = next.features.map((f) => {
     const o = was.get(f.name)
-    return o ? { ...o, sizes: { ...f.sizes } } : structuredClone(f)
+    return o ? { ...o, kind: f.kind ?? o.kind, sizes: { ...f.sizes }, ...(f.kinds ? { kinds: { ...f.kinds } } : {}) } : structuredClone(f)
   })
   if (out.overall && next.overall) out.overall = { ...next.overall }
   if (out.holes && next.holes) out.holes = out.holes.map((h, i) => ({ ...h, diameter: next.holes![i]!.diameter }))
@@ -100,8 +116,8 @@ export function amendChanges(old: Sized, next: Sized): AmendChange[] {
     const n = next.features.find((x) => x.name === f.name)
     if (!n) continue
     for (const [k, v] of Object.entries(f.sizes)) {
-      const to = n.sizes[k]!
-      if (to !== v) out.push({ where: 'feature', feature: f.name, size: k, from: v, to })
+      const to = n.sizes[k]
+      if (to !== undefined && to !== v) out.push({ where: 'feature', feature: f.name, size: k, from: v, to })
     }
   }
   if (old.overall && next.overall) for (const a of ['x', 'y', 'z'] as const) if (old.overall[a] !== next.overall[a]) out.push({ where: 'overall', feature: null, size: a, from: old.overall[a], to: next.overall[a] })

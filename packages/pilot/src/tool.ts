@@ -197,6 +197,12 @@ export interface PilotTool<I = unknown> {
    * (a field costs a local model's context on every turn). The tool takes and checks `input` either way.
    */
   localInput?: z.ZodType
+  /**
+   * Fills in a call's arguments before they are checked against `input`, from what the tool already keeps (a change to
+   * an approved plan sent with only the person's words takes that plan). Returns them as they are when it has nothing
+   * to add. The schema the model is shown stays `input`.
+   */
+  fill?(raw: unknown): unknown
   source: ToolSource
   permission: PermissionClass
   input: z.ZodType<I>
