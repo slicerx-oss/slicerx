@@ -1,0 +1,4 @@
+### Added
+
+- `slicerx_geom_array` 1.5.0 takes `steps` with a design: the steps named (each by its index from 1, its id, or a plan feature's name for all its steps) are repeated on their own part in a row, a grid or around a circle, as one `pattern` step, instead of copying the whole part. The steps themselves are the first copy. The step's value is the count, so `slicerx_design_edit_step` changes it later. A step that makes a new body, works by side or height, or steps on different parts are refused with the reason, as are `merge` false, `rotateCopies` false and more than 100 copies. A copy that misses the part refuses the call with `Copy N:` and the reason, and the design is unchanged.
+- `slicerx_geom_mirror` 1.3.0 takes `steps` the same way: those steps are mirrored through the plane onto their part, as one `pattern` step, and `copy` false is refused with them.

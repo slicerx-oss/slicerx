@@ -3,9 +3,9 @@
 // Mesh modeling commands shared by the open app and the server. File access stays with the caller.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, multiply, point, stepName, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, MAX_STEPS_REPEATED, multiply, point, repeatProblem, stepName, stepPatternProblem, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
-import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, type Design, type PiecePlans } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, stepIndex, type Design, type PiecePlans } from './design-tools'
 import { ToolInputError } from './errors'
 import { modelArg, vec3, type GeomCall } from './args'
 
@@ -140,16 +140,52 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
     },
   })
 
+  /**
+   * The steps a pattern repeats, as ids in the design's order, and the part they work on: each given by its index from
+   * 1, its id, or the plan feature it builds (every step of that feature). Refused, with why, when one cannot be repeated.
+   */
+  const repeated = (d: Design, given: readonly (number | string)[], part: number | undefined): { ids: string[]; part: number } => {
+    const all = d.history.steps
+    const picked = new Set<number>()
+    for (const g of given) {
+      const feature = typeof g === 'string' && !all.some((s) => s.id === g) ? all.flatMap((s, k) => (s.feature && s.feature.trim().toLowerCase() === g.trim().toLowerCase() ? [k] : [])) : []
+      if (feature.length) feature.forEach((k) => picked.add(k))
+      else picked.add(stepIndex(d, g))
+    }
+    const ks = [...picked].sort((a, b) => a - b)
+    if (ks.length > MAX_STEPS_REPEATED) throw new ToolInputError(`steps: a pattern repeats at most ${MAX_STEPS_REPEATED} steps; this names ${ks.length}`)
+    for (const k of ks) {
+      const why = repeatProblem(all[k]!)
+      if (why) throw new ToolInputError(`steps: step ${k + 1}, ${stepName(all[k]!)}: ${why}`)
+    }
+    const on = all[ks[0]!]!.part
+    if (ks.some((k) => all[k]!.part !== on)) throw new ToolInputError('steps: the steps a pattern repeats are all on one part; these work on different parts')
+    if (part !== undefined && part !== on) throw new ToolInputError(`part: the steps named work on part ${on}; leave part out or give ${on}`)
+    return { ids: ks.map((k) => all[k]!.id), part: on }
+  }
+  const stepsArg = z
+    .array(z.union([z.number().int().min(1), z.string().min(1).max(200)]))
+    .min(1)
+    .max(MAX_STEPS_REPEATED)
+    .optional()
+    .describe('With a design: repeat these steps (a cut, boss, hole, push, fillet or paint from a point; each an index from 1, a step id, or a plan feature name for all its steps) on their own part instead of copying the whole part, as one step whose value is the count, so editing the step changes it')
+
   const mirror = defineTool({
     name: 'geom.mirror',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Mirror a design part through a plane, as a step: with copy (the default, like a mirror modifier) the mirror image is joined to the part, so a half becomes a whole; without it the part is flipped. Plane as {"axis":"x","at":0} or {"point":[x,y,z],"normal":[x,y,z]}.',
-    input: z.object({ design: designArg, feature: featureArg, part: z.number().int().min(0).optional().describe('The part to mirror, from 0 (default 0)'), plane, copy: z.boolean().default(true) }),
+      'Mirror a design part through a plane, as a step: with copy (the default, like a mirror modifier) the mirror image is joined to the part, so a half becomes a whole; without it the part is flipped. With steps, only those steps are mirrored onto their part (a cutout or boss built on one side, made on the other too), as one step. Plane as {"axis":"x","at":0} or {"point":[x,y,z],"normal":[x,y,z]}.',
+    input: z.object({ design: designArg, feature: featureArg, part: z.number().int().min(0).optional().describe('The part to mirror, from 0 (default 0)'), plane, copy: z.boolean().default(true), steps: stepsArg }),
     async run(i) {
       const [ds, d] = designOf(i.design)
+      if (i.steps) {
+        if (!i.copy) throw new ToolInputError('copy: a mirror of steps keeps them and adds their mirror image; leave copy out')
+        const { ids, part } = repeated(d, i.steps, i.part)
+        await ds.add(d, part, { op: 'pattern', steps: ids, spec: { kind: 'mirror', plane: planeOf(i.plane) } }, undefined, withFeature(i.feature))
+        return added(d, `Mirrored ${ids.length} step${ids.length === 1 ? '' : 's'}`)
+      }
       await ds.add(d, i.part ?? 0, { op: 'mirror', plane: planeOf(i.plane), copy: i.copy }, undefined, withFeature(i.feature))
       return added(d, 'Mirrored')
     },
@@ -164,16 +200,26 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const array = defineTool({
     name: 'geom.array',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform.',
-    input: z.object({ model: modelOpt, design: designArg.optional(), feature: featureArg, part: partArg, spec: arraySpec, merge: z.boolean().default(true).describe('false: separate copies instead of one body') }),
+      'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy.',
+    input: z.object({ model: modelOpt, design: designArg.optional(), feature: featureArg, part: partArg, spec: arraySpec, merge: z.boolean().default(true).describe('false: separate copies instead of one body'), steps: stepsArg }),
     async run(i) {
       designOrModel(i)
       const spec = JSON.parse(JSON.stringify(i.spec)) as Extract<StepParams, { op: 'array.merged' }>['spec']
       const copies = spec.kind === 'linear' ? spec.count * (spec.count2 ?? 1) : spec.count
+      if (i.steps) {
+        if (!i.design) throw new ToolInputError('steps: repeating steps works on a design; give its id as design')
+        if (!i.merge) throw new ToolInputError('merge: repeated steps stay on their part; leave merge out')
+        const why = stepPatternProblem(spec)
+        if (why) throw new ToolInputError(`spec: ${why}`)
+        const [ds, d] = designOf(i.design)
+        const { ids, part } = repeated(d, i.steps, i.part)
+        await ds.add(d, part, { op: 'pattern', steps: ids, spec }, undefined, withFeature(i.feature))
+        return added(d, `Patterned ${ids.length} step${ids.length === 1 ? '' : 's'}, ${copies} copies`)
+      }
       if (i.design) {
         const [ds, d] = designOf(i.design)
         if (i.merge) {
