@@ -24,20 +24,11 @@ const boat: PlanInput = {
   curved: ['Lower hull', 'Upper hull'],
   flat: ['Cabin'],
   proportions: 'lookup: a 6 m launch, 2.2 m beam, scaled 1:40',
-  scale: '1:40',
-  real: [{ feature: 'Lower hull', size: 'length', value: 6, unit: 'm' }, { feature: 'Cabin', size: 'length', value: 2, unit: 'm' }],
-  tiers: [{ body: 'Cabin', levels: ['Cabin', 'Cabin roof'] }],
+  scale: 40,
+  real: [{ feature: 'Lower hull', size: 'length', mm: 6000 }, { feature: 'Cabin', size: 'length', mm: 2000 }],
+  tiers: { Cabin: ['Cabin', 'Cabin roof'] },
   repeats: ['portholes', 'rail posts'],
-  colors: [
-    { feature: 'Lower hull', color: 'red' },
-    { feature: 'Upper hull', color: 'white' },
-    { feature: 'Deck', color: 'tan' },
-    { feature: 'Cabin', color: 'white' },
-    { feature: 'Cabin roof', color: 'blue' },
-    { feature: 'Rail posts', color: 'white' },
-    { feature: 'Mast', color: 'brown' },
-    { feature: 'Flag', color: 'yellow' },
-  ],
+  colors: { 'Lower hull': 'red', 'Upper hull': 'white', 'Deck': 'tan', 'Cabin': 'white', 'Cabin roof': 'blue', 'Rail posts': 'white', 'Mast': 'brown', 'Flag': 'yellow' },
   features: [
     { name: 'Lower hull', kind: 'loft', sizes: { length: 150, beam: 55, height: 10, sections: 7 }, kinds: { sections: 'count' } },
     { name: 'Upper hull', kind: 'loft', sizes: { length: 150, beam: 55, height: 10, sections: 7 }, kinds: { sections: 'count' } },
@@ -60,18 +51,10 @@ const car: PlanInput = {
   detail: 'display',
   curved: ['Body'],
   proportions: 'stated: a hatchback about 4 m long, 1.8 m wide, 1.5 m tall, scaled 1:43',
-  scale: '1:43',
-  real: [{ feature: 'Body', size: 'length', value: 4, unit: 'm' }, { feature: 'Wheels', size: 'diameter', value: 0.6, unit: 'm' }],
+  scale: 43,
+  real: [{ feature: 'Body', size: 'length', mm: 4000 }, { feature: 'Wheels', size: 'diameter', mm: 600 }],
   repeats: ['wheels', 'headlights'],
-  colors: [
-    { feature: 'Body', color: 'red' },
-    { feature: 'Wheels', color: 'black' },
-    { feature: 'Bumpers', color: 'gray' },
-    { feature: 'Headlights', color: 'white' },
-    { feature: 'Tail lights', color: 'red' },
-    { feature: 'Mirrors', color: 'red' },
-    { feature: 'Spoiler', color: 'black' },
-  ],
+  colors: { 'Body': 'red', 'Wheels': 'black', 'Bumpers': 'gray', 'Headlights': 'white', 'Tail lights': 'red', 'Mirrors': 'red', 'Spoiler': 'black' },
   features: [
     { name: 'Body', kind: 'loft', sizes: { length: 93, width: 42, height: 32, sections: 5 }, kinds: { sections: 'count' } },
     { name: 'Windows', kind: 'extrude cut', sizes: { depth: 0.6 } },
@@ -93,19 +76,11 @@ const house: PlanInput = {
   detail: 'display',
   flat: ['Walls', 'Roof'],
   proportions: 'stated: a two story house 10 m wide, 8 m deep, scaled 1:100',
-  scale: '1:100',
-  real: [{ feature: 'Walls', size: 'width', value: 10, unit: 'm' }],
-  tiers: [{ body: 'Walls', levels: ['Walls'] }, { body: 'Roof', levels: ['Roof'] }],
+  scale: 100,
+  real: [{ feature: 'Walls', size: 'width', mm: 10000 }],
+  tiers: { Walls: ['Walls'], Roof: ['Roof'] },
   repeats: ['windows', 'steps'],
-  colors: [
-    { feature: 'Walls', color: 'white' },
-    { feature: 'Roof', color: 'gray' },
-    { feature: 'Door', color: 'blue' },
-    { feature: 'Chimney', color: 'brick red' },
-    { feature: 'Porch', color: 'white' },
-    { feature: 'Steps', color: 'gray' },
-    { feature: 'Window frames', color: 'white' },
-  ],
+  colors: { 'Walls': 'white', 'Roof': 'gray', 'Door': 'blue', 'Chimney': 'brick red', 'Porch': 'white', 'Steps': 'gray', 'Window frames': 'white' },
   features: [
     { name: 'Walls', kind: 'extrude', sizes: { width: 100, depth: 80, height: 55 } },
     { name: 'Roof', kind: 'extrude', sizes: { width: 104, depth: 84, height: 30 } },
@@ -172,7 +147,7 @@ describe('detailProblem: the rules are about the object', () => {
   })
 
   it('refuses a display plan with fewer features than its level, and says what to add', () => {
-    const two = { ...car, features: car.features.slice(0, 2), colors: car.colors!.slice(0, 1) }
+    const two = { ...car, features: car.features.slice(0, 2), colors: { Body: 'red' } }
     expect(detailProblem(two)).toContain('features: a display model plan of this object has at least 8 features (8 at display model); this one has 2')
     expect(detailProblem({ ...car, detail: 'fine', features: car.features.map((f) => (f.name === 'Body' ? { ...f, sizes: { ...f.sizes, sections: 8 } } : f)) })).toContain('at least 12 features')
   })
@@ -188,23 +163,25 @@ describe('detailProblem: the rules are about the object', () => {
 
   it('wants each body\'s color, and a body painted in two colors split at its line', () => {
     expect(detailProblem({ ...house, colors: undefined })).toContain("colors: give each feature's color as the real thing is painted")
-    const painted = { ...house, colors: [...house.colors!, { feature: 'Walls', color: 'yellow' }] }
-    expect(detailProblem(painted)).toContain('colors: Walls is white and yellow; split it at its color line into one feature per color')
-    expect(detailProblem({ ...house, colors: house.colors!.filter((c) => c.feature !== 'Roof') })).toContain('colors: say what color Roof is')
-    expect(detailProblem({ ...house, colors: [...house.colors!, { feature: 'Garden', color: 'green' }] })).toContain('colors: Garden is not a planned feature')
+    for (const two of ['white and yellow', 'white/yellow', 'white, yellow'])
+      expect(detailProblem({ ...house, colors: { ...house.colors, Walls: two } })).toContain(`colors: Walls is ${two}; split it at its color line into one feature per color`)
+    const { Roof: _roof, ...noRoof } = house.colors!
+    expect(detailProblem({ ...house, colors: noRoof })).toContain('colors: say what color Roof is')
+    expect(detailProblem({ ...house, colors: { ...house.colors, Garden: 'green' } })).toContain('colors: Garden is not a planned feature')
   })
 
   it('holds each real size to scale, and refuses a part far off the size its real one gives', () => {
     const big = withFeature(car, 'Wheels', { sizes: { diameter: 30, width: 6, count: 2 } })
-    expect(detailProblem(big)).toContain('Wheels diameter is 30 mm, 2.2 times the 14 mm its real 0.6 m gives at 1:43; size it from the real one')
+    expect(detailProblem(big)).toContain('Wheels diameter is 30 mm, 2.2 times the 14 mm its real 600 mm gives at 1:43; size it from the real one')
     // a third over scale passes: a display model thickens small parts so they print
     expect(detailProblem(withFeature(car, 'Wheels', { sizes: { diameter: 18, width: 6, count: 2 } }))).toBeNull()
-    expect(detailProblem({ ...car, scale: undefined })).toContain('scale: give the scale the real sizes are held to, as 1:N')
+    expect(detailProblem({ ...car, scale: undefined })).toContain('scale: give N of the scale 1:N the real sizes are held to')
     expect(detailProblem({ ...car, real: undefined })).toContain('real: list the real sizes the lookup or the stated source gives')
     expect(detailProblem({ ...car, real: [], scale: undefined })).toBeNull()
-    expect(detailProblem({ ...house, real: [{ feature: 'Door', size: 'width', value: 1, unit: 'm' }] })).toContain("real: give a main body's real size too")
-    expect(detailProblem({ ...house, real: [{ feature: 'Walls', size: 'span', value: 10, unit: 'm' }] })).toContain('real: Walls has no size named span')
-    expect(partPlanSchema.shape.scale.safeParse('25').success).toBe(false)
+    expect(detailProblem({ ...house, real: [{ feature: 'Door', size: 'width', mm: 1000 }] })).toContain("real: give a main body's real size too")
+    expect(detailProblem({ ...house, real: [{ feature: 'Walls', size: 'span', mm: 10000 }] })).toContain('real: Walls has no size named span')
+    expect(partPlanSchema.shape.scale.safeParse('25:1').success).toBe(false)
+    expect(detailProblem({ ...car, scale: '1:43' })).toBeNull()
   })
 
   it('refuses a part wider than the main body or taller than the whole model, with no source to check it against', () => {
@@ -216,7 +193,7 @@ describe('detailProblem: the rules are about the object', () => {
 
   it('wants each flat-sided main body\'s levels, each a planned feature', () => {
     expect(detailProblem({ ...house, tiers: undefined })).toContain('tiers: give the levels of Walls from the bottom up')
-    expect(detailProblem({ ...house, tiers: [{ body: 'Walls', levels: ['Ground floor', 'Upper floor'] }, { body: 'Roof', levels: ['Roof'] }] })).toContain('tiers: Ground floor, a level of Walls, is not a planned feature')
+    expect(detailProblem({ ...house, tiers: { Walls: ['Ground floor', 'Upper floor'], Roof: ['Roof'] } })).toContain('tiers: Ground floor, a level of Walls, is not a planned feature')
     // a curved body states no levels
     expect(detailProblem(car)).toBeNull()
   })
