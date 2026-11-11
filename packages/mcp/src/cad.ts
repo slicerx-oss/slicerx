@@ -706,13 +706,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const edgePick = defineTool({
     name: 'geom.edge_pick',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description:
-      'Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face\'s normal. Returns the edge (pass it to slicerx_geom_fillet or slicerx_geom_chamfer as is), its length, whether it is convex, whether it can be filleted and why not, the largest radius and bevel that fit, the tangent chain it belongs to, and the loop of every edge around that face.',
+      'Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face\'s normal. Returns the edge (pass it to slicerx_geom_fillet or slicerx_geom_chamfer as is), its length, whether it is convex, whether it can be filleted and why not, the largest radius and bevel that fit this edge (maxRadiusMm, maxDistanceMm) and every edge of its chain (chainMaxRadiusMm) and of its loop (loopMaxRadiusMm), the limits the fillet and chamfer enforce on that set, the tangent chain it belongs to, and the loop of every edge around that face.',
     localDescription:
-      'Pick an edge for a fillet or chamfer on a model or design: a point on a flat face near (or on) the edge and that face\'s normal. Returns the edge (pass it as is to geom.fillet or geom.chamfer), its length, whether it is convex, whether it can be filleted (and why not), the largest radius and bevel that fit, its tangent chain and the loop of edges around that face.',
+      'Pick an edge for a fillet or chamfer on a model or design: a point on a flat face near (or on) the edge and that face\'s normal. Returns the edge (pass it as is to geom.fillet or geom.chamfer), its length, whether it is convex, whether it can be filleted (and why not), the largest radius and bevel for this edge, its chain and its loop (chainMaxRadiusMm, loopMaxRadiusMm: what the ops take on that set), its tangent chain and the loop of edges around that face.',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), face: faceRef.describe('The face the edge bounds: {"at":[x,y,z] near the edge,"normal":[x,y,z]} or {"triangle":n}') }),
     async run(i) {
       oneOf(i)

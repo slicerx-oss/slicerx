@@ -87,6 +87,12 @@ pub struct EdgePick {
     pub reason: Option<String>,
     pub max_distance_mm: [f64; 2],
     pub max_radius_mm: f64,
+    /// the largest sizes the ops take on the whole chain: the least over its edges
+    pub chain_max_distance_mm: [f64; 2],
+    pub chain_max_radius_mm: f64,
+    /// the same over every edge of the loop it can take
+    pub loop_max_distance_mm: [f64; 2],
+    pub loop_max_radius_mm: f64,
     pub chain: Vec<EdgeRef>,
     #[serde(rename = "loop")]
     pub ring: Vec<LoopEdge>,
@@ -444,6 +450,27 @@ impl Geom {
     }
 }
 
+/// whether two faces meet at a sharp fold: what the pick, its loop and chain, and the ops all go by
+fn sharp(faces: &Faces<'_>, ra: usize, rb: usize) -> bool {
+    vec3::dot(faces.regions[ra].normal, faces.regions[rb].normal) < SHARP_DEG.to_radians().m_cos()
+}
+
+/// an edge as the pick and the ops both read it: a sharp fold, then its geometry
+fn edge_geom(
+    faces: &Faces<'_>,
+    ra: usize,
+    rb: usize,
+    a: V3,
+    b: V3,
+    tri_a: u32,
+    tri_b: u32,
+) -> std::result::Result<Geom, String> {
+    if !sharp(faces, ra, rb) {
+        return Err("The faces along this edge meet at less than 30 degrees, too flat to round.".into());
+    }
+    geom(faces, ra, rb, a, b, tri_a, tri_b)
+}
+
 fn geom(
     faces: &Faces<'_>,
     ra: usize,
@@ -612,7 +639,7 @@ fn quad_fits(faces: &Faces<'_>, r: usize, quad: &[V3; 4]) -> bool {
         q.iter().map(|p| p[0]).sum::<f64>() / 4.0,
         q.iter().map(|p| p[1]).sum::<f64>() / 4.0,
     ];
-    for e in faces.boundary(r) {
+    for e in faces.boundary_of(r).iter() {
         let (p0, p1) = (frame.project(e.a), frame.project(e.b));
         let (mut t0, mut t1) = (0.0f64, 1.0f64);
         for &(n, k) in &planes {
@@ -684,14 +711,11 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
     let mut best: Option<(f64, usize, usize)> = None;
     for (i, ring) in rings.iter().enumerate() {
         for (j, run) in ring.iter().enumerate() {
-            let sharp = match run.across {
-                Across::Face(rb, _) => {
-                    vec3::dot(faces.regions[r].normal, faces.regions[rb].normal)
-                        < SHARP_DEG.to_radians().m_cos()
-                }
+            let fold = match run.across {
+                Across::Face(rb, _) => sharp(&faces, r, rb),
                 _ => true,
             };
-            if !sharp {
+            if !fold {
                 continue;
             }
             let dist = dist_to_segment(at, run.a, run.b);
@@ -736,6 +760,10 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
             reason: None,
             max_distance_mm: room,
             max_radius_mm: floor((room[0].min(room[1]) * (rim.geom().phi * 0.5).m_tan()).min(MAX_MM)),
+            chain_max_distance_mm: room,
+            chain_max_radius_mm: floor((room[0].min(room[1]) * (rim.geom().phi * 0.5).m_tan()).min(MAX_MM)),
+            loop_max_distance_mm: room,
+            loop_max_radius_mm: floor((room[0].min(room[1]) * (rim.geom().phi * 0.5).m_tan()).min(MAX_MM)),
             chain: vec![edge],
             ring: vec![LoopEdge {
                 edge,
@@ -761,12 +789,16 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
         reason: None,
         max_distance_mm: [0.0; 2],
         max_radius_mm: 0.0,
+        chain_max_distance_mm: [0.0; 2],
+        chain_max_radius_mm: 0.0,
+        loop_max_distance_mm: [0.0; 2],
+        loop_max_radius_mm: 0.0,
         chain: vec![edge],
         ring: Vec::new(),
     };
     let geom_of = |run: &Run| -> std::result::Result<Geom, String> {
         match run.across {
-            Across::Face(rb, tb) => geom(&faces, r, rb, run.a, run.b, run.tri, tb),
+            Across::Face(rb, tb) => edge_geom(&faces, r, rb, run.a, run.b, run.tri, tb),
             Across::Open => Err("The mesh is open along this edge.".into()),
             Across::Many => Err("More than two faces meet along this edge.".into()),
         }
@@ -849,6 +881,33 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
             }
         })
         .collect();
+    if out.supported {
+        // the same fit the ops make, edge by edge: a set takes no more than its tightest edge
+        let floor = |w: f64| (w * 1000.0 + 1e-6).floor() / 1000.0;
+        let room = |run: &Run| -> Option<([f64; 2], f64)> {
+            let g = geom_of(run).ok()?;
+            let w = [floor(max_width(&faces, &g, 0)), floor(max_width(&faces, &g, 1))];
+            Some((w, floor((w[0].min(w[1]) * (g.phi * 0.5).m_tan()).min(MAX_MM))))
+        };
+        let least = |all: Vec<([f64; 2], f64)>| {
+            all.into_iter().fold(([MAX_MM; 2], MAX_MM), |(w, r), (x, y)| {
+                ([w[0].min(x[0]), w[1].min(x[1])], r.min(y))
+            })
+        };
+        let own = (out.max_distance_mm, out.max_radius_mm);
+        let rooms: Vec<Option<([f64; 2], f64)>> =
+            ring.iter().map(|r| if ok(r) { room(r) } else { None }).collect();
+        let on_chain: Vec<([f64; 2], f64)> = ring
+            .iter()
+            .zip(&rooms)
+            .filter(|(r, _)| out.chain.contains(&to_ref(r)))
+            .filter_map(|(_, x)| *x)
+            .chain([own])
+            .collect();
+        (out.chain_max_distance_mm, out.chain_max_radius_mm) = least(on_chain);
+        (out.loop_max_distance_mm, out.loop_max_radius_mm) =
+            least(rooms.into_iter().flatten().chain([own]).collect());
+    }
     Ok(out)
 }
 
@@ -981,16 +1040,15 @@ fn resolve(faces: &Faces<'_>, n: usize, e: &EdgeRef) -> Result<Geom> {
             ));
         }
     };
-    let g = geom(faces, ra, rb, a, b, ta, tb).map_err(|why| {
+    if !sharp(faces, ra, rb) {
+        return Err(none());
+    }
+    edge_geom(faces, ra, rb, a, b, ta, tb).map_err(|why| {
         Error::invalid(
             "edges",
             format!("edge {n}: {}", lower_first(why.trim_end_matches('.'))),
         )
-    })?;
-    if vec3::dot(faces.regions[ra].normal, faces.regions[rb].normal) > SHARP_DEG.to_radians().m_cos() {
-        return Err(none());
-    }
-    Ok(g)
+    })
 }
 
 type Found = (usize, usize, u32, u32, V3, V3);
@@ -2440,6 +2498,35 @@ mod tests {
     }
 
     #[test]
+    fn the_pick_offers_what_the_ops_take_on_its_chain_and_loop() {
+        // a slot with round ends in a plate: its straight sides allow more than the facets at its ends
+        let f = Frame::WORLD;
+        let b = build::box_mesh([-20.0, -10.0, 0.0], [20.0, 10.0, 6.0]);
+        let mut ring = Vec::new();
+        for (cx, a0) in [(3.25, -90.0f64), (-3.25, 90.0)] {
+            for k in 0..=16 {
+                let (sn, cs) = (a0 + 180.0 * f64::from(k) / 16.0).to_radians().m_sin_cos();
+                ring.push([cx + 3.25 * cs, 3.25 * sn]);
+            }
+        }
+        let slot = build::extrude(&[Polygon::simple(ring)], &f, -1.0, 8.0).unwrap();
+        let m = boolean::boolean(&[b], &[slot], BoolOp::Difference, &BooleanOptions::default())
+            .unwrap()
+            .0;
+        let p = pick(&m, [0.0, 0.0, 1.0], [0.0, 3.4, 6.0]);
+        assert!(p.supported, "{:?}", p.reason);
+        assert!(p.loop_max_radius_mm <= p.chain_max_radius_mm && p.chain_max_radius_mm <= p.max_radius_mm);
+        let all: Vec<EdgeRef> = p.ring.iter().filter(|l| l.supported).map(|l| l.edge).collect();
+        // the loop's own limit goes through, and a hair over it is refused
+        let at = p.loop_max_radius_mm;
+        sound(&run(&m, &all, fillet(at)).unwrap());
+        let err = run(&m, &all, fillet(at + 0.01)).unwrap_err().to_string();
+        assert!(err.contains("does not fit"), "{err} against {at}");
+        let at = p.loop_max_distance_mm[0].min(p.loop_max_distance_mm[1]);
+        sound(&run(&m, &all, chamfer(at)).unwrap());
+    }
+
+    #[test]
     fn an_edge_asked_for_twice_is_cut_once() {
         // a round edge, as a coaster's rim is picked by its chain and its loop: cut twice, it gains triangles
         let disk = build::cylinder(&Frame::WORLD, 10.0, 0.0, 5.0, 64);
@@ -2744,6 +2831,79 @@ mod tests {
         assert!(err.contains("cannot blend"), "{err}");
         let r = run(&m, &[inner, a, b], chamfer(1.0)).unwrap();
         sound(&r);
+    }
+
+    /// a stand: a slanted back that folds 25 degrees into its rear face, and a lip in front
+    fn stand() -> TriMesh {
+        let mut pts = vec![
+            [0.0, 0.0],
+            [60.0, 0.0],
+            [60.0, 10.0],
+            [56.0, 10.0],
+            [56.0, 5.0],
+            [10.0, 5.0],
+            [25.0, 45.0],
+            [20.0, 47.0],
+            [0.0, 5.0],
+        ];
+        if crate::poly2d::signed_area(&pts) < 0.0 {
+            pts.reverse();
+        }
+        build::extrude(&[Polygon::simple(pts)], &Frame::WORLD, 0.0, 40.0).unwrap()
+    }
+
+    #[test]
+    fn every_loop_edge_the_pick_takes_goes_through() {
+        for m in [
+            stand(),
+            l_bracket(),
+            wedge(20.0, 12.0, 9.0),
+            plate(40.0, 30.0, 6.0, [4.0; 4], 6),
+        ] {
+            let mut seen: Vec<EdgeRef> = Vec::new();
+            let mut gone = Vec::new();
+            for t in 0..m.triangles.len() {
+                let c = m.corners(m.triangles[t]);
+                let at = vec3::scale(vec3::add(c[0], c[1]), 0.5);
+                let Ok(p) = pick_edge(&m, u32::try_from(t).unwrap(), at) else {
+                    continue;
+                };
+                let offered = p.ring.iter().map(|l| (l.edge, l.supported));
+                for (edge, ok) in offered.chain(p.chain.iter().map(|e| (*e, p.supported))) {
+                    if !ok || seen.contains(&edge) {
+                        continue;
+                    }
+                    seen.push(edge);
+                    if let Err(e) = run(&m, &[edge], chamfer(0.2)) {
+                        gone.push(format!("{edge:?}: {e}"));
+                    }
+                }
+            }
+            assert!(!seen.is_empty());
+            assert!(gone.is_empty(), "{gone:#?}");
+        }
+    }
+
+    #[test]
+    fn a_shallow_fold_is_not_offered_as_an_edge() {
+        let m = stand();
+        // the slanted back, picked near its middle: its loop holds the fold into the rear face
+        let n = vec3::normalize([-42.0, 20.0, 0.0]).unwrap();
+        let p = pick(&m, n, [10.0, 26.0, 20.0]);
+        let fold = p
+            .ring
+            .iter()
+            .find(|l| {
+                let (a, b) = (l.edge.a, l.edge.b);
+                a[0].abs() < 1e-9
+                    && b[0].abs() < 1e-9
+                    && (a[1] - 5.0).abs() < 1e-9
+                    && (b[1] - 5.0).abs() < 1e-9
+            })
+            .expect("the fold is on the loop");
+        assert!(!fold.supported);
+        let err = run(&m, &[fold.edge], chamfer(0.5)).unwrap_err().to_string();
+        assert!(err.contains("no sharp edge"), "{err}");
     }
 
     #[test]
