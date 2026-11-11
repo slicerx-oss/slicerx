@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! `sx slice --request` on the Bambu Lab H3C, one extruder that holds nine hotends: each filament prints on a hotend
-//! of its own, read back from the change G-code's hotend ids and from the report's filament map, and a second
-//! 2.85 mm TPU filament, with one TPU hotend to print on, is refused with a message that names the filament map.
+//! of its own, read back from the change G-code's nozzle ids and from the report's filament map, and a second
+//! 2.85 mm TPU filament, with one TPU hotend to print on, is refused with a message that names the filament map. The
+//! change G-code's hotend ids stay -1, as the printer's stock output writes them.
 
 #![allow(clippy::disallowed_methods, reason = "a test that writes its request files")]
 
@@ -67,7 +68,8 @@ fn write_cube(path: &Path) {
     std::fs::write(path, s).unwrap();
 }
 
-/// The stock H3C from the resolved profiles, with three filaments and a change G-code that prints the hotend ids.
+/// The stock H3C from the resolved profiles, with three filaments and a change G-code that prints the nozzle and
+/// hotend ids.
 fn h3c() -> serde_json::Value {
     let path = format!(
         "{}/../../profiles/resolved/bambu-lab.json",
@@ -87,7 +89,7 @@ fn h3c() -> serde_json::Value {
         ("machine_end_gcode", serde_json::json!("")),
         (
             "change_filament_gcode",
-            serde_json::json!("; tool [next_filament_id] hotend [next_hotend]\n"),
+            serde_json::json!("; tool [next_filament_id] nozzle [next_nozzle_id] hotend [next_hotend]\n"),
         ),
         ("filament_type", serde_json::json!(["PLA", "PLA", "PLA"])),
         ("filament_diameter", serde_json::json!([1.75, 1.75, 1.75])),
@@ -141,8 +143,10 @@ fn slice_puts_each_filament_on_a_hotend_of_its_own() {
     let gcode = std::fs::read_to_string(dir.0.join("out").join("slice.gcode")).unwrap();
     let mut seen = std::collections::BTreeSet::new();
     for l in gcode.lines().filter_map(|l| l.strip_prefix("; tool ")) {
-        let (tool, hotend) = l.split_once(" hotend ").unwrap();
-        assert_eq!(tool, hotend, "filament {tool} on hotend {hotend}");
+        let (tool, rest) = l.split_once(" nozzle ").unwrap();
+        let (nozzle, hotend) = rest.split_once(" hotend ").unwrap();
+        assert_eq!(tool, nozzle, "filament {tool} on hotend {nozzle}");
+        assert_eq!(hotend, "-1", "filament {tool} names hotend {hotend}, not -1");
         seen.insert(tool.to_owned());
     }
     assert_eq!(seen.len(), 3, "{seen:?}");
