@@ -42,6 +42,8 @@ Numbers.
 | Rack X 352, positions Y 150, 210, 270; upper row 96 mm up; dock approach 28 mm in X, latch stroke 6 mm in Y | no source | estimated |
 | Dock moves at 60 mm/s with 2000 mm/s2, travel at profile speed and acceleration | U1's dock speeds used as a reference for the slow part; Bambu publishes none | estimated |
 
+heimdall. The H2C's routes in `head-shapes.json` go by hotend: 0 is the left nozzle and 1 to 6 are the six hotends the right extruder takes, the same ids the engine's filament map gives each filament. The engine maps each filament to its hotend before it looks a route up, so a change between two filaments on two rack hotends visits the rack, and a change between two filaments on one hotend, or between the nozzles when the hotend in the head is the one wanted, stays at the chute (route `0-0`, or a route the same as `0-1`), whatever the filament numbers are. Rack positions still come from one fixed history: each route starts with the old hotend in the head, after one change from hotend 1 to it, and the firmware's choice of empty position follows from that. Over a long print the positions hotends end up in can differ from the route's, so the stops at the rack are the rack's envelope rather than the exact slot.
+
 Sources: Bambu Studio 2.8.4 machine profile and change G-code template for the H2C; wiki.bambulab.com/en/h2c/manual/induction-hotend-rack-workflow; toms3d.org, "The H2C is Bambu's 7-hotend patent evasion masterpiece" (2026-01-23); tomshardware.com H2C review; the owner's H2C project (`owner-profiles`), whose change G-code is byte identical to the shipped template.
 
 ## Snapmaker U1 (four toolheads, pick and park)

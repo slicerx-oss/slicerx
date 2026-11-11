@@ -214,4 +214,24 @@ mod tests {
         let same = ch.route(3, 3);
         assert!(!same.is_empty() && same.iter().all(|s| !s.station && s.y > 260.0));
     }
+
+    #[test]
+    fn the_h2c_swaps_rack_hotends_at_the_rack_and_switches_nozzles_at_the_chute() {
+        let h2c = machine(Some("bambu-h2c"), None);
+        assert_eq!(h2c.heads.len(), 2);
+        let ch = h2c.changer.expect("the H2C swaps hotends at its rack");
+        let at_rack = |r: &[Stop]| r.iter().any(|s| s.station && s.x > 330.0);
+        // hotend ids: 0 the left nozzle, 1 to 6 the right extruder's; 1 starts in the head
+        for to in 2..7 {
+            assert!(at_rack(ch.route(0, to)), "0-{to}");
+            for from in (1..7).filter(|&f| f != to) {
+                assert!(at_rack(ch.route(from, to)), "{from}-{to}");
+            }
+        }
+        // a switch between the nozzles, or two filaments on one hotend, stays at the chute
+        for (from, to) in [(0, 1), (1, 0), (4, 0), (0, 0), (3, 3)] {
+            let r = ch.route(from, to);
+            assert!(!r.is_empty() && !at_rack(r), "{from}-{to}");
+        }
+    }
 }

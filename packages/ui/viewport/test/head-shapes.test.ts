@@ -66,19 +66,24 @@ function bedOf(machine: Settings): { widthMm: number; depthMm: number; heightMm:
 }
 
 /**
- * The stops of every change between two tools, without the lift at the start and the return at the end. The H3C's
- * tools are its hotends, one dock each, and the engine looks its routes up by hotend from the slice's filament map; its
- * change between two filaments on one hotend, a swap at the chute with no rack visit, is kept as 0-0.
+ * The stops of every change between two tools, without the lift at the start and the return at the end. On the H3C
+ * and the H2C the tools are hotends (the H3C's nine, the H2C's left nozzle and then its rack's six), and the engine
+ * looks their routes up by hotend from the slice's filament map. A change between two filaments on one hotend, a swap
+ * at the chute with no rack visit, is kept as 0-0. An H2C change starts with the old hotend in the head: one change
+ * from the first rack hotend to it comes before, so it is parked where the rack keeps it.
  */
 function routes(spec: ToolChangerSpec): Record<string, [number, number, number, number][]> {
   const out: Record<string, [number, number, number, number][]> = {}
   const tools = spec.kind === 'filament-swap' || spec.kind === 'dual-nozzle' ? 2 : spec.tools
-  const sameTool = spec.kind === 'printtool-rack'
+  const sameTool = spec.kind === 'printtool-rack' || spec.kind === 'hotend-rack'
+  const rackExtruder = Math.max(...spec.extruderOf, 0)
+  const firstOnRack = spec.extruderOf.indexOf(rackExtruder)
   const at: [number, number, number] = [spec.bed.widthMm / 2, spec.bed.depthMm / 2, 10]
   for (let from = 0; from < tools; from++)
     for (let to = 0; to < tools; to++) {
       if (from === to && !sameTool) continue
-      const seq = changeSequence(spec, from, to, at, at, 20)
+      const before: [number, number][] = spec.kind === 'hotend-rack' && spec.extruderOf[from] === rackExtruder && from !== firstOnRack ? [[firstOnRack, from]] : []
+      const seq = changeSequence(spec, from, to, at, at, 20, before)
       const phases = seq.phases.filter((p) => p.move > 0)
       if (phases[0]?.name === 'lift') phases.shift()
       while (phases.length && ['return', 'lower'].includes(phases[phases.length - 1]!.name)) phases.pop()
@@ -132,10 +137,17 @@ function build() {
     const nozzles = Array.isArray(m.machine['nozzle_diameter']) ? m.machine['nozzle_diameter'].length : 1
     const hotends = Array.isArray(m.machine['extruder_max_nozzle_count']) ? m.machine['extruder_max_nozzle_count'].map(Number) : []
     const rack = hotends.some((n) => n > 1)
-    // A printer whose hotends are its tools (the H3C: one extruder, nine hotends) gets a route between every two of them.
-    const tools = nozzles <= 1 && rack ? Math.max(...hotends) : rack ? 6 : Math.max(2, nozzles)
-    // Every extruder prints a tool of its own (the rack's the rest), so each one's head is drawn.
-    const s = nozzles > 1 ? { ...m.machine, filament_map: Array.from({ length: tools }, (_, i) => String(Math.min(i, nozzles - 1) + 1)) } : m.machine
+    // A printer with hotends for tools gets a route between every two hotends: the H3C's nine on its one extruder, the
+    // H2C's left nozzle and the six hotends its right extruder takes from the rack.
+    const counts = Array.from({ length: nozzles }, (_, e) => (rack ? Math.max(1, Math.round(hotends[e] ?? 1)) : 1))
+    const tools = nozzles <= 1 && rack ? Math.max(...hotends) : rack ? counts.reduce((a, b) => a + b, 0) : Math.max(2, nozzles)
+    // Tool t is the engine's nozzle id t: each extruder's hotends in turn. Every extruder prints a tool of its own, so
+    // each one's head is drawn.
+    const extruderOf = (t: number) => {
+      for (let e = 0, k = t; e < nozzles; k -= counts[e]!, e++) if (k < counts[e]!) return e
+      return nozzles - 1
+    }
+    const s = nozzles > 1 ? { ...m.machine, filament_map: Array.from({ length: tools }, (_, i) => String(extruderOf(i) + 1)) } : m.machine
     const kin = kinematics.get(id)
     const spec = toolChangerSpec(id, s, bedOf(s), tools, kin ? { kinematics: kin } : {})
     // An IDEX printer (Snapmaker J1) carries two heads side by side on their own carriages, each the family's own, and
