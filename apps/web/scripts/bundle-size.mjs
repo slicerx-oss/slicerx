@@ -18,6 +18,8 @@ const dist = process.argv[2] ? resolve(process.argv[2]) : join(import.meta.dirna
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'))
 const SHELL_KB = 188
 const WASM_KB = 1056
+// The slicer engine's module (sx_wasm) is only reported against this reference, never failed on it (see below).
+const SLICER_WASM_KB = 1444
 const STEP_WASM_KB = 3584
 const FULL_GEOM_WASM_KB = 1536
 const BREP_WASM_KB = 1400
@@ -115,7 +117,7 @@ for (const f of files(dist).filter((f) => f.endsWith('.wasm'))) {
   const size = gz(f)
   const budget = isStepReader(f) ? STEP_WASM_KB : isFullGeom(f) ? FULL_GEOM_WASM_KB : isBrep(f) ? BREP_WASM_KB : WASM_KB
   if (isSlicer(f)) {
-    console.log(`wasm ${f}: ${(size / 1024).toFixed(1)} KB gzip (reference ${budget} KB, report only)`)
+    console.log(`wasm ${f}: ${(size / 1024).toFixed(1)} KB gzip (reference ${SLICER_WASM_KB} KB, report only)`)
     continue
   }
   console.log(`wasm ${f}: ${(size / 1024).toFixed(1)} KB gzip (budget ${budget} KB)`)
