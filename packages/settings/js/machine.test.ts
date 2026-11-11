@@ -83,10 +83,9 @@ describe('machine settings', () => {
   })
   it('has start, end, layer change and filament change G-code for every model', () => {
     const ids = listPrinterProfiles().map((p) => p.id)
-    // The H3C's and the MK3.5's maker G-code families go into packages/profiles/gcode.json as their own changes. Until
-    // its family is there a printer takes the schema's start and end G-code; once it is, that printer is held to this
-    // check like every other model.
-    const awaiting = ['bambu-h3c', 'prusa-mk3.5'].filter((id) => !gcode.models[id])
+    // The MK3.5's maker G-code family goes into packages/profiles/gcode.json as a change of its own. Until it is there
+    // the printer takes the schema's start and end G-code; once it is, it is held to this check like every other model.
+    const awaiting = ['prusa-mk3.5'].filter((id) => !gcode.models[id])
     for (const id of ids) if (!awaiting.includes(id)) expect(gcodeStatus(id), id).toBeDefined()
     expect(Object.keys(gcode.models).filter((id) => gcode.pending.includes(id))).toEqual([])
     for (const id of ids) {

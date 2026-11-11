@@ -137,6 +137,21 @@ describe('why Test connection is off', () => {
     expect(checkConnection(ok, bambu).ready).toBe(true)
   })
 
+  it('takes an H3C added by hand with its IP address, serial number and access code', () => {
+    // No printer announced itself: the model picked from the grid, then the three fields typed in.
+    const picked = pickModel({ ...EMPTY_FORM, brand: 'bambu-lab' }, 'bambu-h3c')
+    expect(picked.connection).toBe('bambu-lan')
+    expect(profileIdOf(picked)).toBe('bambu-h3c')
+    const h3c = connectionMethod('bambu-lan')
+    expect(testBlockers(picked, h3c).map((b) => b.field)).toEqual(['host', 'accessCode'])
+    const typed: PrinterForm = { ...picked, fields: { ...picked.fields, host: '192.168.1.60', serial: '31B8BP000000001' }, secretLengths: { accessCode: 8 } }
+    expect(testBlockers(typed, h3c)).toEqual([])
+    expect(checkConnection(typed, h3c).ready).toBe(true)
+    expect(profileIdOf(typed)).toBe('bambu-h3c')
+    // The access code guide has no H3C page of its own yet, so none is named for it rather than another family's.
+    expect(bambuFamily('H3C')).toBeNull()
+  })
+
   it('lists them beside the fields as buttons that move to the field', () => {
     const blockers = testBlockers(base, bambu)
     const r = render(createElement('div', null, createElement('input', { id: 'fr-f-accessCode' }), createElement(WhyNotReady, { blockers })))
