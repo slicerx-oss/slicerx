@@ -245,6 +245,7 @@ pub fn plane_cut(mesh: &TriMesh, plane: &Plane, opts: &CutOptions) -> Result<Cut
             (a, b)
         }
     };
+    let (below, above) = (as_stored(below), as_stored(above));
     report.below_volume_mm3 = below.volume();
     report.above_volume_mm3 = above.volume();
     report.below_edges = below.stored_edge_report();
@@ -255,6 +256,30 @@ pub fn plane_cut(mesh: &TriMesh, plane: &Plane, opts: &CutOptions) -> Result<Cut
         extras,
         report,
     })
+}
+
+/// a piece as the reply stores it, when a triangle of it has two corners at one f32 point: a cut a float step or two
+/// from a row of corners crosses every side fanning from one of them within a step of it, and those crossings and the
+/// corner store as one point. Then the corners are rounded to f32, corners at one point made one and the triangles
+/// that leave no area dropped, so the stored piece has no triangle collapsed to a line. Any other piece is left as it
+/// is.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "rounding to the f32 the result is stored in"
+)]
+fn as_stored(m: TriMesh) -> TriMesh {
+    let at = |i: u32| m.positions[i as usize].map(|c| (c as f32).to_bits());
+    if !m.triangles.iter().any(|t| {
+        let [a, b, c] = t.map(at);
+        a == b || b == c || a == c
+    }) {
+        return m;
+    }
+    let mut r = m;
+    for p in &mut r.positions {
+        *p = p.map(|v| f64::from(v as f32));
+    }
+    r.weld(0.0)
 }
 
 #[derive(Default)]
