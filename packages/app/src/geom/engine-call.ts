@@ -30,9 +30,16 @@ export interface GeomExports {
 
 /**
  * A call that trapped. The module is left as it stopped (its state still borrowed), so every later call on it traps
- * too: the worker loads the engine again (geom-worker.ts).
+ * too: the worker loads the engine again (geom-worker.ts). `outOfMemory` when no panic was kept.
  */
-export class EngineTrap extends Error {}
+export class EngineTrap extends Error {
+  constructor(
+    message: string,
+    readonly outOfMemory: boolean,
+  ) {
+    super(message)
+  }
+}
 
 /**
  * What a trapped call says. A panic aborts the engine, which traps as `unreachable`; the engine keeps the panic's
@@ -42,6 +49,14 @@ export function trapMessage(panic: string, memoryBytes: number): string {
   if (panic) return `The geometry engine stopped on an internal error: ${panic.replace(/\s+/g, ' ').trim()}`
   return `The geometry engine ran out of memory at ${(memoryBytes / 2 ** 20).toFixed(1)} MB; try the step again`
 }
+
+/**
+ * Whether a call that ran out of memory is tried once more on the engine loaded again. Each call carries all of its
+ * input, so the retry sees what the first try did, except a nest session's later steps: the session lived in the
+ * engine that stopped. A panic would only repeat, so it is never tried again.
+ */
+export const retriesAfterTrap = (err: unknown, op: string): err is EngineTrap =>
+  err instanceof EngineTrap && err.outOfMemory && op !== 'nest.step' && op !== 'nest.end'
 
 /**
  * The request with each mesh that came as typed arrays (and without faces) written into an engine buffer in the raw
@@ -163,7 +178,7 @@ export function callEngine(x: GeomExports, op: string, request: unknown): unknow
   } catch (err) {
     if (!(err instanceof WebAssembly.RuntimeError)) throw err
     const panic = x.geom_panic_len?.() ? text(x.geom_panic_ptr!(), x.geom_panic_len()) : ''
-    throw new EngineTrap(trapMessage(panic, x.memory.buffer.byteLength))
+    throw new EngineTrap(trapMessage(panic, x.memory.buffer.byteLength), !panic)
   }
   if (code === 0) {
     const answer = JSON.parse(text(x.geom_out_ptr(), x.geom_out_len())) as unknown

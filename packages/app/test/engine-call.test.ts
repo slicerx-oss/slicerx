@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { callEngine, EngineTrap, rawOut, transferables, type GeomExports } from '../src/geom/engine-call'
+import { callEngine, EngineTrap, rawOut, retriesAfterTrap, transferables, type GeomExports } from '../src/geom/engine-call'
 import { liveEngine, wasmPath } from './geom-engine'
 
 /** Exports over a plain memory, with one output buffer written at an address that is not a multiple of four. */
@@ -72,7 +72,14 @@ describe('a call whose engine traps', () => {
 
   it('names the panic it came from', () => {
     const x = trappingEngine('panicked at packages/geom/src/boolean.rs:12:5:\nbad loop')
-    expect(() => callEngine(x, 'shape.extrude', {})).toThrow(new EngineTrap('The geometry engine stopped on an internal error: panicked at packages/geom/src/boolean.rs:12:5: bad loop'))
+    expect(() => callEngine(x, 'shape.extrude', {})).toThrow('The geometry engine stopped on an internal error: panicked at packages/geom/src/boolean.rs:12:5: bad loop')
+    try {
+      callEngine(x, 'shape.extrude', {})
+    } catch (e) {
+      // a panic would only repeat, so it is not tried again
+      expect(e).toBeInstanceOf(EngineTrap)
+      expect(retriesAfterTrap(e, 'shape.extrude')).toBe(false)
+    }
   })
 
   it('says the engine ran out of memory when no panic was kept, as when its memory could not grow', () => {
@@ -85,6 +92,10 @@ describe('a call whose engine traps', () => {
     }
     expect(err).toBeInstanceOf(EngineTrap)
     expect((err as Error).message).toBe('The geometry engine ran out of memory at 3.3 MB; try the step again')
+    expect(retriesAfterTrap(err, 'shape.extrude')).toBe(true)
+    // a nest session's later steps need the session that was in the engine that stopped
+    expect(retriesAfterTrap(err, 'nest.step')).toBe(false)
+    expect(retriesAfterTrap(err, 'nest.end')).toBe(false)
   })
 
   it('passes on an error that is not a trap as it is', () => {

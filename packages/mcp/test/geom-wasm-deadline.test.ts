@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { runPrompt } from '../evals/creative/run'
-import { createGeomWasm, trapMessage } from '@slicerx/pilot/node'
+import { createGeomWasm, retriesAfterTrap, trapMessage } from '@slicerx/pilot/node'
 
 const uleb = (n: number): number[] => {
   const out: number[] = []
@@ -27,24 +27,30 @@ const name = (s: string): number[] => [...uleb(s.length), ...Buffer.from(s)]
 const fn = (code: number[]): number[] => [...uleb(code.length + 1), 0x00, ...code]
 
 /** A module with the sx-geom calling convention whose geom_call loops forever when the op starts with "b". */
-// geom_call traps for "t", and geom_out_len cuts the reply short for "j".
+// geom_call traps for "t", for "p" with a panic kept, and for "u" on any call but the module's first (memory[0] counts
+// the calls); geom_out_len cuts the reply short for "j".
+const PANIC = 'panicked at src/stand_in.rs:7:1:\nno knuckle'
 function standInEngine(): string {
   const out = Buffer.from('{"ok":true}')
-  const exports: [string, number, number][] = [['memory', 2, 0], ['geom_input', 0, 0], ['geom_call', 0, 1], ['geom_out_ptr', 0, 2], ['geom_out_len', 0, 3], ['geom_error_ptr', 0, 4], ['geom_error_len', 0, 5]]
+  const panic = Buffer.from(PANIC)
+  const exports: [string, number, number][] = [['memory', 2, 0], ['geom_input', 0, 0], ['geom_call', 0, 1], ['geom_out_ptr', 0, 2], ['geom_out_len', 0, 3], ['geom_error_ptr', 0, 4], ['geom_error_len', 0, 5], ['geom_panic_ptr', 0, 6], ['geom_panic_len', 0, 7]]
   const bytes = [
     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
     ...section(1, [0x02, 0x60, 0x01, 0x7f, 0x01, 0x7f, 0x60, 0x00, 0x01, 0x7f]),
-    ...section(3, [0x06, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01]),
+    ...section(3, [0x08, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01]),
     ...section(5, [0x01, 0x00, 0x01]),
     ...section(7, [exports.length, ...exports.flatMap(([n, kind, i]) => [...name(n), kind, i])]),
     ...section(10, [
-      0x06,
-      // geom_input: the request goes at 64
-      ...fn([0x41, 0xc0, 0x00, 0x0b]),
-      // geom_call: if memory[64] == 'b' then loop forever; if memory[64] == 't' then trap; 0
+      0x08,
+      // geom_input: memory[0] += 1; the request goes at 64
+      ...fn([0x41, 0x00, 0x41, 0x00, 0x2d, 0x00, 0x00, 0x41, 0x01, 0x6a, 0x3a, 0x00, 0x00, 0x41, 0xc0, 0x00, 0x0b]),
+      // geom_call: if memory[64] == 'b' then loop forever; if memory[64] == 't' or 'p' then trap; if memory[64] == 'u'
+      // and memory[0] > 1 then trap; 0
       ...fn([
         0x41, 0xc0, 0x00, 0x2d, 0x00, 0x00, 0x41, 0xe2, 0x00, 0x46, 0x04, 0x40, 0x03, 0x40, 0x0c, 0x00, 0x0b, 0x0b,
         0x41, 0xc0, 0x00, 0x2d, 0x00, 0x00, 0x41, 0xf4, 0x00, 0x46, 0x04, 0x40, 0x00, 0x0b,
+        0x41, 0xc0, 0x00, 0x2d, 0x00, 0x00, 0x41, 0xf0, 0x00, 0x46, 0x04, 0x40, 0x00, 0x0b,
+        0x41, 0xc0, 0x00, 0x2d, 0x00, 0x00, 0x41, 0xf5, 0x00, 0x46, 0x41, 0x00, 0x2d, 0x00, 0x00, 0x41, 0x01, 0x4b, 0x71, 0x04, 0x40, 0x00, 0x0b,
         0x41, 0x00, 0x0b,
       ]),
       ...fn([0x41, 0x10, 0x0b]),
@@ -52,8 +58,12 @@ function standInEngine(): string {
       ...fn([0x41, 0xc0, 0x00, 0x2d, 0x00, 0x00, 0x41, 0xea, 0x00, 0x46, 0x04, 0x7f, 0x41, 0x05, 0x05, 0x41, out.length, 0x0b, 0x0b]),
       ...fn([0x41, 0x00, 0x0b]),
       ...fn([0x41, 0x00, 0x0b]),
+      // geom_panic_ptr: the kept panic is at 256
+      ...fn([0x41, 0x80, 0x02, 0x0b]),
+      // geom_panic_len: the panic's length when memory[64] == 'p', else 0
+      ...fn([0x41, 0xc0, 0x00, 0x2d, 0x00, 0x00, 0x41, 0xf0, 0x00, 0x46, 0x04, 0x7f, 0x41, panic.length, 0x05, 0x41, 0x00, 0x0b, 0x0b]),
     ]),
-    ...section(11, [0x01, 0x00, 0x41, 0x10, 0x0b, out.length, ...out]),
+    ...section(11, [0x02, 0x00, 0x41, 0x10, 0x0b, out.length, ...out, 0x00, 0x41, 0x80, 0x02, 0x0b, panic.length, ...panic]),
   ]
   const file = join(mkdtempSync(join(tmpdir(), 'sx-geom-stand-in-')), 'engine.wasm')
   writeFileSync(file, Buffer.from(bytes))
@@ -113,11 +123,36 @@ describe('the Node geometry host', () => {
     await expect(after).resolves.toEqual({ ok: true })
   })
 
-  it('fails a call whose engine traps, says why, and the next call gets a fresh engine', async () => {
-    const geom = createGeomWasm({ wasm })
-    // the stand-in keeps no panic, as when its memory could not grow; its memory is two pages
-    await expect(geom.run('trap', {})).rejects.toThrow(/^sx-geom trap: the engine ran out of memory at 0\.1 MB; try the step again$/)
+  it('tries a call that ran out of memory once more on a fresh engine, and says so in its log', async () => {
+    const log: string[] = []
+    const geom = createGeomWasm({ wasm, log: (line) => log.push(line) })
     await expect(geom.run('info', {})).resolves.toEqual({ ok: true })
+    // the stand-in keeps no panic, as when its memory could not grow; its memory is two pages
+    await expect(geom.run('unlucky', {})).resolves.toEqual({ ok: true })
+    expect(log).toEqual(['sx-geom unlucky: the engine ran out of memory at 0.1 MB; try the step again; trying it once more on a fresh engine'])
+  })
+
+  it('says why when the retry runs out of memory too, and the next call gets a fresh engine', async () => {
+    const log: string[] = []
+    const geom = createGeomWasm({ wasm, log: (line) => log.push(line) })
+    await expect(geom.run('trap', {})).rejects.toThrow(/^sx-geom trap: the engine ran out of memory at 0\.1 MB; try the step again$/)
+    expect(log).toHaveLength(1)
+    await expect(geom.run('info', {})).resolves.toEqual({ ok: true })
+  })
+
+  it('names the panic a call stopped on and does not try it again', async () => {
+    const log: string[] = []
+    const geom = createGeomWasm({ wasm, log: (line) => log.push(line) })
+    await expect(geom.run('panic', {})).rejects.toThrow('sx-geom panic: the engine stopped on an internal error: panicked at src/stand_in.rs:7:1: no knuckle')
+    expect(log).toEqual([])
+    await expect(geom.run('info', {})).resolves.toEqual({ ok: true })
+  })
+
+  it('does not try a nest session step again, since its session was in the engine that stopped', () => {
+    expect(retriesAfterTrap('nest.step')).toBe(false)
+    expect(retriesAfterTrap('nest.end')).toBe(false)
+    expect(retriesAfterTrap('nest.start')).toBe(true)
+    expect(retriesAfterTrap('shape.extrude')).toBe(true)
   })
 
   it('names the panic a trap came from when the engine kept one', () => {
