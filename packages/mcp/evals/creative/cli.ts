@@ -26,6 +26,11 @@
 // since that refusal (a live capture stamps samePart, so a refusal the model saw replays as recorded). A replay that gets
 // mimir's note that its approved plan is unfinished (plan_left) is stale and left out of the score unless its live
 // capture got the note too (stamped planGoesOn). The log rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other mimir evals.
+// A replay exits 1 when a scored recording no longer replays as captured: it diverges from what the model read, leaves
+// recorded replies unused or ends early. A recording keeps the model's own miss, so a part that fails a check is
+// reported and counted in the pass rate, never an exit 1. A replay reads the thinnest wall by its facet cap alone
+// (SX_WALL_COUNT_ONLY=1, as the mcp tests do), so a loaded machine reads the wall a quiet one does; a live run reads
+// it with the app's limits.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
@@ -48,6 +53,8 @@ function arg(name: string, fallback?: string): string | undefined {
 const flag = (name: string): boolean => process.argv.includes(`--${name}`)
 
 const mode = arg('mode', 'replay') === 'live' ? 'live' : 'replay'
+// design.check reads the wall by its facet cap alone in a replay, with no time limit (body-facts.ts checkWallBudget)
+if (mode === 'replay' && process.env['SX_WALL_COUNT_ONLY'] === undefined) process.env['SX_WALL_COUNT_ONLY'] = '1'
 const ids = arg('prompt')?.split(',').filter(Boolean)
 const selected = ids ? CREATIVE_PROMPTS.filter((p) => ids.includes(p.id)) : CREATIVE_PROMPTS
 if (!selected.length) {
@@ -119,6 +126,7 @@ const scores: { id: string; score: CreativeScore; calls: number; noBuild?: NoBui
 const waiting: string[] = []
 const skipped: string[] = []
 const stale: string[] = []
+const broken: string[] = []
 const report = (p: CreativePrompt, run: PromptRun): void => {
   // a run the budget stopped ends partway, which is not what the model would do: it is never saved
   if (mode === 'live' && flag('record') && run.steps.length && !run.error && !budget.stopped) {
@@ -138,7 +146,10 @@ const report = (p: CreativePrompt, run: PromptRun): void => {
     stale.push(p.id)
     console.log(`     STALE recording: ${run.stale}`)
   }
-  if (run.error) console.log(`     error: ${run.error}`)
+  if (run.error) {
+    broken.push(p.id)
+    console.log(`     error: ${run.error}`)
+  }
 }
 if (client) {
   for await (const { prompt, run } of runLive(selected, { geom, client, budget, defaultAnswer })) report(prompt, run)
@@ -170,6 +181,7 @@ console.log(
 if (noBuildLine) console.log(noBuildLine)
 console.log(`default answer ${defaultAnswer ? `on, given in ${answeredIds.length} run${answeredIds.length === 1 ? '' : 's'}${answeredIds.length ? `: ${answeredIds.join(', ')}` : ''}` : 'off'}`)
 if (stale.length) console.log(`${stale.length} stale recording${stale.length === 1 ? '' : 's'}, to capture again live: ${stale.join(', ')}`)
+if (mode === 'replay' && broken.length) console.log(`${broken.length} recording${broken.length === 1 ? '' : 's'} no longer replay${broken.length === 1 ? 's' : ''} as captured: ${broken.join(', ')}`)
 if (waiting.length) console.log(`${waiting.length} prompt${waiting.length === 1 ? ' has' : 's have'} no recording yet: ${waiting.join(', ')}`)
 
 if (flag('log') && scores.length) {
@@ -204,4 +216,4 @@ if (flag('log') && scores.length) {
   }
 }
 
-process.exit(mode === 'replay' && passed < scores.length ? 1 : 0)
+process.exit(mode === 'replay' && broken.length ? 1 : 0)
