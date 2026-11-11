@@ -7,6 +7,12 @@
  "filament": {},
  "machine": {},
  "process": {},
+ "every_process": {
+  "comment": "Keys the maker's presets leave to its app's defaults. prime_tower_rib_wall: on; no Bambu Studio 2.9.1 preset sets it, and the app writes 1 into its projects, where the settings default is the rectangle wall.",
+  "values": {
+   "prime_tower_rib_wall": "1"
+  }
+ },
  "models": {
   "bambu-h3c": {
    "orca": {
