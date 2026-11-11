@@ -130,3 +130,19 @@ it.each(['object', 'global'] as const)('paints an unlocked object when the share
   expect(get().plate[0]!.paint).toBeUndefined()
   expect(get().objectSettings).toEqual(settings)
 })
+
+it('splits a height band deep enough that its edge lands on its height, as the server paint preview does', async () => {
+  const depths = () => engine.mock.calls.filter(([op]) => op === 'paint.select').map(([, args]) => (args as { maxDepth?: number }).maxDepth)
+  // the 10 mm box side is one triangle tall: depth 8 puts the band's edge within 0.04 mm (10 / 2^8 = 0.039)
+  await preview({ target: { kind: 'height', from: 4, to: 5 } })
+  expect(depths()).toEqual([8, 8])
+  engine.mockClear()
+  // only the 5 mm part: 5 / 2^7 = 0.039
+  await preview({ target: { kind: 'height', below: 2 }, part: 1 })
+  expect(depths()).toEqual([7])
+  engine.mockClear()
+  // a depth given is kept, and targets other than a height band send none
+  await preview({ target: { kind: 'height', below: 2 }, max_depth: 3 })
+  await preview({ target: { kind: 'direction', direction: 'top' } })
+  expect(depths()).toEqual([3, 3, undefined, undefined])
+})

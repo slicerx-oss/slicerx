@@ -3,13 +3,13 @@
 import { z } from 'zod'
 import { layerArg, paintState, targetArg } from './paint-target'
 
-export { storedTarget } from './paint-target'
+export { bandDepth, storedTarget } from './paint-target'
 export const appPaintReadInput = z.object({ object: z.string().min(1), layer: layerArg })
 export const appPaintPreviewInput = appPaintReadInput.extend({
   state: paintState().describe('Color filament slot, 1 to 32; seam/support 1 or 2; fuzzy 1; 0 clears'),
   target: targetArg,
   part: z.number().int().min(0).optional().describe('Zero-based part index; omit for every part'),
-  max_depth: z.number().int().min(0).max(10).optional(),
+  max_depth: z.number().int().min(0).max(10).optional().describe('How finely a height band splits triangles at its edges, each level halving them; left out, deep enough that the edge is within 0.04 mm of its height (6 to 10)'),
 })
 export const appPaintApplyInput = z.object({ preview: z.string().min(1) })
 export const appPaintFromTextureInput = z.object({
