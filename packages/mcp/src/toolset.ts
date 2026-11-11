@@ -63,13 +63,13 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
 /**
  * The mimir tab's tools on `host`: its own (the question, the lookup card, the dimension sheet, design.plan) and the
  * design toolset with no files. design.check reads the card's plans and holds walls to `nozzleMm`; the part built after
- * an approved plan ties to it (withPlanTies), so design.check checks that design. The app's tab and the creative eval
+ * an approved plan ties to it (withPlanTies), so design.check checks that design, and design.plan refuses a second plan of a part built from one. The app's tab and the creative eval
  * both make their tools here, so the eval offers what the tab offers. `newPlanId` names each plan (default random).
  */
 export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string } = {}): PilotTool<never>[] {
   // design.plan names the gaps design.check holds a print-in-place part to: the same nozzle, layer height and material
   const fitProfile = () => ({ ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })
-  const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile })
+  const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile, designs: () => host.list() })
   return card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true })))
 }
 

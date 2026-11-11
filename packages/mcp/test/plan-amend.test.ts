@@ -66,9 +66,9 @@ const chain: PlanInput = {
 }
 
 /** The tab's tools over the box design: answers each card with `answers` in turn (go, or not yet), recording what each showed. */
-function tab(answers: ('go' | 'not yet')[] = []) {
+function tab(answers: ('go' | 'not yet')[] = [], newPlanId: () => string = () => 'plan_1') {
   const card = createCardPlans(createPlanRegistry())
-  const tools = tabToolset(boxHost(), card, { nozzleMm: () => machine.nozzle, newPlanId: () => 'plan_1' })
+  const tools = tabToolset(boxHost(), card, { nozzleMm: () => machine.nozzle, newPlanId })
   const tool = (name: string) => tools.find((t) => t.name === name)!
   const cards: { title: string; question: string; id: string; plan: PartPlan | null }[] = []
   const ctx = {
@@ -99,7 +99,7 @@ const taller = (p: PlanInput, z: number): PlanInput => ({ ...p, features: p.feat
 describe('design.plan with amends', () => {
   it('tells the model a first plan takes no reason: amends and reason are for changing an approved plan', () => {
     const plan = tabToolset(boxHost(), createCardPlans(createPlanRegistry()), { nozzleMm: () => machine.nozzle }).find((t) => t.name === 'design.plan')!
-    expect(plan.version).toBe('1.3.0')
+    expect(plan.version).toBe('1.4.0')
     const props = toolSpec(plan).inputSchema.properties as Record<string, { description?: string }>
     expect(props['amends']?.description).toMatch(/only to change a plan the person approved/i)
     expect(props['reason']?.description).toMatch(/only with amends/i)
@@ -283,5 +283,65 @@ describe('amend helpers', () => {
     expect(amendShapeProblem(was, { ...was, features: was.features.map((f, i) => (i === 0 ? { ...f, sizes: { height: 30 } } : f)) })).toBe('features: an amend changes sizes only; Base keeps the sizes height, wall')
     expect(amendShapeProblem(was, next)).toBeNull()
     expect(amendProblem('p', { plan: was, origin: 'card', design: 'd1', stale: true }, 'card')).toBe('amends: the person changed sizes since that plan was approved; make a new plan with the sizes they set')
+  })
+})
+
+describe('design.plan for a part already built from an approved plan', () => {
+  const numbered = () => {
+    let n = 0
+    return () => `plan_${++n}`
+  }
+
+  it('refuses a new plan for the built part after a failed check, pointing at undo, edit_step and amends', async () => {
+    const t = tab([], numbered())
+    await t.approve(box)
+    expect((await t.check()).item('overall size')?.pass).toBe(false)
+    await expect(t.run('design.plan', taller(box, 34))).rejects.toThrow(
+      'Hinged box is already built from the approved plan plan_1 in the open design Hinged box. Fix it there rather than planning it again: design.undo or design.edit_step for a step that went wrong, and design.plan with amends plan_1 and a reason for a planned size the build cannot keep. If the person asked for a second part, give it another name.',
+    )
+    // no card was shown for it, and the approved plan keeps its design and fix round
+    expect(t.cards).toHaveLength(1)
+    expect(t.card.plans.get('plan_1')).toMatchObject({ design: 'd1', failedChecks: 1 })
+    expect(t.card.plans.get('plan_2')).toBeUndefined()
+  })
+
+  it('refuses it by the part name whatever its case, and says to stop once the fix round is used', async () => {
+    const t = tab([], numbered())
+    await t.approve(box)
+    await t.check()
+    await t.check()
+    await expect(t.run('design.plan', { ...box, part: ' hinged BOX ' })).rejects.toThrow(
+      'is already built from the approved plan plan_1 in the open design Hinged box, and its check used the fix round. Make no new plan: stop and tell the person exactly what is off.',
+    )
+  })
+
+  it('still plans the built part again when the new plan changes its shape, which amends cannot, until the fix round is used', async () => {
+    const t = tab([], numbered())
+    await t.approve(box)
+    await t.check()
+    const withBore = { ...box, holes: [{ name: 'Lid bore', diameter: 21 }] }
+    expect((await t.run('design.plan', withBore)).output).toMatchObject({ planId: 'plan_2', accepted: true })
+
+    const stopped = tab([], numbered())
+    await stopped.approve(box)
+    await stopped.check()
+    await stopped.check()
+    await expect(stopped.run('design.plan', withBore)).rejects.toThrow('Make no new plan: stop and tell the person exactly what is off.')
+  })
+
+  it('still plans a second part under another name, a part not built yet, and a part whose sizes the person changed', async () => {
+    const t = tab([], numbered())
+    await t.approve(box)
+    const lid = await t.run('design.plan', { ...box, part: 'Lid' })
+    expect(lid.output).toMatchObject({ planId: 'plan_2', accepted: true })
+
+    const unbuilt = tab([], numbered())
+    await unbuilt.run('design.plan', box)
+    expect((await unbuilt.run('design.plan', taller(box, 34))).output).toMatchObject({ planId: 'plan_2', accepted: true })
+
+    const changed = tab([], numbered())
+    await changed.approve(box)
+    changed.card.plans.stale('plan_1')
+    expect((await changed.run('design.plan', taller(box, 34))).output).toMatchObject({ planId: 'plan_2', accepted: true })
   })
 })
