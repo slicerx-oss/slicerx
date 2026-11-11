@@ -640,7 +640,8 @@ fn coarsen_inner(original: &TriMesh, by_id: bool, touching: Option<&[(V3, V3)]>)
         let segs = rim(r);
         let mut next: FxHashMap<u32, u32> = segs.iter().copied().collect();
         let mut loops = Vec::new();
-        while let Some((&s0, _)) = next.iter().find(|(a, _)| !drop(**a)) {
+        // each loop starts at its lowest kept vertex: map order differs between 32 and 64 bit builds
+        while let Some(s0) = next.keys().copied().filter(|&a| !drop(a)).min() {
             let mut a = s0;
             let mut guard = 0;
             loop {
