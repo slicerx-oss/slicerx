@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
+import { AMEND_REASON_MAX, amendAdded, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
 import { DETAIL_HELP, DETAIL_LEVELS, detailProblem, FEATURES_FLOOR, LONG_EXTRA, LONG_RATIO, SECTIONS_FLOOR } from './plan-detail'
 import { floorText, jointProblem, planFloors, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
 
@@ -46,6 +46,7 @@ export type PlanInput = z.infer<typeof PlanInputSchema>
 export const PlanToolInputSchema = PlanInputSchema.extend({
   amends: z.string().trim().min(1).max(64).optional().describe("Only to change a plan the person approved, once its part is built: that plan's planId. Leave it out of a first plan"),
   reason: z.string().max(AMEND_REASON_MAX).optional().describe('Only with amends: why the build changes the approved plan, in a sentence the person reads. A first plan takes none'),
+  asked: z.string().trim().min(1).max(AMEND_REASON_MAX).optional().describe("Only with amends, for a change the person asked for in their latest message (a size, a detail added): their words. It goes in with no card, since their message is the go, and may add features; give no reason"),
 })
 type PlanToolInput = z.infer<typeof PlanToolInputSchema>
 
@@ -266,7 +267,7 @@ export function createCardPlans(plans: PlanRegistry) {
       source: 'command',
       permission: 'read',
       description:
-        `Before the first geometry step of a part with two or more features, show the person the plan. It waits for their Go only when a size must fit something (a sheet with fits) or pieces print assembled and move; any other plan, at its default size, is approved as shown at once, so build it then. Say its detail: display for a model of a real thing named without sizes (the default), basic when the person asks for simple, basic or nothing fancy, fine when they ask for detailed or accurate; the card names it and the person can change it there. A display plan names the features that build its main bodies, in curved when the real thing is curved and in flat when it is flat-sided; a curved body is a loft through at least ${SECTIONS_FLOOR.display} smooth sections (${SECTIONS_FLOOR.fine} at fine; a revolve or a sweep where that fits), never one extrude, while a flat-sided one (a house, a bookshelf) can be extruded; it gives proportions, from a lookup or a stated source; it lists repeats, the real object's repeated details (windows, wheels, slats, vents), each built once and patterned (kind array); it gives scale (N of 1:N) and real, the real sizes in mm the lookup or stated source gives (the main body's and each part's it has), each held to scale within about a third; no part is wider or longer than the main body, or taller than the whole; each flat-sided main body lists its tiers, its levels from the bottom up, each its own feature (a body built in steps or stories is planned as its levels); it gives colors, each feature's color as the real thing is painted, with a body painted in two colors (a stripe, a trim line) split at its line into one feature per color; and it has at least ${FEATURES_FLOOR.display} features (${FEATURES_FLOOR.fine} at fine, ${LONG_EXTRA} more for an object ${LONG_RATIO} or more times as long as its next size, one more for each repeated detail past three). A display or fine plan that misses one is refused with what to plan instead; design.check then fails a curved body whose sections only grow or shrink one way while their top and bottom stay put. ${DETAIL_HELP}. The plan has: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, loft, hole, fillet or array; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size; a thing made of parts in different colors, such as a rocket or a toy car, is planned assembled as it looks finished, one part per color, with the overall size of the whole, never as pieces laid apart unless the person asked for that), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. A size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless they print in place, with the bore it gives around a pin; a wall or pin under two nozzle lines; a hole under the nozzle) is raised on the card with a line saying why. A plan with a hinge or a pin piece says whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption); one that says neither, or both, is refused. On a plan that waits, the person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, the edited plan when they changed anything or a size was raised (build from that), and raised, each size raised from what to what. Not accepted: build nothing and ask what to change. A part of one feature skips the plan. When the build finds an approved size it cannot keep, call it again with amends (the plan's planId) and reason (why, in a sentence the person reads): the person sees the changed sizes beside the old ones, raised to this printer's floors as a new plan's are, and presses Go or Not yet. Sizes only, once per fix round and never after the stop result; Go keeps the planId and its fix round and returns revision and changes, Not yet leaves the plan as approved. A new plan that only changes the sizes of a part already built from an approved plan is refused: fix the part in its design, or change the sizes with amends.`,
+        `Before the first geometry step of a part with two or more features, show the person the plan. It waits for their Go only when a size must fit something (a sheet with fits) or pieces print assembled and move; any other plan, at its default size, is approved as shown at once, so build it then. Say its detail: display for a model of a real thing named without sizes (the default), basic when the person asks for simple, basic or nothing fancy, fine when they ask for detailed or accurate; the card names it and the person can change it there. A display plan names the features that build its main bodies, in curved when the real thing is curved and in flat when it is flat-sided; a curved body is a loft through at least ${SECTIONS_FLOOR.display} smooth sections (${SECTIONS_FLOOR.fine} at fine; a revolve or a sweep where that fits), never one extrude, while a flat-sided one (a house, a bookshelf) can be extruded; it gives proportions, from a lookup or a stated source; it lists repeats, the real object's repeated details (windows, wheels, slats, vents), each built once and patterned (kind array); it gives scale (N of 1:N) and real, the real sizes in mm the lookup or stated source gives (the main body's and each part's it has), each held to scale within about a third; no part is wider or longer than the main body, or taller than the whole; each flat-sided main body lists its tiers, its levels from the bottom up, each its own feature (a body built in steps or stories is planned as its levels); it gives colors, each feature's color as the real thing is painted, with a body painted in two colors (a stripe, a trim line) split at its line into one feature per color; and it has at least ${FEATURES_FLOOR.display} features (${FEATURES_FLOOR.fine} at fine, ${LONG_EXTRA} more for an object ${LONG_RATIO} or more times as long as its next size, one more for each repeated detail past three). A display or fine plan that misses one is refused with what to plan instead; design.check then fails a curved body whose sections only grow or shrink one way while their top and bottom stay put. ${DETAIL_HELP}. The plan has: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, loft, hole, fillet or array; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size; a thing made of parts in different colors, such as a rocket or a toy car, is planned assembled as it looks finished, one part per color, with the overall size of the whole, never as pieces laid apart unless the person asked for that), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. A size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless they print in place, with the bore it gives around a pin; a wall or pin under two nozzle lines; a hole under the nozzle) is raised on the card with a line saying why. A plan with a hinge or a pin piece says whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption); one that says neither, or both, is refused. On a plan that waits, the person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, the edited plan when they changed anything or a size was raised (build from that), and raised, each size raised from what to what. Not accepted: build nothing and ask what to change. A part of one feature skips the plan. When the build finds an approved size it cannot keep, call it again with amends (the plan's planId) and reason (why, in a sentence the person reads): the person sees the changed sizes beside the old ones, raised to this printer's floors as a new plan's are, and presses Go or Not yet. It keeps every planned feature and may add features; once per fix round and never after the stop result; Go keeps the planId and its fix round and returns revision and changes, Not yet leaves the plan as approved. For a change the person asked for once the part is built (a size, a detail added), call it with amends and, with asked, the person's words for a change they asked for, and no reason: the change goes into the plan with no card, since their message is the go, it may add features, and the fix round starts again; then make the change in the design. A new plan that only changes the sizes of a part already built from an approved plan is refused: fix the part in its design, or change the sizes with amends.`,
       localDescription:
         `Before building a part with 2+ features, show the plan and wait: part, units, features in build order with sizes and kind (kinds: count or angle for each such size), overall and holes if known, assumptions, questions. printInPlace pieces: keep the gaps where they meet ${RULE_MIN}; pieces with a gap size print in place unless printInPlace is false. Build from the accepted plan, else ask. More: kb.search "modeling tools".`,
       input: PlanToolInputSchema,
@@ -283,9 +284,10 @@ export function createCardPlans(plans: PlanRegistry) {
         // match; the gaps are the ones design.check holds the part to
         const limits = runFitLimits(ctx.context, opts.fitProfile?.())
         const floors = planFloors(limits)
-        if (i.amends !== undefined) return amend(i, i.amends, askFor(planById(i.amends) ?? i), floors, limits)
+        if (i.amends !== undefined) return i.asked !== undefined ? askedChange(i, i.amends, i.asked, floors, limits) : amend(i, i.amends, askFor(planById(i.amends) ?? i), floors, limits)
         if (i.reason !== undefined) throw new ToolInputError('reason: give a reason only with amends, to change an approved plan')
-        const { amends: _a, reason: _r, ...input } = i
+        if (i.asked !== undefined) throw new ToolInputError('asked: only with amends, for a change the person asked for to a plan already built')
+        const { amends: _a, reason: _r, asked: _k, ...input } = i
         // a part built from an approved plan is fixed where it is; planning it again would start it over
         const built = opts.designs ? builtPlanOf(input.part, opts.designs()) : null
         // a new plan of the same shape changes sizes only, which amends does without starting the part over
@@ -293,7 +295,7 @@ export function createCardPlans(plans: PlanRegistry) {
           throw new ToolInputError(
             built.closed
               ? `${input.part} is already built from the approved plan ${built.planId} in the open design ${built.design}, and its check used the fix round. Make no new plan: stop and tell the person exactly what is off.`
-              : `${input.part} is already built from the approved plan ${built.planId} in the open design ${built.design}. Fix it there rather than planning it again: design.undo or design.edit_step for a step that went wrong, and design.plan with amends ${built.planId} and a reason for a planned size the build cannot keep. If the person asked for a second part, give it another name.`,
+              : `${input.part} is already built from the approved plan ${built.planId} in the open design ${built.design}. Fix it there rather than planning it again: design.undo or design.edit_step for a step that went wrong, design.plan with amends ${built.planId} and a reason for a planned size the build cannot keep, and with amends and asked for a change the person asked for. If the person asked for a second part, give it another name.`,
           )
         // a hinged part says one way its lid prints, so the build has nothing to guess
         const joint = jointProblem(input)
@@ -348,12 +350,12 @@ export function createCardPlans(plans: PlanRegistry) {
     const was = entry!.plan
     const shape = amendShapeProblem(was, i)
     if (shape) throw new ToolInputError(shape)
-    if (!amendChanges(was, i).length) throw new ToolInputError(`amends: no size differs from the approved plan ${planId}`)
+    if (!amendChanges(was, i).length && !amendAdded(was, i).length) throw new ToolInputError(`amends: no size differs from the approved plan ${planId}`)
     const revision = (entry!.revision ?? 1) + 1
     const id = amendId(planId, revision)
     // a size asked under its floor is raised as a new plan's is, with its line among the assumptions
     const { plan, raised } = raiseToFloors({ ...amendedSizes(was, i), planId: id }, floors)
-    if (!amendChanges(was, plan).length) {
+    if (!amendChanges(was, plan).length && !amendAdded(was, plan).length) {
       const back = raised.map((u) => `${underName(u)} stays ${floorText(u, was.units)}, ${u.why}`).join('; ')
       return { ok: false, summary: `Nothing changed: ${back}. Build to the plan as approved`, output: { planId, accepted: false } satisfies PlanAnswer }
     }
@@ -379,8 +381,31 @@ export function createCardPlans(plans: PlanRegistry) {
     const changes = amendChanges(was, latest)
     const edited = !samePlan(card, shown)
     const answer: PlanAnswer = { planId, accepted: true, edits: latest, revision, changes, ...(raised.length ? { raised: raised.map(raisedOut) } : {}) }
-    const said = `Plan changed${edited ? ' with the person\'s edits' : ''} (revision ${revision}): ${changes.map((c) => changeText(c, latest.units)).join(', ')}. Build to it as changed`
+    const said = `Plan changed${edited ? ' with the person\'s edits' : ''} (revision ${revision}): ${changedText(was, latest)}. Build to it as changed`
     return approved(answer, latest, { edited, raised, floors, limits, said })
+  }
+
+  /**
+   * design.plan with amends and asked: a change the person asked for in their latest message, put into the approved
+   * plan with no card (their message is the go). It may add features and is not held to the build's one amend per fix
+   * round; the plan must be the person's, approved and built, and not set aside. The fix round starts again.
+   */
+  function askedChange(i: PlanToolInput, planId: string, words: string, floors: PlanFloors, limits: FitLimits): ToolOutput {
+    if (i.reason !== undefined) throw new ToolInputError('reason: a change the person asked for takes their words in asked and no reason')
+    const entry = plans.get(planId)
+    if (!entry || entry.origin !== 'card') throw new ToolInputError(`amends: there is no plan the person approved with planId ${planId}`)
+    if (entry.stale || entry.superseded) throw new ToolInputError('amends: the person changed sizes since that plan was approved; make a new plan with the sizes they set')
+    if (!entry.design) throw new ToolInputError("amends: the plan's part is not built yet; build to the plan")
+    const was = entry.plan
+    const shape = amendShapeProblem(was, i)
+    if (shape) throw new ToolInputError(shape)
+    const { plan, raised } = raiseToFloors({ ...amendedSizes(was, i), planId }, floors)
+    if (!amendChanges(was, plan).length && !amendAdded(was, plan).length) return { ok: false, summary: `Nothing changed: the plan already has these sizes. Make the change the person asked for in the design`, output: { planId, accepted: false } satisfies PlanAnswer }
+    plans.put(plan, entry.design, 'card')
+    const revision = plans.asked(planId, words)
+    const changes = amendChanges(was, plan)
+    const answer: PlanAnswer = { planId, accepted: true, edits: plan, revision, changes, ...(raised.length ? { raised: raised.map(raisedOut) } : {}) }
+    return approved(answer, plan, { edited: false, raised, floors, limits, said: `Plan changed as asked (revision ${revision}): ${changedText(was, plan)}. Build to it as changed` })
   }
 
   /** An approved plan's result: the raised sizes, sizes the person set under their floors, and a print-in-place part's gaps. */
@@ -407,6 +432,11 @@ export function createCardPlans(plans: PlanRegistry) {
 }
 
 export type CardPlans = ReturnType<typeof createCardPlans>
+
+/** What an amend changed, in plain words: each size, then each feature it added. */
+function changedText(was: PartPlan, now: PartPlan): string {
+  return [...amendChanges(was, now).map((c) => changeText(c, now.units)), ...amendAdded(was, now).map((n) => `added ${n}`)].join(', ')
+}
 
 /** A raised size as design.plan's answer gives it. */
 function raisedOut(u: UnderFloor): NonNullable<PlanAnswer['raised']>[number] {

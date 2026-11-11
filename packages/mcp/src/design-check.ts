@@ -1288,6 +1288,11 @@ export interface PlanRegistry {
    * other amend is taken before another check fails. Returns the new revision, or 0 for an unknown plan.
    */
   amended(planId: string, why: string): number
+  /**
+   * Counts a change the person asked for (design.plan with amends and asked), put already: its revision goes up by one,
+   * and the fix round starts again, since the build that follows is a new one. Returns the new revision, or 0.
+   */
+  asked(planId: string, words: string): number
   /** Records the design the chat started for a kept plan's part, stale or not (PlanEntry.claimed); no-op for an unknown plan. */
   claim(planId: string, design: string): void
   /** Keeps the fit check just run on a design, replacing the one before. */
@@ -1386,6 +1391,16 @@ export function createPlanRegistry(): PlanRegistry {
       entry.revision = (entry.revision ?? 1) + 1
       entry.amendedAt = entry.failedChecks ?? 0
       entry.amendWhy = why
+      return entry.revision
+    },
+    asked(planId, words) {
+      const entry = plans.get(planId)
+      if (!entry) return 0
+      entry.revision = (entry.revision ?? 1) + 1
+      delete entry.closed
+      delete entry.amendedAt
+      delete entry.failedChecks
+      entry.amendWhy = `asked: ${words}`
       return entry.revision
     },
     claim(planId, design) {

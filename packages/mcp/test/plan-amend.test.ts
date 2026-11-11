@@ -196,7 +196,7 @@ describe('design.plan with amends', () => {
     await expect(t.run('design.plan', { ...taller(box, 34), amends: 'plan_1', reason: 'The box closes at 34 mm.' })).rejects.toThrow('amends: the plan has used its fix round; stop and tell the person exactly what is off')
   })
 
-  it('refuses an amend without a reason, of a part not built yet, of no such plan, or that changes more than sizes', async () => {
+  it('refuses an amend without a reason, of a part not built yet, of no such plan, or that drops a feature', async () => {
     const t = tab()
     await t.run('design.plan', box)
     await expect(t.run('design.plan', { ...taller(box, 34), amends: 'plan_1', reason: 'Taller.' })).rejects.toThrow("amends: the plan's part is not built yet; build to the plan, or make a new plan")
@@ -206,8 +206,9 @@ describe('design.plan with amends', () => {
     await expect(t.run('design.plan', { ...taller(box, 34), reason: 'Taller.' })).rejects.toThrow('reason: give a reason only with amends')
     await expect(t.run('design.plan', { ...taller(box, 34), amends: 'plan_9', reason: 'Taller.' })).rejects.toThrow('amends: there is no plan the person approved with planId plan_9')
     await expect(t.run('design.plan', { ...box, part: 'Hinged chest', amends: 'plan_1', reason: 'Renamed.' })).rejects.toThrow('part: an amend changes sizes only; the part stays "Hinged box"')
-    const extra = { ...box, features: [...box.features, { name: 'Latch', sizes: { width: 6 } }], amends: 'plan_1', reason: 'A latch.' }
-    await expect(t.run('design.plan', extra)).rejects.toThrow('features: an amend changes sizes only; the plan has 2 features')
+    // a planned feature dropped is refused; one added is taken (plan-asked-change.test.ts)
+    const fewer = { ...box, features: box.features.slice(1), amends: 'plan_1', reason: 'No base.' }
+    await expect(t.run('design.plan', fewer)).rejects.toThrow('features: an amend keeps every planned feature, in order, and may add features under new names; the plan has Base, Hinge')
     await expect(t.run('design.plan', { ...box, amends: 'plan_1', reason: 'Same.' })).rejects.toThrow('amends: no size differs from the approved plan plan_1')
   })
 
@@ -299,7 +300,7 @@ describe('design.plan for a part already built from an approved plan', () => {
     await t.approve(box)
     expect((await t.check()).item('overall size')?.pass).toBe(false)
     await expect(t.run('design.plan', taller(box, 34))).rejects.toThrow(
-      'Hinged box is already built from the approved plan plan_1 in the open design Hinged box. Fix it there rather than planning it again: design.undo or design.edit_step for a step that went wrong, and design.plan with amends plan_1 and a reason for a planned size the build cannot keep. If the person asked for a second part, give it another name.',
+      'Hinged box is already built from the approved plan plan_1 in the open design Hinged box. Fix it there rather than planning it again: design.undo or design.edit_step for a step that went wrong, design.plan with amends plan_1 and a reason for a planned size the build cannot keep, and with amends and asked for a change the person asked for. If the person asked for a second part, give it another name.',
     )
     // no card was shown for it, and the approved plan keeps its design and fix round
     expect(t.cards).toHaveLength(1)
