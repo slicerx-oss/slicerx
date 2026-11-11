@@ -3,7 +3,7 @@
 // A size changed on the sheet after the build edits its step. When the engine refuses the edit, the sheet's note says
 // so in plain words with what to try; the engine's own text is kept for the dev log, never shown in the note.
 import type { PilotTool } from '@slicerx/pilot'
-import { defineTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { editRow } from '../src/workspaces/mimir/sheet-drive'
@@ -16,7 +16,7 @@ function edit(run: () => Promise<{ ok?: boolean; summary: string }>): PilotTool<
     version: '1',
     description: 'Edit a step',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({ design: z.string(), step: z.number(), value: z.number() }),
     run,
   })
