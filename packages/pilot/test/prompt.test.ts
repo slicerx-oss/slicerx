@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { DISMISSED_LINE, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { DISMISSED_LINE, FAMILY_LINE, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 
@@ -209,8 +209,8 @@ describe('the skill playbooks in the prompt', () => {
 
 describe('the line for parts that move', () => {
   const all = (): boolean => true
-  /** The cloud prompt less its cloud-only parts: the line for parts that move, the plan line's pointer to it and the line for a sweep that changes shape. */
-  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(`\n${RESHAPE_LINE}`, '')
+  /** The cloud prompt less its cloud-only parts: the line for parts that move, the plan line's pointer to it, the line for a sweep that changes shape and the line for a family. */
+  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '')
 
   it('is one line, in the cloud prompt only, after the check line', () => {
     expect(MOVING_PARTS_LINE).not.toContain('\n')
@@ -267,6 +267,29 @@ describe('the line for parts that move', () => {
       expect(cloud).not.toContain(MOVING_PARTS_ORDER)
       expect(asLocal(cloud)).toBe(systemPrompt('full', has))
     }
+  })
+})
+
+describe('the line for a part that fits a family', () => {
+  it('is one line in the cloud prompt only, right after the sizes line, and only with pilot.ask and parts.lookup', () => {
+    expect(FAMILY_LINE).not.toContain('\n')
+    for (const scope of ['full', 'cad'] as const) {
+      const cloud = systemPrompt(scope, () => true, '', { cloud: true })
+      expect(cloud.split(FAMILY_LINE)).toHaveLength(2)
+      const lines = cloud.split('\n')
+      expect(lines[lines.indexOf(FAMILY_LINE) - 1]).toMatch(/^- Sizes come from the request/)
+      expect(systemPrompt(scope, () => true)).not.toContain(FAMILY_LINE)
+      expect(systemPrompt(scope, (n) => n !== 'pilot.ask', '', { cloud: true })).not.toContain(FAMILY_LINE)
+      expect(systemPrompt(scope, (n) => n !== 'parts.lookup', '', { cloud: true })).not.toContain(FAMILY_LINE)
+    }
+  })
+
+  it('asks for the model before any sheet, or names the one assumed with an offer to change it, then uses its published sizes', () => {
+    expect(FAMILY_LINE).toContain('needs the model before any sheet: ask which one with pilot.ask')
+    expect(FAMILY_LINE).toContain('name it in your reply before the sheet and offer to change it')
+    expect(FAMILY_LINE).toContain("that model's published sizes (parts.lookup, else web.lookup)")
+    expect(FAMILY_LINE).toContain('never generic guesses for the family')
+    for (const family of ['a Raspberry Pi', 'a phone', 'a GoPro', 'a NEMA motor', 'a filament spool']) expect(FAMILY_LINE).toContain(family)
   })
 })
 

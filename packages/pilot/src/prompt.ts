@@ -35,6 +35,10 @@ const CHECK_LINE = `- After the last feature of a planned part, call design.chec
 // Such a part turns the plan line's order round: the plan names the moving pieces first, so the sheet after it gets the
 // fit rule's gaps (the runtime adds them only to a sheet that follows a plan with printInPlace).
 export const MOVING_PARTS_LINE = `- For a part whose pieces print assembled and move (a hinge, chain, gears, jointed, articulated or flexi segments, including a simpler version offered in place of a creature), the plan comes first and the sheet after it: call design.plan with the moving pieces by name in printInPlace, then show the sizes on a sheet (it fills in the fit rule's gaps as guesses), build each piece as its own body with that gap on every face where pieces meet, above and below included, then run geom.fit_check on the design, fix any gap it flags, and run design.check (it checks such a plan only after geom.fit_check on the part as built).`
+// cloud prompt only, as above: a part that fits a device or standard part named only by its family. The sizes line
+// already says to ask or say which one, but on its own a sheet of generic guesses for "my phone" or "my GoPro" came
+// first, so this puts the model before the sheet and its published sizes on it.
+export const FAMILY_LINE = `- A part that fits a device or standard part named only by its family (a Raspberry Pi, a phone, a GoPro, a NEMA motor, a filament spool) needs the model before any sheet: ask which one with pilot.ask (the nearest models parts.lookup gives, plus another one), unless the chat already says. If you assume a model instead, name it in your reply before the sheet and offer to change it. Then size the part from that model's published sizes (parts.lookup, else web.lookup), shown on the sheet as looked up with their source, never generic guesses for the family.`
 // the cloud plan line's last sentence, pointing at the line above for the one kind of part planned before its sheet
 export const MOVING_PARTS_ORDER = ` A part whose pieces print assembled and move is planned before its sheet instead, as below.`
 // cloud prompt only, as above: one sweep whose section turns into another, where a loft joined to a bend leaves seams
@@ -60,7 +64,8 @@ const buildLines = (has: HasTool, o: PromptOptions): string => {
   const moving = checks && o.cloud === true
   const plan = moving ? `${PLAN_LINE}${MOVING_PARTS_ORDER}` : PLAN_LINE
   const reshape = o.cloud === true && has('geom.sweep')
-  return [BUILD_FIRST, SIZES_LINE, has('design.plan') ? `${plan}\n${FEATURE_LINE}` : STEPS_LINE, BIND_LINE, checks ? CHECK_LINE : READ_BACK_LINE, ...(moving ? [MOVING_PARTS_LINE] : []), ...(reshape ? [RESHAPE_LINE] : [])].join('\n')
+  const family = o.cloud === true && has('pilot.ask') && has('parts.lookup')
+  return [BUILD_FIRST, SIZES_LINE, ...(family ? [FAMILY_LINE] : []), has('design.plan') ? `${plan}\n${FEATURE_LINE}` : STEPS_LINE, BIND_LINE, checks ? CHECK_LINE : READ_BACK_LINE, ...(moving ? [MOVING_PARTS_LINE] : []), ...(reshape ? [RESHAPE_LINE] : [])].join('\n')
 }
 
 // What the part tools make, in general terms, and what they do not, for both ways of building. A request whose shape is
