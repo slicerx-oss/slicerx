@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // apt-install.sh and playwright-chromium.sh against stand-ins for apt-get, dpkg, sudo and pnpm, so each path runs with
 // no package mirror and nothing installed: packages already there, a warm cache of .deb files, a cold cache with the
-// mirror up, a mirror that cannot be reached (and the fallback mirror), and Playwright's list of missing packages.
+// mirror up, a mirror that cannot be reached (and the fallback mirror), and Playwright's list of missing packages. Also
+// apt-seed.sh, which downloads those files for a hosted image with apt state of its own.
 import { strict as assert } from 'node:assert'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
@@ -16,8 +17,11 @@ const here = dirname(fileURLToPath(import.meta.url))
 const STUBS = {
   sudo: 'exec "$@"',
   sleep: ':',
-  // the packages listed in $STATE/installed are installed
-  'dpkg-query': 'p=${@: -1}; grep -qx "$p" "$STATE/installed" 2>/dev/null && printf "ii " || exit 1',
+  // the packages listed in $STATE/installed ("name" or "name version", 1.0 by default) are installed
+  'dpkg-query': [
+    'p=${@: -1}; line=$(grep -E "^$p( |$)" "$STATE/installed" 2>/dev/null | tail -1); [ -n "$line" ] || exit 1',
+    'case "$2" in *Version*) v=${line#* }; [ "$v" = "$line" ] && v=1.0; printf "%s" "$v" ;; *) printf "ii " ;; esac',
+  ].join('\n'),
   // a stand-in .deb is a text file of "Field: value" lines
   'dpkg-deb': 'grep "^$3: " "$2" | cut -d" " -f2-',
   dpkg: [
@@ -28,6 +32,8 @@ const STUBS = {
   // apt-get logs its call; APT_UPDATE_FAIL and APT_INSTALL_FAIL are how many updates or installs fail first
   'apt-get': [
     'echo "apt-get $*" >> "$STATE/log"',
+    // apt-seed.sh: the sources its private configuration names, as each call saw them
+    'if [ -n "${APT_CONFIG:-}" ]; then grep -h "^deb" "$(awk -F\\" "/^Dir::Etc::sourcelist /{print \\$2}" "$APT_CONFIG")" > "$STATE/sources"; fi',
     'n() { c=$(cat "$STATE/$1" 2>/dev/null || echo 0); echo $((c + 1)) > "$STATE/$1"; [ "$c" -lt "${2:-0}" ]; }',
     'case " $* " in',
     '  *" update "*) n updates "${APT_UPDATE_FAIL:-0}" && exit 100; exit 0 ;;',
@@ -38,6 +44,7 @@ const STUBS = {
   // playwright through pnpm: the report in $STATE/report for a dry run
   pnpm: [
     'echo "pnpm $*" >> "$STATE/log"',
+    '[ -z "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" ] || echo "platform $PLAYWRIGHT_HOST_PLATFORM_OVERRIDE" >> "$STATE/log"',
     'case " $* " in *" --dry-run "*) cat "$STATE/report"; exit "${PW_DRY_STATUS:-0}" ;; esac',
   ].join('\n'),
 }
@@ -78,8 +85,8 @@ describe('apt-install.sh', () => {
     assert.match(r.out, /all 2 packages are installed already/)
   })
 
-  it('installs from a warm cache with no mirror, the newest file of each package', () => {
-    const root = setup({ installed: ['c'] })
+  it('installs from a warm cache with no mirror, the newest file of each package, never an older one', () => {
+    const root = setup({ installed: ['c 9.0'] })
     const cache = join(root, 'cache')
     deb(cache, 'a', '1.0')
     deb(cache, 'a', '1.2')
@@ -119,10 +126,33 @@ describe('apt-install.sh', () => {
     assert.match(readFileSync(join(etc, 'sources.list.d', 'ubuntu.sources'), 'utf8'), /^URIs: http:\/\/mirrors\.edge\.kernel\.org\/ubuntu\/$/m)
   })
 
-  it('fails after three installs when no mirror answers, saying which packages', () => {
+  it('takes an upgrade the cache holds for an installed package, as apt would for the asked ones', () => {
+    const root = setup({ installed: ['lib 1.0', 'tool 3.0'] })
+    const cache = join(root, 'cache')
+    deb(cache, 'lib', '1.1')
+    deb(cache, 'tool', '2.0')
+    deb(cache, 'a', '1.0')
+    const r = run(root, 'apt-install.sh', ['--cache', cache, 'a'])
+    assert.equal(r.status, 0, r.out)
+    assert.equal(r.log.length, 1, r.log.join('\n'))
+    assert.match(r.log[0], /\blib 1\.1\b/)
+    assert.match(r.log[0], /\ba 1\.0\b/)
+    assert.doesNotMatch(r.log[0], /\btool\b/)
+  })
+
+  it('stops with one line and no install tries when neither mirror gives lists', () => {
     const root = setup()
     mkdirSync(join(root, 'etc'))
-    const r = run(root, 'apt-install.sh', ['a', 'b'], { APT_UPDATE_FAIL: '9', APT_INSTALL_FAIL: '9' })
+    const r = run(root, 'apt-install.sh', ['a', 'b'], { APT_UPDATE_FAIL: '9' })
+    assert.equal(r.status, 1)
+    assert.equal(r.log.filter((l) => / update /.test(l)).length, 2)
+    assert.equal(r.log.filter((l) => / install /.test(l)).length, 0)
+    assert.match(r.out, /apt-install: no package mirror answered \(the runner's or the fallback\) and the cache does not hold a b/)
+  })
+
+  it('fails after three installs when the lists come but the downloads do not, saying which packages', () => {
+    const root = setup()
+    const r = run(root, 'apt-install.sh', ['a', 'b'], { APT_INSTALL_FAIL: '9' })
     assert.equal(r.status, 1)
     assert.equal(r.log.filter((l) => / install /.test(l)).length, 3)
     assert.match(r.out, /apt-install: a b did not install/)
@@ -168,3 +198,45 @@ describe('playwright-chromium.sh', () => {
   })
 })
 
+describe('apt-seed.sh', () => {
+  it("downloads with the image's status and sources of its own, and keeps the asked packages", () => {
+    const root = setup()
+    writeFileSync(join(root, 'status'), 'Package: x\n')
+    const dir = join(root, 'seed')
+    const r = run(root, 'apt-seed.sh', ['resolute', join(root, 'status'), dir, 'a', 'b'])
+    assert.equal(r.status, 0, r.out)
+    assert.equal(r.log.length, 2, r.log.join('\n'))
+    assert.match(r.log[0], /update --error-on=any$/)
+    assert.match(r.log[1], /install --download-only -y --no-install-recommends a b$/)
+    assert.match(readFileSync(join(root, 'sources'), 'utf8'), /^deb \[signed-by=\S+\] http:\/\/security\.ubuntu\.com\/ubuntu resolute-security main universe$/m)
+    assert.equal(readFileSync(join(dir, 'packages.txt'), 'utf8'), 'a\nb\n')
+  })
+
+  it('tries the fallback mirror for every pocket when the Ubuntu hosts give no lists', () => {
+    const root = setup()
+    const r = run(root, 'apt-seed.sh', ['noble', join(root, 'status'), join(root, 'seed'), 'a'], { APT_UPDATE_FAIL: '1' })
+    assert.equal(r.status, 0, r.out)
+    assert.equal(r.log.filter((l) => / update /.test(l)).length, 2)
+    const sources = readFileSync(join(root, 'sources'), 'utf8').trim().split('\n')
+    assert.equal(sources.length, 3)
+    for (const line of sources) assert.match(line, / http:\/\/mirrors\.edge\.kernel\.org\/ubuntu noble(-updates|-security)? main universe$/)
+  })
+
+  it('stops with one line when no mirror gives lists', () => {
+    const root = setup()
+    const r = run(root, 'apt-seed.sh', ['noble', join(root, 'status'), join(root, 'seed'), 'a'], { APT_UPDATE_FAIL: '9' })
+    assert.equal(r.status, 1)
+    assert.equal(r.log.filter((l) => / install /.test(l)).length, 0)
+    assert.match(r.out, /apt-seed: no package lists for noble/)
+  })
+
+  it("takes Playwright's list for the image's platform", () => {
+    const root = setup({ report: 'Missing system dependencies (2):\n  fonts-wqy-zenhei\n  xfonts-utils\n' })
+    const dir = join(root, 'seed')
+    const r = run(root, 'apt-seed.sh', ['resolute', join(root, 'status'), dir, '--playwright'], { PW_DRY_STATUS: '1' })
+    assert.equal(r.status, 0, r.out)
+    assert.ok(r.log.includes('platform ubuntu26.04-x64'), r.log.join('\n'))
+    assert.match(r.log.at(-1) ?? '', /install --download-only -y --no-install-recommends fonts-wqy-zenhei xfonts-utils$/)
+    assert.equal(readFileSync(join(dir, 'packages.txt'), 'utf8'), 'fonts-wqy-zenhei\nxfonts-utils\n')
+  })
+})

@@ -233,7 +233,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       # the system packages Chromium needs, as .deb files per runner image, so a warm cache installs them with no
-      # package mirror (scripts/ci/playwright-chromium.sh)
+      # package mirror (scripts/ci/playwright-chromium.sh); the apt-seed workflow fills it from a self-hosted runner
       - uses: actions/cache@v4
         with:
           path: ~/.cache/sx-apt/playwright

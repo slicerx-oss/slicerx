@@ -1,0 +1,176 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: apt-seed
+
+# Fills the actions/cache entries the hosted Linux jobs in ci.yml restore for their system packages (apt-desktop-*,
+# apt-playwright-*), and optionally Playwright's browser (playwright-Linux-*), from a self-hosted Linux runner, which
+# reaches the package mirror when a hosted runner cannot. A warm entry installs with no mirror (scripts/ci/apt-install.sh),
+# so a mirror outage on the hosted runners no longer fails those jobs.
+#
+# 1. probe, on each hosted image ci.yml uses: the image name and version (the key the jobs build from ImageOS and
+#    ImageVersion), its Ubuntu release, and a copy of its package status.
+# 2. seed, on a self-hosted Linux runner: apt-seed.sh downloads the .deb files that image needs, resolved against its
+#    status with lists and state of its own, as the runner's user (nothing on the runner changes). It takes no heavy
+#    lock: it is downloads, not builds.
+# 3. save, on the same hosted image: the files go where the jobs restore them and actions/cache/save stores them under
+#    the jobs' exact key. Saved by a hosted runner, the entry has the path layout and compression the jobs read (a
+#    self-hosted runner's would differ in both).
+#
+# Runs on main, so the entries are in main's cache scope, which every pull request and merge group reads. A key that
+# exists already is left as it is (a hosted job may have saved it first).
+on:
+  schedule:
+    # daily, to follow the hosted images' updates
+    - cron: '41 9 * * *'
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apt-seed.yml
+      - scripts/ci/apt-seed.sh
+      - scripts/ci/apt-desktop-libs.sh
+      - apps/web/package.json
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: Also seed Playwright's Chromium (the playwright-Linux-* entry), for when its download site cannot be reached either
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apt-seed
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ubuntu-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 5
+    steps:
+      - name: The image's name, release and package status
+        run: |
+          mkdir -p probe
+          . /etc/os-release
+          echo "${ImageOS:-none}-${ImageVersion:-none}" > probe/image
+          echo "$VERSION_CODENAME" > probe/suite
+          cp /var/lib/dpkg/status probe/status
+          echo "image $(cat probe/image), release $(cat probe/suite)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apt-probe-${{ matrix.image }}
+          path: probe
+          retention-days: 1
+
+  seed:
+    needs: probe
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the web, e2e and devkit jobs (Playwright) and the desktop test part
+          - image: ubuntu-latest
+            playwright: true
+          # desktop-bridge
+          - image: ubuntu-24.04
+            playwright: false
+    runs-on: [self-hosted, sx-pc]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apt-probe-${{ matrix.image }}
+          path: ${{ runner.temp }}/probe
+      - name: The desktop shell's libraries
+        run: |
+          rm -rf "$RUNNER_TEMP/seed" && mkdir -p "$RUNNER_TEMP/seed"
+          mapfile -t packages < <(bash scripts/ci/apt-desktop-libs.sh --list)
+          bash scripts/ci/apt-seed.sh "$(cat "$RUNNER_TEMP/probe/suite")" "$RUNNER_TEMP/probe/status" "$RUNNER_TEMP/seed/desktop" "${packages[@]}"
+      - if: matrix.playwright
+        uses: pnpm/action-setup@v4
+      - if: matrix.playwright
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - if: matrix.playwright
+        run: pnpm install --frozen-lockfile
+      - if: matrix.playwright
+        name: The packages Playwright's Chromium needs
+        run: |
+          pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2 > "$RUNNER_TEMP/seed/playwright-version"
+          bash scripts/ci/apt-seed.sh "$(cat "$RUNNER_TEMP/probe/suite")" "$RUNNER_TEMP/probe/status" "$RUNNER_TEMP/seed/playwright" --playwright
+      # an artifact does not keep the file mode, so the browser goes as one tar
+      - if: matrix.playwright && (inputs.browser || vars.SX_SEED_BROWSER == 'true')
+        name: Playwright's Chromium
+        run: |
+          case $(cat "$RUNNER_TEMP/probe/suite") in noble) platform=ubuntu24.04-x64 ;; *) platform=ubuntu26.04-x64 ;; esac
+          rm -rf "$RUNNER_TEMP/ms-playwright"
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright" PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=$platform \
+            pnpm --filter @slicerx/web exec playwright install chromium
+          tar -C "$RUNNER_TEMP/ms-playwright" -cf "$RUNNER_TEMP/seed/browser.tar" .
+          rm -rf "$RUNNER_TEMP/ms-playwright"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apt-seed-${{ matrix.image }}
+          path: ${{ runner.temp }}/seed
+          retention-days: 1
+      - if: always()
+        run: rm -rf "$RUNNER_TEMP/seed" "$RUNNER_TEMP/probe"
+
+  save:
+    needs: seed
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ubuntu-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 10
+    steps:
+      # for hashFiles in the desktop key
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: apt-probe-${{ matrix.image }}
+          path: ${{ runner.temp }}/probe
+      - uses: actions/download-artifact@v4
+        with:
+          name: apt-seed-${{ matrix.image }}
+          path: ${{ runner.temp }}/seed
+      - id: keys
+        name: The files where the jobs restore them
+        run: |
+          seed=$RUNNER_TEMP/seed
+          echo "image=$(cat "$RUNNER_TEMP/probe/image")" >> "$GITHUB_OUTPUT"
+          mkdir -p ~/.cache/sx-apt
+          mv "$seed/desktop" ~/.cache/sx-apt/desktop
+          if [ -d "$seed/playwright" ]; then
+            mv "$seed/playwright" ~/.cache/sx-apt/playwright
+            echo "playwright=$(cat "$seed/playwright-version")" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f "$seed/browser.tar" ]; then
+            mkdir -p ~/.cache/ms-playwright
+            tar -C ~/.cache/ms-playwright -xf "$seed/browser.tar"
+            echo "browser=true" >> "$GITHUB_OUTPUT"
+          fi
+          du -sh ~/.cache/sx-apt/* ~/.cache/ms-playwright 2>/dev/null || true
+      - uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/sx-apt/desktop
+          key: apt-desktop-${{ steps.keys.outputs.image }}-${{ hashFiles('scripts/ci/apt-desktop-libs.sh') }}
+      - if: steps.keys.outputs.playwright != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/sx-apt/playwright
+          key: apt-playwright-${{ steps.keys.outputs.image }}-${{ steps.keys.outputs.playwright }}
+      - if: steps.keys.outputs.browser == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.keys.outputs.playwright }}
