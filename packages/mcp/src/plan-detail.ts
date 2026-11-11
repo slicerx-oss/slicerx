@@ -5,8 +5,11 @@
 // ("detailed", "accurate"). The rules hold to the object, never to one kind of thing: each main body says whether the
 // real thing is curved or flat-sided, a curved body is built through smooth sections (a loft, a revolve or a sweep),
 // the proportions come from a lookup or a stated source, and a real object's repeated detail (windows,
-// slats, vents) gets a pass by pattern. A flat-sided object (a house, a bookshelf) needs no loft. design.plan on the
-// mimir tab's card refuses a display or fine plan that breaks them, in words that say what to plan instead.
+// slats, vents) gets a pass by pattern. A flat-sided object (a house, a bookshelf) needs no loft. Each feature says its
+// color as the real thing is painted, a body painted in two colors is split at its line, and a plan has enough features
+// for its level, its length and its repeated details. design.plan on the mimir tab's card refuses a display or fine plan
+// that breaks them, in words that say what to plan instead. design.check then holds each curved body's sections to
+// change along its length in both directions across it (sectionsProblem), so one shape stretched along a length fails.
 import { z } from 'zod'
 
 export const DETAIL_LEVELS = ['basic', 'display', 'fine'] as const
@@ -14,6 +17,17 @@ export type DetailLevel = (typeof DETAIL_LEVELS)[number]
 
 /** The fewest smooth sections a curved body is lofted or swept through, at each level that holds the rules. */
 export const SECTIONS_FLOOR: Record<Exclude<DetailLevel, 'basic'>, number> = { display: 5, fine: 8 }
+
+/**
+ * The fewest features a plan at each level has: its main bodies, a feature for each color band, the parts above them
+ * and a pass for each repeated detail. Fewer reads as a block with a few parts on it, not the real thing.
+ */
+export const FEATURES_FLOOR: Record<Exclude<DetailLevel, 'basic'>, number> = { display: 8, fine: 12 }
+/** A long object (its longest overall side at least LONG_RATIO times its next) has its detail spread along its length: LONG_EXTRA more features. */
+export const LONG_RATIO = 4
+export const LONG_EXTRA = 2
+/** Repeated details past this many add one feature each to the floor: each is built once, then patterned. */
+const REPEATS_IN_FLOOR = 3
 
 /** The level, in plain words, as the plan card names it. */
 export const DETAIL_LABEL: Record<DetailLevel, string> = { basic: 'Basic', display: 'Display model', fine: 'Fine' }
@@ -36,6 +50,11 @@ export const planDetailFields = {
   flat: z.array(text(60)).max(8).optional().describe('Display and fine: the features that build a main body whose real thing is flat-sided (a house, a bookshelf, a box)'),
   proportions: text(200).optional().describe('Display and fine: where the proportions come from, a lookup or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"'),
   repeats: z.array(text(60)).max(8).optional().describe('Display and fine: the real object\'s repeated details (windows, slats, vents), each built by a pattern; an empty list when it has none'),
+  colors: z
+    .array(z.object({ feature: text(60), color: text(40) }))
+    .max(40)
+    .optional()
+    .describe('Display and fine: each feature\'s color as the real thing is painted, such as {"feature": "Lower hull", "color": "red"}. A body the real thing paints in two or more colors (a waterline, a stripe, a trim line, a roof over its walls) is split at its line into one feature per color, each listed with its own'),
 }
 
 /** The same fields with no descriptions, for a local model's shorter tool list: they take exactly what the full ones take. */
@@ -45,6 +64,7 @@ export const bareDetailFields = {
   flat: z.array(z.string()).optional(),
   proportions: z.string().optional(),
   repeats: z.array(z.string()).optional(),
+  colors: z.array(z.object({ feature: z.string(), color: z.string() })).optional(),
 }
 
 /** A plan as the detail rules read it. */
@@ -55,6 +75,8 @@ interface DetailPlan {
   flat?: readonly string[] | undefined
   proportions?: string | undefined
   repeats?: readonly string[] | undefined
+  colors?: readonly { feature: string; color: string }[] | undefined
+  overall?: { x: number; y: number; z: number } | undefined
 }
 
 /** A feature kind that builds through sections: a loft, a revolve or a sweep. */
@@ -106,6 +128,25 @@ export function detailProblem(plan: DetailPlan): string | null {
     const c = sectionCount(f)
     if (c === null || c < floor) problems.push(`${f.name} goes through ${c === null ? 'no stated number of' : c} sections; a ${name} plan lofts or sweeps a curved body through at least ${floor}, given as a size named sections`)
   }
+  const least = featuresFloor(plan, level)
+  if (plan.features.length < least.count)
+    problems.push(`features: a ${name} plan of this object has at least ${least.count} features (${least.why}); this one has ${plan.features.length}. Add the real thing's parts you left out: each color band as its own feature, the parts that stand on the main body, and its smaller details, each repeated one built once and patterned`)
+  if (!plan.colors?.length) problems.push(`colors: give each feature's color as the real thing is painted, such as {"feature": "Lower hull", "color": "red"}; a body painted in two colors is split at its line into two features`)
+  else {
+    const colorsOf = new Map<string, Set<string>>()
+    for (const c of plan.colors) {
+      if (!feature(c.feature)) {
+        problems.push(`colors: ${c.feature} is not a planned feature; name the feature the color is on`)
+        continue
+      }
+      const k = c.feature.trim().toLowerCase()
+      colorsOf.set(k, (colorsOf.get(k) ?? new Set()).add(c.color.trim().toLowerCase()))
+    }
+    for (const [k, set] of colorsOf)
+      if (set.size > 1) problems.push(`colors: ${feature(k)!.name} is ${[...set].join(' and ')}; split it at its color line into one feature per color, so each prints in its own filament`)
+    for (const n of [...(plan.curved ?? []), ...(plan.flat ?? [])])
+      if (feature(n) && !colorsOf.has(n.trim().toLowerCase())) problems.push(`colors: say what color ${n} is`)
+  }
   if (!plan.proportions?.trim()) problems.push(`proportions: say where the proportions come from, a lookup (web.lookup) or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"`)
   if (plan.repeats === undefined) problems.push('repeats: list the real object\'s repeated details (windows, slats, vents), or give an empty list when it has none')
   else if (plan.repeats.length && !plan.features.some((f) => PATTERN.test(f.kind ?? '') || PATTERN.test(f.name)))
@@ -113,9 +154,112 @@ export function detailProblem(plan: DetailPlan): string | null {
   return problems.length ? `A ${name} plan was not shown. ${problems.join('. ')}. ${DETAIL_HELP}` : null
 }
 
+/** The fewest features a display or fine plan has, and why, from its level, its overall proportions and its repeated details. */
+export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, level: Exclude<DetailLevel, 'basic'>): { count: number; why: string } {
+  const why = [`${FEATURES_FLOOR[level]} at ${DETAIL_LABEL[level].toLowerCase()}`]
+  let count = FEATURES_FLOOR[level]
+  const o = plan.overall
+  if (o) {
+    const [a, b] = [o.x, o.y, o.z].sort((p, q) => q - p) as [number, number, number]
+    if (b > 0 && a >= LONG_RATIO * b) {
+      count += LONG_EXTRA
+      why.push(`${LONG_EXTRA} more for a long object, ${Math.round((a / b) * 10) / 10} times as long as its next size`)
+    }
+  }
+  const more = Math.max(0, (plan.repeats?.length ?? 0) - REPEATS_IN_FLOOR)
+  if (more) {
+    count += more
+    why.push(`${more} more for ${plan.repeats!.length} repeated details`)
+  }
+  return { count, why: why.join(', ') }
+}
+
 /**
  * The method a display or fine plan follows, for any object (a car body, a plane's fuselage, a bottle): a few
  * lines in the plan tool's description and in each refusal, never a recipe for one object.
  */
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a deck or roof edge so no knife edge is left. The sections change along the length as the real thing does: finer toward the ends, the top edge rising toward the ends where the real one does. Each color band of the real thing (a waterline, a stripe, a trim line) is its own part, split at its line, so paint follows the shape. Sizes of the parts above it (decks, funnels, wheels) follow the looked-up proportions, not a guess. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. A tapered or raked round part (a funnel, a chimney, a leg) is a loft between two ellipses, offset for the rake, then arrayed. Repeated small parts are one part, then array and mirror'
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a deck or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (the sheer of a deck, a keel rising toward the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Each color band of the real thing (a waterline, a stripe, a trim line) is its own part, split at its line, so paint follows the shape. Sizes of the parts above it (decks, funnels, wheels) follow the looked-up proportions, not a guess. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. A tapered or raked round part (a funnel, a chimney, a leg) is a loft between two ellipses, offset for the rake, then arrayed. Repeated small parts are one part, then array and mirror'
+
+/** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
+export interface LoftSections {
+  feature: string | null
+  /** Each section's lowest and highest point on x, y and z, in loft order. */
+  sections: { lo: [number, number, number]; hi: [number, number, number] }[]
+  /** The way the loft runs: the mean of its sections' plane normals. */
+  along: [number, number, number]
+}
+
+type V2 = readonly number[]
+type Frame = { origin: V2; u: V2; v: V2; normal?: V2 }
+const BED_FRAME: Frame = { origin: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0], normal: [0, 0, 1] }
+
+/** The 2D points that outline a loop as stored in a step (points, a spline's points, a circle's four extremes, segment ends). */
+function loopPoints(l: Record<string, unknown>): number[][] {
+  if (Array.isArray(l['points'])) return l['points'] as number[][]
+  if (l['type'] === 'circle' && Array.isArray(l['center']) && typeof l['diameterMm'] === 'number') {
+    const [x, y] = l['center'] as number[]
+    const r = (l['diameterMm'] as number) / 2
+    return [[x! - r, y!], [x! + r, y!], [x!, y! - r], [x!, y! + r]]
+  }
+  if (Array.isArray(l['start']) && Array.isArray(l['segments']))
+    return [l['start'] as number[], ...(l['segments'] as Record<string, unknown>[]).flatMap((g) => (Array.isArray(g['to']) ? [g['to'] as number[]] : []))]
+  return []
+}
+
+/** The sections of every loft step in a design's history, each with the feature it was tagged with. */
+export function loftSections(steps: readonly { params: Record<string, unknown>; feature?: string | undefined; suppressed?: boolean | undefined }[]): LoftSections[] {
+  const out: LoftSections[] = []
+  for (const st of steps) {
+    if (st.suppressed || st.params['op'] !== 'sketch.loft' || !Array.isArray(st.params['profiles'])) continue
+    const along = [0, 0, 0] as [number, number, number]
+    const sections = (st.params['profiles'] as Record<string, unknown>[]).flatMap((pr) => {
+      const f = (pr['frame'] as Frame | undefined) ?? BED_FRAME
+      const lo = [Infinity, Infinity, Infinity] as [number, number, number]
+      const hi = [-Infinity, -Infinity, -Infinity] as [number, number, number]
+      for (const l of (pr['loops'] as Record<string, unknown>[] | undefined) ?? []) {
+        if (l['construction']) continue
+        for (const q of loopPoints(l))
+          for (let k = 0; k < 3; k++) {
+            const w = f.origin[k]! + f.u[k]! * q[0]! + f.v[k]! * q[1]!
+            lo[k] = Math.min(lo[k]!, w)
+            hi[k] = Math.max(hi[k]!, w)
+          }
+      }
+      const n = f.normal ?? [f.u[1]! * f.v[2]! - f.u[2]! * f.v[1]!, f.u[2]! * f.v[0]! - f.u[0]! * f.v[2]!, f.u[0]! * f.v[1]! - f.u[1]! * f.v[0]!]
+      for (let k = 0; k < 3; k++) along[k] = along[k]! + Math.abs(n[k]!)
+      return Number.isFinite(lo[0]) ? [{ lo, hi }] : []
+    })
+    out.push({ feature: st.feature?.trim() || null, sections, along })
+  }
+  return out
+}
+
+/** A section's top, bottom or side moving less than this share of the body's largest cross size is no change. */
+export const SECTION_CHANGE = 0.03
+
+/**
+ * Why a curved body lofted through these sections reads as one outline stretched along its length, or null when it does
+ * not. That is a body whose sections grow or shrink across one of the two directions the loft does not run along while
+ * their lowest and highest points across the other stay put (by SECTION_CHANGE of the body's largest cross size): a
+ * body whose sections all stand from the same bottom to the same top, only narrower toward the ends, is a box with
+ * pointed ends. A real body's bottom or top line rises toward its ends too, and a fuselage tapers both ways. Sections that
+ * change both ways pass, and so do sections of one outline carried along unchanged in size (a raked round upright, a tube),
+ * which a loft builds as the real thing is.
+ */
+export function sectionsProblem(name: string, l: LoftSections): string | null {
+  if (l.sections.length < 3) return null
+  const axis = l.along.indexOf(Math.max(...l.along))
+  const across = [0, 1, 2].filter((k) => k !== axis)
+  const span = Math.max(...l.sections.flatMap((s) => across.map((k) => s.hi[k]! - s.lo[k]!)))
+  const tol = Math.max(0.1, SECTION_CHANGE * span)
+  const range = (v: number[]): number => Math.max(...v) - Math.min(...v)
+  const grows = (k: number): boolean => range(l.sections.map((s) => s.hi[k]! - s.lo[k]!)) > tol
+  const still = (k: number): boolean => range(l.sections.map((s) => s.lo[k]!)) <= tol && range(l.sections.map((s) => s.hi[k]!)) <= tol
+  const [p, q] = across as [number, number]
+  const fixed = grows(p) && still(q) ? q : grows(q) && still(p) ? p : -1
+  if (fixed < 0) return null
+  const r = (v: number): number => Math.round(v * 100) / 100
+  const other = fixed === p ? q : p
+  return `${name}: all ${l.sections.length} sections span ${'xyz'[fixed]} ${r(l.sections[0]!.lo[fixed]!)} to ${r(l.sections[0]!.hi[fixed]!)} mm; only its size in ${'xyz'[other]} changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a deck rising toward the bow, a keel rising at the ends, a roof sloping down to a hood), then check again`
+}
