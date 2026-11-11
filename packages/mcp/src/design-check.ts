@@ -9,6 +9,7 @@
 import { SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { LIP_RISE_MM } from './hook-lip'
+import { planDetailFields } from './plan-detail'
 
 /** The largest size a plan takes, in its own units. */
 export const PLAN_SIZE_MAX = 10_000
@@ -104,6 +105,8 @@ export const partPlanSchema = z.object({
   openFaces: openFacesInput
     .optional()
     .describe('The faces meant to be open, by piece, such as [{ "piece": "Pen cup", "faces": ["top"] }] for a cup open at the top; leave it out when no face is open'),
+  /** The detail level and what it holds the plan to (plan-detail.ts): the mimir tab's card takes them, design.put_plan leaves them out. */
+  ...planDetailFields,
 })
 export type PartPlan = z.infer<typeof partPlanSchema>
 

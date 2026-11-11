@@ -11,10 +11,10 @@
 import { kindOf, sizeLabelKey, sizeText, sizeUnit, wholeCount, type SizeKind } from '@slicerx/contracts/size-kind'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
-import { Button, Icon } from '@slicerx/ui'
+import { Button, Icon, Seg } from '@slicerx/ui'
 import { ScrubNumber } from '@slicerx/ui/scrub'
 import { useState, type ReactNode } from 'react'
-import { amendOf, editPlan, PLAN_CHANGE, PLAN_GO, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, samePlan, shownPlan, type PartPlan } from './plan-tool'
+import { DETAIL_LABEL, DETAIL_LEVELS, DETAIL_LINE, type DetailLevel, amendOf, editPlan, PLAN_CHANGE, PLAN_GO, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, samePlan, shownPlan, type PartPlan } from './plan-tool'
 
 /** A size's key in plain words: "wall_thickness" and "wallThickness" read "Wall thickness". */
 export function plainLabel(key: string): string {
@@ -115,6 +115,12 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
     } else setNote(`That size was not kept. Sizes are more than 0 and up to ${PLAN_SIZE_MAX} ${unit}.`)
   }
 
+  // the detail level the plan was made at, which the person can change on the card before Go: mimir builds to it
+  const setDetail = (detail: DetailLevel): void => {
+    const next = { ...plan, detail }
+    if (editPlan(next.planId, next)) setPlan(next)
+  }
+
   const answer = (id: string): void => {
     if (!live) return
     if (id === go) editPlan(plan.planId, plan)
@@ -185,6 +191,17 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
           <ul className="plan-rec-notes">
             <li data-testid="mimir-plan-why">{amend.why}</li>
           </ul>
+        </section>
+      ) : null}
+      {plan.detail ? (
+        <section className="plan-rec-block plan-rec-detail" aria-label="Detail" data-testid="mimir-plan-detail" data-detail={plan.detail}>
+          <span className="plan-rec-h">Detail</span>
+          {live && !amend ? (
+            <Seg label="Detail" size="sm" value={plan.detail} onChange={setDetail} options={DETAIL_LEVELS.map((d) => ({ value: d, label: DETAIL_LABEL[d], testId: `mimir-plan-detail-${d}` }))} />
+          ) : (
+            <span className="sheet-rec-v plan-rec-v">{DETAIL_LABEL[plan.detail]}</span>
+          )}
+          <small className="plan-rec-detail-line">{DETAIL_LINE[plan.detail]}</small>
         </section>
       ) : null}
       <ol className="plan-rec-features">

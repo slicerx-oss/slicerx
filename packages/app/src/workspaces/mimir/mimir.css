@@ -273,6 +273,7 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mimir-chat .plan-rec-block { display: flex; flex-direction: column; gap: 2px; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
 .mimir-chat .plan-rec-block .sheet-rec-rows { padding-left: 0; }
 .mimir-chat .plan-rec-h { font-size: var(--fs-sm); color: var(--t-mute); }
+.mimir-chat .plan-rec-detail-line { font-size: var(--fs-sm); color: var(--t-mute); min-height: 2lh; }
 .mimir-chat .plan-rec-notes { margin: 0; padding-left: 18px; color: var(--t-sub); line-height: 1.45; }
 .mimir-chat .plan-rec-foot { align-items: center; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
 .mimir-chat .plan-rec .plan-rec-foot .lookup-rec-s { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
