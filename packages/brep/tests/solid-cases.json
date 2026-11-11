@@ -167,5 +167,18 @@
         }
       ]
     ]
+  },
+  {
+    "name": "plate with an elliptic hole",
+    "volume": [4000, -250],
+    "bounds": [40, 20, 5],
+    "steps": [
+      ["result", "extrude", {
+        "frame": {"origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1]},
+        "polygons": [{"outer": {"points": [[0, 0], [40, 0], [40, 20], [0, 20]]}, "holes": [{"center": [20, 10], "widthMm": 20, "heightMm": 10}]}],
+        "fromMm": 0,
+        "toMm": 5
+      }]
+    ]
   }
 ]

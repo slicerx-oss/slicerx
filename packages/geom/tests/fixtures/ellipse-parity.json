@@ -1,0 +1,182 @@
+{
+  "cases": [
+    {
+      "digest": "ae9e30185e23a350",
+      "numbers": 239,
+      "op": "sketch.check",
+      "request": {
+        "loops": [
+          {
+            "points": [
+              [
+                -20,
+                -12
+              ],
+              [
+                20,
+                -12
+              ],
+              [
+                20,
+                12
+              ],
+              [
+                -20,
+                12
+              ]
+            ]
+          },
+          {
+            "angleDeg": 30,
+            "center": [
+              3,
+              -1
+            ],
+            "heightMm": 9,
+            "type": "ellipse",
+            "widthMm": 24
+          }
+        ]
+      }
+    },
+    {
+      "digest": "89938a8cbda68a2c",
+      "numbers": 15,
+      "op": "sketch.curves",
+      "request": {
+        "loops": [
+          {
+            "points": [
+              [
+                -20,
+                -12
+              ],
+              [
+                20,
+                -12
+              ],
+              [
+                20,
+                12
+              ],
+              [
+                -20,
+                12
+              ]
+            ]
+          },
+          {
+            "angleDeg": 30,
+            "center": [
+              3,
+              -1
+            ],
+            "heightMm": 9,
+            "type": "ellipse",
+            "widthMm": 24
+          }
+        ]
+      }
+    },
+    {
+      "digest": "279db171b53db86f",
+      "numbers": 12,
+      "op": "sketch.mirror",
+      "request": {
+        "axis": {
+          "direction": [
+            1,
+            1
+          ],
+          "point": [
+            0,
+            0
+          ]
+        },
+        "loops": [
+          {
+            "angleDeg": 25,
+            "center": [
+              10,
+              4
+            ],
+            "heightMm": 3,
+            "type": "ellipse",
+            "widthMm": 8
+          }
+        ],
+        "pick": [
+          0
+        ]
+      }
+    },
+    {
+      "digest": "3eab7ae9e5a4b1fb",
+      "numbers": 248,
+      "op": "shape.profile",
+      "request": {
+        "placement": {
+          "center": [
+            5,
+            5
+          ],
+          "rotationDeg": 20
+        },
+        "shape": {
+          "heightMm": 16,
+          "type": "ellipse",
+          "widthMm": 30
+        }
+      }
+    },
+    {
+      "digest": "81a64661a58049f4",
+      "numbers": 6056,
+      "op": "shape.extrude",
+      "request": {
+        "placement": {
+          "center": [
+            5,
+            5
+          ],
+          "rotationDeg": 20
+        },
+        "shape": {
+          "heightMm": 16,
+          "type": "ellipse",
+          "widthMm": 30
+        },
+        "spec": {
+          "distanceMm": 10,
+          "taperDeg": 5
+        }
+      }
+    },
+    {
+      "digest": "2c9de6c0ee2de978",
+      "numbers": 11150,
+      "op": "shape.extrude",
+      "request": {
+        "shape": {
+          "loops": [
+            {
+              "angleDeg": -15,
+              "center": [
+                0,
+                0
+              ],
+              "heightMm": 12,
+              "type": "ellipse",
+              "widthMm": 40
+            }
+          ],
+          "type": "sketch"
+        },
+        "spec": {
+          "distanceMm": 6
+        }
+      }
+    }
+  ],
+  "note": "Ellipse requests and the digest of each reply from the native engine (FNV-1a over every number as f64 bits, in reply order). packages/app/test/ellipse-parity.test.ts holds the wasm engine to the same digests. SX_ELLIPSE_RECORD=1 cargo test -p sx-geom --test ellipse_parity writes them again."
+}

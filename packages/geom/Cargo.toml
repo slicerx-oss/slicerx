@@ -35,6 +35,10 @@ name = "sketch_spline"
 required-features = ["cad"]
 
 [[test]]
+name = "ellipse_parity"
+required-features = ["cad"]
+
+[[test]]
 name = "freeform"
 required-features = ["cad"]
 

@@ -308,7 +308,7 @@ impl<'a> Faces<'a> {
     }
 
     fn rings(&self, r: usize) -> Vec<Vec<Run>> {
-        let edges = self.boundary(r);
+        let edges = self.boundary_of(r);
         let mut next: HashMap<Key, Vec<usize>> = HashMap::new();
         for (i, e) in edges.iter().enumerate() {
             next.entry(key(e.a)).or_default().push(i);
@@ -796,7 +796,12 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
         chain: vec![edge],
         ring: Vec::new(),
     };
+    // every side of an ellipse's rim is refused, so its loop shows no size
+    let rim = !faces.regions[r].curved && ellipse_rim(&faces, r, ring);
     let geom_of = |run: &Run| -> std::result::Result<Geom, String> {
+        if rim {
+            return Err(ELLIPSE_RIM.into());
+        }
         match run.across {
             Across::Face(rb, tb) => edge_geom(&faces, r, rb, run.a, run.b, run.tri, tb),
             Across::Open => Err("The mesh is open along this edge.".into()),
@@ -1043,6 +1048,12 @@ fn resolve(faces: &Faces<'_>, n: usize, e: &EdgeRef) -> Result<Geom> {
     if !sharp(faces, ra, rb) {
         return Err(none());
     }
+    if !faces.regions[ra].curved && on_ellipse_rim(faces, ra, a, b, tol) {
+        return Err(Error::invalid(
+            "edges",
+            format!("edge {n}: {}", lower_first(ELLIPSE_RIM.trim_end_matches('.'))),
+        ));
+    }
     edge_geom(faces, ra, rb, a, b, ta, tb).map_err(|why| {
         Error::invalid(
             "edges",
@@ -1135,6 +1146,28 @@ fn along_line(faces: &Faces<'_>, n: usize, e: &EdgeRef, face: V3, tol: f64) -> R
         return Err(gone());
     }
     Ok(out)
+}
+
+const ELLIPSE_RIM: &str = "The edge goes around an ellipse. Fillet and chamfer work on straight edges and round rims, not on ellipses yet.";
+
+/// whether `ring`, an outline of the flat face `flat`, goes around an ellipse that is no circle
+fn ellipse_rim(faces: &Faces<'_>, flat: usize, ring: &[Run]) -> bool {
+    let Some(frame) = Frame::from_normal(ring[0].a, faces.regions[flat].normal, None) else {
+        return false;
+    };
+    // positions are stored as f32
+    let tol = (faces.size * 1e-6).max(1e-4);
+    let pts: Vec<V2> = ring.iter().map(|r| frame.project(r.a)).collect();
+    crate::poly2d::ellipse_fit(&pts, tol).is_some_and(|(a, b)| a - b > tol * 10.0)
+}
+
+/// the outline of the flat face `flat` that the edge from `a` to `b` lies along, when it goes around an ellipse
+fn on_ellipse_rim(faces: &Faces<'_>, flat: usize, a: V3, b: V3, tol: f64) -> bool {
+    faces.rings(flat).iter().any(|ring| {
+        ring.iter()
+            .any(|r| dist_to_segment(a, r.a, r.b) < tol && dist_to_segment(b, r.a, r.b) < tol)
+            && ellipse_rim(faces, flat, ring)
+    })
 }
 
 fn lower_first(s: &str) -> String {
@@ -3024,5 +3057,54 @@ mod tests {
         for _ in 0..16 {
             assert_eq!(runs_between(&m, &key, ks).unwrap(), first);
         }
+    }
+
+    #[test]
+    fn an_ellipse_rim_is_refused_in_words_and_a_round_one_is_not() {
+        let ring = crate::sketch::ellipse_points([0.0, 0.0], 30.0, 16.0, 0.0);
+        let m = build::extrude(&[Polygon::simple(ring)], &Frame::WORLD, 0.0, 10.0).unwrap();
+        // a top triangle on the rim near the end of the width axis, picked at the rim
+        let (t, at) = m
+            .triangles
+            .iter()
+            .enumerate()
+            .find_map(|(t, &tri)| {
+                let c = m.corners(tri);
+                let top = |p: &V3| (p[2] - 10.0).abs() < 1e-9;
+                let rim: Vec<V3> = c.iter().copied().filter(|p| top(p) && p[0] > 14.0).collect();
+                (c.iter().all(top) && rim.len() == 2).then(|| {
+                    (
+                        u32::try_from(t).unwrap(),
+                        vec3::scale(vec3::add(rim[0], rim[1]), 0.5),
+                    )
+                })
+            })
+            .unwrap();
+        let pick = pick_edge(&m, t, at).unwrap();
+        assert!(!pick.supported);
+        assert_eq!(pick.reason.as_deref(), Some(ELLIPSE_RIM));
+        // its loop is the whole rim, none of it taken, and no size is offered for it
+        assert!(pick.ring.len() > 4 && pick.ring.iter().all(|l| !l.supported));
+        assert!(pick.loop_max_radius_mm <= 0.0 && pick.chain_max_radius_mm <= 0.0);
+        for p in [fillet(1.0), chamfer(1.0)] {
+            let err = run(&m, &[pick.edge], p).unwrap_err().to_string();
+            assert!(err.contains("edge 1: the edge goes around an ellipse"), "{err}");
+        }
+        // a circle's rim still rounds
+        let disc = build::extrude(
+            &[Polygon::simple(crate::poly2d::circle([0.0, 0.0], 8.0, 64))],
+            &Frame::WORLD,
+            0.0,
+            10.0,
+        )
+        .unwrap();
+        let top = disc
+            .triangles
+            .iter()
+            .position(|&tri| disc.corners(tri).iter().all(|p| (p[2] - 10.0).abs() < 1e-9))
+            .unwrap();
+        let rim = pick_edge(&disc, u32::try_from(top).unwrap(), [8.0, 0.0, 10.0]).unwrap();
+        assert!(rim.supported, "{:?}", rim.reason);
+        sound(&run(&disc, &[rim.edge], fillet(1.0)).unwrap());
     }
 }

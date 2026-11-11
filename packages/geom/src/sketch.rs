@@ -71,6 +71,13 @@ pub struct Loop {
     pub center: Option<V2>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diameter_mm: Option<f64>,
+    /// an ellipse's size along its own axes, the width turned `angle_deg` from the sketch's x
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub angle_deg: Option<f64>,
     // construction geometry: kept for constraints, never a profile
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub construction: bool,
@@ -205,6 +212,48 @@ fn arc_points(c: V2, r: f64, a0: f64, sweep: f64, end: Option<V2>) -> Vec<V2> {
         *last = e;
     }
     out
+}
+
+/// an ellipse as a closed ring, counterclockwise from the end of its width axis
+pub(crate) fn ellipse_points(c: V2, w: f64, h: f64, angle_deg: f64) -> Vec<V2> {
+    let (a, b) = (w / 2.0, h / 2.0);
+    // even steps of the angle that maps it to a circle sag no more than that circle's on the long axis do
+    let n = circle_steps(a.max(b));
+    let (s, co) = angle_deg.to_radians().m_sin_cos();
+    #[allow(clippy::cast_precision_loss, reason = "at most 256 steps")]
+    (1..=n)
+        .map(|i| {
+            let d = dir_of(TAU * i as f64 / n as f64);
+            let (x, y) = (a * d[0], b * d[1]);
+            [c[0] + co * x - s * y, c[1] + s * x + co * y]
+        })
+        .collect()
+}
+
+/// an ellipse loop's center, width, height and turn, checked
+fn ellipse_of(l: usize, lp: &Loop) -> std::result::Result<(V2, f64, f64, f64), Issue> {
+    let name = l + 1;
+    let (Some(c), Some(w), Some(h)) = (lp.center, lp.width_mm, lp.height_mm) else {
+        return Err(issue(
+            l,
+            None,
+            IssueKind::BadArc,
+            format!("Loop {name}: an ellipse needs a center, widthMm and heightMm."),
+            None,
+        ));
+    };
+    let size = |v: f64| v.is_finite() && v > 2.0 * MIN_LEN_MM && v <= MAX_MM;
+    let angle = lp.angle_deg.unwrap_or(0.0);
+    if !(finite2(c) && size(w) && size(h) && angle.is_finite()) {
+        return Err(issue(
+            l,
+            None,
+            IssueKind::TooSmall,
+            format!("Loop {name}: the ellipse needs a width and height above 0."),
+            Some(c),
+        ));
+    }
+    Ok((c, w, h, angle))
 }
 
 fn issue(l: usize, seg: Option<usize>, kind: IssueKind, message: String, at: Option<V2>) -> Issue {
@@ -414,6 +463,11 @@ fn flatten(l: usize, lp: &Loop) -> std::result::Result<Ring, Issue> {
     flatten_as(l, lp, true)
 }
 
+/// a closed loop's ring of points, as the mesh path draws it
+pub(crate) fn open_ring(l: usize, lp: &Loop) -> std::result::Result<Vec<V2>, Issue> {
+    flatten(l, lp).map(|r| r.pts)
+}
+
 /// One open chain of a sketch, flattened: its points and the directions it starts and ends in.
 pub(crate) struct Chain {
     pub(crate) pts: Vec<V2>,
@@ -433,6 +487,15 @@ pub(crate) fn open_chain(l: usize, lp: &Loop) -> std::result::Result<Chain, Issu
             None,
             IssueKind::Open,
             format!("Loop {} is a circle, which has no ends.", l + 1),
+            lp.center,
+        ));
+    }
+    if lp.kind.as_deref() == Some("ellipse") {
+        return Err(issue(
+            l,
+            None,
+            IssueKind::Open,
+            format!("Loop {} is an ellipse, which has no ends.", l + 1),
             lp.center,
         ));
     }
@@ -522,6 +585,16 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
             ));
         }
         let pts = arc_points(c, d / 2.0, 0.0, TAU, None);
+        let seg = vec![0; pts.len()];
+        return Ok(Ring {
+            pts,
+            seg,
+            prims: Vec::new(),
+        });
+    }
+    if lp.kind.as_deref() == Some("ellipse") {
+        let (c, w, h, angle) = ellipse_of(l, lp)?;
+        let pts = ellipse_points(c, w, h, angle);
         let seg = vec![0; pts.len()];
         return Ok(Ring {
             pts,
@@ -1044,7 +1117,7 @@ pub struct Piece {
     pub sweep_deg: Option<f64>,
 }
 
-/// a loop as exact lines and arcs, counterclockwise
+/// a loop as exact lines, arcs, a circle or an ellipse, counterclockwise
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged, rename_all = "camelCase")]
 pub enum CurveLoop {
@@ -1052,6 +1125,13 @@ pub enum CurveLoop {
         center: V2,
         #[serde(rename = "diameterMm")]
         diameter_mm: f64,
+    },
+    #[serde(rename_all = "camelCase")]
+    Ellipse {
+        center: V2,
+        width_mm: f64,
+        height_mm: f64,
+        angle_deg: f64,
     },
     Pieces {
         start: V2,
@@ -1101,6 +1181,16 @@ fn exact_path(lp: &Loop, r: &Ring) -> Result<CurveLoop> {
             return Err(Error::invalid("sketch", "a circle needs a center and diameterMm"));
         };
         return Ok(CurveLoop::Circle { center, diameter_mm });
+    }
+    if lp.kind.as_deref() == Some("ellipse") {
+        let (center, width_mm, height_mm, angle_deg) =
+            ellipse_of(0, lp).map_err(|i| Error::invalid("sketch", i.message))?;
+        return Ok(CurveLoop::Ellipse {
+            center,
+            width_mm,
+            height_mm,
+            angle_deg,
+        });
     }
     let start = r.pts[0];
     let mut pieces: Vec<Piece> = r
@@ -2098,5 +2188,81 @@ mod tests {
                 assert!(c.issues.iter().all(|i| !i.message.is_empty()));
             }
         }
+    }
+
+    #[test]
+    fn an_ellipse_is_a_ring_within_the_arc_tolerance_and_an_exact_curve() {
+        let l = loops(
+            json!([{ "type": "ellipse", "center": [5, -2], "widthMm": 30, "heightMm": 16, "angleDeg": 30 }]),
+        );
+        let c = check(&l);
+        assert!(c.ok, "{c:?}");
+        let ring = &c.polygons[0].outer;
+        assert_eq!(ring.len() % 4, 0);
+        let (s, co) = 30f64.to_radians().m_sin_cos();
+        // in its own axes every point is on the ellipse, and the last is the end of its width axis
+        let local = |p: V2| {
+            let (x, y) = (p[0] - 5.0, p[1] + 2.0);
+            [co * x + s * y, -s * x + co * y]
+        };
+        for &p in ring {
+            let [x, y] = local(p);
+            assert!(
+                ((x / 15.0) * (x / 15.0) + (y / 8.0) * (y / 8.0) - 1.0).abs() < 1e-12,
+                "{p:?}"
+            );
+        }
+        let end = local(*ring.last().unwrap());
+        assert!((end[0] - 15.0).abs() < 1e-12 && end[1].abs() < 1e-12, "{end:?}");
+        // the ring sags inside the true curve by no more than the arc tolerance
+        let exact = PI * 15.0 * 8.0;
+        assert!(
+            c.area_mm2 < exact && exact - c.area_mm2 < ARC_TOL_MM * 74.0,
+            "{}",
+            c.area_mm2
+        );
+        assert!((c.loops[0].length_mm - 73.94).abs() < 0.02, "{:?}", c.loops[0]);
+        assert_eq!(
+            curves(&l).unwrap()[0].outer,
+            CurveLoop::Ellipse {
+                center: [5.0, -2.0],
+                width_mm: 30.0,
+                height_mm: 16.0,
+                angle_deg: 30.0
+            }
+        );
+        let e = open_chain(0, &l[0]).err().unwrap();
+        assert_eq!(e.message, "Loop 1 is an ellipse, which has no ends.");
+    }
+
+    #[test]
+    fn an_ellipse_nests_as_a_hole_and_says_what_it_lacks() {
+        let l = loops(json!([
+            { "points": [[-20, -10], [20, -10], [20, 10], [-20, 10]] },
+            { "type": "ellipse", "center": [0, 0], "widthMm": 10, "heightMm": 6 }
+        ]));
+        let p = curves(&l).unwrap();
+        assert_eq!(p.len(), 1);
+        assert!(
+            matches!(p[0].holes[..], [CurveLoop::Ellipse { angle_deg, .. }] if angle_deg == 0.0),
+            "{p:?}"
+        );
+        let c = check(&l);
+        assert!((c.area_mm2 - (800.0 - PI * 15.0)).abs() < 0.1, "{}", c.area_mm2);
+        let says = |v: serde_json::Value| check(&loops(json!([v]))).issues[0].message.clone();
+        assert_eq!(
+            says(json!({ "type": "ellipse", "center": [0, 0], "widthMm": 4 })),
+            "Loop 1: an ellipse needs a center, widthMm and heightMm."
+        );
+        assert_eq!(
+            says(json!({ "type": "ellipse", "center": [0, 0], "widthMm": 4, "heightMm": 0 })),
+            "Loop 1: the ellipse needs a width and height above 0."
+        );
+        // one that crosses another loop is named like any other
+        let crossing = check(&loops(json!([
+            { "type": "ellipse", "center": [0, 0], "widthMm": 20, "heightMm": 6 },
+            { "type": "circle", "center": [10, 0], "diameterMm": 4 }
+        ])));
+        assert_eq!(crossing.issues[0].kind, IssueKind::LoopsCross);
     }
 }

@@ -386,8 +386,8 @@ SmBrep* make_primitive(const Value& r)
     return b;
 }
 
-// a closed loop in the frame's plane: a polygon ({"points": [[x, y], ...]}), a circle ({"center", "diameterMm"}),
-// or lines and arcs from a start ({"start", "segments": [{"to"}, or {"to", "center", "sweepDeg"} for an arc]})
+// a closed loop in the frame's plane: a polygon ({"points": [[x, y], ...]}), a circle ({"center", "diameterMm"}), an
+// ellipse ({"center", "widthMm", "heightMm", "angleDeg"}, the width turned angleDeg from x), or lines and arcs from a start ({"start", "segments": [{"to"}, or {"to", "center", "sweepDeg"} for an arc]})
 void loop_curves(const Value& l, double z, SmTArray<SmCurve*>& out)
 {
     if (l.has("start")) {
@@ -424,6 +424,21 @@ void loop_curves(const Value& l, double z, SmTArray<SmCurve*>& out)
             x = tx;
             y = ty;
         }
+        return;
+    }
+    if (l.has("widthMm")) {
+        double cx, cy;
+        v2(l["center"], "center", cx, cy);
+        double w = num(l, "widthMm"), h = num(l, "heightMm"), deg = num_or(l, "angleDeg", 0) * kPi / 180;
+        if (!(w > 0) || !(h > 0)) throw Error("widthMm", "an ellipse's width and height must be more than 0 mm");
+        // the kernel's own rational ellipse, so the curve is exact
+        SmAxis2Placement frame;
+        frame.SetCanonical(SmPoint3d(cx, cy, z), SmVector3d(std::cos(deg), std::sin(deg), 0),
+                           SmVector3d(-std::sin(deg), std::cos(deg), 0));
+        SmBSplineCurve* c = nullptr;
+        check(SmBSplineCurve::CreateEllipseSegment(*SmApiGetOrCreateContext(), 3, frame, w / 2, h / 2, 0, 360,
+                                                   SM_CO_QUADRATIC, c), "ellipse");
+        out.Add(c);
         return;
     }
     if (l.has("center")) {

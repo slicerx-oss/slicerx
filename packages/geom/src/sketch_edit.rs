@@ -116,6 +116,7 @@ pub fn shapes(loops: &[Loop]) -> Result<Vec<Shape>> {
     loops.iter().enumerate().map(|(l, lp)| shape(l, lp)).collect()
 }
 
+#[allow(clippy::too_many_lines, reason = "one arm per loop form")]
 fn shape(l: usize, lp: &Loop) -> Result<Shape> {
     let bad = |why: String| Error::invalid("loops", format!("loop {}: {why}", l + 1));
     if lp.kind.as_deref() == Some("circle") {
@@ -136,6 +137,24 @@ fn shape(l: usize, lp: &Loop) -> Result<Shape> {
             closed: true,
             construction: lp.construction,
             fits: Vec::new(),
+            spline: false,
+        });
+    }
+    if lp.kind.as_deref() == Some("ellipse") {
+        // only moved whole (mirror, pattern), so its ring stands in for the curve
+        let r = sketch::open_ring(l, lp).map_err(|i| Error::invalid("loops", i.message))?;
+        let curves = (0..r.len())
+            .map(|i| Curve::Line {
+                a: r[i],
+                b: r[(i + 1) % r.len()],
+            })
+            .collect::<Vec<_>>();
+        return Ok(Shape {
+            fits: vec![Vec::new(); curves.len()],
+            curves,
+            circle: false,
+            closed: true,
+            construction: lp.construction,
             spline: false,
         });
     }
@@ -336,7 +355,16 @@ fn no_splines(loops: &[Loop], what: &str) -> Result<()> {
                 l + 1
             ),
         )),
-        None => Ok(()),
+        None => match loops.iter().position(|l| l.kind.as_deref() == Some("ellipse")) {
+            Some(l) => Err(Error::invalid(
+                "loops",
+                format!(
+                    "loop {} is an ellipse; {what} doesn't work on sketches with ellipses yet",
+                    l + 1
+                ),
+            )),
+            None => Ok(()),
+        },
     }
 }
 
@@ -767,6 +795,16 @@ fn reverse(c: Curve) -> Curve {
 }
 
 fn map_loop(lp: &Loop, sh: &Shape, f: &dyn Fn(V2) -> V2) -> Loop {
+    if let (Some("ellipse"), Some(c)) = (lp.kind.as_deref(), lp.center) {
+        // the width axis's end, moved with the center, gives the copy's turn
+        let (s, co) = lp.angle_deg.unwrap_or(0.0).to_radians().m_sin_cos();
+        let (fc, fe) = (f(c), f([c[0] + co, c[1] + s]));
+        return Loop {
+            center: Some(fc),
+            angle_deg: Some((fe[1] - fc[1]).m_atan2(fe[0] - fc[0]).to_degrees()),
+            ..lp.clone()
+        };
+    }
     if sh.circle {
         return Loop {
             center: lp.center.map(f),
@@ -1190,6 +1228,40 @@ mod tests {
                 }
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn an_ellipse_mirrors_and_patterns_whole_and_is_not_trimmed() {
+        let l = loops(
+            json!([{ "type": "ellipse", "center": [10, 0], "widthMm": 8, "heightMm": 4, "angleDeg": 30 }]),
+        );
+        let m = mirror(&l, &[0], [0.0, 0.0], [0.0, 1.0]).unwrap();
+        let e = &m.loops[1];
+        assert_eq!(e.kind.as_deref(), Some("ellipse"));
+        assert!(close(e.center.unwrap(), [-10.0, 0.0]));
+        assert!((e.angle_deg.unwrap() - 150.0).abs() < 1e-9, "{e:?}");
+        assert_eq!((e.width_mm, e.height_mm), (Some(8.0), Some(4.0)));
+        let p = pattern(
+            &l,
+            &[0],
+            Spread::Circle {
+                count: 4,
+                center: [0.0, 0.0],
+                angle_deg: 360.0,
+            },
+        )
+        .unwrap();
+        let q = &p.loops[2];
+        assert!(close(q.center.unwrap(), [-10.0, 0.0]));
+        assert!(
+            (q.angle_deg.unwrap() - 210.0).abs() < 1e-9 || (q.angle_deg.unwrap() + 150.0).abs() < 1e-9,
+            "{q:?}"
+        );
+        let err = trim(&l, 0, 0, [14.0, 0.0]).unwrap_err().to_string();
+        assert!(
+            err.contains("loop 1 is an ellipse; trim doesn't work on sketches with ellipses yet"),
+            "{err}"
         );
     }
 }
