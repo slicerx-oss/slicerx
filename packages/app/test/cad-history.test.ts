@@ -9,7 +9,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { deflateRawSync } from 'node:zlib'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
-import { capOf, clearReplayCache, decodeMeshes, encodeMeshes, findTriangle, followed, historyFiles, parseHistories, replayHistory, stepName, withNumber, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
+import { appendStep, capOf, clearReplayCache, decodeMeshes, encodeMeshes, findTriangle, followed, historyFiles, parseHistories, replayHistory, stepName, withNumber, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
 import { withStep } from '../src/cad/history/record'
 import { allPlates } from '../src/plate/plates'
 import { applyHistory, beginEdit, cancelEdit, deleteStep, editing, runReplay, saveEdit, setParams, setSuppressed } from '../src/cad/history/ops'
@@ -87,6 +87,23 @@ describe('history model', () => {
     const steps = h.steps.map((s, i) => (i === 0 ? { ...s, params: pull(8) } : s))
     const moved = followed(steps[1]!, steps)
     expect(moved.params.op === 'shape.extrude' && moved.params.frame!.origin).toEqual([100, 100, 13])
+  })
+
+  it('a fillet on the top of a body extruded on the bed follows the body when its height changes', () => {
+    // a design's first body has no frame: it stands on the bed
+    const body: Extrude = { op: 'shape.extrude', shape: { type: 'rectangle', widthMm: 30, heightMm: 20 }, placement: {}, spec: { distanceMm: 6, operation: 'new' } }
+    const round: StepParams = { op: 'edge.fillet', edges: [{ a: [-15, -10, 6], b: [15, -10, 6], face: [0, 0, 1] }], radiusMm: 1 }
+    const step = (id: string, params: StepParams): Step => ({ id, params, part: 0, transform: [...T] })
+    let h: History = { version: 1, base: [], steps: [] }
+    h = appendStep(h, step('s1', body))
+    h = appendStep(h, step('s2', round))
+    expect(capOf(h.steps[0]!)).toMatchObject({ distanceMm: 6, normal: [0, 0, 1] })
+    expect(h.steps[1]!.follow).toEqual({ step: 's1', distanceMm: 6 })
+    for (const d of [8, 4]) {
+      const steps = h.steps.map((s, i) => (i === 0 ? { ...s, params: { ...body, spec: { ...body.spec, distanceMm: d } } } : s))
+      const moved = followed(steps[1]!, steps).params
+      expect(moved.op === 'edge.fillet' && moved.edges[0]).toMatchObject({ a: [-15, -10, d], b: [15, -10, d], moved: true })
+    }
   })
 
   it('a step after a broken one suppresses the steps that did not run', () => {
