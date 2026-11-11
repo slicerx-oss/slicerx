@@ -150,6 +150,45 @@ describe('a project with its own printer G-code', () => {
   })
 })
 
+const h3c = printerConfig('bambu-h3c') as unknown as Record<string, string>
+/** The H3C end G-code SlicerX ships with the maker's later two-line change: a new date line and fan P10 off. */
+const H3C_LATER_END = h3c['machine_end_gcode']!
+  .replace(';===== 20261028 ;=====', ';===== 20261106 ;=====')
+  .replace('M106 P2 S0 ; turn off remote part cooling fan\n', 'M106 P2 S0 ; turn off remote part cooling fan\nM106 P10 S0 ; turn off remote part cooling1 fan\n')
+
+/** A Bambu Lab H3C project with the maker's later end G-code. */
+function h3cLaterProject(dir: string): string {
+  const path = join(dir, 'later-end.3mf')
+  writeFileSync(path, writeZip([
+    { name: '3D/3dmodel.model', data: MODEL },
+    { name: 'Metadata/project_settings.config', data: JSON.stringify({ printer_settings_id: 'Bambu Lab H3C 0.4 nozzle', printer_model: 'Bambu Lab H3C', gcode_flavor: 'marlin', filament_type: ['PLA'], machine_end_gcode: H3C_LATER_END }) },
+  ]))
+  return path
+}
+
+describe("an H3C project with the maker's later end G-code", () => {
+  it('keeps the end G-code as stock, with no question', async () => {
+    expect(H3C_LATER_END).toMatch(/^M106 P10 S0 /m)
+    const h = await connect()
+    const read = readProjectFile(h3cLaterProject(h.dir))
+    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'later-end.3mf', config: read.config, model: 'bambu-h3c' } })
+    expect(r.gcodeKept.map((k) => [k.key, k.match, k.message])).toEqual([['machine_end_gcode', 'stock', 'matches the stock Bambu Lab H3C end G-code']])
+    expect(r.gcodeReplaced).toEqual([])
+  })
+
+  it.skipIf(noSx())('slices in review mode with the project\'s end G-code', { timeout: sxTimeout }, async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      const r = await h.call('slicerx_slice_file', { model: h3cLaterProject(h.dir), project_settings: true, profiles: ['machine:bambu-h3c'] })
+      expect(r.isError, text(r)).toBeFalsy()
+      expect(text(r)).toMatch(/The project's end G-code matches the stock Bambu Lab H3C end G-code\./)
+      expect(readFileSync(data<Summary>(r).gcode_path, 'utf8')).toMatch(/^M106 P10 S0 ; turn off remote part cooling1 fan/m)
+    } finally {
+      await h.client.close()
+    }
+  })
+})
+
 const cc = printerConfig('elegoo-centauri-carbon') as unknown as Record<string, string>
 
 /** An OrcaSlicer style Elegoo Centauri Carbon project with the given start G-code and the stock end G-code. */
