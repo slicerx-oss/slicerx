@@ -207,3 +207,57 @@ describe('the floor item of design.check', () => {
     expect(designCheck(vasePlan, body(undefined), 0.4).items.map((i) => i.name)).not.toContain('floor')
   })
 })
+
+describe('blind cuts into a side set no floor', () => {
+  const plan = (features: PartPlan['features'], overall?: PartPlan['overall']): PartPlan => ({ planId: 'p-side', part: 'Part', units: 'mm', features, assumptions: [], questions: [], ...(overall ? { overall } : {}) })
+  const body = (floor: BodyFacts['floor'], minWallMm = 2): BodyFacts => ({ size: { x: 80, y: 80, z: 100 }, holes: [], features: 2, watertight: true, minWallMm, floor })
+  const slitBox = plan(
+    [
+      { name: 'Box', kind: 'extrude', sizes: { length: 60, width: 30, height: 20 } },
+      { name: 'Window slits', kind: 'cut', sizes: { count: 12, length: 2.5, height: 1.2, depth: 1 }, kinds: { count: 'count' } },
+    ],
+    { x: 60, y: 30, z: 20 },
+  )
+
+  it('reads no floor from a row of slits, round recesses or a slot cut into a side of a box', () => {
+    expect(plannedFloor(slitBox)).toBeNull()
+    // round recesses 2 mm deep in a 20 mm box: the 18 mm left under them is no floor
+    expect(plannedFloor(plan([{ name: 'Box', kind: 'extrude', sizes: { length: 60, width: 30, height: 20 } }, { name: 'Recesses', kind: 'pocket', sizes: { diameter: 6, depth: 2, count: 4 }, kinds: { count: 'count' } }], { x: 60, y: 30, z: 20 }))).toBeNull()
+    // a slot with its own height runs into the side: its 12 mm depth goes across the box, not down into it
+    expect(plannedFloor(plan([{ name: 'Box', kind: 'extrude', sizes: { length: 60, width: 30, height: 20 } }, { name: 'Side slot', kind: 'cut', sizes: { width: 3, height: 8, depth: 12 } }], { x: 60, y: 30, z: 20 }))).toBeNull()
+    // no overall size, so the part's height is its tallest feature's: 1 mm slits beside a 15.8 mm post
+    expect(plannedFloor(plan([{ name: 'Hull', kind: 'loft', sizes: { length: 200, beam: 23, depth: 23.8 } }, { name: 'Post', kind: 'extrude', sizes: { diameter: 5.5, height: 15.8 } }, { name: 'Window slits', kind: 'cut', sizes: { count: 30, length: 2.5, height: 1.2, depth: 1 }, kinds: { count: 'count' } }]))).toBeNull()
+  })
+
+  it('adds no floor item to the slit box, even where its bottom reads open', () => {
+    const open = floorFacts([vase({ floor: 0, h: 20 })], ['Box'], 0)
+    expect(open.parts[0]!.openings.length).toBeGreaterThan(0)
+    const result = designCheck(slitBox, { ...body(open), size: { x: 60, y: 30, z: 20 } }, 0.4)
+    expect(result.items.map((i) => i.name)).not.toContain('floor')
+    expect(result.items.filter((i) => !i.pass)).toEqual([])
+  })
+
+  it('still fails a cup whose cavity runs out through the bottom, and one with no bottom', () => {
+    const cup = plan([{ name: 'Body', kind: 'extrude', sizes: { outer_diameter: 80, height: 100 } }, { name: 'Cavity', kind: 'cut', sizes: { inner_diameter: 75, depth: 97 } }])
+    expect(plannedFloor(cup)).toEqual({ mm: 3, from: 'depth 97 mm under the 100 mm height' })
+    const tube = floorFacts([vase({ floor: 0, h: 100 })], ['Cup'], 0)
+    const item = designCheck(cup, body(tube), 0.4).items.find((i) => i.name === 'floor')!
+    expect(item.pass).toBe(false)
+    expect(item.got).toMatch(/^open at the bottom: Cup: the cavity runs through the bottom face at z 0/)
+    // a shallow tray keeps its floor too: a 12 mm well in a 15 mm body
+    expect(plannedFloor(plan([{ name: 'Tray', kind: 'extrude', sizes: { outer_diameter: 140, height: 15 } }, { name: 'Well', kind: 'cut', sizes: { inner_diameter: 134, depth: 12 } }]))?.mm).toBe(3)
+    // a cup with no bottom: walls and a bottom size, built as an open tube
+    const shell = plan([{ name: 'Body', kind: 'revolve', sizes: { outer_diameter: 80, height: 100 } }, { name: 'Hollow', kind: 'shell', sizes: { wall: 2, bottom: 2 } }])
+    expect(designCheck(shell, body(tube), 0.4).items.find((i) => i.name === 'floor')?.pass).toBe(false)
+  })
+
+  it('still fails a cup with a floor too thin to print under its cavity', () => {
+    const cup = plan([{ name: 'Body', kind: 'extrude', sizes: { outer_diameter: 80, height: 100 } }, { name: 'Cavity', kind: 'cut', sizes: { inner_diameter: 75, depth: 99.7 } }])
+    expect(plannedFloor(cup)?.mm).toBeCloseTo(0.3, 6)
+    // the floor is closed, so the floor item passes, and the 0.3 mm floor is the thinnest wall, under two nozzle lines
+    const result = designCheck(cup, body(floorFacts([vase({ floor: 0.3, h: 100 })], ['Cup'], 0), 0.3), 0.4)
+    expect(result.items.find((i) => i.name === 'floor')?.pass).toBe(true)
+    expect(result.items.find((i) => i.name === 'minimum wall')?.pass).toBe(false)
+    expect(result.pass).toBe(false)
+  })
+})
