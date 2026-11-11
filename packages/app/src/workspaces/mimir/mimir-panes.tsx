@@ -12,6 +12,7 @@ import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, LinkButton, Menu, MenuAnchor, MenuItem, ResizeEdge, tipAttrs } from '@slicerx/ui'
 import { RavenMark } from '@slicerx/ui/raven'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { composerOffNote } from './composer-note'
 import { setLookups } from './lookups'
 import { stepWords } from './step-words'
 import { followSteps, useStepCaption, viewStep } from './view-step'
@@ -170,6 +171,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   }, [pilot, sessionId])
   // On mimir cloud, the first chat waits for the person to read what is sent and kept.
   const notice = useCloudNoticeDue() && transcript.turns.length === 0
+  const offNote = composerOffNote({ connecting, notice, ready: ready !== null, turns: transcript.turns.length })
   // every message goes through here, so the read-back lines the person's words up with mimir's runs
   const stick = useRef(true)
   // the cards waiting when a press stopped the chat following the reply, or null while nothing holds it
@@ -544,8 +546,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           attachments={attachments}
           running={run.running}
           sendOff={ready === null || notice}
-          // with no model connected, Enter says where to connect one: the card above, or Settings once the chat has turns
-          {...(connecting ? { offNote: transcript.turns.length === 0 && !notice ? 'Connect a model above to send this.' : 'Connect a model in Settings to send this.' } : {})}
+          // while sending is off, Enter says why in one line
+          {...(offNote ? { offNote } : {})}
           onStop={run.cancel}
           onSend={(text, files) => send(text, files)}
           // a question card takes the words as its answer; a waiting sheet is set aside for them, and its record says so

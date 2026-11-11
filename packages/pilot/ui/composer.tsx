@@ -51,6 +51,9 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
   // Enter pressed on a message while sending is off: the box says why, until sending is on again or the box empties
   const [tried, setTried] = useState(false)
   const offShown = tried && sendOff && offNote !== undefined && text.trim() !== ''
+  // the line belongs to the press that asked for it: an emptied box or sending coming back ends it, and it does not return
+  // on its own. Set while rendering and only when there is a press to end, so typing never costs an extra render.
+  if (tried && (!sendOff || text.trim() === '')) setTried(false)
   const field = useRef<HTMLTextAreaElement>(null)
   const ready = (text.trim() !== '' || attachments.list.length > 0) && !sendOff
   // an answer to a waiting card is words only: a tool result cannot carry a file

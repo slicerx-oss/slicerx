@@ -6,7 +6,7 @@
 // model connected Enter keeps the message and says where to connect one. Scripted, no model behind it.
 import type { Page } from '@playwright/test'
 import { journey as test, expect } from '../journey'
-import { debugOn, emptyMimirTab, setPilot } from './lib/session'
+import { debugOn, emptyMimirTab, setPilot, standIn } from './lib/session'
 
 test.use({ journeyPrefs: { workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'on', provider: 'anthropic' }, scheme: 'dark', themeFollowsSystem: false } })
 test.skip(({ isMobile }) => isMobile, 'Desktop. The phone composer is in phone-mimir-keyboard.spec.ts')
@@ -135,3 +135,32 @@ test.describe('with no model connected', () => {
   })
 })
 
+test.describe('before the first mimir cloud chat', () => {
+  // The notice above the chat has to be read first, so the box is off. Enter keeps the message and points at Start; once
+  // the notice is read the line names the next step (here, connecting a model) and the message is still there.
+  test('says to press Start on Enter, keeping the message', async ({ page }) => {
+    await debugOn(page)
+    await setPilot(page, 'unset', { notice: false })
+    await standIn(page)
+    await emptyMimirTab(page)
+    await page.getByTestId('mimir-composer').getByRole('textbox').fill('')
+    await expect(page.getByTestId('mimir-cloud-notice')).toBeVisible()
+    const box = page.getByTestId('mimir-composer').getByRole('textbox')
+    const note = page.getByTestId('mimir-composer-off-note')
+    await box.fill('Make me a box with a lid')
+    await expect(note).toHaveCount(0)
+    await box.press('Enter')
+    await expect(box).toHaveValue('Make me a box with a lid')
+    await expect(note).toHaveText('Press Start above to send this.')
+    await expect(note).toHaveAttribute('role', 'status')
+    // Shift+Enter still starts a new line
+    await box.press('Shift+Enter')
+    await expect(box).toHaveValue('Make me a box with a lid\n')
+    await box.fill('Make me a box with a lid')
+    await page.getByTestId('mimir-notice-ok').click()
+    await expect(page.getByTestId('mimir-cloud-notice')).toHaveCount(0)
+    // the stand-in shell has no model behind it, so the line now names what is left to do
+    await expect(note).toHaveText('Connect a model above to send this.')
+    await expect(box).toHaveValue('Make me a box with a lid')
+  })
+})
