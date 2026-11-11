@@ -371,3 +371,32 @@ describe('the filament map of a Bambu Lab H2D', () => {
     expect(dec(files.get('Metadata/model_settings.config'))).not.toContain('filament_map_mode')
   })
 })
+
+const H3C = {
+  printer_model: 'Bambu Lab H3C',
+  nozzle_diameter: ['0.4'],
+  extruder_max_nozzle_count: ['9'],
+  default_nozzle_volume_type: ['Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'TPU285', 'Standard'],
+  printable_area: ['0x0', '330x0', '330x320', '0x320'],
+  filament_type: ['PLA', 'TPU'],
+  filament_colour: ['#FF6A13', '#000000'],
+  filament_ids: ['GFA00', 'GFU06'],
+  enable_support: '0',
+  layer_height: '0.2',
+}
+
+describe('the hotend map of a Bambu Lab H3C', () => {
+  it('writes each filament on its hotend, the TPU hotend by its own type, and the model id', () => {
+    const files = unzipStored(writeProject({ plates, bed: { widthMm: 330, depthMm: 320 }, settings: H3C, gcode: { 0: mapped(['; filament_map = 1,1', '; filament_map_mode = Manual', '; filament_nozzle_map = 2,7']) } }))
+    // The saved file opens as a sliced 3MF: the plate's G-code, its checksum and the slice facts are in it.
+    expect(files.has('Metadata/plate_1.gcode')).toBe(true)
+    expect(files.has('Metadata/plate_1.gcode.md5')).toBe(true)
+    expect(files.has('3D/3dmodel.model')).toBe(true)
+    const info = dec(files.get('Metadata/slice_info.config'))
+    expect(info).toContain('<metadata key="printer_model_id" value="N10"/>')
+    expect(info).toContain('<metadata key="filament_maps" value="1 1"/>')
+    expect(info).toContain('<filament id="1" tray_info_idx="GFA00" type="PLA" color="#FF6A13" used_m="2.40" used_g="7.29" group_id="2" nozzle_diameter="0.40" volume_type="Standard"')
+    expect(info).toContain('<filament id="2" tray_info_idx="GFU06" type="TPU" color="#000000" used_m="0.12" used_g="0.36" group_id="7" nozzle_diameter="0.40" volume_type="TPU285"')
+    expect(info).toContain('<nozzle id="2" extruder_id="1" nozzle_diameter="0.4" volume_type="Standard"/>\n    <nozzle id="7" extruder_id="1" nozzle_diameter="0.4" volume_type="TPU285"/>')
+  })
+})

@@ -9,10 +9,11 @@ import type { EasyGoal, PrintConfig, SettingValue } from '@slicerx/contracts/set
 import { applyEasy, goalEasy } from './easy'
 import { isCompatibleWithPrinter, type PrinterContext } from './compat'
 import { settingDefault } from './defaults'
-import { listFilamentFamilies, loadVendorFile, resolveFilamentPreset, type VendorFile } from './filaments'
+import { listFilamentFamilies, loadVendorFile, resolveFilamentPreset, resolveFilamentRaw, type VendorFile } from './filaments'
 import { hotendCount, TPU285 } from './hotends'
 import { filamentConfig, gcodeStatus, listFilamentProfiles, printerConfig, printerProfile, processConfig, processVariantTables } from './profiles'
 import { noStockNozzle, resolvedProfile } from './resolved'
+import { finsSafeTemp, scriptKeysRead } from './script-values'
 
 export interface SlotFilament {
   /** Material type: PLA, PETG, TPU. */
@@ -217,12 +218,12 @@ export function pickExtruderVariant(cfg: Record<string, SettingValue>, variants:
 }
 
 /** A shipped filament preset, resolved: the product's common values, its own, and the printer variant's. */
-async function shippedFilament(vendor: string, family: string, variant: string | undefined, machineName: string | undefined): Promise<{ config: Record<string, SettingValue>; id: string } | undefined> {
+async function shippedFilament(vendor: string, family: string, variant: string | undefined, machineName: string | undefined): Promise<{ config: Record<string, SettingValue>; id: string; extras: Record<string, unknown> } | undefined> {
   const file = await loadVendorFile(vendor)
   if (!file) return undefined
   const v = variant ?? pickVariant(file, family, machineName)
   const preset = v === undefined ? undefined : resolveFilamentPreset(file, family, v)
-  return preset ? { config: { ...preset.config } as Record<string, SettingValue>, id: preset.filamentId } : undefined
+  return preset ? { config: { ...preset.config } as Record<string, SettingValue>, id: preset.filamentId, extras: preset.extras } : undefined
 }
 
 /** The extruder variants a printer's presets are written for, from its own list (`Direct Drive Standard,Direct Drive High Flow`). */
@@ -239,7 +240,7 @@ function printerVariant(machine: Record<string, SettingValue>): string {
 }
 
 /** The generic preset of a material (`Generic PETG`): the printer vendor's own, else the shared library's. */
-async function genericFilament(type: string, vendorFolder: string | undefined, machineName: string | undefined): Promise<{ config: Record<string, SettingValue>; id: string } | undefined> {
+async function genericFilament(type: string, vendorFolder: string | undefined, machineName: string | undefined): Promise<{ config: Record<string, SettingValue>; id: string; extras: Record<string, unknown> } | undefined> {
   const name = `Generic ${type.toUpperCase()}`
   for (const vendor of [vendorFolder, 'OrcaFilamentLibrary']) {
     if (!vendor) continue
@@ -274,10 +275,10 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
   // The filament type is stored only when it is not the schema default (PLA).
   const defaultType = resolved ? String(first(resolved.filament['filament_type']) ?? 'PLA') : ''
   const slots = input.slots.length ? input.slots : [{ type: defaultType || 'PLA' }]
-  const { filaments, filamentIds } = await slotFilaments(slots, resolved, defaultType, machine)
   // The G-code is the text written for SlicerX for this model, not the maker's.
   const gcode = shippedGcode(printerId, base)
-  const values: Record<string, SettingValue> = { ...process, ...perSlot(filaments), ...machine, ...gcode }
+  const { filaments, filamentIds, scriptValues } = await slotFilaments(slots, resolved, defaultType, machine, scriptKeysRead(gcode))
+  const values: Record<string, SettingValue> = { ...process, ...perSlot(filaments), ...scriptValues, ...machine, ...gcode }
   // What every goal gives on this printer and nozzle, for the Goal tiles: the tier in use from its own process.
   const goalValues = {} as Record<EasyGoal, Record<string, SettingValue>>
   for (const g of GOALS) {
@@ -326,9 +327,10 @@ export async function stockPrinter(printerId: string, nozzle?: number): Promise<
   const mm = layerNozzle(profile, nozzle)
   const { resolved, base, machine } = await layerMachine(printerId, 'standard', mm)
   const type = resolved ? String(first(resolved.filament['filament_type']) ?? 'PLA') : ''
-  const { filaments, filamentIds } = await slotFilaments([{ type: type || 'PLA' }], resolved, type, machine)
+  const gcode = shippedGcode(printerId, base)
+  const { filaments, filamentIds, scriptValues } = await slotFilaments([{ type: type || 'PLA' }], resolved, type, machine, scriptKeysRead(gcode))
   const name = resolved ? resolved.orca?.filament || `${profile.vendor} default ${(type || 'PLA').toUpperCase()}` : 'Generic PLA'
-  return { nozzle: mm, machine: { ...machine, ...shippedGcode(printerId, base) }, filament: perSlot(filaments), filamentId: filamentIds[0] ?? '', filamentName: name }
+  return { nozzle: mm, machine: { ...machine, ...gcode }, filament: { ...perSlot(filaments), ...scriptValues }, filamentId: filamentIds[0] ?? '', filamentName: name }
 }
 
 /** The nozzle a layer is for: the size asked for when the printer offers it, else the printer's default. */
@@ -363,11 +365,34 @@ async function layerMachine(printerId: string, tier: EasyGoal, nozzle: number): 
   return { exact, resolved, base, machine }
 }
 
-/** Each slot's filament settings and preset id, in slot order. */
-async function slotFilaments(slots: readonly SlotFilament[], resolved: Resolved, defaultType: string, machine: Record<string, SettingValue>): Promise<{ filaments: Record<string, SettingValue>[]; filamentIds: string[] }> {
+/**
+ * The raw values of the shipped preset of a vendor folder whose `filament_id` is `id`, in the variant written for the
+ * printer: the preset the resolved maker default comes from, whose values the resolved data keeps only as settings.
+ */
+async function presetById(vendorFolder: string | undefined, id: string | undefined, machineName: string | undefined): Promise<Record<string, unknown> | undefined> {
+  if (!vendorFolder || !id) return undefined
+  const file = await loadVendorFile(vendorFolder)
+  if (!file) return undefined
+  for (const family of Object.keys(file.families)) {
+    const v = pickVariant(file, family, machineName)
+    const raw = v === undefined ? undefined : resolveFilamentRaw(file, family, v)
+    const fid = raw?.['filament_id']
+    if ((Array.isArray(fid) ? fid[0] : fid) === id) return raw
+  }
+  return undefined
+}
+
+/**
+ * Each slot's filament settings and preset id, in slot order, and the values the printer's G-code reads that are not
+ * settings (`keys`, from [`scriptKeysRead`]), one entry per slot: `filament_ids` from the preset ids and
+ * `fins_extrude_safe_temp` by [`finsSafeTemp`].
+ */
+async function slotFilaments(slots: readonly SlotFilament[], resolved: Resolved, defaultType: string, machine: Record<string, SettingValue>, keys: ReadonlySet<string> = new Set()): Promise<{ filaments: Record<string, SettingValue>[]; filamentIds: string[]; scriptValues: Record<string, SettingValue> }> {
   const filaments: Record<string, SettingValue>[] = []
   // Orca writes each filament preset's `filament_id` into the project (`filament_ids`); empty where there is none.
   const filamentIds: string[] = []
+  // Each slot's own preset values that are not settings, for `fins_extrude_safe_temp`.
+  const own: Record<string, unknown>[] = []
   const machineName = resolved?.orca?.profile
   const vendorFolder = resolved?.orca?.vendor
   for (const s of slots) {
@@ -377,17 +402,27 @@ async function slotFilaments(slots: readonly SlotFilament[], resolved: Resolved,
     if (picked) {
       filaments.push(pickExtruderVariant(picked.config, variantList(machine), printerVariant(machine)))
       filamentIds.push(picked.id)
+      own.push(picked.extras)
     } else if (resolved && s.type.toUpperCase() === defaultType.toUpperCase()) {
       // The resolved maker default carries the id Orca resolved for its preset (GFA00 and the like).
       filaments.push({ ...(resolved.filament as Record<string, SettingValue>) })
       filamentIds.push(resolved.orca?.filamentId ?? '')
+      own.push((keys.has('fins_extrude_safe_temp') ? await presetById(vendorFolder, resolved.orca?.filamentId, machineName) : undefined) ?? {})
     } else {
       const generic = await genericFilament(s.type, vendorFolder, machineName)
       filaments.push(generic ? pickExtruderVariant(generic.config, variantList(machine), printerVariant(machine)) : ({ ...(filamentConfig(materialId(s.type)) as Record<string, SettingValue>) }))
       filamentIds.push(generic?.id ?? '')
+      own.push(generic?.extras ?? {})
     }
   }
-  return { filaments, filamentIds }
+  const scriptValues: Record<string, SettingValue> = {}
+  if (keys.has('filament_ids')) scriptValues['filament_ids'] = [...filamentIds]
+  if (keys.has('fins_extrude_safe_temp')) {
+    const temps: number[] = []
+    for (const [i, s] of slots.entries()) temps.push(finsSafeTemp([own[i] ?? {}], (await genericFilament(s.type, vendorFolder, machineName))?.extras))
+    scriptValues['fins_extrude_safe_temp'] = temps
+  }
+  return { filaments, filamentIds, scriptValues }
 }
 
 /** The G-code text written for SlicerX for the model, by key, once it is written (gcodeStatus); else none. */
