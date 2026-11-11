@@ -381,9 +381,9 @@ export function pushPreview(face: { frame: FaceFrame; outline: Polygon[] }, dist
   return geom().call<{ tool: GeomMesh; operation: 'join' | 'cut' }>('face.push.preview', { frame: face.frame, outline: face.outline, distanceMm }, signal)
 }
 
-// Fillet and chamfer (docs/cad-fillet.md): round or bevel the straight edge where two flat faces
-// meet. Convex edges lose material, concave edges gain it. Edges next to curved faces are reported
-// as not supported.
+// Fillet and chamfer (docs/cad-fillet.md): round or bevel the straight edge where a flat face meets
+// another face, and edges along a round on a flat face. Convex edges lose material, concave edges
+// gain it. Edges whose picked face is curved are reported as not supported.
 
 export interface EdgeFace {
   normal: Vec3

@@ -33,7 +33,7 @@ Errors are one plain sentence of the form `field: what is wrong`, ready to show 
 | `sketch.loft` | Loft a solid through 2 to 64 profiles in order, each one loop on its own plane: straight or smooth sides, flat ends or a closed ring, and open profiles thickened into a shell | `profiles` (each `frame`, `loops`, `open`, `landmarks`), `smooth`, `closed`, `thicken` (`thicknessMm`, `side`), `operation`, `target` |
 | `face.push` | Move a flat face along its normal: out adds material, in cuts | `mesh`, `triangle`, `at`, `distanceMm` |
 | `boolean` | Union, difference or intersection of closed meshes | `op`, `a`, `b` |
-| `edge.fillet`, `edge.chamfer` | Round or bevel straight edges between flat faces | `mesh`, `edges`, `radiusMm` or `distanceMm` |
+| `edge.fillet`, `edge.chamfer` | Round or bevel straight edges on a flat face, along a round too | `mesh`, `edges`, `radiusMm` or `distanceMm` |
 | `sketch.solve` | Solve a constrained sketch: where each point lands, the radii, the degrees of freedom left and the constraints that conflict or repeat | `points`, `entities`, `constraints`, optional `drag` |
 | `sketch.fillet`, `sketch.chamfer` | Round or bevel sketch corners before extruding | `loops`, `corners`, `radiusMm` or `distanceMm` |
 | `dimension.anchor`, `dimension.evaluate` | Dimensions that stay on the model and follow later edits | see `docs/cad-history.md` |

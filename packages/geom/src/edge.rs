@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! fillet and chamfer on the straight edges where two flat faces meet, and on the round edge where a flat face
-//! meets a cylinder square to it (`rim`)
+//! fillet and chamfer on the straight edges where a flat face meets another face, and on the round edge where a
+//! flat face meets a cylinder square to it (`rim`)
 // triangle, region and ring indices come from the validated mesh and the
 // lists built here
 #![allow(clippy::indexing_slicing)]
@@ -31,6 +31,8 @@ const CHAIN_DEG: f64 = 20.0;
 const FLAT_DEG: f64 = 0.5;
 /// lowest tolerance for finding an edge reference again, millimeters
 const REF_MM: f64 = 0.001;
+/// angles between faces this close, radians, are the same angle along a round
+const SAME_RAD: f64 = 1e-4;
 
 type Key = [u64; 3];
 
@@ -155,6 +157,8 @@ struct Faces<'a> {
     regions: Vec<Region>,
     at_vertex: HashMap<Key, Vec<usize>>,
     size: f64,
+    /// boundaries asked for so far: a loop's ends each look along the same face
+    seen: std::cell::RefCell<HashMap<usize, std::rc::Rc<Vec<Run>>>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -260,7 +264,15 @@ impl<'a> Faces<'a> {
             regions,
             at_vertex,
             size,
+            seen: std::cell::RefCell::default(),
         }
+    }
+
+    fn boundary_of(&self, r: usize) -> std::rc::Rc<Vec<Run>> {
+        let mut seen = self.seen.borrow_mut();
+        seen.entry(r)
+            .or_insert_with(|| std::rc::Rc::new(self.boundary(r)))
+            .clone()
     }
 
     fn tol(&self) -> f64 {
@@ -366,6 +378,8 @@ struct End {
     point: V3,
     normal: V3,
     extend: bool,
+    /// the flat face the edge shares with the round it runs on into, when the end is the plane halfway between them
+    runs_on: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -404,6 +418,16 @@ impl Geom {
         MARGIN_MM.copysign(vec3::dot(out, e.normal))
     }
 
+    fn flipped(self) -> Self {
+        Self {
+            a: self.b,
+            b: self.a,
+            d: vec3::scale(self.d, -1.0),
+            ends: [self.ends[1], self.ends[0]],
+            ..self
+        }
+    }
+
     fn strip(&self, side: usize, w: f64) -> Option<[V3; 4]> {
         let t = if side == 0 { self.ta } else { self.tb };
         let p = vec3::add(self.a, vec3::scale(t, w));
@@ -430,13 +454,13 @@ fn geom(
     tri_b: u32,
 ) -> std::result::Result<Geom, String> {
     let (fa, fb) = (&faces.regions[ra], &faces.regions[rb]);
-    if fa.curved {
-        return Err("The picked face is curved. Fillet and chamfer work between flat faces only.".into());
-    }
-    if fb.curved {
+    if fa.curved && fb.curved {
         return Err(
-            "The face across the edge is curved. Fillet and chamfer work between flat faces only.".into(),
+            "Both faces along this edge are curved. Fillet and chamfer need a flat face on one side.".into(),
         );
+    }
+    if fa.curved {
+        return Err("The picked face is curved. Pick the edge from the flat face on its other side.".into());
     }
     let ab = vec3::sub(b, a);
     let len = vec3::len(ab);
@@ -456,6 +480,7 @@ fn geom(
         point: a,
         normal: d,
         extend: false,
+        runs_on: None,
     }; 2];
     for (i, p) in [a, b].into_iter().enumerate() {
         let others: Vec<usize> = faces
@@ -469,10 +494,19 @@ fn geom(
             _ => return Err("The edge ends where more than three faces meet.".into()),
         };
         let fc = &faces.regions[c];
-        if fc.curved {
-            return Err("The edge ends at a curved face.".into());
-        }
         let out = if i == 0 { vec3::scale(d, -1.0) } else { d };
+        if fb.curved || fc.curved {
+            match round_end(faces, [ra, rb], c, p, out, (phi, convex)) {
+                Some(end) => {
+                    ends[i] = end?;
+                    continue;
+                }
+                None if fc.curved => {
+                    return Err("The edge ends at a curved face it does not run into smoothly.".into());
+                }
+                None => {}
+            }
+        }
         let along = vec3::dot(out, fc.normal);
         if along.abs() < 0.05 {
             return Err("The edge meets the face at its end at too shallow an angle.".into());
@@ -481,6 +515,7 @@ fn geom(
             point: p,
             normal: fc.normal,
             extend: if convex { along > 0.0 } else { along < 0.0 },
+            runs_on: None,
         };
     }
     Ok(Geom {
@@ -496,6 +531,58 @@ fn geom(
         convex,
         ends,
     })
+}
+
+/// The plane halfway into the round `c` that the edge runs on into along one of its flat faces, or none.
+fn round_end(
+    faces: &Faces<'_>,
+    own: [usize; 2],
+    c: usize,
+    p: V3,
+    out: V3,
+    (phi, convex): (f64, bool),
+) -> Option<std::result::Result<End, String>> {
+    let turn = SHARP_DEG.to_radians().m_cos();
+    for s in own {
+        if faces.regions[s].curved {
+            continue;
+        }
+        let Some((run, tc)) = faces.boundary_of(s).iter().find_map(|r| match r.across {
+            Across::Face(x, t) if x == c && (key(r.a) == key(p) || key(r.b) == key(p)) => Some((*r, t)),
+            _ => None,
+        }) else {
+            continue;
+        };
+        let q = if key(run.a) == key(p) { run.b } else { run.a };
+        let Some(next) = vec3::normalize(vec3::sub(q, p)) else {
+            continue;
+        };
+        if vec3::dot(out, next) < turn {
+            continue;
+        }
+        let (ns, nc) = (faces.regions[s].normal, faces.regions[c].normal);
+        let (Some(ts), Some(tn)) = (
+            inward(faces, ns, next, p, run.tri),
+            inward(faces, nc, next, p, tc),
+        ) else {
+            continue;
+        };
+        // only with the same angle on both sides does the halfway plane hold the line between the faces across
+        let phi_next = vec3::dot(ts, tn).clamp(-1.0, 1.0).m_acos();
+        if (vec3::dot(ns, tn) < 0.0) != convex || (phi_next - phi).abs() > SAME_RAD {
+            return Some(Err(
+                "The angle between the faces changes along the round the edge runs into.".into(),
+            ));
+        }
+        let normal = vec3::normalize(vec3::add(out, next))?;
+        return Some(Ok(End {
+            point: p,
+            normal,
+            extend: false,
+            runs_on: Some(s),
+        }));
+    }
+    None
 }
 
 fn quad_fits(faces: &Faces<'_>, r: usize, quad: &[V3; 4]) -> bool {
@@ -1102,6 +1189,169 @@ fn piece(g: &Geom, p: Profile, n: usize) -> Result<TriMesh> {
     Ok(m)
 }
 
+/// One tool along edges that run on into each other round a curve, mitered where they meet.
+#[allow(clippy::cast_possible_truncation, reason = "vertex counts fit u32")]
+fn sweep(chain: &[(usize, Geom)], p: Profile, closed: bool) -> Result<TriMesh> {
+    let (n, g0) = chain[0];
+    let short = || Error::invalid("edges", format!("edge {n} is too short for this size"));
+    let v = vec3::cross(g0.d, g0.ta);
+    let w = if vec3::dot(g0.tb, v) < 0.0 {
+        vec3::scale(v, -1.0)
+    } else {
+        v
+    };
+    let mut poly = Polygon::simple(section(&g0, p));
+    poly.normalize_orientation();
+    let sec: Vec<V2> = poly.vertices().collect();
+    let at = |o: V3, u: V3, q: V2| vec3::add(o, vec3::add(vec3::scale(u, q[0]), vec3::scale(w, q[1])));
+    let capped = |g: &Geom, i: usize| -> Vec<V3> {
+        let o = g.end_offset(i);
+        sec.iter()
+            .map(|&q| {
+                let base = at(g.a, g.ta, q);
+                vec3::add(base, vec3::scale(g.d, g.reach(i, base, o)))
+            })
+            .collect()
+    };
+    let k = chain.len();
+    let mut rings = Vec::with_capacity(k + 1);
+    if !closed {
+        rings.push(capped(&g0, 0));
+    }
+    for i in usize::from(!closed)..k {
+        let (g, h) = (chain[(i + k - 1) % k].1, chain[i].1);
+        let m = vec3::scale(vec3::add(g.ta, h.ta), 1.0 / (1.0 + vec3::dot(g.ta, h.ta)));
+        rings.push(sec.iter().map(|&q| at(h.a, m, q)).collect());
+    }
+    if !closed {
+        rings.push(capped(&chain[k - 1].1, 1));
+    }
+    // every point of the section moves forward along each stretch, or the tool turns inside out
+    for (i, (_, g)) in chain.iter().enumerate() {
+        let (r0, r1) = (&rings[i], &rings[(i + 1) % rings.len()]);
+        if r0
+            .iter()
+            .zip(r1)
+            .any(|(a, b)| vec3::dot(vec3::sub(*b, *a), g.d) < 1e-6)
+        {
+            return Err(short());
+        }
+    }
+    let nq = sec.len();
+    let id = |r: usize, j: usize| (r * nq + j % nq) as u32;
+    let mut m = TriMesh::default();
+    for r in &rings {
+        m.positions.extend(r);
+    }
+    for i in 0..k {
+        let (r0, r1) = (i, (i + 1) % rings.len());
+        for j in 0..nq {
+            m.triangles.push([id(r0, j), id(r0, j + 1), id(r1, j + 1)]);
+            m.triangles.push([id(r0, j), id(r1, j + 1), id(r1, j)]);
+        }
+    }
+    if !closed {
+        let last = rings.len() - 1;
+        for t in crate::poly2d::triangulate(&poly)? {
+            let t = t.map(|x| x as usize);
+            m.triangles.push([id(0, t[0]), id(0, t[2]), id(0, t[1])]);
+            m.triangles.push([id(last, t[0]), id(last, t[1]), id(last, t[2])]);
+        }
+    }
+    if m.volume() < 0.0 {
+        m.flip();
+    }
+    Ok(m)
+}
+
+/// Edges in a row along a round, each with its number in the request.
+type Chain = Vec<(usize, Geom)>;
+
+/// Runs of edges that meet along a round, turned one way, and whether each closes a loop; `nums` as the request counts.
+fn chains(geoms: &[Geom], nums: &[usize]) -> Result<Vec<(Chain, bool)>> {
+    let mut at: HashMap<Key, Vec<(usize, usize)>> = HashMap::new();
+    for (i, g) in geoms.iter().enumerate() {
+        for (e, p) in [g.a, g.b].into_iter().enumerate() {
+            if g.ends[e].runs_on.is_some() {
+                at.entry(key(p)).or_default().push((i, e));
+            }
+        }
+    }
+    let mut next: Vec<[Option<usize>; 2]> = vec![[None; 2]; geoms.len()];
+    let mut joints: Vec<&Vec<(usize, usize)>> = at.values().filter(|l| l.len() > 1).collect();
+    joints.sort_by_key(|l| l.iter().map(|x| x.0).min());
+    for list in joints {
+        let names = || {
+            let mut l: Vec<String> = list.iter().map(|&(i, _)| nums[i].to_string()).collect();
+            let last = l.pop().unwrap_or_default();
+            format!("{} and {last}", l.join(", "))
+        };
+        let [(i, ei), (j, ej)] = list[..] else {
+            return Err(Error::invalid(
+                "edges",
+                format!(
+                    "edges {} meet at one point along a round; pick each edge once",
+                    names()
+                ),
+            ));
+        };
+        let (gi, gj) = (&geoms[i], &geoms[j]);
+        if i == j
+            || gi.ra != gj.ra
+            || gi.ends[ei].runs_on != Some(gi.ra)
+            || gj.ends[ej].runs_on != Some(gj.ra)
+        {
+            return Err(Error::invalid(
+                "edges",
+                format!(
+                    "edges {} meet along a round; pick both from the flat face they share",
+                    names()
+                ),
+            ));
+        }
+        next[i][ei] = Some(j);
+        next[j][ej] = Some(i);
+    }
+    let count = geoms.len();
+    let mut seen = vec![false; count];
+    let mut out = Vec::new();
+    // open chains from their first edge, then closed loops
+    let starts = (0..count)
+        .filter(|&i| next[i].iter().any(Option::is_none))
+        .chain(0..count);
+    for s in starts {
+        if seen[s] {
+            continue;
+        }
+        seen[s] = true;
+        let (mut g, mut to) = (geoms[s], next[s]);
+        if to[0].is_some() && to[1].is_none() {
+            (g, to) = (g.flipped(), [to[1], to[0]]);
+        }
+        let mut list = vec![(nums[s], g)];
+        let mut closed = false;
+        let mut on = to[1];
+        while let Some(j) = on {
+            if j == s {
+                closed = true;
+                break;
+            }
+            if seen[j] {
+                break;
+            }
+            seen[j] = true;
+            let (mut h, mut hto) = (geoms[j], next[j]);
+            if list.last().is_some_and(|(_, l)| key(h.a) != key(l.b)) {
+                (h, hto) = (h.flipped(), [hto[1], hto[0]]);
+            }
+            list.push((nums[j], h));
+            on = hto[1];
+        }
+        out.push((list, closed));
+    }
+    Ok(out)
+}
+
 fn solve3(n: [V3; 3], c: [f64; 3]) -> Option<V3> {
     let x12 = vec3::cross(n[1], n[2]);
     let det = vec3::dot(n[0], x12);
@@ -1369,18 +1619,26 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
             length_mm: r.length(),
         });
     }
-    for (i, g) in geoms.iter().enumerate() {
-        let m = piece(g, profile, straight[i].0)?;
-        if g.convex {
-            out.cut.push(m);
-        } else {
-            out.join.push(m);
-        }
+    for g in &geoms {
         out.edges.push(EdgeInfo {
             convex: g.convex,
             dihedral_deg: g.dihedral_deg(),
             length_mm: g.len,
         });
+    }
+    let nums: Vec<usize> = straight.iter().map(|s| s.0).collect();
+    for (chain, closed) in chains(&geoms, &nums)? {
+        let (n, g) = chain[0];
+        let m = if chain.len() == 1 {
+            piece(&g, profile, n)?
+        } else {
+            sweep(&chain, profile, closed)?
+        };
+        if g.convex {
+            out.cut.push(m);
+        } else {
+            out.join.push(m);
+        }
     }
     if let Profile::Fillet { radius, tolerance } = profile {
         let mut at: HashMap<Key, (V3, Vec<usize>)> = HashMap::new();
@@ -1529,11 +1787,38 @@ fn relocate(mesh: &TriMesh, e: &EdgeRef) -> Option<(EdgeRef, bool)> {
         }
         Some((lo.1, hi.1, hi.0 - lo.0))
     };
-    let spans: Vec<(V3, V3, f64)> = runs.values().filter_map(|r| span(r)).collect();
-    let &(a, b, _) = spans.iter().max_by(|x, y| x.2.total_cmp(&y.2))?;
+    let spans: Vec<_> = runs
+        .values()
+        .filter_map(|r| span(r).map(|(a, b, l)| (a, b, l, r)))
+        .collect();
+    let &(a, b, _, run) = spans.iter().max_by(|x, y| x.2.total_cmp(&y.2))?;
     // The normal of the face `face` faced, as it is now.
     let t0 = mesh.triangles.iter().enumerate().find(|&(t, _)| key(t) == k0)?.1;
     let face = vec3::normalize(mesh.normal(*t0))?;
+    // faces that meet along a curve (a flat face and a round) have no one straight edge: it is found by its place
+    let tol = REF_MM.max(mesh.bounds().map_or(1.0, |b| b.diagonal()) * 1e-7);
+    let point = |x: u32| mesh.positions[x as usize];
+    if run
+        .iter()
+        .any(|&(u, v)| [u, v].into_iter().any(|x| dist_to_segment(point(x), a, b) > tol))
+    {
+        let near = |p: V3| {
+            segs.iter()
+                .flat_map(|&(u, v)| [point(u), point(v)])
+                .find(|&q| vec3::len(vec3::sub(q, p)) < tol)
+        };
+        return Some((
+            EdgeRef {
+                a: near(e.a)?,
+                b: near(e.b)?,
+                face,
+                moved: false,
+                center: None,
+                keys: e.keys,
+            },
+            false,
+        ));
+    }
     // Keep the ends in the order the reference had them.
     let (a, b) = if vec3::dot(vec3::sub(b, a), vec3::sub(e.b, e.a)) < 0.0 {
         (b, a)
@@ -2059,8 +2344,18 @@ mod tests {
         sound(&one);
     }
 
+    /// A cone 10 mm across its base and 5 mm high, base down on z = 0.
+    fn cone() -> TriMesh {
+        let tri = vec![Polygon::simple(vec![[0.0, 0.0], [10.0, 0.0], [0.0, 5.0]])];
+        let m = crate::sketch::revolve(&Frame::WORLD, &tri, [0.0, 0.0], [0.0, 1.0], 360.0).unwrap();
+        crate::xform::transformed(
+            &m,
+            &crate::xform::rotation_about([0.0; 3], [1.0, 0.0, 0.0], PI / 2.0),
+        )
+    }
+
     #[test]
-    fn curved_neighbors_are_not_supported() {
+    fn round_rims_and_cone_rims() {
         // A round plate's rim, where its top meets a cylinder square to it, is a round edge (`rim`).
         let f = Frame::WORLD;
         let plate = build::cylinder(&f, 10.0, 0.0, 5.0, 64);
@@ -2071,21 +2366,278 @@ mod tests {
             p.reason
         );
         sound(&run(&plate, &[p.edge], fillet(1.0)).unwrap());
-        // The rim of a cone's base is not: the face across it is curved and not a cylinder.
-        let tri = vec![Polygon::simple(vec![[0.0, 0.0], [10.0, 0.0], [0.0, 5.0]])];
-        let m = crate::sketch::revolve(&Frame::WORLD, &tri, [0.0, 0.0], [0.0, 1.0], 360.0).unwrap();
-        let m = crate::xform::transformed(
-            &m,
-            &crate::xform::rotation_about([0.0; 3], [1.0, 0.0, 0.0], PI / 2.0),
-        );
+        // a cone's base rim is a ring of straight edges, each ending halfway into the next facet
+        let m = cone();
         let p = pick(&m, [0.0, 0.0, -1.0], [9.9, 0.0, 0.0]);
-        assert!(!p.supported);
+        assert!(p.supported && p.convex, "{:?}", p.reason);
+        // each facet is a chord's plane, a little steeper than the cone
+        assert!(
+            (p.dihedral_deg - 0.5f64.m_atan().to_degrees()).abs() < 0.5,
+            "{}",
+            p.dihedral_deg
+        );
+        assert!(p.ring.len() > 12 && p.ring.iter().all(|l| l.supported));
+        assert_eq!(p.chain.len(), p.ring.len());
+        let one = run(&m, &[p.edge], fillet(1.0)).unwrap();
+        sound(&one);
+        let ring: Vec<EdgeRef> = p.ring.iter().map(|l| l.edge).collect();
+        let all = run(&m, &ring, fine(1.0)).unwrap();
+        sound(&all);
+        // the corner's cross section, swept round between the rim and where the round meets the base
+        let half = 0.5f64.m_atan() * 0.5;
+        let s = 1.0 / half.m_tan();
+        let area = s - (PI - 2.0 * half) / 2.0;
+        let lost = m.volume() - all.mesh.volume();
+        let (lo, hi) = (area * 2.0 * PI * (10.0 - s), area * 2.0 * PI * 10.0);
+        assert!(lost > lo && lost < hi, "{lost} not in {lo}..{hi}");
+        assert!(lost > m.volume() - one.mesh.volume());
+    }
+
+    /// A plate `x` by `y` by `z`, each upright corner from (x, 0) on rounded to its radius (0 stays sharp) in `steps`.
+    fn plate(x: f64, y: f64, z: f64, radii: [f64; 4], steps: usize) -> TriMesh {
+        let mut pts = Vec::new();
+        let corners = [
+            (x, 0.0, -1.0, 1.0),
+            (x, y, -1.0, -1.0),
+            (0.0, y, 1.0, -1.0),
+            (0.0, 0.0, 1.0, 1.0),
+        ];
+        for (i, (cx, cy, sx, sy)) in corners.into_iter().enumerate() {
+            let r = radii[i];
+            if r == 0.0 {
+                pts.push([cx, cy]);
+                continue;
+            }
+            let c = [cx + sx * r, cy + sy * r];
+            let a0 = (i as f64 - 1.0) * PI / 2.0;
+            for k in 0..=steps {
+                let (sn, cs) = (a0 + PI / 2.0 * k as f64 / steps as f64).m_sin_cos();
+                pts.push([c[0] + r * cs, c[1] + r * sn]);
+            }
+        }
+        build::extrude(&[Polygon::simple(pts)], &Frame::WORLD, 0.0, z).unwrap()
+    }
+
+    fn fine(r: f64) -> Profile {
+        Profile::Fillet {
+            radius: r,
+            tolerance: 0.001,
+        }
+    }
+
+    /// The top loop of `m`, picked on its front edge at `x`.
+    fn top_loop_of(m: &TriMesh, x: f64) -> Vec<EdgeRef> {
+        let p = pick(m, [0.0, 0.0, 1.0], [x, 0.1, m.bounds().unwrap().max[2]]);
+        assert!(p.ring.iter().all(|l| l.supported), "{:?}", p.reason);
+        p.ring.iter().map(|l| l.edge).collect()
+    }
+
+    #[test]
+    fn a_rounded_box_loop_is_one_mitered_round() {
+        // the cable clip's base: 30 by 20 by 3, corners rounded to 3 mm in 14 sides each
+        let m = plate(30.0, 20.0, 3.0, [3.0; 4], 14);
+        let p = pick(&m, [0.0, 0.0, 1.0], [15.0, 0.1, 3.0]);
+        assert!(p.supported, "{:?}", p.reason);
+        assert_eq!(p.ring.len(), 4 + 4 * 14);
+        assert_eq!(p.chain.len(), p.ring.len());
+        assert!((p.max_radius_mm - 3.0).abs() < 1e-6, "{}", p.max_radius_mm);
+        let edges = top_loop_of(&m, 15.0);
+        // the corner's cross section times the path of its centroid, which runs inside the outline
+        let path = |off: f64| 2.0 * (30.0 + 20.0) - 8.0 * 3.0 + 2.0 * PI * (3.0 - off);
+        for (profile, area, off) in [
+            (fine(1.0), 1.0 - PI / 4.0, (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI)),
+            (chamfer(0.8), 0.32, 0.8 / 3.0),
+        ] {
+            let r = run(&m, &edges, profile).unwrap();
+            sound(&r);
+            assert!(r.corners.is_empty());
+            let lost = m.volume() - r.mesh.volume();
+            let want = area * path(off);
+            assert!((lost - want).abs() / want < 0.01, "{lost} vs {want}");
+        }
+        // the same loop with some edges given the other way round
+        let mut turned = edges.clone();
+        for e in turned.iter_mut().step_by(3) {
+            (e.a, e.b) = (e.b, e.a);
+        }
+        let a = run(&m, &edges, fillet(1.0)).unwrap();
+        let b = run(&m, &turned, fillet(1.0)).unwrap();
+        sound(&b);
+        assert!((a.mesh.volume() - b.mesh.volume()).abs() < 1e-6);
+        // the round inside the corner cannot be tighter than the corner
+        let err = run(&m, &edges, fillet(3.5)).unwrap_err().to_string();
+        assert!(err.contains("does not fit"), "{err}");
+        sound(&run(&m, &edges, fillet(2.5)).unwrap());
+    }
+
+    #[test]
+    fn a_straight_edge_into_a_round_ends_halfway_into_it() {
+        let m = plate(30.0, 20.0, 3.0, [3.0; 4], 14);
+        let p = pick(&m, [0.0, 0.0, 1.0], [15.0, 0.1, 3.0]);
+        assert!((p.length_mm - 24.0).abs() < 1e-9);
+        let r = run(&m, &[p.edge], fine(1.0)).unwrap();
+        sound(&r);
+        let lost = m.volume() - r.mesh.volume();
+        let want = 24.0 * (1.0 - PI / 4.0);
+        assert!((lost - want).abs() / want < 0.01, "{lost} vs {want}");
+        // one side of the round on its own, and one stretch of it
+        let facet = p.ring[1].edge;
+        assert!(p.ring[1].supported);
+        sound(&run(&m, &[facet], fillet(0.5)).unwrap());
+        let quarter: Vec<EdgeRef> = p.ring[1..15].iter().map(|l| l.edge).collect();
+        let r = run(&m, &quarter, fine(1.0)).unwrap();
+        sound(&r);
+        let lost = m.volume() - r.mesh.volume();
+        let want = (1.0 - PI / 4.0) * PI / 2.0 * (3.0 - 0.2234);
+        assert!((lost - want).abs() / want < 0.05, "{lost} vs {want}");
+    }
+
+    #[test]
+    fn a_round_between_sharp_corners_and_loops_with_both() {
+        // one corner rounded, the other three sharp
+        let m = plate(30.0, 20.0, 4.0, [0.0, 6.0, 0.0, 0.0], 12);
+        let edges = top_loop_of(&m, 15.0);
+        assert_eq!(edges.len(), 4 + 12);
+        for profile in [fillet(1.5), chamfer(1.0)] {
+            sound(&run(&m, &edges, profile).unwrap());
+        }
+        let r = run(&m, &edges, fine(1.5)).unwrap();
+        let lost = m.volume() - r.mesh.volume();
+        let outline = 2.0 * (30.0 + 20.0) - 2.0 * 6.0 + PI * 3.0;
+        let want = 2.25 * (1.0 - PI / 4.0) * outline;
+        assert!(lost < want && lost > want * 0.95, "{lost} vs {want}");
+        // the round alone, its ends halfway into the straight edges either side
+        let arc: Vec<EdgeRef> = edges
+            .iter()
+            .copied()
+            .filter(|e| {
+                (e.a[0] - 24.0).min(e.b[0] - 24.0) > -1e-9 && (e.a[1] - 14.0).min(e.b[1] - 14.0) > -1e-9
+            })
+            .collect();
+        assert_eq!(arc.len(), 12);
+        sound(&run(&m, &arc, fillet(1.5)).unwrap());
+    }
+
+    #[test]
+    fn edges_on_curved_faces_fail_in_words() {
+        let reason = |m: &TriMesh, t: u32, at: V3| pick_edge(m, t, at).unwrap().reason.unwrap_or_default();
+        // a double cone's middle: both faces are curved
+        let dia = vec![Polygon::simple(vec![[0.0, -5.0], [10.0, 0.0], [0.0, 5.0]])];
+        let m = crate::sketch::revolve(&Frame::WORLD, &dia, [0.0, 0.0], [0.0, 1.0], 360.0).unwrap();
+        let (t, at) = m
+            .triangles
+            .iter()
+            .enumerate()
+            .find_map(|(t, &tri)| {
+                let c = m.corners(tri);
+                let mid: Vec<V3> = c.iter().copied().filter(|p| p[1].abs() < 1e-9).collect();
+                (mid.len() == 2 && centroid(c)[1] > 0.0).then(|| {
+                    (
+                        u32::try_from(t).unwrap(),
+                        vec3::scale(vec3::add(mid[0], mid[1]), 0.5),
+                    )
+                })
+            })
+            .unwrap();
+        assert_eq!(
+            reason(&m, t, at),
+            "Both faces along this edge are curved. Fillet and chamfer need a flat face on one side."
+        );
+        let edge = pick_edge(&m, t, at).unwrap().edge;
+        let err = run(&m, &[edge], fillet(0.5)).unwrap_err().to_string();
+        assert!(
+            err.contains("edge 1: both faces along this edge are curved"),
+            "{err}"
+        );
+        // a cone's rim picked from the cone: pick it from the base
+        let m = cone();
+        let side = m
+            .triangles
+            .iter()
+            .position(|&tri| {
+                let c = m.corners(tri);
+                c.iter().filter(|p| p[2].abs() < 1e-9).count() == 2
+                    && vec3::normalize(m.normal(tri)).unwrap()[2] > 0.1
+            })
+            .unwrap();
+        let at = centroid(m.corners(m.triangles[side]));
+        let t = u32::try_from(side).unwrap();
+        assert_eq!(
+            reason(&m, t, at),
+            "The picked face is curved. Pick the edge from the flat face on its other side."
+        );
+        let err = run(&m, &[pick_edge(&m, t, at).unwrap().edge], fillet(0.5))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("the picked face is curved"), "{err}");
+        // a top sloping across a rounded plate meets each side of a corner at its own angle
+        let mut m = plate(30.0, 20.0, 3.0, [3.0; 4], 14);
+        m.map_positions(|p| [p[0], p[1], p[2] * (1.0 + 0.05 * p[0])]);
+        let up = vec3::normalize([-0.15, 0.0, 1.0]).unwrap();
+        let p = pick(&m, up, [15.0, 0.1, 5.25]);
         assert_eq!(
             p.reason.as_deref(),
-            Some("The face across the edge is curved. Fillet and chamfer work between flat faces only.")
+            Some("The angle between the faces changes along the round the edge runs into.")
         );
-        let err = run(&m, &[p.edge], fillet(1.0)).unwrap_err().to_string();
-        assert!(err.contains("curved"), "{err}");
+        let err = run(&m, &[p.edge], fillet(0.5)).unwrap_err().to_string();
+        assert!(err.contains("the angle between the faces changes"), "{err}");
+        // the tip of a C: its top edge meets both rounds square on
+        let mut c = Vec::new();
+        for k in 0..=36 {
+            let (sn, cs) = (1.5 * PI * f64::from(k) / 36.0).m_sin_cos();
+            c.push([10.0 * cs, 10.0 * sn]);
+        }
+        for k in (0..=36).rev() {
+            let (sn, cs) = (1.5 * PI * f64::from(k) / 36.0).m_sin_cos();
+            c.push([6.0 * cs, 6.0 * sn]);
+        }
+        let ring = build::extrude(&[Polygon::simple(c)], &Frame::WORLD, 0.0, 4.0).unwrap();
+        let p = pick(&ring, [0.0, 0.0, 1.0], [8.0, 0.05, 4.0]);
+        assert!((p.length_mm - 4.0).abs() < 1e-9);
+        assert_eq!(
+            p.reason.as_deref(),
+            Some("The edge ends at a curved face it does not run into smoothly.")
+        );
+        // edges that meet along a round are picked from the face they share
+        let m = plate(30.0, 20.0, 3.0, [3.0; 4], 14);
+        let p = pick(&m, [0.0, 0.0, 1.0], [15.0, 0.1, 3.0]);
+        let front = pick(&m, [0.0, -1.0, 0.0], [15.0, 0.0, 2.9]).edge;
+        let err = run(&m, &[front, p.ring[1].edge], fillet(0.5))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("edges 1 and 2 meet along a round"), "{err}");
+        sound(&run(&m, &[front], fillet(0.5)).unwrap());
+    }
+
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "rounded to f32 as the replies are"
+    )]
+    fn a_rounded_box_loop_with_keys_is_found_by_place_along_its_rounds() {
+        let mut m = plate(30.0, 20.0, 3.0, [3.0; 4], 14);
+        crate::faces::with_key_salt(Some(3), || crate::faces::base_keys(&mut m));
+        // as the engine's replies give them: keyed, and rounded to f32
+        let f32ed = |p: V3| p.map(|c| f64::from(c as f32));
+        let edges: Vec<EdgeRef> = top_loop_of(&m, 15.0)
+            .iter()
+            .map(|e| {
+                let k = keyed(&m, e);
+                EdgeRef {
+                    a: f32ed(k.a),
+                    b: f32ed(k.b),
+                    ..k
+                }
+            })
+            .collect();
+        assert!(edges.iter().all(|e| e.keys.is_some()));
+        let r = run(&m, &edges, fillet(1.0)).unwrap();
+        sound(&r);
+        assert!(r.notes.is_empty());
+        assert_eq!(r.refs.len(), edges.len());
+        assert!(r.refs.iter().zip(&edges).all(|(f, e)| f.keys == e.keys
+            && vec3::len(vec3::sub(f.a, e.a)) < 1e-5
+            && vec3::len(vec3::sub(f.b, e.b)) < 1e-5));
     }
 
     #[test]
