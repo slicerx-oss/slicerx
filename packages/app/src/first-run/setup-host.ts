@@ -150,6 +150,8 @@ export function createHostSetup(host: Host, opts: { stepMs?: number } = {}): App
   const stepMs = opts.stepMs ?? 350
   const printers = host.printers
   const bridge = host.capabilities.printers === 'link' || host.capabilities.printers === 'native'
+  // Only the demo fleet answers on the demo network; a build without it never names it.
+  const demo = host.capabilities.demoPrinters === true
   const find = async (address: string): Promise<PrinterInfo | undefined> => {
     const a = parseAddress(address)
     if (!a || !printers) return undefined
@@ -158,7 +160,7 @@ export function createHostSetup(host: Host, opts: { stepMs?: number } = {}): App
 
   return {
     keychain: host.capabilities.secureStorage,
-    scanRange: bridge ? 'this computer\'s local network' : 'the demo network 192.0.2.0/24',
+    scanRange: bridge ? 'this computer\'s local network' : demo ? 'the demo network 192.0.2.0/24' : 'your local network',
 
     async discover(o = {}) {
       await wait(stepMs * 2, o.signal)
@@ -184,7 +186,7 @@ export function createHostSetup(host: Host, opts: { stepMs?: number } = {}): App
     },
 
     async probe(address, o = {}) {
-      // The demo network answers for the printers the host knows at that address.
+      // The address answers for the printers the host knows there (the demo fleet, or none without a bridge).
       const all = await this.discover(o)
       return all.filter((p) => p.address && parseAddress(p.address)?.host === parseAddress(address)?.host)
     },
@@ -231,8 +233,8 @@ export function createHostSetup(host: Host, opts: { stepMs?: number } = {}): App
         const note = bridge
           ? ''
           : bridgeConnector()?.automatic
-            ? ' The printer bridge in this app is not connected, so only the demo printers answer. Connect it in Settings, Printer bridge.'
-            : ` The browser app reaches printers on your network through ${appName()} Link or the desktop app; here it can reach the demo printers.`
+            ? ` The printer bridge in this app is not connected${demo ? ', so only the demo printers answer' : ''}. Connect it in Settings, Printer bridge.`
+            : ` The browser app reaches printers on your network through ${appName()} Link or the desktop app${demo ? '; here it can reach the demo printers' : ''}.`
         return fail(0, 'unreachable', `Nothing answered at ${a.host}.${note}`)
       }
       if (a.port !== undefined && method.defaultPort !== undefined && a.port !== method.defaultPort) return fail(0, 'unreachable', `${a.host} answered, but not on port ${a.port}.`, 'wrong-port')
