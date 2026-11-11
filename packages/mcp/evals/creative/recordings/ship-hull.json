@@ -2,95 +2,61 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-10T06:06:03.509Z",
+ "capturedAt": "2026-11-11T11:55:48.901Z",
  "steps": [
   {
-   "text": "I'll start with the dimension sheet. The 120 mm length is yours; the other sizes are my guesses for a 1:72-ish diorama piece, so please confirm or edit them.",
    "calls": [
     {
      "name": "pilot.sheet",
      "args": {
-      "title": "Hull section sizes",
+      "title": "Ship hull section",
+      "part": "Hull section: half hull shell, open on top, with ribs inside",
       "views": [
        "front",
        "side",
        "iso"
       ],
-      "part": [
-       {
-        "plane": "yz",
-        "points": [
-         [
-          -30,
-          35
-         ],
-         [
-          -30,
-          8
-         ],
-         [
-          -20,
-          0
-         ],
-         [
-          20,
-          0
-         ],
-         [
-          30,
-          8
-         ],
-         [
-          30,
-          35
-         ]
-        ],
-        "from": 0,
-        "to": 120,
-        "kind": "extrude"
-       }
-      ],
       "dims": [
        {
         "key": "length",
-        "label": "Hull length (along X)",
+        "label": "Section length (along the keel)",
         "value": 120,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
           0,
-          -40,
+          0,
           0
          ],
          "b": [
           120,
-          -40,
+          0,
           0
          ],
          "off": [
           0,
-          -8,
+          -6,
           0
          ]
         }
        },
        {
-        "key": "beam",
-        "label": "Beam (width at deck)",
-        "value": 60,
+        "key": "half_beam",
+        "label": "Half width at the deck line",
+        "value": 25,
         "unit": "mm",
         "source": "guess",
         "at": {
          "a": [
-          60,
-          -30,
-          35
+          0,
+          0,
+          30
          ],
          "b": [
-          60,
-          30,
-          35
+          0,
+          25,
+          30
          ],
          "off": [
           0,
@@ -101,49 +67,49 @@
        },
        {
         "key": "depth",
-        "label": "Depth (keel to deck)",
-        "value": 35,
+        "label": "Height from keel to deck",
+        "value": 30,
         "unit": "mm",
         "source": "guess",
         "at": {
          "a": [
-          60,
-          30,
+          0,
+          0,
           0
          ],
          "b": [
-          60,
-          30,
-          35
+          0,
+          0,
+          30
          ],
          "off": [
+          -6,
           0,
-          6,
           0
          ]
         }
        },
        {
-        "key": "wall",
-        "label": "Planking thickness",
-        "value": 2,
+        "key": "plank_thickness",
+        "label": "Plank thickness (shell wall)",
+        "value": 1.5,
         "unit": "mm",
         "source": "guess",
         "at": {
          "a": [
-          60,
-          -30,
-          20
+          0,
+          0,
+          0
          ],
          "b": [
-          60,
-          -28,
-          20
+          0,
+          0,
+          1.5
          ],
          "off": [
+          -3,
           0,
-          0,
-          3
+          0
          ]
         }
        },
@@ -166,27 +132,27 @@
          ],
          "off": [
           0,
-          -6,
+          -10,
           0
          ]
         }
        },
        {
-        "key": "plank_width",
-        "label": "Plank width (outside face)",
-        "value": 5,
+        "key": "rib_thickness",
+        "label": "Rib thickness",
+        "value": 1.5,
         "unit": "mm",
         "source": "guess",
         "at": {
          "a": [
-          60,
-          -30,
-          10
+          0,
+          0,
+          0
          ],
          "b": [
-          60,
-          -30,
-          15
+          1.5,
+          0,
+          0
          ],
          "off": [
           0,
@@ -196,74 +162,256 @@
         }
        }
       ],
-      "addModels": false
+      "part_profile": []
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"length\":120,\"beam\":60,\"depth\":35,\"wall\":2,\"rib_spacing\":15,\"plank_width\":5},\"changed\":[]}}"
+    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"part: Invalid input: expected array, received string\"]}"
    ],
-   "text": "Sizes confirmed. Next I'll plan the features before building.",
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Ship hull section",
+      "part": [
+       {
+        "plane": "yz",
+        "points": [
+         [
+          0,
+          30
+         ],
+         [
+          0,
+          8
+         ],
+         [
+          3,
+          3
+         ],
+         [
+          8,
+          0.5
+         ],
+         [
+          15,
+          0
+         ],
+         [
+          22,
+          2
+         ],
+         [
+          25,
+          8
+         ],
+         [
+          25,
+          30
+         ]
+        ],
+        "from": 0,
+        "to": 120
+       }
+      ],
+      "views": [
+       "front",
+       "side",
+       "iso"
+      ],
+      "dims": [
+       {
+        "key": "length",
+        "label": "Section length (along the keel)",
+        "value": 120,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          120,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "half_beam",
+        "label": "Half width at the deck line",
+        "value": 25,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          30
+         ],
+         "b": [
+          0,
+          25,
+          30
+         ],
+         "off": [
+          0,
+          0,
+          4
+         ]
+        }
+       },
+       {
+        "key": "depth",
+        "label": "Height from keel to deck",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          30
+         ],
+         "off": [
+          -6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "plank_thickness",
+        "label": "Plank thickness (shell wall)",
+        "value": 1.5,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          1.5
+         ],
+         "off": [
+          -3,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "rib_spacing",
+        "label": "Rib spacing",
+        "value": 15,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          15,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -10,
+          0
+         ]
+        }
+       },
+       {
+        "key": "rib_thickness",
+        "label": "Rib thickness",
+        "value": 1.5,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          1.5,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -4,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"length\":120,\"half_beam\":25,\"depth\":30,\"plank_thickness\":1.5,\"rib_spacing\":15,\"rib_thickness\":1.5},\"changed\":[]}}"
+   ],
    "calls": [
     {
      "name": "design.plan",
      "args": {
-      "part": "Wooden ship hull section",
+      "part": "Hull section",
       "units": "mm",
-      "overall": {
-       "x": 120,
-       "y": 60,
-       "z": 35
-      },
       "features": [
        {
         "name": "Hull shell",
-        "kind": "extrude",
         "sizes": {
          "length": 120,
-         "beam": 60,
-         "depth": 35
-        }
-       },
-       {
-        "name": "Hollow interior",
-        "kind": "shell",
-        "sizes": {
-         "wall": 2
+         "half_beam": 25,
+         "depth": 30,
+         "plank_thickness": 1.5
         }
        },
        {
         "name": "Ribs",
-        "kind": "extrude",
         "sizes": {
          "rib_spacing": 15,
-         "rib_thickness": 2,
-         "count": 8
-        },
-        "kinds": {
-         "count": "count"
-        }
-       },
-       {
-        "name": "Plank seams",
-        "kind": "groove",
-        "sizes": {
-         "plank_width": 5,
-         "groove_depth": 0.6
+         "rib_thickness": 1.5,
+         "depth": 30,
+         "half_beam": 25
         }
        }
       ],
       "assumptions": [
-       "Open-top section: the deck side is cut flat, so the inside of the hull shows.",
-       "Hull is a V-bottom profile (beam 60, depth 35), extruded along X for 120 mm.",
-       "Ribs are 2 mm thick, set 15 mm apart, running across the interior, with 8 ribs.",
-       "Curved planking is shown as horizontal plank seams 5 mm apart, cut 0.6 mm deep into the inside walls.",
-       "Printed upright (open top up), no supports needed for the open top."
+       "Open-top half hull, cut on the centerline, so the inside shows the ribs and planking.",
+       "Hull shape is a rounded-bottom section extruded 120 mm along the keel; the curve is a simplified version of a real hull.",
+       "Ribs run across the width, 15 mm apart, spanning the inside of the shell.",
+       "Wall of 1.5 mm stands for the planking; no separate plank seams are modeled.",
+       "Prints on its side or with the keel down on the bed, open face up."
       ],
       "questions": [
-       "Should the plank seams follow the curve of the hull (lofted sections) or stay straight?"
+       "Do you want individual plank seam lines modeled on the outside, or a smooth shell?",
+       "Is the 120 mm length the keel length you need, with the 25 mm half beam and 30 mm depth as guesses?"
       ]
      }
     }
@@ -273,23 +421,58 @@
    "seen": [
     "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_1\",\"accepted\":true}}"
    ],
-   "text": "The plan is approved. Building the hull shell first.",
    "calls": [
     {
      "name": "design.new",
      "args": {
-      "name": "Wooden ship hull section"
+      "name": "Ship hull section"
      }
     },
     {
      "name": "geom.extrude",
      "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Hull shell",
-      "name": "Hull",
-      "distance_mm": 120,
-      "extent": "oneSide",
-      "operation": "new",
+      "design": "Ship hull section",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           0,
+           30
+          ],
+          [
+           0,
+           8
+          ],
+          [
+           3,
+           3
+          ],
+          [
+           8,
+           0.5
+          ],
+          [
+           15,
+           0
+          ],
+          [
+           22,
+           2
+          ],
+          [
+           25,
+           8
+          ],
+          [
+           25,
+           30
+          ]
+         ]
+        }
+       ]
+      },
       "frame": {
        "origin": [
         0,
@@ -300,104 +483,112 @@
         1,
         0,
         0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
        ]
       },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -30,
-           35
-          ],
-          [
-           -30,
-           8
-          ],
-          [
-           -20,
-           0
-          ],
-          [
-           20,
-           0
-          ],
-          [
-           30,
-           8
-          ],
-          [
-           30,
-           35
-          ]
-         ]
-        }
-       ]
-      }
+      "distance_mm": 120,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Hull",
+      "feature": "Hull shell"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Started Wooden ship hull section (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
-    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 120 mm. The part was off the bed, so it moved to the plate by (68, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Sketch extrude 120 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":120,\"unit\":\"mm\"},\"feature\":\"Hull shell\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":242400,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":132,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":242400}],\"placedMm\":[68,128],\"landed\":\"The part was off the bed, so it moved to the plate by (68, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+    "{\"ok\":true,\"summary\":\"Started Ship hull section (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Ship hull section\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 120 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Ship hull section\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Sketch extrude 120 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":120,\"unit\":\"mm\"},\"feature\":\"Hull shell\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":84120,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":176,\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":84120}]}}"
    ],
-   "text": "The hull solid is in place at 120 x 60 x 35 mm. Next I'll hollow it with the top left open.",
    "calls": [
     {
      "name": "geom.shell",
      "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Hollow interior",
+      "design": "Ship hull section",
       "open": [
        {
         "at": [
          60,
-         0,
-         35
+         12.5,
+         30
         ],
         "normal": [
          0,
          0,
          1
         ]
+       },
+       {
+        "at": [
+         60,
+         0,
+         20
+        ],
+        "normal": [
+         0,
+         -1,
+         0
+        ]
        }
       ],
-      "wall_mm": 2
+      "wall_mm": 1.5,
+      "feature": "Hull shell"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Shelled: step 2, Shell, 2 mm walls, 1 open face\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q802\",\"name\":\"Shell, 2 mm walls, 1 open face\",\"op\":\"shell\",\"part\":0,\"value\":{\"label\":\"Wall\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Hollow interior\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":35058.555,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":236,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":35058.555}],\"placedMm\":[68,128]}}"
+    "{\"ok\":true,\"summary\":\"Shelled: step 2, Shell, 1.5 mm walls, 2 open faces\",\"result\":{\"design\":\"d1\",\"name\":\"Ship hull section\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q802\",\"name\":\"Shell, 1.5 mm walls, 2 open faces\",\"op\":\"shell\",\"part\":0,\"value\":{\"label\":\"Wall\",\"value\":1.5,\"unit\":\"mm\"},\"feature\":\"Hull shell\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":11526.581,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":253014,\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":11526.581}]}}"
    ],
-   "text": "The shell is hollow with a 2 mm wall. Now the first rib, which I'll join to the walls and then array.",
    "calls": [
     {
      "name": "geom.extrude",
      "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
-      "distance_mm": 2,
-      "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
+      "design": "Ship hull section",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           1,
+           28.5
+          ],
+          [
+           1,
+           9
+          ],
+          [
+           3.5,
+           4.5
+          ],
+          [
+           8,
+           1.5
+          ],
+          [
+           15,
+           1
+          ],
+          [
+           21.5,
+           3
+          ],
+          [
+           24.5,
+           9
+          ],
+          [
+           24.5,
+           28.5
+          ]
+         ]
+        }
+       ]
+      },
       "frame": {
        "origin": [
-        6,
+        7.5,
         0,
         0
        ],
@@ -405,58 +596,27 @@
         1,
         0,
         0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
        ]
       },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -28.5,
-           35
-          ],
-          [
-           -28.5,
-           9
-          ],
-          [
-           -19,
-           1.5
-          ],
-          [
-           19,
-           1.5
-          ],
-          [
-           28.5,
-           9
-          ],
-          [
-           28.5,
-           35
-          ]
-         ]
-        }
-       ]
-      }
+      "distance_mm": 1.5,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Rib",
+      "feature": "Ribs"
      }
-    },
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Extruded: step 3, Sketch extrude 1.5 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Ship hull section\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q803\",\"name\":\"Sketch extrude 1.5 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":1.5,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":12426.019,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":253014,\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":11526.581},{\"index\":1,\"name\":\"Rib\",\"slot\":1,\"triangles\":436,\"minMm\":[7.5,1,1],\"sizeMm\":[1.5,23.5,27.5],\"volumeMm3\":899.438}]}}"
+   ],
+   "calls": [
     {
      "name": "geom.array",
      "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
+      "design": "Ship hull section",
+      "part": 1,
       "spec": {
        "kind": "linear",
        "count": 8,
@@ -467,668 +627,43 @@
        ]
       },
       "merge": true,
-      "part": 0
+      "feature": "Ribs"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Joined: step 3, Sketch extrude 2 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q803\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":38651.282,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":1726,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":38651.282}],\"placedMm\":[68,128]}}",
-    "{\"ok\":false,\"summary\":\"The step did not go through: sx-geom array: array: the merged copies are unsafe at mesh storage precision (intersecting faces); try another count, or keep the copies unmerged. The design is unchanged. The cut or join left faces that line up or slivers. For a cut, extend the cutting shape about 0.05 mm past the faces it meets; for a join, overlap the bodies about 0.05 mm rather than letting faces just touch. Try again once, and tell the person in plain words if it still fails; never quote the engine text.\"}"
-   ],
-   "text": "The array step failed on the merge, so I'll join the remaining seven ribs one at a time instead.",
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
-      "distance_mm": 2,
-      "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
-      "frame": {
-       "origin": [
-        21,
-        0,
-        0
-       ],
-       "normal": [
-        1,
-        0,
-        0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -28.5,
-           35
-          ],
-          [
-           -28.5,
-           9
-          ],
-          [
-           -19,
-           1.5
-          ],
-          [
-           19,
-           1.5
-          ],
-          [
-           28.5,
-           9
-          ],
-          [
-           28.5,
-           35
-          ]
-         ]
-        }
-       ]
-      }
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
-      "distance_mm": 2,
-      "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
-      "frame": {
-       "origin": [
-        36,
-        0,
-        0
-       ],
-       "normal": [
-        1,
-        0,
-        0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -28.5,
-           35
-          ],
-          [
-           -28.5,
-           9
-          ],
-          [
-           -19,
-           1.5
-          ],
-          [
-           19,
-           1.5
-          ],
-          [
-           28.5,
-           9
-          ],
-          [
-           28.5,
-           35
-          ]
-         ]
-        }
-       ]
-      }
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
-      "distance_mm": 2,
-      "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
-      "frame": {
-       "origin": [
-        51,
-        0,
-        0
-       ],
-       "normal": [
-        1,
-        0,
-        0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -28.5,
-           35
-          ],
-          [
-           -28.5,
-           9
-          ],
-          [
-           -19,
-           1.5
-          ],
-          [
-           19,
-           1.5
-          ],
-          [
-           28.5,
-           9
-          ],
-          [
-           28.5,
-           35
-          ]
-         ]
-        }
-       ]
-      }
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
-      "distance_mm": 2,
-      "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
-      "frame": {
-       "origin": [
-        66,
-        0,
-        0
-       ],
-       "normal": [
-        1,
-        0,
-        0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -28.5,
-           35
-          ],
-          [
-           -28.5,
-           9
-          ],
-          [
-           -19,
-           1.5
-          ],
-          [
-           19,
-           1.5
-          ],
-          [
-           28.5,
-           9
-          ],
-          [
-           28.5,
-           35
-          ]
-         ]
-        }
-       ]
-      }
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
-      "distance_mm": 2,
-      "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
-      "frame": {
-       "origin": [
-        81,
-        0,
-        0
-       ],
-       "normal": [
-        1,
-        0,
-        0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -28.5,
-           35
-          ],
-          [
-           -28.5,
-           9
-          ],
-          [
-           -19,
-           1.5
-          ],
-          [
-           19,
-           1.5
-          ],
-          [
-           28.5,
-           9
-          ],
-          [
-           28.5,
-           35
-          ]
-         ]
-        }
-       ]
-      }
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
-      "distance_mm": 2,
-      "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
-      "frame": {
-       "origin": [
-        96,
-        0,
-        0
-       ],
-       "normal": [
-        1,
-        0,
-        0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -28.5,
-           35
-          ],
-          [
-           -28.5,
-           9
-          ],
-          [
-           -19,
-           1.5
-          ],
-          [
-           19,
-           1.5
-          ],
-          [
-           28.5,
-           9
-          ],
-          [
-           28.5,
-           35
-          ]
-         ]
-        }
-       ]
-      }
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Ribs",
-      "distance_mm": 2,
-      "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
-      "frame": {
-       "origin": [
-        111,
-        0,
-        0
-       ],
-       "normal": [
-        1,
-        0,
-        0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -28.5,
-           35
-          ],
-          [
-           -28.5,
-           9
-          ],
-          [
-           -19,
-           1.5
-          ],
-          [
-           19,
-           1.5
-          ],
-          [
-           28.5,
-           9
-          ],
-          [
-           28.5,
-           35
-          ]
-         ]
-        }
-       ]
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Joined: step 4, Sketch extrude 2 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smuo69q805\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":42244.009,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":1952,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":42244.009}],\"placedMm\":[68,128]}}",
-    "{\"ok\":true,\"summary\":\"Joined: step 5, Sketch extrude 2 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smuo69q806\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":45836.733,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":2168,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":45836.733}],\"placedMm\":[68,128]}}",
-    "{\"ok\":true,\"summary\":\"Joined: step 6, Sketch extrude 2 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smuo69q807\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":49429.456,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":2400,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":49429.456}],\"placedMm\":[68,128]}}",
-    "{\"ok\":true,\"summary\":\"Joined: step 7, Sketch extrude 2 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smuo69q808\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":53022.187,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":2586,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":53022.187}],\"placedMm\":[68,128]}}",
-    "{\"ok\":true,\"summary\":\"Joined: step 8, Sketch extrude 2 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smuo69q809\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":56614.917,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":2828,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":56614.917}],\"placedMm\":[68,128]}}",
-    "{\"ok\":true,\"summary\":\"Joined: step 9, Sketch extrude 2 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smuo69q80a\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":60207.648,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":3046,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":60207.648}],\"placedMm\":[68,128]}}",
-    "{\"ok\":true,\"summary\":\"Joined: step 10, Sketch extrude 2 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smuo69q80b\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":63800.379,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":3412,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":63800.379}],\"placedMm\":[68,128]}}"
-   ],
-   "text": "All eight ribs are joined. Next I'll cut the plank seams: five horizontal grooves per inside wall, 1 mm tall and 0.6 mm deep.",
-   "calls": [
-    {
-     "name": "geom.subtract",
-     "args": {
-      "design": "Wooden ship hull section",
-      "feature": "Plank seams",
-      "label": "Plank seams",
-      "part": 0,
-      "solids": [
-       {
-        "type": "box",
-        "min": [
-         2,
-         27.9,
-         10
-        ],
-        "max": [
-         118,
-         28.6,
-         11
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         27.9,
-         15
-        ],
-        "max": [
-         118,
-         28.6,
-         16
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         27.9,
-         20
-        ],
-        "max": [
-         118,
-         28.6,
-         21
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         27.9,
-         25
-        ],
-        "max": [
-         118,
-         28.6,
-         26
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         27.9,
-         30
-        ],
-        "max": [
-         118,
-         28.6,
-         31
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         -28.6,
-         10
-        ],
-        "max": [
-         118,
-         -27.9,
-         11
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         -28.6,
-         15
-        ],
-        "max": [
-         118,
-         -27.9,
-         16
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         -28.6,
-         20
-        ],
-        "max": [
-         118,
-         -27.9,
-         21
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         -28.6,
-         25
-        ],
-        "max": [
-         118,
-         -27.9,
-         26
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         2,
-         -28.6,
-         30
-        ],
-        "max": [
-         118,
-         -27.9,
-         31
-        ]
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Subtracted: step 11, Plank seams\",\"result\":{\"design\":\"d1\",\"name\":\"Wooden ship hull section\",\"exact\":false,\"steps\":11,\"lastStep\":{\"index\":11,\"id\":\"smuo69q80c\",\"name\":\"Plank seams\",\"op\":\"subtract\",\"part\":0,\"feature\":\"Plank seams\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":63088.298,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":6912,\"minMm\":[0,-30,0],\"sizeMm\":[120,60,35],\"volumeMm3\":63088.298}],\"placedMm\":[68,128]}}"
+    "{\"ok\":true,\"summary\":\"Arrayed 8 copies: step 4, Array of 8, merged\",\"result\":{\"design\":\"d1\",\"name\":\"Ship hull section\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smuo69q804\",\"name\":\"Array of 8, merged\",\"op\":\"array.merged\",\"part\":1,\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":18722.081,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":253014,\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":11526.581},{\"index\":1,\"name\":\"Rib\",\"slot\":1,\"triangles\":3488,\"minMm\":[7.5,1,1],\"sizeMm\":[106.5,23.5,27.5],\"volumeMm3\":7195.5}]}}"
    ],
    "calls": [
+    {
+     "name": "geom.boolean",
+     "args": {
+      "design": "Ship hull section",
+      "op": "union",
+      "part": 0,
+      "with_parts": [
+       1
+      ],
+      "feature": "Ribs"
+     }
+    },
     {
      "name": "design.check",
      "args": {
       "planId": "plan_1",
-      "design": "Wooden ship hull section"
+      "design": "Ship hull section"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Wooden ship hull section (d1, tied to the plan) matches plan plan_1: all 4 checks pass\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Wooden ship hull section\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"overall size\",\"want\":\"120 x 60 x 35 mm\",\"got\":\"120 x 60 x 35 mm\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"4 features, each built by a step tagged with its name\",\"got\":\"11 steps for 4 features (Ribs 8)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1.4 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":120,\"y\":60,\"z\":35},\"holes\":[],\"features\":11,\"steps\":[\"Sketch extrude 120 mm\",\"Shell, 2 mm walls, 1 open face\",\"Sketch extrude 2 mm\",\"Sketch extrude 2 mm\",\"Sketch extrude 2 mm\",\"Sketch extrude 2 mm\",\"Sketch extrude 2 mm\",\"Sketch extrude 2 mm\",\"Sketch extrude 2 mm\",\"Sketch extrude 2 mm\",\"Plank seams\"],\"tags\":[\"Hull shell\",\"Hollow interior\",\"Ribs\",\"Ribs\",\"Ribs\",\"Ribs\",\"Ribs\",\"Ribs\",\"Ribs\",\"Ribs\",\"Plank seams\"],\"stepIds\":[\"smuo69q801\",\"smuo69q802\",\"smuo69q803\",\"smuo69q805\",\"smuo69q806\",\"smuo69q807\",\"smuo69q808\",\"smuo69q809\",\"smuo69q80a\",\"smuo69q80b\",\"smuo69q80c\"],\"watertight\":true,\"minWallMm\":1.4}}}"
+    "{\"ok\":true,\"summary\":\"Union: step 5, Join 1 part\",\"result\":{\"design\":\"d1\",\"name\":\"Ship hull section\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smuo69q805\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":0,\"feature\":\"Ribs\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":18328.299,\"parts\":[{\"index\":0,\"name\":\"Hull\",\"slot\":1,\"triangles\":181002,\"minMm\":[0,0,0],\"sizeMm\":[120,25,30],\"volumeMm3\":18328.299}]}}",
+    "{\"ok\":true,\"summary\":\"Ship hull section (d1, tied to the plan): 1 of 3 checks against plan plan_1 failed: minimum wall (want at least 0.8 mm (twice the 0.4 mm nozzle), got 0.3 mm)\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Ship hull section\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"feature count\",\"want\":\"2 features, each built by a step tagged with its name\",\"got\":\"5 steps for 2 features (Hull shell 2, Ribs 3)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"0.3 mm\",\"pass\":false}],\"body\":{\"size\":{\"x\":120,\"y\":25,\"z\":30},\"holes\":[{\"diameterMm\":118.58757880021743},{\"diameterMm\":119.10532235750885}],\"features\":5,\"steps\":[\"Sketch extrude 120 mm\",\"Shell, 1.5 mm walls, 2 open faces\",\"Sketch extrude 1.5 mm\",\"Array of 8, merged\",\"Join 1 part\"],\"tags\":[\"Hull shell\",\"Hull shell\",\"Ribs\",\"Ribs\",\"Ribs\"],\"stepIds\":[\"smuo69q801\",\"smuo69q802\",\"smuo69q803\",\"smuo69q804\",\"smuo69q805\"],\"watertight\":true,\"minWallMm\":0.296}}}"
    ],
-   "text": "The part is built and passes its plan check. I'll slice it to get print time and filament use.",
-   "calls": [
-    {
-     "name": "slice",
-     "args": {}
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"1 plate, 1h 13m, 35.1 g, $0.88\",\"result\":{\"plates\":[{\"plate\":1,\"layers\":175,\"timeS\":4390,\"grams\":35.2,\"cost\":0.88,\"warnings\":[]}],\"total\":{\"timeS\":4390,\"grams\":35.2,\"cost\":0.88,\"layers\":175}}}"
-   ],
-   "text": "The hull section is built in the project as \"Wooden ship hull section\": 120 x 60 x 35 mm, open on top, with a 2 mm wall, eight 2 mm ribs 15 mm apart, and plank seams cut 0.6 mm deep into both inside walls. It passed its plan check, is watertight, and slices to 1 h 13 min and 35 g of PLA ($0.88) on your P1S.\n\nThe beam (60 mm), depth (35 mm), wall (2 mm), rib spacing (15 mm), plank width (5 mm) and rib thickness (2 mm) were my guesses; you confirmed them on the sheet, but they are still estimates for the look you want. The plank seams are straight, not curved; I can rebuild them to follow the hull curve if you want that effect. Nothing has been sent to the printer. Say the word and I'll queue it."
+   "text": "The hull section is built, but it does not pass the plan check yet, so I have stopped there.\n\n- **Built:** a 120 mm long half hull (25 mm half beam, 30 mm deep) with a 1.5 mm shell, open on top and on the centerline, plus 8 ribs at 15 mm spacing inside it. The ribs are joined to the shell as one body.\n- **Failed check:** minimum wall is 0.3 mm, and the plan wants at least 0.8 mm (twice the 0.4 mm nozzle). I think it comes from where the rib outlines meet the curved bottom and the open centerline edge, but I did not confirm the exact spot.\n- **Guessed sizes:** half beam, depth, 1.5 mm planking, 15 mm rib spacing and 1.5 mm ribs. The 120 mm length is yours.\n- **Not done:** nothing is sliced or sent to the P1S.\n\nDo you want me to change the shell wall, rebuild the rib outlines to sit fully inside the wall, or thicken the hull to a 2 mm skin, which would also change the sheet you confirmed? Once you pick, I'll rerun the check and then slice for the P1S."
   }
  ],
  "defaultAnswer": true,
