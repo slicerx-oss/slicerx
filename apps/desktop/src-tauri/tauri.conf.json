@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5174",
     "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "node scripts/pack-mcp.mjs && pnpm build"
+    "beforeBuildCommand": "node scripts/pack-mcp.mjs && node scripts/build-page.mjs"
   },
   "app": {
     "windows": [

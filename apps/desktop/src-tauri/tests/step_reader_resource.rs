@@ -71,6 +71,6 @@ fn the_folder_is_the_one_the_bundle_and_the_asset_scope_name() {
     );
     assert_eq!(
         conf["build"]["beforeBuildCommand"],
-        "node scripts/pack-mcp.mjs && pnpm build"
+        "node scripts/pack-mcp.mjs && node scripts/build-page.mjs"
     );
 }

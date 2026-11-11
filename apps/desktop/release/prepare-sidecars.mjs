@@ -30,7 +30,8 @@ const configPath = arg('--config')
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: repo, stdio: 'inherit', ...opts })
 const resources = resolve(arg('--resources') ?? join(tauri, 'resources'))
 
-run('node', [join(repo, 'packages', 'mcp', 'scripts', 'build.mjs'), '--standalone', join(resources, 'mcp'), '--step-reader'])
+// through pack-mcp.mjs, which writes only the files that changed, so the app does not recompile for an unchanged pack
+run('node', [join(repo, 'apps', 'desktop', 'scripts', 'pack-mcp.mjs'), '--out', join(resources, 'mcp')])
 
 const model = join(resources, 'sx-watch-siglip2.onnx')
 const url = process.env.SX_WATCH_MODEL_URL
