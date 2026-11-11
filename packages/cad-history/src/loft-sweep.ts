@@ -23,11 +23,13 @@ export interface LoftOptions {
   thicken?: Thicken | object | undefined
   operation?: SolidOperation | undefined
   name?: string | undefined
+  /** The filament slot of the new body a new operation makes, from 1 (else the slot the part it replaces had, or 1). */
+  slot?: number | undefined
 }
 
 /** The sketch.loft step for these profiles and options: smooth and closed only when on. */
 export function loftParams(o: LoftOptions): StepParams {
-  return plain({ op: 'sketch.loft', profiles: o.profiles, ...(o.smooth ? { smooth: true } : {}), ...(o.closed ? { closed: true } : {}), ...(o.thicken ? { thicken: o.thicken } : {}), operation: o.operation, name: o.name })
+  return plain({ op: 'sketch.loft', profiles: o.profiles, ...(o.smooth ? { smooth: true } : {}), ...(o.closed ? { closed: true } : {}), ...(o.thicken ? { thicken: o.thicken } : {}), operation: o.operation, name: o.name, slot: o.slot })
 }
 
 /** A sweep's profile, path and options, copied as plain JSON like LoftOptions. */
@@ -44,11 +46,13 @@ export interface SweepOptions {
   endProfile?: SweepEnd | object | undefined
   operation?: SolidOperation | undefined
   name?: string | undefined
+  /** The filament slot of the new body a new operation makes, from 1 (else the slot the part it replaces had, or 1). */
+  slot?: number | undefined
 }
 
 /** The sketch.sweep step for this profile, path and options: the taper, twist and ease only when they change it. */
 export function sweepParams(o: SweepOptions): StepParams {
-  return plain({ op: 'sketch.sweep', profile: o.profile, path: o.path, ...(o.thicken ? { thicken: o.thicken } : {}), ...(o.scaleEnd !== undefined && o.scaleEnd !== 1 ? { scaleEnd: o.scaleEnd } : {}), ...(o.twistDeg ? { twistDeg: o.twistDeg } : {}), ...(o.ease === 'smooth' ? { ease: o.ease } : {}), ...(o.endProfile ? { endProfile: o.endProfile } : {}), operation: o.operation, name: o.name })
+  return plain({ op: 'sketch.sweep', profile: o.profile, path: o.path, ...(o.thicken ? { thicken: o.thicken } : {}), ...(o.scaleEnd !== undefined && o.scaleEnd !== 1 ? { scaleEnd: o.scaleEnd } : {}), ...(o.twistDeg ? { twistDeg: o.twistDeg } : {}), ...(o.ease === 'smooth' ? { ease: o.ease } : {}), ...(o.endProfile ? { endProfile: o.endProfile } : {}), operation: o.operation, name: o.name, slot: o.slot })
 }
 
 const BED: Pick<FaceFrame, 'origin' | 'u' | 'v'> = { origin: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0] }

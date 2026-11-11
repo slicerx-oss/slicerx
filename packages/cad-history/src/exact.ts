@@ -6,7 +6,7 @@
 // solid, returns null and the mesh path runs it; so does a step the kernel fails, with a note. The mesh each step
 // leaves is the solid's tessellation, with the solid's faces and keys.
 import type { FaceFrame, FreeShape, MovedFace, Polygon, Shape, Vec2, Vec3 } from './types'
-import { direction, invert, point, type HistoryMesh, type Mat4, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
+import { direction, invert, newSlot, point, type HistoryMesh, type Mat4, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 export type Call = (op: string, request: unknown) => Promise<unknown>
 
@@ -385,7 +385,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
           out[s.part] = await part(target!, r)
           return out
         }
-        const body = await part({ name: p.name ?? 'Body', slot: out[s.part]?.slot ?? 1 }, r)
+        const body = await part({ name: p.name ?? 'Body', slot: newSlot(p) ?? out[s.part]?.slot ?? 1 }, r)
         if (s.part < out.length) out[s.part] = body
         else out.push(body)
         return out

@@ -360,6 +360,15 @@ const shape = z
   .describe('What to extrude, in the plane: rectangle, circle, slot, polygon or text centered on placement.center, a free sketch of closed loops (as typed), or SVG artwork scaled to widthMm')
 
 const operation = z.enum(['new', 'join', 'cut']).default('new').describe('new: a separate body; join: add to target; cut: remove from target')
+/** The filament a new body prints in, as geom.build takes it. */
+const slotArg = z.number().int().min(1).max(32).optional().describe('With a design and operation new: the filament of the new part, from 1 (default 1)')
+
+/** A filament slot names a new body on a design: a join or a cut changes a part that keeps its own filament. */
+function slotOk(i: { slot?: number | undefined; design?: string | undefined; operation: string }): void {
+  if (i.slot === undefined) return
+  if (!i.design) throw new ToolInputError('slot: a filament is for a new part of a design; give the design, or leave slot out')
+  if (i.operation !== 'new') throw new ToolInputError(`slot: a ${i.operation} changes a part that keeps its own filament; leave slot out, or use operation new for a part of its own`)
+}
 const edgeRef = z
   .object({ a: vec3, b: vec3, face: vec3, center: vec3.optional(), keys: z.tuple([z.number(), z.number()]).optional() })
   .describe('An edge as slicerx_geom_edge_pick returns it: end points a and b, the normal of its first face, and on a design the keys of its two faces; pass it as is')
@@ -813,7 +822,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.8.0',
+    version: '1.9.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -834,8 +843,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       feature: featureArg,
       part: partArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
+      slot: slotArg,
     }),
     async run(i) {
+      slotOk(i)
       const spec = { distanceMm: i.distance_mm, extent: i.extent, operation: i.operation, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}), ...(i.flip !== undefined ? { flip: i.flip } : {}), ...(i.taper_deg !== undefined ? { taperDeg: i.taper_deg } : {}) }
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Extruded'
       if (i.sketch !== undefined && (i.shape || i.frame)) throw new ToolInputError('sketch: the sketch gives the shape and plane; leave shape and frame out')
@@ -849,7 +860,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
         const piece = newPiece(d, i)
-        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: piece ?? i.name })
+        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: piece ?? i.name, slot: i.slot })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
         return pieceNamed(stepOut(d, verb), piece, i.name)
       }
@@ -862,7 +873,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -878,8 +889,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       feature: featureArg,
       part: partArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
+      slot: slotArg,
     }),
     async run(i) {
+      slotOk(i)
       if (i.sketch !== undefined && (i.loops || i.frame)) throw new ToolInputError('sketch: the sketch gives the loops and plane; leave loops and frame out')
       if (i.loops) splinesOk(i.loops)
       if (i.design) {
@@ -890,7 +903,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const drawn = k ? k.loops : i.loops
         if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
         const piece = newPiece(d, i)
-        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: piece ?? i.name })
+        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: piece ?? i.name, slot: i.slot })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
         return pieceNamed(stepOut(d, 'Revolved'), piece, i.name)
       }
@@ -923,7 +936,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -940,8 +953,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       feature: featureArg,
       part: partArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
+      slot: slotArg,
     }),
     async run(i) {
+      slotOk(i)
       if (!i.profiles === !i.sketches) throw new ToolInputError(i.profiles ? 'sketches: give profiles or sketches, not both' : 'profiles: give 2 or more profiles, or finished sketch ids as sketches')
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Lofted'
       const th = i.thicken === undefined ? undefined : parsedAt(thickenShape, i.thicken, 'thicken')
@@ -951,7 +966,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const part = targetPart(d, i.target, i.part)
         const profiles = i.sketches ? i.sketches.map((id) => finished(id, d.id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
         const piece = newPiece(d, i)
-        const params: StepParams = loftParams({ profiles, ...loftOpts, operation: i.operation, name: piece ?? i.name })
+        const params: StepParams = loftParams({ profiles, ...loftOpts, operation: i.operation, name: piece ?? i.name, slot: i.slot })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
         return pieceNamed(stepOut(d, verb), piece, i.name)
       }
@@ -973,7 +988,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.8.0',
+    version: '1.9.0',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale, twist_deg and end_profile taper, turn and reshape it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
@@ -993,8 +1008,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       feature: featureArg,
       part: z.number().int().min(0).optional(),
       name: z.string().optional(),
+      slot: slotArg,
     }),
     async run(i) {
+      slotOk(i)
       if (!i.profile === !i.profile_sketch) throw new ToolInputError(i.profile ? 'profile_sketch: give profile or profile_sketch, not both' : 'profile: give the profile, or a finished sketch id as profile_sketch')
       if (!i.path === !i.path_sketch) throw new ToolInputError(i.path ? 'path_sketch: give path or path_sketch, not both' : 'path: give the path, or a finished sketch id as path_sketch')
       if (i.path && !i.path.loops && !i.path.points) throw new ToolInputError('path: give the path as loops on a plane or as points')
@@ -1031,7 +1048,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const j = i.path_sketch ? finished(i.path_sketch, d.id) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points, ...smooth } : { frame: frameOf(qf), loops: pathLoops! }
         const piece = newPiece(d, i)
-        const params: StepParams = sweepParams({ profile, path, thicken: th, ...law, ...morph, operation: i.operation, name: piece ?? i.name })
+        const params: StepParams = sweepParams({ profile, path, thicken: th, ...law, ...morph, operation: i.operation, name: piece ?? i.name, slot: i.slot })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
         return pieceNamed(stepOut(d, verb), piece, i.name)
       }
