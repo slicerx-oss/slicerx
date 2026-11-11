@@ -209,7 +209,8 @@ export const HISTORY_VERSION = 1
 export const keepsArrayOf = (name: unknown): name is string => typeof name === 'string' && name.trim() !== '' && name.length <= 120
 
 let seq = 0
-export const stepId = (): string => `s${Date.now().toString(36)}${(++seq).toString(36)}`
+// the counter is decimal so every id holds a digit: tools and replays that pick ids out of text tell an id from a word by its digit
+export const stepId = (): string => `s${Date.now().toString(36)}${++seq}`
 
 // Small matrix and vector helpers (column-major, like three.js).
 

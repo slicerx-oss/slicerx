@@ -73,7 +73,10 @@ export interface Timeline {
   marker: number
 }
 
-/** When a step was made, from its id (`stepId`: s, 8 base 36 digits of Date.now, then a counter). Null for other ids. */
+/**
+ * When a step was made, from its id (`stepId`: s, 8 base 36 digits of Date.now, then a counter). Null for other ids. Older
+ * ids wrote the counter in base 36 and newer ones in decimal; reading either as base 36 keeps them in the order made.
+ */
 export function madeAt(id: string): { time: number; seq: number } | null {
   const m = /^s([0-9a-z]{8})([0-9a-z]+)$/.exec(id)
   if (!m) return null

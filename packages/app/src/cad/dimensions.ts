@@ -48,9 +48,10 @@ export function wholeTriangle(e: PlateEntry, partIndex: number, triangle: number
 }
 
 let seq = 0
+// a decimal counter, so every id holds a digit, as step ids do
 const newId = (taken: Set<string>): string => {
   let id = ''
-  do id = `d${Date.now().toString(36)}${(++seq).toString(36)}`
+  do id = `d${Date.now().toString(36)}${++seq}`
   while (taken.has(id))
   return id
 }
