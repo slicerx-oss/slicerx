@@ -27,6 +27,11 @@
 // - front-dock (Prusa Core One with INDX): one Smart Head and passive nozzle tools parked in docks along the front.
 //   The head backs the tool it carries into its dock and releases it, runs along X in front of the bed to the next
 //   dock, latches that tool and pulls it out, heats it, blobs and wipes at the purge collector and returns.
+// - printtool-rack (Bambu Lab H3C): one toolhead and nine PrintTools, each a hotend with its own filament path, parked
+//   on the SwapTek rack across the front of the chamber. The rack lowers to the head's height, the head backs the
+//   PrintTool it carries into its dock and unlocks it, picks the PrintTool of the next filament's hotend from its dock,
+//   the rack rises again, and the head goes to the purge chute at the back right and leaves it by the change G-code's
+//   exit moves.
 //
 // Moves are timed with trapezoidal velocity profiles from the printer's speed and acceleration limits,
 // so the head never jumps. The firmware's own work (cutting, loading, flushing, latching) is a dwell of
@@ -36,7 +41,7 @@ import type { Bed, PreviewBuffers, ToolDock } from '@slicerx/contracts'
 
 export type V3 = [number, number, number]
 
-export type ToolChangerKind = 'dual-nozzle' | 'hotend-rack' | 'tool-rack' | 'xl-dock' | 'lift-switch' | 'filament-swap' | 'idex-park' | 'klipper-dock' | 'front-dock'
+export type ToolChangerKind = 'dual-nozzle' | 'hotend-rack' | 'tool-rack' | 'xl-dock' | 'lift-switch' | 'filament-swap' | 'idex-park' | 'klipper-dock' | 'front-dock' | 'printtool-rack'
 
 export interface MotionLimits {
   /** mm/s */
@@ -165,6 +170,22 @@ export interface ToolChangerSpec {
     slow: MotionLimits
     heatMin: number
   }
+  /**
+   * Bambu Lab H3C: one dock per hotend on the SwapTek rack along the front of the chamber (`x`, by hotend number), the
+   * Y where a PrintTool sits in its dock (`dockY`) and the Y the head runs along X at (`clearY`). The rack waits `rise`
+   * above the head's height while the print runs and lowers to it for a change; a docked PrintTool hangs `seatRise`
+   * higher than the head holds it. `slow` is the moves into and out of a dock; `exit` the speeds of the change G-code's
+   * moves out of the chute (`chute.exitY`). Which values are sourced and which estimated: docs/toolchanger-sim.md.
+   */
+  printTool?: {
+    x: number[]
+    dockY: number
+    clearY: number
+    rise: number
+    seatRise: number
+    slow: MotionLimits
+    exit: MotionLimits[]
+  }
 }
 
 /** A plain settings record (Orca keys) as the app resolves it. */
@@ -232,10 +253,15 @@ function kindOf(printerId: string | undefined, cfg: Settings, hints: ChangerHint
   if (hints.kinematics === 'idex') return nozzles >= 2 && !hints.copy ? 'idex-park' : null
   // The Artisan's dual extrusion module is neither the H2D's head nor IDEX: nothing plays until its mechanism is checked.
   if (id.startsWith('snapmaker-artisan')) return null
+  // One extruder whose hotends are its tools (the H3C: one `nozzle_diameter`, nine hotends): a PrintTool per hotend.
+  if (id.startsWith('bambu-h3c') || (nozzles <= 1 && hotendCount(cfg) > 1)) return 'printtool-rack'
   if (nozzles < 2) return swapChute(id, { widthMm: 0, depthMm: 0, heightMm: 0 }) ? 'filament-swap' : null
   if (list(cfg['extruder_max_nozzle_count']).some((n) => n > 1)) return 'hotend-rack'
   return nozzles === 2 ? 'dual-nozzle' : 'tool-rack'
 }
+
+/** The hotends of the first extruder (`extruder_max_nozzle_count`), 1 when not listed. */
+const hotendCount = (cfg: Settings): number => Math.max(1, Math.round(list(cfg['extruder_max_nozzle_count'])[0] ?? 1))
 
 /**
  * The purge chute of a Bambu Lab printer with one nozzle, from its machine G-code (Bambu Studio 2.8.4 templates):
@@ -378,6 +404,7 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
     // Estimated: the bed drops 2 mm for the change.
     base.liftMm = 2
   }
+  if (kind === 'printtool-rack') printToolSpec(base, cfg, bed)
   if (kind === 'tool-rack') {
     // Snapmaker U1 printer.cfg: xy_park_position per extruder, y_idle_position, horizontal_move_x,
     // retract_x_dist, insertion_buffer_dist, fast_move_speed, slow_move_speed, grab_speed, switch_accel.
@@ -389,6 +416,64 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
     base.z = { speed: 10, accel: base.z.accel }
   }
   return base
+}
+
+/** The H3C's dock pitch, mm: nine docks across the front of the chamber (estimated; the maker publishes no drawing). */
+export const H3C_PITCH = 36
+
+/**
+ * The H3C, from its stock change G-code, its machine profile and the maker's wiki (docs/toolchanger-sim.md):
+ * - each filament prints on its own hotend, from the slice's filament map (`filament_nozzle_map`, 0-based hotends); the
+ *   head starts with the first filament's PrintTool, as the start G-code's `T[initial_no_support_filament_id]` loads it;
+ * - a swap costs the printer's hotend change time: the first of `machine_hotend_change_time`, `machine_tool_change_time`
+ *   and `machine_switch_extruder_time` above 0 (0, unset and 4 s in the stock presets, so 4 s), as the engine counts it;
+ * - the change lifts to 3 mm over the highest layer printed (`G1 Z{max_layer_z + 3.0} F3000`) before the `T`, and after
+ *   it leaves the back of the chamber by `G387 Y295 J1 F60000` and `G387 Y265 J1 F18000`;
+ * - the purge wiper and chute are at the back right (wiki, main components), the rack across the front (wiki: the SwapTek
+ *   rack is installed on the front of the chamber), and the rack lowers for a change and rises after it (wiki, SwapTek
+ *   workflow).
+ * Estimated: the dock pitch, the docks' Y, the rack's standby height, the seat rise, the chute's X, the dock speeds.
+ */
+function printToolSpec(base: ToolChangerSpec, cfg: Settings, bed: Bed): void {
+  const n = Math.max(2, hotendCount(cfg))
+  const given = list(cfg['filament_nozzle_map']).map((v) => Math.min(n - 1, Math.max(0, Math.round(v))))
+  base.extruderOf = Array.from({ length: base.tools }, (_, t) => given[t] ?? Math.min(t, n - 1))
+  const hotendSwap = ['machine_hotend_change_time', 'machine_tool_change_time', 'machine_switch_extruder_time'].map((k) => num(cfg[k], 0)).find((t) => t > 0) ?? 0
+  base.seconds = { ...base.seconds, switch: hotendSwap }
+  base.liftMm = 3
+  base.liftOverPrint = true
+  base.chute = { x: Math.max(0, bed.widthMm - 30), y: bed.depthMm + 16, exitY: [295, 265] }
+  base.printTool = {
+    x: Array.from({ length: n }, (_, i) => bed.widthMm / 2 + (i - (n - 1) / 2) * H3C_PITCH),
+    dockY: -40,
+    clearY: -8,
+    rise: 60,
+    seatRise: 2,
+    slow: { speed: 150, accel: 3000 },
+    exit: [
+      { speed: Math.min(1000, base.travel.speed), accel: base.travel.accel },
+      { speed: Math.min(300, base.travel.speed), accel: base.travel.accel },
+    ],
+  }
+}
+
+/**
+ * The H3C rack before a change from `from`: what each dock holds (the filament its PrintTool last printed, `SPARE` for
+ * a PrintTool the print does not use, -1 for the one in the head) and the filament in the head. `history` lists the
+ * changes before this one; with none the head holds `from`.
+ */
+export function printToolRackBefore(spec: ToolChangerSpec, history: readonly [number, number][], from: number): { slots: number[]; inHead: number } {
+  const n = spec.printTool?.x.length ?? 9
+  const dock = (t: number) => Math.min(n - 1, Math.max(0, spec.extruderOf[t] ?? 0))
+  const held: number[] = Array.from({ length: n }, () => SPARE)
+  for (let t = spec.tools - 1; t >= 0; t--) held[dock(t)] = t
+  let inHead = history[0]?.[0] ?? from
+  held[dock(inHead)] = inHead
+  for (const [, t] of history) {
+    inHead = t
+    held[dock(t)] = t
+  }
+  return { slots: held.map((v, i) => (i === dock(inHead) ? -1 : v)), inHead }
 }
 
 /** The StealthChanger project's dock path (its example `Toolhead_T0.cfg`, `params_sc_path`), relative to the park point. */
@@ -845,6 +930,7 @@ export function changeSequence(spec: ToolChangerSpec, from: number, to: number, 
   if (spec.kind === 'idex-park') return idexPark(spec, from, to, at, resume, firm)
   if (spec.kind === 'klipper-dock') return klipperDock(spec, from, to, at, up, back, resume, firm)
   if (spec.kind === 'front-dock') return frontDock(spec, from, to, at, up, back, resume, firm)
+  if (spec.kind === 'printtool-rack') return printToolRack(spec, from, to, at, up, back, resume, firm, history)
   if (spec.kind === 'filament-swap') {
     // To the cutter (or cut at the chute), then the chute: the firmware unloads, the AMS feeds the next filament,
     // the nozzle flushes; then over the wiper and out.
@@ -1058,6 +1144,63 @@ function frontDock(spec: ToolChangerSpec, from: number, to: number, at: V3, up: 
   after[from] = from
   after[to] = -1
   return { from, to, duration: b.t, phases: b.phases, slotsBefore: slots, slotsAfter: after, rowBefore: 0, rowAfter: 0 }
+}
+
+/**
+ * Bambu Lab H3C: the head lifts over the print (the change G-code), and the firmware's `T` does the rest: the rack lowers
+ * as the head runs to the front, the head backs its PrintTool into its dock and unlocks it, backs out, runs along the
+ * docks to the PrintTool of the next filament's hotend, goes in and locks it, pulls it out; the rack rises as the head
+ * goes to the chute at the back right, where the new PrintTool's filament is gripped and primed. The G-code then leaves
+ * the chute by its two exit moves, returns and comes down. The profile's change time covers the firmware's part, from
+ * the trip to the rack to the chute; the prime takes what the moves leave of it. Two filaments on one hotend (more
+ * filaments than hotends) swap filament at the chute instead, with no rack visit. Pose state is the dock of the
+ * PrintTool in the head; the rack's row is 1 raised (standby) and 0 lowered.
+ */
+function printToolRack(spec: ToolChangerSpec, from: number, to: number, at: V3, up: number, back: V3, resume: V3, firm: number, history: readonly [number, number][]): ChangeSequence {
+  const k = spec.printTool!
+  const ch = spec.chute!
+  const n = k.x.length
+  const dock = (t: number) => Math.min(n - 1, Math.max(0, spec.extruderOf[t] ?? 0))
+  const st = printToolRackBefore(spec, history, from)
+  const a = dock(st.inHead)
+  const c = dock(to)
+  const leave = (b: Builder) => {
+    ch.exitY.forEach((y, i) => b.moveTo(i === 0 ? 'wipe' : 'exit', [ch.x, y, up], k.exit[i] ?? spec.travel))
+    b.moveTo('return', back, spec.travel)
+    b.moveTo('lower', resume, spec.z)
+  }
+  if (a === c) {
+    const b = new Builder(at, st.inHead, a).row(1)
+    b.moveTo('lift', [at[0], at[1], up], spec.z)
+    b.moveTo('to chute', [ch.x, ch.y, up], spec.travel)
+    b.dwell('cut', firm * 0.15)
+    b.carry(to).dwell('load', firm * 0.85)
+    leave(b)
+    return { from, to, duration: b.t, phases: b.phases, slotsBefore: st.slots, slotsAfter: st.slots, rowBefore: 1, rowAfter: 1 }
+  }
+  const build = (load: number): { b: Builder; firmware: number } => {
+    const b = new Builder(at, st.inHead, a).row(1)
+    b.moveTo('lift', [at[0], at[1], up], spec.z)
+    const start = b.t
+    b.row(0).moveTo('to rack', [k.x[a]!, k.clearY, up], spec.travel)
+    b.moveTo('insert', [k.x[a]!, k.dockY, up], k.slow)
+    b.carry(null).at(-1).dwell('release', 0.3)
+    b.moveTo('back out', [k.x[a]!, k.clearY, up], k.slow)
+    b.moveTo('to next', [k.x[c]!, k.clearY, up], spec.travel)
+    b.moveTo('insert', [k.x[c]!, k.dockY, up], k.slow)
+    b.carry(to).at(c).dwell('latch', 0.4)
+    b.moveTo('extract', [k.x[c]!, k.clearY, up], k.slow)
+    b.row(1).moveTo('to chute', [ch.x, ch.y, up], spec.travel)
+    b.dwell('load', load)
+    const firmware = b.t - start
+    leave(b)
+    return { b, firmware }
+  }
+  const { b } = build(Math.max(0.3, firm - build(0).firmware))
+  const after = st.slots.slice()
+  after[a] = st.inHead
+  after[c] = -1
+  return { from, to, duration: b.t, phases: b.phases, slotsBefore: st.slots, slotsAfter: after, rowBefore: 1, rowAfter: 1 }
 }
 
 /** IDEX: both carriages' nozzle X, the one at the pose at `x` and the idle one `local` seconds along its own move. */
