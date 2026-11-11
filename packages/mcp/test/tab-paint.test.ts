@@ -34,7 +34,7 @@ describe('the tab paint tools', () => {
     expect(tab.map((t) => t.name)).toEqual(PAINT)
     expect(tab.map((t) => [t.name, t.version, t.permission, shape(t)])).toEqual(server.map((t) => [t.name, t.version, t.permission, shape(t)]))
     // the same targets in words: the part, faces by direction, a height band, a seed and one state for another
-    expect(shape(tab[0]!)).toEqual(['design', 'layer', 'state', 'target', 'part', 'max_depth', 'view', 'size', 'image'])
+    expect(shape(tab[0]!)).toEqual(['design', 'layer', 'state', 'target', 'part', 'max_depth', 'view', 'size', 'image', 'whole'])
   })
 
   it('applying color paint in a filament past the last adds it and says so', async () => {

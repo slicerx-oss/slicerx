@@ -120,7 +120,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
 
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
