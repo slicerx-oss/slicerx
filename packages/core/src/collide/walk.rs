@@ -597,14 +597,14 @@ impl Walker<'_> {
     }
 
     /// A tool change from `from` to `to` (1-based slots) between `at` and `resume`: the head lifts, makes the changer's
-    /// stops and comes back. The stops before the switch carry the old tool's head, the rest the new one's. A change
+    /// stops for the two slots' changer tools ([`super::Model::dock`]) and comes back. The stops before the switch carry the old tool's head, the rest the new one's. A change
     /// G-code that lifts over `max_layer_z`, as the makers' own do, clears everything printed so far (`printed`).
     fn change(&mut self, at: [f64; 3], resume: [f64; 3], from: u8, to: u8, printed: f64, base: Probe) {
         let m = self.m;
         let Some(ch) = m.changer.as_ref() else {
             return;
         };
-        let stops = ch.route(usize::from(from.max(1) - 1), usize::from(to.max(1) - 1));
+        let stops = ch.route(m.dock(from), m.dock(to));
         let here = at[2].max(resume[2]);
         let top = if self.lift_over_print {
             here.max(printed)
