@@ -9,7 +9,7 @@
 import { SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { LIP_RISE_MM } from './hook-lip'
-import { planDetailFields } from './plan-detail'
+import { type LoftSections, planDetailFields, sectionsProblem } from './plan-detail'
 
 /** The largest size a plan takes, in its own units. */
 export const PLAN_SIZE_MAX = 10_000
@@ -135,6 +135,8 @@ export interface BodyFacts {
   tags?: (string | null)[] | undefined
   /** Those steps' ids, in order (slicerx_design_edit_step takes a step by id; an index counts paint and suppressed steps too). */
   stepIds?: string[] | undefined
+  /** Each loft step's sections and the feature it was tagged with, read so a display plan's curved bodies are held to change along their length. */
+  lofts?: LoftSections[] | undefined
   /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
   parts?: { x: number; y: number; z: number }[] | undefined
   /** True when every part is closed. */
@@ -226,6 +228,13 @@ const MM_PER_IN = 25.4
 /** Overall sizes pass within 0.2 mm or 1 percent, whichever is larger. */
 const SIZE_MM = 0.2
 const SIZE_SHARE = 0.01
+/**
+ * A display or fine plan's overall size passes within 1 mm or 5 percent, whichever is larger, with a warning past the
+ * tight tolerance: a model of a real thing is held to its looks, not a fit, and a smooth loft bulges a little between its
+ * sections. A miss that size is not worth a plan change.
+ */
+const DISPLAY_SIZE_MM = 1
+const DISPLAY_SIZE_SHARE = 0.05
 /** Each named hole's diameter passes within 0.1 mm. */
 const HOLE_MM = 0.1
 
@@ -243,10 +252,12 @@ export function nozzleOr(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : DEFAULT_NOZZLE_MM
 }
 
-const sizeOk = (got: number, want: number): boolean => Math.abs(got - want) <= Math.max(SIZE_MM, SIZE_SHARE * want)
+type SizeOk = (got: number, want: number) => boolean
+const tightOk: SizeOk = (got, want) => Math.abs(got - want) <= Math.max(SIZE_MM, SIZE_SHARE * want)
+const displayOk: SizeOk = (got, want) => Math.abs(got - want) <= Math.max(DISPLAY_SIZE_MM, DISPLAY_SIZE_SHARE * want)
 
 /** Whether a size matches axis by axis, x and y swapped passing (turned on the bed), with a note on a swap. */
-function sizeMatch(got: number[], want: number[]): { pass: boolean; note: string } {
+function sizeMatch(got: number[], want: number[], sizeOk: SizeOk = tightOk): { pass: boolean; note: string } {
   if (want.every((w, k) => sizeOk(got[k]!, w))) return { pass: true, note: '' }
   if (sizeOk(got[1]!, want[0]!) && sizeOk(got[0]!, want[1]!) && sizeOk(got[2]!, want[2]!)) return { pass: true, note: ' (x and y swapped: turned on the bed, it prints the same)' }
   const [gs, ws] = [[...got].sort((a, b) => a - b), [...want].sort((a, b) => a - b)]
@@ -508,7 +519,13 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
     const got = part?.pass
       ? `${axes.map((a) => r2(largest![a])).join(' x ')} mm, the largest part, with the other ${body.parts!.length === 2 ? 'part' : `${body.parts!.length - 1} parts`} laid out beside it${part.note}`
       : `${axes.map((a) => r2(body.size[a])).join(' x ')} mm${whole.note}`
-    items.push({ name: 'overall size', want: `${want.map(r2).join(' x ')} mm${inches}`, got, pass: whole.pass || part?.pass === true })
+    const pass = whole.pass || part?.pass === true
+    // a display model a little off its planned size passes with a warning, so a smooth loft's bulge costs no plan change
+    const looks = plan.detail === 'display' || plan.detail === 'fine'
+    const near = !pass && looks ? sizeMatch(axes.map((a) => body.size[a]), want, displayOk) : undefined
+    const off = near?.pass ? axes.flatMap((a, k) => (tightOk(body.size[a], want[k]!) ? [] : [`${a} ${r2(body.size[a] - want[k]!) > 0 ? '+' : ''}${r2(body.size[a] - want[k]!)} mm`])) : []
+    const warning = near?.pass ? `${off.join(', ')} from the plan, within the ${DISPLAY_SIZE_MM} mm or ${DISPLAY_SIZE_SHARE * 100} percent a ${plan.detail} model is held to; no plan change needed, say it in the reply` : undefined
+    items.push({ name: 'overall size', want: `${want.map(r2).join(' x ')} mm${inches}`, got, pass: pass || near?.pass === true, ...(warning ? { warning } : {}) })
   }
 
   const { rows, extra } = matchHoles(plan.holes ?? [], body.holes, scale)
@@ -528,6 +545,8 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   items.push(featureItem(plan.features.map((f) => f.name), body))
   items.push({ name: 'watertight', want: 'closed', got: body.watertight ? 'closed' : openWords(body.openWhy), pass: body.watertight })
   items.push(wallItem(body, nozzle))
+  const curved = curvedItem(plan, body)
+  if (curved) items.push(curved)
   if (plan.printInPlace) items.push(...fitItems(plan.printInPlace, body))
   // the gaps the plan sets, held to the same limits as the gaps measured; a plan whose pieces print together without
   // naming them (printsTogether) gets this item alone, as it names no pieces to measure
@@ -552,6 +571,28 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   if (floor && body.floor) items.push(floorItem(floor, body.floor))
 
   return { pass: items.every((i) => i.pass), items }
+}
+
+/**
+ * A display or fine plan's curved bodies, from the loft steps tagged with them: none is one outline stretched one way
+ * along its length (sectionsProblem). Null when the plan holds no level or names no curved body built
+ * by a loft (a revolve or a sweep is round or follows its path by its nature).
+ */
+function curvedItem(plan: PartPlan, body: BodyFacts): CheckItem | null {
+  if ((plan.detail !== 'display' && plan.detail !== 'fine') || !plan.curved?.length || !body.lofts?.length) return null
+  const names = new Map(plan.curved.map((n) => [n.trim().toLowerCase(), n]))
+  const lofts = body.lofts.filter((l) => l.feature && names.has(l.feature.toLowerCase()))
+  if (!lofts.length) return null
+  const problems = lofts.flatMap((l) => {
+    const p = sectionsProblem(l.feature!, l)
+    return p ? [p] : []
+  })
+  return {
+    name: 'curved bodies',
+    want: 'no curved body is one outline stretched one way: its sections change top and bottom along its length as well as width, as the real thing does',
+    got: problems.length ? problems.join('; ') : `${lofts.length === 1 ? 'its loft is' : `all ${lofts.length} lofts are`} shaped along the length`,
+    pass: !problems.length,
+  }
 }
 
 /**

@@ -13,6 +13,7 @@ import { TOO_DENSE_WHY, type BodyFacts, type FitLimits, type FloorFacts } from '
 import { fitFacts } from './fit-facts'
 import { floorOpenings } from './holder-floor'
 import { hookOn, surfacePoints } from './hook-lip'
+import { loftSections } from './plan-detail'
 
 type V3 = [number, number, number]
 type Mesh = Pick<HistoryMesh, 'positions' | 'indices'>
@@ -77,6 +78,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     steps: shaping.map((s) => stepName(s)),
     tags: shaping.map((s) => s.feature?.trim() || null),
     stepIds: shaping.map((s) => s.id),
+    lofts: loftSections(shaping as unknown as Parameters<typeof loftSections>[0]),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     watertight,
     ...(watertight ? {} : { openWhy: notClosedWords(open) }),
