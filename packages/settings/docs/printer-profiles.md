@@ -21,6 +21,7 @@ The Prusa Core One with INDX has no maker profile to read yet, so its machine se
 | Bambu Lab H2D | checked at 97700c5 | maker template | same bed and height |
 | Bambu Lab H2C | checked at 97700c5 | maker template | same bed and height |
 | Bambu Lab H2S | checked at 97700c5 | maker template | same bed and height |
+| Bambu Lab H3C | checked at 97700c5 | maker template | same bed and height |
 | Prusa Research MK4S | checked at 97700c5 | maker template | same bed and height |
 | Prusa Research MK4 | checked at 97700c5 | maker template | same bed and height |
 | Prusa Research MK3.9 | no maker profile to check against | written | catalog values only |
