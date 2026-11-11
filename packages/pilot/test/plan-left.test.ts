@@ -388,7 +388,7 @@ describe("the hinged box's stop on its first failed check", () => {
       version: '1',
       description: 'leaves a card open',
       source: 'command',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.record(z.string(), z.unknown()),
       run: async (_a, ctx) => {
         if (kind === 'ask') void ctx.ask!({ title: 'Lid', question: 'Should the lid snap shut?', choices: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] }).catch(() => undefined)
