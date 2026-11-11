@@ -27,7 +27,7 @@ export function partBoxes(d: Design): Box[] {
 const r1 = (n: number): number => Math.round(n * 10) / 10
 
 /** The step that made part `k` (the first step that started it), as its number from 1, or 0 when none is found. */
-function maker(d: Design, k: number): number {
+export function maker(d: Design, k: number): number {
   const made = (p: unknown): boolean => {
     const q = p as { op: string; operation?: string; spec?: { operation?: string } }
     return q.op === 'parts.add' || (q.operation ?? q.spec?.operation) === 'new'
