@@ -397,6 +397,7 @@ impl Rim {
             point: self.start,
             normal: d,
             extend: false,
+            runs_on: None,
         };
         Geom {
             a: self.start,

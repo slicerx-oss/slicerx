@@ -2,13 +2,13 @@
 
 Engine contract for rounding and beveling edges, in sx-geom (`packages/geom`) and the typed calls in `packages/app/src/geom/cad.ts`. Same rules as `docs/cad-engine.md` sections 2 and 7: JSON in and out, world millimeters, angles in degrees, meshes flat or `{mesh, transform}`. A mesh that replaces an input comes back in that input's local frame. Errors are thrown as one plain sentence of the form `field: what is wrong`, ready to show. This file only grows; nothing in it is renamed or removed.
 
-The tool is meant for brackets, boxes and plates: round or bevel the straight edge where two flat faces meet, and the round edge where a flat face meets a cylinder square to it (a hole's rim, the root of a boss, the rim of a round plate). Left out on purpose: variable radius, setback and vertex blends beyond the simple sphere corner, edges between other curved faces, and anything that needs a B-rep.
+The tool is meant for brackets, boxes and plates: round or bevel the straight edge where two flat faces meet, the edges along a round on a flat face (a rounded rectangle's outline, a cone's base rim), and the round edge where a flat face meets a cylinder square to it (a hole's rim, the root of a boss, the rim of a round plate). Left out on purpose: variable radius, setback and vertex blends beyond the simple sphere corner, edges between other curved faces, and anything that needs a B-rep.
 
 Shared shapes, as in section 7: `Vec2`, `Vec3`, `MeshResult`, `BooleanOptions`, `FaceFrame`, `SketchLoop`.
 
 ## Edges
 
-An edge is a straight run where two flat faces meet at a sharp fold (more than 30 degrees). Collinear mesh edges between the same two faces are one edge. A face is curved when it blends into a neighbor without a sharp fold (the facets of a tessellated cylinder, for example). Edges next to a curved face are reported but cannot be filleted or chamfered.
+An edge is a straight run where two flat faces meet at a sharp fold (more than 30 degrees). Collinear mesh edges between the same two faces are one edge. A face is curved when it blends into a neighbor without a sharp fold (the facets of a tessellated cylinder, for example). An edge between a flat face and one facet of a curved face works when it is picked from the flat face (see "Edges along a round"); an edge picked from a curved face, or between two curved faces, is reported but cannot be filleted or chamfered.
 
 ```
 EdgeRef = { a: Vec3, b: Vec3, face: Vec3, moved?: boolean }
@@ -25,6 +25,12 @@ EdgeRef = { a: Vec3, b: Vec3, face: Vec3, center: Vec3 }
 ```
 
 `face` is the flat face's outward normal, `a` a corner of the circle (the same one whichever triangle was picked) and `b` the same point; the radius is `a`'s distance from the axis through `center` along `face`. `edge.pick` returns it with `lengthMm` the circumference, `chain` the edge alone and `loop` the edge alone. `maxDistanceMm` is how far the flat face reaches from the rim (to its nearest other edge on that side of the circle, or to the middle) and how far the cylinder runs from it. A chamfer's `distanceMm` is on the flat face and `distance2Mm` down the cylinder. The tool is the straight edge's cross section turned once around the axis, in as many steps as the rim has sides and starting at one of its corners, so it follows the hole's own facets. A chamfer's bevel comes out as a cone face. A size that would reach past the middle of the circle fails as `edges: edge 1 is a round edge 8.000 mm across; this size reaches past its middle`; a round edge that is gone (a history replay changed the part) as `edges: edge 1 is a round edge that is not there any more; pick it again`. When the face a rim sits on moves in a replay, its corner and center move with it.
+
+### Edges along a round
+
+A straight edge on a flat face may run on into a curved face: a side of a rounded rectangle into its corner, one side of a cone's base rim into the next. When the next side of the round along the flat face turns less than 30 degrees from the edge and meets the flat face at the same angle as the edge's own faces (within 0.0001 radians), the edge ends on the plane halfway between it and that next side. That plane holds the line between the two faces across, so the edge's tool meets the next side's exactly. Edges picked together that meet that way, from the same flat face, become one tool: the edge's cross section swept along them and mitered at each joint, with its ends as for one edge, or closed with no ends when they make a whole loop. An edge picked alone stops on that plane.
+
+`edge.pick` reports these edges as supported, and its `chain` runs on through a round, so the loop of a rounded box's top is supported all the way round. When the angle between the faces changes along the round (a sloped top over a rounded outline), the edge is not supported, and neither is an edge that ends at a curved face it does not run into smoothly (the tip of a C, an edge running square into a boss). A keyed edge whose two faces meet along a curve (a flat face and a round, which share no one straight edge) is found again by its place on that curve.
 
 `moved` is set by history replays when the ends moved with a face they lie on (docs/cad-history.md). When no edge matches the ends exactly, the ops take the sharp edge on the line through `a` and `b` that overlaps them, end to end, with `face` naming its first face as before. None fails as `edges: edge 2 moved with the face beside it and is not there any more; pick it again`, two or more as `more than one edge matches there`. `edge.pick` never sets it.
 
@@ -54,7 +60,7 @@ The edge is the sharp boundary edge of the picked triangle's flat face nearest t
 
 Errors: `edge: pick near the edge of a flat face`, `triangle: out of range`.
 
-Reasons when not supported: "The face across the edge is curved. Fillet and chamfer work between flat faces only.", "The picked face is curved. Fillet and chamfer work between flat faces only.", "The mesh is open along this edge.", "More than two faces meet along this edge.", "The edge ends where more than three faces meet.", "The edge ends at a curved face.", "The edge meets the face at its end at too shallow an angle."
+Reasons when not supported: "Both faces along this edge are curved. Fillet and chamfer need a flat face on one side.", "The picked face is curved. Pick the edge from the flat face on its other side.", "The mesh is open along this edge.", "More than two faces meet along this edge.", "The edge ends where more than three faces meet.", "The edge ends at a curved face it does not run into smoothly.", "The angle between the faces changes along the round the edge runs into.", "The edge meets the face at its end at too shallow an angle."
 
 When `supported` is false, `maxDistanceMm` and `maxRadiusMm` are 0 and `chain` holds the edge alone. `maxDistanceMm` and `maxRadiusMm` are rounded down to whole micrometers.
 
@@ -99,7 +105,8 @@ Messages about one edge name it counting from 1:
 
 - `edges: edge 2: no sharp edge between two flat faces there` (the edge is gone or moved)
 - `edges: edge 2: more than one edge matches there; pick it again`
-- `edges: edge 2: the face across the edge is curved. Fillet and chamfer work between flat faces only`, and the other reasons from `edge.pick` in the same form
+- `edges: edge 2: the picked face is curved. Pick the edge from the flat face on its other side`, and the other reasons from `edge.pick` in the same form
+- `edges: edges 1 and 2 meet along a round; pick both from the flat face they share`, and `edges: edges 1, 2 and 3 meet at one point along a round; pick each edge once`
 - `edges: edge 2 is too short for this size`
 - `edges: the corner at (x, y, z) joins more than three fillets; leave some of its edges out`
 - `radiusMm: 3 mm does not fit; edges 1 and 4 would overlap on one face` (likewise `distanceMm`), when the strips of two edges that do not share an end overlap on a face

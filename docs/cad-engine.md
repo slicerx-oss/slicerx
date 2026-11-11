@@ -16,7 +16,7 @@ SlicerX is a slicer, and its modeling tools cover what people need to make or fi
 | Free sketch | Lines, arcs and circles with typed sizes on the bed or a face, checked for closure and crossings, with corner fillets and chamfers; extruded or revolved as a new body, joined or cut | `sketch.rs`, `sketch_corner.rs`, `face.rs` |
 | Push and pull | Move a flat face along its normal, adding or cutting material | `push.rs` |
 | Kept dimensions | Dimensions anchored to the model that follow later edits | `dimension.rs` |
-| Fillet and chamfer | Round or bevel straight edges between flat faces, with sphere corners, and the round edge where a flat face meets a cylinder square to it (a hole's rim, a boss's root) | `edge.rs`, `edge/rim.rs`, docs/cad-fillet.md |
+| Fillet and chamfer | Round or bevel straight edges on a flat face, with sphere corners and edges along a round as one mitered tool, and the round edge where a flat face meets a cylinder square to it (a hole's rim, a boss's root) | `edge.rs`, `edge/rim.rs`, docs/cad-fillet.md |
 | Hole tool | Find a round hole from a pick (through or blind, its depth and diameter) and make it another size in place, with a counterbore or a countersink at its entry | `hole.rs` |
 | Shell tool | Hollow a body to a wall thickness with the faces picked left open (trays, boxes, enclosures): an exact wall for a flat-faced body, the voxel wall for one with curved faces, and the toast says which; in the full engine only | `shell.rs` |
 | Thread tool | Cut an ISO metric coarse thread, M3 to M30, into a picked hole or onto a rod or boss, with the measured fit as clearance; in the full engine only | `thread.rs` |
