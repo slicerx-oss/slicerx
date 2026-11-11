@@ -375,6 +375,11 @@ const CAVITY_WORDS: ReadonlySet<string> = new Set(['cavity', 'inner', 'inside', 
 const HEIGHT_WORDS: ReadonlySet<string> = new Set(['overall', 'total', 'outer', 'body'])
 /** The feature kinds that hollow a part: a cut, pocket, shell or hollow. */
 const HOLLOWS = /\b(?:cut|pocket|shell|hollow)\b/i
+/**
+ * The least share of the part's height a cavity runs down into it to set a floor: a cup, planter or tray is mostly
+ * cavity, its floor thinner than the cavity is deep, while a blind cut a millimeter or two deep leaves a solid part.
+ */
+const CAVITY_SHARE = 0.5
 
 /** The floor a plan sets, in mm, and the size that sets it, as the floor item says it. */
 export interface PlannedFloor {
@@ -388,8 +393,10 @@ export interface PlannedFloor {
  * a size named for the floor or bottom and nothing else but its thickness (floor, bottom, bottom_thickness; base only
  * as base_thickness) in a plan with a wall (a size named wall, or a shell or hollow feature), or a cut, pocket or shell
  * feature with a depth (depth, cavity_depth, well_depth) less than the part's height (overall z, else its largest
- * height size), whose floor is the difference. Null when the plan sets no floor: a tube or spout open at both ends, a
- * plate with a base, a box that names no floor. Inch sizes are read in mm.
+ * height size) and at least CAVITY_SHARE of it, whose floor is the difference. A cut that gives its own height (a row
+ * of window slits, a slot) runs into a side, its depth across the part, so it sets no floor. Null when the plan sets
+ * no floor: a tube or spout open at both ends, a plate with a base, a box that names no floor, blind slits or recesses
+ * in a side. Inch sizes are read in mm.
  */
 export function plannedFloor(plan: Pick<PartPlan, 'units' | 'features' | 'overall'>): PlannedFloor | null {
   const scale = plan.units === 'in' ? MM_PER_IN : 1
@@ -405,9 +412,15 @@ export function plannedFloor(plan: Pick<PartPlan, 'units' | 'features' | 'overal
       return { mm: s.v * scale, from: s.key }
     }
   const tall = plan.overall?.z ?? Math.max(0, ...sizes.filter((s) => s.words.includes('height') && only(s.words.filter((w) => w !== 'height'), HEIGHT_WORDS)).map((s) => s.v))
-  for (const s of sizes) {
-    if (!HOLLOWS.test(s.kind) || s.words.at(-1) !== 'depth' || !only(s.words.slice(0, -1), CAVITY_WORDS)) continue
-    if (s.v < tall - 1e-6) return { mm: (tall - s.v) * scale, from: `${s.key} ${r2(s.v * scale)} mm under the ${r2(tall * scale)} mm height` }
+  for (const f of plan.features) {
+    if (!HOLLOWS.test(f.kind ?? '')) continue
+    const own = Object.entries(f.sizes).map(([key, v]) => ({ key, v, words: keyWords(key) }))
+    // a cut with its own height opens in a side (a row of window slits, a slot): its depth runs across the part
+    if (own.some((s) => s.words.includes('height'))) continue
+    for (const s of own) {
+      if (s.words.at(-1) !== 'depth' || !only(s.words.slice(0, -1), CAVITY_WORDS)) continue
+      if (s.v < tall - 1e-6 && s.v >= tall * CAVITY_SHARE) return { mm: (tall - s.v) * scale, from: `${s.key} ${r2(s.v * scale)} mm under the ${r2(tall * scale)} mm height` }
+    }
   }
   return null
 }
