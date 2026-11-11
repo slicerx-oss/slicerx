@@ -117,7 +117,7 @@ async function startFresh(host: Host): Promise<boolean> {
 }
 
 /** Returns true when it already told the person what it did (a toast of its own). */
-async function addBytes(host: Host, name: string, data: ArrayBuffer, scope?: OpenScope): Promise<boolean> {
+async function addBytes(host: Host, name: string, data: ArrayBuffer, scope?: OpenScope, again = false): Promise<boolean> {
   if (/\.(stl|obj|amf|step|stp|igs|iges)$/i.test(name)) {
     // Every mesh goes through the engine: repaired, unit detected, loose bodies split. STEP and IGES
     // files are meshed first in a worker of their own.
@@ -143,7 +143,7 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer, scope?: Ope
   } else {
     // A project with objects, parts and volumes opens as such.
     // The project reader loads with the first project, not with the app.
-    const opened = await (await import('./open-project')).addProject(host, data, name, scope)
+    const opened = await (await import('./open-project')).addProject(host, data, name, scope, again)
     if (opened) return opened === 'told'
     // 3MF geometry for the viewport arrives with the core's mesh export; slice it meanwhile.
     const handle = await host.slicer.loadModel(data, name)
@@ -181,7 +181,7 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
   set({ plateLoading: true })
   try {
     const before = new Set(get().plate.map((p) => p.id))
-    const told = await addBytes(host, name, data, scope)
+    const told = await addBytes(host, name, data, scope, Boolean(opts.restore))
     // A model from the library keeps its model and creator ids for the sx3mf it is saved in.
     if (source && (source.modelId || source.creatorId)) {
       const tag = () => set((s) => ({ plate: s.plate.map((p) => (before.has(p.id) ? p : { ...p, source })) }))
