@@ -504,6 +504,10 @@ pub(crate) struct Model {
     own: usize,
     /// The extruder of each filament slot, 0-based.
     extruder_of: Vec<usize>,
+    /// The changer's tool of each filament slot, 0-based, which picks the route of a change
+    /// ([`Changer::route`]): the hotend on a printer whose hotends are its tools (the H3C), as the filament map puts
+    /// each filament on one, else the slot itself.
+    dock_of: Vec<usize>,
     changer: Option<Changer>,
     lift_mm: f64,
     rod: f64,
@@ -540,7 +544,7 @@ impl Model {
         objects: &[&PlateObject],
         config: &PrintConfig,
         printer_id: Option<&str>,
-        extruder_of: Option<Vec<usize>>,
+        map: Option<&crate::nozzles::Map>,
         by_layer: bool,
         zones: Vec<u8>,
     ) -> Self {
@@ -615,8 +619,18 @@ impl Model {
         let machine_estimated = machine.estimated;
         let radius = clearance_radius(config);
         // Without a filament map each tool has its own extruder where the machine has more than one head.
-        let extruder_of =
-            extruder_of.unwrap_or_else(|| (0..64).map(|t| t.min(heads.len().saturating_sub(1))).collect());
+        let extruder_of = map.map_or_else(
+            || (0..64).map(|t| t.min(heads.len().saturating_sub(1))).collect(),
+            |m| m.extruder.iter().map(|&e| usize::from(e)).collect(),
+        );
+        // The H3C's routes go by hotend: a change docks the PrintTool of the hotend the old filament prints on and
+        // picks the one the new filament prints on, wherever their slots are.
+        let dock_of = match map {
+            Some(m) if crate::nozzles::hotend_tools(config) => {
+                m.nozzle.iter().map(|&h| usize::from(h)).collect()
+            }
+            _ => (0..64).collect(),
+        };
         #[allow(clippy::cast_possible_truncation, reason = "settings in mm and mm/s")]
         let meta = Meta {
             objects: listed,
@@ -637,6 +651,7 @@ impl Model {
             heads,
             own,
             extruder_of,
+            dock_of,
             changer,
             lift_mm,
             rod: if delta {
@@ -659,6 +674,12 @@ impl Model {
             .copied()
             .unwrap_or(0);
         e.min(self.own.saturating_sub(1))
+    }
+
+    /// The changer's tool (0-based) of filament slot `tool` (1-based): which route a change to or from it takes.
+    fn dock(&self, tool: u8) -> usize {
+        let slot = usize::from(tool.max(1) - 1);
+        self.dock_of.get(slot).copied().unwrap_or(slot)
     }
 
     /// Adds a copy of every head whose columns are stretched to cover the nozzle, for the plate check, which walks

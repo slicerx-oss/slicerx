@@ -2170,14 +2170,11 @@ fn collide_model(
     if printable.len() < 2 {
         return None;
     }
-    let map = session
-        .filament_map()
-        .map(|m| m.extruder.iter().map(|&e| usize::from(e)).collect());
     Some(crate::collide::Model::new(
         &printable,
         config,
         printer_id,
-        map,
+        session.filament_map(),
         session.could_print_by_layer(config),
         zones,
     ))
