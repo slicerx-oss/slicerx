@@ -201,7 +201,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const show = defineTool({
     name: 'project.show',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
