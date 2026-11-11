@@ -513,12 +513,13 @@ fn extract(work: &Imprint, original: &TriMesh, region: &Region, eps: f64) -> Tri
     let mut kept: Vec<[u32; 3]> = Vec::with_capacity(work.tris.len());
     for &t in &work.tris {
         let [a, b, c] = t.map(|i| work.pos[i as usize]);
-        let Some(n) = vec3::normalize(vec3::tri_normal(a, b, c)) else {
-            continue;
-        };
+        // a triangle with no area (its corners on one line, as a sliver of an earlier cap stores at f32) has no side to
+        // lean to: it goes where its corners are, and only one on a face of the region is left out, as both halves
+        // leave it. Dropping every one left its three sides open on a part far from the cut.
+        let n = vec3::normalize(vec3::tri_normal(a, b, c));
         let dist = |pl: &Plane| {
             (snap(pl.distance(a)) + snap(pl.distance(b)) + snap(pl.distance(c))) / 3.0
-                - delta * vec3::dot(n, pl.normal)
+                - n.map_or(0.0, |n| delta * vec3::dot(n, pl.normal))
         };
         if region.csg.contains_with(&dist) {
             kept.push(t);

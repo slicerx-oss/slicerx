@@ -23,6 +23,10 @@ name = "sx-geom"
 path = "src/bin/sx-geom.rs"
 
 [[test]]
+name = "cut_again"
+required-features = ["cad"]
+
+[[test]]
 name = "sketch_spline"
 required-features = ["cad"]
 
