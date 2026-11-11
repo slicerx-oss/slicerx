@@ -18,8 +18,6 @@ import { liveEngine } from './geom-engine'
  * lands), or not captured again yet.
  */
 const ELSEWHERE: Record<string, string> = {
-  'fidget-spinner': 'captured again with the hole tools (feat/geom-hole-tools)',
-  'headphone-hook': 'captured again with the hole tools (feat/geom-hole-tools)',
   'gear-pair': 'not captured again yet: two live runs stopped at their cost cap before the model finished',
 }
 
