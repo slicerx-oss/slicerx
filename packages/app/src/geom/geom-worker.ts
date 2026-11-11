@@ -9,7 +9,7 @@
 // (brep.ts), which loads the first time one comes.
 import { replayHistory, type ReplayRequest } from '@slicerx/cad-history'
 import { engineModules, type EngineModule } from './modules'
-import { callEngine, EngineTrap, transferables, type GeomExports } from './engine-call'
+import { callEngine, EngineTrap, retriesAfterTrap, transferables, type GeomExports } from './engine-call'
 import { loadBrep, type BrepModule } from './brep'
 import { replayStepOf, workerLoop, type WorkerMessage } from './worker-loop'
 
@@ -47,6 +47,17 @@ function call(x: GeomExports, op: string, request: unknown): unknown {
       engine = startEngine()
     }
     throw err
+  }
+}
+
+/** `first`, and when it ran out of memory (retriesAfterTrap) the same call once more on the engine loaded again, logged. */
+async function retried(op: string, request: unknown, first: () => unknown): Promise<unknown> {
+  try {
+    return await first()
+  } catch (err) {
+    if (!retriesAfterTrap(err, op)) throw err
+    console.warn(`sx-geom ${op}: ${err.message}; trying it once more on a fresh engine`)
+    return (await engine.module(op, request)).call(op, request)
   }
 }
 
@@ -94,11 +105,11 @@ const handle = workerLoop((message, transfer) => self.postMessage(message, { tra
     // A project goes to the engine as its bytes (engine-call.ts, rawData), other files as base64.
     const input = op === 'format.read3mf' ? request : bytesAsBase64(request)
     const build = await engine.module(op, input)
-    return () => build.call(op, input)
+    return () => retried(op, input, () => build.call(op, input))
   },
   // a replay with exact solids calls the kernel's ops too; the kernel lives in this worker, so its bodies last from
   // call to call
-  replay: (request, yieldStep) => replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : engine.run(o, r)), request as ReplayRequest, { keepsBodies: true, yieldStep: (s) => yieldStep(replayStepOf(s)) }),
+  replay: (request, yieldStep) => replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : retried(o, r, () => engine.run(o, r))), request as ReplayRequest, { keepsBodies: true, yieldStep: (s) => yieldStep(replayStepOf(s)) }),
   memoryBytes,
   transfer: (op, result) => (op.startsWith('brep.') || op.startsWith('engine.') ? [] : transferables(result)),
 })

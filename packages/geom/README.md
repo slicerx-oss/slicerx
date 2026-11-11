@@ -110,4 +110,4 @@ const geom = await createGeom(await WebAssembly.compileStreaming(fetch('sx_geom_
 const out = geom.call('build', { solids: [{ type: 'box', min: [0, 0, 0], max: [10, 10, 5] }] })
 ```
 
-Every operation in the tables above works except `stlPath` meshes (no file access). Send meshes flat (`positions`, `indices`) or as base64 STL; `import` takes `data: {base64}`. Calls are synchronous, so run them in a worker.
+Every operation in the tables above works except `stlPath` meshes (no file access). Send meshes flat (`positions`, `indices`) or as base64 STL; `import` takes `data: {base64}`. Calls are synchronous, so run them in a worker. A call that stops the engine (a panic, or memory the host would not grow) throws an error with `trapped: true` that says why, and the next call runs on a fresh module; one that ran out of memory (`outOfMemory: true`) is tried once more on a fresh module first, and the retry is logged. After a trap the module also has the panic text at `geom_panic_ptr` and `geom_panic_len`.

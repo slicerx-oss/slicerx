@@ -214,6 +214,13 @@ export function trapMessage(panic: string, memoryBytes: number): string {
   return `the engine ran out of memory at ${(memoryBytes / 2 ** 20).toFixed(1)} MB; try the step again`
 }
 
+/**
+ * Whether a call that ran out of memory is tried once more on a fresh engine. Each call carries all of its input, so
+ * the retry sees what the first try did, except a nest session's later steps: the session lived in the engine that
+ * stopped.
+ */
+export const retriesAfterTrap = (op: string): boolean => op !== 'nest.step' && op !== 'nest.end'
+
 /** Runs in the engine's worker thread: one request in, its reply text or error out. */
 const ENGINE_THREAD = `
 const { parentPort, workerData } = require('node:worker_threads')
@@ -243,9 +250,12 @@ parentPort.on('message', ({ op, input }) => {
  * runs past its time limit (`timeoutMs`, by default its operation's class limit) ends its worker, since a synchronous
  * engine call reads no messages, and the next call starts a fresh one; one past its limit is refused with what to try.
  * Calls run one at a time, in order, and each one's limit starts when its turn comes. A call that traps ends its worker
- * too, since a trapped module is left as it stopped, and says why (trapMessage).
+ * too, since a trapped module is left as it stopped, and says why (trapMessage). One that ran out of memory (a trap with
+ * no panic) is tried once more on a fresh engine (retriesAfterTrap), and the retry goes to `log` (by default
+ * console.warn); a panic would only repeat, so it is not tried again.
  */
-export function createGeomWasm(opts: { wasm: string; timeoutMs?: GeomTimeout }): GeomHost {
+export function createGeomWasm(opts: { wasm: string; timeoutMs?: GeomTimeout; log?: (line: string) => void }): GeomHost {
+  const log = opts.log ?? ((line: string) => console.warn(line))
   let worker: Worker | null = null
   let queue: Promise<unknown> = Promise.resolve()
   const call = (op: string, input: unknown, signal?: AbortSignal): Promise<unknown> => {
@@ -263,15 +273,16 @@ export function createGeomWasm(opts: { wasm: string; timeoutMs?: GeomTimeout }):
         done()
         reject(new Error(`sx-geom ${op}: ${message}`))
       }
-      const stop = (message: string): void => {
+      const stop = (message: string, outOfMemory = false): void => {
         if (worker === w) worker = null
         void w.terminate()
-        fail(message)
+        done()
+        reject(Object.assign(new Error(`sx-geom ${op}: ${message}`), { outOfMemory }))
       }
       const onAbort = (): void => stop('canceled, so the engine was stopped')
       const onMessage = (m: { out?: string; error?: string; trap?: { panic: string; memoryBytes: number } }): void => {
         if (m.trap) {
-          stop(trapMessage(m.trap.panic, m.trap.memoryBytes))
+          stop(trapMessage(m.trap.panic, m.trap.memoryBytes), !m.trap.panic)
           return
         }
         if (m.out !== undefined) {
@@ -309,7 +320,12 @@ export function createGeomWasm(opts: { wasm: string; timeoutMs?: GeomTimeout }):
   }
   return {
     run(op, input, signal) {
-      const next = (): Promise<unknown> => call(op, input, signal)
+      const next = (): Promise<unknown> =>
+        call(op, input, signal).catch((e: unknown) => {
+          if (!(e instanceof Error && (e as { outOfMemory?: boolean }).outOfMemory && retriesAfterTrap(op))) throw e
+          log(`${e.message}; trying it once more on a fresh engine`)
+          return call(op, input, signal)
+        })
       const answer = queue.then(next, next)
       queue = answer.catch(() => undefined)
       return answer

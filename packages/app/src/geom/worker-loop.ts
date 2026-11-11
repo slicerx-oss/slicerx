@@ -10,7 +10,7 @@
 import { stepName, type Step } from '@slicerx/cad-history'
 
 export interface WorkerJobs {
-  /** Waits for what the call needs (an engine build, the B-rep kernel), then hands back the engine call itself. */
+  /** Waits for what the call needs (an engine build, the B-rep kernel), then hands back the engine call itself (its answer, or a promise of it). */
   prepare(op: string, request: unknown): Promise<() => unknown>
   /**
    * history.replay, in TypeScript: `yieldStep` runs before each of its steps, with the step's operation and the name a
@@ -68,7 +68,8 @@ export function workerLoop(post: WorkerPost, jobs: WorkerJobs): (data: WorkerMes
       }
       // the page ends this worker when a canceled call is still running here (client.ts, CANCEL_GRACE_MS)
       post({ started: id })
-      const result = call()
+      // a call tried once more after its engine ran out of memory waits for the engine to load again
+      const result = await call()
       answer(id, { result }, jobs.transfer(op, result))
     } catch (err) {
       canceled.delete(id)
