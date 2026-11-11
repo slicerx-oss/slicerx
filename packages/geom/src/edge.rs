@@ -1502,11 +1502,24 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
             None => Ok(keyed(mesh, e)),
         })
         .collect::<Result<_>>()?;
-    let edges = found.as_slice();
+    // an edge asked for twice is cut once: a second tool on the same edge leaves slivers the boolean cannot close
+    let tol = REF_MM.max(faces.size * 1e-7);
+    let mut notes = Vec::new();
+    let mut once: Vec<(usize, &EdgeRef)> = Vec::new();
+    for (i, e) in found.iter().enumerate() {
+        match once.iter().find(|(_, o)| same_edge(o, e, tol)) {
+            Some(&(j, _)) => notes.push(format!(
+                "edge {} is edge {} again and was taken once",
+                i + 1,
+                j + 1
+            )),
+            None => once.push((i, e)),
+        }
+    }
     // Round edges get their own tools; the straight ones go on as before, numbered as the request numbers them.
     let mut rims = Vec::new();
     let mut straight = Vec::new();
-    for (i, e) in edges.iter().enumerate() {
+    for &(i, e) in &once {
         if e.center.is_some() {
             rims.push((i + 1, rim::of_ref(mesh, e, i + 1)?));
         } else {
@@ -1584,6 +1597,7 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
     }
     let mut out = Tools {
         refs: found.clone(),
+        notes,
         ..Tools::default()
     };
     for &(n, ref r) in &rims {
@@ -1673,6 +1687,20 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         }
     }
     Ok(out)
+}
+
+/// whether two found references are one edge: the same ends either way round, or the same rim
+fn same_edge(a: &EdgeRef, b: &EdgeRef, tol: f64) -> bool {
+    let near = |p: V3, q: V3| vec3::len(vec3::sub(p, q)) < tol;
+    match (a.center, b.center) {
+        (Some(ca), Some(cb)) => {
+            near(ca, cb)
+                && vec3::dot(a.face, b.face) > 0.999
+                && (vec3::len(vec3::sub(a.a, ca)) - vec3::len(vec3::sub(b.a, cb))).abs() < tol
+        }
+        (None, None) => (near(a.a, b.a) && near(a.b, b.b)) || (near(a.a, b.b) && near(a.b, b.a)),
+        _ => false,
+    }
 }
 
 /// The two faces' keys at the middle of edge `e`, the face `e.face` faces first, or none when the mesh's faces have
@@ -2402,6 +2430,38 @@ mod tests {
         let (lo, hi) = (area * 2.0 * PI * (10.0 - s), area * 2.0 * PI * 10.0);
         assert!(lost > lo && lost < hi, "{lost} not in {lo}..{hi}");
         assert!(lost > m.volume() - one.mesh.volume());
+    }
+
+    #[test]
+    fn an_edge_asked_for_twice_is_cut_once() {
+        // a round edge, as a coaster's rim is picked by its chain and its loop: cut twice, it gains triangles
+        let disk = build::cylinder(&Frame::WORLD, 10.0, 0.0, 5.0, 64);
+        let rim = pick(&disk, [0.0, 0.0, 1.0], [9.9, 0.0, 5.0]).edge;
+        let one = run(&disk, &[rim], fillet(1.0)).unwrap();
+        let r = run(&disk, &[rim, rim], fillet(1.0)).unwrap();
+        sound(&r);
+        assert_eq!(r.mesh.triangles.len(), one.mesh.triangles.len());
+        assert_eq!(r.mesh, one.mesh);
+        let c = run(&disk, &[rim, rim], chamfer(0.6)).unwrap();
+        assert_eq!(c.mesh, run(&disk, &[rim], chamfer(0.6)).unwrap().mesh);
+        let b = build::box_mesh([0.0; 3], [20.0, 10.0, 5.0]);
+        let top = pick(&b, [0.0, 0.0, 1.0], [8.0, 0.4, 5.0]).edge;
+        let back = EdgeRef {
+            a: top.b,
+            b: top.a,
+            ..top
+        };
+        let one = run(&b, &[top], fillet(1.0)).unwrap();
+        for twice in [vec![top, top], vec![top, back]] {
+            let r = run(&b, &twice, fillet(1.0)).unwrap();
+            sound(&r);
+            assert_eq!(r.mesh, one.mesh);
+            assert_eq!(r.refs.len(), 2);
+            assert_eq!(
+                r.notes,
+                vec!["edge 2 is edge 1 again and was taken once".to_owned()]
+            );
+        }
     }
 
     /// A plate `x` by `y` by `z`, each upright corner from (x, 0) on rounded to its radius (0 stays sharp) in `steps`.
