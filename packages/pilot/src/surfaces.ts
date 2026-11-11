@@ -20,8 +20,8 @@ export function isLocalModel(config: Pick<PilotConfig, 'provider'>): boolean {
 
 /** Tools a local model does not get, per surface. Everything else the surface has stays. */
 const LOCAL_LEAVE_OUT: Record<ToolSurface, ReadonlySet<string>> = {
-  // make_model's schema alone is about 1,700 tokens
-  tab: new Set(['make_model']),
+  // make_model's schema alone is about 1,700 tokens; design.look sends a picture, which a local model cannot read
+  tab: new Set(['make_model', 'design.look']),
 }
 
 /**

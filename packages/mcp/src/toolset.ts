@@ -4,6 +4,7 @@
 // them with its files; the app builds the same definitions on its plate, where a model file is not a design and
 // every file call says so.
 import type { DesignHost } from '@slicerx/cad-history'
+import { lookTool } from './look'
 import type { PilotTool } from '@slicerx/pilot'
 import { cadTools, type CadFiles } from './cad'
 import { createPlanRegistry } from './design-check'
@@ -77,7 +78,8 @@ export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?:
   const fitProfile = () => ({ ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })
   const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile, designs: () => host.list() })
   // paint.preview, paint.apply and paint.regions paint a design's parts as a step of its history, as on the server
-  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true }))), ...paintTools(host)]
+  // design.look draws the design for a cloud model to look at on a vague follow-up (look.ts); a local model is not offered it
+  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true }))), ...paintTools(host), lookTool(host, opts.filaments)]
   // the open project's filaments, where the host has them: the part makers add the ones their slot is past, and two
   // tools add and set them
   return opts.filaments ? [...withNewFilaments(tools, opts.filaments), ...filamentTools(opts.filaments)] : tools

@@ -47,6 +47,8 @@ const WORDS: Record<string, Words | null> = {
   'geom.fit_check': { doing: 'Checking the gaps', done: 'Checked the gaps' },
   'geom.interference': { doing: 'Checking the fit of two parts', done: 'Checked the fit of two parts' },
   'geom.info': { doing: 'Checking the part', done: 'Checked the part' },
+  // a picture the model looks at on a vague follow-up: one plain line, never a silent step
+  'design.look': { doing: 'Looking at the model', done: 'Looked at the model' },
   'design.check': { doing: 'Checking the part against its plan', done: 'Checked the part against its plan' },
   'design.undo': { doing: 'Undoing the last step', done: 'Undid the last step' },
   'app.slice': { doing: 'Slicing the plate', done: 'Sliced the plate' },
