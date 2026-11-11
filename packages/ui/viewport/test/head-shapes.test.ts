@@ -65,14 +65,19 @@ function bedOf(machine: Settings): { widthMm: number; depthMm: number; heightMm:
   return { widthMm: Math.max(...pts.map((p) => p[0] ?? 0)), depthMm: Math.max(...pts.map((p) => p[1] ?? 0)), heightMm: Number(machine['printable_height']) || 250 }
 }
 
-/** The stops of every change between two tools, without the lift at the start and the return at the end. */
+/**
+ * The stops of every change between two tools, without the lift at the start and the return at the end. The H3C's
+ * tools are its hotends, one dock each, and the engine looks its routes up by hotend from the slice's filament map; its
+ * change between two filaments on one hotend, a swap at the chute with no rack visit, is kept as 0-0.
+ */
 function routes(spec: ToolChangerSpec): Record<string, [number, number, number, number][]> {
   const out: Record<string, [number, number, number, number][]> = {}
   const tools = spec.kind === 'filament-swap' || spec.kind === 'dual-nozzle' ? 2 : spec.tools
+  const sameTool = spec.kind === 'printtool-rack'
   const at: [number, number, number] = [spec.bed.widthMm / 2, spec.bed.depthMm / 2, 10]
   for (let from = 0; from < tools; from++)
     for (let to = 0; to < tools; to++) {
-      if (from === to) continue
+      if (from === to && !sameTool) continue
       const seq = changeSequence(spec, from, to, at, at, 20)
       const phases = seq.phases.filter((p) => p.move > 0)
       if (phases[0]?.name === 'lift') phases.shift()
@@ -80,8 +85,9 @@ function routes(spec: ToolChangerSpec): Record<string, [number, number, number, 
       // Stops at the rack, dock or switch bay are the station; the moves between are the trip there and back.
       const station = new Set(['dock', 'seat', 'push in', 'release', 'back out', 'grab', 'settle', 'pull out', 'unlatch', 'leave', 'engage', 'to slot', 'along', 'approach', 'unlock', 'park', 'pull back', 'insert', 'lock', 'clear', 'extract', 'into bay', 'switch', 'out of bay'])
       const stops: [number, number, number, number][] = phases.map((p) => [Math.round(p.to[0] * 10) / 10, Math.round(p.to[1] * 10) / 10, Math.round((p.to[2] - at[2]) * 100) / 100, station.has(p.name) ? 1 : 0])
-      // A change that goes the same way whichever tools it swaps is kept once, as 0-1.
-      if (from > 0 || to > 1) if (JSON.stringify(stops) === JSON.stringify(out['0-1'])) continue
+      // A change that goes the same way whichever tools it swaps is kept once, as 0-1 (0-0 for one tool to itself).
+      const first = from === to ? '0-0' : '0-1'
+      if (`${from}-${to}` !== first && JSON.stringify(stops) === JSON.stringify(out[first])) continue
       out[`${from}-${to}`] = stops
     }
   return out
@@ -124,8 +130,10 @@ function build() {
   const printers: Record<string, { heads: string[]; changer?: string }> = {}
   for (const [id, m] of Object.entries(machine)) {
     const nozzles = Array.isArray(m.machine['nozzle_diameter']) ? m.machine['nozzle_diameter'].length : 1
-    const rack = Array.isArray(m.machine['extruder_max_nozzle_count']) && m.machine['extruder_max_nozzle_count'].some((n) => Number(n) > 1)
-    const tools = rack ? 6 : Math.max(2, nozzles)
+    const hotends = Array.isArray(m.machine['extruder_max_nozzle_count']) ? m.machine['extruder_max_nozzle_count'].map(Number) : []
+    const rack = hotends.some((n) => n > 1)
+    // A printer whose hotends are its tools (the H3C: one extruder, nine hotends) gets a route between every two of them.
+    const tools = nozzles <= 1 && rack ? Math.max(...hotends) : rack ? 6 : Math.max(2, nozzles)
     // Every extruder prints a tool of its own (the rack's the rest), so each one's head is drawn.
     const s = nozzles > 1 ? { ...m.machine, filament_map: Array.from({ length: tools }, (_, i) => String(Math.min(i, nozzles - 1) + 1)) } : m.machine
     const kin = kinematics.get(id)
@@ -135,12 +143,6 @@ function build() {
     // yet, carries its two nozzles as two family heads as well.
     if (spec?.kind === 'idex-park' || (!spec && nozzles > 1) || (spec?.kind === 'dual-nozzle' && !id.startsWith('bambu-'))) {
       printers[id] = { heads: Array.from({ length: nozzles }, () => single(id)) }
-      continue
-    }
-    // The H3C's PrintTool rack plays in Preview only: heimdall keeps the family head and no changer for it until its
-    // head and dock routes are checked against the engine's collision tests.
-    if (spec?.kind === 'printtool-rack') {
-      printers[id] = { heads: [single(id)] }
       continue
     }
     const ch = spec ? { changer: changer(id, { kind: spec.kind, liftMm: spec.liftMm, routes: routes(spec) }) } : {}

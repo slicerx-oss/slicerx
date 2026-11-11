@@ -13,7 +13,7 @@ import { buildProfileLayer } from '../src/adapters/profile'
 import { applyCollisionFix } from '../src/plate/heimdall-fix'
 import { collisionTime, jumpTo } from '../src/plate/heimdall-jump'
 import { gantryHits, gantrySpec } from '../src/plate/heimdall-gantry'
-import { collisionDetail, collisionTitle, fixDetail, fixTitle, namesOf } from '@slicerx/ui/heimdall-words'
+import { collisionDetail, collisionTitle, fixDetail, fixTitle, namesOf, stationOf } from '@slicerx/ui/heimdall-words'
 import { preflight } from '../src/plate/preflight'
 import { showSpot } from '../src/plate/preflight-show'
 import { get, set } from '../src/state/store'
@@ -253,5 +253,14 @@ describe('heimdall in the app', () => {
     const out: CollisionFix = { kind: 'move_object', costS: 0, clears: [1], oneClick: false, objectId: 'a' }
     expect(fixTitle(out, name, [], undefined, list)).toBe('Move Bracket out of the zone')
     expect(fixDetail(out, name, 2, undefined, list)).toBe('Place Bracket where the printer does not need the plate clear. Clears 1 strike.')
+  })
+
+  it('names the H3C tool rack where a change docks, and the chute on other Bambu Lab printers', () => {
+    expect(stationOf('bambu-h3c')).toBe('tool rack')
+    expect(stationOf('bambu-h2c')).toBe('hotend rack')
+    expect(stationOf('bambu-x1-carbon')).toBe('purge chute')
+    const name = namesOf([{ id: 'a', name: 'Bracket' }, { id: 'b', name: 'Hook' }])
+    const dock: Collision = { ...hit, kind: 'dock', part: 'toolhead', objectId: 'b', hitId: 'a' }
+    expect(collisionTitle(dock, name, stationOf('bambu-h3c'))).toBe('The tool rack meets Bracket')
   })
 })
