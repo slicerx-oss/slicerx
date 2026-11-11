@@ -296,7 +296,7 @@ describe('finished sketches in the design tools', () => {
     const inputs: [string, string, (l: unknown[]) => unknown][] = [
       ['geom.sketch_check', '1.1.0', (l) => ({ loops: l })],
       ['geom.sketch_edit', '1.1.0', (l) => ({ loops: l, op: 'intersect' })],
-      ['geom.extrude', '1.6.0', (l) => ({ shape: { type: 'sketch', loops: l }, distance_mm: 2 })],
+      ['geom.extrude', '1.7.0', (l) => ({ shape: { type: 'sketch', loops: l }, distance_mm: 2 })],
       ['geom.revolve', '1.6.0', (l) => ({ loops: l, axis: { point: [0, 0], direction: [0, 1] } })],
       ['design.sketch', '1.3.0', (l) => ({ loops: l })],
     ]
