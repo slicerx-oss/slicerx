@@ -660,6 +660,7 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
         ("current_nozzle_id", n(0.0)),
         ("next_nozzle_id", n(0.0)),
         ("initial_nozzle_id", n(0.0)),
+        ("initial_no_support_nozzle_id", n(0.0)),
         ("nozzle_diameter_at_nozzle_id", list([cfg.nozzle_diameter])),
         ("nozzle_volume_types", Value::List(vec![Value::Str(volume_type)])),
         ("is_prime_tower_interface", Value::Bool(false)),
@@ -695,8 +696,9 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
     for (k, v) in vars {
         c.vars.insert(k.to_owned(), v);
     }
-    // One extruder whose hotends are its tools (the H3C): the hotend ids are the hotends the filaments print on (the
-    // nozzle id is the hotend too), and the per-hotend lists have one entry per hotend.
+    // One extruder whose hotends are its tools (the H3C): the nozzle ids are the hotends the filaments print on, and
+    // the per-hotend lists have one entry per hotend. The hotend ids stay -1, as the printer's stock output writes them
+    // (its firmware picks the hotend from the filament's place in the map).
     if crate::nozzles::hotend_tools(cfg) {
         let hotend = |id: u8| {
             #[allow(clippy::cast_precision_loss, reason = "a hotend index")]
@@ -705,9 +707,9 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
         };
         let count = crate::nozzles::hotends(cfg);
         for (k, v) in [
-            ("current_hotend", hotend(first_id)),
-            ("next_hotend", hotend(first_id)),
-            ("initial_no_support_hotend", hotend(solid_id)),
+            ("current_hotend", n(-1.0)),
+            ("next_hotend", n(-1.0)),
+            ("initial_no_support_hotend", n(-1.0)),
             ("current_nozzle_id", hotend(first_id)),
             ("next_nozzle_id", hotend(first_id)),
             ("initial_nozzle_id", hotend(first_id)),
@@ -1252,6 +1254,13 @@ fn add_defaults(c: &mut Context<'_>, cfg: &PrintConfig, tools: usize) {
     put("filament_max_volumetric_speed", per_tool(zero()));
     put("filament_notes", per_tool(Value::Str(String::new())));
     put("filament_type", per_tool(Value::Str("PLA".into())));
+    // Each filament's preset id (`GFA00`); empty for a filament with no shipped preset, as a project writes it. The
+    // settings package fills both lists below from the filament presets on printers whose G-code reads them.
+    put("filament_ids", per_tool(Value::Str(String::new())));
+    // The fin extrusion safe temperature of a filament with no value anywhere: 0, which the stock G-code that reads
+    // it takes as the check turned off, as a real H3C slice writes it for presets without one. The settings
+    // package's rule (`finsSafeTemp`) gives a filament its preset's value first and its material's generic value next.
+    put("fins_extrude_safe_temp", per_tool(Value::Num(0.0)));
     put("filament_diameter", per_tool(Value::Num(cfg.filament_diameter)));
     put("printer_model", Value::Str(String::new()));
     put("printer_preset", Value::Str(String::new()));
