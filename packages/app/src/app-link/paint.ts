@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, storedTarget } from '@slicerx/mcp/toolset'
+import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, storedTarget } from '@slicerx/mcp/toolset'
 import { geom } from '../geom/client'
 import { slotCount } from '../filament/slots'
 import { history, inStep } from '../plate/history'
@@ -72,13 +72,15 @@ export async function previewPaint(args: Record<string, unknown>, client: LinkCl
   let selected: ReturnType<typeof storedTarget>
   try { selected = storedTarget(i.target) }
   catch (error) { throw new LinkError('invalid_input', error instanceof Error ? error.message : String(error)) }
+  // a height band's edge lands on its height, as the server's paint.preview picks it, so a thin band prints only its layers
+  const maxDepth = i.max_depth ?? (selected.kind === 'height' ? bandDepth(i.part === undefined ? e.parts : [e.parts[i.part]!], e.transform) : undefined)
   const paint: PaintData = { ...e.paint }
   const edits: StrokeEdits[] = []
   let areaMm2 = 0
   for (const [part, mesh] of e.parts.entries()) {
     if (i.part !== undefined && part !== i.part) continue
     const old = e.paint?.[part]?.[i.layer] ?? {}
-    const result = await geom().call<{ changed: Record<string, string>; selectedAreaMm2: number }>('paint.select', { mesh: { positions: mesh.positions, indices: mesh.indices }, transform: e.transform, paint: old, state: i.state, target: selected, ...(i.max_depth === undefined ? {} : { maxDepth: i.max_depth }) })
+    const result = await geom().call<{ changed: Record<string, string>; selectedAreaMm2: number }>('paint.select', { mesh: { positions: mesh.positions, indices: mesh.indices }, transform: e.transform, paint: old, state: i.state, target: selected, ...(maxDepth === undefined ? {} : { maxDepth }) })
     const changed = Object.entries(result.changed).filter(([key, value]) => (old[Number(key)] ?? '') !== value).map(([key, value]) => ({ triangle: Number(key), after: value || null }))
     const texts = { ...old }
     for (const { triangle, after } of changed) { if (after) texts[triangle] = after; else delete texts[triangle] }
