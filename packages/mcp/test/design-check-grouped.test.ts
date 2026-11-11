@@ -81,6 +81,42 @@ describe('design.check with grouped features', () => {
   })
 })
 
+// A thing made of parts in different colors (a ship: hull, superstructure, funnels, masts) is planned assembled, one
+// part per color, and built that way: the check holds it to the whole, so the assembled build passes and a kit of the
+// same pieces laid apart fails (the plan's own size, not the bed's spread).
+describe('design.check on a model of colored parts', () => {
+  const ship: PartPlan = {
+    planId: 'ship',
+    part: 'Ship',
+    units: 'mm',
+    features: [
+      { name: 'Hull', kind: 'extrude', sizes: { length: 200, beam: 24, height: 16 } },
+      { name: 'Superstructure', kind: 'extrude', sizes: { length: 120, width: 18, height: 8 } },
+      { name: 'Funnels', kind: 'extrude', sizes: { diameter: 7, height: 14 } },
+    ],
+    overall: { x: 200, y: 24, z: 38 },
+    assumptions: [],
+    questions: [],
+  }
+  const shipSteps = ['Hull', 'Superstructure', 'Funnels']
+  const hull = { x: 200, y: 24, z: 16 }
+  const deck = { x: 120, y: 18, z: 8 }
+  const funnels = { x: 70, y: 7, z: 14 }
+
+  it('passes the assembled build, held to the whole with no part laid apart', () => {
+    const assembled: BodyFacts = { size: { x: 200, y: 24, z: 38 }, holes: [], features: 3, steps: shipSteps, watertight: true, minWallMm: 2, parts: [hull, deck, funnels] }
+    const r = designCheck(ship, assembled, 0.4)
+    expect(item(r, 'overall size')).toMatchObject({ pass: true })
+    expect(item(r, 'overall size').got).not.toContain('largest part')
+    expect(r.pass).toBe(true)
+  })
+
+  it('fails the same pieces laid flat apart, since no piece is the whole ship', () => {
+    const kit: BodyFacts = { size: { x: 200, y: 24 + 10 + 18 + 10 + 7, z: 16 }, holes: [], features: 3, steps: shipSteps, watertight: true, minWallMm: 2, parts: [hull, deck, funnels] }
+    expect(item(designCheck(ship, kit, 0.4), 'overall size').pass).toBe(false)
+  })
+})
+
 // Each modeling tool takes the plan feature its step builds (feature), recorded on the step. A feature with no step
 // tagged with its name fails by name; an untagged step is finishing work and never stands in for a missing feature.
 describe('design.check ties steps to features by their tag', () => {

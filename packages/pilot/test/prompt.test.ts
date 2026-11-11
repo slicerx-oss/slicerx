@@ -4,9 +4,10 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { DISMISSED_LINE, FAMILY_LINE, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { ASSEMBLED_LINE, assembledLine, DISMISSED_LINE, FAMILY_LINE, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
+import { turnSet, turnSetTools } from '../src/turnsets'
 
 afterEach(() => setAssistantBrand())
 
@@ -82,6 +83,38 @@ describe('the print run in the full prompt', () => {
     for (const p of [systemPrompt('full'), systemPrompt('full', (n) => !n.startsWith('printer.') && n !== 'run.target')]) {
       const line = lineWith(p, 'Print only when asked')
       expect(line).toContain('a part alone ends with the part')
+    }
+  })
+
+  /** Wishes about how a part will print or look, none of them a request to print or slice. */
+  const WISHES = ['for easy printing', 'in four colors', 'and paint it to match', 'so it prints without supports', 'and make it look like the real thing']
+
+  it('slices, targets and queues only on an ask to slice or print, never on a wish about how it prints', () => {
+    for (const p of [systemPrompt('full'), systemPrompt('full', undefined, '', { cloud: true })]) {
+      const line = lineWith(p, 'Print only when asked')
+      expect(line).toContain('Call run.target, app.slice, slice or printer.queue only when the person asks to slice or print')
+      expect(line).toContain('a wish about how it will print or look is not a request to print')
+      // the rule stays general: no request's own words in the prompt
+      for (const w of ['for easy printing', 'in four colors', 'paint it']) expect(line).not.toContain(w)
+      // the job rule is for a print the person asked for, not any request with a part in it
+      expect(lineWith(p, 'kb.intent')).toContain('For a print job the person asks for ("print 12 PETG brackets by Friday")')
+    }
+    // only the tools the model is offered are named
+    const noTarget = lineWith(systemPrompt('full', (n) => n !== 'run.target' && n !== 'slice'), 'Print only when asked')
+    expect(noTarget).toContain('Call app.slice or printer.queue only when')
+    expect(noTarget).not.toContain('run.target')
+  })
+
+  it('a local turn asking for a part with a wish about how it prints or looks is a build turn, sent no slice, target or queue tool', () => {
+    const tools = ['design.new', 'design.plan', 'geom.build', 'run.target', 'app.slice', 'slice', 'printer.queue'].map((name) => ({ name }))
+    for (const part of ['design me a ship, nothing too detailed,', 'design a two color keychain tag that says SLICERX,', 'make a small toy rocket, red and white,']) {
+      for (const wish of WISHES) {
+        const message = `${part} ${wish}`
+        const set = turnSet(message)
+        expect(set, message).toBe('build')
+        const sent = turnSetTools(tools, set).map((t) => t.name)
+        for (const t of ['run.target', 'app.slice', 'slice', 'printer.queue']) expect(sent, message).not.toContain(t)
+      }
     }
   })
 
@@ -210,7 +243,8 @@ describe('the skill playbooks in the prompt', () => {
 describe('the line for parts that move', () => {
   const all = (): boolean => true
   /** The cloud prompt less its cloud-only parts: the line for parts that move, the plan line's pointer to it, the line for a sweep that changes shape and the line for a family. */
-  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '')
+  // the line for things made of colored parts names only the tools offered, so it is taken out by its start
+  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '')
 
   it('is one line, in the cloud prompt only, after the check line', () => {
     expect(MOVING_PARTS_LINE).not.toContain('\n')
@@ -302,5 +336,40 @@ describe('the line for a sweep that changes shape', () => {
     expect(cloud.split(RESHAPE_LINE)).toHaveLength(2)
     expect(systemPrompt('cad', () => true)).not.toContain(RESHAPE_LINE)
     expect(systemPrompt('cad', (n) => n !== 'geom.sweep', '', { cloud: true })).not.toContain(RESHAPE_LINE)
+  })
+})
+
+describe('a thing made of colored parts', () => {
+  const cloud = (has?: (n: string) => boolean) => systemPrompt('full', has, '', { cloud: true })
+  const line = (p: string) => p.split('\n').find((l) => l.includes('parts in different colors')) ?? ''
+
+  it('is built assembled in one design, one part per color, and never split or laid out unasked', () => {
+    const l = line(cloud())
+    expect(l).toContain('is one design, built assembled as it looks finished')
+    expect(l).toContain('one part per color, each on the filament of its color (slot on geom.build)')
+    expect(l).toContain('never a kit of pieces laid apart')
+    expect(l).toContain('Plan and check it as that one assembled model')
+    expect(l).toContain('Do not split it into objects or lay its parts out on the plate unless the person asks for that')
+    // it comes after the plan line and before the check, as the model meets them building
+    const p = cloud()
+    expect(p.indexOf(l)).toBeGreaterThan(p.indexOf('Every new part shows its sizes on the dimension sheet first'))
+    expect(p.indexOf(l)).toBeLessThan(p.indexOf('After the last feature of a planned part, call design.check'))
+  })
+
+  it('names the filament and split tools only when the model is offered them', () => {
+    // today's tab has neither: the line still reads whole, in plain words
+    const today = line(cloud((n) => n !== 'project.set_filament' && n !== 'project.split_objects'))
+    expect(today).not.toContain('project.')
+    expect(today.endsWith('unless the person asks for that.')).toBe(true)
+    const both = line(cloud())
+    expect(both).toContain("Set those filaments' colors with project.set_filament.")
+    expect(both.endsWith('unless the person asks for that (then project.split_objects).')).toBe(true)
+    expect(assembledLine(() => false)).toBe(ASSEMBLED_LINE)
+  })
+
+  it('is in the cloud prompt only, and only with design.plan', () => {
+    expect(systemPrompt('full')).not.toContain('parts in different colors')
+    expect(cloud((n) => n !== 'design.plan')).not.toContain('parts in different colors')
+    expect(systemPrompt('cad', undefined, '', { cloud: true })).toContain('parts in different colors')
   })
 })
