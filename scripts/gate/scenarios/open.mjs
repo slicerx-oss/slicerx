@@ -64,6 +64,22 @@ async function openAlone(s, id, label) {
   return { listing, state: st }
 }
 
+/**
+ * Waits for the Filament section to show the printer's spools before b1 opens anything. The A1's filament unit reports
+ * its spools a while after the app starts, and the spools set the filament values a kept project holds: spools that
+ * arrive between keeping a plate and Reopen change those values under it, so b1 ran differently by when they came.
+ * Waiting here makes every b1 run start from the same filaments, whatever ran before it. A printer that never reports
+ * (no connection) leaves the spools as they are, said in the log.
+ */
+async function spoolsReady(s) {
+  const read = async () => (await s.call('app_spools')).data ?? {}
+  const loaded = await waitUntil(async () => ((await read()).fromPrinter ? true : null), { timeoutMs: 45_000, everyMs: 500 })
+  // The print profile follows the spools; give it a moment to build on them.
+  if (!loaded.timedOut) await s.sleep(2000)
+  const now = await read()
+  s.info(loaded.timedOut ? 'the printer reported no spools in 45 s; b1 goes on with the spools as they are' : 'the Filament section shows the printer\'s spools', (now.spools ?? []).map((sp) => `${sp.label} ${sp.type}${sp.family ? ` ${sp.family}` : ''} (${sp.source})`))
+}
+
 /** Signed out: on the example plate, on a cleared plate, the kept plate and Reopen, and the save question on Clear the plate. */
 export async function openSignedOut(s) {
   const who = await s.user()
@@ -79,6 +95,7 @@ export async function openSignedOut(s) {
     s.info(`signed out ${who.email} first`)
   }
   s.check('signed out', true)
+  await spoolsReady(s)
   const before = await s.state()
   s.info('the plate before the first open', before.plate.objects.map((o) => o.name))
   await openAlone(s, 'temperature-tower', 'on the plate as it starts')
