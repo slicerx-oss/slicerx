@@ -220,6 +220,48 @@ Drawing. The Smart Head (black body with the orange front and the coil strip low
 
 Sources: prusa3d.com/product/indx-4-tool-conversion-kit-for-core-one-gen2/, github.com/BondtechAB/INDX (its README and `indx.cfg` description), and the Prusa forum thread "Tools mounted on the front impacting access" in the INDX general discussion.
 
+## Bambu Lab H3C (nine PrintTools on the SwapTek rack)
+
+How it works. The H3C has one toolhead and nine PrintTools. A PrintTool is a hotend on a base of its own, with its own filament path, so each filament stays loaded in its own hotend and a change between two of them flushes nothing. The PrintTools wait on the SwapTek rack, which is installed on the front of the chamber, each on a dock that holds it by a magnet. The rack is motorized: it waits raised while the print runs, so the print stays in view, and lowers to its working position when a change comes. The toolhead goes to the preset position of the PrintTool it carries, its ToolLock motor moves the PrintTool down out of the lock and the dock takes it; the head then picks the next PrintTool from its dock the same way in reverse, and the rack rises again. The purge wiper is at the back right of the chamber, over the purge chute at the back. Preview plays that as `printtool-rack` in `toolchanger.ts`.
+
+Where the change happens. The stock change G-code lifts to 3 mm over the highest layer printed (`G1 Z{max_layer_z + 3.0} F3000`), stops the fans, sets the flush and retraction values (`M620.10`, `M620.11`), and hands over to the firmware with `T[next_filament_id]` between `M620 S[next_filament_id]A` and `M621 S[next_filament_id]A`. After the `T` it leaves the back of the chamber by `G387 Y295 J1 F60000` and `G387 Y265 J1 F18000`, then selects the hotend for the air printing check (`M620.6 I[next_filament_id] H[next_hotend]`). The start G-code loads the first filament the same way (`T[initial_no_support_filament_id]`, then `M620.6 ... H[initial_no_support_hotend]`) and also leaves its wipes by the same two `G387` moves, so the firmware's work on a `T` ends at the back of the chamber. The change G-code moves the head to no dock: the rack positions are the firmware's own (the wiki's docking calibration finds each dock near a preset XY), so the ones below are estimated, for Preview only. The sequence: lift; the rack lowers as the head runs to the front; into the dock of the PrintTool it carries, unlock, back out; along the docks to the PrintTool of the next filament's hotend, in, lock, out; the rack rises as the head goes to the chute at the back right, where the new PrintTool's filament is gripped and primed; out by the two `G387` moves; back to the next move and down. Two filaments on one hotend (more filaments than hotends) swap filament at the chute instead, with no rack visit.
+
+The move order was checked against a real H3C print file (two cubes, PETG and ABS in filaments 1 and 3, a prime tower): every one of its 165 changes runs `M620 Q`, `M620 S..A`, the lift, `T`, `M621 S..A`, `G387 Y295`, `G387 Y265`, `M620.6`, `M620 O`, and every change to filament 3 goes to hotend 1 and every change to filament 1 to hotend 0, as its nozzle change comments say. Preview plays the same 165 changes on the same hotends (test/h3c.test.ts).
+
+Which hotend. Each filament prints on the hotend the slice's filament map gives it (`filamentMap.nozzles` in the slice result, `filament_nozzle_map` in the settings, 0-based). The engine fills that map: the plate's filaments take free hotends in slot order, a 2.85 mm TPU filament the TPU hotend, and filaments past the free hotends share hotend 0. Before a slice, filament `n` is taken to be on hotend `n`.
+
+Which printers get it. The `bambu-h3c` profile, and any printer with one `nozzle_diameter` entry and an `extruder_max_nozzle_count` above 1 (one extruder whose hotends are its tools, the engine's `hotend_tools` rule).
+
+Timing. A swap costs the printer's hotend change time, as the engine counts it: the first of `machine_hotend_change_time`, `machine_tool_change_time` and `machine_switch_extruder_time` above 0. The stock presets give 0, nothing and 4 s, so a swap takes 4 s. Each hotend keeps its filament as an extruder does, so the first visit to a hotend also loads it (15 s), and later swaps to it are 4 s. The 4 s cover the firmware's part, from the trip to the rack to the chute; the prime at the chute takes what the moves leave of it, at least 0.3 s. The lift, the exit moves, the return and the lowering come on top, at their own feed rates.
+
+Drawing. The toolhead (black body with the display chip in the printing filament's color, the silver cover, the lock plate under the body) is part of the gantry and always drawn; the PrintTool hangs under it, with the indicator light on the front of its base and the filament stub at the back of its top. The PrintTool in play reads against the black head and the steel rack: its nozzle tip and filament stub take the filament's color and its base gets a light edge. That is the PrintTool in the head, and during a change the one in the dock the head stands in front of, so the PrintTool being parked shows until the head backs out. Parked PrintTools stay steel. The rack stands across the front: a beam with a hanger in front of each dock. A docked PrintTool hangs 2 mm higher than the head holds it, and the dock takes it up those 2 mm as it is unlocked. Docks of hotends the print does not use hold spare PrintTools. The rack is drawn raised 60 mm while the print plays and lowered through the change. The chute and wiper at the back right are the purge rig's.
+
+Sizes. The wiki gives the print area (330 x 320 mm) and photos, and no dimensions of the toolhead, the PrintTools or the rack. The drawing is scaled from the bed and those photos: a PrintTool base 24 mm square and 13 mm tall, a toolhead 40 mm wide, 32 mm deep and 80 mm over the tip, nine docks 36 mm apart, which spreads the rack across the chamber's width (the wiki fixes the rack with screws in both side panels).
+
+heimdall. This section is Preview only. heimdall's collision data (`head-shapes.json`) keeps the H3C's family head and no changer route for now; giving it the drawn head and the dock routes is a separate change.
+
+| Value | Source | Status |
+| --- | --- | --- |
+| Bed 330 x 320 mm, printable height 325 mm | machine profile (`printable_area`, `printable_height`) | measured |
+| One extruder (`nozzle_diameter` one entry), nine hotends (`extruder_max_nozzle_count` 9), hotend 8 for 2.85 mm TPU | machine profile | measured |
+| `machine_hotend_change_time` 0, `machine_switch_extruder_time` 4 s, load 15 s, unload 28 s | machine profile | measured |
+| Lift 3 mm over the highest layer before the change (`G1 Z{max_layer_z + 3.0} F3000`) | change G-code | measured |
+| Exit moves `G387 Y295` at 60000 mm/min and `G387 Y265` at 18000 mm/min | change G-code | measured |
+| Order: `M620 S..A`, lift, `T`, `M621 S..A`, exits, `M620.6 ... H[next_hotend]` | change G-code; a real H3C print file, all 165 changes | measured |
+| Rack on the front of the chamber, fixed by screws in both side panels; docks hold PrintTools by magnet; the rack waits raised and lowers for a change | wiki, main components; wiki, SwapTek rack replacement; wiki, SwapTek workflow | sourced, no coordinates |
+| The head unlocks a PrintTool with its ToolLock motor, moving it down out of the lock | wiki, main components | sourced |
+| Purge wiper at the back right of the chamber, over the purge chute at the back | wiki, main components | sourced, no coordinates |
+| Travel speed and acceleration | process profile (`travel_speed`, `travel_acceleration`) | measured |
+| Nine docks 36 mm apart, centered on the bed; PrintTool seated at Y -40, the head runs along X at Y -8 | no source | estimated |
+| Rack raised 60 mm while printing; a docked PrintTool 2 mm higher than held | no source | estimated |
+| Chute at X 300 (30 mm in from the bed's right edge), Y 336 (16 mm past the bed, as the H2 family's) | wiki (back right); position not published | estimated |
+| Moves into and out of a dock at 150 mm/s, 3000 mm/s2; unlock 0.3 s, lock 0.4 s, shortest prime 0.3 s | no source | estimated |
+| PrintTool base 24 mm square and 13 mm tall; toolhead 40 x 32 mm, 80 mm over the tip | scaled from the 330 x 320 mm print area and the wiki photos; no published dimensions | estimated |
+
+The stock change and start G-code come from the H3C's G-code family staged for `gcode.json`, which does not carry it yet; until it does, the change G-code the app writes for the H3C is not the stock one, and Preview takes the lift and the exits from the values above rather than from the settings.
+
+Sources: the H3C machine and process profiles in `packages/profiles` (resolved/bambu-lab.json); the H3C's stock change and start G-code; wiki.bambulab.com/en/h3c/manual/swaptek-workflow-and-function, wiki.bambulab.com/en/h3c/manual/main-components, wiki.bambulab.com/en/h3c/maintenance/replace-swaptek-rack, wiki.bambulab.com/en/h3c/maintenance/replace-printtool and wiki.bambulab.com/en/h3c/troubleshooting/how-to-place-printtool.
+
 ## Timing model
 
 Playback time comes from the layer times the engine writes into the preview buffer. Those cover the print moves of a layer. The change itself is added by the app's timeline from the same rules the engine uses for the G-code's time estimate (`packages/core/src/gcode.rs`, `tool_change_time`, after Orca 2.4.2 `GCodeProcessor::process_T` and Bambu Studio `process_filament_change`):
@@ -227,7 +269,7 @@ Playback time comes from the layer times the engine writes into the preview buff
 - Same extruder, other filament: unload time plus load time.
 - Other extruder: the switch time (`machine_tool_change_time`, or Bambu's `machine_switch_extruder_time` when the profile has only that), plus load time if the extruder is empty, or unload plus load if it last held a different filament.
 
-That gives 5.6 s per switch on the H2D, 5 s plus 30 s of unload and load per hotend swap on the H2C, 5 s on the U1, and nothing on the UltiMaker S series, whose profiles give the switch no time of its own. The simulation's moves are timed with the printer's own travel speed and acceleration (trapezoidal profiles, no instant velocity changes) and its dock speeds; where the profile's documented time is longer than the moves, the difference is spent where the machine spends it (cutting, loading and flushing at the chute on Bambu printers, waiting on temperature on the U1). Where it is shorter, the moves win, so the head never teleports.
+That gives 5.6 s per switch on the H2D, 5 s plus 30 s of unload and load per hotend swap on the H2C, 4 s per hotend swap on the H3C (each hotend standing for an extruder, so its first use adds the 15 s load), 5 s on the U1, and nothing on the UltiMaker S series, whose profiles give the switch no time of its own. The simulation's moves are timed with the printer's own travel speed and acceleration (trapezoidal profiles, no instant velocity changes) and its dock speeds; where the profile's documented time is longer than the moves, the difference is spent where the machine spends it (cutting, loading and flushing at the chute on Bambu printers, waiting on temperature on the U1). Where it is shorter, the moves win, so the head never teleports.
 
 ## What the engine got wrong before this work
 

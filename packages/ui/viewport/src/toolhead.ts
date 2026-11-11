@@ -20,6 +20,10 @@
 // - Prusa Core One with INDX: the Smart Head (black body, orange front, the induction coil low on its front) carrying a
 //   passive nozzle tool under it; the docks in a row along the front with the parked tools standing in them, and the
 //   purge collector with its wiper beside the bed's front right corner.
+// - Bambu Lab H3C: the toolhead (black body, silver upper cover, the lock plate under it) carrying a PrintTool, a hotend
+//   on a base with its indicator light; the SwapTek rack across the front of the chamber, a dock per hotend with the
+//   parked PrintTools hanging in it, raised while the print runs and lowered for a change. The purge chute and wiper at
+//   the back right are the purge rig's (purge.ts).
 // Poses come from `toolchanger.ts`.
 //
 // Every part is a separate solid in millimeters, nozzle tip at the origin, z up, +y toward the back of the
@@ -40,7 +44,10 @@ import {
   Color,
   ConeGeometry,
   CylinderGeometry,
+  EdgesGeometry,
   Group,
+  LineBasicMaterial,
+  LineSegments,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -52,7 +59,7 @@ import {
 import { displayHex } from './palette'
 import { amber, black, block, brass, dark, deep, graphite, hotPlate, lightMat, part, post, prusaOrange, ring, silver, slab, sock, steel, white } from './headparts'
 import { buildHead, type HeadModel } from './heads'
-import { DOCK_PITCH, INDX_DOCK, rackStateBefore, SPARE, type Pose, type ToolChangerSpec } from './toolchanger'
+import { DOCK_PITCH, H3C_PITCH, INDX_DOCK, printToolRackBefore, rackStateBefore, SPARE, type Pose, type ToolChangerSpec } from './toolchanger'
 
 /** Dimensions, mm. */
 export const HOTEND = { collarZ: 30, collarR: 5.5, shaftR: 3.2, top: 58 } as const
@@ -219,6 +226,63 @@ function buildSmartHead(): Group {
     part(post(2.2, 6, 16), steel, 0, 10, k.top + 3, 'inlet'),
   )
   return g
+}
+
+/**
+ * The H3C toolhead and a PrintTool, mm, tip at the origin. The maker publishes no drawing (the wiki gives the 330 x 320 mm
+ * print area and photos), so the sizes are scaled from the bed and the wiki photos: a PrintTool is a hotend under a base
+ * 24 mm square and 13 mm tall, with its indicator light on the front and the filament entering at the back of its top;
+ * the head is 40 mm wide, 32 mm deep and 80 mm over the tip. The lock plate takes the base from above and is narrower than
+ * the 36 mm dock pitch less a neighbor's half, so the head passes over the docks beside the one it works; the body stays
+ * over the parked PrintTools' tops.
+ */
+export const H3C_HEAD = { tool: { half: 12, top: 33 }, plate: { half: 13, front: -8, back: 4, top: 40 }, body: { half: 20, front: -15, back: 17, top: 72 }, cover: 80 } as const
+
+/** The light edge around the base of the PrintTool in play, so it reads against the black head and the steel rack. */
+const edgeMat = new LineBasicMaterial({ color: new Color('#f4f6ff') })
+
+/**
+ * A PrintTool, tip at the origin: the nozzle tip, the hotend under its sock, the heatsink, the base with its light and the
+ * filament stub at the back of its top. The tip and the stub take the filament's color on the PrintTool in play (steel
+ * otherwise), and its base gets the light edge.
+ */
+function buildPrintTool(): { group: Group; tip: Mesh; stub: Mesh; edge: LineSegments } {
+  const g = new Group()
+  g.name = 'tool'
+  const h = H3C_HEAD.tool.half
+  const top = H3C_HEAD.tool.top
+  const tip = part(new ConeGeometry(2.8, 4, 24).rotateX(-Math.PI / 2), steel, 0, 0, 2, 'nozzle')
+  const stub = part(post(2, 4.5, 16), steel, 0, 8, top + 2.25, 'filament')
+  const edge = new LineSegments(new EdgesGeometry(new BoxGeometry(2 * h + 0.6, 2 * h + 0.6, top - 20 + 0.6)), edgeMat)
+  edge.name = 'edge'
+  edge.position.set(0, 0, (top + 20) / 2)
+  edge.visible = false
+  g.add(
+    tip,
+    slab(sock, -5.5, 5.5, -5.5, 5.5, 4, 11, 'sock', 1.2),
+    slab(graphite, -7, 7, -7, 7, 11, 20, 'heatsink', 1),
+    slab(dark, -h, h, -h, h, 20, top, 'base', 1.5),
+    slab(lightMat, -2.5, 2.5, -h - 0.4, -h, 29, 31, 'light'),
+    stub,
+    edge,
+  )
+  return { group: g, tip, stub, edge }
+}
+
+/** The H3C toolhead over the PrintTool it carries: the lock plate, the black body with the display chip, the silver cover, the filament inlet. */
+function buildH3cHead(): { group: Group; chip: Mesh } {
+  const g = new Group()
+  g.name = 'h3c head'
+  const { plate: p, body: b } = H3C_HEAD
+  const chip = slab(steel, -6, 6, b.front - 0.4, b.front, 56, 61, 'chip')
+  g.add(
+    slab(black, -p.half, p.half, p.front, p.back, H3C_HEAD.tool.top + 0.5, p.top, 'lock plate', 1),
+    slab(black, -b.half, b.half, b.front, b.back, p.top, b.top, 'body', 2.5),
+    slab(silver, -b.half, b.half, b.front, b.back, b.top, H3C_HEAD.cover, 'cover', 3),
+    chip,
+    part(post(1.8, 5, 16), steel, 0, 6, H3C_HEAD.cover + 2.5, 'inlet'),
+  )
+  return { group: g, chip }
 }
 
 /** A U1 toolhead, tip at the origin: black body, nozzle under its sock, the orange lever, the extruder motor at the back, the coupling face at the front. */
@@ -447,6 +511,8 @@ export class ToolheadRig {
 
   private clear(): void {
     this.indxBlob = null
+    this.h3cEdges = []
+    this.h3cActive = -1
     this.head.clear()
     this.fixed.clear()
     this.fixed.position.set(0, 0, 0)
@@ -505,6 +571,8 @@ export class ToolheadRig {
       this.buildKlipper(spec, shadow)
     } else if (spec.kind === 'front-dock') {
       this.buildIndx(spec, shadow)
+    } else if (spec.kind === 'printtool-rack') {
+      this.buildH3c(spec, shadow)
     } else if (spec.kind === 'xl-dock') {
       // Prusa XL: the toolhead hangs behind the carriage's coupling plate.
       const t = buildXlTool()
@@ -687,6 +755,47 @@ export class ToolheadRig {
     this.fixed.add(dock)
   }
 
+  /**
+   * H3C: the head is part of the gantry and always drawn; the PrintTool hangs under it. The SwapTek rack stands across the
+   * front: a beam with a dock per hotend, each a hanger plate in front of its PrintTool, which hangs `seatRise` higher than
+   * the head holds it. The rack keeps the head's height (the bed moves in z), `rise` higher
+   * while the print runs.
+   */
+  private h3cEdges: { edge: LineSegments; slot: number }[] = []
+  private h3cActive = -1
+  private buildH3c(spec: ToolChangerSpec, shadow: Mesh): void {
+    const k = spec.printTool
+    const t = buildPrintTool()
+    this.carried = t.group
+    const head = buildH3cHead()
+    this.head.add(shadow, t.group, head.group)
+    this.disposables.push(t.edge.geometry)
+    this.h3cEdges = [{ edge: t.edge, slot: -1 }]
+    this.h3cActive = -1
+    for (const mesh of [t.tip, t.stub, head.chip]) this.sleeves.push({ mesh, tool: () => this.carriedTool })
+    if (!k) return
+    const rack = new Group()
+    rack.name = 'dock'
+    const h = H3C_HEAD.tool.half
+    const y0 = k.dockY - h
+    const x0 = Math.min(...k.x) - H3C_PITCH / 2 - 6
+    const x1 = Math.max(...k.x) + H3C_PITCH / 2 + 6
+    rack.add(slab(dark, x0, x1, y0 - 12, y0 - 4, 14, 31, 'rack beam', 1.5), slab(black, x0, x1, y0 - 14, y0 - 4, 31, 34, 'rack top', 1))
+    k.x.forEach((x, i) => {
+      const tool = buildPrintTool()
+      tool.group.position.set(x, k.dockY, k.seatRise)
+      tool.group.userData.slot = i
+      rack.add(tool.group, slab(graphite, x - 10, x + 10, y0 - 4, y0 - 0.5, 18, 32, 'hanger', 1))
+      this.disposables.push(tool.edge.geometry)
+      this.h3cEdges.push({ edge: tool.edge, slot: i })
+      this.rackSlots.push({ group: tool.group })
+      // Parked PrintTools stay steel; only the one at the dock the head works shows its filament.
+      for (const mesh of [tool.tip, tool.stub]) this.sleeves.push({ mesh, tool: () => (i === this.h3cActive ? this.slotTool(i) : -1) })
+    })
+    this.rackGroup = rack
+    this.fixed.add(rack)
+  }
+
   /** The Prusa XL dock along the back frame: a perforated black panel with a pin block behind each parked toolhead. */
   private buildXlDock(k: NonNullable<ToolChangerSpec['xl']>): void {
     const dock = new Group()
@@ -777,6 +886,7 @@ export class ToolheadRig {
     if (spec.kind === 'xl-dock') return (spec.xl?.x ?? []).map((_, i) => (i === tool ? -1 : i))
     if (spec.kind === 'klipper-dock') return (spec.klipper?.docks ?? []).map((_, i) => (i === tool ? -1 : i))
     if (spec.kind === 'front-dock') return (spec.frontDock?.x ?? []).map((_, i) => (i === tool ? -1 : i < spec.tools ? i : SPARE))
+    if (spec.kind === 'printtool-rack') return printToolRackBefore(spec, [], tool).slots
     if (spec.kind === 'hotend-rack') return rackStateBefore(spec, []).slots
     return []
   }
@@ -800,6 +910,10 @@ export class ToolheadRig {
     }
     if (spec.kind === 'front-dock') {
       this.placeIndx(spec, px, py, pz, tool, pose, slots)
+      return
+    }
+    if (spec.kind === 'printtool-rack') {
+      this.placeH3c(spec, px, py, pz, tool, pose, slots)
       return
     }
     if (spec.kind === 'tool-rack' || spec.kind === 'xl-dock' || spec.kind === 'klipper-dock') {
@@ -884,6 +998,37 @@ export class ToolheadRig {
       this.indxBlob.visible = pose?.phase === 'blob'
       this.indxBlob.scale.setScalar(Math.max(0.05, pose?.phase === 'blob' ? pose.latch : 0))
     }
+    this.head.position.set(px, py, pz)
+    this.fixed.position.z = pz
+    this.paint()
+  }
+
+  /**
+   * H3C: the head at the pose with the PrintTool it carries; parked PrintTools hang in their docks, spares included. As a
+   * PrintTool is released its dock takes it the seat rise up off the head, and as one is locked the head takes it back
+   * down. The rack stands raised while the print runs and lowers for the change (the pose's row).
+   */
+  private placeH3c(spec: ToolChangerSpec, px: number, py: number, pz: number, tool: number, pose: Pose | null, slots: number[] | null): void {
+    const k = spec.printTool
+    this.carriedTool = pose ? (pose.carried ?? -1) : tool
+    this.slots = slots ?? (pose ? pose.slots : this.restSlots(tool))
+    const rise = k?.seatRise ?? 0
+    const latching = pose?.phase === 'latch' || pose?.phase === 'release'
+    const at = k ? k.x.reduce((best, x, i) => (Math.abs(x - px) < Math.abs((k.x[best] ?? 0) - px) ? i : best), 0) : -1
+    if (this.carried) {
+      this.carried.visible = this.carriedTool >= 0
+      this.carried.position.z = latching && pose ? rise * (1 - pose.latch) : 0
+    }
+    for (const [i, s] of this.rackSlots.entries()) {
+      s.group.visible = (this.slots[i] ?? -1) !== -1
+      s.group.position.z = latching && pose && i === at ? rise * (1 - pose.latch) : rise
+    }
+    // The PrintTool in play: the one in the head, and during a change the one in the dock the head stands in front of.
+    this.h3cActive = pose && k && py < k.clearY - 0.5 ? at : -1
+    for (const e of this.h3cEdges) e.edge.visible = e.slot < 0 ? this.carriedTool >= 0 : e.slot === this.h3cActive && (this.slots[e.slot] ?? -1) >= 0
+    // Away from a change the rack stands raised; the last change's row says so too once there is one.
+    const row = pose ? pose.row : this.restState ? this.row : 1
+    if (this.rackGroup) this.rackGroup.position.z = row * (k?.rise ?? 0)
     this.head.position.set(px, py, pz)
     this.fixed.position.z = pz
     this.paint()

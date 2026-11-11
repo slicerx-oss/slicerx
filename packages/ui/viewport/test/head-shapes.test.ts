@@ -137,6 +137,12 @@ function build() {
       printers[id] = { heads: Array.from({ length: nozzles }, () => single(id)) }
       continue
     }
+    // The H3C's PrintTool rack plays in Preview only: heimdall keeps the family head and no changer for it until its
+    // head and dock routes are checked against the engine's collision tests.
+    if (spec?.kind === 'printtool-rack') {
+      printers[id] = { heads: [single(id)] }
+      continue
+    }
     const ch = spec ? { changer: changer(id, { kind: spec.kind, liftMm: spec.liftMm, routes: routes(spec) }) } : {}
     if (!spec || spec.kind === 'filament-swap') {
       printers[id] = { heads: [single(id)], ...ch }
