@@ -12,12 +12,14 @@
 #
 #   zsh apps/desktop/release/macos-sign.sh
 #
-# Environment (all optional):
+# Environment (optional unless marked required):
 #   SX_SIGN_IDENTITY  certificate name (default: the SlicerX Developer ID Application certificate)
 #   SX_NOTARY_PROFILE notarytool keychain profile (default: slicerx-notary)
 #   SX_OUT            where the finished files go (default: target/signed under the repository)
 #   SX_MIMIR_REGISTER_KEY the edition's mimir cloud registration key (default: the keychain item
 #                     slicerx-mimir-register-key); without one the app has no mimir cloud
+#   SLICERX_SUPABASE_URL, SLICERX_SUPABASE_ANON_KEY  the backend (required): without both the build would be a demo
+#                     build, which check-demo-data.mjs refuses
 set -euo pipefail
 
 identity=${SX_SIGN_IDENTITY:-"Developer ID Application: SEAN LEONARD (X2928JZ7GJ)"}
@@ -58,6 +60,9 @@ else
   print "warning: no mimir registration key, so this build has no mimir cloud"
 fi
 pnpm install --frozen-lockfile --filter "@slicerx/desktop..." --filter "@slicerx/mcp..."
+# A release is never a demo build: refuse an environment without the backend variables before building. It reads
+# the edition with the installed packages, so it runs after the install.
+node apps/desktop/release/check-demo-data.mjs --env
 rustup target add wasm32-unknown-unknown aarch64-apple-darwin x86_64-apple-darwin
 pnpm --filter @slicerx/slicer build:wasm
 sh packages/geom/wasm/scripts/build.sh
@@ -74,6 +79,8 @@ mkdir -p "$out"
 lipo -archs "$app/Contents/MacOS/${name:l}" 2>/dev/null || true
 say "no agent bridge"
 node apps/desktop/release/check-agent-bridge.mjs --binary "$app/Contents/MacOS/${name:l}" --dist apps/desktop/dist
+say "not a demo build"
+node apps/desktop/release/check-demo-data.mjs --dist apps/desktop/dist
 
 say "sign, notarize and staple the app"
 "${signer[@]}" "$app"

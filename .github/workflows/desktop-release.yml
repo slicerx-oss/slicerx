@@ -12,6 +12,8 @@ name: desktop-release
 #            APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
 #   Windows: WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD
 # mimir cloud: SX_MIMIR_REGISTER_KEY, the edition's registration key; without it the app has no mimir cloud.
+# Backend: the repository variables SLICERX_SUPABASE_URL and SLICERX_SUPABASE_ANON_KEY. Without both the run fails,
+# since a release is never a demo build (apps/desktop/release/check-demo-data.mjs).
 # No updater artifacts or TAURI_SIGNING_PRIVATE_KEY here: update bundles are signed on the release Mac
 # (apps/desktop/release/updates.md).
 
@@ -59,6 +61,11 @@ jobs:
             args: --target x86_64-unknown-linux-gnu --bundles appimage,deb
             targets: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
+    # The backend the app talks to, from repository variables (the anon key is the public publishable one). Without
+    # both the build is a demo build, which the release check below refuses.
+    env:
+      SLICERX_SUPABASE_URL: ${{ vars.SLICERX_SUPABASE_URL }}
+      SLICERX_SUPABASE_ANON_KEY: ${{ vars.SLICERX_SUPABASE_ANON_KEY }}
     outputs:
       release_id: ${{ steps.tauri.outputs.releaseId }}
     steps:
@@ -201,6 +208,11 @@ jobs:
         shell: bash
         run: node apps/desktop/release/check-agent-bridge.mjs --env --manifest apps/desktop/src-tauri/Cargo.toml
 
+      # A release is never a demo build (made-up printers, the bundled demo catalog): both backend variables must be set.
+      - name: Not a demo build
+        shell: bash
+        run: node apps/desktop/release/check-demo-data.mjs --env
+
       - uses: tauri-apps/tauri-action@v0
         id: tauri
         env:
@@ -225,6 +237,10 @@ jobs:
           args=()
           for b in $bins; do args+=(--binary "$b"); done
           node apps/desktop/release/check-agent-bridge.mjs --dist apps/desktop/dist "${args[@]}"
+
+      - name: Not a demo build in the release
+        shell: bash
+        run: node apps/desktop/release/check-demo-data.mjs --dist apps/desktop/dist
 
       - name: Keep installers for the manifest
         uses: actions/upload-artifact@v4
