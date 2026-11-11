@@ -53,8 +53,8 @@ pub struct Profile {
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Options {
-    /// The sides follow a smooth curve through the profiles (centripetal Catmull-Rom through matching points) instead
-    /// of straight lines from each profile to the next.
+    /// The sides follow a smooth curve through the profiles (centripetal Catmull-Rom through matching points, on an
+    /// open loft held so it does not run past them) instead of straight lines from each profile to the next.
     pub smooth: bool,
     /// The last profile joins the first, making a ring with no caps.
     pub closed: bool,
@@ -959,6 +959,53 @@ pub(crate) fn span(p0: V3, p1: V3, p2: V3, p3: V3) -> [V3; 4] {
     ]
 }
 
+/// `span` with its slope at each end held so the curve does not run past its points: along each of `axes`, where the
+/// points on both sides of an end go the same way, the slope there is at most three times the smaller of the two
+/// (and not against them), so both middle control points lie between `p1` and `p2` and the whole span does too; where
+/// either side is flat (a rise within the tolerance), the slope is flat; where they turn back, as on a profile turning
+/// about the loft, it keeps its way and is held to three times the smaller in size, times the shorter chord over the
+/// longer, so a curve past a low station between far and near ones (a rocker keel) goes only a little below it.
+/// Elsewhere it is `span`'s, so an evenly spaced twist bends as before. Both spans at a point hold it alike, so they
+/// still leave it the same way.
+pub(crate) fn kept_span(p0: V3, p1: V3, p2: V3, p3: V3, axes: &[V3; 3]) -> [V3; 4] {
+    let (h0, h1, h2) = (knot(p0, p1), knot(p1, p2), knot(p2, p3));
+    let b = span(p0, p1, p2, p3);
+    // the slopes at the ends per knot step
+    let (s1, s2) = (
+        vec3::scale(vec3::sub(b[1], p1), 3.0 / h1),
+        vec3::scale(vec3::sub(p2, b[2]), 3.0 / h1),
+    );
+    // the slope `s` at a point held by the rises `da` over the step `ha` before it and `db` over `hb` after it
+    let held = |da: f64, db: f64, ha: f64, hb: f64, s: f64| {
+        if da.abs() <= SMOOTH_TOL_MM || db.abs() <= SMOOTH_TOL_MM {
+            return 0.0;
+        }
+        let (a, b) = (da / ha, db / hb);
+        let most = 3.0 * a.abs().min(b.abs());
+        if a * b > 0.0 {
+            (s * a.signum()).clamp(0.0, most) * a.signum()
+        } else {
+            // steps are the square roots of the chords, so this is the shorter chord over the longer
+            let r = ha.min(hb) / ha.max(hb);
+            let most = most * r * r;
+            s.clamp(-most, most)
+        }
+    };
+    let (mut m1, mut m2) = ([0.0; 3], [0.0; 3]);
+    for &e in axes {
+        let rise = |a: V3, b: V3| vec3::dot(vec3::sub(b, a), e);
+        let (d0, d1, d2) = (rise(p0, p1), rise(p1, p2), rise(p2, p3));
+        m1 = vec3::add(m1, vec3::scale(e, held(d0, d1, h0, h1, vec3::dot(s1, e)) * h1));
+        m2 = vec3::add(m2, vec3::scale(e, held(d1, d2, h1, h2, vec3::dot(s2, e)) * h1));
+    }
+    [
+        p1,
+        vec3::add(p1, vec3::scale(m1, 1.0 / 3.0)),
+        vec3::sub(p2, vec3::scale(m2, 1.0 / 3.0)),
+        p2,
+    ]
+}
+
 /// The point at `t` (0 to 1) along a cubic Bezier.
 pub(crate) fn bezier_at(b: &[V3; 4], t: f64) -> V3 {
     let u = 1.0 - t;
@@ -976,9 +1023,11 @@ pub(crate) fn steps(b: &[V3; 4]) -> f64 {
 }
 
 /// The rows of a smooth loft and the span each row's strip to the next belongs to. Each ring point follows its own
-/// centripetal Catmull-Rom curve through the matching point of every profile; an open loft's ends mirror their
-/// neighbors, and a ring (`wrap`, the last ring's start on the first) runs around. Every span is cut into as many rows
-/// as its most bent curve needs to stay within the tolerance.
+/// centripetal Catmull-Rom curve through the matching point of every profile. An open loft's curves are held along the
+/// first profile's axes so they do not dip or bulge past the profiles (`kept_span`), and its ends mirror their
+/// neighbors. A ring (`wrap`, the last ring's start on the first) runs around, its curves as they are: turning about
+/// its middle is its shape, and as few as three profiles of it share a coordinate where its curves must still bow.
+/// Every span is cut into as many rows as its most bent curve needs to stay within the tolerance.
 fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>>, Vec<usize>)> {
     let count = sections.len();
     let n = sections[0].ring.len();
@@ -1004,6 +1053,7 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
         }
     };
     let spans = if wrap.is_some() { count } else { count - 1 };
+    let axes = [sections[0].frame.u, sections[0].frame.v, sections[0].frame.w];
     let mut rows = Vec::new();
     let mut of = Vec::new();
     #[allow(
@@ -1014,7 +1064,14 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
         #[allow(clippy::cast_possible_wrap, reason = "profile counts are small")]
         let k = s as isize;
         let curves: Vec<[V3; 4]> = (0..n)
-            .map(|i| span(pt(k - 1, i), pt(k, i), pt(k + 1, i), pt(k + 2, i)))
+            .map(|i| {
+                let (p0, p1, p2, p3) = (pt(k - 1, i), pt(k, i), pt(k + 1, i), pt(k + 2, i));
+                if wrap.is_some() {
+                    span(p0, p1, p2, p3)
+                } else {
+                    kept_span(p0, p1, p2, p3, &axes)
+                }
+            })
             .collect();
         let most = curves.iter().map(steps).fold(1.0f64, f64::max);
         #[allow(clippy::cast_precision_loss, reason = "a small constant")]
@@ -1165,9 +1222,10 @@ mod tests {
     use super::*;
     use std::f64::consts::PI;
 
-    /// No side curve of the landmarked hull bends tighter than this, mm; matched by point count alone, the same stations
-    /// pinch to about 19 mm where the bilge changes size.
-    const RAIL_FLOOR_MM: f64 = 30.0;
+    /// No side curve of the landmarked hull bends tighter than this, mm (about 21 mm where the sides arrive flat at its
+    /// two equal stations rather than bulge past them); matched by point count alone, the same stations pinch to about
+    /// 10 mm where the bilge changes size.
+    const RAIL_FLOOR_MM: f64 = 15.0;
 
     fn square(c: V2, s: f64) -> Loop {
         let h = s / 2.0;
@@ -1448,6 +1506,37 @@ mod tests {
         for q in [bezier_at(&a, 1.0), bezier_at(&b, 0.0)] {
             assert!(vec3::len(vec3::sub(q, p[2])) < 1e-12, "{q:?}");
         }
+    }
+
+    #[test]
+    fn a_kept_span_stays_between_its_points_and_leaves_them_the_same_way() {
+        let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        // a keel that steps down and then runs flat, its stations 8 mm and then 42 mm apart
+        let k: [V3; 4] = [
+            [0.0, 0.0, 0.5],
+            [8.0, 0.0, 0.0],
+            [50.0, 0.0, 0.0],
+            [92.0, 0.0, 0.0],
+        ];
+        let low = |b: &[V3; 4]| {
+            (0..=40)
+                .map(|j| bezier_at(b, f64::from(j) / 40.0)[2])
+                .fold(f64::INFINITY, f64::min)
+        };
+        assert!(low(&span(k[0], k[1], k[2], k[3])) < -0.01);
+        assert!(low(&kept_span(k[0], k[1], k[2], k[3], &axes)) >= 0.0);
+        let p: [V3; 5] = [
+            [0.0, 0.0, 0.0],
+            [3.0, 1.0, 10.0],
+            [8.0, 0.0, 14.0],
+            [2.0, -2.0, 30.0],
+            [0.0, 0.0, 33.0],
+        ];
+        let a = kept_span(p[0], p[1], p[2], p[3], &axes);
+        let b = kept_span(p[1], p[2], p[3], p[4], &axes);
+        let into = vec3::normalize(vec3::sub(a[3], a[2])).unwrap();
+        let out = vec3::normalize(vec3::sub(b[1], b[0])).unwrap();
+        assert!(vec3::len(vec3::sub(into, out)) < 1e-12, "{into:?} {out:?}");
     }
 
     #[test]

@@ -1591,8 +1591,8 @@ fn apart(pts: &[V3]) -> Result<()> {
     }
 }
 
-/// The centripetal Catmull-Rom curve through `pts` as the loft's smooth sides draw it, its ends mirroring their
-/// neighbors, flattened within the arc tolerance, and the directions it starts and ends in.
+/// The centripetal Catmull-Rom curve through `pts` (the loft's smooth sides before they are held), its ends mirroring
+/// their neighbors, flattened within the arc tolerance, and the directions it starts and ends in.
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,

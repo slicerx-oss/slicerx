@@ -23,6 +23,10 @@ name = "sx-geom"
 path = "src/bin/sx-geom.rs"
 
 [[test]]
+name = "loft_envelope"
+required-features = ["cad"]
+
+[[test]]
 name = "cut_again"
 required-features = ["cad"]
 
