@@ -335,6 +335,16 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     anchor.current = at ? { el: at, top: at.getBoundingClientRect().top } : null
     setFold(folds)
   }, [folds, fold])
+  // To the end of the chat, except that a size sheet waiting for the person shows from its top when it is taller than
+  // the chat: its title and first size in view, never cut off under the header with only its buttons showing.
+  const followEnd = (el: HTMLElement): void => {
+    el.scrollTop = el.scrollHeight
+    const recs = el.querySelectorAll<HTMLElement>('[data-testid="mimir-sheet-record"]')
+    const rec = recs[recs.length - 1]
+    if (!rec?.querySelector('[data-testid="mimir-sheet-confirm"]')) return
+    const over = el.getBoundingClientRect().top - rec.getBoundingClientRect().top
+    if (over > 0) el.scrollTop -= over
+  }
   // Follows the stream while the reader is at the bottom; leaves them be once they scroll up or press a button in it.
   useLayoutEffect(() => {
     const el = body.current
@@ -343,7 +353,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       held.current = null
       stick.current = true
     }
-    if (el && stick.current) el.scrollTop = el.scrollHeight
+    if (el && stick.current) followEnd(el)
     readBelow()
   }, [transcript])
   // and when the chat itself gets shorter, as it does under a phone's drawing
@@ -351,7 +361,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     const el = body.current
     if (!el) return
     const ro = new ResizeObserver(() => {
-      if (stick.current) el.scrollTop = el.scrollHeight
+      if (stick.current) followEnd(el)
       readBelow()
     })
     ro.observe(el)

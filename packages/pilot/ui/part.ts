@@ -16,6 +16,8 @@ export interface CreatedPart {
   built?: true
   /** A design the turn changed but did not start: the card says it was updated, not created. */
   updated?: true
+  /** How many parts the design has, when it has more than one: the card says how many were made. */
+  parts?: number
 }
 
 /** A next step for a part: the chip's label and the exact request it sends, or the value it asks for first. */
@@ -103,7 +105,8 @@ export function builtPart(row: ToolRowModel): CreatedPart | null {
   const size = o['sizeMm']
   if (!triple(size)) return null
   const name = typeof o['name'] === 'string' && o['name'] ? o['name'] : design
-  return { id: design, name, kind: 'part', sizeMm: [size[0], size[1], size[2]], built: true }
+  const parts = Array.isArray(o['parts']) ? o['parts'].length : 0
+  return { id: design, name, kind: 'part', sizeMm: [size[0], size[1], size[2]], built: true, ...(parts > 1 ? { parts } : {}) }
 }
 
 const WORD: Record<PartKind, string> = { cube: 'Cube', box: 'Box', cylinder: 'Cylinder', part: 'Part' }
@@ -115,9 +118,13 @@ export function partSize(p: CreatedPart): string {
   return `${p.sizeMm.map(mm).join(' x ')} mm`
 }
 
-/** The card's title: "Cube created", or "Box with lid updated" for a design the turn changed but did not start. */
+/**
+ * The card's title: "Cube created", "3 parts created" for a design of several parts, or "Box with lid updated" for a
+ * design the turn changed but did not start.
+ */
 export function partTitle(p: CreatedPart): string {
-  return p.updated ? `${p.name} updated` : `${WORD[p.kind]} created`
+  if (p.updated) return `${p.name} updated`
+  return p.parts && p.parts > 1 ? `${p.parts} parts created` : `${WORD[p.kind]} created`
 }
 
 /** The card's subtitle: "Cube 20 x 20 x 20 mm", or the part's own name for anything that is not a plain solid. */
