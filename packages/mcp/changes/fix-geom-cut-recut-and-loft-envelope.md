@@ -1,3 +1,4 @@
 ### Fixed
 
 - `slicerx_geom_cut` keeps both pieces closed when the part was itself cut before. A piece cut again could come back with open edges on the earlier cut face, and a boolean on it was refused as not closed until it was repaired.
+- `slicerx_geom_loft` with `smooth` stays within its profiles on an open loft: unevenly spaced profiles no longer make the sides dip below the lowest profile or bulge wider than the widest one (a hull through stations 8 mm and then 42 mm apart dipped 0.118 mm below its keel). Where a profile is a true low or high point between its neighbors, the sides may still pass it by a little, held by the spacing on either side. Evenly spaced twists and closed rings come out as before. Smooth lofts through uneven profiles give slightly different meshes, volumes and sizes than before.
