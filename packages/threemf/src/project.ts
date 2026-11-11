@@ -209,6 +209,7 @@ export const BAMBU_MODEL_IDS: Readonly<Record<string, string>> = {
   'Bambu Lab H2D': 'O1D',
   'Bambu Lab H2D Pro': 'O1E',
   'Bambu Lab H2S': 'O1S',
+  'Bambu Lab H3C': 'N10',
   'Bambu Lab P1P': 'C11',
   'Bambu Lab P1S': 'C12',
   'Bambu Lab P2S': 'N7',
@@ -247,6 +248,11 @@ export interface SliceMachine {
   layerHeight: number
   /** The printable area's corners, for the outside check. */
   printableArea: [number, number][]
+  /**
+   * On a printer with one extruder whose hotends are its tools (the H3C's nine): the volume type of each hotend
+   * (`Standard`, `High Flow`, `TPU285`). Empty on every other printer.
+   */
+  hotendVolumeTypes?: string[]
 }
 
 /** The printer and filament facts the printer-side metadata needs, from Orca-format project settings. */
@@ -271,6 +277,14 @@ export function sliceMachine(settings: Readonly<Record<string, unknown>>): Slice
     return l.length ? l.map((t) => (one.test(t) || t === '1' ? 1 : 0)) : nozzles.map(() => 0)
   }
   const tl = firstSetting(settings['timelapse_type'])
+  // One extruder that holds several hotends, each its own tool: the type of each hotend, as the printer reports them
+  // in a synced project, else as the settings list them per hotend, else the printer's default rack.
+  const hotends = nozzles.length === 1 ? Number(listSetting(settings['extruder_max_nozzle_count'])[0] ?? 1) : 1
+  const perHotend = (k: string) => {
+    const l = listSetting(settings[k])
+    return l.length === hotends ? l : undefined
+  }
+  const hotendVolumeTypes = hotends > 1 ? (perHotend('extruder_nozzle_volume_type') ?? perHotend('nozzle_volume_type') ?? perHotend('default_nozzle_volume_type') ?? Array.from({ length: hotends }, () => 'Standard')) : []
   return {
     printerModelId: BAMBU_MODEL_IDS[firstSetting(settings['printer_model']) ?? ''] ?? '',
     nozzleDiameters: nozzles,
@@ -281,6 +295,7 @@ export function sliceMachine(settings: Readonly<Record<string, unknown>>): Slice
     filaments: Array.from({ length: count }, (_, i) => ({ type: types[i] ?? types[0] ?? 'PLA', color: colors[i] ?? colors[0] ?? '#FFFFFF', trayInfoIdx: ids[i] ?? '' })),
     layerHeight: Number(firstSetting(settings['layer_height']) ?? 0.2) || 0.2,
     printableArea: area,
+    ...(hotendVolumeTypes.length ? { hotendVolumeTypes } : {}),
   }
 }
 
@@ -347,8 +362,16 @@ function configList(gcode: string, key: string): number[] | null {
 }
 
 export function plateFilamentMap(machine: SliceMachine, plate?: { settings: Pick<PlateSettingsInput, 'nozzleMap'> }, gcode?: string): FilamentMapOut | null {
-  if (machine.nozzleDiameters.length < 2) return null
   const n = machine.filaments.length
+  // One extruder whose hotends are its tools: every filament on the one extruder, on the hotend the sliced G-code's
+  // configuration block gives it (the map the engine printed with).
+  if (machine.hotendVolumeTypes?.length) {
+    const nozzles = gcode !== undefined ? configList(gcode, 'filament_nozzle_map') : null
+    if (!nozzles?.length) return null
+    const manual = /^; filament_map_mode = (Manual|Nozzle Manual)$/m.test(gcode!)
+    return { mode: manual ? 'Manual' : 'Auto For Flush', maps: Array.from({ length: Math.max(n, nozzles.length) }, () => 1), nozzles }
+  }
+  if (machine.nozzleDiameters.length < 2) return null
   const fromGcode = gcode !== undefined ? configList(gcode, 'filament_map') : null
   if (fromGcode?.length) {
     const nozzles = configList(gcode!, 'filament_nozzle_map') ?? fromGcode.map((e) => e - 1)
@@ -399,6 +422,8 @@ export function sliceInfoXml(plates: { index: number; gcode: string; names: read
     const nozzleOf = (i: number) => (map ? (map.nozzles[i] ?? extruderOf(i)) : 0)
     const diameterOf = (e: number) => machine.nozzleDiameters[e] ?? machine.nozzleDiameters[0] ?? 0.4
     const volumeOf = (e: number) => ((machine.nozzleVolumeTypes[e] ?? machine.nozzleVolumeTypes[0]) === 1 ? 'High Flow' : 'Standard')
+    // On a printer whose hotends are its tools, a hotend's own type (the TPU hotend's TPU285).
+    const hotendVolume = (nozzle: number, e: number) => machine.hotendVolumeTypes?.[nozzle] ?? volumeOf(e)
     const nozzle = diameterOf(0)
     const volume = volumeOf(0)
     // The nozzles the plate prints with, once each, in nozzle order (Bambu Studio's `<nozzle>` entries).
@@ -424,11 +449,11 @@ export function sliceInfoXml(plates: { index: number; gcode: string; names: read
         .map((u) => {
           const f = machine.filaments[u.id] ?? machine.filaments[0]!
           const e = extruderOf(u.id)
-          return `    <filament id="${u.id + 1}" tray_info_idx="${esc(f.trayInfoIdx)}" type="${esc(f.type)}" color="${esc(f.color.toUpperCase())}" used_m="${fixed2(u.m)}" used_g="${fixed2(u.g)}" group_id="${nozzleOf(u.id)}" nozzle_diameter="${fixed2(diameterOf(e))}" volume_type="${volumeOf(e)}" used_for_object="true" used_for_support="${machine.supportUsed}"/>\n`
+          return `    <filament id="${u.id + 1}" tray_info_idx="${esc(f.trayInfoIdx)}" type="${esc(f.type)}" color="${esc(f.color.toUpperCase())}" used_m="${fixed2(u.m)}" used_g="${fixed2(u.g)}" group_id="${nozzleOf(u.id)}" nozzle_diameter="${fixed2(diameterOf(e))}" volume_type="${hotendVolume(nozzleOf(u.id), e)}" used_for_object="true" used_for_support="${machine.supportUsed}"/>\n`
         })
         .join('') +
       (map
-        ? usedNozzles.map(([id, e]) => `    <nozzle id="${id}" extruder_id="${e + 1}" nozzle_diameter="${plain(diameterOf(e))}" volume_type="${volumeOf(e)}"/>\n`).join('')
+        ? usedNozzles.map(([id, e]) => `    <nozzle id="${id}" extruder_id="${e + 1}" nozzle_diameter="${plain(diameterOf(e))}" volume_type="${hotendVolume(id, e)}"/>\n`).join('')
         : used.length
           ? `    <nozzle id="0" extruder_id="1" nozzle_diameter="${plain(nozzle)}" volume_type="${volume}"/>\n`
           : '') +

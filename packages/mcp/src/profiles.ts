@@ -5,7 +5,7 @@
 // filament presets from knowledge/, and the Easy intent presets.
 import type { EasyGoal, PrintConfig, SettingSection, SettingValue, SmartLayerMode } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
-import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, presetDefaults, printerConfig, printerProfile, processConfig, resolvedNozzles, resolveFilamentPreset, stockPrinter, stockProcess, type StockPrinter, type VendorFile } from '@slicerx/settings'
+import { applyEasy, EASY_MAP, finsSafeTemp, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, presetDefaults, printerConfig, printerProfile, processConfig, resolvedNozzles, resolveFilamentPreset, scriptKeysRead, stockPrinter, stockProcess, type StockPrinter, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore, type KnowledgeEntry } from './data'
 import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileFor, sameValue } from './settings'
 
@@ -305,7 +305,16 @@ export class ProfileCatalog {
       const parts = stockParts(summary.id)
       const file = parts ? this.vendors.get(parts.vendor) : undefined
       const preset = parts && file ? resolveFilamentPreset(file, parts.family, parts.variant) : undefined
-      return preset ? { ...summary, config: preset.config as unknown as Record<string, SettingValue>, chain: [preset.name], unknown_keys: Object.keys(preset.extras).sort() } : undefined
+      if (!preset || !file) return undefined
+      // On a printer whose G-code reads values that are not settings (the H3C's), the preset's own, as the app's layer
+      // gives each slot (stockLayer): its preset id, and its fin extrusion safe temperature by the settings' rule, the
+      // maker's generic preset of the material for the same printer standing in where the preset has none.
+      const stock = printer ? this.stockPrinter(printer.printerId, printer.nozzle) : undefined
+      const keys = scriptKeysRead(stock?.machine ?? {})
+      const script: Record<string, SettingValue> = {}
+      if (keys.has('filament_ids')) script['filament_ids'] = [preset.filamentId]
+      if (keys.has('fins_extrude_safe_temp')) script['fins_extrude_safe_temp'] = [finsSafeTemp([preset.extras], resolveFilamentPreset(file, `Generic ${preset.type.toUpperCase()}`, preset.variant)?.extras)]
+      return { ...summary, config: { ...(preset.config as unknown as Record<string, SettingValue>), ...script }, chain: [preset.name], unknown_keys: Object.keys(preset.extras).sort() }
     }
     const nozzle = printer?.nozzle ?? (printer ? printerProfile(printer.printerId)?.defaultNozzle : undefined) ?? 0.4
     if (summary.id === SLICERX_DEFAULT_PROCESS) {
