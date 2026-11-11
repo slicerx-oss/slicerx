@@ -94,7 +94,7 @@ describe('the local form of every tool', () => {
       source: 'plugin',
       permission: 'read',
       description: 'Probe.',
-      input: z.object({ n: z.number().int().optional(), open: z.object({ a: z.string() }), shut: z.strictObject({ b: z.boolean().optional() }), any: z.looseObject({}), map: z.record(z.string(), z.number()), list: z.array(z.string()).default([]), point: z.tuple([z.number(), z.number()]), pair: z.tuple([z.string(), z.number()]), kind: z.literal('box'), side: z.enum(['left', 'right']) }),
+      input: z.object({ n: z.number().int().optional(), open: z.object({ a: z.string() }), id: z.string().min(1).optional(), title: z.string().min(2).max(60).optional(), shut: z.strictObject({ b: z.boolean().optional() }), any: z.looseObject({}), map: z.record(z.string(), z.number()), list: z.array(z.string()).default([]), point: z.tuple([z.number(), z.number()]), pair: z.tuple([z.string(), z.number()]), kind: z.literal('box'), side: z.enum(['left', 'right']) }),
       async run() {
         return { summary: 'ok' }
       },
@@ -104,6 +104,9 @@ describe('the local form of every tool', () => {
       properties: {
         n: { type: 'integer' },
         open: { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] },
+        // a string that is not empty says nothing a model needs; a longer floor and a ceiling stay
+        id: { type: 'string' },
+        title: { type: 'string', minLength: 2, maxLength: 60 },
         shut: { type: 'object', properties: { b: { type: 'boolean' } }, additionalProperties: false },
         any: { type: 'object', properties: {} },
         map: { type: 'object', additionalProperties: { type: 'number' } },
@@ -119,7 +122,7 @@ describe('the local form of every tool', () => {
       required: ['open', 'shut', 'any', 'map', 'list', 'point', 'pair', 'kind', 'side'],
     })
     // the published schema is as it was: closed objects and the safe integer range
-    expect(toolSpec(probe).inputSchema).toMatchObject({ additionalProperties: false, properties: { n: { maximum: Number.MAX_SAFE_INTEGER }, open: { additionalProperties: false } } })
+    expect(toolSpec(probe).inputSchema).toMatchObject({ additionalProperties: false, properties: { n: { maximum: Number.MAX_SAFE_INTEGER }, open: { additionalProperties: false }, id: { minLength: 1 } } })
   })
 })
 

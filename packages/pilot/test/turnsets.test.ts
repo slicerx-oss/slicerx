@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { createEvalEnv } from '../evals/harness'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
 import { defineTool, type PilotTool } from '../src/tool'
-import { inTurnSet, TURN_SET_TOOL, turnSet, turnSetsOf, type TurnSet } from '../src/turnsets'
+import { inTurnSet, TURN_SET_TOOL, TURN_SETS, turnSet, turnSetsOf, type TurnSet } from '../src/turnsets'
 
 const MACHINE: PilotMachine = { printer: 'prusa_mk4s', material: 'pla', nozzle: 0.4 }
 
@@ -174,6 +174,10 @@ describe('the set a request picks', () => {
     // a part's colors come with shaping it, as well as with the rest of the project; a local model's build turn has no room
     for (const n of ['project.add_filament', 'project.set_filament']) expect(turnSetsOf({ name: n })).toEqual(new Set(['shape', 'app']))
     for (const n of ['pilot.ask', 'kb.search', 'project.info', TURN_SET_TOOL]) expect(turnSetsOf({ name: n })).toBe('every')
+    // saving a note goes with every set but a new part's, and calling it never moves a turn to another set
+    expect(turnSetsOf({ name: 'memory.remember' })).toBe('every')
+    expect(TURN_SETS.filter((s) => inTurnSet({ name: 'memory.remember' }, s))).toEqual(['shape', 'edit', 'app', 'print'])
+    expect(inTurnSet({ name: 'memory.recall' }, 'build')).toBe(true)
     expect(inTurnSet({ name: 'pilot.sheet' }, 'build')).toBe(true)
     expect(inTurnSet({ name: 'pilot.sheet' }, 'app')).toBe(false)
   })

@@ -25,6 +25,13 @@ export const TURN_SET_TOOL = 'pilot.tools'
 const EVERY_TURN: ReadonlySet<string> = new Set([TURN_SET_TOOL, 'pilot.ask', 'lookup.show', 'parts.lookup', 'kb.search', 'web.lookup', 'memory.recall', 'memory.remember', 'project.info'])
 
 /**
+ * Tools of EVERY_TURN a new part's turn leaves out, where a local model's context is fullest: saving a note never was a
+ * step of building a part in the local or eval runs. Every other set sends them, and calling one never moves a turn to
+ * another set.
+ */
+const NOT_ON_BUILD: ReadonlySet<string> = new Set(['memory.remember'])
+
+/**
  * Building a new part: the sheet and plan, the solids, the common features, and reading the part back. These are the
  * steps the prompt names for a new part; the rest of the design tools are in shape and edit.
  */
@@ -76,7 +83,8 @@ const TURN_SET_SHORT: Record<TurnSet, string> = {
 const isDesign = (t: GroupedTool): boolean => toolGroupOf(t) === 'design' && (t.name.startsWith('design.') || t.name.startsWith('geom.'))
 
 /**
- * The sets a tool belongs to, or 'every' for the tools every turn sends: design tools by name, printer tools (by their
+ * The sets a tool belongs to, or 'every' for the tools every turn sends (but NOT_ON_BUILD, which a build turn leaves
+ * out) and whose call never moves a turn to another set: design tools by name, printer tools (by their
  * group, so a printer plugin's tools and each printer's commands count) in print, anything else in app.
  */
 export function turnSetsOf(t: GroupedTool): ReadonlySet<TurnSet> | 'every' {
@@ -97,7 +105,8 @@ export function turnSetsOf(t: GroupedTool): ReadonlySet<TurnSet> | 'every' {
 /** Whether a turn on `set` sends `t`. */
 export function inTurnSet(t: GroupedTool, set: TurnSet): boolean {
   const sets = turnSetsOf(t)
-  return sets === 'every' || sets.has(set)
+  if (sets === 'every') return set !== 'build' || !NOT_ON_BUILD.has(t.name)
+  return sets.has(set)
 }
 
 /** `tools` a turn on `set` sends, in their own order. */
