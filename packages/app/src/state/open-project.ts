@@ -23,11 +23,12 @@ import { quietly } from '../plate/history'
 /**
  * Opens a 3MF project with its objects, parts and volumes (negative parts, support blockers and
  * enforcers). Returns false when the file is not one we can read as a project, so the caller falls back
- * to the engine's own loader; `told` when it already showed the person a note of its own.
+ * to the engine's own loader; `told` when it already showed the person a note of its own. `again`: a kept project
+ * brought back (Reopen, Recent projects), whose note says it was opened again, never "Applied" alone.
  */
-export async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: OpenScope): Promise<false | 'opened' | 'told'> {
+export async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: OpenScope, again = false): Promise<false | 'opened' | 'told'> {
   const { scanProjectFile, projectOf, ProjectReadError } = await import('../export/import3mf')
-  return addProjectShown(host, data, name, scope, { scanProjectFile, projectOf, ProjectReadError })
+  return addProjectShown(host, data, name, scope, { scanProjectFile, projectOf, ProjectReadError }, again)
 }
 
 async function addProjectShown(
@@ -36,6 +37,7 @@ async function addProjectShown(
   name: string,
   scope: OpenScope | undefined,
   { scanProjectFile, projectOf, ProjectReadError }: Pick<typeof import('../export/import3mf'), 'scanProjectFile' | 'projectOf' | 'ProjectReadError'>,
+  again = false,
 ): Promise<false | 'opened' | 'told'> {
   // The open's own changes, so an edit made while it runs is not taken for part of it.
   const mine = <T>(fn: () => T): T => (scope ? scope.run(fn) : fn())
@@ -325,7 +327,8 @@ async function addProjectShown(
     if (offer) {
       note = `${offer.text}${note ? ` ${note}` : ''}`
       offerNote = { ...(offer.action ? { action: offer.action } : {}), details: offer.details, ...(offer.settle ? { settle: offer.settle } : {}) }
-    } else if (n && apply) note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
+    } else if (again && apply && Object.keys(changed).length) note = `Opened ${name} again with its settings${note ? `. ${note}` : ''}`
+    else if (n && apply) note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
     if (apply) {
       for (const k of Object.keys(values)) {
         brought.add(k)
@@ -413,6 +416,8 @@ async function addProjectShown(
   // What the reader left out of the file or read another way (paint in a newer format, parts of a type it does not
   // know, read as normal parts) is said too, on two lines (wrap), so it is not hidden behind Details.
   if (project.readerNote) note = `${note ? `${note} ` : ''}${project.readerNote}`
+  // A kept project brought back says so first, whatever else its note says.
+  if (again && note && !note.startsWith(`Opened ${name} again`)) note = `Opened ${name} again. ${note}`
   if (!note) return 'opened'
   // A newer open took over meanwhile: its note is the one to show.
   mine(() => undefined)

@@ -54,6 +54,13 @@ export function filamentOverrideList(key: string, raw: unknown): SettingValue | 
   return out as SettingValue
 }
 
+/** A filament override key whose value overrides nothing: an empty list, or one of `nil` entries only. */
+function leavesItToFilament(key: string, value: SettingValue): boolean {
+  if (!FILAMENT_OVERRIDE_KEYS.has(key)) return false
+  const entries: unknown[] = Array.isArray(value) ? value : [value]
+  return entries.every((x) => x === NIL || x === '' || x === null || x === undefined)
+}
+
 // Bambu Studio prints a project's own values for wall_filament, sparse_infill_filament and solid_infill_filament on
 // nothing ("1", the stock value, and every other alike), so the rule leaves a project's out (`unread`); an object's, a
 // part's or a modifier's own still count (`modifierSettings`).
@@ -70,7 +77,9 @@ export function projectSettingChanges(raw: Record<string, unknown>, current: Pri
   const taken: Record<string, SettingValue> = {}
   const left: string[] = []
   for (const [key, value] of Object.entries(imported)) {
-    if (!takesProjectValue(key, value)) {
+    // An empty or all-nil filament override list leaves the value to the filament: like an unset value, it is no
+    // project value, so it never counts as a change and is never pinned over the loaded filament's own.
+    if (leavesItToFilament(key, value) || !takesProjectValue(key, value)) {
       left.push(key)
       continue
     }
