@@ -403,3 +403,39 @@ it('with kept bodies, frees the ones no cached step holds', async () => {
   // the first replay's two bodies (the cache was cleared) and the cut's side
   expect(e.freed.sort((a, b) => a - b)).toEqual([1, 2, 4])
 })
+
+it('repeats a hole along a row on the kernel, each copy at its own place and with its own face keys', async () => {
+  const e = engine()
+  const row = step('row-1', { op: 'pattern', steps: ['hole-1'], spec: { kind: 'linear', count: 3, step: [6, 0, 0] } })
+  const r = await replayHistory(e.call, { history: history(box, hole, row), exact: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+  expect(r.exactFellBack).toBeUndefined()
+  const subtracts = e.sent.filter((s) => s.op === 'brep.subtract')
+  expect(subtracts).toHaveLength(3)
+  // the hole's own solids, sent in a frame moved back by each copy's move, so each lands 6 mm further along
+  expect(subtracts.map((s) => s.req['frame'])).toEqual([0, -6, -12].map((x) => ({ origin: [x, 0, 0], u: [1, 0, 0], normal: [0, 0, 1] })))
+  expect(subtracts.every((s) => JSON.stringify(s.req['solids']) === JSON.stringify(subtracts[0]!.req['solids']))).toBe(true)
+  expect(new Set(subtracts.map((s) => s.req['keySalt'])).size).toBe(3)
+})
+
+it('mirrors a hole on the mesh, as the kernel takes no mirrored frame', async () => {
+  const e = engine()
+  const both = step('both-1', { op: 'pattern', steps: ['hole-1'], spec: { kind: 'mirror', plane: { point: [5, 0, 0], normal: [1, 0, 0] } } })
+  const r = await replayHistory(e.call, { history: history(box, hole, both), exact: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+  const mesh = e.sent.filter((s) => s.op === 'subtract')
+  expect(mesh).toHaveLength(1)
+  // reflected through x = 5, as a column-major transform the engine applies to the part
+  expect(mesh[0]!.req['mesh']).toMatchObject({ transform: [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1] })
+})
+
+it('breaks a pattern whose steps are gone or cannot be repeated, in words', async () => {
+  const gone = await replayHistory(engine().call, { history: history(box, hole, step('row-1', { op: 'pattern', steps: ['nope'], spec: { kind: 'linear', count: 2, step: [6, 0, 0] } })) })
+  expect(gone.status[2]).toEqual({ state: 'broken', message: 'A step this pattern repeats is gone or comes after it; pick the steps again.' })
+  clearReplayCache()
+  const body = await replayHistory(engine().call, { history: history(box, hole, step('row-1', { op: 'pattern', steps: ['box-1'], spec: { kind: 'linear', count: 2, step: [6, 0, 0] } })) })
+  expect(body.status[2]?.message).toMatch(/makes a new body/)
+  clearReplayCache()
+  const off = await replayHistory(engine().call, { history: history(box, { ...hole, suppressed: true }, step('row-1', { op: 'pattern', steps: ['hole-1'], spec: { kind: 'linear', count: 2, step: [6, 0, 0] } })) })
+  expect(off.status[2]).toEqual({ state: 'done', note: 'The steps this pattern repeats are turned off, so it repeats nothing.' })
+})
