@@ -4,6 +4,7 @@
 // from the whole config it is given, so `sx slice <project.3mf>`, which slices with every key the file holds, renders a
 // script that names one of them. A slice built from the imported settings has only the keys the schema knows, so the
 // project's value for each such key a kept script names goes along with it, as the file has it.
+import { SCRIPT_KEYS } from './script-values'
 
 const WORD = /[A-Za-z_][A-Za-z0-9_]*/g
 
@@ -32,13 +33,16 @@ export function scriptNames(text: string): Set<string> {
   return out
 }
 
+/** Keys the printer layer fills from each slot's filament (script-values.ts): the file's own value is the closer one. */
+const FILLED = new Set<string>(SCRIPT_KEYS)
+
 /**
  * The entries of `unmodeled` (a project's values for keys the schema has no setting for, as the file holds them) that a
- * G-code text in `config` (any `*_gcode` key) names and `config` itself does not hold. It reads no schema, so the app's
- * slice can use it without loading the settings catalog.
+ * G-code text in `config` (any `*_gcode` key) names and `config` itself does not hold, or holds only as the printer
+ * layer's per-slot fill. It reads no schema, so the app's slice can use it without loading the settings catalog.
  */
 export function scriptKeyValues<T>(config: Readonly<Record<string, unknown>>, unmodeled: Readonly<Record<string, T>>): Record<string, T> {
-  const keys = Object.keys(unmodeled).filter((k) => config[k] === undefined)
+  const keys = Object.keys(unmodeled).filter((k) => config[k] === undefined || FILLED.has(k))
   if (keys.length === 0) return {}
   const named = new Set<string>()
   for (const [key, v] of Object.entries(config)) {

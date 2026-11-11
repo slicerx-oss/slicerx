@@ -29,6 +29,12 @@ describe("a project's values for the keys a kept script names", () => {
     expect(scriptKeyValues({ layer_height: '{hold_probe_temp}' }, unmodeled)).toEqual({})
   })
 
+  it("gives the file's filament ids and fin temperatures over the printer layer's per-slot fill", () => {
+    const script = { machine_start_gcode: 'M1002 set_next_filament_id:{filament_ids[0]} E{fins_extrude_safe_temp[0]}' }
+    const file = { filament_ids: ['GFA00', 'GFU06'], fins_extrude_safe_temp: ['57', '0'] }
+    expect(scriptKeyValues({ ...script, filament_ids: ['GFA00', 'GFU99'], fins_extrude_safe_temp: [57, 0] }, file)).toEqual(file)
+  })
+
   it('keeps the values of keys no setting models, as plain values, and no secrets', () => {
     expect(unmodeledValues({ layer_height: '0.2', hold_probe_temp: ['187'], nested: [['1']], printhost_apikey: 'k', post_process: ['x'], my_token: 't' })).toEqual({ hold_probe_temp: ['187'] })
   })

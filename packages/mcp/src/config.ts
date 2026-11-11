@@ -81,6 +81,12 @@ export interface ExtraLayers {
 /** Keys of a filament preset that describe the preset, not a slot. */
 const NOT_PER_SLOT = /^(compatible_|inherits$)/
 
+/**
+ * Per-slot values a printer's G-code reads that are not settings (`SCRIPT_KEYS` of @slicerx/settings), with what a
+ * slot no layer sets gets: no preset id, and 0, the settings' last fallback for the fin extrusion safe temperature.
+ */
+const SCRIPT_KEY_FILL: Record<string, unknown> = { filament_ids: '', fins_extrude_safe_temp: 0 }
+
 /** `list` with `value` at 1-based `slot`; slots in between keep the last value the list had, or `fill` when it was empty. */
 export function setSlot(list: readonly unknown[], slot: number, value: unknown, fill: unknown = value): unknown[] {
   const out = [...list]
@@ -177,8 +183,9 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
     for (const layer of extra.slots) {
       for (const [k, v] of Object.entries(layer.values)) {
         if (NOT_PER_SLOT.test(k)) continue
-        const cur = explicit[k] ?? defaults[k]
-        explicit[k] = (Array.isArray(v) && Array.isArray(cur) ? setSlot(cur, layer.slot, v[0]) : v) as SettingValue
+        const fill = SCRIPT_KEY_FILL[k]
+        const cur = explicit[k] ?? defaults[k] ?? (fill !== undefined ? [] : undefined)
+        explicit[k] = (Array.isArray(v) && Array.isArray(cur) ? setSlot(cur, layer.slot, v[0], fill ?? v[0]) : v) as SettingValue
       }
       if (layer.customGcode) untrustedSlot = true
       if (layer.color) explicit['filament_colour'] = setSlot(Array.isArray(explicit['filament_colour']) ? explicit['filament_colour'] : [], layer.slot, layer.color, '#FFFFFF') as SettingValue
