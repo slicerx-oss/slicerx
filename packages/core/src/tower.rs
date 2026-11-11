@@ -70,6 +70,9 @@ pub(crate) struct Tower {
     whole_rows: bool,
     /// Each wipe after a tool change starts with a short nozzle wipe (`prime_tower_skip_points` on a type 1 tower).
     skip_points: bool,
+    /// A type 1 tower on a printer whose hotends are its tools ([`crate::nozzles::hotend_tools`], the H3C): the hotend a
+    /// change brings in already holds its filament, so its wipe rows go to full speed after the first ([`primed_row_speed`]).
+    primed: bool,
     /// A single nozzle's ramming leads into the wipe ([`rams_past_cap`]): the row it finishes is the last of the
     /// ramming's band, a whole row spacing before the wipe's own rows.
     full_lead: bool,
@@ -91,6 +94,27 @@ struct Rib {
     fillet: bool,
     height: f64,
     offset: (f64, f64),
+}
+
+/// The speed of wipe row `k` of `rows` after a change into a hotend that already holds its filament (the H3C's
+/// hotends), mm/s, for a tower whose wipe target is `target`. The rows of a single nozzle speed up over four rows
+/// because the nozzle has just been loaded and its melt pressure builds as it prints. A hotend coming off the rack has
+/// carried its own filament all along and primes 2 mm before the first row, so only two rows print slowly:
+/// - the first, at a third of the target (the speed the single nozzle's first row has), so the bead bonds to the
+///   tower layer below after the trip from the rack;
+/// - the last, when there are three rows or more, at 0.458 of the target (the single nozzle's third row), so the
+///   flow eases before the retraction and the travel off the tower, and the tip leaves less behind on the way out.
+///
+/// Every row between holds the type 1 tower's steady speed, 0.875 of the target plus 50 mm/min, as on a single nozzle
+/// from its fifth row.
+fn primed_row_speed(target: f64, k: usize, rows: usize) -> f64 {
+    if k == 0 {
+        0.33 * target
+    } else if rows >= 3 && k + 1 == rows {
+        0.458 * target
+    } else {
+        (0.875 * target + 50.0 / 60.0).min(target)
+    }
 }
 
 /// The speed a type 1 tower's contact wipe ([`Tower::purge_lead`]) speeds up to, mm/s.
@@ -1010,6 +1034,7 @@ impl Tower {
             type1: type1(cfg),
             whole_rows: type1(cfg) || prusa_tools(cfg) || flush_on_tower(cfg),
             skip_points: type1(cfg) && flag_or(cfg, "prime_tower_skip_points", true),
+            primed: type1(cfg) && crate::nozzles::hotend_tools(cfg),
             full_lead: rams_past_cap(cfg),
             on_box: walls_on_box(cfg, tools),
             rib: None,
@@ -1685,8 +1710,12 @@ impl Tower {
         };
         let mut speed = 0.33 * target;
         let mut paths = Vec::new();
+        let rows = pts.chunks(2).count();
+        let primed = self.primed && !first && !contact;
         for (k, row) in pts.chunks(2).enumerate() {
-            if k > 0 {
+            if primed {
+                speed = primed_row_speed(target, k, rows);
+            } else if k > 0 {
                 speed = if speed < 0.34 * target {
                     0.375 * target
                 } else if speed < 0.377 * target {
@@ -3437,6 +3466,64 @@ mod tests {
         }
         // Nothing to fill when the purges take the whole depth.
         assert!(t.fill(&c, 40.0, false).is_empty());
+    }
+
+    #[test]
+    fn a_hotend_off_the_rack_wipes_at_full_speed_between_a_slow_first_and_last_row() {
+        // An H3C tower 50 mm wide, 40 rows deep: one extruder with nine hotends, so the hotend a change brings in
+        // already holds its filament.
+        let h3c = |extra: &[(&str, serde_json::Value)]| {
+            let mut pairs = vec![
+                ("enable_prime_tower", serde_json::json!(true)),
+                ("printer_model", serde_json::json!("Bambu Lab H3C")),
+                ("extruder_max_nozzle_count", serde_json::json!(["9"])),
+            ];
+            pairs.extend_from_slice(extra);
+            cfg(&pairs)
+        };
+        let c = h3c(&[]);
+        assert!(crate::nozzles::hotend_tools(&c));
+        let Some(t) = Tower::new(&c, 2, 40.0).map(|t| t.shaped(50.0, 0.0).at([0.0, 0.0])) else {
+            panic!("tower")
+        };
+        let speeds = |t: &Tower, first: bool| -> Vec<f64> {
+            t.purge(45.0, 0.2, first, 0.0)
+                .0
+                .iter()
+                .map(|r| f64::from(r.speed_mm_s))
+                .collect()
+        };
+        // `prime_tower_max_speed` 90 mm/s: the first row at a third of it, the last at 0.458 of it, and every row
+        // between at the steady 0.875 of it plus 50 mm/min.
+        let got = speeds(&t, false);
+        assert!(got.len() >= 4, "{got:?}");
+        let hold = 78.75 + 50.0 / 60.0;
+        let mut want = vec![29.7];
+        want.extend(std::iter::repeat_n(hold, got.len() - 2));
+        want.push(41.22);
+        for (g, w) in got.iter().zip(&want) {
+            assert!((g - w).abs() < 1e-3, "{got:?}");
+        }
+        // Two rows: the slow first row, then the steady speed; one row: the slow first row alone.
+        assert!((primed_row_speed(90.0, 0, 1) - 29.7).abs() < 1e-9);
+        assert!((primed_row_speed(90.0, 1, 2) - hold).abs() < 1e-9);
+        // The speed follows `prime_tower_max_speed`.
+        let slow = h3c(&[("prime_tower_max_speed", serde_json::json!(60))]);
+        let Some(s) = Tower::new(&slow, 2, 40.0).map(|t| t.shaped(50.0, 0.0).at([0.0, 0.0])) else {
+            panic!("tower")
+        };
+        let got = speeds(&s, false);
+        assert!(
+            (got[0] - 19.8).abs() < 1e-3 && (got[1] - (52.5 + 50.0 / 60.0)).abs() < 1e-3,
+            "{got:?}"
+        );
+        assert!((got[got.len() - 1] - 27.48).abs() < 1e-3, "{got:?}");
+        // The first layer keeps the single nozzle's ramp from a third of the first layer speed.
+        let first = speeds(&t, true);
+        let base = t.first_speed;
+        for (g, w) in first.iter().zip([0.33, 0.375, 0.458, 0.875]) {
+            assert!((g - w * base).abs() < 1e-3, "{first:?}");
+        }
     }
 
     #[test]
