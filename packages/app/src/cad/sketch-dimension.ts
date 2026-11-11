@@ -22,7 +22,7 @@ export function pointAt(sketch: Sketch, r: SketchPointRef): V2 | null {
   if (r.e === -1) return [0, 0]
   const e = sketch[r.e]
   if (!e) return null
-  if (e.kind === 'circle') return r.at === 'center' ? e.center : null
+  if (e.kind === 'circle' || e.kind === 'ellipse') return r.at === 'center' ? e.center : null
   if (r.at === 'start') return e.start
   if (r.at === 'to') return e.segs[r.seg]?.to ?? null
   if (r.at === 'point') {
@@ -53,7 +53,7 @@ export function pointHit(sketch: Sketch, at: V2, tol: number): SketchPointRef | 
   }
   take({ e: -1, at: 'start' })
   sketch.forEach((e, i) => {
-    if (e.kind === 'circle') return take({ e: i, at: 'center' })
+    if (e.kind === 'circle' || e.kind === 'ellipse') return take({ e: i, at: 'center' })
     take({ e: i, at: 'start' })
     e.segs.forEach((s, k) => {
       // a closed chain's last end is its start
@@ -73,6 +73,8 @@ function curveAt(sketch: Sketch, r: SketchCurveRef): Curve | null {
   const e: Entity | undefined = sketch[r.e]
   if (!e) return null
   if (e.kind === 'circle') return { kind: 'circle', center: e.center, r: e.diameterMm / 2 }
+  // no radius to measure
+  if (e.kind === 'ellipse') return null
   const s = e.segs[r.seg]
   if (!s) return null
   const a = segStart(e, r.seg)

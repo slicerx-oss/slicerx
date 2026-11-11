@@ -85,6 +85,9 @@ export function profileOffPathMm(frame: FaceFrame | undefined, loops: readonly S
     if ('type' in l && l.type === 'circle') {
       const r = l.diameterMm / 2
       uv.push([l.center[0] - r, l.center[1] - r], [l.center[0] + r, l.center[1] + r])
+    } else if ('type' in l && l.type === 'ellipse') {
+      const r = Math.max(l.widthMm, l.heightMm) / 2
+      uv.push([l.center[0] - r, l.center[1] - r], [l.center[0] + r, l.center[1] + r])
     } else if ('points' in l) uv.push(...l.points.map((q) => [q[0], q[1]] as [number, number]))
     else if ('start' in l) {
       uv.push([l.start[0], l.start[1]])

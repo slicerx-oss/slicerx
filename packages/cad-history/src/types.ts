@@ -31,6 +31,8 @@ export type Shape =
   | { type: 'rectangle'; widthMm: number; heightMm: number; cornerRadiusMm?: number }
   | { type: 'circle'; diameterMm: number }
   | { type: 'slot'; lengthMm: number; widthMm: number }
+  /** Width along placement x before its rotation, height across it. */
+  | { type: 'ellipse'; widthMm: number; heightMm: number }
   | { type: 'polygon'; sides: number; diameterMm: number; fit?: 'inscribed' | 'circumscribed' }
   | { type: 'text'; text: string; sizeMm: number; letterSpacingMm?: number; lineSpacing?: number; align?: 'left' | 'center' | 'right' }
 
@@ -122,6 +124,8 @@ export interface DimLook {
 export type SketchLoop = (
   | { start: Vec2; segments: SketchSegment[] }
   | { type: 'circle'; center: Vec2; diameterMm: number }
+  /** Full axis lengths; the width axis is turned angleDeg (default 0) counterclockwise from the sketch's X. */
+  | { type: 'ellipse'; center: Vec2; widthMm: number; heightMm: number; angleDeg?: number }
   | { points: Vec2[] }
   /** A closed smooth curve through `points`, 3 or more. */
   | { type: 'spline'; points: Vec2[] }

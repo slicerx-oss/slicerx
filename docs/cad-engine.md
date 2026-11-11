@@ -72,7 +72,7 @@ Meshes are flat (`{positions: [x, y, z, ...], indices: [a, b, c, ...]}`) or base
 | `thread.apply` | `mesh`, `thread` (as `thread.find` returns it), `spec` (`size`, optional `lengthMm`, `clearanceMm` a side, at most a quarter of the pitch) | mesh in the item's frame, `report` (size, pitch, major and minor diameter as cut, length, `maxLayerMm`, volume change, watertight, shells); a hole is first sized to the thread's minor diameter, and a thread stops half a pitch short of a closed end |
 | `resume` | `meshes` (every object with its transform) or `mesh`, `measuredHeightMm` or `failedLayer`, layer heights or `layerTopsMm` | layer to resume at, printed height, resume Z, warnings, optionally the part left to print |
 
-A request may carry `keySalt` (a history step's, up to 2^52): the faces the operation makes get keys from it, a mesh that comes without keys gets a base's keys, and every mesh that comes back has its faces' keys in `faces.keys` (docs/cad-history.md, "Face keys"). `shell` takes an optional `key` per open face and reports `openKeys`; `edge.pick` gives each edge its faces' `keys`, and `edge.fillet` and `edge.chamfer` find a straight edge by them first and reply with `refs` (the edges as found, with keys) and `notes`.
+A request may carry `keySalt` (a history step's, up to 2^52): the faces the operation makes get keys from it, a mesh that comes without keys gets a base's keys, and every mesh that comes back has its faces' keys in `faces.keys` (docs/cad-history.md, "Face keys"). `shell` takes an optional `key` per open face and reports `openKeys`; `edge.pick` gives each edge its faces' `keys`, and `edge.fillet` and `edge.chamfer` find a straight edge by them first and reply with `refs` (the edges as found, with keys) and `notes`. An edge that goes around an ellipse (the rim of an extruded ellipse, say) takes neither: `edge.pick` says it is not supported and why, and `edge.fillet` and `edge.chamfer` refuse it in the same words.
 
 Errors come back as a message the UI can show as is, for example "the cut removes the whole body".
 
@@ -165,6 +165,7 @@ A sketch is a plane plus closed loops. The plane is a `FaceFrame` (a picked face
 A loop is one of:
 - `{start: Vec2, segments: Segment[]}`
 - `{type: "circle", center: Vec2, diameterMm}`
+- `{type: "ellipse", center: Vec2, widthMm, heightMm, angleDeg?}`: full axis lengths, the width axis turned `angleDeg` (default 0) counterclockwise from `u`. It stays a true curve in the history and on exact solids (`sketch.curves` returns it as given); the mesh path draws it within 0.005 mm. Trim, extend and intersect refuse it, and a sweep path cannot be one
 - `{points: Vec2[]}`: straight sides through the points, closed back to the first
 
 A segment starts where the previous one ended:
@@ -192,6 +193,7 @@ It does not throw for bad geometry, only for a request it cannot read.
 
 New `Shape` types for `shape.profile` and `shape.extrude`:
 - `{type: "sketch", loops}`. With the default placement the loops sit in the frame exactly as typed. `shape.extrude` throws the first issue's message when the sketch is not `ok`.
+- `{type: "ellipse", widthMm, heightMm}`: centered on the placement, its width along `u` before the placement's turn.
 - `{type: "svg", svg, widthMm, toleranceMm?}`: the filled outline of SVG artwork (all colors merged), scaled to `widthMm`, centered on the placement's center, SVG up along `v`.
 
 Both take every `ExtrudeSpec` field: `distanceMm`, `extent` (`oneSide`, `symmetric`, `twoSides`), `distance2Mm`, `flip`, `taperDeg` (draft) and `operation` (`new`, `join`, `cut`).

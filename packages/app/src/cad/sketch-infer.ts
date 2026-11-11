@@ -41,7 +41,7 @@ function dirAt(c: Chain, i: number, end: boolean): V2 | null {
 function pointsOf(sketch: Sketch, e: number): { ref: SketchPointRef; at: V2 }[] {
   const x = sketch[e]
   if (!x) return []
-  if (x.kind === 'circle') return [{ ref: { e, at: 'center' }, at: x.center }]
+  if (x.kind === 'circle' || x.kind === 'ellipse') return [{ ref: { e, at: 'center' }, at: x.center }]
   const out: { ref: SketchPointRef; at: V2 }[] = []
   // a closed chain's last end is its start
   if (!x.closed) out.push({ ref: { e, at: 'start' }, at: x.start })
@@ -54,6 +54,7 @@ function centersOf(sketch: Sketch, e: number): { ref: SketchPointRef; curve: Ske
   const x = sketch[e]
   if (!x) return []
   if (x.kind === 'circle') return [{ ref: { e, at: 'center' }, curve: { e, seg: 0 }, at: x.center }]
+  if (x.kind === 'ellipse') return []
   return x.segs.flatMap((s, seg) => {
     if (s.kind !== 'arc') return []
     const a = arcThrough(segStart(x, seg), s.through, s.to)
@@ -86,7 +87,7 @@ function landedOn(sketch: Sketch, skip: number, l: Landing, own: SketchPointRef,
     } else if (l.kind === 'edge') {
       if (x.kind === 'circle') {
         if (Math.abs(dist(l.at, x.center) - x.diameterMm / 2) < 1e-4) return { type: 'onCircle', point: own, circle: { e, seg: 0 } }
-      } else {
+      } else if (x.kind === 'chain') {
         const seg = x.segs.findIndex((s, i) => s.kind === 'line' && onSegment(l.at, segStart(x, i), s.to))
         if (seg >= 0) return { type: 'onLine', point: own, line: { e, seg } }
       }

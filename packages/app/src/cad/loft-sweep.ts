@@ -37,7 +37,7 @@ export function pathOf(k: Pick<SketchItem, 'name' | 'loops'>, frame: FaceFrame):
   if (loops.length > 1) return { why: `${k.name} has ${plural(loops.length, 'loop', 'loops')}; a sweep path is one open line.` }
   // a loop the sketch tools cannot draw (segments given by length and angle) is left to the engine to judge
   const e = fromLoops(loops)?.[0]
-  const closed = e ? e.kind === 'circle' || e.closed : !('start' in loops[0]!)
+  const closed = e ? e.kind !== 'chain' || e.closed : !('start' in loops[0]!)
   if (closed) return { why: `${k.name} is closed; a sweep path is one open line with two ends.` }
   return { path: { frame: copy(frame), loops: copy(loops) } }
 }
