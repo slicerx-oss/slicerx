@@ -10,6 +10,11 @@ export interface HostCapabilities {
   orcaEngine: boolean
   /** Where printers come from: none, the in-memory demo fleet, sx-link, or linked in. */
   printers: 'none' | 'sim' | 'link' | 'native'
+  /**
+   * The printers the host starts with are the made-up demo fleet on 192.0.2.0/24 (dev, test and demo builds), so setup
+   * may name the demo network. Absent means real printers only: the fleet starts empty until a bridge brings real ones.
+   */
+  demoPrinters?: boolean
   webgpu: boolean
   /** Worker shards (web) or threads (desktop) available for slicing. */
   threads: number

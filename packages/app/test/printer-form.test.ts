@@ -30,6 +30,7 @@ import {
   withHardware,
 } from '../src/first-run/printer-form'
 import { createHostSetup, type TestStep } from '../src/first-run/setup-host'
+import { appName } from '../src/edition'
 import { setBridgeConnector } from '../src/link/bridge'
 
 const bambu = (): PrinterForm => pickModel(pickBrand(EMPTY_FORM, 'bambu-lab'), 'bambu-x1-carbon')
@@ -182,6 +183,32 @@ describe('setup host over the printers API', () => {
     } finally {
       setBridgeConnector(null)
     }
+  })
+
+  it('names the demo network and the demo printers only when the host runs the demo fleet', async () => {
+    const input = { family: 'bambu-lan', address: '192.0.2.99', credential: '12345678' }
+    const demoHost = { ...host, capabilities: { printers: 'sim', secureStorage: false, demoPrinters: true } } as unknown as Host
+    const demo = createHostSetup(demoHost, { stepMs: 0 })
+    expect(demo.scanRange).toBe('the demo network 192.0.2.0/24')
+    expect((await demo.testConnection(input)).message).toMatch(/here it can reach the demo printers\.$/)
+
+    // A production build: no demo fleet, so plain words about the real network and nothing about demo printers.
+    expect(setup.scanRange).toBe('your local network')
+    const real = await setup.testConnection(input)
+    expect(real.message).toBe(`Nothing answered at 192.0.2.99. The browser app reaches printers on your network through ${appName()} Link or the desktop app.`)
+    expect(real.message).not.toMatch(/demo/)
+
+    setBridgeConnector({ automatic: true, connect: () => Promise.reject(new Error('down')) })
+    try {
+      expect((await demo.testConnection(input)).message).toMatch(/not connected, so only the demo printers answer\. Connect it in Settings, Printer bridge\.$/)
+      const desktop = (await setup.testConnection(input)).message
+      expect(desktop).toBe('Nothing answered at 192.0.2.99. The printer bridge in this app is not connected. Connect it in Settings, Printer bridge.')
+    } finally {
+      setBridgeConnector(null)
+    }
+    // With a bridge the scan is this computer's network either way.
+    const linked = createHostSetup({ ...host, capabilities: { printers: 'link', secureStorage: true, demoPrinters: true } } as unknown as Host, { stepMs: 0 })
+    expect(linked.scanRange).toBe("this computer's local network")
   })
 
   it('adds a known printer by id and never keeps a credential without a keychain', async () => {

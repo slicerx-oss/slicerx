@@ -112,6 +112,7 @@ export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
       nativeSlicing: over.nativeSlicing ?? false,
       orcaEngine: false,
       printers: __SX_FEATURE_CONNECT__ ? 'sim' : 'none',
+      ...(__SX_FEATURE_CONNECT__ && demoPrinters ? { demoPrinters: true } : {}),
       webgpu: typeof navigator !== 'undefined' && 'gpu' in navigator,
       threads: over.threads ?? Math.max(1, Math.min(11, (navigator.hardwareConcurrency || 4) - 1)),
       secureStorage: false,
