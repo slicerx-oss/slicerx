@@ -58,7 +58,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
       holes.push({ part, at: loop.at, axis: loop.axis, diameterMm })
     }
   }
-  const wall = minWall(world)
+  const wall = minWall(world, checkWallBudget())
   const shaping = d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint')
   let gaps: Pick<BodyFacts, 'fit' | 'fitWhy'> = {}
   if (fit)
@@ -249,6 +249,15 @@ export interface WallBudget {
  * measures in under a second, so the facet cap leaves room for one that size; the time limit stops a slower one.
  */
 export const WALL_BUDGET: WallBudget = { maxFacets: 1_000_000, maxMs: 1500 }
+
+/**
+ * The budget design.check reads the wall with. Tests and recorded replays set SX_WALL_COUNT_ONLY=1 and drop the time
+ * limit, keeping the facet cap, so a loaded runner reads the same wall a quiet one does.
+ */
+export function checkWallBudget(): WallBudget {
+  const env = typeof process === 'undefined' ? undefined : process.env['SX_WALL_COUNT_ONLY']
+  return env === '1' ? { ...WALL_BUDGET, maxMs: Infinity } : WALL_BUDGET
+}
 
 /** The thinnest wall, in mm, or null with the reason when it was not measured (null alone: no ray met a far side). */
 export interface WallReading {
