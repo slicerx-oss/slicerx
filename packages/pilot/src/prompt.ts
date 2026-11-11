@@ -80,6 +80,14 @@ export const DETAIL_LINE = `- A model of a real thing (a car, a plane, a house, 
 // instead of editing the step they came from, and ended on a question the person had not asked for.
 export const FOLLOWUP_LINE = `- A follow-up on a design already built (a detail added, a size changed, a part recolored) is made in that design at once: no size sheet and no plan card. Put the change in its plan with design.plan with amends and asked (the person's words), then change what is built: a size of something built is design.edit_step with size on the step that made it (a patterned detail at its source step, and the copies follow; never a push on each copy), and a new detail is added as its own step. A recolor of a part already painted in bands goes on the band the words name (the bottom: a height band; the whole part: paint.preview with whole) and says which it took; when the words name none, paint.preview lets the person pick the band with one tap. The reply to a follow-up ends with what changed, in a few words: never a question, and no offer to slice or print.`
 
+// cloud prompt only, with design.look: a vague follow-up. "add bevels" on a model meant its plain upper blocks, not
+// its body: the model read the body, since nothing told it which parts were plain blocks or let it see the model.
+export const VAGUE_LINE = `- A vague follow-up (add bevels, more detail, make it nicer, smooth it) is read against the model the person is looking at: read each part's form in the design read-back (a plain block is boxes and cylinders with every edge sharp) and, once, design.look, then apply it where it shows and is needed, plain blocks first, and say in a few words what you took it to mean ("Beveled the deck houses and the cabin roof edges"). A part word that names nothing in the plan ("the top", "the pipes", "the front") is the part whose position, color or shape fits it; name the parts you took. Ask only when two readings are equally likely and far apart, with two choices. Never answer that the tools cannot do it: make the nearest change that reads right, and say so.`
+
+// cloud prompt only, with design.edit_step: what a follow-up aims at. Asked for more windows, top details or posts,
+// runs added one row, one kind of detail and plain slabs; asked for an overhang, a slab stuck out of the body.
+export const GENEROUS_LINE = `- A follow-up aims at what the person expects to see, not the least that answers it: windows on every face that would have them, at a size and spacing that reads at this scale; details as a believable set of a few kinds, placed with care; repeated items as a full row on each side, each shaped rather than a slab; and where the honest change is to the main body's shape (an overhang, more curve, a taper), edit the sections of the main body in place with design.edit_step rather than adding a block to it.`
+
 /**
  * Prompt text a local model gets as well as a cloud one. Text not wrapped in local() reaches cloud turns only, so a new
  * line costs a local model's build turn nothing unless it is marked here on purpose; the local prompt is pinned word for
@@ -125,6 +133,8 @@ const PLAN_LID: Piece[] = [
  */
 const buildLines = (has: HasTool, o: PromptOptions): Piece[] => {
   const checks = has('design.check') && has('design.plan')
+  // only on a turn that follows a built design: on a first build the line read as building each detail as its own piece
+  const followUp = has('design.plan') && has('design.edit_step') && o.followUp === true
   return [
     local(BUILD_FIRST),
     local(SIZES_LINE),
@@ -132,8 +142,9 @@ const buildLines = (has: HasTool, o: PromptOptions): Piece[] => {
     has('design.plan') && DETAIL_LINE,
     ...(has('design.plan') ? [[local(PLAN_LINE), ...PLAN_LID, checks && MOVING_PARTS_ORDER], local(FEATURE_LINE)] : [local(STEPS_LINE)]),
     has('design.plan') && assembledLine(has),
-    // only on a turn that follows a built design: on a first build the line read as building each detail as its own piece
-    has('design.plan') && has('design.edit_step') && o.followUp === true && FOLLOWUP_LINE,
+    followUp && FOLLOWUP_LINE,
+    followUp && GENEROUS_LINE,
+    followUp && has('design.look') && VAGUE_LINE,
     local(BIND_LINE),
     local(checks ? CHECK_LINE : READ_BACK_LINE),
     checks && MOVING_PARTS_LINE,
