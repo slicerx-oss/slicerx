@@ -62,6 +62,22 @@ describe('design.edit_step size and move', () => {
     expect(r1(lifted.output.parts[1]!.sizeMm[2])).toBe(26)
   })
 
+  it('keeps the painted rim of a pen cup on its top when the cup is shortened or lifted', async () => {
+    const { ok } = await start()
+    const d = (await ok('slicerx_design_new', { name: 'Desk organizer' })).output.design
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 80, heightMm: 50 }, distance_mm: 12, name: 'Tray' })
+    await ok('slicerx_geom_revolve', { design: d, loops: [{ points: [[0, 0], [10, 0], [10, 34], [0, 34]] }], frame: { origin: [-25, 0, 12], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, axis: { point: [0, 0], direction: [0, 1] }, angle_deg: 360, operation: 'new', name: 'Pen cup' })
+    // the top 4 mm of the cup painted in filament 2: from z 42 up
+    const pv = await ok('slicerx_paint_preview', { design: d, layer: 'color', state: 2, target: { kind: 'height', above: 42 }, part: 1 })
+    await ok('slicerx_paint_apply', { preview: (pv.output as unknown as { preview: string }).preview })
+    const painted = (o: Summary) => Object.values((o.parts[1] as unknown as { paintedTriangles?: Record<string, number> }).paintedTriangles ?? {}).reduce((a, b) => a + b, 0)
+    const short = await ok('slicerx_design_edit_step', { design: d, step: 2, size: { axis: 'z', mm: 26 } })
+    expect(painted(short.output)).toBeGreaterThan(0)
+    expect(short.summary).toContain('the paint on it follows')
+    const lifted = await ok('slicerx_design_edit_step', { design: d, step: 2, move: [0, 0, 5] })
+    expect(painted(lifted.output)).toBeGreaterThan(0)
+  })
+
   it('makes a toy boat hull longer by editing its loft along its length', async () => {
     const { ok } = await start()
     const d = (await ok('slicerx_design_new', { name: 'Toy boat' })).output.design
