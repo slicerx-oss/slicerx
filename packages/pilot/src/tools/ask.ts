@@ -269,11 +269,11 @@ export function sheetTool(): PilotTool<never> {
       if (!ctx.sheet) return { ok: false, summary: 'Nobody here can confirm a sheet' }
       // the person edits sizes on the drawing, so a sheet of several sizes needs the part to draw, and a place on it for
       // every row, so each row has its callout
-      if (i.dims.length > 1 && !i.part?.length && !i.design) return { ok: false, summary: 'Not shown: a sheet of several sizes needs part: [solid, ...], the part as it will be built (each solid an extrude {"plane", "points", "from", "to"}, or a revolve, sweep or loft for a round, bent or tapered body), or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
+      if (i.dims.length > 1 && !i.part?.length && !i.design) return { ok: false, inputRefused: true, summary: 'Not shown: a sheet of several sizes needs part: [solid, ...], the part as it will be built (each solid an extrude {"plane", "points", "from", "to"}, or a revolve, sweep or loft for a round, bent or tapered body), or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
       // a design that is not on the plate would show the sheet with no drawing, so mimir hears of it instead
-      if (i.design && ctx.sheetDesign && !ctx.sheetDesign(i.design)) return { ok: false, summary: `Not shown: no built design ${i.design} on the plate; use the design id geom.info gives, or give part instead.` }
+      if (i.design && ctx.sheetDesign && !ctx.sheetDesign(i.design)) return { ok: false, inputRefused: true, summary: `Not shown: no built design ${i.design} on the plate; use the design id geom.info gives, or give part instead.` }
       const unplaced = i.dims.length > 1 ? i.dims.flatMap((d, n) => (d.at ? [] : [unplacedRow(d, n)])) : []
-      if (unplaced.length) return { ok: false, summary: `Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. ${unplaced.join('; ')}. Send it again with them.` }
+      if (unplaced.length) return { ok: false, inputRefused: true, summary: `Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. ${unplaced.join('; ')}. Send it again with them.` }
       const answer = await ctx.sheet(sheetOf(i))
       // words written while it waited set it aside: they are the person's answer, as for a dismissed question
       if (!answer.confirmed && answer.said) {

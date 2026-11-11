@@ -125,6 +125,11 @@ export interface ToolOutput {
   passthrough?: unknown
   /** A record to show the person as a card, with its source. */
   lookup?: Omit<PilotLookup, 'id'>
+  /**
+   * Set on a refusal of the call's own input, before the tool did anything (a sheet row with no place on the drawing):
+   * the model's slip, fixed by sending the call again, so Auto does not take it for struggling (runtime.ts).
+   */
+  inputRefused?: boolean
 }
 
 /** The sets tools load in (docs: agent tools architecture). A client starts with core and loads the others it needs. */
