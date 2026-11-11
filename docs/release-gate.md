@@ -13,6 +13,10 @@ sign-in link. When a link has to be opened, it says which one and waits for an o
 
 Build the bridge test build from the release candidate's commit, with the same backend settings as the release: the
 production `SLICERX_SUPABASE_URL` and its public publishable key in `SLICERX_SUPABASE_ANON_KEY`.
+The signed release builds need the same two: without both the SlicerX edition is a demo build (made-up printers in
+Search my network, the bundled demo catalog in the Vault), and `apps/desktop/release/check-demo-data.mjs` stops the
+release before the build (`--env`) and again on the built frontend before anything is signed (`--dist`). The bridge
+test build is a test build, so it may be a demo build.
 
 ```sh
 SLICERX_SUPABASE_URL=... SLICERX_SUPABASE_ANON_KEY=... pnpm --filter @slicerx/desktop build:bridge

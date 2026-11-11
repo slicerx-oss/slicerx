@@ -165,6 +165,8 @@ if ($Release) {
     }
     # A release never carries the agent bridge (docs/agent-bridge.md): refuse a bridge environment before building.
     Run 'agent bridge off' { node apps/desktop/release/check-agent-bridge.mjs --env --manifest apps/desktop/src-tauri/Cargo.toml }
+    # A release is never a demo build: refuse an environment without the backend variables before building.
+    Run 'not a demo build' { node apps/desktop/release/check-demo-data.mjs --env }
     Run 'engine module' { pnpm --filter @slicerx/slicer build:wasm }
     Run 'geometry module' { sh packages/geom/wasm/scripts/build.sh }
     Run 'edition config' { pnpm --filter @slicerx/desktop tauri:config }
@@ -191,6 +193,7 @@ if ($Release) {
     try { Run 'signed build' { pnpm tauri build --config src-tauri/gen/edition.signed.conf.json --target $triple --bundles 'nsis,msi' } } finally { Pop-Location }
     # The app the installers carry and the frontend inside it, checked for the agent bridge before anything is copied out.
     Run 'no agent bridge' { node apps/desktop/release/check-agent-bridge.mjs --binary "$target\slicerx.exe" --dist apps/desktop/dist }
+    Run 'not a demo build' { node apps/desktop/release/check-demo-data.mjs --dist apps/desktop/dist }
     # Exactly one installer of each kind, of this version.
     $version = (Get-Content (Join-Path $repo 'apps/desktop/src-tauri/tauri.conf.json') -Raw | ConvertFrom-Json).version
     function One([string]$dir, [string]$filter) {
