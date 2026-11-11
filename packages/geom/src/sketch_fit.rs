@@ -203,6 +203,9 @@ pub fn tidy_loop(l: &mut Loop) {
     l.start = l.start.map(tidy2);
     l.center = l.center.map(tidy2);
     l.diameter_mm = l.diameter_mm.map(tidy);
+    l.width_mm = l.width_mm.map(tidy);
+    l.height_mm = l.height_mm.map(tidy);
+    l.angle_deg = l.angle_deg.map(tidy);
     for s in &mut l.segments {
         s.to = s.to.map(tidy2);
         s.through = s.through.map(tidy2);

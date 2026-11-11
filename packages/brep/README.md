@@ -20,7 +20,7 @@ Operation names are limited to 128 UTF-8 bytes. Requests are limited to 32 MiB o
 The saved-body checksum detects changed text; it is not authentication. These limits bound input parsing, not the time or memory of an arbitrary modeling operation. Native serialized-body input still requires the existing developer opt-in. Worker/process termination and recovery remain necessary for a hard execution deadline.
 ## Solid regression fixtures
 
-`tests/solid-cases.json` describes procedural brackets, open enclosures with 2 mm and 0.6 mm walls, a plate with 100 holes, and a cube with four fillets. Each volume is represented as `a + b * pi`, derived from boxes, cylinders and circular fillet segments. The native and committed-WASM tests run the same cases at scales 0.1, 1 and 10, both at the origin and translated by [1000, -700, 350] mm.
+`tests/solid-cases.json` describes procedural brackets, open enclosures with 2 mm and 0.6 mm walls, a plate with 100 holes, a cube with four fillets and a plate with an elliptic hole. Each volume is represented as `a + b * pi`, derived from boxes, cylinders, circular fillet segments and ellipses. The native and committed-WASM tests run the same cases at scales 0.1, 1 and 10, both at the origin and translated by [1000, -700, 350] mm.
 
 ```sh
 SX_BREP_REQUIRE=1 cargo test -p sx-brep --release --test solids
@@ -78,10 +78,10 @@ Cached objects include the source, recursive wrapper and kernel headers, compile
 
 | File | Bytes | gzip | SHA-256 |
 | --- | --- | --- | --- |
-| `lib/sx_brep.wasm` | 3,259,520 | 1,288,899 | `37a7b36b7a22e9329c06ed68f76ad52416c2c69311c58ea708705d6de52caa9a` |
+| `lib/sx_brep.wasm` | 3,260,720 | 1,289,305 | `6a62a54b0c069fb06d3c2ff12a942a21da6e06bdb85f7796c4f91daf9b13419d` |
 | `lib/sx_brep.mjs` | 63,340 | 17,861 | `ecda0a5fb31873ad175525b589c3fc45c98ed0aa967b23186df002eb0997760c` |
 
-Gzip sizes use Node zlib at level 9, matching the web bundle gate. The previous WASM was 1,288,185 bytes by the same method; this build adds 714 bytes and remains below the 1,400,000-byte ceiling.
+Gzip sizes use Node zlib at level 9, matching the web bundle gate. The previous WASM was 1,288,899 bytes by the same method; this build adds 406 bytes and remains below the 1,400,000-byte ceiling.
 
 ## Licenses
 

@@ -232,6 +232,10 @@ pub enum Shape {
         length_mm: f64,
         width_mm: f64,
     },
+    Ellipse {
+        width_mm: f64,
+        height_mm: f64,
+    },
     Polygon {
         sides: usize,
         diameter_mm: f64,
@@ -364,6 +368,13 @@ fn shape_polygons(
             arc([-x, 0.0], r, PI / 2.0, 1.5 * PI, half, &mut ring);
             ring.dedup();
             vec![Polygon::simple(ring)]
+        }
+        Shape::Ellipse { width_mm, height_mm } => {
+            let (w, h) = (positive(width_mm, "widthMm")?, positive(height_mm, "heightMm")?);
+            inset_free(
+                vec![Polygon::simple(sketch::ellipse_points([0.0, 0.0], w, h, 0.0))],
+                inset,
+            )?
         }
         Shape::Polygon {
             sides,
@@ -1731,5 +1742,55 @@ mod tests {
             "{:?}",
             r.report
         );
+    }
+
+    #[test]
+    fn an_ellipse_extrudes_with_one_smooth_side_and_tapers() {
+        let shape = Shape::Ellipse {
+            width_mm: 30.0,
+            height_mm: 16.0,
+        };
+        let at = Placement {
+            center: [5.0, 5.0],
+            rotation_deg: 90.0,
+        };
+        let spec = ExtrudeSpec {
+            distance_mm: 10.0,
+            ..ExtrudeSpec::default()
+        };
+        let r = extrude(&FaceFrame::bed([0.0, 0.0]), &shape, &at, None, &spec, None).unwrap();
+        let exact = PI * 15.0 * 8.0 * 10.0;
+        let v = r.mesh.volume();
+        assert!(v < exact && exact - v < 0.002 * exact, "{v}");
+        // turned a quarter: the width runs along y
+        let b = r.mesh.bounds().unwrap();
+        assert!(
+            (b.max[1] - 20.0).abs() < 1e-5 && (b.max[0] - 13.0).abs() < 1e-5,
+            "{b:?}"
+        );
+        // caps and one side face, not a face per facet
+        let faces = r.mesh.faces.as_ref().unwrap();
+        let mut ids = faces.ids.clone();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), 3, "{:?}", faces.table);
+        assert_eq!(
+            ids.iter()
+                .filter(|&&i| faces.table[i as usize] == Surface::Other)
+                .count(),
+            1
+        );
+        let taper = ExtrudeSpec {
+            taper_deg: 10.0,
+            ..spec
+        };
+        let t = extrude(&FaceFrame::bed([0.0, 0.0]), &shape, &at, None, &taper, None).unwrap();
+        assert!(t.report.watertight && t.mesh.volume() < v * 0.9, "{:?}", t.report);
+        let bad = Shape::Ellipse {
+            width_mm: 0.0,
+            height_mm: 4.0,
+        };
+        let err = extrude(&FaceFrame::bed([0.0, 0.0]), &bad, &at, None, &spec, None).unwrap_err();
+        assert!(err.to_string().contains("widthMm"), "{err}");
     }
 }

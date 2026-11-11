@@ -336,6 +336,60 @@ fn sketch_and_slot_extrudes() {
 }
 
 #[test]
+fn ellipse_extrudes_exact() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    // a plate with a turned elliptic hole, and a turned ellipse alone; the kernel takes the exact curve
+    let plate = json!([
+        { "points": [[-30, -20], [30, -20], [30, 20], [-30, 20]] },
+        { "type": "ellipse", "center": [0, 0], "widthMm": 20, "heightMm": 10, "angleDeg": 30 }
+    ]);
+    let lone =
+        json!([{ "type": "ellipse", "center": [5, 0], "widthMm": 30, "heightMm": 16, "angleDeg": 45 }]);
+    let half = (225.0f64 + 64.0).sqrt() / 2f64.sqrt();
+    for (name, loops, depth, want, min, max) in [
+        (
+            "plate",
+            plate,
+            5.0,
+            (2400.0 - PI * 50.0) * 5.0,
+            [-30.0, -20.0, 0.0],
+            [30.0, 20.0, 5.0],
+        ),
+        (
+            "ellipse",
+            lone,
+            4.0,
+            PI * 120.0 * 4.0,
+            [5.0 - half, -half, 0.0],
+            [5.0 + half, half, 4.0],
+        ),
+    ] {
+        let profiles = call("sketch.curves", &json!({ "loops": loops }));
+        let brep = made(
+            "extrude",
+            json!({ "frame": frame, "polygons": profiles, "fromMm": 0, "toMm": depth }),
+        );
+        let on_mesh = call(
+            "shape.extrude",
+            &json!({ "frame": frame, "shape": { "type": "sketch", "loops": loops }, "placement": {}, "spec": { "distanceMm": depth } }),
+        );
+        check(
+            name,
+            &brep_solid(&brep),
+            0.0,
+            &mesh_solid(&on_mesh["mesh"]),
+            ARC_TOL,
+            want,
+            min,
+            max,
+        );
+    }
+}
+
+#[test]
 fn extrude_into_the_top() {
     if !sx_brep::KERNEL {
         return;

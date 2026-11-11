@@ -206,6 +206,12 @@ pub(crate) fn ring_faces(
     let len = ring.len();
     let at = |k: usize| ring[k % len];
     let (on_arc, tol) = arcs(ring);
+    // a whole ellipse that is no circle is one smooth face, not a facet each
+    if !on_arc.iter().all(Option::is_some)
+        && poly2d::ellipse_fit(ring, tol).is_some_and(|(a, b)| a - b > tol * 10.0)
+    {
+        return vec![f.push(Surface::Other); len];
+    }
     let same = |a: Circle, b: Circle| same_circle(a, b, tol);
     let mut ids = Vec::with_capacity(len);
     let mut last: Option<((V2, f64), u32)> = None;

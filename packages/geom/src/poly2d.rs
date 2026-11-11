@@ -547,6 +547,82 @@ fn in_triangle_open(p: V2, a: V2, b: V2, c: V2) -> bool {
     orient(a, b, p) > 0.0 && orient(b, c, p) > 0.0 && orient(c, a, p) > 0.0
 }
 
+/// the half axes of the one ellipse every point of the closed ring lies on within `tol`, or none
+pub fn ellipse_fit(ring: &[V2], tol: f64) -> Option<(f64, f64)> {
+    let n = ring.len();
+    if n < 12 {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss, reason = "ring sizes are small")]
+    let c = [
+        ring.iter().map(|p| p[0]).sum::<f64>() / n as f64,
+        ring.iter().map(|p| p[1]).sum::<f64>() / n as f64,
+    ];
+    let s = ring
+        .iter()
+        .map(|p| (p[0] - c[0]).m_hypot(p[1] - c[1]))
+        .fold(0.0, f64::max);
+    if !(s > 0.0 && s.is_finite()) {
+        return None;
+    }
+    // centered and scaled to about one, the conic a x2 + b xy + (1 - a) y2 + d x + e y + f = 0 by least squares
+    let pts: Vec<V2> = ring
+        .iter()
+        .map(|p| [(p[0] - c[0]) / s, (p[1] - c[1]) / s])
+        .collect();
+    let mut m = [[0.0; 6]; 5];
+    for &[x, y] in &pts {
+        let row = [x * x - y * y, x * y, x, y, 1.0];
+        for i in 0..5 {
+            for j in 0..5 {
+                m[i][j] += row[i] * row[j];
+            }
+            m[i][5] -= row[i] * y * y;
+        }
+    }
+    for k in 0..5 {
+        let p = (k..5).max_by(|&i, &j| m[i][k].abs().total_cmp(&m[j][k].abs()))?;
+        m.swap(k, p);
+        if m[k][k].abs() < 1e-14 {
+            return None;
+        }
+        for i in k + 1..5 {
+            let (f, row) = (m[i][k] / m[k][k], m[k]);
+            for (v, r) in m[i].iter_mut().zip(row).skip(k) {
+                *v -= f * r;
+            }
+        }
+    }
+    let mut x = [0.0; 5];
+    for k in (0..5).rev() {
+        let t: f64 = (k + 1..5).map(|j| m[k][j] * x[j]).sum();
+        x[k] = (m[k][5] - t) / m[k][k];
+    }
+    let [a, b, d, e, f] = x;
+    let cc = 1.0 - a;
+    let det = 4.0 * a * cc - b * b;
+    if det <= 0.0 {
+        return None;
+    }
+    let tol = tol / s;
+    let near = pts.iter().all(|&[x, y]| {
+        let v = a * x * x + b * x * y + cc * y * y + d * x + e * y + f;
+        let g = (2.0 * a * x + b * y + d).m_hypot(b * x + 2.0 * cc * y + e);
+        g > 1e-12 && v.abs() / g <= tol
+    });
+    if !near {
+        return None;
+    }
+    let o = [(b * e - 2.0 * cc * d) / det, (b * d - 2.0 * a * e) / det];
+    let at = a * o[0] * o[0] + b * o[0] * o[1] + cc * o[1] * o[1] + d * o[0] + e * o[1] + f;
+    let (mid, half) = (f64::midpoint(a, cc), ((a - cc) / 2.0).m_hypot(b / 2.0));
+    let (l1, l2) = (mid + half, mid - half);
+    if !(l2 > 0.0 && at < 0.0) {
+        return None;
+    }
+    Some(((-at / l2).sqrt() * s, (-at / l1).sqrt() * s))
+}
+
 pub fn circle(center: V2, r: f64, segments: usize) -> Vec<V2> {
     let n = segments.max(3);
     (0..n)
@@ -762,5 +838,25 @@ mod tests {
         assert_eq!(polys.len(), 2);
         assert_eq!(polys.iter().map(|p| p.holes.len()).sum::<usize>(), 1);
         assert!((polys.iter().map(Polygon::area).sum::<f64>() - 68.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn an_ellipse_fits_and_a_circle_or_square_does_not_differ() {
+        let (s, c) = 20f64.to_radians().m_sin_cos();
+        let ring: Vec<V2> = (0..64)
+            .map(|i| {
+                let t = std::f64::consts::TAU * f64::from(i) / 64.0;
+                let (x, y) = (15.0 * t.m_cos(), 5.0 * t.m_sin());
+                [3.0 + c * x - s * y, 4.0 + s * x + c * y]
+            })
+            .collect();
+        let (a, b) = ellipse_fit(&ring, 1e-7).unwrap();
+        assert!((a - 15.0).abs() < 1e-6 && (b - 5.0).abs() < 1e-6, "{a} {b}");
+        let (a, b) = ellipse_fit(&circle([0.0, 0.0], 5.0, 48), 1e-7).unwrap();
+        assert!((a - b).abs() < 1e-6);
+        assert!(ellipse_fit(&rect([0.0, 0.0], [4.0, 4.0]), 1e-7).is_none());
+        let mut bumpy = ring.clone();
+        bumpy[3][0] += 0.01;
+        assert!(ellipse_fit(&bumpy, 1e-4).is_none());
     }
 }
