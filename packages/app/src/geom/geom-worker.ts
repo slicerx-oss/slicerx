@@ -9,7 +9,7 @@
 // (brep.ts), which loads the first time one comes.
 import { replayHistory, type ReplayRequest } from '@slicerx/cad-history'
 import { engineModules, type EngineModule } from './modules'
-import { callEngine, transferables, type GeomExports } from './engine-call'
+import { callEngine, EngineTrap, transferables, type GeomExports } from './engine-call'
 import { loadBrep, type BrepModule } from './brep'
 import { replayStepOf, workerLoop, type WorkerMessage } from './worker-loop'
 
@@ -24,11 +24,12 @@ async function load(url: URL): Promise<EngineModule> {
 }
 
 // A build that does not load is reported to the page (client.ts), ahead of the answer to the call that asked for it.
-const engine = engineModules(
+const startEngine = () => engineModules(
   () => load(new URL('../../../geom/wasm/pkg/sx_geom_core.wasm', import.meta.url)),
   () => load(new URL('../../../geom/wasm/pkg/sx_geom_wasm.wasm', import.meta.url)),
   (loadError) => self.postMessage({ loadError }),
 )
+let engine = startEngine()
 
 /** The engine modules' memory, which only grows; each answer says how big it is, so the page can end a worker that holds a lot. */
 const memories = new Set<WebAssembly.Memory>()
@@ -37,7 +38,16 @@ const memoryBytes = (): number => [...memories].reduce((n, m) => n + m.buffer.by
 
 function call(x: GeomExports, op: string, request: unknown): unknown {
   memories.add(x.memory)
-  return callEngine(x, op, request)
+  try {
+    return callEngine(x, op, request)
+  } catch (err) {
+    // a trapped module traps on every later call, so the next call loads the engine again
+    if (err instanceof EngineTrap) {
+      memories.delete(x.memory)
+      engine = startEngine()
+    }
+    throw err
+  }
 }
 
 /** A file sent as its bytes (`data.bytes`) goes to the engine as base64, encoded here rather than on the page. */

@@ -204,16 +204,35 @@ export function createGeomCli(opts: { binary?: string; args?: readonly string[];
   }
 }
 
+/**
+ * What a trapped engine call says. A panic aborts the web build, which traps as `unreachable`; the engine keeps the
+ * panic's message and place (`geom_panic_ptr`). A trap with no panic kept is an allocation the host refused: the
+ * module's memory could not grow.
+ */
+export function trapMessage(panic: string, memoryBytes: number): string {
+  if (panic) return `the engine stopped on an internal error: ${panic.replace(/\s+/g, ' ').trim()}`
+  return `the engine ran out of memory at ${(memoryBytes / 2 ** 20).toFixed(1)} MB; try the step again`
+}
+
 /** Runs in the engine's worker thread: one request in, its reply text or error out. */
 const ENGINE_THREAD = `
 const { parentPort, workerData } = require('node:worker_threads')
 const x = new WebAssembly.Instance(new WebAssembly.Module(require('node:fs').readFileSync(workerData.wasm)), {}).exports
 const text = (ptr, len) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len))
 parentPort.on('message', ({ op, input }) => {
-  const bytes = new TextEncoder().encode(op + '\\0' + JSON.stringify(input))
-  const at = x.geom_input(bytes.length)
-  new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
-  if (x.geom_call() === 0) parentPort.postMessage({ out: text(x.geom_out_ptr(), x.geom_out_len()) })
+  let code
+  try {
+    const bytes = new TextEncoder().encode(op + '\\0' + JSON.stringify(input))
+    const at = x.geom_input(bytes.length)
+    new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
+    code = x.geom_call()
+  } catch (e) {
+    if (!(e instanceof WebAssembly.RuntimeError)) throw e
+    // the host ends this worker, so the next call gets a fresh engine
+    parentPort.postMessage({ trap: { panic: x.geom_panic_len ? text(x.geom_panic_ptr(), x.geom_panic_len()) : '', memoryBytes: x.memory.buffer.byteLength } })
+    return
+  }
+  if (code === 0) parentPort.postMessage({ out: text(x.geom_out_ptr(), x.geom_out_len()) })
   else parentPort.postMessage({ error: text(x.geom_error_ptr(), x.geom_error_len()) })
 })
 `
@@ -223,7 +242,8 @@ parentPort.on('message', ({ op, input }) => {
  * the command's byte for byte; errors read like the command's, `sx-geom <op>: <message>`. A call that is canceled or
  * runs past its time limit (`timeoutMs`, by default its operation's class limit) ends its worker, since a synchronous
  * engine call reads no messages, and the next call starts a fresh one; one past its limit is refused with what to try.
- * Calls run one at a time, in order, and each one's limit starts when its turn comes.
+ * Calls run one at a time, in order, and each one's limit starts when its turn comes. A call that traps ends its worker
+ * too, since a trapped module is left as it stopped, and says why (trapMessage).
  */
 export function createGeomWasm(opts: { wasm: string; timeoutMs?: GeomTimeout }): GeomHost {
   let worker: Worker | null = null
@@ -249,7 +269,11 @@ export function createGeomWasm(opts: { wasm: string; timeoutMs?: GeomTimeout }):
         fail(message)
       }
       const onAbort = (): void => stop('canceled, so the engine was stopped')
-      const onMessage = (m: { out?: string; error?: string }): void => {
+      const onMessage = (m: { out?: string; error?: string; trap?: { panic: string; memoryBytes: number } }): void => {
+        if (m.trap) {
+          stop(trapMessage(m.trap.panic, m.trap.memoryBytes))
+          return
+        }
         if (m.out !== undefined) {
           // read before settling: a throw in this listener would leave the call, and every call queued behind it, waiting
           let value: unknown
