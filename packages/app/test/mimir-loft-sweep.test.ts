@@ -250,9 +250,9 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
     const items = (check['items'] ?? []) as { name: string; pass: boolean }[]
     expect(items.map((i) => i.name)).toContain('minimum wall')
     expect(items.filter((i) => i.name !== 'minimum wall' && !i.pass), JSON.stringify(items)).toEqual([])
-    // a hook over the open top, ending pointed down, is the weak design: no side join and no lip
+    // a hook over the open top is joined to the stem at its top, but it ends pointed down, so its tip does not rise: no lip
     expect(s.hook, JSON.stringify(s.hook)).toMatchObject({ pass: false })
-    expect(s.hook?.detail).toMatch(/meets the stem only at its top; tip rises only/)
+    expect(s.hook?.detail).toMatch(/joined to the stem at its top; tip rises only 0 mm above the hook's lowest point near the end \(want 3 mm or more\)/)
   })
 
   // The hook as it should be: a 16 mm tube out of the stem's side wall below its top, bending up at its end into a lip.
@@ -270,7 +270,7 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
     const s = r.score
     expect(s.hook, JSON.stringify(s.hook)).toMatchObject({ pass: true })
     // the stem is read from the part, so the lofted stem shows its taper
-    expect(s.hook?.detail).toMatch(/^stem tapers from \d+ to \d+ mm across, \w+; leaves the stem side below its top; tip rises/)
+    expect(s.hook?.detail).toMatch(/^stem tapers from \d+ to \d+ mm across, \w+; joined to the stem at its side below its top; tip rises \d+ mm above the hook's lowest point near the end \(want 3 mm or more\)$/)
     expect({ watertight: s.watertight?.pass, bodies: s.bodies?.pass, sizes: s.sizes?.pass }, JSON.stringify(s)).toEqual({ watertight: true, bodies: true, sizes: true })
     expect(((check['items'] ?? []) as { name: string; pass: boolean }[]).find((i) => i.name === 'watertight')?.pass).toBe(true)
   })
