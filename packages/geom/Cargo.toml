@@ -35,6 +35,10 @@ name = "sketch_project"
 required-features = ["cad"]
 
 [[test]]
+name = "cut_vertex_row"
+required-features = ["cad"]
+
+[[test]]
 name = "nest_bench"
 required-features = ["nest"]
 
