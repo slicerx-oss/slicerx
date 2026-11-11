@@ -1,14 +1,15 @@
 {
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-11T01:32:40.790Z",
+ "capturedAt": "2026-11-11T21:37:46.708Z",
  "steps": [
   {
    "calls": [
     {
      "name": "parts.lookup",
      "args": {
-      "name": "M4"
+      "name": "M4",
+      "category": "screw"
      }
     }
    ]
@@ -21,64 +22,36 @@
     {
      "name": "pilot.sheet",
      "args": {
-      "title": "Cable hook: sizes",
-      "part": [
-       {
-        "plane": "xy",
-        "points": [
-         [
-          0,
-          0
-         ],
-         [
-          40,
-          0
-         ],
-         [
-          40,
-          40
-         ],
-         [
-          0,
-          40
-         ]
-        ],
-        "from": 0,
-        "to": 5
-       },
-       {
-        "kind": "sweep",
-        "profile": {
-         "d": 10
-        },
-        "path": [
-         [
-          20,
-          20,
-          5
-         ],
-         [
-          20,
-          20,
-          65
-         ],
-         [
-          60,
-          20,
-          65
-         ]
-        ],
-        "round": 20
-       }
-      ],
+      "title": "Cable hook (J-hook)",
       "views": [
        "front",
+       "side",
+       "top",
        "iso"
       ],
       "dims": [
        {
-        "key": "plate_size",
-        "label": "Base plate, square",
+        "key": "rod_diameter",
+        "label": "Rod diameter",
+        "value": 10,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          10,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "base_size",
+        "label": "Base plate width and length",
         "value": 40,
         "unit": "mm",
         "source": "asked",
@@ -92,401 +65,69 @@
           40,
           0,
           0
-         ],
-         "off": [
-          0,
-          -8,
-          0
          ]
         }
        },
        {
-        "key": "plate_thickness",
+        "key": "base_thickness",
         "label": "Base plate thickness",
         "value": 5,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
-          40,
+          0,
           0,
           0
          ],
          "b": [
-          40,
+          0,
           0,
           5
-         ],
-         "off": [
-          8,
-          0,
-          0
          ]
         }
        },
        {
-        "key": "rod_diameter",
-        "label": "Rod diameter",
-        "value": 10,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          15,
-          20,
-          5
-         ],
-         "b": [
-          25,
-          20,
-          5
-         ],
-         "off": [
-          0,
-          -6,
-          0
-         ]
-        }
-       },
-       {
-        "key": "rise_height",
-        "label": "Straight rise above plate",
+        "key": "rise",
+        "label": "Straight rise above the plate",
         "value": 60,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
-          0,
           20,
+          0,
           5
          ],
          "b": [
-          0,
           20,
-          65
-         ],
-         "off": [
-          -8,
           0,
-          0
+          65
          ]
         }
        },
        {
         "key": "hook_radius",
-        "label": "Hook bend radius (to rod centerline)",
+        "label": "Hook bend radius",
         "value": 20,
         "unit": "mm",
         "source": "asked",
         "at": {
-         "c": [
-          40,
-          20,
-          65
-         ],
-         "from": [
-          -1,
-          0,
-          0
-         ],
-         "to": [
-          0,
-          0,
-          -1
-         ],
-         "r": 20
-        }
-       },
-       {
-        "key": "hook_sweep",
-        "label": "Hook sweep (over the top, tip pointing down)",
-        "value": 180,
-        "unit": "deg",
-        "source": "guess",
-        "at": {
-         "c": [
-          40,
-          20,
-          65
-         ],
-         "from": [
-          -1,
-          0,
-          0
-         ],
-         "to": [
-          1,
-          0,
-          0
-         ],
-         "r": 20
-        }
-       },
-       {
-        "key": "screw_hole_diameter",
-        "label": "Screw hole diameter (M4 clearance, normal)",
-        "value": 4.5,
-        "unit": "mm",
-        "source": "lookup",
-        "at": {
          "a": [
-          8,
           20,
-          0
-         ],
-         "b": [
-          8,
-          20,
-          5
-         ],
-         "off": [
-          -6,
           0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "screw_hole_edge_offset",
-        "label": "Screw hole center from plate edge (both holes on the centerline)",
-        "value": 8,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          20,
-          0
-         ],
-         "b": [
-          8,
-          20,
-          0
-         ],
-         "off": [
-          0,
-          -6,
-          0
-         ]
-        }
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"dims.7.label: Too big: expected string to have <=60 characters\",\"(input): a looked-up value needs its sourceUrl\"]}"
-   ],
-   "calls": [
-    {
-     "name": "pilot.sheet",
-     "args": {
-      "title": "Cable hook: sizes",
-      "part": [
-       {
-        "plane": "xy",
-        "points": [
-         [
-          0,
-          0
-         ],
-         [
-          40,
-          0
-         ],
-         [
-          40,
-          40
-         ],
-         [
-          0,
-          40
-         ]
-        ],
-        "from": 0,
-        "to": 5
-       },
-       {
-        "kind": "sweep",
-        "profile": {
-         "d": 10
-        },
-        "path": [
-         [
-          20,
-          20,
-          5
-         ],
-         [
-          20,
-          20,
           65
-         ],
-         [
-          60,
-          20,
-          65
-         ]
-        ],
-        "round": 20
-       }
-      ],
-      "views": [
-       "front",
-       "iso"
-      ],
-      "dims": [
-       {
-        "key": "plate_size",
-        "label": "Base plate, square",
-        "value": 40,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
          ],
          "b": [
           40,
           0,
-          0
-         ],
-         "off": [
-          0,
-          -8,
-          0
-         ]
-        }
-       },
-       {
-        "key": "plate_thickness",
-        "label": "Base plate thickness",
-        "value": 5,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          40,
-          0,
-          0
-         ],
-         "b": [
-          40,
-          0,
-          5
-         ],
-         "off": [
-          8,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "rod_diameter",
-        "label": "Rod diameter",
-        "value": 10,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          15,
-          20,
-          5
-         ],
-         "b": [
-          25,
-          20,
-          5
-         ],
-         "off": [
-          0,
-          -6,
-          0
-         ]
-        }
-       },
-       {
-        "key": "rise_height",
-        "label": "Straight rise above plate",
-        "value": 60,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          0,
-          20,
-          5
-         ],
-         "b": [
-          0,
-          20,
           65
-         ],
-         "off": [
-          -8,
-          0,
-          0
          ]
         }
        },
        {
-        "key": "hook_radius",
-        "label": "Hook bend radius to centerline",
-        "value": 20,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "c": [
-          40,
-          20,
-          65
-         ],
-         "from": [
-          -1,
-          0,
-          0
-         ],
-         "to": [
-          0,
-          0,
-          -1
-         ],
-         "r": 20
-        }
-       },
-       {
-        "key": "hook_sweep",
-        "label": "Hook sweep, tip pointing down",
-        "value": 180,
-        "unit": "deg",
-        "source": "guess",
-        "at": {
-         "c": [
-          40,
-          20,
-          65
-         ],
-         "from": [
-          -1,
-          0,
-          0
-         ],
-         "to": [
-          1,
-          0,
-          0
-         ],
-         "r": 20
-        }
-       },
-       {
-        "key": "screw_hole_diameter",
-        "label": "Screw hole, M4 clearance normal",
+        "key": "screw_hole",
+        "label": "Screw hole diameter (M4 normal clearance)",
         "value": 4.5,
         "unit": "mm",
         "source": "lookup",
@@ -494,42 +135,32 @@
         "sourceUrl": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339",
         "at": {
          "a": [
-          8,
-          20,
+          5,
+          5,
           0
          ],
          "b": [
-          8,
-          20,
-          5
-         ],
-         "off": [
-          -6,
-          0,
+          9.5,
+          5,
           0
          ]
         }
        },
        {
-        "key": "screw_hole_edge_offset",
-        "label": "Screw hole center from plate edge",
-        "value": 8,
+        "key": "hole_spacing",
+        "label": "Screw hole spacing along the plate",
+        "value": 30,
         "unit": "mm",
         "source": "guess",
         "at": {
          "a": [
-          0,
+          5,
           20,
           0
          ],
          "b": [
-          8,
+          35,
           20,
-          0
-         ],
-         "off": [
-          0,
-          -6,
           0
          ]
         }
@@ -541,7 +172,7 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"plate_size\":40,\"plate_thickness\":5,\"rod_diameter\":10,\"rise_height\":60,\"hook_radius\":20,\"hook_sweep\":180,\"screw_hole_diameter\":4.5,\"screw_hole_edge_offset\":8},\"changed\":[]}}"
+    "{\"ok\":true,\"summary\":\"Confirmed as shown. It showed as a list with no drawing: give part (the part as it will be built) or design on the next sheet, so each row gets its callout\",\"result\":{\"confirmed\":true,\"values\":{\"rod_diameter\":10,\"base_size\":40,\"base_thickness\":5,\"rise\":60,\"hook_radius\":20,\"screw_hole\":4.5,\"hole_spacing\":30},\"changed\":[]}}"
    ],
    "calls": [
     {
@@ -549,6 +180,7 @@
      "args": {
       "part": "Cable hook",
       "units": "mm",
+      "detail": "basic",
       "features": [
        {
         "name": "Base plate",
@@ -560,41 +192,30 @@
         }
        },
        {
+        "name": "Rod J-curve (sweep)",
+        "kind": "sweep",
+        "sizes": {
+         "diameter": 10,
+         "rise": 60,
+         "hook_radius": 20
+        }
+       },
+       {
         "name": "Screw holes",
         "kind": "hole",
-        "count": 2,
         "sizes": {
          "diameter": 4.5,
-         "edge_offset": 8
-        }
-       },
-       {
-        "name": "Rod rise",
-        "kind": "sweep",
-        "sizes": {
-         "diameter": 10,
-         "length": 60
-        }
-       },
-       {
-        "name": "Hook bend",
-        "kind": "sweep",
-        "sizes": {
-         "diameter": 10,
-         "bend_radius": 20,
-         "sweep_angle": 180
+         "spacing": 30
         }
        }
       ],
       "assumptions": [
-       "Rod axis sits at the plate center (20, 20), rising from the plate top at z = 5 to z = 65.",
-       "Hook bends over 180 degrees with its tip pointing down, toward the plate side, with the 20 mm radius measured to the rod centerline.",
-       "Two M4 clearance holes (4.5 mm, normal fit per the Albany County chart) run through the plate on the centerline, 8 mm from each end edge at (8, 20) and (32, 20).",
-       "Hook tip stays at the height of the bend center (z = 65), so it extends 40 mm out from the rod."
+       "Rod centerline rises straight up at x 20, y 20, from the plate top to z 65, then bends 180 degrees over a 20 mm radius, so the tip points down at x 60, z 65 (top of hook at z 85).",
+       "Screw holes are M4 normal clearance, 4.5 mm, on the plate centerline at y 20, x 5 and x 35, through the plate.",
+       "Hole spacing of 30 mm is a guess; the plate edge is 5 mm from each hole center."
       ],
       "questions": [
-       "Should the hook sweep be 180 degrees (tip pointing down) or a shorter curve?",
-       "Are the screw holes placed as assumed, or should they move?"
+       "Should the hook curve over a full 180 degrees, or stop short (for example 90 degrees)?"
       ]
      }
     }
@@ -602,7 +223,7 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mwbg1w9u24o4f\",\"accepted\":true}}"
+    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mwcn3tvk23w3z\",\"accepted\":true}}"
    ],
    "calls": [
     {
@@ -615,11 +236,6 @@
      "name": "geom.extrude",
      "args": {
       "design": "Cable hook",
-      "distance_mm": 5,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Cable hook",
-      "feature": "Base plate",
       "shape": {
        "type": "rectangle",
        "widthMm": 40,
@@ -631,103 +247,27 @@
         20
        ],
        "rotationDeg": 0
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Started Cable hook (obj_mwbg22frd8)\",\"result\":{\"design\":\"obj_mwbg22frd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
-    "{\"ok\":true,\"summary\":\"Extruded: step 1, Rectangle extrude 5 mm\",\"result\":{\"design\":\"obj_mwbg22frd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smwbg22fv1\",\"name\":\"Rectangle extrude 5 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":5,\"unit\":\"mm\"},\"feature\":\"Base plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[40,40,5],\"volumeMm3\":8000,\"parts\":[{\"index\":0,\"name\":\"Cable hook\",\"slot\":1,\"triangles\":192,\"minMm\":[0,0,0],\"sizeMm\":[40,40,5],\"volumeMm3\":8000}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.hole",
-     "args": {
-      "design": "obj_mwbg22frd8",
-      "center": [
-       8,
-       20,
-       0
-      ],
-      "axis": [
-       0,
-       0,
-       1
-      ],
-      "diameter_mm": 4.5,
-      "feature": "Screw holes",
-      "label": "M4 clearance hole left"
-     }
-    },
-    {
-     "name": "geom.hole",
-     "args": {
-      "design": "obj_mwbg22frd8",
-      "center": [
-       32,
-       20,
-       0
-      ],
-      "axis": [
-       0,
-       0,
-       1
-      ],
-      "diameter_mm": 4.5,
-      "feature": "Screw holes",
-      "label": "M4 clearance hole right"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Made a 4.5 mm through hole: step 2, M4 clearance hole left\",\"result\":{\"design\":\"obj_mwbg22frd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smwbg23t32\",\"name\":\"M4 clearance hole left\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":5.05,\"unit\":\"mm\"},\"feature\":\"Screw holes\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[40,40,5],\"volumeMm3\":7920.705,\"parts\":[{\"index\":0,\"name\":\"Cable hook\",\"slot\":1,\"triangles\":664,\"minMm\":[0,0,0],\"sizeMm\":[40,40,5],\"volumeMm3\":7920.705}],\"part\":0,\"hole\":{\"center\":[8,20,0],\"axis\":[0,0,-1],\"diameterMm\":4.5,\"depthMm\":5,\"kind\":\"through\",\"head\":\"none\"}}}",
-    "{\"ok\":true,\"summary\":\"Made a 4.5 mm through hole: step 3, M4 clearance hole right\",\"result\":{\"design\":\"obj_mwbg22frd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smwbg23ue3\",\"name\":\"M4 clearance hole right\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":5.05,\"unit\":\"mm\"},\"feature\":\"Screw holes\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[40,40,5],\"volumeMm3\":7841.411,\"parts\":[{\"index\":0,\"name\":\"Cable hook\",\"slot\":1,\"triangles\":1132,\"minMm\":[0,0,0],\"sizeMm\":[40,40,5],\"volumeMm3\":7841.411}],\"part\":0,\"hole\":{\"center\":[32,20,0],\"axis\":[0,0,-1],\"diameterMm\":4.5,\"depthMm\":5,\"kind\":\"through\",\"head\":\"none\"}}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "obj_mwbg22frd8",
-      "distance_mm": 60,
+      },
+      "distance_mm": 5,
       "extent": "oneSide",
-      "operation": "join",
-      "part": 0,
-      "frame": {
-       "origin": [
-        20,
-        20,
-        5
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "circle",
-       "diameterMm": 10
-      },
-      "feature": "Rod rise"
+      "operation": "new",
+      "name": "Base plate",
+      "feature": "Base plate"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Joined: step 4, Circle extrude 60 mm\",\"result\":{\"design\":\"obj_mwbg22frd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smwbg259z4\",\"name\":\"Circle extrude 60 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":60,\"unit\":\"mm\"},\"feature\":\"Rod rise\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[40,40,65],\"volumeMm3\":12547.821,\"parts\":[{\"index\":0,\"name\":\"Cable hook\",\"slot\":1,\"triangles\":1680,\"minMm\":[0,0,0],\"sizeMm\":[40,40,65],\"volumeMm3\":12547.821}]}}"
+    "{\"ok\":true,\"summary\":\"Started Cable hook (obj_mwcn3uxzd8)\",\"result\":{\"design\":\"obj_mwcn3uxzd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Rectangle extrude 5 mm\",\"result\":{\"design\":\"obj_mwcn3uxzd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smwcn3uy41\",\"name\":\"Rectangle extrude 5 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":5,\"unit\":\"mm\"},\"feature\":\"Base plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[40,40,5],\"volumeMm3\":8000,\"parts\":[{\"index\":0,\"name\":\"Base plate\",\"slot\":1,\"triangles\":192,\"minMm\":[0,0,0],\"sizeMm\":[40,40,5],\"volumeMm3\":8000}]}}"
    ],
    "calls": [
     {
      "name": "geom.sweep",
      "args": {
-      "design": "obj_mwbg22frd8",
+      "design": "obj_mwcn3uxzd8",
       "operation": "join",
-      "part": 0,
       "profile": {
        "loops": [
         {
@@ -738,27 +278,14 @@
          ],
          "diameterMm": 10
         }
-       ],
-       "frame": {
-        "origin": [
-         20,
-         20,
-         60
-        ],
-        "normal": [
-         0,
-         0,
-         1
-        ]
-       }
+       ]
       },
       "path": {
-       "smooth": true,
        "points": [
         [
          20,
          20,
-         60
+         2.5
         ],
         [
          20,
@@ -766,19 +293,29 @@
          65
         ],
         [
-         21.52,
+         20.681,
          20,
-         72.65
+         70.176
         ],
         [
-         25.86,
+         22.679,
          20,
-         79.14
+         75
         ],
         [
-         32.35,
+         25.858,
          20,
-         83.48
+         79.142
+        ],
+        [
+         30,
+         20,
+         82.321
+        ],
+        [
+         34.824,
+         20,
+         84.319
         ],
         [
          40,
@@ -786,19 +323,29 @@
          85
         ],
         [
-         47.65,
+         45.176,
          20,
-         83.48
+         84.319
         ],
         [
-         54.14,
+         50,
          20,
-         79.14
+         82.321
         ],
         [
-         58.48,
+         54.142,
          20,
-         72.65
+         79.142
+        ],
+        [
+         57.321,
+         20,
+         75
+        ],
+        [
+         59.319,
+         20,
+         70.176
         ],
         [
          60,
@@ -807,30 +354,192 @@
         ]
        ]
       },
-      "feature": "Hook bend"
+      "feature": "Rod J-curve (sweep)"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Joined: step 5, Sweep\",\"result\":{\"design\":\"obj_mwbg22frd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smwbg29bd5\",\"name\":\"Sweep\",\"op\":\"sketch.sweep\",\"part\":0,\"feature\":\"Hook bend\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[64.905,40,90.001],\"volumeMm3\":17473.081,\"parts\":[{\"index\":0,\"name\":\"Cable hook\",\"slot\":1,\"triangles\":15112,\"minMm\":[0,0,0],\"sizeMm\":[64.905,40,90.001],\"volumeMm3\":17473.081}]}}"
+    "{\"ok\":false,\"summary\":\"profile: its loop sits 28.39 mm from where the path starts (20, 20, 2.5), and the profile is carried as it sits. Loop points are [u, v] from the profile frame's origin, so with the origin on the path's start a loop around it is centered at [0, 0]. The step was sent in a way this tool does not take; the text says what to change (for a join or cut on a design, leave target out and give part). Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.sweep",
+     "args": {
+      "design": "obj_mwcn3uxzd8",
+      "operation": "join",
+      "part": 0,
+      "profile": {
+       "frame": {
+        "origin": [
+         20,
+         20,
+         2.5
+        ],
+        "normal": [
+         0,
+         0,
+         1
+        ]
+       },
+       "loops": [
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 10
+        }
+       ]
+      },
+      "path": {
+       "points": [
+        [
+         20,
+         20,
+         2.5
+        ],
+        [
+         20,
+         20,
+         65
+        ],
+        [
+         20.681,
+         20,
+         70.176
+        ],
+        [
+         22.679,
+         20,
+         75
+        ],
+        [
+         25.858,
+         20,
+         79.142
+        ],
+        [
+         30,
+         20,
+         82.321
+        ],
+        [
+         34.824,
+         20,
+         84.319
+        ],
+        [
+         40,
+         20,
+         85
+        ],
+        [
+         45.176,
+         20,
+         84.319
+        ],
+        [
+         50,
+         20,
+         82.321
+        ],
+        [
+         54.142,
+         20,
+         79.142
+        ],
+        [
+         57.321,
+         20,
+         75
+        ],
+        [
+         59.319,
+         20,
+         70.176
+        ],
+        [
+         60,
+         20,
+         65
+        ]
+       ]
+      },
+      "feature": "Rod J-curve (sweep)"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 2, Sweep\",\"result\":{\"design\":\"obj_mwcn3uxzd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smwcn41oq2\",\"name\":\"Sweep\",\"op\":\"sketch.sweep\",\"part\":0,\"feature\":\"Rod J-curve (sweep)\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[64.957,40,90.043],\"volumeMm3\":17620.946,\"parts\":[{\"index\":0,\"name\":\"Base plate\",\"slot\":1,\"triangles\":2470,\"minMm\":[0,0,0],\"sizeMm\":[64.957,40,90.043],\"volumeMm3\":17620.946}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mwcn3uxzd8",
+      "center": [
+       5,
+       20,
+       5
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "diameter_mm": 4.5,
+      "part": 0,
+      "feature": "Screw holes",
+      "label": "Screw hole 1 (M4 clearance)"
+     }
+    },
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mwcn3uxzd8",
+      "center": [
+       35,
+       20,
+       5
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "diameter_mm": 4.5,
+      "part": 0,
+      "feature": "Screw holes",
+      "label": "Screw hole 2 (M4 clearance)"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Made a 4.5 mm through hole: step 3, Screw hole 1 (M4 clearance)\",\"result\":{\"design\":\"obj_mwcn3uxzd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smwcn44d63\",\"name\":\"Screw hole 1 (M4 clearance)\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":5.05,\"unit\":\"mm\"},\"feature\":\"Screw holes\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[64.957,40,90.043],\"volumeMm3\":17541.651,\"parts\":[{\"index\":0,\"name\":\"Base plate\",\"slot\":1,\"triangles\":2912,\"minMm\":[0,0,0],\"sizeMm\":[64.957,40,90.043],\"volumeMm3\":17541.651}],\"part\":0,\"hole\":{\"center\":[5,20,5],\"axis\":[0,0,1],\"diameterMm\":4.5,\"depthMm\":5,\"kind\":\"through\",\"head\":\"none\"}}}",
+    "{\"ok\":true,\"summary\":\"Made a 4.5 mm through hole: step 4, Screw hole 2 (M4 clearance)\",\"result\":{\"design\":\"obj_mwcn3uxzd8\",\"name\":\"Cable hook\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smwcn44g94\",\"name\":\"Screw hole 2 (M4 clearance)\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":5.05,\"unit\":\"mm\"},\"feature\":\"Screw holes\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[64.957,40,90.043],\"volumeMm3\":17462.357,\"parts\":[{\"index\":0,\"name\":\"Base plate\",\"slot\":1,\"triangles\":3354,\"minMm\":[0,0,0],\"sizeMm\":[64.957,40,90.043],\"volumeMm3\":17462.357}],\"part\":0,\"hole\":{\"center\":[35,20,5],\"axis\":[0,0,1],\"diameterMm\":4.5,\"depthMm\":5,\"kind\":\"through\",\"head\":\"none\"}}}"
    ],
    "calls": [
     {
      "name": "design.check",
      "args": {
-      "planId": "plan_mwbg1w9u24o4f",
-      "design": "obj_mwbg22frd8"
+      "planId": "plan_mwcn3tvk23w3z",
+      "design": "obj_mwcn3uxzd8"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Cable hook (obj_mwbg22frd8, tied to the plan) matches plan plan_mwbg1w9u24o4f: all 3 checks pass\",\"result\":{\"planId\":\"plan_mwbg1w9u24o4f\",\"design\":\"obj_mwbg22frd8\",\"designName\":\"Cable hook\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"4 features, each built by a step tagged with its name\",\"got\":\"5 steps for 4 features (Screw holes 2)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"5 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":64.905,\"y\":40,\"z\":90.001},\"holes\":[{\"diameterMm\":4.499999914529156},{\"diameterMm\":4.5000000454601965}],\"features\":5,\"steps\":[\"Rectangle extrude 5 mm\",\"M4 clearance hole left\",\"M4 clearance hole right\",\"Circle extrude 60 mm\",\"Sweep\"],\"tags\":[\"Base plate\",\"Screw holes\",\"Screw holes\",\"Rod rise\",\"Hook bend\"],\"stepIds\":[\"smwbg22fv1\",\"smwbg23t32\",\"smwbg23ue3\",\"smwbg259z4\",\"smwbg29bd5\"],\"watertight\":true,\"minWallMm\":5}}}"
+    "{\"ok\":true,\"summary\":\"Cable hook (obj_mwcn3uxzd8, tied to the plan) matches plan plan_mwcn3tvk23w3z: all 3 checks pass\",\"result\":{\"planId\":\"plan_mwcn3tvk23w3z\",\"design\":\"obj_mwcn3uxzd8\",\"designName\":\"Cable hook\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"3 features, each built by a step tagged with its name\",\"got\":\"4 steps for 3 features (Screw holes 2)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"2.76 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":64.957,\"y\":40,\"z\":90.043},\"holes\":[{\"diameterMm\":4.500000169047882},{\"diameterMm\":4.50000000901475}],\"features\":4,\"steps\":[\"Rectangle extrude 5 mm\",\"Sweep\",\"Screw hole 1 (M4 clearance)\",\"Screw hole 2 (M4 clearance)\"],\"tags\":[\"Base plate\",\"Rod J-curve (sweep)\",\"Screw holes\",\"Screw holes\"],\"stepIds\":[\"smwcn3uy41\",\"smwcn41oq2\",\"smwcn44d63\",\"smwcn44g94\"],\"lofts\":[],\"watertight\":true,\"minWallMm\":2.762}}}"
    ],
-   "text": "The cable hook is built and passes the plan check: a 40 by 40 by 5 mm base plate, a 10 mm rod rising 60 mm from its center, and a 20 mm radius bend that curves over into a downward-pointing tip. It is 65 mm wide, 40 mm deep and 90 mm tall, and it is one watertight body.\n\nSizes you gave: plate 40 by 40 by 5 mm, rod 10 mm, rise 60 mm, bend radius 20 mm. Sizes I chose:\n- **Hook sweep:** 180 degrees, so the tip points back down toward the plate. Tell me if you wanted a shorter curve.\n- **Screw holes:** 4.5 mm, the M4 normal clearance from the Albany County Fasteners chart. They sit on the centerline 8 mm from each end, at x = 8 and x = 32.\n\nThe underside of the bend is an overhang, so it will need supports, or you can print it on its side. I have not sliced or sent it, since you asked for the part only. Say the word when you want it sliced for the P1S."
+   "text": "The cable hook is built and passes its plan check: a 40 by 40 by 5 mm base plate, a 10 mm rod rising 60 mm and curving over a 20 mm radius hook, and two 4.5 mm clearance holes for M4 screws. The part is 65 mm in X, 40 mm in Y and 90 mm tall, and it is watertight.\n\nThe M4 clearance comes from the Albany County Fasteners chart. The 30 mm hole spacing is my guess, which puts the holes 5 mm from the plate edges. The hook curves a full 180 degrees, so the tip points down at the hook's outer edge, about 20 mm below the top of the curve. Tell me if you want a shorter bend, such as 90 degrees, or different hole spacing.\n\nI have not sliced or sent it to the P1S. Say the word and I will slice it and queue it, with your approval on the card."
   }
  ],
  "score": {
