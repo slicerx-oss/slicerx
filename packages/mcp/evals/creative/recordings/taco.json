@@ -2,140 +2,28 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-10T12:15:50.605Z",
+ "capturedAt": "2026-11-11T21:12:10.873Z",
  "steps": [
   {
-   "text": "I'll sketch the taco first so you can confirm the sizes before I build anything. The overall length is your 100 mm. The rest are my guesses for a kid-safe scale.",
+   "text": "I can model this, but the lettuce and meat won't come out as real organic shapes with the tools I have. Which version do you want?",
    "calls": [
     {
-     "name": "pilot.sheet",
+     "name": "pilot.ask",
      "args": {
-      "title": "Play kitchen taco",
-      "views": [
-       "front",
-       "side",
-       "iso"
-      ],
-      "dims": [
+      "title": "Taco version",
+      "question": "Which version should I build? All options are about 100 mm long.",
+      "choices": [
        {
-        "key": "length",
-        "label": "Overall length (shell tip to tip)",
-        "value": 100,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          100,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          -10,
-          0
-         ]
-        }
+        "id": "layers",
+        "label": "Shell with flat layers: curved shell, wavy lettuce plate, flat meat strip"
        },
        {
-        "key": "shell_height",
-        "label": "Shell height at the fold",
-        "value": 26,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          0,
-          26
-         ],
-         "off": [
-          -10,
-          0,
-          0
-         ]
-        }
+        "id": "shell",
+        "label": "Shell only, no filling"
        },
        {
-        "key": "shell_width",
-        "label": "Shell width (depth of the taco)",
-        "value": 70,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          70,
-          0
-         ],
-         "off": [
-          -10,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "wall",
-        "label": "Shell wall thickness",
-        "value": 3,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          35,
-          0
-         ],
-         "b": [
-          3,
-          35,
-          0
-         ],
-         "off": [
-          0,
-          -5,
-          0
-         ]
-        }
-       },
-       {
-        "key": "filling_thickness",
-        "label": "Filling layer thickness (lettuce and meat)",
-        "value": 6,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          50,
-          35,
-          0
-         ],
-         "b": [
-          50,
-          35,
-          6
-         ],
-         "off": [
-          8,
-          0,
-          0
-         ]
-        }
+        "id": "nothing",
+        "label": "Nothing for now"
        }
       ]
      }
@@ -144,396 +32,26 @@
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"Not shown: a sheet of several sizes needs part: [solid, ...], the part as it will be built (each solid an extrude {\\\"plane\\\", \\\"points\\\", \\\"from\\\", \\\"to\\\"}, or a revolve, sweep or loft for a round, bent or tapered body), or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.\"}"
+    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"choices.0.label: Too big: expected string to have <=40 characters\"]}"
    ],
    "calls": [
     {
-     "name": "pilot.sheet",
+     "name": "pilot.ask",
      "args": {
-      "title": "Play kitchen taco",
-      "views": [
-       "front",
-       "side",
-       "iso"
-      ],
-      "part": [
+      "title": "Taco version",
+      "question": "Which version should I build? All are about 100 mm long.",
+      "choices": [
        {
-        "kind": "extrude",
-        "plane": "xz",
-        "points": [
-         [
-          100,
-          0
-         ],
-         [
-          98.3,
-          6.73
-         ],
-         [
-          93.3,
-          13
-         ],
-         [
-          85.36,
-          18.38
-         ],
-         [
-          75,
-          22.52
-         ],
-         [
-          62.94,
-          25.11
-         ],
-         [
-          50,
-          26
-         ],
-         [
-          37.06,
-          25.11
-         ],
-         [
-          25,
-          22.52
-         ],
-         [
-          14.64,
-          18.38
-         ],
-         [
-          6.7,
-          13
-         ],
-         [
-          1.7,
-          6.73
-         ],
-         [
-          0,
-          0
-         ],
-         [
-          3,
-          0
-         ],
-         [
-          4.6,
-          5.95
-         ],
-         [
-          9.3,
-          11.5
-         ],
-         [
-          16.77,
-          16.26
-         ],
-         [
-          26.5,
-          19.92
-         ],
-         [
-          37.83,
-          22.22
-         ],
-         [
-          50,
-          23
-         ],
-         [
-          62.17,
-          22.22
-         ],
-         [
-          73.5,
-          19.92
-         ],
-         [
-          83.23,
-          16.26
-         ],
-         [
-          90.7,
-          11.5
-         ],
-         [
-          95.4,
-          5.95
-         ],
-         [
-          97,
-          0
-         ]
-        ],
-        "from": 0,
-        "to": 70
+        "id": "layers",
+        "label": "Shell with flat layers"
        },
        {
-        "kind": "extrude",
-        "plane": "xz",
-        "points": [
-         [
-          94,
-          0
-         ],
-         [
-          92.5,
-          3.11
-         ],
-         [
-          88.11,
-          6
-         ],
-         [
-          81.11,
-          8.49
-         ],
-         [
-          72,
-          10.39
-         ],
-         [
-          61.39,
-          11.59
-         ],
-         [
-          50,
-          12
-         ],
-         [
-          38.61,
-          11.59
-         ],
-         [
-          28,
-          10.39
-         ],
-         [
-          18.89,
-          8.49
-         ],
-         [
-          11.89,
-          6
-         ],
-         [
-          7.5,
-          3.11
-         ],
-         [
-          6,
-          0
-         ]
-        ],
-        "from": 3,
-        "to": 67
+        "id": "shell",
+        "label": "Shell only, no filling"
        },
        {
-        "kind": "extrude",
-        "plane": "xz",
-        "points": [
-         [
-          86,
-          0
-         ],
-         [
-          84.78,
-          3.88
-         ],
-         [
-          81.18,
-          7.5
-         ],
-         [
-          75.46,
-          10.61
-         ],
-         [
-          68,
-          12.99
-         ],
-         [
-          59.32,
-          14.49
-         ],
-         [
-          50,
-          15
-         ],
-         [
-          40.68,
-          14.49
-         ],
-         [
-          32,
-          12.99
-         ],
-         [
-          24.54,
-          10.61
-         ],
-         [
-          18.82,
-          7.5
-         ],
-         [
-          15.22,
-          3.88
-         ],
-         [
-          14,
-          0
-         ]
-        ],
-        "from": 12,
-        "to": 58
-       }
-      ],
-      "dims": [
-       {
-        "key": "length",
-        "label": "Overall length (shell tip to tip)",
-        "value": 100,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          0,
-          -6,
-          0
-         ],
-         "b": [
-          100,
-          -6,
-          0
-         ],
-         "off": [
-          0,
-          -8,
-          0
-         ]
-        }
-       },
-       {
-        "key": "shell_height",
-        "label": "Shell height at the fold",
-        "value": 26,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          -6,
-          0,
-          0
-         ],
-         "b": [
-          -6,
-          0,
-          26
-         ],
-         "off": [
-          -6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "shell_width",
-        "label": "Shell width (depth of the taco)",
-        "value": 70,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          -4
-         ],
-         "b": [
-          0,
-          70,
-          -4
-         ],
-         "off": [
-          0,
-          0,
-          -6
-         ]
-        }
-       },
-       {
-        "key": "wall",
-        "label": "Shell wall thickness",
-        "value": 3,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          50,
-          23,
-          0
-         ],
-         "b": [
-          50,
-          26,
-          0
-         ],
-         "off": [
-          4,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "lettuce_height",
-        "label": "Lettuce layer height",
-        "value": 12,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          50,
-          0,
-          0
-         ],
-         "b": [
-          50,
-          0,
-          12
-         ],
-         "off": [
-          -10,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "meat_height",
-        "label": "Meat layer height above the bed",
-        "value": 15,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          50,
-          0,
-          0
-         ],
-         "b": [
-          50,
-          0,
-          15
-         ],
-         "off": [
-          10,
-          0,
-          0
-         ]
-        }
+        "id": "nothing",
+        "label": "Nothing for now"
        }
       ]
      }
@@ -542,52 +60,57 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"length\":100,\"shell_height\":26,\"shell_width\":70,\"wall\":3,\"lettuce_height\":12,\"meat_height\":15},\"changed\":[]}}"
+    "{\"ok\":true,\"summary\":\"Answered in words: \\\"Use common sizes and sensible defaults, then build it\\\"\",\"result\":{\"picked\":null,\"said\":\"Use common sizes and sensible defaults, then build it\"}}"
    ],
-   "text": "The sizes are confirmed. The taco has three pieces (shell, lettuce, meat), so I'll lock the build plan next.",
+   "text": "You left the choice to me, so I'll build the shell with flat layers and common sizes. Here is the plan.",
    "calls": [
     {
      "name": "design.plan",
      "args": {
-      "part": "Play kitchen taco",
+      "part": "Taco",
       "units": "mm",
+      "detail": "basic",
       "features": [
        {
-        "name": "Shell",
+        "name": "Shell (half tube)",
         "kind": "extrude",
         "sizes": {
          "length": 100,
-         "height": 26,
-         "width": 70,
-         "wall": 3
+         "outer_diameter": 60,
+         "height": 30,
+         "wall": 2.4
         }
        },
        {
-        "name": "Lettuce",
+        "name": "Lettuce layer",
         "kind": "extrude",
         "sizes": {
-         "length": 88,
-         "height": 12,
-         "width": 64
+         "length": 92,
+         "width": 52,
+         "thickness": 5,
+         "bottom_z": 24
         }
        },
        {
-        "name": "Meat",
+        "name": "Meat strip",
         "kind": "extrude",
         "sizes": {
-         "length": 72,
-         "height": 15,
-         "width": 46
+         "length": 80,
+         "width": 30,
+         "thickness": 8,
+         "bottom_z": 29,
+         "corner_radius": 4
         }
        }
       ],
       "assumptions": [
-       "Shell is a folded half-ellipse crescent, open at the bottom, extruded 70 mm along the width.",
-       "Lettuce and meat sit inside the shell on the bed as separate solid pieces, not fused to the shell.",
-       "Filling pieces are half-ellipses, printed as separate bodies so they can be colored differently."
+       "Taco is 100 mm long along X, shell is a half tube (U section) open at the top, lying flat on the bed",
+       "Shell outer diameter 60 mm, wall 2.4 mm, height 30 mm (guessed, common play-food scale)",
+       "Lettuce and meat are flat layers, not sculpted (closest version the tools can make)",
+       "Printed in PLA; a play toy, not for food contact"
       ],
       "questions": [
-       "Should the meat and lettuce be separate filament colors on the plate?"
+       "Do you want the filling in a different color? Printing as one color by default"
       ]
      }
     }
@@ -601,499 +124,561 @@
     {
      "name": "design.new",
      "args": {
-      "name": "Play kitchen taco"
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Play kitchen taco",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           100,
-           0
-          ],
-          [
-           98.3,
-           6.73
-          ],
-          [
-           93.3,
-           13
-          ],
-          [
-           85.36,
-           18.38
-          ],
-          [
-           75,
-           22.52
-          ],
-          [
-           62.94,
-           25.11
-          ],
-          [
-           50,
-           26
-          ],
-          [
-           37.06,
-           25.11
-          ],
-          [
-           25,
-           22.52
-          ],
-          [
-           14.64,
-           18.38
-          ],
-          [
-           6.7,
-           13
-          ],
-          [
-           1.7,
-           6.73
-          ],
-          [
-           0,
-           0
-          ],
-          [
-           3,
-           0
-          ],
-          [
-           4.6,
-           5.95
-          ],
-          [
-           9.3,
-           11.5
-          ],
-          [
-           16.77,
-           16.26
-          ],
-          [
-           26.5,
-           19.92
-          ],
-          [
-           37.83,
-           22.22
-          ],
-          [
-           50,
-           23
-          ],
-          [
-           62.17,
-           22.22
-          ],
-          [
-           73.5,
-           19.92
-          ],
-          [
-           83.23,
-           16.26
-          ],
-          [
-           90.7,
-           11.5
-          ],
-          [
-           95.4,
-           5.95
-          ],
-          [
-           97,
-           0
-          ]
-         ]
-        }
-       ]
-      },
-      "distance_mm": 70,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Shell",
-      "feature": "Shell"
+      "name": "Taco"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Started Play kitchen taco (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Play kitchen taco\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
-    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 70 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Play kitchen taco\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Sketch extrude 70 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":70,\"unit\":\"mm\"},\"feature\":\"Shell\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[100,26,70],\"volumeMm3\":23803.238,\"parts\":[{\"index\":0,\"name\":\"Shell\",\"slot\":1,\"triangles\":650,\"minMm\":[0,0,0],\"sizeMm\":[100,26,70],\"volumeMm3\":23803.238}]}}"
+    "{\"ok\":true,\"summary\":\"Started Taco (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Taco\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
    ],
-   "text": "The shell came out standing up (26 mm in Y, 70 mm in Z). I'll undo it and redo it on an XZ-plane frame so the height runs along Z.",
    "calls": [
     {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    },
-    {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
       "design": "d1",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           100,
-           0
-          ],
-          [
-           98.3,
-           6.73
-          ],
-          [
-           93.3,
-           13
-          ],
-          [
-           85.36,
-           18.38
-          ],
-          [
-           75,
-           22.52
-          ],
-          [
-           62.94,
-           25.11
-          ],
-          [
-           50,
-           26
-          ],
-          [
-           37.06,
-           25.11
-          ],
-          [
-           25,
-           22.52
-          ],
-          [
-           14.64,
-           18.38
-          ],
-          [
-           6.7,
-           13
-          ],
-          [
-           1.7,
-           6.73
-          ],
-          [
-           0,
-           0
-          ],
-          [
-           3,
-           0
-          ],
-          [
-           4.6,
-           5.95
-          ],
-          [
-           9.3,
-           11.5
-          ],
-          [
-           16.77,
-           16.26
-          ],
-          [
-           26.5,
-           19.92
-          ],
-          [
-           37.83,
-           22.22
-          ],
-          [
-           50,
-           23
-          ],
-          [
-           62.17,
-           22.22
-          ],
-          [
-           73.5,
-           19.92
-          ],
-          [
-           83.23,
-           16.26
-          ],
-          [
-           90.7,
-           11.5
-          ],
-          [
-           95.4,
-           5.95
-          ],
-          [
-           97,
-           0
-          ]
-         ]
-        }
-       ]
-      },
-      "frame": {
-       "origin": [
-        0,
-        70,
-        0
-       ],
-       "normal": [
-        0,
-        -1,
-        0
-       ],
-       "u": [
-        1,
-        0,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "distance_mm": 70,
-      "extent": "oneSide",
-      "operation": "new",
       "name": "Shell",
-      "feature": "Shell"
+      "feature": "Shell (half tube)",
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         30
+        ],
+        "axis": [
+         1,
+         0,
+         0
+        ],
+        "diameterMm": 60,
+        "heightMm": 100
+       }
+      ],
+      "subtract": [
+       {
+        "type": "cylinder",
+        "origin": [
+         -1,
+         0,
+         30
+        ],
+        "axis": [
+         1,
+         0,
+         0
+        ],
+        "diameterMm": 55.2,
+        "heightMm": 102
+       },
+       {
+        "type": "box",
+        "min": [
+         -5,
+         -40,
+         30
+        ],
+        "max": [
+         105,
+         40,
+         70
+        ]
+       }
+      ]
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Removed Sketch extrude 70 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Play kitchen taco\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
-    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 70 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Play kitchen taco\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q802\",\"name\":\"Sketch extrude 70 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":70,\"unit\":\"mm\"},\"feature\":\"Shell\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[100,70,26],\"volumeMm3\":23803.238,\"parts\":[{\"index\":0,\"name\":\"Shell\",\"slot\":1,\"triangles\":650,\"minMm\":[0,0,0],\"sizeMm\":[100,70,26],\"volumeMm3\":23803.238}]}}"
+    "{\"ok\":false,\"blocked\":true,\"message\":\"Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.\"}"
    ],
-   "text": "The shell is now 100 x 70 x 26 mm. Next I'll add the lettuce and meat as separate bodies inside it.",
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Taco sizes",
+      "views": [
+       "front",
+       "top",
+       "side",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          100,
+          0
+         ],
+         [
+          100,
+          60
+         ],
+         [
+          0,
+          60
+         ]
+        ],
+        "from": 0,
+        "to": 30
+       }
+      ],
+      "dims": [
+       {
+        "key": "length",
+        "label": "Taco length",
+        "value": 100,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          -8,
+          0
+         ],
+         "b": [
+          100,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "outer_diameter",
+        "label": "Shell outer diameter",
+        "value": 60,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          -8,
+          0,
+          0
+         ],
+         "b": [
+          -8,
+          60,
+          0
+         ]
+        }
+       },
+       {
+        "key": "height",
+        "label": "Shell height",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          104,
+          0,
+          0
+         ],
+         "b": [
+          104,
+          0,
+          30
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Shell wall",
+        "value": 2.4,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          62,
+          0
+         ],
+         "b": [
+          2.4,
+          62,
+          0
+         ]
+        }
+       },
+       {
+        "key": "lettuce_thickness",
+        "label": "Lettuce layer thickness",
+        "value": 5,
+        "unit": "mm",
+        "source": "guess"
+       },
+       {
+        "key": "meat_thickness",
+        "label": "Meat strip thickness",
+        "value": 8,
+        "unit": "mm",
+        "source": "guess"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. row 5 (Lettuce layer thickness) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle; row 6 (Meat strip thickness) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle. Send it again with them.\"}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Taco sizes",
+      "views": [
+       "front",
+       "top",
+       "side",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          100,
+          0
+         ],
+         [
+          100,
+          60
+         ],
+         [
+          0,
+          60
+         ]
+        ],
+        "from": 0,
+        "to": 30
+       }
+      ],
+      "dims": [
+       {
+        "key": "length",
+        "label": "Taco length",
+        "value": 100,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          -8,
+          0
+         ],
+         "b": [
+          100,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "outer_diameter",
+        "label": "Shell outer diameter",
+        "value": 60,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          -8,
+          0,
+          0
+         ],
+         "b": [
+          -8,
+          60,
+          0
+         ]
+        }
+       },
+       {
+        "key": "height",
+        "label": "Shell height",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          104,
+          0,
+          0
+         ],
+         "b": [
+          104,
+          0,
+          30
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Shell wall",
+        "value": 2.4,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          62,
+          0
+         ],
+         "b": [
+          2.4,
+          62,
+          0
+         ]
+        }
+       },
+       {
+        "key": "lettuce_thickness",
+        "label": "Lettuce layer thickness",
+        "value": 5,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          102,
+          30,
+          24
+         ],
+         "b": [
+          102,
+          30,
+          29
+         ]
+        }
+       },
+       {
+        "key": "meat_thickness",
+        "label": "Meat strip thickness",
+        "value": 8,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          102,
+          30,
+          29
+         ],
+         "b": [
+          102,
+          30,
+          37
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"length\":100,\"outer_diameter\":60,\"height\":30,\"wall\":2.4,\"lettuce_thickness\":5,\"meat_thickness\":8},\"changed\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "d1",
+      "name": "Shell",
+      "feature": "Shell (half tube)",
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         0,
+         0,
+         30
+        ],
+        "axis": [
+         1,
+         0,
+         0
+        ],
+        "diameterMm": 60,
+        "heightMm": 100
+       }
+      ],
+      "subtract": [
+       {
+        "type": "cylinder",
+        "origin": [
+         -1,
+         0,
+         30
+        ],
+        "axis": [
+         1,
+         0,
+         0
+        ],
+        "diameterMm": 55.2,
+        "heightMm": 102
+       },
+       {
+        "type": "box",
+        "min": [
+         -5,
+         -40,
+         30
+        ],
+        "max": [
+         105,
+         40,
+         70
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 1, Add Shell. The part was off the bed, so it moved to the plate by (78, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Taco\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Add Shell\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Shell (half tube)\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[100,60,30],\"volumeMm3\":21652.729,\"parts\":[{\"index\":0,\"name\":\"Shell\",\"slot\":1,\"triangles\":492,\"minMm\":[0,-30,0],\"sizeMm\":[100,60,30],\"volumeMm3\":21652.729}],\"placedMm\":[78,128],\"landed\":\"The part was off the bed, so it moved to the plate by (78, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+   ],
    "calls": [
     {
      "name": "geom.extrude",
      "args": {
       "design": "d1",
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           94,
-           0
-          ],
-          [
-           92.5,
-           3.11
-          ],
-          [
-           88.11,
-           6
-          ],
-          [
-           81.11,
-           8.49
-          ],
-          [
-           72,
-           10.39
-          ],
-          [
-           61.39,
-           11.59
-          ],
-          [
-           50,
-           12
-          ],
-          [
-           38.61,
-           11.59
-          ],
-          [
-           28,
-           10.39
-          ],
-          [
-           18.89,
-           8.49
-          ],
-          [
-           11.89,
-           6
-          ],
-          [
-           7.5,
-           3.11
-          ],
-          [
-           6,
-           0
-          ]
-         ]
-        }
-       ]
-      },
+      "feature": "Lettuce layer",
       "frame": {
        "origin": [
         0,
-        67,
-        0
+        0,
+        24
        ],
        "normal": [
-        0,
-        -1,
-        0
-       ],
-       "u": [
-        1,
-        0,
-        0
-       ],
-       "v": [
         0,
         0,
         1
        ]
       },
-      "distance_mm": 64,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Lettuce",
-      "feature": "Lettuce"
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "d1",
       "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           86,
-           0
-          ],
-          [
-           84.78,
-           3.88
-          ],
-          [
-           81.18,
-           7.5
-          ],
-          [
-           75.46,
-           10.61
-          ],
-          [
-           68,
-           12.99
-          ],
-          [
-           59.32,
-           14.49
-          ],
-          [
-           50,
-           15
-          ],
-          [
-           40.68,
-           14.49
-          ],
-          [
-           32,
-           12.99
-          ],
-          [
-           24.54,
-           10.61
-          ],
-          [
-           18.82,
-           7.5
-          ],
-          [
-           15.22,
-           3.88
-          ],
-          [
-           14,
-           0
-          ]
-         ]
-        }
+       "type": "rectangle",
+       "widthMm": 92,
+       "heightMm": 52
+      },
+      "placement": {
+       "center": [
+        50,
+        0
        ]
       },
-      "frame": {
-       "origin": [
-        0,
-        58,
-        0
-       ],
-       "normal": [
-        0,
-        -1,
-        0
-       ],
-       "u": [
-        1,
-        0,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "distance_mm": 46,
+      "distance_mm": 5,
       "extent": "oneSide",
-      "operation": "new",
-      "name": "Meat",
-      "feature": "Meat"
+      "operation": "join",
+      "part": 0
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Extruded: step 2, Sketch extrude 64 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Play kitchen taco\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q803\",\"name\":\"Sketch extrude 64 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":64,\"unit\":\"mm\"},\"feature\":\"Lettuce\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[100,70,26],\"volumeMm3\":76282.125,\"parts\":[{\"index\":0,\"name\":\"Shell\",\"slot\":1,\"triangles\":650,\"minMm\":[0,0,0],\"sizeMm\":[100,70,26],\"volumeMm3\":23803.238},{\"index\":1,\"name\":\"Lettuce\",\"slot\":1,\"triangles\":448,\"minMm\":[6,3,0],\"sizeMm\":[88,64,12],\"volumeMm3\":52478.887}]}}",
-    "{\"ok\":true,\"summary\":\"Extruded: step 3, Sketch extrude 46 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Play kitchen taco\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q804\",\"name\":\"Sketch extrude 46 mm\",\"op\":\"shape.extrude\",\"part\":2,\"value\":{\"label\":\"Distance\",\"value\":46,\"unit\":\"mm\"},\"feature\":\"Meat\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[100,70,26],\"volumeMm3\":114863.244,\"parts\":[{\"index\":0,\"name\":\"Shell\",\"slot\":1,\"triangles\":650,\"minMm\":[0,0,0],\"sizeMm\":[100,70,26],\"volumeMm3\":23803.238},{\"index\":1,\"name\":\"Lettuce\",\"slot\":1,\"triangles\":448,\"minMm\":[6,3,0],\"sizeMm\":[88,64,12],\"volumeMm3\":52478.887},{\"index\":2,\"name\":\"Meat\",\"slot\":1,\"triangles\":130,\"minMm\":[14,12,0],\"sizeMm\":[72,46,15],\"volumeMm3\":38581.119}]}}"
+    "{\"ok\":false,\"summary\":\"The step did not go through: The shape stops 0.9 mm short of the part. The design is unchanged.\"}"
    ],
-   "text": "All three bodies are in. I'll check the part against the plan.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "feature": "Lettuce layer",
+      "frame": {
+       "origin": [
+        0,
+        0,
+        24
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 92,
+       "heightMm": 56
+      },
+      "placement": {
+       "center": [
+        50,
+        0
+       ]
+      },
+      "distance_mm": 5,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 2, Rectangle extrude 5 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Taco\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q803\",\"name\":\"Rectangle extrude 5 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":5,\"unit\":\"mm\"},\"feature\":\"Lettuce layer\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[100,60,30],\"volumeMm3\":46763.152,\"parts\":[{\"index\":0,\"name\":\"Shell\",\"slot\":1,\"triangles\":3278,\"minMm\":[0,-30,0],\"sizeMm\":[100,60,30],\"volumeMm3\":46763.152}],\"placedMm\":[78,128]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "feature": "Meat strip",
+      "frame": {
+       "origin": [
+        0,
+        0,
+        29
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 80,
+       "heightMm": 30,
+       "cornerRadiusMm": 4
+      },
+      "placement": {
+       "center": [
+        50,
+        0
+       ]
+      },
+      "distance_mm": 8,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 3, Rectangle extrude 8 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Taco\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q804\",\"name\":\"Rectangle extrude 8 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":8,\"unit\":\"mm\"},\"feature\":\"Meat strip\",\"state\":\"done\"},\"minMm\":[0,-30,0],\"sizeMm\":[100,60,37],\"volumeMm3\":65852.631,\"parts\":[{\"index\":0,\"name\":\"Shell\",\"slot\":1,\"triangles\":3882,\"minMm\":[0,-30,0],\"sizeMm\":[100,60,37],\"volumeMm3\":65852.631}],\"placedMm\":[78,128]}}"
+   ],
    "calls": [
     {
      "name": "design.check",
@@ -1106,9 +691,9 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Play kitchen taco (d1, tied to the plan) matches plan plan_1: all 3 checks pass\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Play kitchen taco\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"3 features, each built by a step tagged with its name\",\"got\":\"3 steps for 3 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"2.39 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":100,\"y\":70,\"z\":26},\"holes\":[],\"features\":3,\"steps\":[\"Sketch extrude 70 mm\",\"Sketch extrude 64 mm\",\"Sketch extrude 46 mm\"],\"tags\":[\"Shell\",\"Lettuce\",\"Meat\"],\"stepIds\":[\"smuo69q802\",\"smuo69q803\",\"smuo69q804\"],\"parts\":[{\"x\":100,\"y\":70,\"z\":26},{\"x\":88,\"y\":64,\"z\":12},{\"x\":72,\"y\":46,\"z\":15}],\"watertight\":true,\"minWallMm\":2.386}}}"
+    "{\"ok\":true,\"summary\":\"Taco (d1, tied to the plan) matches plan plan_1: all 3 checks pass\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Taco\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"3 features, each built by a step tagged with its name\",\"got\":\"3 steps for 3 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"2.4 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":100,\"y\":60,\"z\":37},\"holes\":[],\"features\":3,\"steps\":[\"Add Shell\",\"Rectangle extrude 5 mm\",\"Rectangle extrude 8 mm\"],\"tags\":[\"Shell (half tube)\",\"Lettuce layer\",\"Meat strip\"],\"stepIds\":[\"smuo69q801\",\"smuo69q803\",\"smuo69q804\"],\"lofts\":[],\"watertight\":true,\"minWallMm\":2.395}}}"
    ],
-   "text": "The taco is designed and passes its checks, but I haven't sent it to a printer. It's ready to slice on your P1S whenever you want.\n\n- **Shell:** a folded, open-bottomed half-oval, 100 mm long, 70 mm wide, 26 mm tall, with a 3 mm wall.\n- **Lettuce:** a wavy green-style bed, 88 x 64 x 12 mm, sitting inside the shell.\n- **Meat:** a 72 x 46 mm mound, 15 mm tall, sitting on the bed and partly inside the lettuce, so only about 3 mm of it shows above the lettuce.\n\nThe shell width, wall, and filling heights were my guesses, and you confirmed them. The lettuce and meat overlap in the design, so the slicer will merge them into one piece. If you want them as two colors, say so and I'll split them onto separate plates. Want me to slice it now?"
+   "text": "The taco is built in the design \"Taco\" and passes the plan check: 100 mm long, 60 mm wide, 37 mm tall, watertight, with 2.4 mm walls.\n\nIt has three parts: a U-shaped shell open at the top, a flat lettuce layer inside it, and a rounded meat strip on top. The lettuce and meat are flat layers rather than wavy or lumpy, since the tools can't sculpt organic shapes. The outer diameter, wall, and layer thicknesses are my guesses, and you confirmed them on the sheet.\n\nI haven't sliced or sent it to the P1S. Do you want me to slice it for the P1S in PLA, or would you like changes first, such as a different filling color?"
   }
  ],
  "defaultAnswer": true,

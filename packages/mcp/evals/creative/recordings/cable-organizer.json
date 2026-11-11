@@ -2,247 +2,50 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-10T06:21:58.379Z",
+ "capturedAt": "2026-11-11T20:57:44.841Z",
  "steps": [
   {
-   "text": "I'll start with the dimension sheet. The 100 mm length and five slots are from your request. The rest are my guesses, so please check the desk edge thickness and the cable slot size first.",
    "calls": [
     {
      "name": "pilot.sheet",
      "args": {
       "title": "Desk cable organizer",
-      "views": [
-       "front",
-       "side",
-       "iso"
-      ],
-      "dims": [
-       {
-        "key": "length",
-        "label": "Organizer length (X)",
-        "value": 100,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          100,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          -8,
-          0
-         ]
-        }
-       },
-       {
-        "key": "plate_depth",
-        "label": "Top plate depth over desk (Y)",
-        "value": 40,
-        "unit": "mm",
-        "source": "guess",
-        "note": "How far the plate reaches back onto the desk top",
-        "at": {
-         "a": [
-          0,
-          -40,
-          29
-         ],
-         "b": [
-          0,
-          4,
-          29
-         ],
-         "off": [
-          -6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "desk_edge_thickness",
-        "label": "Desk edge thickness (lip height)",
-        "value": 25,
-        "unit": "mm",
-        "source": "guess",
-        "note": "Measure your desk edge; the lip hangs down this height",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          0,
-          25
-         ],
-         "off": [
-          -8,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "wall_thickness",
-        "label": "Plate and lip thickness",
-        "value": 4,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          4,
-          0,
-          0
-         ],
-         "b": [
-          4,
-          0,
-          4
-         ],
-         "off": [
-          6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_count",
-        "label": "Cable slots",
-        "value": 5,
-        "unit": "mm",
-        "source": "asked",
-        "note": "Five slots, count only"
-       },
-       {
-        "key": "slot_width",
-        "label": "Slot width (X)",
-        "value": 8,
-        "unit": "mm",
-        "source": "guess",
-        "note": "USB cables are about 4 to 6 mm thick, so 8 mm gives clearance",
-        "at": {
-         "a": [
-          18,
-          -20,
-          29
-         ],
-         "b": [
-          26,
-          -20,
-          29
-         ],
-         "off": [
-          0,
-          -6,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_length",
-        "label": "Slot length (Y)",
-        "value": 12,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          22,
-          -30,
-          29
-         ],
-         "b": [
-          22,
-          -18,
-          29
-         ],
-         "off": [
-          -4,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_pitch",
-        "label": "Slot spacing, center to center",
-        "value": 16,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          22,
-          -20,
-          29
-         ],
-         "b": [
-          38,
-          -20,
-          29
-         ],
-         "off": [
-          0,
-          -12,
-          0
-         ]
-        }
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"Not shown: a sheet of several sizes needs part: [solid, ...], the part as it will be built (each solid an extrude {\\\"plane\\\", \\\"points\\\", \\\"from\\\", \\\"to\\\"}, or a revolve, sweep or loft for a round, bent or tapered body), or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.\"}"
-   ],
-   "calls": [
-    {
-     "name": "pilot.sheet",
-     "args": {
-      "title": "Desk cable organizer",
-      "views": [
-       "front",
-       "side",
-       "iso"
-      ],
       "part": [
        {
         "kind": "extrude",
         "plane": "yz",
         "points": [
          [
-          -40,
-          25
+          -5,
+          15
          ],
          [
-          0,
-          25
+          40,
+          15
+         ],
+         [
+          40,
+          0
          ],
          [
           0,
           0
          ],
          [
-          4,
-          0
+          0,
+          -25
          ],
          [
-          4,
-          29
+          10,
+          -25
          ],
          [
-          -40,
-          29
+          10,
+          -28
+         ],
+         [
+          -5,
+          -28
          ]
         ],
         "from": 0,
@@ -252,99 +55,58 @@
       "dims": [
        {
         "key": "length",
-        "label": "Organizer length (X)",
+        "label": "Length (X)",
         "value": 100,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
           0,
-          0,
+          -40,
+          15
+         ],
+         "b": [
+          100,
+          -40,
+          15
+         ]
+        }
+       },
+       {
+        "key": "tray_depth",
+        "label": "Tray depth over desk (Y)",
+        "value": 45,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          50,
+          -5,
+          15
+         ],
+         "b": [
+          50,
+          40,
+          15
+         ]
+        }
+       },
+       {
+        "key": "tray_height",
+        "label": "Tray height",
+        "value": 15,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          100,
+          40,
           0
          ],
          "b": [
           100,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          -8,
-          0
-         ]
-        }
-       },
-       {
-        "key": "plate_depth",
-        "label": "Top plate depth over desk (Y)",
-        "value": 40,
-        "unit": "mm",
-        "source": "guess",
-        "note": "How far the plate reaches back onto the desk top",
-        "at": {
-         "a": [
-          0,
-          -40,
-          29
-         ],
-         "b": [
-          0,
-          4,
-          29
-         ],
-         "off": [
-          -6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "desk_edge_thickness",
-        "label": "Desk edge thickness (lip height)",
-        "value": 25,
-        "unit": "mm",
-        "source": "guess",
-        "note": "Measure your desk edge; the lip hangs down this height",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          0,
-          25
-         ],
-         "off": [
-          -8,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "wall_thickness",
-        "label": "Plate and lip thickness",
-        "value": 4,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          4,
-          0,
-          0
-         ],
-         "b": [
-          4,
-          0,
-          4
-         ],
-         "off": [
-          6,
-          0,
-          0
+          40,
+          15
          ]
         }
        },
@@ -353,557 +115,147 @@
         "label": "Cable slots",
         "value": 5,
         "unit": "mm",
-        "source": "asked",
-        "note": "Five slots, count only"
-       },
-       {
-        "key": "slot_width",
-        "label": "Slot width (X)",
-        "value": 8,
-        "unit": "mm",
-        "source": "guess",
-        "note": "USB cables are about 4 to 6 mm thick, so 8 mm gives clearance",
-        "at": {
-         "a": [
-          18,
-          -20,
-          29
-         ],
-         "b": [
-          26,
-          -20,
-          29
-         ],
-         "off": [
-          0,
-          -6,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_length",
-        "label": "Slot length (Y)",
-        "value": 12,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          22,
-          -30,
-          29
-         ],
-         "b": [
-          22,
-          -18,
-          29
-         ],
-         "off": [
-          -4,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_pitch",
-        "label": "Slot spacing, center to center",
-        "value": 16,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          22,
-          -20,
-          29
-         ],
-         "b": [
-          38,
-          -20,
-          29
-         ],
-         "off": [
-          0,
-          -12,
-          0
-         ]
-        }
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. row 5 (Cable slots) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle. Send it again with them.\"}"
-   ],
-   "calls": [
-    {
-     "name": "pilot.sheet",
-     "args": {
-      "title": "Desk cable organizer",
-      "views": [
-       "front",
-       "side",
-       "iso"
-      ],
-      "part": [
-       {
-        "kind": "extrude",
-        "plane": "yz",
-        "points": [
-         [
-          -40,
-          25
-         ],
-         [
-          0,
-          25
-         ],
-         [
-          0,
-          0
-         ],
-         [
-          4,
-          0
-         ],
-         [
-          4,
-          29
-         ],
-         [
-          -40,
-          29
-         ]
-        ],
-        "from": 0,
-        "to": 100
-       }
-      ],
-      "dims": [
-       {
-        "key": "length",
-        "label": "Organizer length (X)",
-        "value": 100,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          100,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          -8,
-          0
-         ]
-        }
-       },
-       {
-        "key": "plate_depth",
-        "label": "Top plate depth over desk (Y)",
-        "value": 40,
-        "unit": "mm",
-        "source": "guess",
-        "note": "How far the plate reaches back onto the desk top",
-        "at": {
-         "a": [
-          0,
-          -40,
-          29
-         ],
-         "b": [
-          0,
-          4,
-          29
-         ],
-         "off": [
-          -6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "desk_edge_thickness",
-        "label": "Desk edge thickness (lip height)",
-        "value": 25,
-        "unit": "mm",
-        "source": "guess",
-        "note": "Measure your desk edge; the lip hangs down this height",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          0,
-          25
-         ],
-         "off": [
-          -8,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "wall_thickness",
-        "label": "Plate and lip thickness",
-        "value": 4,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          4,
-          0,
-          0
-         ],
-         "b": [
-          4,
-          0,
-          4
-         ],
-         "off": [
-          6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_count",
-        "label": "Cable slots",
-        "value": 5,
-        "unit": "count",
         "kind": "count",
-        "source": "asked",
-        "at": {
-         "a": [
-          18,
-          -20,
-          29
-         ],
-         "b": [
-          82,
-          -20,
-          29
-         ],
-         "off": [
-          0,
-          -14,
-          0
-         ]
-        }
+        "source": "asked"
        },
        {
         "key": "slot_width",
         "label": "Slot width (X)",
-        "value": 8,
-        "unit": "mm",
-        "source": "guess",
-        "note": "USB cables are about 4 to 6 mm thick, so 8 mm gives clearance",
-        "at": {
-         "a": [
-          18,
-          -20,
-          29
-         ],
-         "b": [
-          26,
-          -20,
-          29
-         ],
-         "off": [
-          0,
-          -6,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_length",
-        "label": "Slot length (Y)",
         "value": 12,
         "unit": "mm",
         "source": "guess",
         "at": {
          "a": [
-          22,
-          -30,
-          29
+          8,
+          20,
+          15
          ],
          "b": [
-          22,
-          -18,
-          29
+          20,
+          20,
+          15
+         ]
+        }
+       },
+       {
+        "key": "slot_depth",
+        "label": "Slot depth",
+        "value": 12,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          8,
+          20,
+          15
          ],
-         "off": [
-          -4,
-          0,
-          0
+         "b": [
+          8,
+          20,
+          3
          ]
         }
        },
        {
         "key": "slot_pitch",
-        "label": "Slot spacing, center to center",
-        "value": 16,
+        "label": "Slot pitch (center to center)",
+        "value": 18,
         "unit": "mm",
         "source": "guess",
         "at": {
          "a": [
-          22,
-          -20,
-          29
+          14,
+          25,
+          15
          ],
          "b": [
-          38,
-          -20,
-          29
+          32,
+          25,
+          15
+         ]
+        }
+       },
+       {
+        "key": "clip_thickness",
+        "label": "Clip plate thickness",
+        "value": 5,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          -5,
+          -12,
+          -10
          ],
-         "off": [
+         "b": [
           0,
           -12,
+          -10
+         ]
+        }
+       },
+       {
+        "key": "clip_drop",
+        "label": "Clip drop below tray bottom",
+        "value": 28,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          -8,
+          -5,
+          0
+         ],
+         "b": [
+          -8,
+          -5,
+          -28
+         ]
+        }
+       },
+       {
+        "key": "hook_reach",
+        "label": "Hook lip under desk edge",
+        "value": 10,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          5,
+          -28
+         ],
+         "b": [
+          10,
+          5,
+          -28
+         ]
+        }
+       },
+       {
+        "key": "desk_thickness",
+        "label": "Desk top thickness (fits the hook)",
+        "value": 25,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          5,
+          -25
+         ],
+         "b": [
+          0,
+          5,
           0
          ]
         }
        }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"dims.4.unit: Invalid option: expected one of \\\"mm\\\"|\\\"deg\\\"|\\\"%\\\"\"]}"
-   ],
-   "calls": [
-    {
-     "name": "pilot.sheet",
-     "args": {
-      "title": "Desk cable organizer",
+      ],
       "views": [
        "front",
        "side",
        "iso"
-      ],
-      "part": [
-       {
-        "kind": "extrude",
-        "plane": "yz",
-        "points": [
-         [
-          -40,
-          25
-         ],
-         [
-          0,
-          25
-         ],
-         [
-          0,
-          0
-         ],
-         [
-          4,
-          0
-         ],
-         [
-          4,
-          29
-         ],
-         [
-          -40,
-          29
-         ]
-        ],
-        "from": 0,
-        "to": 100
-       }
-      ],
-      "dims": [
-       {
-        "key": "length",
-        "label": "Organizer length (X)",
-        "value": 100,
-        "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          100,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          -8,
-          0
-         ]
-        }
-       },
-       {
-        "key": "plate_depth",
-        "label": "Top plate depth over desk (Y)",
-        "value": 40,
-        "unit": "mm",
-        "source": "guess",
-        "note": "How far the plate reaches back onto the desk top",
-        "at": {
-         "a": [
-          0,
-          -40,
-          29
-         ],
-         "b": [
-          0,
-          4,
-          29
-         ],
-         "off": [
-          -6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "desk_edge_thickness",
-        "label": "Desk edge thickness (lip height)",
-        "value": 25,
-        "unit": "mm",
-        "source": "guess",
-        "note": "Measure your desk edge; the lip hangs down this height",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          0,
-          25
-         ],
-         "off": [
-          -8,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "wall_thickness",
-        "label": "Plate and lip thickness",
-        "value": 4,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          4,
-          0,
-          0
-         ],
-         "b": [
-          4,
-          0,
-          4
-         ],
-         "off": [
-          6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_width",
-        "label": "Slot width (X)",
-        "value": 8,
-        "unit": "mm",
-        "source": "guess",
-        "note": "USB cables are about 4 to 6 mm thick, so 8 mm gives clearance",
-        "at": {
-         "a": [
-          18,
-          -20,
-          29
-         ],
-         "b": [
-          26,
-          -20,
-          29
-         ],
-         "off": [
-          0,
-          -6,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_length",
-        "label": "Slot length (Y)",
-        "value": 12,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          22,
-          -30,
-          29
-         ],
-         "b": [
-          22,
-          -18,
-          29
-         ],
-         "off": [
-          -4,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "slot_pitch",
-        "label": "Slot spacing, center to center",
-        "value": 16,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          22,
-          -20,
-          29
-         ],
-         "b": [
-          38,
-          -20,
-          29
-         ],
-         "off": [
-          0,
-          -12,
-          0
-         ]
-        }
-       }
       ]
      }
     }
@@ -911,9 +263,8 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"length\":100,\"plate_depth\":40,\"desk_edge_thickness\":25,\"wall_thickness\":4,\"slot_width\":8,\"slot_length\":12,\"slot_pitch\":16},\"changed\":[]}}"
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"length\":100,\"tray_depth\":45,\"tray_height\":15,\"slot_count\":5,\"slot_width\":12,\"slot_depth\":12,\"slot_pitch\":18,\"clip_thickness\":5,\"clip_drop\":28,\"hook_reach\":10,\"desk_thickness\":25},\"changed\":[]}}"
    ],
-   "text": "The sizes are confirmed. Next I'll plan the part before building it.",
    "calls": [
     {
      "name": "design.plan",
@@ -922,38 +273,45 @@
       "units": "mm",
       "features": [
        {
-        "name": "Base",
+        "name": "Body and desk hook",
         "kind": "extrude",
         "sizes": {
          "length": 100,
-         "plate_depth": 40,
-         "desk_edge_thickness": 25,
-         "wall_thickness": 4
+         "tray_depth": 45,
+         "tray_height": 15,
+         "clip_thickness": 5,
+         "clip_drop": 28,
+         "hook_reach": 10
         }
        },
        {
-        "name": "Cable slots",
+        "name": "Cable slot",
         "kind": "cut",
-        "kinds": {
-         "slot_count": "count"
-        },
+        "sizes": {
+         "slot_width": 12,
+         "slot_depth": 12,
+         "slot_pitch": 18
+        }
+       },
+       {
+        "name": "Slot row",
+        "kind": "array",
         "sizes": {
          "slot_count": 5,
-         "slot_width": 8,
-         "slot_length": 12,
-         "slot_pitch": 16
+         "slot_pitch": 18
         }
        }
       ],
       "assumptions": [
-       "L-shaped profile in the YZ plane, extruded 100 mm along X: a 4 mm top plate 40 mm deep over the desk top and a 4 mm lip hanging 25 mm down the front of the desk edge.",
-       "Overall height 29 mm (25 mm desk edge plus 4 mm plate).",
-       "Five slots through the top plate, centered on X at 18, 34, 50, 66 and 82 mm, each 8 mm by 12 mm, with the 12 mm side along Y.",
-       "Desk edge thickness and plate depth are guesses to confirm by measuring the desk."
+       "Organizer sits on the desk top with its front lip hooking over the desk's front edge and a lip under the top, for a desk top about 25 mm thick.",
+       "Slots are pockets open at the top, 12 mm wide, 12 mm deep, 30 mm long in Y, leaving a 3 mm floor.",
+       "Printed flat on its back, PLA, 0.4 mm nozzle."
       ],
       "questions": [
-       "Does the desk edge measure 25 mm thick? If not, the lip height changes."
-      ]
+       "Desk top thickness and whether the desk edge is a rounded or square edge (the hook depends on it).",
+       "Cable diameter, if you use thicker cables than USB-C."
+      ],
+      "detail": "basic"
      }
     }
    ]
@@ -968,24 +326,30 @@
      "args": {
       "name": "Desk cable organizer"
      }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "Desk cable organizer",
+      "sketch": "placeholder",
+      "distance_mm": 100,
+      "extent": "oneSide",
+      "operation": "new",
+      "feature": "Body and desk hook"
+     }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Started Desk cable organizer (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
+    "{\"ok\":true,\"summary\":\"Started Desk cable organizer (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":false,\"summary\":\"No finished sketch placeholder in the design timeline; slicerx_design_timeline lists them.\"}"
    ],
    "calls": [
     {
-     "name": "geom.extrude",
+     "name": "design.sketch",
      "args": {
       "design": "d1",
-      "sketch": "__none__",
-      "distance_mm": 100,
-      "extent": "oneSide",
-      "operation": "new",
-      "feature": "Base",
-      "name": "Organizer",
       "frame": {
        "origin": [
         0,
@@ -1008,321 +372,166 @@
         1
        ]
       },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -40,
-           25
-          ],
-          [
-           0,
-           25
-          ],
-          [
-           0,
-           0
-          ],
-          [
-           4,
-           0
-          ],
-          [
-           4,
-           29
-          ],
-          [
-           -40,
-           29
-          ]
+      "loops": [
+       {
+        "points": [
+         [
+          -5,
+          15
+         ],
+         [
+          40,
+          15
+         ],
+         [
+          40,
+          0
+         ],
+         [
+          0,
+          0
+         ],
+         [
+          0,
+          -25
+         ],
+         [
+          10,
+          -25
+         ],
+         [
+          10,
+          -28
+         ],
+         [
+          -5,
+          -28
          ]
-        }
-       ]
-      }
+        ]
+       }
+      ]
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"sketch: the sketch gives the shape and plane; leave shape and frame out\"}"
+    "{\"ok\":true,\"summary\":\"Sketch 1 is in the timeline\",\"result\":{\"id\":\"smuo69q801k\",\"name\":\"Sketch 1\",\"loops\":1}}"
    ],
    "calls": [
     {
      "name": "geom.extrude",
      "args": {
       "design": "d1",
+      "sketch": "smuo69q801k",
       "distance_mm": 100,
       "extent": "oneSide",
       "operation": "new",
-      "feature": "Base",
       "name": "Organizer",
-      "frame": {
-       "origin": [
-        0,
-        0,
-        0
-       ],
-       "normal": [
-        1,
-        0,
-        0
-       ],
-       "u": [
-        0,
-        1,
-        0
-       ],
-       "v": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "points": [
-          [
-           -40,
-           25
-          ],
-          [
-           0,
-           25
-          ],
-          [
-           0,
-           0
-          ],
-          [
-           4,
-           0
-          ],
-          [
-           4,
-           29
-          ],
-          [
-           -40,
-           29
-          ]
-         ]
-        }
-       ]
-      }
+      "feature": "Body and desk hook"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 100 mm. The part was off the bed, so it moved to the plate by (78, 146) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Sketch extrude 100 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":100,\"unit\":\"mm\"},\"feature\":\"Base\",\"state\":\"done\"},\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":27600,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":544,\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":27600}],\"placedMm\":[78,146],\"landed\":\"The part was off the bed, so it moved to the plate by (78, 146) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 100 mm. The part was off the bed, so it moved to the plate by (78, 110.5) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q802\",\"name\":\"Sketch extrude 100 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":100,\"unit\":\"mm\"},\"feature\":\"Body and desk hook\",\"state\":\"done\"},\"minMm\":[0,-5,-28],\"sizeMm\":[100,45,43],\"volumeMm3\":84500,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":384,\"minMm\":[0,-5,-28],\"sizeMm\":[100,45,43],\"volumeMm3\":84500}],\"placedMm\":[78,110.5],\"landed\":\"The part was off the bed, so it moved to the plate by (78, 110.5) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
    ],
-   "text": "The base is in (100 x 44 x 29 mm, 27600 mm³, which matches the L profile). Now the five slots.",
    "calls": [
     {
-     "name": "geom.extrude",
+     "name": "geom.subtract",
      "args": {
       "design": "d1",
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "cut",
-      "feature": "Cable slots",
-      "label": "Slot 1",
-      "frame": {
-       "origin": [
-        0,
-        0,
-        29
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 8,
-       "heightMm": 12
-      },
-      "placement": {
-       "center": [
-        18,
-        -20
-       ]
-      },
-      "target": "d1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Cut: step 2, Rectangle cut 10 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q802\",\"name\":\"Rectangle cut 10 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":10,\"unit\":\"mm\"},\"feature\":\"Cable slots\",\"state\":\"done\"},\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":27216,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":622,\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":27216}],\"placedMm\":[78,146]}}"
-   ],
-   "text": "The first slot cut correctly (384 mm³ removed, which is 8 x 12 x 4). Cutting the other four.",
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "d1",
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "cut",
-      "feature": "Cable slots",
-      "label": "Slot 2",
-      "frame": {
-       "origin": [
-        0,
-        0,
-        29
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 8,
-       "heightMm": 12
-      },
-      "placement": {
-       "center": [
-        34,
-        -20
-       ]
-      },
-      "target": "d1"
+      "part": 0,
+      "label": "Cable slot 1",
+      "feature": "Cable slot",
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         8,
+         5,
+         3
+        ],
+        "max": [
+         20,
+         35,
+         20
+        ]
+       }
+      ]
      }
     },
     {
-     "name": "geom.extrude",
+     "name": "geom.subtract",
      "args": {
       "design": "d1",
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "cut",
-      "feature": "Cable slots",
-      "label": "Slot 3",
-      "frame": {
-       "origin": [
-        0,
-        0,
-        29
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 8,
-       "heightMm": 12
-      },
-      "placement": {
-       "center": [
-        50,
-        -20
-       ]
-      },
-      "target": "d1"
+      "part": 0,
+      "label": "Slot row (slots 2 to 5)",
+      "feature": "Slot row",
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         26,
+         5,
+         3
+        ],
+        "max": [
+         38,
+         35,
+         20
+        ]
+       },
+       {
+        "type": "box",
+        "min": [
+         44,
+         5,
+         3
+        ],
+        "max": [
+         56,
+         35,
+         20
+        ]
+       },
+       {
+        "type": "box",
+        "min": [
+         62,
+         5,
+         3
+        ],
+        "max": [
+         74,
+         35,
+         20
+        ]
+       },
+       {
+        "type": "box",
+        "min": [
+         80,
+         5,
+         3
+        ],
+        "max": [
+         92,
+         35,
+         20
+        ]
+       }
+      ]
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Cut: step 3, Rectangle cut 10 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q803\",\"name\":\"Rectangle cut 10 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":10,\"unit\":\"mm\"},\"feature\":\"Cable slots\",\"state\":\"done\"},\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":26832,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":688,\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":26832}],\"placedMm\":[78,146]}}",
-    "{\"ok\":true,\"summary\":\"Cut: step 4, Rectangle cut 10 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smuo69q804\",\"name\":\"Rectangle cut 10 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":10,\"unit\":\"mm\"},\"feature\":\"Cable slots\",\"state\":\"done\"},\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":26448,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":766,\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":26448}],\"placedMm\":[78,146]}}"
+    "{\"ok\":true,\"summary\":\"Subtracted: step 2, Cable slot 1. Desk cable organizer is off the bed, so it stays where it is. Move it onto the bed to print it.\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q803\",\"name\":\"Cable slot 1\",\"op\":\"subtract\",\"part\":0,\"value\":{\"label\":\"Width\",\"value\":12,\"unit\":\"mm\"},\"feature\":\"Cable slot\",\"state\":\"done\"},\"minMm\":[0,-5,-28],\"sizeMm\":[100,45,43],\"volumeMm3\":80180,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":424,\"minMm\":[0,-5,-28],\"sizeMm\":[100,45,43],\"volumeMm3\":80180}],\"placedMm\":[78,110.5],\"landed\":\"Desk cable organizer is off the bed, so it stays where it is. Move it onto the bed to print it.\"}}",
+    "{\"ok\":true,\"summary\":\"Subtracted: step 3, Slot row (slots 2 to 5). Desk cable organizer is off the bed, so it stays where it is. Move it onto the bed to print it.\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smuo69q804\",\"name\":\"Slot row (slots 2 to 5)\",\"op\":\"subtract\",\"part\":0,\"feature\":\"Slot row\",\"state\":\"done\"},\"minMm\":[0,-5,-28],\"sizeMm\":[100,45,43],\"volumeMm3\":62900,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":832,\"minMm\":[0,-5,-28],\"sizeMm\":[100,45,43],\"volumeMm3\":62900}],\"placedMm\":[78,110.5],\"landed\":\"Desk cable organizer is off the bed, so it stays where it is. Move it onto the bed to print it.\"}}"
    ],
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "d1",
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "cut",
-      "feature": "Cable slots",
-      "label": "Slot 4",
-      "frame": {
-       "origin": [
-        0,
-        0,
-        29
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 8,
-       "heightMm": 12
-      },
-      "placement": {
-       "center": [
-        66,
-        -20
-       ]
-      },
-      "target": "d1"
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "d1",
-      "distance_mm": 10,
-      "extent": "oneSide",
-      "operation": "cut",
-      "feature": "Cable slots",
-      "label": "Slot 5",
-      "frame": {
-       "origin": [
-        0,
-        0,
-        29
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 8,
-       "heightMm": 12
-      },
-      "placement": {
-       "center": [
-        82,
-        -20
-       ]
-      },
-      "target": "d1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Cut: step 5, Rectangle cut 10 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smuo69q805\",\"name\":\"Rectangle cut 10 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":10,\"unit\":\"mm\"},\"feature\":\"Cable slots\",\"state\":\"done\"},\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":26064,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":866,\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":26064}],\"placedMm\":[78,146]}}",
-    "{\"ok\":true,\"summary\":\"Cut: step 6, Rectangle cut 10 mm\",\"result\":{\"design\":\"d1\",\"name\":\"Desk cable organizer\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smuo69q806\",\"name\":\"Rectangle cut 10 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":10,\"unit\":\"mm\"},\"feature\":\"Cable slots\",\"state\":\"done\"},\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":25680,\"parts\":[{\"index\":0,\"name\":\"Organizer\",\"slot\":1,\"triangles\":940,\"minMm\":[0,-40,0],\"sizeMm\":[100,44,29],\"volumeMm3\":25680}],\"placedMm\":[78,146]}}"
-   ],
-   "text": "All five slots are cut (27600 minus 25680 mm³ is 1920, which is 5 x 384). Running the plan check.",
    "calls": [
     {
      "name": "design.check",
@@ -1335,30 +544,9 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Desk cable organizer (d1, tied to the plan) matches plan plan_1: all 3 checks pass\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Desk cable organizer\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"2 features, each built by a step tagged with its name\",\"got\":\"6 steps for 2 features (Cable slots 5)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"4 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":100,\"y\":44,\"z\":29},\"holes\":[],\"features\":6,\"steps\":[\"Sketch extrude 100 mm\",\"Rectangle cut 10 mm\",\"Rectangle cut 10 mm\",\"Rectangle cut 10 mm\",\"Rectangle cut 10 mm\",\"Rectangle cut 10 mm\"],\"tags\":[\"Base\",\"Cable slots\",\"Cable slots\",\"Cable slots\",\"Cable slots\",\"Cable slots\"],\"stepIds\":[\"smuo69q801\",\"smuo69q802\",\"smuo69q803\",\"smuo69q804\",\"smuo69q805\",\"smuo69q806\"],\"watertight\":true,\"minWallMm\":4}}}"
+    "{\"ok\":true,\"summary\":\"Desk cable organizer (d1, tied to the plan) matches plan plan_1: all 3 checks pass\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Desk cable organizer\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"feature count\",\"want\":\"3 features, each built by a step tagged with its name\",\"got\":\"3 steps for 3 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"3 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":100,\"y\":45,\"z\":43},\"holes\":[],\"features\":3,\"steps\":[\"Sketch extrude 100 mm\",\"Cable slot 1\",\"Slot row (slots 2 to 5)\"],\"tags\":[\"Body and desk hook\",\"Cable slot\",\"Slot row\"],\"stepIds\":[\"smuo69q802\",\"smuo69q803\",\"smuo69q804\"],\"lofts\":[],\"watertight\":true,\"minWallMm\":3}}}"
    ],
-   "calls": [
-    {
-     "name": "pilot.sheet_bind",
-     "args": {
-      "design": "d1",
-      "binds": [
-       {
-        "key": "length",
-        "step": 1,
-        "scale": 1,
-        "offset": 0
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Tied 1 row to the design\",\"result\":{\"bound\":1}}"
-   ],
-   "text": "The desk cable organizer is designed and passes its plan check. I haven't sliced or queued it, since you asked for the design only.\n\n- **Shape:** an L-shaped clip, 100 mm long, 44 mm deep and 29 mm tall. A 4 mm top plate sits on the desk and a 4 mm lip hangs 25 mm down the front edge.\n- **Cable slots:** five 8 x 12 mm slots through the plate, 16 mm apart, centered on the 100 mm length.\n- **Checks:** the body is closed and the thinnest wall is 4 mm.\n\nPlease measure your desk edge. I guessed 25 mm thick, and the lip height and total height depend on it. I also guessed the 40 mm plate depth and the 8 mm slot width, which is a bit over the 4 to 6 mm of a typical USB cable. Tell me if any of those change and I'll rebuild it.\n\nWhen you're ready, I can slice it for your P1S in PLA at 0.4 mm and send it to the printer for your approval."
+   "text": "The cable organizer is built and checked. It is 100 mm long, 45 mm deep and 43 mm tall, with five 12 mm wide cable slots at 18 mm pitch. The front plate and hook lip are sized for a desk top about 25 mm thick. It is in the project as \"Desk cable organizer\" and passes the plan check: it is watertight with 3 mm minimum walls.\n\nThe sizes you confirmed were length (100 mm) and slot count (5). The rest are my guesses, which you can change on the sheet or in Model:\n- Tray depth 45 mm and height 15 mm\n- Slot width 12 mm, depth 12 mm, pitch 18 mm\n- Clip plate 5 mm thick, dropping 28 mm below the tray\n- Hook lip 10 mm under the desk\n- Desk top thickness 25 mm, which decides whether the hook fits your desk\n\nAs built, the tray underside overhangs the desk side by about 40 mm, so it will need supports or a different print orientation. I have not sent it to a printer. Tell me if you want me to orient it for printing, slice it on your P1S with PLA, and queue it for your approval."
   }
  ],
  "defaultAnswer": true,
