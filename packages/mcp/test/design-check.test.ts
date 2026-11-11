@@ -47,6 +47,17 @@ describe('designCheck', () => {
     expect(r.items.every((i) => i.pass)).toBe(true)
   })
 
+  it('a recess the body reads as no hole passes with a warning, while a through hole it lacks still fails', () => {
+    // a toy boat's portholes, 1 mm dents in its curved side: no flat face, so no hole loop to read
+    const boat: PartPlan = { ...bracket, holes: [{ name: 'portholes', diameter: 1, count: 12, recess: true }] }
+    const r = designCheck(boat, { ...built, holes: [] }, 0.4)
+    expect(r.items.find((i) => i.name === 'portholes')).toMatchObject({ pass: true, want: '12 x 1 mm diameter recess', got: 'not measured: a recess is checked by its feature step', warning: 'not measured as a hole; look over the recesses on the part' })
+    const through = designCheck({ ...boat, holes: [{ name: 'portholes', diameter: 1, count: 12 }] }, { ...built, holes: [] }, 0.4)
+    expect(failed(through)).toEqual(['portholes'])
+    // a recess the body does read is held to its size as a hole is
+    expect(failed(designCheck(boat, { ...built, holes: Array.from({ length: 12 }, () => ({ diameterMm: 2 })) }, 0.4))).toEqual(['portholes'])
+  })
+
   it('a 6 mm hole built at 5 mm fails that item only', () => {
     const r = designCheck(bracket, { ...built, holes: [{ diameterMm: 4 }, { diameterMm: 5 }] }, 0.4)
     expect(r.pass).toBe(false)
@@ -1412,7 +1423,7 @@ describe('design.put_plan', () => {
 
   it('is 1.5.0, keeps the kinds of each size, drops an empty kinds map, and refuses kinds that name no size', async () => {
     const { plans, run, set } = tools([boxDesign('d1', 'Spacer')])
-    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.5.0')
+    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.6.0')
     const features = [{ name: 'Wheel', sizes: { spokes: 5, rake: 12 }, kinds: { spokes: 'count', rake: 'angle' } }, { name: 'Rim', sizes: { width: 8 }, kinds: {} }]
     await run('design.put_plan', { plan: { ...boxPlan, planId: 'kinds-1', features } })
     expect(plans.get('kinds-1')!.plan.features).toEqual([features[0], { name: 'Rim', sizes: { width: 8 } }])
