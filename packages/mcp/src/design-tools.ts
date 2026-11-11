@@ -18,6 +18,9 @@ import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, und
 import { meshStats } from './mesh'
 import { movedStep, sizedStep } from './step-reshape'
 import { FORMS_MAX, partForms } from './part-form'
+import { bodyOf, sectionEdited, SHAPE_WORDS, stationRows } from './section-edit'
+import { onPlate, seatShift, seatWords, standingOn, supportArea, surfaceAt } from './section-follow'
+import { maker } from './sunk'
 
 type V3 = [number, number, number]
 
@@ -309,7 +312,15 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
     state: s.suppressed ? 'suppressed' : (st?.state ?? 'done'),
     ...(st?.message ? { message: st.message } : {}),
     ...(st?.note ? { note: st.note } : {}),
+    ...loftStations(s),
   }
+}
+
+/** A loft step's stations front to back (number, place, width, height), for a section edit to name; {} for any other step. */
+function loftStations(s: Step): Record<string, unknown> {
+  if (s.params.op !== 'sketch.loft') return {}
+  const b = bodyOf(s)
+  return typeof b === 'string' ? {} : { stations: stationRows(b), run: b.axisWord }
 }
 
 /** The step a client names: its 1-based index, its id, or its name ("Fillet 1.5 mm", the last one by that name). */
@@ -352,6 +363,130 @@ export interface DesignToolOptions {
 
 /** Two names for one part: the same words, whatever the case or the spaces around them. */
 const sameName = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+const sectionLine = z.object({
+  which: z.string().min(1).max(30).describe('top (roofline, spine) or bottom (belly, underside)'),
+  front: z.number().min(-500).max(500).optional().describe('mm the line rises at the front, eased to nothing at the middle'),
+  back: z.number().min(-500).max(500).optional(),
+  frontBy: z.number().min(-2).max(2).optional().describe('the rise as a share of the body height'),
+  backBy: z.number().min(-2).max(2).optional(),
+})
+const sectionInput = z.object({
+  station: z.union([z.number().int().min(1), z.string().min(1).max(30)]).optional().describe('Which station: a number from 1 at the front, or front (nose, tip), back (tail, base), middle, widest, shoulder or all'),
+  front: z.enum(['high', 'low']).optional().describe('Which end of the run is the front, when the steps list has it the wrong way round'),
+  width: z.number().positive().max(10_000).optional().describe('The station this wide, mm, about its middle'),
+  height: z.number().positive().max(10_000).optional().describe('The station this tall, mm, from its bottom'),
+  scale: z.union([z.number().positive().max(20), z.object({ width: z.number().positive().max(20).optional(), height: z.number().positive().max(20).optional() })]).optional().describe('The station scaled, both ways or one'),
+  at: z.number().min(-10_000).max(10_000).optional().describe('The station moved to this place along the run, mm'),
+  out: z.number().min(-10_000).max(10_000).optional().describe('The station moved this far out from the middle of the run (negative: in), mm'),
+  outBy: z.number().min(-1).max(1).optional().describe('out as a share of the body length'),
+  add: z.number().min(-10_000).max(10_000).optional().describe('A station added at this place along the run, blended from the two around it'),
+  remove: z.union([z.number().int().min(1), z.string().min(1).max(30)]).optional().describe('A station taken out'),
+  curve: z.number().positive().max(5).optional().describe('More curve along the body (above 1) or less: the stations away from the widest drawn in or let out'),
+  line: sectionLine.optional(),
+  end: z.object({ which: z.string().min(1).max(30).describe('front or back'), lean: z.number().min(-60).max(75).optional().describe('degrees the end leans out from upright (rake)'), leanBy: z.number().min(-90).max(90).optional().describe('degrees more than it leans now'), overhang: z.number().min(-500).max(500).optional().describe('mm its top reaches past its foot') }).optional(),
+  flatten: z.number().min(0).max(1).optional().describe('A flatter bottom: the lower half of every station pressed toward its bottom, 0 to 1'),
+})
+
+/**
+ * After a section edit of loft step `k` (made as `edited`): replays with it, re-seats on the new top the steps joined
+ * on the body and the parts standing on it, and says what moved, what now hangs past an edge or sits into the body,
+ * and what now needs supports.
+ */
+async function sectionFollow(host: DesignHost, d: HostDesign, k: number, edited: Step): Promise<{ said: string[]; moved: string[]; warnings: string[] }> {
+  const s = d.history.steps[k]!
+  const body = s.part
+  const said: string[] = []
+  const moved: string[] = []
+  const warnings: string[] = []
+  const bodyName = d.parts[body]?.name ?? 'the body'
+  const wholeBefore = onPlate(d.parts[body]!, d.transform)
+  const others = d.parts.flatMap((m, j) => (j === body ? [] : [{ part: j, mesh: onPlate(m, d.transform) }]))
+  const standing = standingOn(wholeBefore, others)
+  const supportsBefore = supportArea(wholeBefore)
+  let steps = d.history.steps.map((x, j) => (j === k ? edited : x))
+  // steps joined on the body after the loft that stood on its top (an upper block, a cab) follow the top up or down
+  const joins = d.history.steps.map((x, j) => ({ x, j })).filter(({ x, j }) => j > k && x.part === body && !x.suppressed && x.params.op === 'shape.extrude' && x.params.spec.operation === 'join' && x.params.frame && x.params.frame.normal[2] > 0.99)
+  if (joins.length) {
+    const loftAt = async (hist: Step[]) => {
+      const r = await replayHistory((op, request) => host.call(op, request), { history: { ...d.history, steps: hist.slice(0, k + 1) } })
+      return r.parts[body] ? onPlate(r.parts[body]!, d.transform) : null
+    }
+    const before = await loftAt(d.history.steps)
+    const after = await loftAt(steps)
+    for (const { x, j } of joins) {
+      if (!before || !after || x.params.op !== 'shape.extrude' || !x.params.frame) continue
+      const f = x.params.frame
+      const c = x.params.placement?.center ?? [0, 0]
+      const at = [f.origin[0] + f.u[0] * c[0] + f.v[0] * c[1], f.origin[1] + f.u[1] * c[0] + f.v[1] * c[1], f.origin[2]]
+      const top = surfaceAt(before, at[0]!, at[1]!)
+      if (top === null || Math.abs(top - at[2]!) > 1.5) continue
+      const now = surfaceAt(after, at[0]!, at[1]!)
+      if (now === null) {
+        warnings.push(`step ${j + 1}, ${stepName(x)}, stood on ${bodyName} where the body no longer reaches; it stays where it was, so edit or remove it`)
+        continue
+      }
+      if (Math.abs(now - top) < 0.05) continue
+      const m = movedStep(x, [0, 0, now - top], d.transform)
+      if (typeof m === 'string') continue
+      steps = steps.map((y, i) => (i === j ? { ...y, params: m } : y))
+      moved.push(`step ${j + 1}, ${stepName(x)}, ${now > top ? 'up' : 'down'} ${r3(Math.abs(now - top))} mm`)
+    }
+  }
+  await replayChange(host, d, { ...d.history, steps })
+  // parts that stood on it, re-seated at the steps that made them, with their paint
+  let wholeAfter = onPlate(d.parts[body]!, d.transform)
+  const shifts: { st: (typeof standing)[number]; dz: number; step: number }[] = []
+  for (const st of standing) {
+    const dz = seatShift(st, wholeAfter)
+    const name = d.parts[st.part]?.name ?? `part ${st.part + 1}`
+    if (dz === null) {
+      warnings.push(`${name} stood on ${bodyName}, which no longer reaches under its middle: it now hangs off the body; move it with its step or edit the station under it`)
+      continue
+    }
+    const step = maker(d, st.part) - 1
+    if (Math.abs(dz) < 0.05) {
+      shifts.push({ st, dz: 0, step })
+      continue
+    }
+    if (step < 0) {
+      warnings.push(`${name} stood on ${bodyName} and is now ${r3(Math.abs(dz))} mm ${dz > 0 ? 'inside it' : 'above it'}; no step made it, so move it ${dz > 0 ? 'up' : 'down'} another way`)
+      continue
+    }
+    shifts.push({ st, dz, step })
+  }
+  const moving = shifts.filter((x) => x.dz !== 0)
+  if (moving.length) {
+    const next = d.history.steps.map((x, j) => {
+      const own = moving.find((m) => m.step === j)
+      if (own) {
+        const m = movedStep(x, [0, 0, own.dz], d.transform)
+        return typeof m === 'string' ? x : { ...x, params: m }
+      }
+      const later = moving.find((m) => j > m.step && x.part === m.st.part && x.params.op === 'paint')
+      return later && x.params.op === 'paint' ? { ...x, params: movedPaint(x.params, [0, 0, later.dz], d.transform) } : x
+    })
+    await replayChange(host, d, { ...d.history, steps: next })
+    wholeAfter = onPlate(d.parts[body]!, d.transform)
+    for (const m of moving) moved.push(`${d.parts[m.st.part]?.name ?? 'a part'} ${m.dz > 0 ? 'up' : 'down'} ${r3(Math.abs(m.dz))} mm`)
+  }
+  for (const { st } of shifts) {
+    const mesh = d.parts[st.part]
+    if (!mesh) continue
+    const plate = onPlate(mesh, d.transform)
+    let foot = Infinity
+    for (let i = 2; i < plate.positions.length; i += 3) foot = Math.min(foot, plate.positions[i]!)
+    const w = seatWords(mesh.name, bodyName, st, wholeAfter, foot)
+    if (w) warnings.push(w)
+  }
+  if (moved.length) said.push(`re-seated on the new top of ${bodyName}: ${moved.join(', ')}`)
+  const supportsAfter = supportArea(wholeAfter)
+  if (supportsAfter - supportsBefore > Math.max(10, supportsBefore * 0.1)) {
+    warnings.push(`${bodyName} now needs supports: about ${Math.round(supportsAfter - supportsBefore)} mm² more of it faces down steeper than 45 degrees${supportsBefore < 10 ? ', where it printed without supports before' : ''}. Kept as asked; lean it less (under 45 degrees) to print it without them`)
+  }
+  said.push(...warnings)
+  return { said, moved, warnings }
+}
 
 /** The design tools on a host; `files` reads the models design.new starts from and the 3MF files design.open and design.save use. */
 export function designTools(designs: DesignHost, files: DesignFiles, opts: DesignToolOptions = {}): PilotTool<never>[] {
@@ -426,39 +561,43 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
-    description: 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.',
+    description: 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed. A loft step lists its stations front to back, and the answer then carries shapeWords: what people say about a lofted body\'s shape and the section edit that answers each.',
     input: z.object({ design: designArg }),
     async run(i) {
       const d = designs.get(i.design)
       const rows = d.history.steps.map((_, k) => stepRow(d, k))
       const broken = rows.filter((r) => r['state'] === 'broken').length
-      return { summary: `${plural(rows.length, 'step')}${broken ? `, ${broken} broken` : ''}`, output: { ...designSummary(d), steps: rows } }
+      const lofted = rows.some((r) => r['stations'])
+      return { summary: `${plural(rows.length, 'step')}${broken ? `, ${broken} broken` : ''}`, output: { ...designSummary(d), steps: rows, ...(lofted ? { shapeWords: SHAPE_WORDS } : {}) } }
     },
   })
 
-  const editStepInput = z.object({
-    design: designArg,
-    step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id'),
-    value: z.number().min(-10_000).max(10_000).optional().describe('The new main number'),
-    suppressed: z.boolean().optional(),
-    label: z.string().max(120).optional().describe('A name for the step; empty for the one made from its numbers'),
-    feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
-    size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
-    move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
-  })
+  const editInput = z.object({
+      design: designArg,
+      step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id'),
+      value: z.number().min(-10_000).max(10_000).optional().describe('The new main number'),
+      suppressed: z.boolean().optional(),
+      label: z.string().max(120).optional().describe('A name for the step; empty for the one made from its numbers'),
+      feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
+      size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
+      move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
+      section: sectionInput.optional().describe("Reshape a loft (a car body, fuselage, bottle, vase) by its stations, as slicerx_design_steps lists them front to back; its shapeWords give the edit for what the person said. Parts standing on the body are re-seated on its new top, and the answer says what moved, what now hangs past an edge, and what now needs supports"),
+    })
+  // a local model edits steps without the section edit and the follow-up's size and move, which stay with the cloud ones
+  const editLocalInput = editInput.omit({ section: true, size: true, move: true })
+
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description:
       `Edit one step of a design and replay the steps after it, as editing a step in ${productName()}'s history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, rename it, or set the plan feature it builds. Setting a number clears that step's expression binding; renaming or suppressing it keeps the binding. Steps after it that no longer work are reported broken with the reason; edit them, or edit this one back.`,
-    input: editStepInput,
-    // a local model's form leaves out the follow-up's size and move, which only the cloud follow-up line asks for
-    localInput: editStepInput.omit({ size: true, move: true }),
+    input: editInput,
+    localInput: editLocalInput,
     async run(i) {
       const d = designs.get(i.design)
       const k = stepIndex(d, i.step)
@@ -471,6 +610,14 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         const { bind: _bind, ...unbound } = next
         next = { ...unbound, params: r.params }
         said.push(`${r3(r.was)} mm to ${r3(i.size.mm)} mm along ${i.size.axis}`)
+      }
+      if (i.section) {
+        if (s.params.op !== 'sketch.loft') throw new ToolInputError('section: only a loft is edited by its sections; change this step by size, move or value')
+        const r = sectionEdited(s, i.section)
+        if (typeof r === 'string') throw new ToolInputError(r)
+        const { bind: _bind, ...unbound } = next
+        next = { ...unbound, params: r.params }
+        said.push(...r.said)
       }
       if (i.move) {
         const r = movedStep(next, i.move as [number, number, number], d.transform)
@@ -502,6 +649,13 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       // the part's span along the axis a size or move works on, before the change, for the paint on it to follow
       const axisOf = i.size ? ({ x: 0, y: 1, z: 2 } as const)[i.size.axis] : 2
       const spanBefore = i.size ? partSpan(d, s.part, axisOf) : null
+      if (i.section) {
+        const follow = await sectionFollow(designs, d, k, clean)
+        const rows = d.history.steps.map((_, j) => stepRow(d, j))
+        const broken = rows.filter((r) => r['state'] === 'broken')
+        const words = [...said, ...follow.said]
+        return { ok: broken.length === 0, summary: `Edited step ${k + 1}, ${stepName(clean)}: ${words.join('; ')}${broken.length ? `; step ${String(broken[0]!['index'])} broke: ${String(broken[0]!['message'] ?? '')}` : ''}`, output: { ...designSummary(d), steps: rows, ...(follow.moved.length ? { moved: follow.moved } : {}), ...(follow.warnings.length ? { warnings: follow.warnings } : {}) } }
+      }
       await replayChange(designs, d, { ...d.history, steps: d.history.steps.map((x, j) => (j === k ? clean : x)) })
       // paint laid on the part after this step follows what it painted: a move shifts it, a size stretches it
       const later = d.history.steps.map((x, j) => ({ x, j })).filter(({ x, j }) => j > k && x.part === s.part && x.params.op === 'paint' && !x.suppressed)

@@ -1,0 +1,29 @@
+{
+  "about": "Words a person uses for the shape of a lofted body (a car body, a fuselage, a bottle, a vase, a pod), each with the design.edit_step section edit that answers it. Scale the numbers for how strongly they said it: a little is half, a lot is double.",
+  "names": {
+    "front": ["nose", "tip", "neck", "leading end"],
+    "back": ["tail", "rear", "base", "heel", "trailing end"],
+    "top line": ["roofline", "beltline", "spine", "crown"],
+    "bottom": ["belly", "underside", "floor"],
+    "widest": ["widest point", "middle", "belly of the bottle"],
+    "shoulder": ["the station just past the widest toward the front"]
+  },
+  "words": [
+    { "say": ["more curve", "more body curve", "curvier", "more shape"], "edit": { "curve": 1.3 } },
+    { "say": ["fuller front", "blunter nose", "fuller nose", "flare the front"], "edit": { "station": "front", "scale": { "width": 1.25 } } },
+    { "say": ["sharper front", "pointier nose", "finer nose", "taper the front"], "edit": { "station": "front", "scale": { "width": 0.7 } } },
+    { "say": ["rounder back", "rounder tail", "fuller tail", "flare the back"], "edit": { "station": "back", "scale": { "width": 1.2, "height": 1.1 } } },
+    { "say": ["slimmer tail", "taper the tail", "thinner tail", "taper the back"], "edit": { "station": "back", "scale": 0.7 } },
+    { "say": ["more overhang", "more rake", "raked front", "swept nose", "lean the front out"], "edit": { "end": { "which": "front", "leanBy": 12 } } },
+    { "say": ["raked back", "swept tail", "more overhang at the back", "lean the back out"], "edit": { "end": { "which": "back", "leanBy": 12 } } },
+    { "say": ["upswept tail", "tail sweeps up", "lift the tail"], "edit": { "line": { "which": "bottom", "backBy": 0.3 } } },
+    { "say": ["top line rises at the ends", "higher nose", "more crown at the ends"], "edit": { "line": { "which": "top", "frontBy": 0.2, "backBy": 0.1 } } },
+    { "say": ["lower roofline", "lower top", "lower profile"], "edit": { "station": "all", "scale": { "height": 0.85 } } },
+    { "say": ["flatter bottom", "flat underside", "flatter belly"], "edit": { "flatten": 0.6 } },
+    { "say": ["longer nose", "longer front", "stretch the front"], "edit": { "station": "front", "outBy": 0.1 } },
+    { "say": ["fuller shoulder", "rounder shoulder", "broader shoulder"], "edit": { "station": "shoulder", "scale": 1.15 } },
+    { "say": ["sloped shoulder", "narrower shoulder"], "edit": { "station": "shoulder", "scale": 0.85 } },
+    { "say": ["wider", "broader", "fatter"], "edit": { "station": "all", "scale": { "width": 1.15 } } },
+    { "say": ["narrower", "slimmer", "thinner"], "edit": { "station": "all", "scale": { "width": 0.85 } } }
+  ]
+}
