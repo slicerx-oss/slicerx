@@ -135,7 +135,7 @@ export const BAMBU: PrinterModel[] = [
     nozzleCount: 9,
     filamentSystem: 'ams',
     find: FIND_H2,
-    note: 'Nine print tools that swap on one carriage, one of them for TPU. For now a print with several filaments is sliced as one nozzle that changes filament, with the first tool\'s nozzle size.',
+    note: 'Nine print tools that swap on one carriage, one of them for TPU. Each filament prints on a tool of its own. Every tool is sliced with the one nozzle size picked for the printer, so a rack with nozzles of different sizes is not supported yet.',
   }),
   bambu({
     id: 'bambu-x2d',
