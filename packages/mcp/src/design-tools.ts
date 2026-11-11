@@ -213,7 +213,7 @@ function partSpan(d: Design, part: number, a: number): [number, number] | null {
 type PaintParams = Extract<Step['params'], { op: 'paint' }>
 
 /** A paint step's target moved by `world` mm, as what it painted moved. */
-function movedPaint(p: PaintParams, world: [number, number, number], transform: Mat4): PaintParams {
+export function movedPaint(p: PaintParams, world: [number, number, number], transform: Mat4): PaintParams {
   void transform
   const t = p.target
   if (t.kind === 'height') {

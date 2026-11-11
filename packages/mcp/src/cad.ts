@@ -13,12 +13,13 @@ import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, 
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { notClosedWords, partClosure, type Closure } from './closure'
-import { partBoxes, sunkNote } from './sunk'
+import { partBoxes, roundTenth, sunkNote, sunkParts } from './sunk'
+import { movedStep } from './step-reshape'
 import { gapMm, gapSentence, nozzleOr } from './design-check'
 import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
 import type { PlanRegistry } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
-import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, partAt, partsAt, pieceNameFor, pieceNameNote, replayChange, type Design } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, movedPaint, partAt, partsAt, pieceNameFor, pieceNameNote, replayChange, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import type { AppLinkCaller } from './app-route'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
@@ -869,9 +870,26 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const on = i.operation === 'join' ? (part ?? 0) : -1
         const before = on >= 0 ? partBoxes(d) : []
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
+        // parts that stood on the body this raised are lifted onto its new top, at the steps that made them, with
+        // their paint; the answer says so
+        const sunk = on >= 0 ? sunkParts(d, on, before) : []
+        const liftable = sunk.filter((s) => s.step >= 0)
+        if (liftable.length) {
+          const steps = d.history.steps.map((x, j) => {
+            const lift = liftable.find((s) => s.step === j)
+            if (lift) {
+              const moved = movedStep(x, [0, 0, lift.depthMm], d.transform)
+              return typeof moved === 'string' ? x : { ...x, params: moved }
+            }
+            const later = liftable.find((s) => j > s.step && x.part === s.part && x.params.op === 'paint')
+            return later && x.params.op === 'paint' ? { ...x, params: movedPaint(x.params, [0, 0, later.depthMm], d.transform) } : x
+          })
+          await replayChange(designs(), d, { ...d.history, steps })
+        }
         const out = pieceNamed(stepOut(d, verb), piece, i.name)
-        const sunk = on >= 0 ? sunkNote(d, on, before) : ''
-        return sunk ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${sunk}` } : out
+        const lifted = liftable.map((s) => `${d.parts[s.part]!.name} ${roundTenth(s.depthMm)} mm`).join(', ')
+        const said = [lifted ? `Lifted ${lifted} onto the new top of ${d.parts[on]!.name}, at the steps that made them` : '', on >= 0 ? sunkNote(d, on, sunk) : ''].filter(Boolean).join('. ')
+        return said ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${said}` } : out
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch extrudes on a design; give its id as design')
       if (!i.shape) throw new ToolInputError('shape: give the shape to extrude')
