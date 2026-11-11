@@ -10,7 +10,7 @@ import { gunzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import type { EngineCall } from '@slicerx/cad-history'
 import type { SettingValue } from '@slicerx/contracts'
-import { ReplayMismatch, digest, replayEngine, writeRecording, type Recorded } from './geom-engine'
+import { PACKED_FORMAT, ReplayMismatch, digest, replayEngine, unpackReplies, writeRecording } from './geom-engine'
 import { boxStl, connect, data, type Harness } from './helpers'
 
 const FIXTURE = join(__dirname, 'fixtures', 'arrange-zones.json.gz')
@@ -105,7 +105,7 @@ describe('replayed geometry replies', () => {
   })
 
   it('keeps the mismatch when arrange catches it and falls back to rows', async () => {
-    const replies = JSON.parse(gunzipSync(readFileSync(FIXTURE)).toString('utf8')) as Record<string, Recorded[]>
+    const replies = unpackReplies(JSON.parse(gunzipSync(readFileSync(FIXTURE)).toString('utf8')))
     expect(replies[CORNER]?.length).toBeGreaterThan(0)
     const r = replayEngine(FIXTURE, replies)
     r.start(CORNER)
@@ -164,7 +164,9 @@ describe('writing a recording', () => {
     const d = dir()
     const file = join(d, 'x.json.gz')
     expect(writeRecording(file, { t: [{ op: 'a', request: 'r', reply: 2 }] })).toBe(true)
-    expect(JSON.parse(gunzipSync(readFileSync(file)).toString('utf8'))).toEqual({ t: [{ op: 'a', request: 'r', reply: 2 }] })
+    const written = JSON.parse(gunzipSync(readFileSync(file)).toString('utf8')) as { format?: string }
+    expect(written.format).toBe(PACKED_FORMAT)
+    expect(unpackReplies(written)).toEqual({ t: [{ op: 'a', request: 'r', reply: 2 }] })
     rmSync(d, { recursive: true })
   })
 
