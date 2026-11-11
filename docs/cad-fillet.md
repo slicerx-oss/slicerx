@@ -51,6 +51,10 @@ The edge is the sharp boundary edge of the picked triangle's flat face nearest t
 | `reason` | string? | why not, in words, when `supported` is false |
 | `maxDistanceMm` | `[number, number]` | the widest bevel that fits on each face, measured on the face from the edge |
 | `maxRadiusMm` | number | the largest fillet radius that fits |
+| `chainMaxDistanceMm` | `[number, number]` | the widest bevel every edge of `chain` takes, each side as in `maxDistanceMm` |
+| `chainMaxRadiusMm` | number | the largest fillet radius every edge of `chain` takes |
+| `loopMaxDistanceMm` | `[number, number]` | the widest bevel every supported edge of `loop` takes |
+| `loopMaxRadiusMm` | number | the largest fillet radius every supported edge of `loop` takes |
 | `chain` | EdgeRef[] | the edge and the edges that continue it tangentially (turning 20 degrees or less at each corner), in order along the edge |
 | `loop` | `{edge: EdgeRef, supported: boolean}[]` | every edge around the picked face's boundary ring that holds this edge, in order, so a click can take the whole loop |
 
@@ -58,11 +62,17 @@ The edge is the sharp boundary edge of the picked triangle's flat face nearest t
 
 `maxDistanceMm` and `maxRadiusMm` look only at this edge. When several edges share a face, the ops check the whole set.
 
+The chain and loop sizes are the least of the same per edge test over those edges: a fillet or chamfer of the chain, or of the loop's supported edges, at that size or less passes the per edge fit, and a size above it is refused as `does not fit on this face`. Two strips that overlap on one face are still checked by the op on the set.
+
+An edge on the loop is supported exactly when the op takes it: two faces that meet at less than 30 degrees are not an edge for either ("The faces along this edge meet at less than 30 degrees, too flat to round.").
+
 Errors: `edge: pick near the edge of a flat face`, `triangle: out of range`.
 
 Reasons when not supported: "Both faces along this edge are curved. Fillet and chamfer need a flat face on one side.", "The picked face is curved. Pick the edge from the flat face on its other side.", "The mesh is open along this edge.", "More than two faces meet along this edge.", "The edge ends where more than three faces meet.", "The edge ends at a curved face it does not run into smoothly.", "The angle between the faces changes along the round the edge runs into.", "The edge meets the face at its end at too shallow an angle."
 
 When `supported` is false, `maxDistanceMm` and `maxRadiusMm` are 0 and `chain` holds the edge alone. `maxDistanceMm` and `maxRadiusMm` are rounded down to whole micrometers.
+
+The chain and loop sizes are 0 when `supported` is false, and rounded down to whole micrometers like the edge's own.
 
 ## Chamfer and fillet
 
