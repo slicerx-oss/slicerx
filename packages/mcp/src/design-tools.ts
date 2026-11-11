@@ -310,6 +310,8 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
 
 /** The step a client names: its 1-based index, its id, or its name ("Fillet 1.5 mm", the last one by that name). */
 export function stepIndex(d: HostDesign, step: number | string): number {
+  // a step number sent as text ("2") is that step, unless a step has that id or name
+  if (typeof step === 'string' && /^\d+$/.test(step.trim()) && !d.history.steps.some((s) => s.id === step || stepName(s) === step)) step = Number(step.trim())
   const named = (s: Step): boolean => typeof step === 'string' && stepName(s).toLowerCase() === step.trim().toLowerCase()
   const byName = d.history.steps.map((s, i) => (named(s) ? i : -1)).filter((i) => i >= 0).pop() ?? -1
   const i = typeof step === 'number' ? step - 1 : d.history.steps.some((s) => s.id === step) ? d.history.steps.findIndex((s) => s.id === step) : byName
