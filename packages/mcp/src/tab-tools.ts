@@ -219,14 +219,36 @@ export function createCardPlans(plans: PlanRegistry) {
    * material); what it leaves out comes from the run's machine. The plan's sizes are held to the same printer's floors
    * (plan-floors.ts).
    */
-  function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile } = {}): PilotTool<never> {
+  /**
+   * The approved plan a part of this name is already built from, in an open design that has a body: the person's plan
+   * (not stale or set aside) tied to it. A new plan for that part would start it over; it is fixed in its design instead.
+   * A plan of another shape (a feature or row of holes more or less) is what amends cannot make, so the caller lets it
+   * through while the fix round is open.
+   */
+  function builtPlanOf(part: string, designs: readonly { id: string; name: string; parts: readonly unknown[] }[]): { planId: string; design: string; closed: boolean; plan: PartPlan } | null {
+    const name = part.trim().toLowerCase()
+    for (const d of designs) {
+      if (!d.parts.length) continue
+      for (const planId of plans.tiedTo(d.id)) {
+        const entry = cardEntry(planId)
+        if (entry && !entry.stale && !entry.superseded && entry.plan.part.trim().toLowerCase() === name) return { planId, design: d.name, closed: !!entry.closed, plan: entry.plan }
+      }
+    }
+    return null
+  }
+
+  /**
+   * `designs` is the open designs, for refusing a second plan of a part already built from an approved one; without it
+   * no plan is refused for that.
+   */
+  function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile; designs?: () => readonly { id: string; name: string; parts: readonly unknown[] }[] } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.3.0',
+      version: '1.4.0',
       source: 'command',
       permission: 'read',
       description:
-        `Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. A size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless they print in place, with the bore it gives around a pin; a wall or pin under two nozzle lines; a hole under the nozzle) is raised on the card with a line saying why. A plan with a hinge or a pin piece says whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption); one that says neither, or both, is refused. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, the edited plan when they changed anything or a size was raised (build from that), and raised, each size raised from what to what. Not accepted: build nothing and ask what to change. A part of one feature skips the plan. When the build finds an approved size it cannot keep, call it again with amends (the plan's planId) and reason (why, in a sentence the person reads): the person sees the changed sizes beside the old ones, raised to this printer's floors as a new plan's are, and presses Go or Not yet. Sizes only, once per fix round and never after the stop result; Go keeps the planId and its fix round and returns revision and changes, Not yet leaves the plan as approved.`,
+        `Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. A size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless they print in place, with the bore it gives around a pin; a wall or pin under two nozzle lines; a hole under the nozzle) is raised on the card with a line saying why. A plan with a hinge or a pin piece says whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption); one that says neither, or both, is refused. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, the edited plan when they changed anything or a size was raised (build from that), and raised, each size raised from what to what. Not accepted: build nothing and ask what to change. A part of one feature skips the plan. When the build finds an approved size it cannot keep, call it again with amends (the plan's planId) and reason (why, in a sentence the person reads): the person sees the changed sizes beside the old ones, raised to this printer's floors as a new plan's are, and presses Go or Not yet. Sizes only, once per fix round and never after the stop result; Go keeps the planId and its fix round and returns revision and changes, Not yet leaves the plan as approved. A new plan that only changes the sizes of a part already built from an approved plan is refused: fix the part in its design, or change the sizes with amends.`,
       localDescription:
         `Before the first geometry step of a part with 2+ features, show the plan and wait: part, units, features in build order with sizes and kind (kinds: count or angle for each such size), overall and holes if known, assumptions, questions. printInPlace pieces: keep the gaps where they meet ${RULE_MIN}; pieces with a gap size print in place unless printInPlace is false. Build from the accepted plan, else build nothing and ask. More: kb.search "modeling tools".`,
       input: PlanToolInputSchema,
@@ -242,6 +264,15 @@ export function createCardPlans(plans: PlanRegistry) {
         if (i.amends !== undefined) return amend(i, i.amends, ctx.ask, floors, limits)
         if (i.reason !== undefined) throw new ToolInputError('reason: give a reason only with amends, to change an approved plan')
         const { amends: _a, reason: _r, ...input } = i
+        // a part built from an approved plan is fixed where it is; planning it again would start it over
+        const built = opts.designs ? builtPlanOf(input.part, opts.designs()) : null
+        // a new plan of the same shape changes sizes only, which amends does without starting the part over
+        if (built && (built.closed || !amendShapeProblem(built.plan, { ...input, part: built.plan.part })))
+          throw new ToolInputError(
+            built.closed
+              ? `${input.part} is already built from the approved plan ${built.planId} in the open design ${built.design}, and its check used the fix round. Make no new plan: stop and tell the person exactly what is off.`
+              : `${input.part} is already built from the approved plan ${built.planId} in the open design ${built.design}. Fix it there rather than planning it again: design.undo or design.edit_step for a step that went wrong, and design.plan with amends ${built.planId} and a reason for a planned size the build cannot keep. If the person asked for a second part, give it another name.`,
+          )
         // a hinged part says one way its lid prints, so the build has nothing to guess
         const joint = jointProblem(input)
         if (joint) throw new ToolInputError(`assumptions: ${joint}`)
