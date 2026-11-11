@@ -2,9 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A build that finds a planned size it cannot keep asks to change the approved plan: design.plan with amends shows
 // the person the plan with the changed sizes, the old value beside each, and the build's reason, and waits for Go, as
-// a new plan does; design.put_plan with amends changes a client's own plan. An amend changes sizes only, once per fix
-// round, never after the round is over, and never buys a second round: the plan keeps its failed checks under the same
-// planId, and its revision goes up by one.
+// a new plan does; design.put_plan with amends changes a client's own plan. An amend changes sizes and may add
+// features, keeping every planned one; a build's amend comes once per fix round, never after the round is over, and
+// never buys a second round: the plan keeps its failed checks under the same planId, and its revision goes up by one. A
+// change the person asked for (asked) goes in with no card and is not held to the fix round (tab-tools.ts).
 import type { PartPlan, PlanEntry, PlanOrigin } from './design-check'
 
 /** The longest reason an amend takes. */
@@ -30,18 +31,21 @@ const sameKeys = (a: object, b: object): boolean => {
 }
 
 /**
- * What keeps `next` from being an amend of `old`, or null: an amend keeps the part, its units, each feature (name,
- * kind, the sizes it has and what each measures, in order), whether it has an overall size, and each row of holes
- * (name and count), and its open faces. Only the numbers change.
+ * What keeps `next` from being an amend of `old`, or null: an amend keeps the part, its units, every planned feature
+ * (name, kind, the sizes it has and what each measures, in order, with features it adds anywhere among them under new
+ * names), whether it has an overall size, and each row of holes (name and count), and its open faces. Only the numbers
+ * change, and features may be added.
  */
 export function amendShapeProblem(old: Sized, next: Sized): string | null {
   const only = 'an amend changes sizes only'
   if (next.part !== old.part) return `part: ${only}; the part stays "${old.part}"`
   if (next.units !== old.units) return `units: ${only}; the plan stays in ${old.units}`
-  if (next.features.length !== old.features.length) return `features: ${only}; the plan has ${old.features.length} features`
-  for (const [i, f] of next.features.entries()) {
+  const kept = keptFeatures(old, next)
+  if (!kept) return `features: an amend keeps every planned feature, in order, and may add features under new names; the plan has ${old.features.map((f) => f.name).join(', ')}`
+  for (const [i, j] of kept.entries()) {
+    const f = next.features[j]!
     const o = old.features[i]!
-    if (f.name !== o.name || (f.kind ?? '') !== (o.kind ?? '')) return `features: ${only}; feature ${i + 1} stays "${o.name}"`
+    if ((f.kind ?? '') !== (o.kind ?? '')) return `features: ${only}; feature ${i + 1} stays "${o.name}", a ${o.kind ?? 'feature'}`
     if (!sameKeys(f.sizes, o.sizes)) return `features: ${only}; ${o.name} keeps the sizes ${Object.keys(o.sizes).join(', ') || 'it has (none)'}`
     if (JSON.stringify(Object.entries(f.kinds ?? {}).sort()) !== JSON.stringify(Object.entries(o.kinds ?? {}).sort())) return `features: ${only}; ${o.name} keeps its kinds`
   }
@@ -53,10 +57,37 @@ export function amendShapeProblem(old: Sized, next: Sized): string | null {
   return null
 }
 
-/** `old` with the sizes of `next` (amendShapeProblem says they match): its assumptions and questions stay as they are. */
+/**
+ * Where each of `old`'s features is in `next` (index in next, by old index), or null when one is missing or out of
+ * order. The features in between are the ones `next` adds; none of them may take a planned feature's name.
+ */
+function keptFeatures(old: Sized, next: Sized): number[] | null {
+  const at: number[] = []
+  let j = 0
+  for (const o of old.features) {
+    while (j < next.features.length && next.features[j]!.name !== o.name) j++
+    if (j >= next.features.length) return null
+    at.push(j++)
+  }
+  const names = new Set(old.features.map((f) => f.name))
+  if (next.features.some((f, k) => !at.includes(k) && names.has(f.name))) return null
+  return at
+}
+
+/** The features `next` adds to `old` (amendShapeProblem says it is an amend), by name, in order. */
+export function amendAdded(old: Sized, next: Sized): string[] {
+  const names = new Set(old.features.map((f) => f.name))
+  return next.features.filter((f) => !names.has(f.name)).map((f) => f.name)
+}
+
+/** `old` with the sizes of `next` and the features it adds (amendShapeProblem says it is an amend): its assumptions and questions stay as they are. */
 export function amendedSizes<P extends PartPlan>(old: P, next: Sized): P {
   const out = structuredClone(old)
-  out.features = out.features.map((f, i) => ({ ...f, sizes: { ...next.features[i]!.sizes } }))
+  const was = new Map(out.features.map((f) => [f.name, f]))
+  out.features = next.features.map((f) => {
+    const o = was.get(f.name)
+    return o ? { ...o, sizes: { ...f.sizes } } : structuredClone(f)
+  })
   if (out.overall && next.overall) out.overall = { ...next.overall }
   if (out.holes && next.holes) out.holes = out.holes.map((h, i) => ({ ...h, diameter: next.holes![i]!.diameter }))
   return out
@@ -65,11 +96,14 @@ export function amendedSizes<P extends PartPlan>(old: P, next: Sized): P {
 /** Each size that differs between two plans of one shape. */
 export function amendChanges(old: Sized, next: Sized): AmendChange[] {
   const out: AmendChange[] = []
-  for (const [i, f] of old.features.entries())
+  for (const f of old.features) {
+    const n = next.features.find((x) => x.name === f.name)
+    if (!n) continue
     for (const [k, v] of Object.entries(f.sizes)) {
-      const to = next.features[i]!.sizes[k]!
+      const to = n.sizes[k]!
       if (to !== v) out.push({ where: 'feature', feature: f.name, size: k, from: v, to })
     }
+  }
   if (old.overall && next.overall) for (const a of ['x', 'y', 'z'] as const) if (old.overall[a] !== next.overall[a]) out.push({ where: 'overall', feature: null, size: a, from: old.overall[a], to: next.overall[a] })
   for (const [i, h] of (old.holes ?? []).entries()) {
     const to = next.holes![i]!.diameter
