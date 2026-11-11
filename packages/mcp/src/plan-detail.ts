@@ -40,6 +40,17 @@ export const DETAIL_LINE: Record<DetailLevel, string> = {
 
 const text = (max: number) => z.string().trim().min(1).max(max)
 
+/** A scale as a plan gives it: 1:N. */
+const SCALE_RE = /^1\s*:\s*\d+(\.\d+)?$/
+/** The units a real size may come in, and each in mm. */
+const REAL_UNITS = ['mm', 'cm', 'm', 'in', 'ft'] as const
+const MM_OF: Record<(typeof REAL_UNITS)[number], number> = { mm: 1, cm: 10, m: 1000, in: 25.4, ft: 304.8 }
+/**
+ * How far a planned size may sit from its real size at scale, as a factor either way. A display model rounds and
+ * thickens small parts so they print, so a round upright or a wheel 30 percent over scale passes; twice the scale does not.
+ */
+export const SCALE_SLACK = 1.35
+
 /** The plan fields the detail level adds; each is optional in the shared plan, and the card's input asks for detail. */
 export const planDetailFields = {
   detail: z
@@ -55,6 +66,17 @@ export const planDetailFields = {
     .max(40)
     .optional()
     .describe('Display and fine: each feature\'s color as the real thing is painted, such as {"feature": "Lower hull", "color": "red"}. A body the real thing paints in two or more colors (a waterline, a stripe, a trim line, a roof over its walls) is split at its line into one feature per color, each listed with its own'),
+  scale: z.string().trim().regex(SCALE_RE, 'scale is 1:N, such as 1:25').optional().describe('Display and fine: the model\'s scale against the real thing, 1:N, such as "1:25"'),
+  real: z
+    .array(z.object({ feature: text(60), size: text(40), value: z.number().positive(), unit: z.enum(REAL_UNITS) }))
+    .max(40)
+    .optional()
+    .describe('Display and fine: the real thing\'s sizes that the lookup or the stated source gives, each tied to the feature size it sets, such as {"feature": "Body", "size": "length", "value": 4.2, "unit": "m"}: the main body\'s length and more, and every part the source gives a size for. Each is held to scale. An empty list when the source gives none'),
+  tiers: z
+    .array(z.object({ body: text(60), levels: z.array(text(60)).min(1).max(12) }))
+    .max(8)
+    .optional()
+    .describe('Display and fine: for each flat-sided main body, its levels from the bottom up, each a planned feature: a body the real thing builds in steps or stories (a deckhouse, a stepped roof, a tower, a tiered stand) lists each level; a single block lists only itself'),
 }
 
 /** The same fields with no descriptions, for a local model's shorter tool list: they take exactly what the full ones take. */
@@ -65,6 +87,9 @@ export const bareDetailFields = {
   proportions: z.string().optional(),
   repeats: z.array(z.string()).optional(),
   colors: z.array(z.object({ feature: z.string(), color: z.string() })).optional(),
+  scale: z.string().optional(),
+  real: z.array(z.object({ feature: z.string(), size: z.string(), value: z.number(), unit: z.enum(REAL_UNITS) })).optional(),
+  tiers: z.array(z.object({ body: z.string(), levels: z.array(z.string()) })).optional(),
 }
 
 /** A plan as the detail rules read it. */
@@ -76,6 +101,9 @@ interface DetailPlan {
   proportions?: string | undefined
   repeats?: readonly string[] | undefined
   colors?: readonly { feature: string; color: string }[] | undefined
+  scale?: string | undefined
+  real?: readonly { feature: string; size: string; value: number; unit: (typeof REAL_UNITS)[number] }[] | undefined
+  tiers?: readonly { body: string; levels: readonly string[] }[] | undefined
   overall?: { x: number; y: number; z: number } | undefined
 }
 
@@ -147,11 +175,99 @@ export function detailProblem(plan: DetailPlan): string | null {
     for (const n of [...(plan.curved ?? []), ...(plan.flat ?? [])])
       if (feature(n) && !colorsOf.has(n.trim().toLowerCase())) problems.push(`colors: say what color ${n} is`)
   }
+  problems.push(...scaleProblems(plan, feature), ...massProblems(plan, feature), ...tierProblems(plan, feature))
   if (!plan.proportions?.trim()) problems.push(`proportions: say where the proportions come from, a lookup (web.lookup) or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"`)
   if (plan.repeats === undefined) problems.push('repeats: list the real object\'s repeated details (windows, slats, vents), or give an empty list when it has none')
   else if (plan.repeats.length && !plan.features.some((f) => PATTERN.test(f.kind ?? '') || PATTERN.test(f.name)))
     problems.push(`repeats: ${plan.repeats.join(', ')} repeat on the real object, so plan at least one detail pass that builds one and patterns it (kind array or pattern)`)
   return problems.length ? `A ${name} plan was not shown. ${problems.join('. ')}. ${DETAIL_HELP}` : null
+}
+
+type FeatureOf = (name: string) => DetailPlan['features'][number] | undefined
+const r1 = (v: number): number => Math.round(v * 10) / 10
+
+/** N of a 1:N scale, or null when there is none. */
+export function scaleOf(scale: string | undefined): number | null {
+  if (!scale || !SCALE_RE.test(scale.trim())) return null
+  const n = Number(scale.split(':')[1])
+  return n > 0 ? n : null
+}
+
+/**
+ * Each real size against its planned size at scale (proportions from the source): a planned size more than SCALE_SLACK
+ * times its real size at scale, either way, is refused with the size the real one gives. Real sizes need a scale, and
+ * a plan whose source gave sizes lists the main body's among them, so the scale is anchored on the thing itself.
+ */
+function scaleProblems(plan: DetailPlan, feature: FeatureOf): string[] {
+  if (plan.real === undefined) return ['real: list the real sizes the lookup or the stated source gives (the main body\'s length, and each part it gives a size for), each with the feature size it sets, so the plan is held to them at scale; an empty list when it gives none']
+  if (!plan.real.length) return []
+  const n = scaleOf(plan.scale)
+  if (n === null) return ['scale: give the scale the real sizes are held to, as 1:N']
+  const out: string[] = []
+  const bodies = new Set([...(plan.curved ?? []), ...(plan.flat ?? [])].map((b) => b.trim().toLowerCase()))
+  if (bodies.size && !plan.real.some((r) => bodies.has(r.feature.trim().toLowerCase()))) out.push('real: give a main body\'s real size too (its length), so the scale is set by the thing itself')
+  for (const r of plan.real) {
+    const f = feature(r.feature)
+    if (!f) {
+      out.push(`real: ${r.feature} is not a planned feature`)
+      continue
+    }
+    const key = Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === r.size.trim().toLowerCase())
+    if (!key) {
+      out.push(`real: ${f.name} has no size named ${r.size}; tie the real size to one of its sizes (${Object.keys(f.sizes).join(', ')})`)
+      continue
+    }
+    const want = (r.value * MM_OF[r.unit]) / n
+    const got = f.sizes[key]!
+    if (want > 0 && (got > want * SCALE_SLACK || got < want / SCALE_SLACK))
+      out.push(`${f.name} ${key} is ${r1(got)} mm, ${r1(got / want)} times the ${r1(want)} mm its real ${r.value} ${r.unit} gives at ${plan.scale}; size it from the real one`)
+  }
+  return out
+}
+
+/** A size's name read as the main way it measures across: a width, a length or a height. */
+const WIDTH = /^(width|beam|breadth|diameter|d)$/i
+const LENGTH = /^(length|long)$/i
+const HEIGHT = /^(height|tall|depth)$/i
+
+/**
+ * The masses against each other: no part other than a main body is wider, longer or taller than the largest main body
+ * that way (a round upright as wide as the main body, a wheel taller than the car body). Read from the sizes named width (or beam,
+ * breadth, diameter), length and height.
+ */
+function massProblems(plan: DetailPlan, feature: FeatureOf): string[] {
+  const bodies = [...(plan.curved ?? []), ...(plan.flat ?? [])].map(feature).filter((f): f is NonNullable<typeof f> => !!f)
+  if (!bodies.length) return []
+  const largest = (re: RegExp, fs: typeof bodies): number => Math.max(0, ...fs.flatMap((f) => Object.entries(f.sizes).filter(([k]) => re.test(k.trim())).map(([, v]) => v)))
+  const out: string[] = []
+  for (const f of plan.features) {
+    if (bodies.includes(f)) continue
+    for (const [re, way] of [[WIDTH, 'wide'], [LENGTH, 'long']] as const) {
+      const body = largest(re, bodies)
+      const part = largest(re, [f])
+      if (body > 0 && part > body) out.push(`${f.name} is ${r1(part)} mm ${way}, more than the main body's ${r1(body)} mm; a part on the body is smaller than it, so size it from the real one`)
+    }
+    const tall = largest(HEIGHT, [f])
+    if (plan.overall && tall > plan.overall.z) out.push(`${f.name} is ${r1(tall)} mm tall, more than the whole model's ${r1(plan.overall.z)} mm height`)
+  }
+  return out
+}
+
+/**
+ * Each flat-sided main body states its levels from the bottom up (tiers), each a planned feature, so a body the real
+ * thing builds in steps or stories is planned that way and not as one slab; a single block lists only itself.
+ */
+function tierProblems(plan: DetailPlan, feature: FeatureOf): string[] {
+  const out: string[] = []
+  const stated = new Map((plan.tiers ?? []).map((t) => [t.body.trim().toLowerCase(), t]))
+  for (const b of plan.flat ?? [])
+    if (feature(b) && !stated.has(b.trim().toLowerCase()))
+      out.push(`tiers: give the levels of ${b} from the bottom up; a body the real thing builds in steps or stories (a deckhouse, a stepped roof, a tower) lists each level as its own feature, a single block lists only itself`)
+  for (const t of plan.tiers ?? []) {
+    if (!feature(t.body)) out.push(`tiers: ${t.body} is not a planned feature`)
+    for (const l of t.levels) if (!feature(l)) out.push(`tiers: ${l}, a level of ${t.body}, is not a planned feature; plan each level as its own feature`)
+  }
+  return out
 }
 
 /** The fewest features a display or fine plan has, and why, from its level, its overall proportions and its repeated details. */
@@ -179,7 +295,7 @@ export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, lev
  * lines in the plan tool's description and in each refusal, never a recipe for one object.
  */
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a deck or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (the sheer of a deck, a keel rising toward the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Each color band of the real thing (a waterline, a stripe, a trim line) is its own part, split at its line, so paint follows the shape. Sizes of the parts above it (decks, funnels, wheels) follow the looked-up proportions, not a guess. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. A tapered or raked round part (a funnel, a chimney, a leg) is a loft between two ellipses, offset for the rake, then arrayed. Repeated small parts are one part, then array and mirror'
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a deck or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (the sheer of a deck, a keel rising toward the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Each color band of the real thing (a waterline, a stripe, a trim line) is its own part, split at its line, so paint follows the shape. Sizes of the parts on it (decks, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. A tapered or raked round part (a funnel, a chimney, a leg) is a loft between two ellipses, offset for the rake, then arrayed. Repeated small parts are one part, then array and mirror'
 
 /** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
 export interface LoftSections {
