@@ -57,7 +57,7 @@ import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
 // the opening turn of a plan the open project holds (planSeed), which is no message of the person's
 import { PLAN_SEED_NOTE } from './plan-left'
-import { chatRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
+import { chatRoute, HUGINN, INPUT_REFUSAL_FAILS, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
 import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
 
@@ -744,6 +744,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     set.add(design)
     sheetDesigns.set(sessionId, set)
   }
+  // calls refused for their own input (arguments that are not JSON or out of shape, a tool's inputRefused), by call id,
+  // until the run's struggle count reads them; a call to a tool that does not exist is a failure, not a slip
+  const inputRefused = new Set<string>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
   // the last turn of each session that left toolsets out (toolsets.ts)
   const caps = new Map<string, ToolCapReport>()
@@ -1015,6 +1018,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       parsedJson = call.arguments.trim() === '' ? {} : JSON.parse(call.arguments)
     } catch {
       emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: withheld ? INPUT_WITHHELD : call.arguments, ...(withheld ? { args: INPUT_WITHHELD } : {}) })
+      inputRefused.add(call.id)
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: 'Arguments were not valid JSON' })
       return { message: JSON.stringify({ ok: false, error: 'Arguments were not valid JSON.' }), stop: false }
     }
@@ -1028,6 +1032,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (!parsed.success) {
       const issues = parsed.error.issues.slice(0, 5).map((i) => `${(withheld ? i.path.slice(0, 1) : i.path).join('.') || '(input)'}: ${i.message}`)
       emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: withheld ? INPUT_WITHHELD : parsedJson, args: withheld ? INPUT_WITHHELD : argLine(parsedJson) })
+      inputRefused.add(call.id)
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Invalid arguments: ${issues.join('; ')}` })
       return { message: JSON.stringify({ ok: false, error: 'Invalid arguments', issues }), stop: false }
     }
@@ -1182,8 +1187,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     try {
       out = await tool.run(input, ctx)
     } catch (e) {
-      out = { ok: false, summary: errorText(e) }
+      // a tool that throws a refusal of its input (the MCP tools' invalid_input) refused the call, as one that says so
+      out = { ok: false, summary: errorText(e), ...((e as { code?: unknown } | null)?.code === 'invalid_input' ? { inputRefused: true } : {}) }
     }
+    if (out.ok === false && out.inputRefused) inputRefused.add(call.id)
     // A step stopped for good is not run again as it was on that design. A geometry change to the design that goes
     // through (a geom.* step that is not a read, or an edit, undo or redo) may be the smaller version the refusal
     // asked for, so the steps stopped on that design may run again after it; nothing else lets them. A mesh model
@@ -1311,6 +1318,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (label) emit({ type: 'model_switch', model, label, reason: why })
     }
     let fails = 0
+    // refusals of a call's own input: the model sends the call again, so only a run of them counts
+    let refusals = 0
     // a design check that found the part off its plan: building takes tries, but a part that misses its plan needs the larger model
     let checkMissed = false
     const called = new Map<string, string>()
@@ -1323,8 +1332,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         else waiting.delete(sessionId)
       }
       if (e.type === 'tool_result' && e.ok && called.get(e.callId) === 'design.check' && (e.output as { pass?: unknown } | undefined)?.pass === false) checkMissed = true
-      // building takes tries; only other failures count toward moving up
-      if (e.type === 'tool_result' && !e.ok && !(designs && BUILD_CALL.test(called.get(e.callId) ?? ''))) fails++
+      // building takes tries; only other failures count toward moving up, and a refusal of the call's own input apart
+      if (e.type === 'tool_result' && !e.ok && !(designs && BUILD_CALL.test(called.get(e.callId) ?? ''))) {
+        if (inputRefused.delete(e.callId)) refusals++
+        else fails++
+      }
       emit(e)
     }
     // A run always ends on a reply. Out of steps, or done without a word, it gets one more step with no tools to say
@@ -1656,7 +1668,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         const res = await execute(call, sessionId, context, watch, signal, citations, cards, stops, loader)
         if (call.name === 'design.new' && res.message.includes(`"code":"${SAME_PART}"`)) restartRefused = true
         stepOn(sessionId, call, res.message)
-        if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || checkMissed)) {
+        if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || refusals >= INPUT_REFUSAL_FAILS || checkMissed)) {
           tier = MUNINN
           why = 'struggle'
         }

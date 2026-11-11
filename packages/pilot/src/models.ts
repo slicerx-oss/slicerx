@@ -39,6 +39,14 @@ export const MUNINN_TOOLS: ReadonlySet<string> = new Set([
 /** Failed tool results on huginn before Auto moves the rest of the run to muninn. */
 export const STRUGGLE_FAILS = 2
 
+/**
+ * Refusals of a call's own input on huginn (arguments out of shape, a sheet row with no place) before Auto moves the run
+ * to muninn. They are counted apart from STRUGGLE_FAILS: the model fixes them by sending the call again, and two of them
+ * on a first dimension sheet moved whole build runs up before anything was built, costing 6 to 12 s and most of the
+ * run's spend. A model that keeps getting the input wrong still moves up.
+ */
+export const INPUT_REFUSAL_FAILS = 3
+
 export function tierForPrompt(prompt: string): Tier {
   return DEEP.test(prompt) ? MUNINN : HUGINN
 }
