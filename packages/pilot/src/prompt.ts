@@ -73,6 +73,11 @@ export interface PromptOptions {
 // curved bodies lofted through sections and its repeated details patterned, each step named for what it is.
 export const DETAIL_LINE = `- A model of a real thing (a car, a plane, a house, a lamp) named without sizes is planned at display detail unless the person asks for something simple or detailed: a car body, fuselage or bottle is a series of sections, so loft it, and repeated details are built once and patterned, with steps named for what they are ("Body (loft)", "Window rows (array)").`
 
+// cloud prompt only, with design.plan and design.edit_step: a follow-up on a built design. Without it a short follow-up
+// ("make the posts shorter", "add top details") raised a plan card or a size sheet, pushed each patterned copy apart
+// instead of editing the step they came from, and ended on a question the person had not asked for.
+export const FOLLOWUP_LINE = `- A follow-up on a design already built (a detail added, a size changed, a part recolored) is made in that design at once: no size sheet and no plan card. Put the change in its plan with design.plan with amends and asked (the person's words), then change what is built: a size of something built is design.edit_step with size on the step that made it (a patterned detail at its source step, and the copies follow; never a push on each copy), and a new detail is added as its own step. The reply to a follow-up ends with what changed, in a few words: never a question, and no offer to slice or print.`
+
 /**
  * Prompt text a local model gets as well as a cloud one. Text not wrapped in local() reaches cloud turns only, so a new
  * line costs a local model's build turn nothing unless it is marked here on purpose; the local prompt is pinned word for
@@ -124,6 +129,7 @@ const buildLines = (has: HasTool): Piece[] => {
     has('design.plan') && DETAIL_LINE,
     ...(has('design.plan') ? [[local(PLAN_LINE), ...PLAN_LID, checks && MOVING_PARTS_ORDER], local(FEATURE_LINE)] : [local(STEPS_LINE)]),
     has('design.plan') && assembledLine(has),
+    has('design.plan') && has('design.edit_step') && FOLLOWUP_LINE,
     local(BIND_LINE),
     local(checks ? CHECK_LINE : READ_BACK_LINE),
     checks && MOVING_PARTS_LINE,
