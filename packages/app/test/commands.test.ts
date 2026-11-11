@@ -121,8 +121,12 @@ describe('commands that take objects off the plate', () => {
   it('are the remove class, which asks first by default', () => {
     const specs = [...builtinCommands(host, workspaces), ...plateCommands(() => ({ id: 'slicerx' }), undefined)]
     const tool = new Map(specs.filter((c) => c.tool).map((c) => [c.id, c.tool!.permission]))
-    // Cut takes the selection off; New project and Start over clear the plate, saved or not.
-    for (const id of ['cut', 'project-new', 'plate-default']) expect(tool.get(id), id).toBe('remove')
+    // Cut takes the selection off; New project, Start over and putting an example model on the plate clear the plate, saved or not.
+    const examples = [...tool.keys()].filter((id) => id.startsWith('plate-add-'))
+    expect(examples.length).toBeGreaterThan(0)
+    for (const id of ['cut', 'project-new', 'plate-default', ...examples]) expect(tool.get(id), id).toBe('remove')
+    // Adding a plate keeps every object
+    expect(tool.get('plate-add')).toBe('slice')
     const sounding = [...tool.keys()].filter((id) => /(^|-)(cut|delete|remove|clear|new|default|reset|undo|redo)(-|$)/.test(id))
     expect(sounding.filter((id) => tool.get(id) !== 'remove')).toEqual([])
   })
