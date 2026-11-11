@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_geom_extrude`, `slicerx_geom_revolve`, `slicerx_geom_loft`, `slicerx_geom_sweep`, `slicerx_geom_push_pull`, `slicerx_geom_fillet`, `slicerx_geom_chamfer`, `slicerx_geom_subtract`, `slicerx_geom_boolean` and `slicerx_geom_array` give the same mesh from the desktop engine and the browser engine. After a join, cut or round, the two could fill a flat face again with different triangles, so the next step could go differently: a merged array of a rib joined into a shelled hull was refused by both, for different reasons, and now goes through on both. Volumes stay within a millionth of the part; the triangles on some flat faces change.

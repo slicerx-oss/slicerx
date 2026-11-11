@@ -21,6 +21,7 @@ const ELSEWHERE: Record<string, string> = {
   'fidget-spinner': 'captured again with the hole tools (feat/geom-hole-tools)',
   'headphone-hook': 'captured again with the hole tools (feat/geom-hole-tools)',
   'gear-pair': 'not captured again yet: two live runs stopped at their cost cap before the model finished',
+  'ship-hull': 'not captured again yet: the merged array after the first rib now goes through, where it was refused when captured',
 }
 
 // the replays build real geometry, so they run where the engine is built (the web job), and skip on the replay job
