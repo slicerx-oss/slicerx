@@ -6,7 +6,7 @@
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, MovedFace, Vec3 } from './types'
-import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
+import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, newSlot, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 import { EXACT_FELL_BACK, exactStep, meshed, type Solids } from './exact'
@@ -376,7 +376,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     const name = (p.op === 'shape.extrude' || p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && p.name ? p.name : 'Body'
     const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: 'new' } : p.op === 'sketch.sweep' ? { ...sweepOpts(p), operation: 'new' } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: 'new' }
     const r = (await call(p.op, req)) as { mesh: { positions: number[]; indices: number[] } }
-    const body = local(r.mesh, { name, slot: out[s.part]?.slot ?? 1 })
+    const body = local(r.mesh, { name, slot: newSlot(p) ?? out[s.part]?.slot ?? 1 })
     if (s.part < out.length) out[s.part] = body
     else out.push(body)
     return out

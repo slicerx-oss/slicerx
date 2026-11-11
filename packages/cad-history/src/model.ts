@@ -46,20 +46,20 @@ export interface HistoryMesh {
 
 export type StepParams =
   | { op: 'face.push'; at: Vec3; normal: Vec3; distanceMm: number; faceKey?: number }
-  | { op: 'shape.extrude'; frame?: FaceFrame; shape: Shape | FreeShape; placement?: Placement; spec: ExtrudeSpec; font?: string; name?: string; pattern?: Pattern }
-  | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string }
+  | { op: 'shape.extrude'; frame?: FaceFrame; shape: Shape | FreeShape; placement?: Placement; spec: ExtrudeSpec; font?: string; name?: string; pattern?: Pattern; slot?: number }
+  | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string; slot?: number }
   /**
    * A solid through sketch profiles in order, each one loop on its own plane (the bed when frame is absent): smooth sides
    * through them, the last joined back to the first when closed, and the sides made a shell with thicken (which open
    * profiles need).
    */
-  | { op: 'sketch.loft'; profiles: LoftProfile[]; smooth?: boolean; closed?: boolean; thicken?: Thicken; operation?: 'new' | 'join' | 'cut'; name?: string }
+  | { op: 'sketch.loft'; profiles: LoftProfile[]; smooth?: boolean; closed?: boolean; thicken?: Thicken; operation?: 'new' | 'join' | 'cut'; name?: string; slot?: number }
   /**
    * A solid swept from one sketch profile along an open path, the profile keeping its turn relative to the path; an open
    * profile is thickened into a shell. scaleEnd and twistDeg taper and turn it by length along the path, and endProfile
    * is the section it turns into by the end, all eased by ease.
    */
-  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; thicken?: Thicken; scaleEnd?: number | [number, number]; twistDeg?: number; ease?: 'linear' | 'smooth'; endProfile?: SweepEnd; operation?: 'new' | 'join' | 'cut'; name?: string }
+  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; thicken?: Thicken; scaleEnd?: number | [number, number]; twistDeg?: number; ease?: 'linear' | 'smooth'; endProfile?: SweepEnd; operation?: 'new' | 'join' | 'cut'; name?: string; slot?: number }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
   | { op: 'hollow'; wallMm: number }
   | { op: 'repair' }
@@ -814,4 +814,10 @@ export function withNumber(p: StepParams, v: number): StepParams | string {
     default:
       return 'This step has no number to change.'
   }
+}
+
+/** The filament slot a new body step names for the part it makes (extrude, revolve, loft or sweep), or undefined. */
+export function newSlot(p: StepParams): number | undefined {
+  const slot = 'slot' in p ? p.slot : undefined
+  return typeof slot === 'number' && Number.isInteger(slot) && slot >= 1 ? slot : undefined
 }

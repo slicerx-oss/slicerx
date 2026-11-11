@@ -257,7 +257,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const emboss = defineTool({
     name: 'geom.emboss',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description: 'Raise (emboss) or cut in (deboss) text on a face of the model. Give the point on the surface where the text is centered, and the face normal if the point is on an edge. With "design" it adds a text step on the plane through the point (flat faces); with a model it writes a new STL. With a design, textFit in the reply compares the text with the face, along the text and across it (mm), and gives the largest letter height that fits (fitSizeMm).',
@@ -272,10 +272,15 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
       size_mm: z.number().positive().max(200).describe('Capital letter height, mm'),
       depth_mm: z.number().positive().max(50).describe('Height of raised text or depth of the pocket, mm'),
       mode: z.enum(['emboss', 'deboss']).default('emboss'),
+      slot: z.number().int().min(1).max(32).optional().describe('With a design and emboss: the raised text becomes a part of its own in this filament, from 1, such as white letters on a black tag'),
+      name: z.string().min(1).max(120).optional().describe('With a design and slot: the name of the text part'),
     }),
     async run(i) {
       designOrModel(i)
-      const { model, design, ...spec } = i
+      if (i.slot !== undefined && !i.design) throw new ToolInputError('slot: a filament for the text is for a design; give the design, or leave slot out')
+      if (i.slot !== undefined && i.mode === 'deboss') throw new ToolInputError('slot: debossed text is a pocket in the part, with no filament of its own; leave slot out')
+      if (i.name !== undefined && i.slot === undefined) throw new ToolInputError('name: the text is a part of its own only with a slot; give slot, or leave name out')
+      const { model, design, slot: _slot, name: _name, ...spec } = i
       if (design) {
         const [ds, d] = designOf(design)
         const f = faceAt(d, i.point, i.normal)
@@ -287,12 +292,14 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         if (l < 1e-9) throw new ToolInputError('up: must not be along the face normal')
         const uu: V3 = [u[0] / l, u[1] / l, u[2] / l]
         const frame = { origin: i.point, normal: n, u: uu, v: [n[1] * uu[2] - n[2] * uu[1], n[2] * uu[0] - n[0] * uu[2], n[0] * uu[1] - n[1] * uu[0]] as V3 }
-        const params: StepParams = { op: 'shape.extrude', frame, shape: { type: 'text', text: i.text, sizeMm: i.size_mm }, spec: { distanceMm: i.depth_mm, operation: i.mode === 'deboss' ? 'cut' : 'join' } }
+        // with a slot, the raised letters are a new part of their own standing on the face, in that filament
+        const own = i.slot
+        const params: StepParams = { op: 'shape.extrude', frame, shape: { type: 'text', text: i.text, sizeMm: i.size_mm }, spec: { distanceMm: i.depth_mm, operation: own !== undefined ? 'new' : i.mode === 'deboss' ? 'cut' : 'join' }, ...(own !== undefined ? { name: i.name ?? `Text ${i.text.slice(0, 40)}`, slot: own } : {}) }
         // The text against the face it goes on, as the app's Text on a face checks it before Apply.
         const fit = await textFitOn(ds, d, f, frame, i.point, i.text, i.size_mm)
         const words = textFitMessage(fit)
         try {
-          await ds.add(d, f.part, params, undefined, withFeature(i.feature))
+          await ds.add(d, own !== undefined ? d.parts.length : f.part, params, undefined, withFeature(i.feature))
         } catch (e) {
           // a join that runs off the face is refused; the refusal says by how much and what size fits
           if (words && e instanceof Error) e.message = `${e.message} ${words}`
