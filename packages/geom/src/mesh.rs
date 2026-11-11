@@ -48,6 +48,15 @@ pub struct EdgeReport {
     pub boundary_edges: usize,
     pub non_manifold_edges: usize,
     pub flipped_edges: usize,
+    /// Triangles with two corners at one stored f32 point, left out of the counts above as the slicer leaves them out
+    /// (`TriMesh::stored_edge_report`): the mesh can be closed and still carry them. Sent only when there are some.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub collapsed_triangles: usize,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "serde passes a reference")]
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl EdgeReport {
@@ -411,31 +420,75 @@ impl TriMesh {
     }
 
     pub fn edge_report(&self) -> EdgeReport {
-        let mut edges: FxHashMap<(u32, u32), (u32, u32)> =
-            FxHashMap::with_capacity_and_hasher(self.triangles.len() * 2, FxBuildHasher);
-        for t in &self.triangles {
-            for k in 0..3 {
-                let (a, b) = (t[k], t[(k + 1) % 3]);
-                let e = edges.entry((a.min(b), a.max(b))).or_insert((0, 0));
-                if a < b {
-                    e.0 += 1;
-                } else {
-                    e.1 += 1;
-                }
-            }
-        }
-        let mut r = EdgeReport::default();
-        for &(fwd, back) in edges.values() {
-            match fwd + back {
-                1 => r.boundary_edges += 1,
-                2 if fwd != 1 => r.flipped_edges += 1,
-                2 => {}
-                _ => r.non_manifold_edges += 1,
-            }
-        }
-        r
+        edges_of(self.triangles.iter().copied(), self.triangles.len())
     }
 
+    /// The edge report of the mesh as a reply stores it and the slicer reads it back: corners at the same f32 point
+    /// (by its bits, so -0 stays apart from 0) are one vertex, whatever their indices, and a triangle with two corners
+    /// at one point there is dropped, as the slicer drops it, and counted in `collapsed_triangles`. A dropped triangle
+    /// leaves the mesh closed when its neighbors close over it. With no two corners at one f32 point it is
+    /// `edge_report`.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "rounding to the f32 the mesh is stored in"
+    )]
+    pub fn stored_edge_report(&self) -> EdgeReport {
+        let mut ids: FxHashMap<[u32; 3], u32> =
+            FxHashMap::with_capacity_and_hasher(self.positions.len(), FxBuildHasher);
+        let v: Vec<u32> = self
+            .positions
+            .iter()
+            .map(|p| {
+                let n = ids.len() as u32;
+                *ids.entry(p.map(|c| (c as f32).to_bits())).or_insert(n)
+            })
+            .collect();
+        if ids.len() == self.positions.len() {
+            return self.edge_report();
+        }
+        let stored = self.triangles.iter().map(|t| t.map(|i| v[i as usize]));
+        let collapsed = stored
+            .clone()
+            .filter(|t| t[0] == t[1] || t[1] == t[2] || t[0] == t[2])
+            .count();
+        let mut r = edges_of(
+            stored.filter(|t| t[0] != t[1] && t[1] != t[2] && t[0] != t[2]),
+            self.triangles.len(),
+        );
+        r.collapsed_triangles = collapsed;
+        r
+    }
+}
+
+/// the edge counts of `triangles`: a side with one triangle is open, a side whose two triangles run it the same way is
+/// flipped, a side with more than two is non-manifold
+fn edges_of(triangles: impl Iterator<Item = [u32; 3]>, n: usize) -> EdgeReport {
+    let mut edges: FxHashMap<(u32, u32), (u32, u32)> =
+        FxHashMap::with_capacity_and_hasher(n * 2, FxBuildHasher);
+    for t in triangles {
+        for k in 0..3 {
+            let (a, b) = (t[k], t[(k + 1) % 3]);
+            let e = edges.entry((a.min(b), a.max(b))).or_insert((0, 0));
+            if a < b {
+                e.0 += 1;
+            } else {
+                e.1 += 1;
+            }
+        }
+    }
+    let mut r = EdgeReport::default();
+    for &(fwd, back) in edges.values() {
+        match fwd + back {
+            1 => r.boundary_edges += 1,
+            2 if fwd != 1 => r.flipped_edges += 1,
+            2 => {}
+            _ => r.non_manifold_edges += 1,
+        }
+    }
+    r
+}
+
+impl TriMesh {
     pub fn components(&self) -> Vec<TriMesh> {
         fn find(parent: &mut [u32], mut x: u32) -> u32 {
             while parent[x as usize] != x {
