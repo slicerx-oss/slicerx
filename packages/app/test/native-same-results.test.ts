@@ -305,6 +305,9 @@ function firstCall(native: CallLog[], wasm: CallLog[]): Difference['call'] | und
   return undefined
 }
 
+/** A call only the native engine makes for a kernel body (the exact loft), which has no counterpart on the mesh path. */
+const exactOnly = (c: CallLog): boolean => c.op === 'exact.ops' || (c.request !== null && typeof c.request === 'object' && (c.request as Record<string, unknown>)['exact'] === true)
+
 /** Whether a part at this step is exact (its native part is a kernel body) or follows from one. */
 const isExact = (n: PartRecord | undefined, fromBody: boolean) => fromBody || n?.normals === true
 
@@ -328,13 +331,20 @@ export function compareSteps(design: string, steps: readonly { id: string; param
     n.parts.forEach((p, i) => p.normals && fromBody.add(i))
     const exactStep = n.parts.some((p, i) => isExact(p, fromBody.has(i)))
     const kind = exactStep ? 'exact' : 'mesh'
-    const call = exactStep ? undefined : firstCall(n.calls, w.calls)
+    // the first engine call that differs, for the mesh parts' differences (on an exact step too, where other parts are mesh)
+    const kernelOps = new Set(n.calls.filter(exactOnly).map((c) => c.op))
+    const call = firstCall(n.calls.filter((c) => !kernelOps.has(c.op)), w.calls.filter((c) => !kernelOps.has(c.op)))
     const add = (d: Omit<Difference, keyof typeof at | 'kind'> & { kind?: Difference['kind'] }) => out.push({ ...at, kind, ...d, ...(call && (d.kind ?? kind) === 'mesh' ? { call } : {}) })
     if (n.status !== w.status) add({ field: 'status', native: n.status, wasm: w.status })
     if (n.parts.length !== w.parts.length) add({ field: 'parts', native: String(n.parts.length), wasm: String(w.parts.length) })
+    const before = { n: s ? native[s - 1] : undefined, w: s ? wasm[s - 1] : undefined }
     for (let i = 0; i < Math.min(n.parts.length, w.parts.length); i++) {
       const a = n.parts[i]!
       const b = w.parts[i]!
+      // a part this step left as it was on both engines: its differences were reported at the step that made them
+      const pa = before.n?.parts[i]
+      const pb = before.w?.parts[i]
+      if (pa && pb && pa.mesh === a.mesh && pa.faces === a.faces && pb.mesh === b.mesh && pb.faces === b.faces && pa.name === a.name && pb.name === b.name) continue
       if (a.name !== b.name) add({ part: i, field: 'name', native: a.name, wasm: b.name })
       if (b.normals) add({ part: i, field: 'normals', native: String(a.normals), wasm: String(b.normals) })
       if (!isExact(a, fromBody.has(i))) {
@@ -695,6 +705,16 @@ describe('the same-results comparison', () => {
     const line = differenceLine(d[0]!)
     expect(line).toMatch(/^box step 1\/1 face\.push \(s1, request [0-9a-f]{12}, mesh step\) part 0: mesh: native 8 vertices, 12 triangles, sha256 [0-9a-f]{16} \| wasm 8 vertices, 12 triangles, sha256 [0-9a-f]{16}$/)
     expect(d[0]!.native).not.toBe(d[0]!.wasm)
+  })
+
+  it('reports a difference once, at the step that made it, and not again on the steps that leave the part as it was', () => {
+    const changed = box(0)
+    const indices = Uint32Array.from(changed.indices)
+    ;[indices[0], indices[1]] = [indices[1]!, indices[0]!]
+    changed.indices = indices
+    const twoSteps = [...oneStep, { id: 's2', params: { op: 'face.push', at: [0, 0, 0], normal: [0, 1, 0], distanceMm: 1 } as StepParams }]
+    const d = compareSteps('box', twoSteps, [record([box(0)]), record([box(0)])], [record([changed]), record([changed])])
+    expect(d.map((x) => `${x.step} ${x.field}`)).toEqual(['1 mesh'])
   })
 
   it('compares an exact part by face count, bounds, volume and distance, not by its triangles', () => {
