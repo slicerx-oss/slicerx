@@ -527,6 +527,15 @@ impl std::fmt::Debug for Model {
 }
 
 impl Model {
+    /// How many triangles of the obstacles' surfaces the walks have read ([`grid::Surface::reads`]).
+    pub(crate) fn reads(&self) -> u64 {
+        self.objects
+            .iter()
+            .filter_map(|o| o.surface.get())
+            .map(grid::Surface::reads)
+            .sum()
+    }
+
     /// Lets go of object `j`'s mesh, for a one-shot slice once no walk can read it: the walk of an object never reads
     /// its own obstacle, so once every other object's moves are walked, the last object's mesh only holds memory.
     /// Its footprint, height and hull stay.
