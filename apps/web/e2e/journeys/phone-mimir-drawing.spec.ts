@@ -36,12 +36,16 @@ const span = (key: string, label: string, value: number, a: number[], b: number[
 const SHEETS = {
   block: {
     title: 'Block sizes',
+    // its sizes must fit, so the sheet waits with its drawing up (a sheet without fits goes ahead at once)
+    fits: true,
     views: ['top', 'front', 'side', 'iso'],
     dims: [span('length', 'Length', 40, [-20, -15, 0], [20, -15, 0], [0, -12, 0]), span('height', 'Height', 20, [-20, -15, 0], [-20, -15, 20], [-12, 0, 0]), span('depth', 'Depth', 30, [20, -15, 0], [20, 15, 0], [0, 0, -12])],
     part: [{ plane: 'xy', points: [[-20, -15], [20, -15], [20, 15], [-20, 15]], from: 0, to: 20 }],
   },
   plate: {
     title: 'Plate sizes',
+    // its sizes must fit, so the sheet waits with its drawing up (a sheet without fits goes ahead at once)
+    fits: true,
     views: ['top', 'iso'],
     dims: [span('width', 'Width', 60, [-30, -20, 2], [30, -20, 2], [0, -12, 0]), span('depth', 'Depth', 40, [30, -20, 2], [30, 20, 2], [12, 0, 0])],
     part: [{ plane: 'xy', points: [[-30, -20], [30, -20], [30, 20], [-30, 20]], from: 0, to: 2 }],

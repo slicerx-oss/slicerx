@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // When mimir's reply would end with the plan approved in the same run unfinished, it goes on once and the chat shows one
-// plain line that says so. The scripted mounting plate plays that out: its sheet is confirmed, its plan gets Go, the
+// plain line that says so. The scripted mounting plate plays that out: at its default size its sheet and plan go ahead
+// with nobody asked, the
 // plate is built, and the reply stops to ask whether to add the screw holes the plan already has. The line shows once,
 // in the reply, and the run goes on to build the holes and check the part. On the desktop at 1440 px and on a phone at
 // 390 px; with SX_SHOTS set, each takes the line in light and dark.
@@ -32,12 +33,16 @@ journey.describe('mimir goes on with an approved plan it has not finished', () =
   journey('one line says it went on to the screw holes the plan still needs, and the run builds them', async ({ page, isMobile }, info) => {
     await mimirTab(page, isMobile)
     await askTab(page, 'Make a mounting plate')
-    const confirm = page.getByTestId('mimir-sheet-confirm')
-    await expect(confirm).toBeEnabled({ timeout: 30_000 })
-    await (isMobile ? confirm.tap() : confirm.click())
-    const go = page.getByTestId('mimir-plan-go')
-    await expect(go).toBeEnabled({ timeout: 30_000 })
-    await (isMobile ? go.tap() : go.click())
+    // a mounting plate at its default size goes ahead with nobody asked: its sheet reads confirmed and its plan card
+    // approved, with no Go, and one line on how to change it after
+    const sheet = page.getByTestId('mimir-sheet-record').first()
+    await expect(sheet).toHaveAttribute('data-auto', '', { timeout: 30_000 })
+    await expect(sheet.getByTestId('mimir-sheet-status')).toHaveText('Confirmed as shown')
+    await expect(sheet.getByTestId('mimir-sheet-confirm')).toHaveCount(0)
+    const card = page.getByTestId('mimir-plan-card')
+    await expect(card).toHaveAttribute('data-auto', 'true', { timeout: 30_000 })
+    await expect(card.getByTestId('mimir-plan-go')).toHaveCount(0)
+    await expect(card.getByTestId('mimir-plan-auto')).toHaveText('Built at its default size; ask to resize or change it.')
     await expect(page.getByTestId('mimir-plan-status')).toHaveText('Approved as shown')
     const transcript = page.getByTestId('mimir-transcript')
     // the reply that stopped to ask, then the line, then the holes and the check after it
