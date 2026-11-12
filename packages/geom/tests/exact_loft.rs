@@ -667,3 +667,95 @@ fn the_hull_s_and_a_block_s_edges_are_on_the_curves_their_faces_were_given() {
         assert!(lofted.off_mm <= 1e-9 * size, "{name}: {:e} mm", lofted.off_mm);
     }
 }
+
+/// A held body's faces as `brep.tessellate` sorts them into the five kinds mesh operations know, and the kernel's
+/// own kind of each face's surface.
+fn sorted(body: u64) -> (Vec<Value>, Vec<String>) {
+    let mesh: Value = serde_json::from_str(&op("brep.tessellate", &json!({ "body": body }))).unwrap();
+    let list = |v: &Value| v.as_array().expect("a list").clone();
+    let table = list(&mesh["faces"])
+        .iter()
+        .map(|f| f["surface"].clone())
+        .collect();
+    let kinds = list(&mesh["surfaces"])
+        .iter()
+        .map(|s| s["kind"].as_str().expect("a kind").to_owned())
+        .collect();
+    (table, kinds)
+}
+
+fn count(of: &[Value], kind: &str) -> usize {
+    of.iter().filter(|s| s["kind"] == kind).count()
+}
+
+// a loft's sides are spline surfaces in the kernel, flat or not. Among the five kinds a flat one is a plane, as it
+// is for the older solid operations; the kernel's own kind stays what it is
+#[test]
+fn a_loft_s_flat_sides_are_planes_among_the_five_kinds_and_its_curved_sides_are_not() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let start = table::count();
+    let lofted = |profiles: &Value, smooth: bool| -> u64 {
+        let request = json!({ "profiles": profiles, "smooth": smooth, "exact": true });
+        let reply: Value = serde_json::from_str(&op("sketch.loft", &request)).unwrap();
+        reply["body"].as_u64().expect("a body")
+    };
+    let splines = |kinds: &[String]| kinds.iter().filter(|k| *k == "spline").count();
+    let free = |body: u64| assert_eq!(op("brep.free", &json!({ "body": body })), r#"{"freed":true}"#);
+
+    let body = lofted(&block(), false);
+    let (table_of, kinds) = sorted(body);
+    assert_eq!((splines(&kinds), kinds.len()), (4, 6), "{kinds:?}");
+    for (normal, offset) in [
+        ([1.0, 0.0, 0.0], 10.0),
+        ([-1.0, 0.0, 0.0], 10.0),
+        ([0.0, 1.0, 0.0], 5.0),
+        ([0.0, -1.0, 0.0], 5.0),
+        ([0.0, 0.0, 1.0], 15.0),
+        ([0.0, 0.0, -1.0], 0.0),
+    ] {
+        let on = |s: &&Value| {
+            s["kind"] == "plane"
+                && (0..3).all(|k| (s["normal"][k].as_f64().expect("a normal") - normal[k]).abs() < 1e-9)
+                && (s["offset"].as_f64().expect("an offset") - offset).abs() < 1e-9
+        };
+        assert_eq!(
+            table_of.iter().filter(on).count(),
+            1,
+            "{normal:?} at {offset}: {table_of:?}"
+        );
+    }
+    let info: Value = serde_json::from_str(&op("brep.info", &json!({ "body": body }))).unwrap();
+    assert_eq!(info["faceTypes"], json!({ "plane": 6 }));
+    free(body);
+
+    // the same block with its middle a hundredth of a millimeter wider all round: the sides bow, and are no planes
+    let bowed = json!([
+        level(0.0, &rectangle(20.0, 10.0)),
+        level(7.5, &rectangle(20.02, 10.02)),
+        level(15.0, &rectangle(20.0, 10.0))
+    ]);
+    let body = lofted(&bowed, true);
+    let (table_of, kinds) = sorted(body);
+    assert_eq!((splines(&kinds), kinds.len()), (4, 6), "{kinds:?}");
+    assert_eq!(
+        (count(&table_of, "plane"), count(&table_of, "other")),
+        (2, 4),
+        "{table_of:?}"
+    );
+    free(body);
+
+    // the hull: its two ends are planes, and so is the strip under the keel, which every station has at height 0;
+    // the five sides that follow the stations are curved
+    let body = lofted(&hull(), true);
+    let (table_of, kinds) = sorted(body);
+    assert_eq!((splines(&kinds), kinds.len()), (6, 8), "{kinds:?}");
+    assert_eq!(
+        (count(&table_of, "plane"), count(&table_of, "other")),
+        (3, 5),
+        "{table_of:?}"
+    );
+    free(body);
+    assert_eq!(table::count(), start);
+}

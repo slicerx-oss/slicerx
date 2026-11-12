@@ -622,6 +622,52 @@ fn same_info(name: &str, held: u32, old_body: &Value) {
     }
 }
 
+// a tapered extrude's sides come out of the kernel as ruled surfaces, flat to a hundredth of a micron, and the
+// older operation puts them on exact planes before it answers. The engine, which holds the body now, answers its
+// faces as the older operation does
+#[test]
+fn a_tapered_extrude_s_sides_are_planes_as_the_older_operation_has_them() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let _one = alone();
+    let request = json!({
+        "frame": { "origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1] },
+        "polygons": [{ "outer": { "points": [[0, 0], [20, 0], [20, 10], [0, 10]] }, "holes": [] }],
+        "fromMm": 0,
+        "toMm": 5,
+        "taperDeg": 10,
+    });
+    let old_body = Old::made("extrude", &request);
+    let old: Value =
+        serde_json::from_str(&older("tessellate", &json!({ "body": old_body.0 }))).expect("reply is JSON");
+    let made = Made(run("brep.extrude", &request)["body"].clone());
+    let held = made
+        .0
+        .as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .expect("a body");
+    let new = read(held);
+    same_faces("taper", &new.answer, &old);
+    same_info("taper", held, &old_body.0);
+    let count = |list: &Value, kind: &dyn Fn(&Value) -> &Value, name: &str| {
+        list.as_array()
+            .expect("a list")
+            .iter()
+            .filter(|v| kind(v) == name)
+            .count()
+    };
+    assert_eq!(
+        count(&new.answer["faces"], &|f| &f["surface"]["kind"], "plane"),
+        6
+    );
+    assert_eq!(count(&new.answer["faces"], &|f| &f["type"], "plane"), 6);
+    // and they are planes in the kernel itself
+    assert_eq!(count(&new.answer["surfaces"], &|s| &s["kind"], "plane"), 6);
+    let (answer, _) = raw(&json!({ "body": held }));
+    assert_eq!(count(&answer["faces"]["table"], &|s| &s["kind"], "plane"), 6);
+}
+
 #[allow(clippy::float_cmp, reason = "coordinates are compared bit for bit")]
 #[test]
 fn a_held_body_tessellates_to_the_old_op_s_triangles() {
