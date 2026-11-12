@@ -526,7 +526,7 @@ describe('projections into a sketch that moved with its design', () => {
     const k = String((await run('design.sketch', { design: d, frame: { origin: [0, 0, 10], normal: [0, 0, 1] }, loops: square(0, 0, 2) })).output['id'])
     const stored = structuredClone(sketchItem(k).frame)
     // an edge picked in the design's frame, and every edge around that face
-    const e = (await run('geom.edge_pick', { design: d, face: { at: [0, -9.5, 10], normal: [0, 0, 1] } })).output as { edge: { a: number[] }; loop: { edge: unknown }[] }
+    const e = (await run('geom.edge_pick', { design: d, face: { at: [0, -9.5, 10], normal: [0, 0, 1] }, list_edges: true })).output as { edge: { a: number[] }; loop: { edge: unknown }[] }
     expect(e.edge.a.map(r2)[1]).toBe(-10)
     expect((await run('design.sketch_project', { sketch: k, design: d, kind: 'edges', edges: e.loop.map((l) => l.edge), mode: 'real' })).ok).toBe(true)
     const pad = await run('geom.extrude', { design: d, sketch: k, distance_mm: 2, operation: 'join' })

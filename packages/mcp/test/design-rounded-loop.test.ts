@@ -42,7 +42,7 @@ describe('a client rounds a rounded box', () => {
     const box = await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 30, heightMm: 20, cornerRadiusMm: 3 }, distance_mm: 6, name: 'Box' })
     expect(box.sizeMm).toEqual([30, 20, 6])
 
-    const e = await h.call('slicerx_geom_edge_pick', { design: d, face: { at: [0, -9.9, 6], normal: [0, 0, 1] } })
+    const e = await h.call('slicerx_geom_edge_pick', { design: d, face: { at: [0, -9.9, 6], normal: [0, 0, 1] }, list_edges: true })
     expect(e.isError, text(e)).toBeFalsy()
     const pick = data<{ output: { edge: EdgeRef; supported: boolean; lengthMm: number; maxRadiusMm: number; loop: { edge: EdgeRef; supported: boolean }[] } }>(e).output
     expect(pick.supported).toBe(true)
@@ -54,7 +54,7 @@ describe('a client rounds a rounded box', () => {
     const loop = pick.loop.map((l) => l.edge)
 
     // a round wider than the corners is refused in words and leaves the design as it was
-    const tight = await h.call('slicerx_geom_fillet', { design: d, edges: loop, radius_mm: 3.5 })
+    const tight = await h.call('slicerx_geom_fillet', { design: d, edges: loop, radius_mm: 3.5, all_or_nothing: true })
     expect(tight.isError).toBe(true)
     expect(text(tight)).toMatch(/does not fit.*design is unchanged/s)
 
