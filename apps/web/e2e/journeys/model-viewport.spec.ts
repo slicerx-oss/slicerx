@@ -239,25 +239,34 @@ test.describe('Model CAD look', () => {
 
   test('Model draws each part in its filament color with its edges, the colors Slice shows', async ({ page }) => {
     test.slow()
-    await sliceTab(page).click()
-    await openModel(page, join(starters(), 'x-mark.sx3mf'))
-    await designTab(page).click()
-    await expect.poll(async () => (await look(page)).mode).toBe('cadColor')
-    const model = await look(page)
-    expect(model.edges).toBe(true)
-    // drawn wide (1.5 px), not as 1 px GL lines, and outlined where the model meets what is behind it
-    expect(model.wide).toBe(true)
-    await expect.poll(async () => (await look(page)).silhouette).toBe(true)
-    // Model's colors once its look has settled (the silhouette pass is on): a design's colors follow its filaments in a
-    // store update of their own after the open, so the first frame in Model may still show the file's
-    const modelColors = (await look(page)).colors
-    await sliceTab(page).click()
-    await expect.poll(async () => (await look(page)).mode).not.toBe('cadColor')
-    // the same filament colors as Slice, on the CAD finish, polled like the mode: Slice's part colors can reach the view
-    // in a plate update after the one that flips the mode
-    await expect.poll(async () => (await look(page)).colors).toEqual(modelColors)
-    expect((await look(page)).wide).toBe(false)
-    await expect.poll(async () => (await look(page)).silhouette).toBe(false)
+    // The filaments are set here, so the colors do not come from an earlier test on the shared page (one that sets dark
+    // red ones leaves them). Both are lighter than the CAD look's floor for very dark parts (cadBodyHex), which Model
+    // lifts and Slice does not, so Model and Slice draw them in the same color.
+    const slots = { 1: { type: 'PLA', brand: '', color: '#ff5555' }, 2: { type: 'PLA', brand: '', color: '#8be9fd' } }
+    const was = await page.evaluate(() => (window as unknown as { __sx: { getState(): { slotSetup: unknown } } }).__sx.getState().slotSetup)
+    await setState(page, { slotSetup: slots })
+    try {
+      await sliceTab(page).click()
+      await openModel(page, join(starters(), 'x-mark.sx3mf'))
+      await designTab(page).click()
+      await expect.poll(async () => (await look(page)).mode).toBe('cadColor')
+      const model = await look(page)
+      expect(model.edges).toBe(true)
+      // drawn wide (1.5 px), not as 1 px GL lines, and outlined where the model meets what is behind it
+      expect(model.wide).toBe(true)
+      await expect.poll(async () => (await look(page)).silhouette).toBe(true)
+      // each part in its filament's color, the plinth on filament 1 and the X on filament 2, polled like the mode
+      const colors = ['ff5555', '8be9fd']
+      await expect.poll(async () => (await look(page)).colors).toEqual(colors)
+      await sliceTab(page).click()
+      await expect.poll(async () => (await look(page)).mode).not.toBe('cadColor')
+      // the same filament colors in Slice, on its own finish
+      await expect.poll(async () => (await look(page)).colors).toEqual(colors)
+      expect((await look(page)).wide).toBe(false)
+      await expect.poll(async () => (await look(page)).silhouette).toBe(false)
+    } finally {
+      await setState(page, { slotSetup: was })
+    }
   })
 
   /** The studio the view draws with, read back from the view itself (the debug handle), so it is what is drawn with and not what the theme says. */
