@@ -16,6 +16,8 @@ name: desktop-release
 # since a release is never a demo build (apps/desktop/release/check-demo-data.mjs).
 # No updater artifacts or TAURI_SIGNING_PRIVATE_KEY here: update bundles are signed on the release Mac
 # (apps/desktop/release/updates.md).
+# The exact kernel (the desktop crate's native-geom feature) is built into each leg whose matrix entry has
+# kernel: true; set it to false to drop the kernel from that leg alone.
 
 on:
   push:
@@ -52,14 +54,17 @@ jobs:
             os: macos-latest
             args: --target universal-apple-darwin --bundles app,dmg
             targets: aarch64-apple-darwin x86_64-apple-darwin
+            kernel: true
           - name: windows
             os: windows-latest
             args: --target x86_64-pc-windows-msvc --bundles nsis,msi
             targets: x86_64-pc-windows-msvc
+            kernel: true
           - name: linux
             os: ubuntu-24.04
             args: --target x86_64-unknown-linux-gnu --bundles appimage,deb
             targets: x86_64-unknown-linux-gnu
+            kernel: true
     runs-on: ${{ matrix.os }}
     # The backend the app talks to, from repository variables (the anon key is the public publishable one). Without
     # both the build is a demo build, which the release check below refuses.
@@ -202,6 +207,25 @@ jobs:
           target="${target#*--target }"
           target="${target%% *}"
           node apps/desktop/release/prepare-sidecars.mjs --target "$target" --config apps/desktop/src-tauri/gen/edition.conf.json
+
+      # The exact kernel, on the legs that ship it: its source at the pinned commit, hash-checked, with the routine swap
+      # checked (packages/brep/scripts/fetch-smlib.sh). SX_BREP_REQUIRE=1 makes a build without it fail instead of
+      # building the stand-in. kernel-config.mjs turns native-geom on through the edition config and adds the kernel's
+      # license files to the bundle.
+      - name: Kernel source cache
+        if: matrix.kernel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/slicerx/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - name: Exact kernel
+        if: matrix.kernel
+        shell: bash
+        run: |
+          kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
+          if [ "$RUNNER_OS" = Windows ]; then kernel=$(cygpath -m "$kernel"); fi
+          { echo "SX_SMLIB_DIR=$kernel"; echo "SX_BREP_REQUIRE=1"; } >> "$GITHUB_ENV"
+          node apps/desktop/release/kernel-config.mjs --config apps/desktop/src-tauri/gen/edition.conf.json --kernel "$kernel"
 
       # The agent bridge is for dev and test builds only (docs/agent-bridge.md).
       - name: Agent bridge off

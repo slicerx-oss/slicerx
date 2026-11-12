@@ -20,6 +20,8 @@
 #                     slicerx-mimir-register-key); without one the app has no mimir cloud
 #   SLICERX_SUPABASE_URL, SLICERX_SUPABASE_ANON_KEY  the backend (required): without both the build would be a demo
 #                     build, which check-demo-data.mjs refuses
+#   SX_RELEASE_KERNEL 0 drops the exact kernel (the desktop crate's native-geom feature) from this build; it is built
+#                     in otherwise
 set -euo pipefail
 
 identity=${SX_SIGN_IDENTITY:-"Developer ID Application: SEAN LEONARD (X2928JZ7GJ)"}
@@ -68,6 +70,17 @@ pnpm --filter @slicerx/slicer build:wasm
 sh packages/geom/wasm/scripts/build.sh
 pnpm --filter @slicerx/desktop tauri:config
 node apps/desktop/release/prepare-sidecars.mjs --target universal-apple-darwin --config apps/desktop/src-tauri/gen/edition.conf.json
+# The exact kernel: its source at the pinned, hash-checked commit with the routine swap checked (fetch-smlib.sh), and
+# SX_BREP_REQUIRE=1, so a build without it fails instead of building the stand-in (for both architectures).
+# kernel-config.mjs turns native-geom on through the edition config and adds the kernel's license files.
+if [[ ${SX_RELEASE_KERNEL:-1} != 0 ]]; then
+  say "kernel source"
+  kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
+  export SX_SMLIB_DIR=$kernel SX_BREP_REQUIRE=1
+  node apps/desktop/release/kernel-config.mjs --config apps/desktop/src-tauri/gen/edition.conf.json --kernel "$kernel"
+else
+  say "kernel: off (SX_RELEASE_KERNEL=0)"
+fi
 (cd apps/desktop && pnpm tauri build --config src-tauri/gen/edition.conf.json --target universal-apple-darwin --bundles app)
 
 bundle=$repo/target/universal-apple-darwin/release/bundle/macos
