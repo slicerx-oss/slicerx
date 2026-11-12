@@ -102,7 +102,7 @@ export interface ToolContext {
   confirmsPlan?(): boolean
   /**
    * Shows a dimension sheet and waits for the person to confirm or edit it; absent where nobody can answer. A sheet
-   * without fits shows and is confirmed as shown at once.
+   * without fits, and any sheet in a follow-up on a built design, shows and is confirmed as shown at once.
    */
   sheet?(sheet: Omit<PilotSheet, 'id'>): Promise<PilotSheetAnswer>
   /** True when a built design with this id is there for a sheet to draw; absent where the host has no plate. */

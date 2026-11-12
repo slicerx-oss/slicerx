@@ -360,7 +360,7 @@ export interface PilotSheetAnswer {
   values: Record<string, number>
   changed: string[]
   said?: string
-  /** Nobody was asked: the sheet showed and the build went ahead with its sizes (no fits). */
+  /** Nobody was asked: the sheet showed and the build went ahead with its sizes (no fits, or a follow-up). */
   auto?: true
 }
 
