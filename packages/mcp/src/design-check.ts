@@ -1198,6 +1198,12 @@ export interface PlanEntry {
 
   /** Its last design.check passed; a whole new design of its part is then refused (design.new). */
   passed?: true
+  /** A check of it has passed at least once: its part was built, and a later failed check comes from a change since. */
+  passedOnce?: true
+  /** The person asked for a change to the built part (an asked amend): a check that change breaks is fixed or undone. */
+  followUp?: true
+  /** Failed checks since its last pass, once it has passed; a follow-up change that breaks it is fixed or undone. */
+  failsSincePass?: number
 
   /** How many times the build changed the plan with an amend (plan-amend.ts), plus one: absent for the plan as first approved. */
   revision?: number
@@ -1239,6 +1245,16 @@ export const FIX_ROUNDS = 1
  */
 export const fixRoundOpen = (planId: string): string =>
   `This is not the last check: the plan has one fix round, and it is open. Fix each failed item now (change the part until it has what the plan wants, or, for a planned size the build cannot keep, change the plan with amends), then check plan ${planId} again. Do not stop or ask the person yet; only a second failed check ends the building.`
+
+/**
+ * What a failed check says once its part has passed before: a change made since broke it, so it is fixed or undone in
+ * the same turn, never left as a question that holds up what the person asks next. The second failure in a row since
+ * the pass asks for the undo. It names no tool, as the mimir card's step row shows it too.
+ */
+export const changeBroke = (planId: string, fails: number): string =>
+  fails >= 2
+    ? `The part was built to plan ${planId} before this change, and it still fails after a fix: undo the change that broke it now, check plan ${planId} again, and say in the reply what you undid and why it could not stay. Do not ask the person how to go on, and make whatever else they asked for.`
+    : `The part was built to plan ${planId} before this change, so the change broke it. Fix that change now, in this turn (smaller, shallower or fewer, until the failed item passes), then check plan ${planId} again; or undo it and say why it could not stay. Do not stop or ask the person how to go on, and make whatever else they asked for.`
 
 /** Plans kept at most for each origin; putting one more drops the one of that origin put longest ago. */
 export const MAX_PLANS = 50
@@ -1293,6 +1309,8 @@ export interface PlanRegistry {
    * and the fix round starts again, since the build that follows is a new one. Returns the new revision, or 0.
    */
   asked(planId: string, words: string): number
+  /** A closed plan whose part changed since: open again as a change after the build (followUp), its fix round cleared. */
+  reopenAfterBuild(planId: string): void
   /** Records the design the chat started for a kept plan's part, stale or not (PlanEntry.claimed); no-op for an unknown plan. */
   claim(planId: string, design: string): void
   /** Keeps the fit check just run on a design, replacing the one before. */
@@ -1324,7 +1342,7 @@ export function createPlanRegistry(): PlanRegistry {
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.superseded ? { superseded: was.superseded } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}), ...(was?.revision ? { revision: was.revision } : {}), ...(was?.amendedAt !== undefined ? { amendedAt: was.amendedAt } : {}), ...(was?.amendWhy ? { amendWhy: was.amendWhy } : {}) }
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.passedOnce ? { passedOnce: was.passedOnce } : {}), ...(was?.followUp ? { followUp: was.followUp } : {}), ...(was?.failsSincePass ? { failsSincePass: was.failsSincePass } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.superseded ? { superseded: was.superseded } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}), ...(was?.revision ? { revision: was.revision } : {}), ...(was?.amendedAt !== undefined ? { amendedAt: was.amendedAt } : {}), ...(was?.amendWhy ? { amendWhy: was.amendWhy } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -1352,8 +1370,11 @@ export function createPlanRegistry(): PlanRegistry {
         delete entry.replaceable
         delete entry.openAtFail
         entry.passed = true
+        entry.passedOnce = true
+        entry.failsSincePass = 0
       } else {
         delete entry.passed
+        if (entry.passedOnce || entry.followUp) entry.failsSincePass = (entry.failsSincePass ?? 0) + 1
         entry.failedChecks = (entry.failedChecks ?? 0) + 1
         entry.replaceable = true
         if (open) entry.openAtFail = [...open]
@@ -1397,11 +1418,21 @@ export function createPlanRegistry(): PlanRegistry {
       const entry = plans.get(planId)
       if (!entry) return 0
       entry.revision = (entry.revision ?? 1) + 1
+      // a change the person asked for once the part is built: a check it breaks is fixed or undone, never a stop
+      entry.followUp = true
+      entry.failsSincePass = 0
       delete entry.closed
       delete entry.amendedAt
       delete entry.failedChecks
       entry.amendWhy = `asked: ${words}`
       return entry.revision
+    },
+    reopenAfterBuild(planId) {
+      const entry = plans.get(planId)
+      if (!entry) return
+      delete entry.closed
+      entry.followUp = true
+      entry.failsSincePass = 0
     },
     claim(planId, design) {
       const entry = plans.get(planId)
