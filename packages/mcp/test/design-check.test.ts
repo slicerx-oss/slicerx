@@ -154,14 +154,12 @@ describe('designCheck', () => {
     expect(thin.items.at(-1)!.warning).toBeUndefined()
   })
 
-  it('a wall that was not measured fails; one too dense to measure in time passes with a warning, never silently', () => {
+  it('a wall that was not measured fails, and says why when it was on purpose', () => {
     const r = designCheck(bracket, { ...built, minWallMm: null }, 0.4)
     expect(failed(r)).toEqual(['minimum wall'])
     expect(r.items.at(-1)).toMatchObject({ name: 'minimum wall', got: 'not measured', pass: false })
     const dense = designCheck(bracket, { ...built, minWallMm: null, minWallWhy: 'part too dense' }, 0.4)
-    expect(dense.pass).toBe(true)
-    expect(dense.items.at(-1)).toMatchObject({ got: 'not measured (part too dense)', pass: true })
-    expect(dense.items.at(-1)!.warning).toContain('not measured: the part has too many facets to measure in time')
+    expect(dense.items.at(-1)).toMatchObject({ got: 'not measured (part too dense)', pass: false })
   })
 
   it('compares the size axis by axis: an x and y swap passes, a swap with z fails and says to rotate it', () => {
@@ -400,10 +398,7 @@ describe('minWall', () => {
     // out of time: a clock that jumps a minute at every look
     let t = 0
     expect(minWall([m], { maxFacets: 1_000_000, maxMs: 1000 }, () => (t += 60_000))).toEqual({ mm: null, why: 'part too dense' })
-    // a warning, never a failure and never a silent pass
-    const dense = designCheck(bracket, { ...built, minWallMm: null, minWallWhy: 'part too dense' }, 0.4)
-    expect(dense.pass).toBe(true)
-    expect(dense.items.find((i) => i.name === 'minimum wall')!.warning).toContain('not measured')
+    expect(designCheck(bracket, { ...built, minWallMm: null, minWallWhy: 'part too dense' }, 0.4).pass).toBe(false)
   })
 
   it('measures a hollowed curved part as dense as a voxel shell leaves it, within the time budget', () => {

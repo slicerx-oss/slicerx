@@ -603,12 +603,8 @@ function curvedItem(plan: PartPlan, body: BodyFacts): CheckItem | null {
 /**
  * The minimum wall: the thinnest wall away from sharp edges and points against twice the nozzle. Thinner readings
  * within two nozzle widths of a sharp outward edge or a point are the edge's taper, which the slicer drops or prints as
- * a thin line, so they warn with where they are and never fail the part; a real thin wall elsewhere still fails. A
- * part too dense to measure in time passes with a warning that the wall was not measured.
+ * a thin line, so they warn with where they are and never fail the part; a real thin wall elsewhere still fails.
  */
-/** Why body-facts.ts gives for a wall past its measuring budget. */
-export const TOO_DENSE_WHY = 'part too dense'
-
 function wallItem(body: BodyFacts, nozzle: number): CheckItem {
   const wall = minWallFor(nozzle)
   const want = `at least ${mm(wall)} (twice the ${mm(nozzle)} nozzle)`
@@ -619,10 +615,6 @@ function wallItem(body: BodyFacts, nozzle: number): CheckItem {
   if (body.minWallMm === null) {
     const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'
     if (tip) return { name: 'minimum wall', want, got: `${mm(tip.mm)} at a sharp edge or point only`, pass: true, warning: tipWarning }
-    // a part past the measuring budget (a dense lofted or patterned model) is not failed for its size, and never passes
-    // silently: the item says the wall was not measured
-    if (body.minWallWhy === TOO_DENSE_WHY)
-      return { name: 'minimum wall', want, got: unmeasured, pass: true, warning: 'not measured: the part has too many facets to measure in time. Look over its thinnest places (fins, rims, masts) against twice the nozzle yourself' }
     return { name: 'minimum wall', want, got: unmeasured, pass: false }
   }
   const pass = body.minWallMm >= wall - 1e-6
