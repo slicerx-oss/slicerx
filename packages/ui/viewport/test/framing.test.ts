@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { Box3, PerspectiveCamera, Vector3 } from 'three'
+import { Box3, PerspectiveCamera, Sphere, Vector3 } from 'three'
 import { describe, expect, it, vi } from 'vitest'
 import { applyInsets, CameraRig, freeArea, NO_INSETS, type Insets } from '../src/camera'
 
@@ -148,5 +148,83 @@ describe('a jump to a pose', () => {
     const next = p.clone().project(drawn)
     expect(now.x).toBeCloseTo(next.x, 6)
     expect(now.y).toBeCloseTo(next.y, 6)
+  })
+})
+
+describe('fit: a long thin part fills the view, a compact one frames as before', () => {
+  const W = 886
+  const H = 674
+  /** The camera distance Fit used before it looked at the part's own outline: its bounding sphere's, with 12 percent room. */
+  function sphereDistance(camera: PerspectiveCamera, fw: number, fh: number, box: Box3): number {
+    const fov = (camera.fov * Math.PI) / 180
+    const fovH = 2 * Math.atan(Math.tan(fov / 2) * camera.aspect)
+    const half = Math.min(Math.atan(Math.tan(fov / 2) * fh), Math.atan(Math.tan(fovH / 2) * fw))
+    return (box.getBoundingSphere(new Sphere()).radius * 1.12) / Math.sin(half)
+  }
+  /** Fit from the camera at `from`, and the share of the view's width and height the part's corners then take. */
+  function fit(box: Box3, from: Vector3) {
+    const { camera, rig } = setup(W, H, NO_INSETS)
+    camera.position.copy(from)
+    const pose = rig.presetPose('fit', box, 256)
+    const before = sphereDistance(camera, rig.free.fw, rig.free.fh, box)
+    const distance = pose.pos.distanceTo(pose.target)
+    camera.position.copy(pose.pos)
+    camera.lookAt(pose.target)
+    camera.updateProjectionMatrix()
+    camera.updateMatrixWorld(true)
+    const px = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera))
+    const xs = px.map((p) => ((p.x + 1) / 2) * W)
+    const ys = px.map((p) => ((1 - p.y) / 2) * H)
+    const span = { w: (Math.max(...xs) - Math.min(...xs)) / W, h: (Math.max(...ys) - Math.min(...ys)) / H }
+    const inside = Math.min(...xs) >= 0 && Math.max(...xs) <= W && Math.min(...ys) >= 0 && Math.max(...ys) <= H
+    return { distance, before, span, inside, target: pose.target }
+  }
+  const ISO = new Vector3(400, 300, 500)
+  const SIDE = new Vector3(0, 0.001, 600)
+  const TOP = new Vector3(0, 600, 0.5)
+  // A 20 mm calibration cube, the 64 x 60 x 22 mm layered X (y up), and a 255 x 51 x 27 mm ship, all on the bed.
+  const CUBE = new Box3(new Vector3(-10, 0, -10), new Vector3(10, 20, 10))
+  const X = new Box3(new Vector3(-32, 0, -11), new Vector3(32, 60, 11))
+  const SHIP = new Box3(new Vector3(-127.75, 0, -13.5), new Vector3(127.75, 51, 13.5))
+
+  it('frames a 20 mm cube exactly as before', () => {
+    for (const from of [ISO, SIDE, TOP]) {
+      const r = fit(CUBE, from)
+      expect(r.distance / r.before).toBeCloseTo(1, 6)
+    }
+  })
+
+  it('frames the layered X within 3 percent of before, never farther', () => {
+    for (const from of [ISO, SIDE, TOP]) {
+      const r = fit(X, from)
+      // nearer by 1.2 percent from the front right and 2.4 percent from the side or the top
+      expect(r.distance / r.before).toBeLessThanOrEqual(1 + 1e-9)
+      expect(r.distance / r.before).toBeGreaterThan(0.97)
+      expect(r.inside).toBe(true)
+    }
+  })
+
+  it('brings a long thin part in until it fills the view, from the front right, the side and the top', () => {
+    // From the front right the sphere left the ship 57 percent of the width; it now takes about three quarters, as
+    // Isometric gives it. Seen broadside its length already sets the sphere, so the side and top views keep their
+    // framing, about two thirds of the width.
+    const iso = fit(SHIP, ISO)
+    expect(iso.distance / iso.before).toBeLessThan(0.8)
+    expect(iso.span.w).toBeGreaterThan(0.7)
+    expect(iso.inside).toBe(true)
+    for (const from of [SIDE, TOP]) {
+      const r = fit(SHIP, from)
+      expect(r.distance / r.before).toBeLessThanOrEqual(1 + 1e-9)
+      expect(r.span.w).toBeGreaterThan(0.6)
+      expect(r.inside).toBe(true)
+    }
+  })
+
+  it('frames a selection away from the middle of the bed around its own center', () => {
+    const sel = SHIP.clone().translate(new Vector3(60, 0, -40))
+    const r = fit(sel, ISO)
+    expect(r.target.distanceTo(sel.getCenter(new Vector3()))).toBeLessThan(1e-9)
+    expect(r.inside).toBe(true)
+    expect(r.span.w).toBeGreaterThan(0.7)
   })
 })

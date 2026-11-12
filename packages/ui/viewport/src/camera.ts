@@ -48,8 +48,8 @@ export function reducedMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-/** Distance at which the box's projected corners fill the given share of the view. */
-function fitDistance(cam: PerspectiveCamera, box: Box3, dir: Vector3, fillH: number, fillW: number): { target: Vector3; distance: number } {
+/** Distance at which the box's projected corners fill the given share of the view, at least `floor` mm. */
+function fitDistance(cam: PerspectiveCamera, box: Box3, dir: Vector3, fillH: number, fillW: number, floor = 60): { target: Vector3; distance: number } {
   const target = box.getCenter(new Vector3())
   const pts: Vector3[] = []
   for (let i = 0; i < 8; i++) pts.push(new Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z))
@@ -70,7 +70,22 @@ function fitDistance(cam: PerspectiveCamera, box: Box3, dir: Vector3, fillH: num
     }
     d *= Math.max((y1 - y0) / 2 / fillH, (x1 - x0) / 2 / fillW)
   }
-  return { target, distance: Math.max(d, 60) }
+  return { target, distance: Math.max(d, floor) }
+}
+
+/**
+ * How much nearer Fit may stand than the distance that fits `box`'s bounding sphere: the distance that fits the box
+ * itself over the one that fits a cube with the same sphere, seen from `dir`, at most 1. A cube frames exactly as the
+ * sphere does and a compact part nearly so, while a long thin part, whose sphere is as wide as it is long, comes in
+ * until its own outline fills the view about as much as a cube's does.
+ */
+function nearerThanCube(cam: PerspectiveCamera, box: Box3, sphere: Sphere, dir: Vector3, fh: number, fw: number): number {
+  const s = sphere.radius / Math.sqrt(3)
+  if (!(s > 0)) return 1
+  const cube = new Box3(sphere.center.clone().subScalar(s), sphere.center.clone().addScalar(s))
+  const own = fitDistance(cam, box, dir, fh, fw, 0).distance
+  const ref = fitDistance(cam, cube, dir, fh, fw, 0).distance
+  return ref > 0 && Number.isFinite(own) ? Math.min(1, own / ref) : 1
 }
 
 /** Pixels of the view that overlays cover on each side (the legend, the layer strip, the playback bar). */
@@ -156,7 +171,7 @@ export class CameraRig {
     } else if (kind === 'fit') {
       target = sphere.center.clone()
       dir = cam.position.clone().sub(this.controls.target).normalize()
-      d = distFor(sphere.radius * 1.12)
+      d = distFor(sphere.radius * 1.12) * nearerThanCube(cam, box, sphere, dir, fh, fw)
     } else if (kind === 'plate') {
       // The opening view: the whole build plate from a three-quarter view above the front, with the parts (and anything
       // tall on it) in view.
