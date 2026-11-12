@@ -68,8 +68,8 @@ const settled = async (n) => {
   throw new Error('calls did not settle')
 }
 const KEY = 'integration-key-slicerx'
-// back to the seeds (0022, 0023, 0028): $1 an install, $20 for SlicerX's day, open calls at $0.05
-const RESET = "update public.mimir_limits set install_daily_micros = 1000000, edition_daily_micros = 20000000, install_call_micros = 50000, install_in_flight = 3, register_key_hash = null where edition = 'slicerx'"
+// back to the seeds (0022, 0023, 0028, 0034): $20 an install, $20 for SlicerX's day, open calls at $0.05
+const RESET = "update public.mimir_limits set install_daily_micros = 20000000, edition_daily_micros = 20000000, install_call_micros = 50000, install_in_flight = 3, register_key_hash = null where edition = 'slicerx'"
 
 try {
   sql('delete from public.mimir_sessions; delete from public.mimir_calls; delete from public.mimir_installs')
