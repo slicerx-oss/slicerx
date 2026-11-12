@@ -6,7 +6,7 @@
 // own numbers and laid on them as the step replays, so an edit of a size, a move or a section afterwards keeps it, the
 // timeline shows the same steps, and undoing the edit takes it back. A pattern made of the step copies the leaning one.
 import { meshPieces } from '@slicerx/contracts/mesh-pieces'
-import { BED_FRAME, type HistoryMesh, type LoftProfile, type Step, type StepParams, type StepTilt } from './model'
+import { BED_FRAME, direction, point, type HistoryMesh, type LoftProfile, type Step, type StepParams, type StepTilt } from './model'
 import { movedParams } from './design-frame'
 import type { Mat4, SketchLoop, Vec2, Vec3 } from './types'
 
@@ -154,14 +154,18 @@ export function nearestFoot(feet: readonly Vec3[], q: Vec3, up: Vec3): Vec3 | un
 
 /**
  * A part's points turned, each separate piece (partPieces) by the turn `turnOf` gives for its vertices; its faces keep
- * their keys, and the shape it was made as no longer fits.
+ * their keys. A part made as a shape is one piece, and the shape turns with it (its frame), so an exact replay still
+ * starts the part as the kernel's solid of that shape; a part of several pieces is no one shape.
  */
 function turnedPart(part: HistoryMesh, turnOf: (at: readonly number[]) => Mat4 | null): HistoryMesh {
   const p = part.positions
   const out = Float32Array.from(p)
-  for (const at of partPieces(part)) {
+  const pieces = partPieces(part)
+  let one: Mat4 | null = null
+  for (const at of pieces) {
     const m = turnOf(at)
     if (!m) continue
+    if (pieces.length === 1) one = m
     for (const v of at) {
       const i = v * 3
       const [x, y, z] = [p[i]!, p[i + 1]!, p[i + 2]!]
@@ -170,8 +174,14 @@ function turnedPart(part: HistoryMesh, turnOf: (at: readonly number[]) => Mat4 |
       out[i + 2] = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!
     }
   }
-  const { primitive: _shape, ...rest } = part
-  return { ...rest, positions: out }
+  if (!part.primitive || (pieces.length === 1 && !one)) return { ...part, positions: out }
+  // a shape is one piece and turns with it; a part of several pieces is no one shape
+  if (!one) {
+    const { primitive: _shape, ...rest } = part
+    return { ...rest, positions: out }
+  }
+  const f = part.primitive.frame
+  return { ...part, positions: out, primitive: { ...part.primitive, frame: { origin: point(one, f.origin), u: direction(one, f.u), normal: direction(one, f.normal) } } }
 }
 
 /**

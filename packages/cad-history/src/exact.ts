@@ -385,6 +385,9 @@ export function fits(spec: PrimitiveSpec, positions: ArrayLike<number>, indices:
   return true
 }
 
+/** The steps exactStep has a version of on exact solids. */
+const EXACT_STEPS: ReadonlySet<StepParams['op']> = new Set(['face.push', 'hole.apply', 'shape.extrude', 'subtract', 'boolean', 'edge.fillet', 'edge.chamfer', 'plane.cut'])
+
 /**
  * The parts after step `s` on exact solids, or null when the mesh path should run it. Kernel failures come back as
  * null too, with `fellBack` told; an answer that is the step's real result (a plane that misses) throws ExactBroken.
@@ -409,6 +412,8 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
     const keys = (r as Record<string, unknown>)[`${k}Keys`]
     return { name: like.name, slot: like.slot, positions: [], indices: [], body: v, unmeshed: Array.isArray(keys) ? (keys as number[]) : [] }
   }
+  // a step with no exact version runs on the mesh, before any part is made a solid for it
+  if (!EXACT_STEPS.has(p.op)) return null
   try {
     // the parts the step works on that Add shape made, and still fit the shape, start as the kernel's solid of it;
     // not a sphere yet, whose triangles at the mesh's resolution take the kernel over 20 ms
