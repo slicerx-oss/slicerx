@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Solids joined from faces: straight and cubic curves held exactly, ruled, skinned and flat faces, which face of the
-// body each given face became, and the refusals when the faces leave the solid open. Empty without the typed
+// body each given face became, the joined edges read back against the curves the faces were given, and the
+// refusals when the faces leave the solid open or meet off their curves. Empty without the typed
 // feature, so a workspace test run that names every test target passes over it.
 #![cfg(feature = "typed")]
 use sx_brep::{Body, Error, Path, Sheet, Surface, Tessellation};
@@ -265,4 +266,59 @@ fn faces_the_kernel_pulled_together_are_refused_with_the_gap_in_mm() {
             );
         }
     }
+}
+
+// After the join, every edge of the body is read back against the curves its two faces were given. On faces that
+// meet on their curves that is rounding.
+#[test]
+fn the_edges_of_joined_faces_are_on_the_curves_the_faces_were_given() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let block = tower(square(10.0, 0.0), square(10.0, 5.0), line);
+    let cubic_block = tower(square(10.0, 0.0), square(10.0, 5.0), cubic);
+    let tapered = tower(square(10.0, 0.0), square(6.0, 10.0), cubic);
+    let big = tower(square(400.0, 0.0), square(400.0, 200.0), line);
+    for (name, sheets, size) in [("block", block, 5.0), ("block on cubic rails", cubic_block, 5.0), ("tapered block", tapered, 10.0), ("block 400 mm", big, 200.0)] {
+        let (_, order, off) = Body::stitched_off(&sheets).unwrap_or_else(|why| panic!("{name}: {why}"));
+        assert_eq!(order.len(), 6, "{name}");
+        println!("EDGES {name}: the edges are {off:e} mm from the curves given");
+        assert!(off <= 1e-9 * size, "{name}: {off:e} mm");
+    }
+}
+
+/// A block 10 mm square and 5 mm high whose top face is given its side from `top[0]` to `top[1]` as a cubic that
+/// bows `bow` mm out in the top's plane, while the side face under it is given the straight line there. The two
+/// meet at both corners and nowhere between.
+fn block_with_a_bowed_top(bow: f64) -> Vec<Sheet> {
+    let top = square(10.0, 5.0);
+    let mut sheets = tower(square(10.0, 0.0), top, line);
+    // a cubic's middle is three quarters of the way out to its two inner control points
+    let out = bow * 4.0 / 3.0;
+    let at = |t: f64| [top[0][0] + (top[1][0] - top[0][0]) * t, top[0][1] - out, top[0][2]];
+    let mut sides = ring(&top);
+    sides[0] = Path::Cubics(vec![[top[0], at(1.0 / 3.0), at(2.0 / 3.0), top[1]]]);
+    sheets[5] = Sheet::Flat(sides);
+    sheets
+}
+
+#[test]
+fn faces_joined_off_the_curves_they_were_given_are_refused() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // within a billionth of the size the two are one curve
+    let (_, _, off) = Body::stitched_off(&block_with_a_bowed_top(1e-10)).expect("a block");
+    assert!(off <= 5e-9, "{off:e}");
+    // 5e-4 mm apart between the corners: the gap the kernel reports does not see it, the edges read back do
+    let why = Body::stitched(&block_with_a_bowed_top(5e-4)).expect_err("a refusal");
+    let Error::Moved { off_mm } = &why else {
+        panic!("{why}");
+    };
+    println!("EDGES bowed top: {why}");
+    assert!((1e-4..=5.0001e-4).contains(off_mm), "{off_mm:e}");
+    assert_eq!(
+        why.to_string(),
+        format!("stitch: the faces were joined along a side {off_mm:.3e} mm off the curves they were given; they must meet on them")
+    );
 }

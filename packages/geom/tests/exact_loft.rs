@@ -639,3 +639,24 @@ fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
     }
     assert_eq!(table::count(), start);
 }
+
+#[test]
+fn the_hull_s_and_a_block_s_edges_are_on_the_curves_their_faces_were_given() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let block = json!([
+        level(0.0, &rectangle(20.0, 10.0)),
+        level(15.0, &rectangle(20.0, 10.0))
+    ]);
+    // the largest coordinate of each: 217.6 mm and 15 mm
+    for (name, profiles, opts, size) in [
+        ("hull, smooth", hull(), json!({ "smooth": true }), 217.6),
+        ("hull, straight", hull(), json!({}), 217.6),
+        ("block", block, json!({}), 15.0),
+    ] {
+        let lofted = exact::lofted(&rails_of(&profiles, &opts)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        println!("EDGES {name}: the edges are {:e} mm from the curves given", lofted.off_mm);
+        assert!(lofted.off_mm <= 1e-9 * size, "{name}: {:e} mm", lofted.off_mm);
+    }
+}
