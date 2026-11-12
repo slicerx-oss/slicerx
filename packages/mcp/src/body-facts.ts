@@ -364,15 +364,63 @@ export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGE
     return { mm: Number.isFinite(read.best) ? r3(read.best) : null, ...tip }
   }
   const seen: Mesh[] = []
-  for (const m of meshes) {
+  // the faces where two parts meet at a cut, read only when a taper asks
+  let cuts: SharedCuts | null = null
+  for (const [k, m] of meshes.entries()) {
     // a part that is another one moved (an arrayed copy) has its walls: it is read once
     if (seen.some((o) => moved(o, m))) continue
     seen.push(m)
-    const done = Math.floor(m.indices.length / 3) <= budget.maxFacets && partWall(m, read, budget.maxWork, opposed, floor, used)
+    const onCut = meshes.length > 1 ? (p: V3, n: V3): boolean => (cuts ??= sharedCuts(meshes)).has(k, p, n) : undefined
+    const done = Math.floor(m.indices.length / 3) <= budget.maxFacets && partWall(m, read, budget.maxWork, opposed, floor, used, onCut)
     // out of budget: a wall under the floor read already fails the part, whatever else it holds; else not measured
     if (!done) return read.best < floor ? reading() : { mm: null, why: TOO_DENSE }
   }
   return reading()
+}
+
+/** Where the parts of a design touch face to face, as a cut between two bands of one body leaves them. */
+interface SharedCuts {
+  /** Whether point `p` on a face of part `part` with outward normal `n` lies on a face of another part turned the other way. */
+  has(part: number, p: V3, n: V3): boolean
+}
+
+/** A point within this of another part's face, on its plane, lies on it, mm. */
+const CUT_MM = 1e-3
+
+/**
+ * The parts' facets by their plane (the outward normal and its distance from the origin, rounded), so a point on one
+ * part's face finds the facets of another part on the same plane facing it, as two bands cut from one body meet.
+ */
+function sharedCuts(meshes: readonly Mesh[]): SharedCuts {
+  const key = (n: V3, d: number): string => `${Math.round(n[0] * 1000)},${Math.round(n[1] * 1000)},${Math.round(n[2] * 1000)},${Math.round(d * 1000)}`
+  const planes = new Map<string, { part: number; a: V3; b: V3; c: V3; n: V3 }[]>()
+  for (const [part, m] of meshes.entries())
+    for (let t = 0; t < Math.floor(m.indices.length / 3); t++) {
+      const [a, b, c] = corners(m, t)
+      const cr = cross(sub(b, a), sub(c, a))
+      const l = len(cr)
+      if (l < 1e-12) continue
+      const n = scale(cr, 1 / l)
+      const k = key(n, dot(n, a))
+      const list = planes.get(k)
+      const f = { part, a, b, c, n }
+      if (list) list.push(f)
+      else planes.set(k, [f])
+    }
+  return {
+    has(part, p, n) {
+      const facing = planes.get(key(scale(n, -1), -dot(n, p)))
+      if (!facing) return false
+      return facing.some((f) => f.part !== part && inTriangle(p, f.a, f.b, f.c, f.n))
+    },
+  }
+}
+
+/** Whether `p`, on the plane of the triangle a b c with normal n (within CUT_MM), lies inside it or on its edge. */
+function inTriangle(p: V3, a: V3, b: V3, c: V3, n: V3): boolean {
+  if (Math.abs(dot(sub(p, a), n)) > CUT_MM) return false
+  const side = (u: V3, v: V3): number => dot(cross(sub(v, u), sub(p, u)), n) / Math.max(len(sub(v, u)), 1e-12)
+  return side(a, b) >= -CUT_MM && side(b, c) >= -CUT_MM && side(c, a) >= -CUT_MM
 }
 
 /** Whether part `b` is part `a` moved: the same facets on the same corners, each corner shifted by the same amount. */
@@ -420,7 +468,7 @@ function shareEdge(tri: Float64Array, a: number, b: number): boolean {
  * `maxWork` steps (counted into `used` when given). `zone` is both the floor and the tip zone: a reading under it whose faces meet within it of the
  * ray's start (tapers) is a tip, kept apart from the wall.
  */
-function partWall(m: Mesh, read: PartReading, maxWork: number, opposed: number, zone: number, used?: { work: number }): boolean {
+function partWall(m: Mesh, read: PartReading, maxWork: number, opposed: number, zone: number, used?: { work: number }, onCut?: (p: V3, n: V3) => boolean): boolean {
   const tris = Math.floor(m.indices.length / 3)
   if (tris === 0) return true
   // the steps of work so far: facets tested against a ray, cells passed, facets a taper or flat patch check looks at
@@ -600,7 +648,9 @@ function partWall(m: Mesh, read: PartReading, maxWork: number, opposed: number, 
     // so a real thin wall away from any edge still fails while a sharp rim only warns (asked only of a reading that
     // would win: the tip matters only while the wall away from tips holds the floor).
     if (faces && (hit < best || (best >= zone && hit < read.tip)) && !narrow(t)) {
-      if (hit < zone && tapers(hitFacet, d0, d1, d2, hit, o0, o1, o2)) {
+      // a rim at a cut where this part meets another (two bands of one body) is a wall: the bands print as one body
+      // there, and the rim is as thin as it reads
+      if (hit < zone && tapers(hitFacet, d0, d1, d2, hit, o0, o1, o2) && !atCut(hitFacet, d0, d1, d2, hit, o0, o1, o2)) {
         if (hit < read.tip) {
           read.tip = hit
           read.tipAt = [o0, o1, o2]
@@ -611,6 +661,15 @@ function partWall(m: Mesh, read: PartReading, maxWork: number, opposed: number, 
   read.best = best
   if (used) used.work += work
   return true
+
+  /**
+   * Whether the reading's start or its far end lies on a face this part shares with another part, turned toward it:
+   * the start on its own facet (outward normal against the ray), the far end on the facet it met.
+   */
+  function atCut(far: number, d0: number, d1: number, d2: number, hit: number, x: number, y: number, z: number): boolean {
+    if (!onCut || far < 0) return false
+    return onCut([x, y, z], [-d0, -d1, -d2]) || onCut([x + d0 * hit, y + d1 * hit, z + d2 * hit], unitNormal(tri, far * 9))
+  }
 
   /**
    * Whether the reading `hit` along the unit ray `(d0, d1, d2)` (against the start facet's outward normal), started at
