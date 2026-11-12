@@ -25,11 +25,14 @@ undocumented_unsafe_blocks = "deny"
 [features]
 # tests/routines.rs: the kernel routines we replaced, against what the originals gave
 routine-probe = []
+# The kernel as Rust types (bodies, faces, edges, tessellation), reached through a cxx bridge. Off by default: cxx
+# compiles a C++ file of its own even without the kernel, and a plain workspace build needs no C++ compiler.
+typed = ["dep:cxx", "dep:cxx-build"]
 
 [dependencies]
-cxx = "=1.0.205"
+cxx = { version = "=1.0.205", optional = true }
 serde_json = "=1.0.151"
 
 [build-dependencies]
 cc = { version = "=1.5.1", features = ["parallel"] }
-cxx-build = "=1.0.205"
+cxx-build = { version = "=1.0.205", optional = true }

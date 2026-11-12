@@ -126,4 +126,4 @@ texture = ["formats", "dep:png", "dep:zune-jpeg"]
 trace = ["cad", "dep:png", "dep:zune-jpeg"]
 # The exact solid ops of sx-brep as brep.* (box, extrude, boolean, subtract, cut, info, tessellate, save, load). Off by
 # default: it builds the SMLib kernel from C++ source.
-brep = ["dep:sx-brep"]
+brep = ["dep:sx-brep", "sx-brep/typed"]
