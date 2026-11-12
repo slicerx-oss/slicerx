@@ -300,3 +300,49 @@ describe('the run on Auto', () => {
     expect(start).not.toHaveProperty('route')
   })
 })
+
+describe('a request on a chat with a built design', () => {
+  /** Changes to the design there, in words that open a new part's set too. */
+  const CHANGE = ['Make it rounder', 'Make the body rounder', 'Make it 10 mm taller', 'Round off the body', 'add a handle to it']
+  /** Asks for a part of its own: another one, or a new one that goes with the design. */
+  const ANOTHER = ['now make me a second one', 'make a lid for it', 'make me a handle for it as a separate piece']
+
+  it('keeps a change on huginn, and starts a part of its own on muninn', () => {
+    for (const p of CHANGE) {
+      expect(tabRoute(p, [], { design: true }), p).toEqual({ tier: HUGINN, reason: 'default' })
+      expect(designRoute(p, [], { design: true }), p).toEqual({ tier: HUGINN, reason: 'default' })
+    }
+    for (const p of ANOTHER) {
+      expect(tabRoute(p, [], { design: true }), p).toEqual({ tier: MUNINN, reason: 'new_part' })
+      expect(designRoute(p, [], { design: true }), p).toEqual({ tier: MUNINN, reason: 'new_part' })
+    }
+  })
+
+  it('still starts a first request on muninn as a new part when the chat has no design', () => {
+    for (const p of ['Make me a model rocket', 'build a toy rocket', 'make a lid for a 60 mm jar']) {
+      expect(tabRoute(p), p).toEqual({ tier: MUNINN, reason: 'new_part' })
+      expect(tabRoute(p, [], { design: false }), p).toEqual({ tier: MUNINN, reason: 'new_part' })
+    }
+  })
+
+  it('runs a change on huginn for a cloud model and for a local one, and a part of its own on muninn for a cloud model', async () => {
+    const run = async (message: string, local: boolean) => {
+      const client = createScriptedClient([{ text: 'Done.' }], { chunk: false })
+      const config = local ? { ...AUTO, provider: 'openai-compatible', models: { huginn: 'local-small', muninn: 'local-large' } } : AUTO
+      const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport }, config, policy: DEFAULT_POLICY, client, builtins: false, tools: [DESIGN_NEW], hasDesign: () => true })
+      const ev: PilotEvent[] = []
+      for await (const e of pilot.run('s', message)) ev.push(e)
+      return { models: client.requests.filter((r) => !r.webSearch).map((r) => r.model), start: ev.find((e) => e.type === 'start') }
+    }
+    for (const p of CHANGE) {
+      expect((await run(p, false)).models, p).toEqual(['claude-haiku-5-5'])
+      expect((await run(p, false)).start, p).toMatchObject({ route: { tier: HUGINN, reason: 'default' } })
+      expect((await run(p, true)).models, p).toEqual(['local-small'])
+    }
+    for (const p of ANOTHER) {
+      expect((await run(p, false)).start, p).toMatchObject({ model: 'claude-sonnet-5-5', route: { tier: MUNINN, reason: 'new_part' } })
+      // a local model routes as before: a new part alone moves only a cloud or key run up
+      expect((await run(p, true)).models, p).toEqual(['local-small'])
+    }
+  })
+})
