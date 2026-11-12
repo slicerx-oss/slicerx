@@ -15,6 +15,10 @@ use crate::kernel;
 pub const MAX_SHEETS: usize = 4096;
 /// The most pieces one curve has, and the most curves one face runs across or is bounded by.
 pub const MAX_PIECES: usize = 4096;
+/// The widest gap between two faces the kernel may close to join them, as a share of the largest coordinate given
+/// (of 1 mm when all are smaller). Faces that share a side are given the very same curve along it, so a real gap
+/// there is rounding. The kernel closes far wider ones without a word, and then the solid is not the one asked for.
+const MEET: f64 = 1e-9;
 
 /// A curve in space, by its control points. The kernel holds it exactly as given.
 #[derive(Debug, Clone, PartialEq)]
@@ -191,6 +195,19 @@ fn flat(sides: &[Path]) -> Result<()> {
     Ok(())
 }
 
+/// The largest coordinate of any point given, at least 1.
+fn size(sheets: &[Sheet]) -> f64 {
+    sheets
+        .iter()
+        .flat_map(|sheet| match sheet {
+            Sheet::Ruled(a, b) => vec![a, b],
+            Sheet::Skinned(paths) | Sheet::Flat(paths) => paths.iter().collect(),
+        })
+        .flat_map(Path::points)
+        .flatten()
+        .fold(1.0_f64, |most, c| most.max(c.abs()))
+}
+
 /// What the kernel must not be asked, in plain words.
 fn checked(sheets: &[Sheet]) -> Result<()> {
     if sheets.len() < 2 {
@@ -222,7 +239,10 @@ impl Body {
             "stitch",
             || checked(sheets),
             || {
-                let (solid, made) = kernel::stitched(sheets)?;
+                let (solid, made, gap) = kernel::stitched(sheets)?;
+                if gap.is_nan() || gap > MEET * size(sheets) {
+                    return Err(Error::Apart { gap_mm: gap });
+                }
                 order = made;
                 Ok(solid)
             },
@@ -256,7 +276,10 @@ mod tests {
     #[test]
     fn faces_are_refused_in_words_before_the_kernel_is_asked() {
         let cap = Sheet::Flat(square(0.0));
-        assert_eq!(why(&[cap.clone()]), "faces: a solid needs 2 or more faces");
+        assert_eq!(
+            why(std::slice::from_ref(&cap)),
+            "faces: a solid needs 2 or more faces"
+        );
         let with = |sheet: Sheet| why(&[cap.clone(), sheet]);
         let (a, b) = (
             line([0.0; 3], [1.0, 0.0, 0.0]),

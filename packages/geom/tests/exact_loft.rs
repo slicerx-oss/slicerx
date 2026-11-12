@@ -192,21 +192,32 @@ fn ring() -> Value {
     Value::Array(squares)
 }
 
-/// The plane each flat face of a body faces out along, as a unit normal and its offset, from the body's triangles
-/// (counterclockwise seen from outside); none for a face that is not flat.
+/// The plane each face of a body lies in and faces out along, as a unit normal and its offset, from the body's
+/// triangles (counterclockwise seen from outside); none for a face whose triangles are not all in one plane. A
+/// ruled face between straight rails is a spline surface in the kernel and can still lie in a plane.
 fn planes(mesh: &sx_brep::Mesh) -> Vec<Option<(V3, f64)>> {
-    let mut out = vec![None; mesh.surfaces.len()];
+    let mut found: Vec<Option<(V3, f64)>> = vec![None; mesh.surfaces.len()];
+    let mut flat = vec![true; mesh.surfaces.len()];
     for (triangle, &face) in mesh.triangles.iter().zip(&mesh.faces) {
         let face = face as usize;
-        if out[face].is_some() || !matches!(mesh.surfaces[face], Surface::Plane { .. }) {
-            continue;
+        let corners = triangle.map(|v| mesh.positions[v as usize]);
+        let [a, b, c] = corners;
+        if found[face].is_none() {
+            found[face] = vec3::normalize(vec3::cross(vec3::sub(b, a), vec3::sub(c, a)))
+                .map(|normal| (normal, vec3::dot(normal, a)));
         }
-        let [a, b, c] = triangle.map(|v| mesh.positions[v as usize]);
-        if let Some(normal) = vec3::normalize(vec3::cross(vec3::sub(b, a), vec3::sub(c, a))) {
-            out[face] = Some((normal, vec3::dot(normal, a)));
-        }
+        let on = found[face].is_some_and(|(normal, offset)| {
+            corners
+                .iter()
+                .all(|&p| (vec3::dot(normal, p) - offset).abs() < 1e-9)
+        });
+        flat[face] = flat[face] && on;
     }
-    out
+    found
+        .into_iter()
+        .zip(flat)
+        .map(|(plane, flat)| plane.filter(|_| flat))
+        .collect()
 }
 
 /// The key of the mesh's face on this plane.
@@ -286,19 +297,21 @@ fn the_hull_s_ends_take_the_mesh_loft_s_keys_and_its_sides_their_own() {
     let (mesh, planes, keys) = keyed_both_ways(&hull(), &json!({ "smooth": true }));
     assert_eq!(keys.len(), 8);
     let mesh_keys = &mesh.faces.as_ref().unwrap().keys;
-    let mut ends = 0;
+    let mut shared = Vec::new();
     for (plane, key) in planes.iter().zip(&keys) {
         match plane {
-            // the two ends are the mesh loft's ends
+            // a face that lies in one plane from end to end is one face of the mesh loft too
             Some(plane) => {
                 assert_eq!(key_on(&mesh, *plane), Some(*key), "{plane:?}");
-                ends += 1;
+                shared.push(plane.0.map(f64::round));
             }
-            // the mesh loft has no face that runs the whole length of one side: it cuts its sides between profiles
+            // the mesh loft cuts its other sides between profiles and has no face that runs a side's whole length
             None => assert!(!mesh_keys.contains(key)),
         }
     }
-    assert_eq!(ends, 2);
+    // the two ends, and the bottom between the two keel points, which lies on the bed all the way
+    shared.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(shared, [[-1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]]);
 }
 
 #[test]
@@ -380,8 +393,14 @@ fn what_cannot_be_made_exact_is_refused_and_nothing_is_kept() {
     let refused = |rails: &Rails| {
         let (profiles, opts) = parsed(&hull(), &json!({ "smooth": true }));
         let mut mesh = sketch_loft::loft_with(&profiles, &opts).unwrap();
-        let why = exact::hold(rails, &mut mesh).expect_err("a refusal").to_string();
-        assert_eq!(exact::lofted(rails).expect_err("a refusal").to_string(), why);
+        let why = match exact::hold(rails, &mut mesh) {
+            Ok(handle) => format!("held as {handle}"),
+            Err(e) => e.to_string(),
+        };
+        assert_eq!(
+            exact::lofted(rails).map(|_| ()).map_err(|e| e.to_string()),
+            Err(why.clone())
+        );
         why
     };
     // a first section that is not flat cannot be an end
@@ -403,13 +422,63 @@ fn what_cannot_be_made_exact_is_refused_and_nothing_is_kept() {
         refused(&still),
         "loft: ruled face: a curve has a piece of no length"
     );
-    // a rail that ends off the last section: two sides no longer meet the end, and the faces do not close
+    // a rail that ends 1 mm off the last section: two sides no longer meet the end. The kernel closes a gap like
+    // that by itself and calls the result a solid, so it is refused by the gap the kernel reports.
     let mut open = hull_rails.clone();
     let last = open.rails[2].len() - 1;
     open.rails[2][last][3][0] += 1.0;
-    assert_eq!(
-        refused(&open),
-        "loft: stitch: the result is not a solid: its faces do not close"
+    let why = refused(&open);
+    assert!(
+        why.starts_with("loft: stitch: the faces are ")
+            && why.ends_with(" mm apart along a side they share; they must meet"),
+        "{why}"
     );
     assert_eq!(table::count(), start);
+}
+
+#[test]
+fn the_body_is_where_the_profiles_frames_put_it() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // a 20 by 10 mm rectangle on a plane that is off the origin and leans back, and the same one 15 mm along that
+    // plane's normal
+    let (origin, normal) = ([100.0, -50.0, 30.0], [0.0, -0.6, 0.8]);
+    let (u, v) = ([1.0, 0.0, 0.0], [0.0, 0.8, 0.6]);
+    let at = |x: f64, y: f64, h: f64| [0, 1, 2].map(|i| origin[i] + x * u[i] + y * v[i] + h * normal[i]);
+    let on = |h: f64| {
+        json!({
+            "frame": { "origin": at(0.0, 0.0, h), "normal": normal, "u": u, "v": v },
+            "loops": [rectangle(20.0, 10.0)],
+        })
+    };
+    let profiles = json!([on(0.0), on(15.0)]);
+    let lofted = exact::lofted(&rails_of(&profiles, &json!({}))).expect("a block");
+    let volume = lofted.body.volume().expect("volume");
+    assert!((volume - 3000.0).abs() < 1e-6, "{volume}");
+    let (min, max) = lofted.body.bounds().expect("bounds");
+    let mut corners = Vec::new();
+    for h in [0.0, 15.0] {
+        for (x, y) in [(-10.0, -5.0), (10.0, -5.0), (10.0, 5.0), (-10.0, 5.0)] {
+            corners.push(at(x, y, h));
+        }
+    }
+    // and it is where the mesh loft of the same profiles is
+    let (parsed_profiles, opts) = parsed(&profiles, &json!({}));
+    let mesh = sketch_loft::loft_with(&parsed_profiles, &opts).unwrap();
+    for i in 0..3 {
+        let low = corners.iter().map(|c| c[i]).fold(f64::INFINITY, f64::min);
+        let high = corners.iter().map(|c| c[i]).fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            (min[i] - low).abs() < 1e-9 && (max[i] - high).abs() < 1e-9,
+            "{min:?} {max:?}"
+        );
+        let (mesh_low, mesh_high) = mesh
+            .positions
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                (lo.min(p[i]), hi.max(p[i]))
+            });
+        assert!((min[i] - mesh_low).abs() < 1e-9 && (max[i] - mesh_high).abs() < 1e-9);
+    }
 }
