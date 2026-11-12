@@ -6,8 +6,9 @@
 #
 #   scripts/ci/playwright-chromium.sh
 #
-# The browser comes from Playwright's own download (kept by actions/cache in ~/.cache/ms-playwright). Then Playwright
-# lists the system packages that are missing (install-deps --dry-run, a simulated install that needs no network): none
+# The browser comes from Playwright's own download (kept by actions/cache in ~/.cache/ms-playwright; a download that
+# fails is tried again through net-retry.sh). Then Playwright lists the system packages that are missing
+# (install-deps --dry-run, a simulated install that needs no network): none
 # missing, and no apt runs at all; some missing, and those go through apt-install.sh, from the .deb files in
 # SX_APT_CACHE (by default ~/.cache/sx-apt/playwright, kept per runner image) when it has them, otherwise from the
 # mirror with cut-off retries and a fallback mirror. When the list cannot be made (no package lists on the runner), the
@@ -17,7 +18,7 @@
 set -uo pipefail
 
 pw() { pnpm --filter @slicerx/web exec playwright "$@"; }
-pw install chromium || exit 1
+bash "$(dirname "$0")/net-retry.sh" pnpm --filter @slicerx/web exec playwright install chromium || exit 1
 [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && exit 0
 [ "$(uname -s)" = Linux ] || exit 0
 

@@ -39,6 +39,8 @@ permissions:
 # just stops, failing. Anything that cannot tell (another event, git or the network failing) carries on, so a live group
 # runs exactly as before.
 env:
+  # Cargo's own retries for a crate or index download that fails on the network (3 by default).
+  CARGO_NET_RETRY: 5
   SX_GROUP_CHECK: |
     if [ "${GITHUB_EVENT_NAME:-}" = merge_group ]; then
       sx_rc=0
@@ -52,6 +54,25 @@ env:
         fi
         exit 1
       fi
+    fi
+  # The pinned compiler, components and targets from rust-toolchain.toml (eval "$SX_TOOLCHAIN_INSTALL" in the steps that
+  # install it, after checkout). A toolchain that is already installed with everything the file names and runs cargo
+  # needs no download. Otherwise `rustup toolchain install` runs through net-retry.sh, since its manifest request failed
+  # on one hosted runner (tcp connect timed out) and took a merge group out of the queue. A file this cannot read (a
+  # list over several lines) counts as not installed, so it only costs the download.
+  SX_TOOLCHAIN_INSTALL: |
+    sx_tc=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+    sx_have=$(rustup component list --installed --toolchain "$sx_tc" 2>/dev/null) || sx_have=
+    sx_ok=1
+    grep -qE '^(components|targets) *= *\[[^]]*$' rust-toolchain.toml && sx_ok=0
+    for sx_n in $(sed -n 's/^components *=//p' rust-toolchain.toml | grep -o '"[^"]*"' | tr -d '"') \
+        $(sed -n 's/^targets *=//p' rust-toolchain.toml | grep -o '"[^"]*"' | tr -d '"' | sed 's/^/rust-std-/'); do
+      grep -qE "^$sx_n(-|\$)" <<< "$sx_have" || sx_ok=0
+    done
+    if [ "$sx_ok" = 1 ] && rustup run "$sx_tc" cargo --version > /dev/null 2>&1; then
+      echo "toolchain $sx_tc is already installed"
+    else
+      bash scripts/ci/net-retry.sh rustup toolchain install
     fi
   # How a Playwright step on the GPU lane ended, from its exit status in sx_rc (eval "$SX_GPU_RUN_EXIT"). In the merge
   # queue, heavy.sh giving up on the heavy lock (status 75: no tests ran) is a busy machine, not a broken change, so the
@@ -210,7 +231,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
       # One retry per failing test; one that passes only on the retry is flaky (scripts/ci/README.md, "Flaky tests"):
@@ -219,7 +240,7 @@ jobs:
       # Both geometry engine modules (git-ignored) for the app and pilot tests that run the real engine. On CI a missing
       # module fails those tests instead of skipping them (wasmBuilt in packages/app/test/geom-engine.ts). Built here,
       # not downloaded from the wasm job, so this job does not wait for that one.
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: Swatinem/rust-cache@v2
         with:
           key: geom
@@ -266,7 +287,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       - run: bash scripts/ci/replay-fixtures.sh
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
@@ -299,7 +320,7 @@ jobs:
         uses: actions/checkout@v4
       # The pinned compiler and components from rust-toolchain.toml, so the cache key matches what the steps run.
       - if: env.DUP != 'true'
-        run: rustup toolchain install
+        run: eval "$SX_TOOLCHAIN_INSTALL"
       - if: env.DUP != 'true'
         uses: Swatinem/rust-cache@v2
         with:
@@ -370,7 +391,7 @@ jobs:
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-parts
@@ -400,7 +421,8 @@ jobs:
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
+        shell: bash
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: windows-parts
@@ -504,7 +526,7 @@ jobs:
       # Hosted runners install the toolchain and restore a cache. The self-hosted runners have the pinned toolchain
       # installed and keep one build directory per runner, and each cargo step there holds the machine's heavy lock.
       - if: runner.environment == 'github-hosted'
-        run: rustup toolchain install
+        run: eval "$SX_TOOLCHAIN_INSTALL"
       - if: runner.environment == 'github-hosted'
         uses: Swatinem/rust-cache@v2
         with:
@@ -642,7 +664,7 @@ jobs:
           cache: pnpm
       - if: startsWith(matrix.part, 'crates-c')
         run: |
-          pnpm install --frozen-lockfile
+          bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
           # the tool runtime that sx call runs (test/sx-call.test.ts, and the app's route parity test below)
           pnpm --filter @slicerx/mcp build
           eval "$SX_GROUP_CHECK"
@@ -758,7 +780,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: Swatinem/rust-cache@v2
         with:
           key: wasm-geom
@@ -786,7 +808,7 @@ jobs:
             packages/geom/wasm/pkg/
           retention-days: 3
           if-no-files-found: error
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       - run: pnpm --filter @slicerx/web build
       # Neither product build (the default and the CAD-only studio) carries the end-to-end test slicer.
       - run: SLICERX_WEB_SLICING=0 pnpm --filter @slicerx/web exec vite build --outDir dist-cad-only
@@ -801,7 +823,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: Swatinem/rust-cache@v2
         with:
           key: sx-link
@@ -840,7 +862,7 @@ jobs:
           node-version-file: .nvmrc
       - run: node --test packages/brep/tests/solids-wasm.mjs
       - run: sh packages/brep/tests/wasm-cache.sh
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/slicerx/smlib
@@ -909,7 +931,7 @@ jobs:
           node-version-file: .nvmrc
       - run: node --test packages/brep/tests/solids-wasm.mjs
       - run: sh packages/brep/tests/wasm-cache.sh
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/slicerx/smlib
@@ -959,7 +981,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: Swatinem/rust-cache@v2
         with:
           key: sx-cli
@@ -979,7 +1001,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
+        shell: bash
       - uses: Swatinem/rust-cache@v2
         with:
           key: sx-cli
@@ -1006,7 +1029,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       # an artifact does not keep the file mode
       - uses: actions/download-artifact@v4
         with:
@@ -1067,7 +1090,7 @@ jobs:
           node-version-file: .nvmrc
           # the project runner keeps its pnpm store and browsers locally; uploading them gains nothing
           cache: ${{ runner.environment == 'self-hosted' && '' || 'pnpm' }}
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           name: wasm-modules
@@ -1214,7 +1237,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           name: wasm-modules
@@ -1311,7 +1334,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           name: wasm-modules
@@ -1407,7 +1430,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - if: needs.e2e-shard.result != 'skipped' || needs.e2e-gpu.result != 'skipped'
-        run: pnpm install --frozen-lockfile
+        run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       # the reports are for reading only, so a download that fails (it has, after its retries) loses the HTML report,
       # never the result
       - if: needs.e2e-shard.result != 'skipped' || needs.e2e-gpu.result != 'skipped'
@@ -1532,7 +1555,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       - run: cargo build -p sx-cli --release
       - id: pw
         run: |
@@ -1665,7 +1688,7 @@ jobs:
         if: needs.detect.outputs.node == 'true'
         run: |
           corepack enable
-          pnpm install --frozen-lockfile
+          bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
           pnpm dlx license-checker-rseidelsohn --production --summary \
             --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;MPL-2.0;Unlicense;BlueOak-1.0.0;Python-2.0;CC-BY-4.0;AGPL-3.0-only;AGPL-3.0-or-later;GPL-3.0-only;GPL-3.0-or-later;LGPL-3.0-only;LGPL-3.0-or-later"
 
@@ -1711,6 +1734,6 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci/net-retry.sh pnpm install --frozen-lockfile
       - name: Generated files are current
         run: node scripts/check-generated.mjs
