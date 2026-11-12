@@ -4,7 +4,7 @@
 // The mimir tab sets the project's filaments: project.add_filament and project.set_filament change the slots the way
 // the filament rail and its dialog do and answer with every filament as the rail now shows it, so the parts on screen
 // take the colors mimir picked. The part makers take the filament of the part they make, and one past the project's
-// last filament adds it and says so. A scripted run of a small toy boat, as the tab's runtime runs it, ends with each
+// last filament adds it and says so. A scripted run of a small toy train, as the tab's runtime runs it, ends with each
 // part in its planned color.
 import type { Host, MeshHandle, PilotEvent, PrinterHost } from '@slicerx/contracts'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type PilotTool, type ScriptStep } from '@slicerx/pilot'
@@ -112,26 +112,26 @@ describe('the tab sets the filaments', () => {
 const printers = { list: async () => [], plugins: async () => [], fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
 const noLlm = { available: async () => true, stream: () => { throw new Error('scripted') } }
 
-/** The colors the toy boat is planned in, by filament. */
+/** The colors the toy train is planned in, by filament. */
 const PLAN = { 1: '#1a1a1a', 2: '#f4f1e8', 3: '#c8a165', 4: '#b22222', 5: '#6b4423' } as const
 
-const hull = (z: number, h: number) => ({ type: 'prism', points: [[-100, -12], [90, -12], [110, 0], [90, 12], [-100, 12]], origin: [0, 0, z], axis: [0, 0, 1], heightMm: h })
-const funnel = (x: number) => ({ type: 'cylinder', origin: [x, 0, 30], axis: [0, 0, 1], diameterMm: 7, heightMm: 16 })
-const mast = (x: number) => ({ type: 'cylinder', origin: [x, 0, 20], axis: [0, 0, 1], diameterMm: 2, heightMm: 30 })
+const body = (z: number, h: number) => ({ type: 'prism', points: [[-100, -12], [90, -12], [110, 0], [90, 12], [-100, 12]], origin: [0, 0, z], axis: [0, 0, 1], heightMm: h })
+const chimney = (x: number) => ({ type: 'cylinder', origin: [x, 0, 30], axis: [0, 0, 1], diameterMm: 7, heightMm: 16 })
+const pole = (x: number) => ({ type: 'cylinder', origin: [x, 0, 20], axis: [0, 0, 1], diameterMm: 2, heightMm: 30 })
 
-describe('a scripted toy boat in the tab', () => {
+describe('a scripted toy train in the tab', () => {
   beforeEach(fresh)
 
   it('ends assembled on the plate with every part in its planned color', async () => {
     const steps: ScriptStep[] = [
-      { calls: [{ name: 'pilot.sheet', args: { title: 'toy boat', dims: [{ key: 'length', label: 'Length', value: 210, unit: 'mm', source: 'asked' }] } }] },
-      { calls: [{ name: 'design.new', args: { name: 'toy boat' } }] },
-      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Lower hull', slot: 4, solids: [hull(0, 8)] } }] },
-      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Upper hull', slot: 1, solids: [hull(8, 12)] } }] },
-      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Superstructure', slot: 2, solids: [{ type: 'box', min: [-60, -9, 20], max: [50, 9, 30] }] } }] },
-      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Funnels', slot: 3, solids: [funnel(-35), funnel(-12), funnel(11), funnel(34)] } }] },
+      { calls: [{ name: 'pilot.sheet', args: { title: 'toy train', dims: [{ key: 'length', label: 'Length', value: 210, unit: 'mm', source: 'asked' }] } }] },
+      { calls: [{ name: 'design.new', args: { name: 'toy train' } }] },
+      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Lower body', slot: 4, solids: [body(0, 8)] } }] },
+      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Upper body', slot: 1, solids: [body(8, 12)] } }] },
+      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Cab', slot: 2, solids: [{ type: 'box', min: [-60, -9, 20], max: [50, 9, 30] }] } }] },
+      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Chimneys', slot: 3, solids: [chimney(-35), chimney(-12), chimney(11), chimney(34)] } }] },
       { calls: [{ name: 'project.add_filament', args: { type: 'PLA', color: PLAN[5] } }] },
-      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Masts', slot: 5, solids: [mast(-85), mast(80)] } }] },
+      { calls: [{ name: 'geom.build', args: { design: 'DESIGN', name: 'Poles', slot: 5, solids: [pole(-85), pole(80)] } }] },
       {
         calls: [
           { name: 'project.set_filament', args: { slot: 1, color: PLAN[1] } },
@@ -140,7 +140,7 @@ describe('a scripted toy boat in the tab', () => {
           { name: 'project.set_filament', args: { slot: 4, color: PLAN[4] } },
         ],
       },
-      { text: 'Your toy boat is on the plate: black hull, red below the waterline, white decks, buff funnels and brown masts.' },
+      { text: 'Your toy train is on the plate: black body, red base, white cab, buff chimneys and brown poles.' },
     ]
     // the design id design.new answered with goes into the later calls, as a model reads it from the reply
     const designIn = (m: unknown): string => /design\\*"\s*:\s*\\*"([\w~-]+)/.exec(JSON.stringify(m))?.[1] ?? ''
@@ -152,7 +152,7 @@ describe('a scripted toy boat in the tab', () => {
     const pilot = createPilot({ ...options, client: createScriptedClient(script, { chunk: false }) })
     const names = new Map<string, string>()
     const results: { tool: string; ok: boolean; summary: string }[] = []
-    for await (const e of pilot.run('tab', 'make a toy boat, keep the details simple, then color each part', {}) as AsyncIterable<PilotEvent>) {
+    for await (const e of pilot.run('tab', 'make a toy train, keep the details simple, then color each part', {}) as AsyncIterable<PilotEvent>) {
       if (e.type === 'sheet') void pilot.answerSheet!(e.sheet.id, {})
       if (e.type === 'approval_request') await pilot.resolveApproval(e.request.id, { kind: 'approve' })
       if (e.type === 'tool_call') names.set(e.callId, e.tool)
@@ -165,11 +165,11 @@ describe('a scripted toy boat in the tab', () => {
     // one assembled object, each part in its planned color, and five filaments on the rail
     expect(get().plate).toHaveLength(1)
     expect(partColors()).toEqual([
-      { name: 'Lower hull', slot: 4, color: PLAN[4] },
-      { name: 'Upper hull', slot: 1, color: PLAN[1] },
-      { name: 'Superstructure', slot: 2, color: PLAN[2] },
-      { name: 'Funnels', slot: 3, color: PLAN[3] },
-      { name: 'Masts', slot: 5, color: PLAN[5] },
+      { name: 'Lower body', slot: 4, color: PLAN[4] },
+      { name: 'Upper body', slot: 1, color: PLAN[1] },
+      { name: 'Cab', slot: 2, color: PLAN[2] },
+      { name: 'Chimneys', slot: 3, color: PLAN[3] },
+      { name: 'Poles', slot: 5, color: PLAN[5] },
     ])
     expect(resolveSlots(get()).map((r) => r.color)).toEqual([PLAN[1], PLAN[2], PLAN[3], PLAN[4], PLAN[5]])
   }, 120_000)
