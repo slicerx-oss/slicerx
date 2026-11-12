@@ -85,6 +85,20 @@ impl Curve {
         }
     }
 
+    /// A spline piece as drawn: its cubic spans from its start to its end, cut from the spline's own where the piece
+    /// begins and ends within them. None for any other piece.
+    pub fn spline_spans(&self) -> Option<Vec<[V2; 4]>> {
+        let Self::Spline { spans, from, to } = self else {
+            return None;
+        };
+        let forward = spans.portion(spans.step_at(from.min(*to)), spans.step_at(from.max(*to)));
+        Some(if from <= to {
+            forward
+        } else {
+            forward.iter().rev().map(|&[a, b, c, d]| [d, c, b, a]).collect()
+        })
+    }
+
     /// How far around it goes, radians; 0 for a line. A spline's is how far it turns, all its bends summed.
     fn sweep(&self) -> f64 {
         match *self {
@@ -95,28 +109,65 @@ impl Curve {
     }
 }
 
-/// A spline as the cubic spans the mesh loft flattens, measured along so that places on it go by its length.
+/// A spline as the cubic spans the mesh loft flattens, measured along so that places on it go by its length and by
+/// how sharply it bends.
+///
+/// Each chord between samples counts its length, and the square root of its length times its turn (half the turn at
+/// each of its ends), scaled so the two halves of the measure are as long as each other. How far a chord strays from
+/// the curve goes as its length times its turn, so evenly spread places gather into tight bends, where a face skinned
+/// through them needs them, without piling onto a near cusp, which has little length to stray over. Every profile's
+/// spline is measured the same way, so a place the same share along each is the same place on each.
 #[derive(Debug, PartialEq)]
 pub struct SplineSpans {
     /// From each drawn point to the next.
     pub spans: Vec<[V2; 4]>,
-    /// How far along it each sample is, `SPLINE_SAMPLES` to a span evenly by its parameter, from its start to its end.
+    /// How far along it each sample is by that measure, `SPLINE_SAMPLES` to a span evenly by its parameter, from its
+    /// start to its end.
     along: Vec<f64>,
 }
 
 impl SplineSpans {
     fn new(spans: Vec<[V2; 4]>) -> Self {
-        let mut along = vec![0.0];
-        let mut last = spans[0][0];
+        let mut points = vec![spans[0][0]];
         for b in &spans {
-            for p in sketch_spline::flatten(b, SPLINE_SAMPLES) {
-                along.push(along[along.len() - 1] + (p[0] - last[0]).m_hypot(p[1] - last[1]));
-                last = p;
-            }
+            points.extend(sketch_spline::flatten(b, SPLINE_SAMPLES));
+        }
+        let chords: Vec<V2> = points
+            .windows(2)
+            .map(|w| [w[1][0] - w[0][0], w[1][1] - w[0][1]])
+            .collect();
+        let lengths: Vec<f64> = chords.iter().map(|c| c[0].m_hypot(c[1])).collect();
+        // the turn at each sample between two chords
+        let turns: Vec<f64> = chords
+            .windows(2)
+            .map(|w| {
+                let (u, v) = (w[0], w[1]);
+                (u[0] * v[1] - u[1] * v[0])
+                    .m_atan2(u[0] * v[0] + u[1] * v[1])
+                    .abs()
+            })
+            .collect();
+        // how far a chord's points stray from the curve goes as its length times how far it turns, so each chord
+        // also counts the square root of that, and places spread evenly by it stray evenly
+        let bends: Vec<f64> = lengths
+            .iter()
+            .enumerate()
+            .map(|(i, len)| {
+                let before = if i > 0 { turns[i - 1] } else { 0.0 };
+                let after = turns.get(i).copied().unwrap_or(0.0);
+                (len * (before + after) / 2.0).sqrt()
+            })
+            .collect();
+        let (length, bending) = (lengths.iter().sum::<f64>(), bends.iter().sum::<f64>());
+        let scale = if bending > 0.0 { length / bending } else { 0.0 };
+        let mut along = vec![0.0];
+        for (len, bend) in lengths.iter().zip(&bends) {
+            along.push(along[along.len() - 1] + len + scale * bend);
         }
         Self { spans, along }
     }
 
+    /// How long it is by its measure.
     fn length(&self) -> f64 {
         self.along[self.along.len() - 1]
     }
@@ -146,6 +197,33 @@ impl SplineSpans {
         let i = (step.max(0.0).floor() as usize).min(self.along.len() - 2);
         let f = step - i as f64;
         (self.along[i] + (self.along[i + 1] - self.along[i]) * f) / self.length()
+    }
+
+    /// Its spans from the place `from` samples along to the place `to`, each cut where those places fall in it.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "a sample count"
+    )]
+    fn portion(&self, from: f64, to: f64) -> Vec<[V2; 4]> {
+        let per = SPLINE_SAMPLES as f64;
+        let last = self.spans.len() - 1;
+        // the span a place is in and how far along that span, as its own parameter
+        let place = |step: f64, end: bool| {
+            let at = step.max(0.0) / per;
+            let k = (at.floor() as usize).min(last);
+            // a place on a span's end is the end of that span, not the start of the next, when it ends a portion
+            let k = if end && k > 0 && at == k as f64 { k - 1 } else { k };
+            (k, at - k as f64)
+        };
+        let ((k0, t0), (k1, t1)) = (place(from, false), place(to, true));
+        (k0..=k1)
+            .map(|k| {
+                let (a, b) = (if k == k0 { t0 } else { 0.0 }, if k == k1 { t1 } else { 1.0 });
+                cut_span(&self.spans[k], a, b)
+            })
+            .collect()
     }
 
     /// The point `step` samples from its start, on the spans themselves.
@@ -225,6 +303,33 @@ type Try<T> = std::result::Result<T, No>;
 
 fn unmatched<T>(why: impl Into<String>) -> Try<T> {
     Err(No::Unmatched(why.into()))
+}
+
+/// The part of the cubic Bezier `b` from its parameter `a` to `t`, as a cubic Bezier of its own.
+fn cut_span(b: &[V2; 4], a: f64, t: f64) -> [V2; 4] {
+    let mix = |p: V2, q: V2, f: f64| [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+    // split at a and keep the part after it, then split that at where t falls in it
+    let after = |b: [V2; 4], f: f64| -> [V2; 4] {
+        let (p01, p12, p23) = (mix(b[0], b[1], f), mix(b[1], b[2], f), mix(b[2], b[3], f));
+        let (p012, p123) = (mix(p01, p12, f), mix(p12, p23, f));
+        [mix(p012, p123, f), p123, p23, b[3]]
+    };
+    let before = |b: [V2; 4], f: f64| -> [V2; 4] {
+        let (p01, p12, p23) = (mix(b[0], b[1], f), mix(b[1], b[2], f), mix(b[2], b[3], f));
+        let (p012, p123) = (mix(p01, p12, f), mix(p12, p23, f));
+        [b[0], p01, p012, mix(p012, p123, f)]
+    };
+    let tail = if a > 0.0 { after(*b, a) } else { *b };
+    let rest = if a < 1.0 { (t - a) / (1.0 - a) } else { 1.0 };
+    let mut out = if rest < 1.0 { before(tail, rest) } else { tail };
+    // the drawn points themselves where the piece starts or ends on them
+    if a == 0.0 {
+        out[0] = b[0];
+    }
+    if t == 1.0 {
+        out[3] = b[3];
+    }
+    out
 }
 
 /// One drawn piece of a profile, from one of its corners to the next.
@@ -1084,7 +1189,7 @@ pub struct Piece {
     /// How many stretches between neighboring rails it covers.
     pub stretches: usize,
     /// What it is on each profile, in the profiles' order: a face over lines alone can be ruled across its rails,
-    /// and one with an arc is skinned across them.
+    /// and one with an arc or a spline is skinned across them.
     pub curves: Vec<Curve>,
 }
 

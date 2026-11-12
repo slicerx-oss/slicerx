@@ -1304,3 +1304,66 @@ fn a_spline_is_matched_only_to_a_spline() {
         "profile 2 is a closed spline, which has no corners to match its pieces between"
     );
 }
+
+/// Where `p` is along the spline through `through`: the place of its nearest point, a fine step at a time.
+fn place_on_spline(p: [f64; 2], through: &[[f64; 2]]) -> usize {
+    let mut points = vec![through[0]];
+    for b in sketch_spline::spans(through, false) {
+        points.extend(sketch_spline::flatten(&b, 4096));
+    }
+    let gap = |q: [f64; 2]| (q[0] - p[0]).m_hypot(q[1] - p[1]);
+    (0..points.len())
+        .min_by(|&i, &j| gap(points[i]).total_cmp(&gap(points[j])))
+        .unwrap_or(0)
+}
+
+#[test]
+fn spline_rails_keep_their_order_and_their_corners_at_every_density() {
+    let sizes = [(0.0, 10.0, 8.0), (12.0, 8.0, 6.0), (25.0, 9.0, 7.0)];
+    let profiles = json!(
+        sizes
+            .iter()
+            .map(|&(z, w, d)| at(z, &d_section(w, d)))
+            .collect::<Vec<Value>>()
+    );
+    let opts = json!({ "smooth": true });
+    let mut corner_rails: Option<Vec<Vec<[V3; 4]>>> = None;
+    for density in [
+        Density::default(),
+        Density {
+            arc_step_deg: 5.0,
+            least: 24,
+        },
+        Density {
+            arc_step_deg: 2.5,
+            least: 48,
+        },
+    ] {
+        let Match::Rails(r) = match_of(&profiles, &opts, &density) else {
+            panic!("unmatched");
+        };
+        // the rails through the corners are the same curves however many rails the pieces get
+        let corners: Vec<Vec<[V3; 4]>> = r.pieces.iter().map(|p| r.rails[p.first].clone()).collect();
+        match &corner_rails {
+            Some(before) => assert_eq!(&corners, before, "{density:?}"),
+            None => corner_rails = Some(corners),
+        }
+        // and on every section the spline piece's points run along the spline in order, so no two rails cross
+        let spline = r
+            .pieces
+            .iter()
+            .find(|p| p.curves.iter().all(|c| matches!(c, Curve::Spline { .. })))
+            .expect("a spline piece");
+        let n = r.rings[0].flat.len();
+        for (ring, &(_, w, d)) in r.rings.iter().zip(&sizes) {
+            let mut through = vec![[w, 0.0]];
+            through.extend(d_points(w, d));
+            through.push([-w, 0.0]);
+            let places: Vec<usize> = (spline.first..=spline.first + spline.stretches)
+                .map(|i| place_on_spline(ring.flat[i % n], &through))
+                .collect();
+            // the loft winds the section the other way from how it was drawn, so the places run back along it
+            assert!(places.windows(2).all(|w| w[0] > w[1]), "{density:?}: {places:?}");
+        }
+    }
+}

@@ -94,6 +94,11 @@ zune-jpeg = { version = "=0.5.15", optional = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = { version = "=1.12.0", optional = true }
 
+# the tests compare mesh replies too large to keep with what the code made before by their SHA-256; already in the
+# lockfile through other crates. MIT OR Apache-2.0.
+[dev-dependencies]
+sha2 = { version = "=0.11.0", default-features = false }
+
 # The tools a build carries. Every one is on by default; an edition or an integrator leaves out what it does not
 # offer (docs/cad-engine.md, section 2). Booleans, arrays, measure, cut, split, repair, import, orient, emboss,
 # simplify, fit check and print rescue are always there.

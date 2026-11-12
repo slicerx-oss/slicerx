@@ -5801,6 +5801,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "spade",
  "sx-brep",
  "sx-i-overlay",
