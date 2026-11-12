@@ -15,6 +15,7 @@ import { objectWarnings } from '../plate/object-list'
 import { jobFileName } from '../state/actions'
 import { openTiming, viewTiming } from '../lib/open-timing'
 import { geomCalls } from '../geom/client'
+import { quietLofts } from '../cad/history/exact-flag'
 import { geomWorkers } from '../geom/worker-memory'
 import { sliceTiming } from '../lib/slice-timing'
 import { get, setWorkspace, type AppState } from '../state/store'
@@ -157,7 +158,8 @@ export function appState(s: AppState): Record<string, unknown> {
     // How long the 3D view took to its first frame, or null before it.
     view: viewTiming(),
     // What the geometry engine answered, and its workers alive now with the engine memory each holds (geom/worker-memory.ts).
-    geometry: { ...geomCalls(), workers: geomWorkers() },
+    // exactLofts: new lofts the native engine made on the mesh this session, with each step's reason (exact-flag.ts).
+    geometry: { ...geomCalls(), workers: geomWorkers(), exactLofts: quietLofts() },
     // The big buffers the page keeps: every plate's meshes (each buffer once) and the slice preview.
     memory: pageMemory(s),
     lastSlice: sliceTiming(),
