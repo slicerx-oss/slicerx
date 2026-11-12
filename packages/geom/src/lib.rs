@@ -32,6 +32,8 @@ pub mod dimension;
 pub mod edge;
 pub mod emboss;
 mod error;
+#[cfg(feature = "brep")]
+pub mod exact;
 #[cfg(feature = "cad")]
 pub mod face;
 pub mod faces;
