@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { HISTORY_VERSION } from '@slicerx/cad-history'
 import type { Host, JsonSchema, LlmHttpRequest, LlmTransport, MeshHandle } from '@slicerx/contracts'
-import { FAMILY_LINE, messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, REPLY_RESERVE, RESHAPE_LINE, toolsTokens, TURN_SET_TOOL } from '@slicerx/pilot'
+import { describedPaths, encodeToolName, FAMILY_LINE, LOCAL_BUILD_CAP, LOCAL_TOOLS, localToolDef, messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, REPLY_RESERVE, RESHAPE_LINE, surfaceTools, toolSpec, toolsTokens, TURN_SET_TOOL, type PilotTool } from '@slicerx/pilot'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { runCall } from '../src/app-link/methods'
 import { builtinCommands } from '../src/commands/builtin'
@@ -311,6 +311,34 @@ describe('the mimir tab on a local model', () => {
     const sent = read(llm.sent[at]!).tools.map((t) => t.name)
     expect(sent).toContain('design__new')
     expect(sent).not.toContain('geom__array')
+  })
+
+  it('holds every tool the tab can send a local model to its row in LOCAL_TOOLS, and a new part turn to LOCAL_BUILD_CAP', async () => {
+    const fix = 'raise or add its row in packages/pilot/src/local-tools.ts, in the same change'
+    // every tool of every set, as a set switch (pilot.tools) can send any of them
+    resetTabMimir()
+    set({ pilot: LOCAL, plate: [DESIGN] })
+    const pilot = (await tabMimir(hostWith(transport()), NEUTRAL)) as unknown as { registry(): PilotTool<never>[] }
+    const over = surfaceTools('tab', true, pilot.registry())
+      .map((t) => ({ name: t.name, cost: toolsTokens([{ ...localToolDef(t), name: encodeToolName(t.name) }]), row: LOCAL_TOOLS[t.name]?.tokens }))
+      .filter((t) => t.row === undefined || t.cost > t.row)
+    expect(over.map((t) => `${t.name} ${t.cost} (row ${t.row ?? 'none'})`), fix).toEqual([])
+    // a row lists only field paths its tool still describes, and sends a description only for a tool without its own
+    for (const t of surfaceTools('tab', true, pilot.registry())) {
+      const shown = t.localInput ? { ...t, input: t.localInput } : t
+      const described = new Set(describedPaths(toolSpec(shown as PilotTool<unknown>).inputSchema))
+      expect((LOCAL_TOOLS[t.name]?.fields ?? []).filter((f) => !described.has(f)), t.name).toEqual([])
+      if (t.localDescription !== undefined) expect(LOCAL_TOOLS[t.name]?.description, t.name).toBeUndefined()
+    }
+    // and as each kind of turn sends them
+    for (const { kind, message, before, design } of TURNS) {
+      const sent = read(await turn(LOCAL, message, before, design))
+      for (const t of sent.tools) {
+        const name = t.name.replace(/__/g, '.')
+        expect(toolsTokens([t as never]), `${name} on a ${kind} turn: ${fix}`).toBeLessThanOrEqual(LOCAL_TOOLS[name]?.tokens ?? 0)
+      }
+      if (kind === 'build') expect(toolsTokens(sent.tools as never), 'the tools of a new part turn (LOCAL_BUILD_CAP in packages/pilot/src/local-tools.ts)').toBeLessThanOrEqual(LOCAL_BUILD_CAP)
+    }
   })
 
   it('lists each set for clients, and every set together is every tool the tab offers', async () => {

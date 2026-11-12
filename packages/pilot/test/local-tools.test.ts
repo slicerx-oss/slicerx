@@ -9,8 +9,11 @@ import type { PilotMachine } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createEvalEnv } from '../evals/harness'
-import { estimateTokens } from '../src/context'
+import { estimateTokens, toolsTokens } from '../src/context'
+import { describedPaths, keepDescriptions } from '../src/local-schema'
+import { LOCAL_TOOLS } from '../src/local-tools'
 import type { MemoryStore } from '../src/memory/facts'
+import { encodeToolName } from '../src/provider/openai'
 import { createScriptedClient } from '../src/provider/scripted'
 import { surfaceTools } from '../src/surfaces'
 import { defineTool, localToolDef, toolSpec, type PilotTool } from '../src/tool'
@@ -143,5 +146,80 @@ describe('a local input', () => {
     expect(Object.keys((localToolDef(t).parameters as { properties: object }).properties)).toEqual(['part'])
     expect(Object.keys((toolSpec(t).inputSchema as { properties: object }).properties)).toEqual(['part', 'amends'])
     expect((await t.run(t.input.parse({ part: 'Box', amends: 'p1' }), {} as never)).summary).toBe('amends p1')
+  })
+})
+
+describe('the text a local model is sent', () => {
+  it('holds every tool this package can send a local model to its row in LOCAL_TOOLS (local-tools.ts)', async () => {
+    const over = (await everyTool())
+      .map((t) => ({ name: t.name, cost: toolsTokens([{ ...localToolDef(t), name: encodeToolName(t.name) }]), row: LOCAL_TOOLS[t.name]?.tokens }))
+      .filter((t) => t.row === undefined || t.cost > t.row)
+    expect(over.map((t) => `${t.name} ${t.cost} (row ${t.row ?? 'none'})`), 'raise or add its row in local-tools.ts, in the same change').toEqual([])
+  })
+
+  it('lists in each row only field paths its tool still describes, and a description only for a tool without its own', async () => {
+    // a tool made in more than one form (pilot.ask with sizes, as the app makes it) may describe a path in either
+    const described = new Map<string, Set<string>>()
+    const tools = [...(await everyTool()), askTool({ sizesOnSheet: true })]
+    for (const t of tools) {
+      const shown = t.localInput ? { ...t, input: t.localInput } : t
+      for (const p of describedPaths(toolSpec(shown as PilotTool<unknown>).inputSchema)) described.set(t.name, (described.get(t.name) ?? new Set()).add(p))
+    }
+    for (const t of tools) {
+      const row = LOCAL_TOOLS[t.name]!
+      expect((row.fields ?? []).filter((p) => !described.get(t.name)?.has(p)), t.name).toEqual([])
+      if (t.localDescription !== undefined) expect(row.description, t.name).toBeUndefined()
+    }
+  })
+
+  it('sends a local model no description and no field description of a tool with no row, while a cloud model gets both', () => {
+    const t = defineTool({
+      name: 'test.unlisted',
+      version: '1.0.0',
+      description: 'A tool added for cloud models.',
+      source: 'command',
+      permission: 'read',
+      input: z.object({ part: z.string().describe('The part') }),
+      async run() {
+        return { summary: 'ok' }
+      },
+    })
+    expect(localToolDef(t)).toEqual({ name: 'test.unlisted', description: '', parameters: { type: 'object', properties: { part: { type: 'string' } }, required: ['part'] } })
+    expect(toolSpec(t).description).toBe('A tool added for cloud models.')
+    expect(toolSpec(t).inputSchema).toMatchObject({ properties: { part: { description: 'The part' } } })
+  })
+
+  it("keeps only the field descriptions a tool's row lists: a field added later reaches cloud turns only", () => {
+    // kb.search's row sends its description and none of its field descriptions
+    const t = defineTool({
+      name: 'kb.search',
+      version: '1.0.0',
+      description: 'Search the knowledge base.',
+      source: 'command',
+      permission: 'read',
+      input: z.object({ query: z.string(), later: z.string().optional().describe('A field added for cloud models') }),
+      async run() {
+        return { summary: 'ok' }
+      },
+    })
+    expect(LOCAL_TOOLS['kb.search']).toEqual({ tokens: 88, description: true })
+    expect(localToolDef(t).description).toBe('Search the knowledge base.')
+    expect(describedPaths(localToolDef(t).parameters)).toEqual([])
+    expect(describedPaths(toolSpec(t).inputSchema)).toEqual(['later'])
+  })
+
+  it('writes each described field as a path: properties by name, [] for items, {} for map values, a union at its own path', () => {
+    const schema = {
+      description: 'root',
+      properties: {
+        shape: { anyOf: [{ properties: { kind: { description: 'a' } } }, { properties: { kind: { description: 'b' }, r: { description: 'c' } } }] },
+        rows: { items: { properties: { at: { description: 'd' } } } },
+        tags: { additionalProperties: { description: 'e' } },
+      },
+    }
+    expect(describedPaths(schema)).toEqual(['', 'rows[].at', 'shape.kind', 'shape.r', 'tags{}'])
+    expect(describedPaths(keepDescriptions(schema, new Set(['shape.kind'])))).toEqual(['shape.kind'])
+    // the copy is new: the schema given is left as it was
+    expect(describedPaths(schema)).toHaveLength(5)
   })
 })
