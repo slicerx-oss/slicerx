@@ -380,7 +380,7 @@ fn what_cannot_be_made_exact_is_refused_and_nothing_is_kept() {
             &json!([level(0.0, &circle(20.0)), level(20.0, &spline)]),
             &json!({})
         ),
-        "loft: profile 2 has a spline, which has no pieces to match"
+        "loft: profile 2 is a closed spline, which has no corners to match its pieces between"
     );
     assert_eq!(
         refused(
@@ -618,7 +618,7 @@ fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
         ),
         (
             json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &spline)] }),
-            "Profile 2 has a spline, which has no pieces to match.",
+            "Profile 2 is a closed spline, which has no corners to match its pieces between.",
         ),
         (
             json!({ "profiles": block(), "operation": "join", "target": { "mesh": target } }),

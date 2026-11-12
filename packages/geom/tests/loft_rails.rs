@@ -11,6 +11,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use sx_geom::fm::Fm;
 use sx_geom::mesh::TriMesh;
 use sx_geom::sketch_loft::{self, Curve, Density, Match, Options, Profile, Rails};
+use sx_geom::sketch_spline;
 use sx_geom::vec3::{self, V3};
 
 fn level(z: f64) -> Value {
@@ -772,7 +773,7 @@ fn profiles_that_cannot_be_matched_say_why() {
             &json!([at(0.0, &circle([0.0, 0.0], 20.0)), at(20.0, &spline)]),
             &json!({})
         ),
-        "profile 2 has a spline, which has no pieces to match"
+        "profile 2 is a closed spline, which has no corners to match its pieces between"
     );
     let bow = |z: f64| {
         json!({
@@ -1174,4 +1175,132 @@ fn pictures_of_matched_pairs() {
         print!("{}", picture(&rails_of(&profiles, &json!({}))));
         println!("-----8<----- end");
     }
+}
+
+/// A D: a straight top from (-w, 0) to (w, 0) and a spline under it `depth` deep, drawn clockwise.
+fn d_section(w: f64, depth: f64) -> Value {
+    json!({ "start": [-w, 0], "segments": [
+        { "type": "line", "to": [w, 0] },
+        { "type": "spline", "points": d_points(w, depth), "to": [-w, 0] },
+    ] })
+}
+
+/// The points a D's spline is drawn through between its ends.
+fn d_points(w: f64, depth: f64) -> Vec<[f64; 2]> {
+    [
+        (0.8, -0.5),
+        (0.4, -0.95),
+        (0.0, -1.0),
+        (-0.4, -0.95),
+        (-0.8, -0.5),
+    ]
+    .iter()
+    .map(|&(x, y)| [x * w, y * depth])
+    .collect()
+}
+
+/// How far `p` is from the spline through `through`: from the nearest chord of it drawn far finer than the slicing
+/// tolerance, so to well within a micrometer.
+fn off_spline(p: [f64; 2], through: &[[f64; 2]]) -> f64 {
+    let mut points = vec![through[0]];
+    for b in sketch_spline::spans(through, false) {
+        points.extend(sketch_spline::flatten(&b, 4096));
+    }
+    points
+        .windows(2)
+        .map(|w| {
+            let (a, b) = (w[0], w[1]);
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let f =
+                (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / (d[0] * d[0] + d[1] * d[1])).clamp(0.0, 1.0);
+            (p[0] - a[0] - f * d[0]).m_hypot(p[1] - a[1] - f * d[1])
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+#[test]
+fn a_line_and_a_spline_match_piece_for_piece() {
+    let sizes = [(0.0, 10.0, 8.0), (12.0, 8.0, 6.0), (25.0, 9.0, 7.0)];
+    let profiles: Vec<Value> = sizes.iter().map(|&(z, w, d)| at(z, &d_section(w, d))).collect();
+    let r = rails_of(&json!(profiles), &json!({ "smooth": true }));
+    assert_eq!(r.pieces.len(), 2);
+    let line = r
+        .pieces
+        .iter()
+        .position(|p| p.curves.iter().all(|c| *c == Curve::Line))
+        .expect("a line piece");
+    let spline = r
+        .pieces
+        .iter()
+        .position(|p| p.curves.iter().all(|c| matches!(c, Curve::Spline { .. })))
+        .expect("a spline piece");
+    assert_ne!(line, spline);
+    let n = r.rings[0].flat.len();
+    for (ring, &(_, w, d)) in r.rings.iter().zip(&sizes) {
+        // counterclockwise about the way the loft goes, whichever way it was drawn
+        let area: f64 = (0..n)
+            .map(|i| {
+                let (a, b) = (ring.flat[i], ring.flat[(i + 1) % n]);
+                a[0] * b[1] - a[1] * b[0]
+            })
+            .sum();
+        assert!(area > 0.0, "{area}");
+        // the two corners are the line's ends, each where the drawing has it
+        let corners: Vec<[f64; 2]> = (0..n)
+            .filter(|&i| ring.corners[i])
+            .map(|i| ring.flat[i])
+            .collect();
+        assert_eq!(corners.len(), 2, "{corners:?}");
+        assert!(
+            corners.contains(&[w, 0.0]) && corners.contains(&[-w, 0.0]),
+            "{corners:?}"
+        );
+        // every point of the line piece is on the line, and every point of the spline piece on the spline drawn
+        let mut through = vec![[w, 0.0]];
+        through.extend(d_points(w, d));
+        through.push([-w, 0.0]);
+        let piece = |k: usize| {
+            let p = &r.pieces[k];
+            (p.first..=p.first + p.stretches).map(move |i| ring.flat[i % n])
+        };
+        assert!(
+            piece(line).all(|p| p[1] == 0.0 && p[0].abs() <= w),
+            "{:?}",
+            ring.flat
+        );
+        let off = piece(spline).map(|p| off_spline(p, &through)).fold(0.0, f64::max);
+        assert!(off <= 1e-6, "{off:e}");
+    }
+}
+
+#[test]
+fn a_spline_is_matched_only_to_a_spline() {
+    let arc_beside = json!({ "start": [-10, 0], "segments": [
+        { "type": "line", "to": [10, 0] },
+        { "type": "arc", "to": [0, -10], "through": [7.071_067_811_865_476, -7.071_067_811_865_476] },
+        { "type": "spline", "points": [[-7, -7]], "to": [-10, 0] },
+    ] });
+    let opts = json!({});
+    let unmatched = |profiles: &Value| match match_of(profiles, &opts, &Density::default()) {
+        Match::Unmatched(why) => why,
+        Match::Rails(_) => panic!("matched"),
+    };
+    assert_eq!(
+        unmatched(&json!([
+            at(0.0, &d_section(10.0, 8.0)),
+            at(20.0, &square([0.0, -4.0], 16.0))
+        ])),
+        "a spline is matched only to a spline, and profile 2 has none where profile 1 has one"
+    );
+    assert_eq!(
+        unmatched(&json!([at(0.0, &arc_beside), at(20.0, &arc_beside)])),
+        "profile 1 has an arc beside a spline, which has no pieces to match yet"
+    );
+    let around = json!({ "start": [10, 0], "segments": [
+        { "type": "spline", "points": [[0, 8], [-10, 0], [0, -8]], "to": [10, 0] },
+    ] });
+    assert_eq!(
+        unmatched(&json!([at(0.0, &d_section(10.0, 8.0)), at(20.0, &around)])),
+        "profile 2 is a closed spline, which has no corners to match its pieces between"
+    );
 }

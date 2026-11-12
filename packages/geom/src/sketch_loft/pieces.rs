@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! profiles with arcs matched piece to piece for a loft's rails: arc to arc and line to line, and where two profiles
-//! have different pieces, each split where the other's corners land on it
+//! profiles with arcs or splines matched piece to piece for a loft's rails: arc to arc, spline to spline and line to
+//! line, and where two profiles have different pieces, each split where the other's corners land on it
 // piece and rail indices come from the lists built here
 #![allow(clippy::indexing_slicing)]
 // a corner's place is copied from rail to rail and never worked out twice, so places are compared as they are
@@ -10,9 +10,11 @@
 use super::{LANDMARK_TOL_MM, MAX_RING, Profile, alongs, frame_of, landmarked, ring_of};
 use crate::error::Error;
 use crate::fm::Fm;
-use crate::sketch::{self, CurveLoop, Loop};
+use crate::sketch::{self, CurveLoop, Loop, Prim};
+use crate::sketch_spline;
 use crate::vec3::{self, Frame, V2, V3};
 use std::f64::consts::TAU;
+use std::sync::Arc;
 
 /// How close two places along a profile are one place, mm: the landmark tolerance. A corner of one profile that lands
 /// this near a corner of the next is that corner, so no piece (and later no face) comes out thinner than a point marked
@@ -34,9 +36,11 @@ const THIN_MM: f64 = 1e-6;
 const TWIST_SAMPLES: usize = 360;
 /// The offsets around a profile tried for the least twist before the best is closed in on.
 const TWIST_TURNS: usize = 120;
+/// The samples a spline's span is measured at, so places along a spline go by its length.
+const SPLINE_SAMPLES: usize = 64;
 
 /// One piece of a profile in its plane, between two ring points.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Curve {
     /// A straight line.
     Line,
@@ -57,20 +61,130 @@ pub enum Curve {
         from: f64,
         sweep: f64,
     },
+    /// Part of a spline drawn through points: from the share `from` of its length to the share `to`.
+    Spline {
+        spans: Arc<SplineSpans>,
+        from: f64,
+        to: f64,
+    },
 }
 
 impl Curve {
-    /// Whether it is an arc of a circle or an ellipse.
+    /// Whether it is anything but a straight line: an arc of a circle or an ellipse, or a spline.
     pub fn curved(&self) -> bool {
         !matches!(self, Self::Line)
     }
 
-    /// How far around it goes, radians; 0 for a line.
+    /// What it pairs with piece for piece: a line with a line, an arc of a circle or an ellipse with either, and a
+    /// spline with a spline.
+    fn kind(&self) -> u8 {
+        match self {
+            Self::Line => 0,
+            Self::Arc { .. } | Self::Ellipse { .. } => 1,
+            Self::Spline { .. } => 2,
+        }
+    }
+
+    /// How far around it goes, radians; 0 for a line. A spline's is how far it turns, all its bends summed.
     fn sweep(&self) -> f64 {
         match *self {
             Self::Line => 0.0,
             Self::Arc { sweep, .. } | Self::Ellipse { sweep, .. } => sweep.abs(),
+            Self::Spline { ref spans, from, to } => spans.turning(from, to),
         }
+    }
+}
+
+/// A spline as the cubic spans the mesh loft flattens, measured along so that places on it go by its length.
+#[derive(Debug, PartialEq)]
+pub struct SplineSpans {
+    /// From each drawn point to the next.
+    pub spans: Vec<[V2; 4]>,
+    /// How far along it each sample is, `SPLINE_SAMPLES` to a span evenly by its parameter, from its start to its end.
+    along: Vec<f64>,
+}
+
+impl SplineSpans {
+    fn new(spans: Vec<[V2; 4]>) -> Self {
+        let mut along = vec![0.0];
+        let mut last = spans[0][0];
+        for b in &spans {
+            for p in sketch_spline::flatten(b, SPLINE_SAMPLES) {
+                along.push(along[along.len() - 1] + (p[0] - last[0]).m_hypot(p[1] - last[1]));
+                last = p;
+            }
+        }
+        Self { spans, along }
+    }
+
+    fn length(&self) -> f64 {
+        self.along[self.along.len() - 1]
+    }
+
+    /// Where the share `g` of its length is, in samples from its start: measured to the sample before, and on to the
+    /// next by the share of the chord between them.
+    #[allow(clippy::cast_precision_loss, reason = "a sample count")]
+    fn step_at(&self, g: f64) -> f64 {
+        let d = g.clamp(0.0, 1.0) * self.length();
+        let i = self
+            .along
+            .partition_point(|&a| a <= d)
+            .saturating_sub(1)
+            .min(self.along.len() - 2);
+        let (a, b) = (self.along[i], self.along[i + 1]);
+        i as f64 + if b > a { (d - a) / (b - a) } else { 0.0 }
+    }
+
+    /// The share of its length the place `step` samples from its start is at; [`Self::step_at`] the other way.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "a sample count"
+    )]
+    fn share_at(&self, step: f64) -> f64 {
+        let i = (step.max(0.0).floor() as usize).min(self.along.len() - 2);
+        let f = step - i as f64;
+        (self.along[i] + (self.along[i + 1] - self.along[i]) * f) / self.length()
+    }
+
+    /// The point `step` samples from its start, on the spans themselves.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "a sample count"
+    )]
+    fn point(&self, step: f64) -> V2 {
+        let per = SPLINE_SAMPLES as f64;
+        let k = ((step.max(0.0) / per).floor() as usize).min(self.spans.len() - 1);
+        sketch_spline::point(&self.spans[k], step / per - k as f64)
+    }
+
+    /// How far it turns between the shares `from` and `to` of its length, radians: the turns from each chord to
+    /// the next, a chord to a sample.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "a sample count"
+    )]
+    fn turning(&self, from: f64, to: f64) -> f64 {
+        let (a, b) = (self.step_at(from.min(to)), self.step_at(from.max(to)));
+        let n = ((b - a).ceil() as usize).max(1);
+        let points: Vec<V2> = (0..=n)
+            .map(|i| self.point(a + (b - a) * i as f64 / n as f64))
+            .collect();
+        points
+            .windows(3)
+            .map(|w| {
+                let u = [w[1][0] - w[0][0], w[1][1] - w[0][1]];
+                let v = [w[2][0] - w[1][0], w[2][1] - w[1][1]];
+                (u[0] * v[1] - u[1] * v[0])
+                    .m_atan2(u[0] * v[0] + u[1] * v[1])
+                    .abs()
+            })
+            .sum()
     }
 }
 
@@ -114,7 +228,7 @@ fn unmatched<T>(why: impl Into<String>) -> Try<T> {
 }
 
 /// One drawn piece of a profile, from one of its corners to the next.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Part {
     from: V2,
     to: V2,
@@ -154,11 +268,15 @@ impl Part {
                 from,
                 sweep,
             } => ellipse_at(center, half_width, half_height, turn, from + sweep * f),
+            Curve::Spline {
+                ref spans, from, to, ..
+            } => spans.point(spans.step_at(from + (to - from) * f)),
         }
     }
 
     /// How long it is. An ellipse is measured by the angle that maps it to a circle of its longer half axis, as its
-    /// flattening steps are, so places along it go by that angle and not by true length.
+    /// flattening steps are, so places along it go by that angle and not by true length. A spline is measured along
+    /// its chords, a few dozen to a span.
     fn measure(&self) -> f64 {
         match self.curve {
             Curve::Line => (self.to[0] - self.from[0]).m_hypot(self.to[1] - self.from[1]),
@@ -169,6 +287,9 @@ impl Part {
                 sweep,
                 ..
             } => half_width.max(half_height) * sweep.abs(),
+            Curve::Spline {
+                ref spans, from, to, ..
+            } => spans.length() * (to - from).abs(),
         }
     }
 
@@ -201,6 +322,13 @@ impl Part {
                 turn,
                 from: from + sweep * f0,
                 sweep: sweep * (f1 - f0),
+            },
+            Curve::Spline {
+                ref spans, from, to, ..
+            } => Curve::Spline {
+                spans: Arc::clone(spans),
+                from: from + (to - from) * f0,
+                to: from + (to - from) * f1,
             },
         }
     }
@@ -242,6 +370,13 @@ impl Part {
                     sweep,
                 }
             }
+            Curve::Spline {
+                ref spans, from, to, ..
+            } => Curve::Spline {
+                spans: Arc::clone(spans),
+                from: to,
+                to: from,
+            },
         };
         Self {
             from: self.to,
@@ -278,6 +413,43 @@ impl Part {
                 let d = [p[0] - center[0], p[1] - center[1]];
                 let (x, y) = (c * d[0] + s * d[1], c * d[1] - s * d[0]);
                 turn_from((y / half_height).m_atan2(x / half_width), from, sweep)
+            }
+            Curve::Spline {
+                ref spans, from, to, ..
+            } => {
+                // the nearest of its samples, then closed in on between the samples either side
+                let (s0, s1) = (spans.step_at(from), spans.step_at(to));
+                let (lo, hi) = (s0.min(s1), s0.max(s1));
+                let off = |s: f64| {
+                    let q = spans.point(s);
+                    (p[0] - q[0]).m_hypot(p[1] - q[1])
+                };
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    clippy::cast_precision_loss,
+                    reason = "a sample count"
+                )]
+                let (n, step) = {
+                    let n = ((hi - lo).ceil() as usize).max(1);
+                    (n, (hi - lo) / n as f64)
+                };
+                #[allow(clippy::cast_precision_loss, reason = "a sample count")]
+                let best = (0..=n)
+                    .map(|i| lo + step * i as f64)
+                    .min_by(|&a, &b| off(a).total_cmp(&off(b)))
+                    .unwrap_or(lo);
+                let (mut a, mut b) = ((best - step).max(lo), (best + step).min(hi));
+                for _ in 0..60 {
+                    let (m1, m2) = (a + (b - a) / 3.0, b - (b - a) / 3.0);
+                    if off(m1) <= off(m2) {
+                        b = m2;
+                    } else {
+                        a = m1;
+                    }
+                }
+                let g = spans.share_at(f64::midpoint(a, b));
+                if to == from { 0.0 } else { (g - from) / (to - from) }
             }
         };
         let f = f.clamp(0.0, 1.0);
@@ -434,9 +606,7 @@ fn outline_of(k: usize, p: &Profile) -> Try<Outline> {
     }
     let drawn: Vec<Loop> = p.loops.iter().filter(|l| !l.construction).cloned().collect();
     if drawn.iter().any(sketch::has_spline) {
-        return unmatched(format!(
-            "profile {name} has a spline, which has no pieces to match"
-        ));
+        return spline_outline(name, &drawn);
     }
     let mut curves = match sketch::curves(&drawn) {
         Ok(c) => c,
@@ -507,6 +677,67 @@ fn outline_of(k: usize, p: &Profile) -> Try<Outline> {
     Ok(Outline::new(parts))
 }
 
+/// The outline of a profile drawn with lines and spline segments, counterclockwise in its plane. A spline matches only
+/// a spline, so a spline all the way around (with no corner to match from) and an arc beside a spline are left
+/// unmatched.
+fn spline_outline(name: usize, drawn: &[Loop]) -> Try<Outline> {
+    let [lp] = drawn else {
+        return unmatched(format!("profile {name} is not one closed loop"));
+    };
+    let closed = || {
+        unmatched(format!(
+            "profile {name} is a closed spline, which has no corners to match its pieces between"
+        ))
+    };
+    if lp.kind.as_deref() == Some("spline") {
+        return closed();
+    }
+    let (start, pieces) = match sketch::drawn_pieces(0, lp) {
+        Ok(d) => d,
+        Err(e) => return unmatched(format!("profile {name}: {e}")),
+    };
+    if pieces.len() < 2 {
+        return closed();
+    }
+    let mut parts = Vec::with_capacity(pieces.len());
+    // twice the area it winds around, to know which way that is
+    let mut area2 = 0.0;
+    let mut from = start;
+    for (prim, points) in pieces {
+        let (to, curve) = match prim {
+            Prim::Line { to } => {
+                area2 += from[0] * to[1] - from[1] * to[0];
+                (to, Curve::Line)
+            }
+            Prim::Spline { to } => {
+                let mut through = vec![from];
+                through.extend(points);
+                through.push(to);
+                let spans = sketch_spline::spans(&through, false);
+                area2 += sketch_spline::area2(&spans);
+                let spans = Arc::new(SplineSpans::new(spans));
+                (
+                    to,
+                    Curve::Spline {
+                        spans,
+                        from: 0.0,
+                        to: 1.0,
+                    },
+                )
+            }
+            Prim::Arc { .. } => {
+                return unmatched(format!(
+                    "profile {name} has an arc beside a spline, which has no pieces to match yet"
+                ));
+            }
+        };
+        parts.push(Part { from, to, curve });
+        from = to;
+    }
+    let outline = Outline::new(parts);
+    Ok(if area2 < 0.0 { outline.reversed() } else { outline })
+}
+
 /// A profile ready to match: its outline wound the way the loft goes, on its plane.
 struct Lined {
     outline: Outline,
@@ -568,7 +799,7 @@ fn least_twist(a: &Lined, b: &Lined) -> ((f64, f64), bool) {
     let (oa, ob) = (&a.outline, &b.outline);
     let n = oa.parts.len();
     if !oa.free && !ob.free && n == ob.parts.len() {
-        let kinds = |o: &Outline, i: usize| o.parts[i % n].curve.curved();
+        let kinds = |o: &Outline, i: usize| o.parts[i % n].curve.kind();
         let mid = |o: &Outline, i: usize| f64::midpoint(o.at[i % n], o.at[i % n + 1]);
         let mut best: Option<(f64, usize)> = None;
         for s in (0..n).filter(|&s| (0..n).all(|i| kinds(oa, i) == kinds(ob, i + s))) {
@@ -651,7 +882,7 @@ impl Map {
             tb: b.total(),
         };
         // the corners strictly inside the run of `o` from `from` over `len`, and the kind of each piece in it
-        let inside = |o: &Outline, from: f64, len: f64| -> (Vec<f64>, Vec<bool>) {
+        let inside = |o: &Outline, from: f64, len: f64| -> (Vec<f64>, Vec<u8>) {
             let mut c: Vec<f64> = o
                 .corners()
                 .iter()
@@ -668,7 +899,7 @@ impl Map {
             });
             let kinds = std::iter::once(from)
                 .chain(c.iter().copied())
-                .map(|t| o.parts[o.part_at(t)].curve.curved())
+                .map(|t| o.parts[o.part_at(t)].curve.kind())
                 .collect();
             (c, kinds)
         };
@@ -876,8 +1107,9 @@ pub(super) struct Matched {
 /// around has no corner: it is split only where other profiles' corners land, and with none anywhere the loft is one
 /// piece all the way around, its first rail at the first profile's start.
 ///
-/// Refused as unmatched: open chains, splines, and a ring whose rails do not come back onto themselves after one
-/// time around.
+/// A spline is matched only to a spline. Refused as unmatched: open chains, closed splines, arcs beside splines, a
+/// spline that would pair with anything but a spline, and a ring whose rails do not come back onto themselves after
+/// one time around.
 pub(super) fn matched(profiles: &[Profile], closed: bool, density: &Density) -> Try<Matched> {
     if !(density.arc_step_deg.is_finite() && density.arc_step_deg > 0.0 && density.least >= 1) {
         return Err(Error::invalid(
@@ -989,6 +1221,17 @@ fn cut(frames: &[Frame], outlines: &[Outline], rails: &[Rail], density: &Density
             .zip(outlines)
             .map(|(&(i, f0, f1), o)| o.parts[i].cut(f0, f1))
             .collect();
+        let spline = |c: &Curve| matches!(c, Curve::Spline { .. });
+        if let (Some(s), Some(o)) = (
+            curves.iter().position(spline),
+            curves.iter().position(|c| !spline(c)),
+        ) {
+            return unmatched(format!(
+                "a spline is matched only to a spline, and profile {} has none where profile {} has one",
+                o + 1,
+                s + 1
+            ));
+        }
         let widest = curves.iter().map(Curve::sweep).fold(0.0, f64::max).to_degrees();
         #[allow(
             clippy::cast_possible_truncation,
