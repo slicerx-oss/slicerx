@@ -36,6 +36,8 @@ export type LlmMessage =
       toolCalls?: LlmToolCall[]
       /** Provider items to send back verbatim on the next turn (reasoning state). */
       raw?: unknown[]
+      /** What the provider signed the reasoning in `raw` against (reasoning-binding.ts bindingKey). */
+      bound?: string
     }
   | { role: 'tool'; callId: string; content: string; images?: LlmImage[] }
 
