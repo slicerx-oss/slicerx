@@ -3,6 +3,7 @@
 // The geometry engine (sx-geom) for the app: cut, repair, simplify, hollow, emboss, orient and
 // booleans. Loads on first use in a worker. A host can provide its own (for example native code in
 // the desktop app) with setGeomProvider.
+import { withTooBig } from '@slicerx/cad-history'
 import type { FaceSurface, MeshPart } from '@slicerx/contracts'
 import { geomCallLimitMs, geomStuckMessage } from '@slicerx/contracts/geom-limits'
 import type { LoadError } from './modules'
@@ -245,7 +246,7 @@ function workerProvider(): GeomProvider {
     const current = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
     worker = current
     workerStarted(current, 'shared')
-    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number } | { step: number; op?: string; name?: string } | { yielded: number }>) => {
+    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; tooBig?: unknown; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number } | { step: number; op?: string; name?: string } | { yielded: number }>) => {
       if (worker !== current) return
       if ('loadError' in e.data) {
         noteLoadError(e.data.loadError)
@@ -312,7 +313,8 @@ function workerProvider(): GeomProvider {
       }
       if (!p) return
       pending.delete(e.data.id)
-      if (e.data.error !== undefined) p.reject(new Error(e.data.error))
+      // a body too big for the engine carries its size and limit (withTooBig)
+      if (e.data.error !== undefined) p.reject(withTooBig(new Error(e.data.error), e.data))
       else p.resolve(e.data.result)
     }
     current.onerror = (e) => {
@@ -450,7 +452,7 @@ export function soloCall<T>(op: string, request: unknown, transfer: Transferable
       calls.lastError = e.message
       reject(e)
     }
-    w.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string } | { loadError: LoadError } | { started: number }>) => {
+    w.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; tooBig?: unknown } | { loadError: LoadError } | { started: number }>) => {
       if ('loadError' in e.data) return noteLoadError(e.data.loadError)
       if ('started' in e.data) {
         if (e.data.started !== 1 || !worker) return
@@ -460,7 +462,7 @@ export function soloCall<T>(op: string, request: unknown, transfer: Transferable
       }
       // a spare's own start-up answer (startSpareGeomWorker) is not this call's
       if (e.data.id !== 1) return
-      if (e.data.error !== undefined) return fail(new Error(e.data.error))
+      if (e.data.error !== undefined) return fail(withTooBig(new Error(e.data.error), e.data))
       stop()
       calls.answered[op] = (calls.answered[op] ?? 0) + 1
       resolve(e.data.result as T)

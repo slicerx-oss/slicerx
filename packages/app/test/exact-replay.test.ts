@@ -5,7 +5,7 @@
 // what they send it, and how a step falls back to the mesh when the kernel fails. The kernel itself is tested in
 // packages/brep (cargo) and brep-module.test.ts.
 import { beforeEach, expect, it } from 'vitest'
-import { EXACT_FELL_BACK, IDENTITY, clearReplayCache, replayHistory, stepSalt, type History, type Step, type StepParams } from '@slicerx/cad-history'
+import { EXACT_FELL_BACK, EXACT_OPS, IDENTITY, clearReplayCache, replayHistory, stepSalt, type History, type Step, type StepParams } from '@slicerx/cad-history'
 import { primitive } from '../src/plate/mesh-ops'
 
 const tri = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }
@@ -19,6 +19,8 @@ function engine(failing: string[] = []) {
   let n = 0
   const call = async (op: string, request: unknown) => {
     const req = request as Record<string, unknown>
+    // which operations it makes exact and the largest solid it takes, asked once a replay: not a step's call
+    if (op === EXACT_OPS) return { ops: [] }
     sent.push({ op, req })
     if (failing.includes(op)) throw new Error(`kernel: ${op} failed (SMLib status 1001)`)
     if (op === 'brep.tessellate') return { ...tri, faceIds: [0], faces: [{ id: 0, type: 'plane', surface: { kind: 'plane', normal: [0, 0, 1], offset: 0 }, key: 77 }] }

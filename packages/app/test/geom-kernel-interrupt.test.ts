@@ -56,7 +56,7 @@ it('ends a busy real kernel worker and starts again without its body handles', a
     clearReplayCache()
     const recovered = await replayHistory((op, request) => { operations.push(op); return api.call(op, request) }, { history: JSON.parse(saved) as History, exact: true })
     expect(recovered.status).toEqual([{ state: 'done' }])
-    expect(operations).toEqual(['brep.extrude', 'brep.tessellate'])
+    expect(operations).toEqual(['brep.extrude', 'exact.ops', 'brep.tessellate'])
     const positions = Array.from(recovered.parts[0]!.positions)
     for (const axis of [0, 1, 2]) {
       const values = positions.filter((_, index) => index % 3 === axis)

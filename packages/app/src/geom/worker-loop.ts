@@ -7,7 +7,7 @@
 // before the engine runs it and after any build it needs has loaded, so the page can end a worker stuck in a canceled
 // call, or in one past its time limit; a replay also says when it waits between steps ({yielded}) and when each of its
 // steps starts ({step}).
-import { stepName, type Step } from '@slicerx/cad-history'
+import { stepName, tooBigOf, type Step } from '@slicerx/cad-history'
 
 export interface WorkerJobs {
   /** Waits for what the call needs (an engine build, the B-rep kernel), then hands back the engine call itself (its answer, or a promise of it). */
@@ -43,7 +43,7 @@ export function workerLoop(post: WorkerPost, jobs: WorkerJobs): (data: WorkerMes
   const canceled = new Set<number>()
   // calls waiting for the page's go
   const waiting = new Map<number, { op: string; request: unknown }>()
-  const answer = (id: number, m: { result: unknown } | { error: string }, transfer?: Transferable[]) => post({ id, ...m, memoryBytes: jobs.memoryBytes() }, transfer)
+  const answer = (id: number, m: { result: unknown } | { error: string; tooBig?: { size: number; limit: number } }, transfer?: Transferable[]) => post({ id, ...m, memoryBytes: jobs.memoryBytes() }, transfer)
   const run = async (id: number, op: string, request: unknown) => {
     try {
       if (op === 'history.replay') {
@@ -73,7 +73,8 @@ export function workerLoop(post: WorkerPost, jobs: WorkerJobs): (data: WorkerMes
       answer(id, { result }, jobs.transfer(op, result))
     } catch (err) {
       canceled.delete(id)
-      answer(id, { error: err instanceof Error ? err.message : String(err) })
+      const tooBig = tooBigOf(err)
+      answer(id, { error: err instanceof Error ? err.message : String(err), ...(tooBig ? { tooBig } : {}) })
     }
   }
   return async (data) => {
