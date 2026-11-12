@@ -125,15 +125,19 @@ pub fn flatten(b: &[V2; 4], n: usize) -> Vec<V2> {
             if s == n {
                 return b[3];
             }
-            let t = s as f64 / n as f64;
-            let u = 1.0 - t;
-            let (w0, w1, w2, w3) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
-            [
-                w0 * b[0][0] + w1 * b[1][0] + w2 * b[2][0] + w3 * b[3][0],
-                w0 * b[0][1] + w1 * b[1][1] + w2 * b[2][1] + w3 * b[3][1],
-            ]
+            point(b, s as f64 / n as f64)
         })
         .collect()
+}
+
+/// the point at `t` along the span, from 0 at its start to 1 at its end
+pub fn point(b: &[V2; 4], t: f64) -> V2 {
+    let u = 1.0 - t;
+    let (w0, w1, w2, w3) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+    [
+        w0 * b[0][0] + w1 * b[1][0] + w2 * b[2][0] + w3 * b[3][0],
+        w0 * b[0][1] + w1 * b[1][1] + w2 * b[2][1] + w3 * b[3][1],
+    ]
 }
 
 /// the unit direction the span leaves its start in
@@ -195,15 +199,6 @@ mod tests {
         assert!((a[0] * b[1] - a[1] * b[0]).abs() < 1e-9, "{a:?} {b:?}");
     }
 
-    fn bez(b: &[V2; 4], t: f64) -> V2 {
-        let u = 1.0 - t;
-        let w = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
-        [
-            w[0] * b[0][0] + w[1] * b[1][0] + w[2] * b[2][0] + w[3] * b[3][0],
-            w[0] * b[0][1] + w[1] * b[1][1] + w[2] * b[2][1] + w[3] * b[3][1],
-        ]
-    }
-
     fn off_chord(p: V2, a: V2, b: V2) -> f64 {
         let ab = sub(b, a);
         let l2 = ab[0] * ab[0] + ab[1] * ab[1];
@@ -242,7 +237,7 @@ mod tests {
                 for k in 0..n {
                     for j in 0..=64 {
                         let t = (k as f64 + f64::from(j) / 64.0) / n as f64;
-                        worst = worst.max(off_chord(bez(b, t), poly[k], poly[k + 1]));
+                        worst = worst.max(off_chord(point(b, t), poly[k], poly[k + 1]));
                     }
                 }
                 assert!(worst <= TOL_MM + 1e-12, "{worst} on {b:?}");
