@@ -110,22 +110,29 @@ export interface Solids {
   made: (body: number) => void
   /** Whether the engine makes an exact body for this operation itself (exactOps); asked once a replay. */
   has?: (op: string) => Promise<boolean>
+  /** The largest solid text a part keeps, as the engine gives it (exactOps); MAX_SOLID_TEXT when not given. */
+  limit?: () => Promise<number>
 }
 
 /** The engine operation that lists the operations it has an exact path for. */
 export const EXACT_OPS = 'exact.ops'
 
 /**
- * The operations the engine makes exact bodies for, as it answers EXACT_OPS (`{ ops: [...] }`). An engine without
- * the kernel lists none, and one that does not know the question has none either.
+ * The operations the engine makes exact bodies for, and the largest solid text it takes, as it answers EXACT_OPS
+ * (`{ ops: [...], maxSolidText }`). An engine without the kernel lists none, and one that does not know the question
+ * has none either. An engine that gives no limit has MAX_SOLID_TEXT.
  */
-export async function exactOps(call: Call): Promise<Set<string>> {
+export async function exactOps(call: Call): Promise<{ ops: Set<string>; maxSolidText: number }> {
   try {
-    const r = (await call(EXACT_OPS, {})) as { ops?: unknown } | null
-    return new Set(Array.isArray(r?.ops) ? r.ops.filter((o): o is string => typeof o === 'string') : [])
+    const r = (await call(EXACT_OPS, {})) as { ops?: unknown; maxSolidText?: unknown } | null
+    const limit = r?.maxSolidText
+    return {
+      ops: new Set(Array.isArray(r?.ops) ? r.ops.filter((o): o is string => typeof o === 'string') : []),
+      maxSolidText: typeof limit === 'number' && Number.isInteger(limit) && limit > 0 ? limit : MAX_SOLID_TEXT,
+    }
   } catch (e) {
     if ((e as { name?: string }).name === 'AbortError') throw e
-    return new Set()
+    return { ops: new Set(), maxSolidText: MAX_SOLID_TEXT }
   }
 }
 
@@ -133,23 +140,41 @@ export async function exactOps(call: Call): Promise<Set<string>> {
 export const MAX_SOLID_TEXT = 8 * 1024 * 1024
 
 /** `chars` and the limit in millions, to one place, or to as many more as it takes for the two to read apart. */
-function inMillions(chars: number): [string, string] {
+function inMillions(chars: number, limit: number): [string, string] {
   const m = (n: number, places: number) => (n / 1e6).toFixed(places).replace(/\.?0+$/, '')
   let places = 1
-  while (places < 6 && m(chars, places) === m(MAX_SOLID_TEXT, places)) places++
-  return [m(chars, places), m(MAX_SOLID_TEXT, places)]
+  while (places < 6 && m(chars, places) === m(limit, places)) places++
+  return [m(chars, places), m(limit, places)]
 }
 
 /**
- * What a step says when the part's exact solid grew past MAX_SOLID_TEXT: from this step on the part is built as a mesh,
+ * What a step says when the part's exact solid grew past the limit (`max`, the engine's or MAX_SOLID_TEXT): from this step on the part is built as a mesh,
  * or, in a design that must stay exact (`strict`), the step cannot stay exact.
  */
-export function solidTooBig(chars: number, strict: boolean): string {
-  const [now, limit] = inMillions(chars)
+export function solidTooBig(chars: number, strict: boolean, max = MAX_SOLID_TEXT): string {
+  const [now, limit] = inMillions(chars, max)
   const size = `size ${now} million, limit ${limit} million`
   return strict
     ? `this step would make the part too detailed to stay an exact solid (${size}).`
     : `This part is now too detailed to stay an exact solid, so from this step on it is built as a mesh. (Size ${now} million, limit ${limit} million.)`
+}
+
+/** The engine's refusal of a body too big for it, as its error reply gives it: `{ error, tooBig: { size, limit } }`. */
+export interface TooBig {
+  size: number
+  limit: number
+}
+
+/** The size and limit an engine error carries (withTooBig), or undefined for any other error, an older engine's too. */
+export function tooBigOf(e: unknown): TooBig | undefined {
+  const t = (e as { tooBig?: { size?: unknown; limit?: unknown } } | null)?.tooBig
+  return t && Number.isInteger(t.size) && Number.isInteger(t.limit) ? { size: t.size as number, limit: t.limit as number } : undefined
+}
+
+/** `error` carrying the size and limit of the engine's reply (or answer) when it refused a body too big for it. */
+export function withTooBig<E extends Error>(error: E, reply: unknown): E {
+  const t = tooBigOf(reply)
+  return t ? Object.assign(error, { tooBig: t }) : error
 }
 
 /** The note on a step the kernel could not do, which then ran on the mesh. */
@@ -178,11 +203,11 @@ export interface Tessellated {
   normals?: ArrayLike<number>
 }
 
-/** A part from a solid: its tessellation with faces and keys, and the solid's text unless it is too big to keep. */
-export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot'>, smb: string, tooBig?: (chars: number) => void): Promise<ExactPart> {
-  if (smb.length > MAX_SOLID_TEXT) tooBig?.(smb.length)
+/** A part from a solid: its tessellation with faces and keys, and the solid's text unless it is longer than `limit`. */
+export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot'>, smb: string, tooBig?: (chars: number, limit: number) => void, limit = MAX_SOLID_TEXT): Promise<ExactPart> {
+  if (smb.length > limit) tooBig?.(smb.length, limit)
   const t = (await call('brep.tessellate', { body: { smb } })) as Tessellated
-  return { name: like.name, slot: like.slot, ...tessellated(t), ...(smb.length <= MAX_SOLID_TEXT ? { smb } : {}) }
+  return { name: like.name, slot: like.slot, ...tessellated(t), ...(smb.length <= limit ? { smb } : {}) }
 }
 
 /** The part with its body tessellated, when it has not been yet. */
@@ -508,7 +533,7 @@ export async function addedSolids(call: Call, added: readonly HistoryMesh[], sol
       out.push({ name: x.name, slot: x.slot, positions: [], indices: [], body: r['body'], unmeshed: Array.isArray(r['bodyKeys']) ? (r['bodyKeys'] as number[]) : [] })
     } else {
       if (typeof r['bodySmb'] !== 'string') throw new Error('brep: no bodySmb in the reply')
-      out.push(await fromSolid(call, x, r['bodySmb']))
+      out.push(await fromSolid(call, x, r['bodySmb'], undefined, (await solids.limit?.()) ?? MAX_SOLID_TEXT))
     }
   }
   return out
@@ -526,7 +551,7 @@ const EXACT_STEPS: ReadonlySet<StepParams['op']> = new Set(['face.push', 'hole.a
  * `missed` is told which copies (from 0, in `copies` order) left no face of their own in the result, from the kernel's
  * `missed` list of outlines or cutters, or null when the kernel's reply does not say (an engine from before it did).
  */
-export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}, copies?: readonly Mat4[], tooBig?: (chars: number) => void, missed?: (copies: number[] | null) => void): Promise<ExactPart[] | null> {
+export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}, copies?: readonly Mat4[], tooBig?: (chars: number, limit: number) => void, missed?: (copies: number[] | null) => void): Promise<ExactPart[] | null> {
   const p = s.params
   let parts = given
   const frame = rigidFrame(s.transform)
@@ -540,9 +565,10 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
     if (typeof v === 'number') solids.made(v)
     return v as number | string
   }
+  const limit = async () => (await solids.limit?.()) ?? MAX_SOLID_TEXT
   const part = async (like: Pick<ExactPart, 'name' | 'slot'>, r: unknown, k = 'body'): Promise<ExactPart> => {
     const v = reply(r, k)
-    if (typeof v === 'string') return fromSolid(call, like, v, tooBig)
+    if (typeof v === 'string') return fromSolid(call, like, v, tooBig, await limit())
     const keys = (r as Record<string, unknown>)[`${k}Keys`]
     return { name: like.name, slot: like.slot, positions: [], indices: [], body: v, unmeshed: Array.isArray(keys) ? (keys as number[]) : [] }
   }
@@ -653,7 +679,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         }
         // as the mesh boolean does: an intersection keeps what every part shares
         const acc = await fold(p.kind, solid(target), others.map(solid))
-        out[s.part] = typeof acc === 'number' ? await part(target!, r) : await fromSolid(call, target!, (acc as { smb: string }).smb, tooBig)
+        out[s.part] = typeof acc === 'number' ? await part(target!, r) : await fromSolid(call, target!, (acc as { smb: string }).smb, tooBig, await limit())
         return out.filter((_, i) => !p.with.includes(i))
       }
       case 'edge.fillet':

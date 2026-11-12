@@ -11,7 +11,7 @@
 // starts another. A crash in the engine ends only its process and fails the call it was running. The process also
 // ends after IDLE_MS with nothing to do, as the worker does, and with it every kernel body it held: each body number
 // the page sees names the process that made it, so a number from an ended process is never sent to the next one.
-import { clearReplayCache, replayHistory, type ReplayRequest } from '@slicerx/cad-history'
+import { clearReplayCache, replayHistory, withTooBig, type ReplayRequest } from '@slicerx/cad-history'
 import { decodeFrame, encodeFrame, namesBody, ownBodies, plainArrays, rawData, rawMeshes, readBuffers, tagBodies } from '@slicerx/cad-history/served'
 import { geomCallLimitMs, geomStuckMessage } from '@slicerx/contracts/geom-limits'
 import { askFaces, CANCEL_GRACE_MS, IDLE_MS, noteCall, setGeomProvider, type GeomProvider } from './client'
@@ -139,7 +139,7 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
     if (typeof answer['panic'] === 'string') throw new Error(trapMessage(answer['panic'], 0))
     if (typeof answer['error'] === 'string') {
       // the native engine names the kernel in its message ("brep: ..."); the worker's kernel does not
-      throw new Error(job.op.startsWith('brep.') ? answer['error'].replace(/^brep: /, '') : answer['error'])
+      throw withTooBig(new Error(job.op.startsWith('brep.') ? answer['error'].replace(/^brep: /, '') : answer['error']), answer)
     }
     const result = buffers.length ? readBuffers(answer['result'], buffers) : answer['result']
     // a body comes from a kernel op, or from another op asked to keep the body it makes (`withKeys`, an exact loft)

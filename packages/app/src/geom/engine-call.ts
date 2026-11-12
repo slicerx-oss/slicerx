@@ -5,6 +5,7 @@
 // engine wrote to an output buffer (`rawOut`, a request's `meshOutput: "raw"`) comes back as typed arrays. Both use the
 // raw form of `TriMesh::from_raw`: the vertex and triangle counts as little-endian u32, then the positions as f32 and
 // the triangles as u32.
+import { withTooBig } from '@slicerx/cad-history'
 import { askFaces } from './client'
 
 /** The engine module's exports (packages/geom/wasm/src/lib.rs). */
@@ -185,10 +186,12 @@ export function callEngine(x: GeomExports, op: string, request: unknown): unknow
     return (x.geom_out_files?.() ?? 0) > 0 ? rawOut(x, answer) : answer
   }
   let message = text(x.geom_error_ptr(), x.geom_error_len())
+  let reply: unknown
   try {
-    message = (JSON.parse(message) as { error?: string }).error ?? message
+    reply = JSON.parse(message)
+    message = (reply as { error?: string }).error ?? message
   } catch {
     // A plain message stays as it is.
   }
-  throw new Error(message)
+  throw withTooBig(new Error(message), reply)
 }

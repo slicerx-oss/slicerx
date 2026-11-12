@@ -3,6 +3,7 @@
 // The B-rep kernel (packages/brep): exact solids on SMLib, about 1 MB of wasm that the geometry worker loads the
 // first time a call needs it, and never with the app shell. One JSON call, the same as sx-brep's native build; the
 // ops are listed in packages/brep/src/lib.rs.
+import { withTooBig } from '@slicerx/cad-history'
 import type { SxBrepModule } from '../../../brep/lib/sx_brep.mjs'
 
 export interface BrepModule {
@@ -31,7 +32,7 @@ export function brepModule(m: SxBrepModule): BrepModule {
         p = m._sx_brep_call(o, r)
         if (!p) throw new Error('brep: out of memory')
         const reply = JSON.parse(m.UTF8ToString(p)) as { error?: string }
-        if (typeof reply.error === 'string') throw new Error(reply.error)
+        if (typeof reply.error === 'string') throw withTooBig(new Error(reply.error), reply)
         return reply
       } finally {
         try {

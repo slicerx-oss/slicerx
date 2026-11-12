@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { DesignHost } from '@slicerx/cad-history'
+import { withTooBig, type DesignHost } from '@slicerx/cad-history'
 import { productName } from '@slicerx/contracts'
 import { modelingTools } from './modeling-tools'
 import type { PiecePlans } from './design-tools'
@@ -52,7 +52,8 @@ function runGeom(bin: string, op: string, request: unknown, outDir: string | und
         return reject(new Error(`sx-geom ${op} exited with code ${code}: ${stderr.trim().split('\n').slice(-3).join(' ') || 'no readable output'}`))
       }
       const err = (parsed as { error?: unknown }).error
-      if (code !== 0 || typeof err === 'string') return reject(new ToolInputError(typeof err === 'string' ? err : `sx-geom ${op} failed with code ${code}`))
+      // a body too big for the engine carries its size and limit (withTooBig)
+      if (code !== 0 || typeof err === 'string') return reject(withTooBig(new ToolInputError(typeof err === 'string' ? err : `sx-geom ${op} failed with code ${code}`), parsed))
       if (inputError) return reject(interruption(`could not complete its input stream: ${inputError.message}`))
       resolve(parsed)
     })

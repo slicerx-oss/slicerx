@@ -13,7 +13,7 @@ import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { addedSolids, EXACT_FELL_BACK, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, fromSolid, meshed, paintOfFaces, rigidFrame, solidTooBig, type FacePaint, type Solids } from './exact'
+import { addedSolids, EXACT_FELL_BACK, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, fromSolid, MAX_SOLID_TEXT, meshed, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -437,6 +437,12 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     for (const x of p.parts) added.push((strict ? (await addedSolids(call, [x], solids))?.[0] : undefined) ?? flat(x))
     return [...parts, ...added]
   }
+  // a solid too big to keep, by cad-history's own limit or as the engine refused it: never silent, and a design that
+  // must stay exact stops here; the sentence to put on the step otherwise
+  const tooBig = (chars: number, limit: number): string => {
+    if (strict) throw new ExactBroken(solidTooBig(chars, true, limit))
+    return solidTooBig(chars, false, limit)
+  }
   // A step that works only on mesh parts, and makes no new body, runs on the mesh: there is no exact part to keep.
   const reads = s.part === -1 ? parts : [parts[s.part], ...(p.op === 'boolean' ? p.with.map((i) => parts[i]) : [])]
   const newBody = makesBody(p)
@@ -448,8 +454,10 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       s,
       parts,
       (error) => {
-        if (strict) throw new Broken(`Exact operation failed: ${error instanceof Error ? error.message : String(error)}`)
-        found.notes[s.id] = EXACT_FELL_BACK
+        // an engine that gives no size and limit (an older one) keeps its own sentence
+        const t = tooBigOf(error)
+        if (strict && !t) throw new Broken(`Exact operation failed: ${error instanceof Error ? error.message : String(error)}`)
+        found.notes[s.id] = t ? tooBig(t.size, t.limit) : EXACT_FELL_BACK
         found.fellBack.push(s.id)
       },
       solids,
@@ -460,10 +468,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         if (!reached) gone.add(s.id)
       },
       undefined,
-      (chars) => {
-        // a solid too big to keep: never silent, and a design that must stay exact stops here
-        if (strict) throw new ExactBroken(solidTooBig(chars, true))
-        big = solidTooBig(chars, false)
+      (chars, limit) => {
+        big = tooBig(chars, limit)
       },
     )
     if (done) {
@@ -494,21 +500,39 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       const inv = invert(s.transform)
       // asked for and answered as the other exact steps' bodies are (exact.ts): a number with its faces' keys
       // (`withKeys`) from an engine that keeps bodies, the solid's text (`save`) from one that does not
-      const r = (await call('sketch.loft', { ...loftOpts(same ? p : { ...p, profiles: p.profiles.map((q) => localProfile(q, inv)) }), operation: 'new', exact: true, ...(solids.keep ? { withKeys: true } : { save: true }) })) as { mesh: { positions: number[]; indices: number[] }; body?: unknown; bodyKeys?: unknown; bodySmb?: unknown; exact?: { made?: boolean; why?: unknown } }
+      let r: { mesh: { positions: number[]; indices: number[] }; body?: unknown; bodyKeys?: unknown; bodySmb?: unknown; exact?: { made?: boolean; why?: unknown } }
+      let refused = false
+      try {
+        r = (await call('sketch.loft', { ...loftOpts(same ? p : { ...p, profiles: p.profiles.map((q) => localProfile(q, inv)) }), operation: 'new', exact: true, ...(solids.keep ? { withKeys: true } : { save: true }) })) as typeof r
+      } catch (e) {
+        // a body too big for the engine: the loft runs on the mesh with the size and the limit; any other error is the step's
+        const t = tooBigOf(e)
+        if (!t) throw e
+        fell(tooBig(t.size, t.limit))
+        refused = true
+        r = { mesh: { positions: [], indices: [] } }
+      }
       const like = { name: p.name ? p.name : 'Body', slot: newSlot(p) ?? parts[s.part]?.slot ?? 1 }
       let body: Flat | undefined
       if (solids.keep && typeof r.body === 'number') {
         solids.made(r.body)
         body = { ...like, positions: [], indices: [], body: r.body, unmeshed: Array.isArray(r.bodyKeys) ? (r.bodyKeys as number[]) : [] }
-      } else if (!solids.keep && typeof r.bodySmb === 'string') body = await fromSolid(call, like, r.bodySmb)
+      } else if (!solids.keep && typeof r.bodySmb === 'string') {
+        let big: string | undefined
+        body = await fromSolid(call, like, r.bodySmb, (chars, limit) => (big = tooBig(chars, limit)), (await solids.limit?.()) ?? MAX_SOLID_TEXT)
+        if (big) {
+          if (exact) found.notes[s.id] = big
+          else found.quiet.push({ step: s.id, why: big })
+        }
+      }
       if (body) {
         const out = parts.slice()
         placeBody(out, s.part, body)
         return out
       }
-      fell(typeof r.exact?.why === 'string' && r.exact.why ? r.exact.why : EXACT_FELL_BACK)
+      if (!refused) fell(typeof r.exact?.why === 'string' && r.exact.why ? r.exact.why : EXACT_FELL_BACK)
       // the answer's mesh is today's loft when the profiles went as they are
-      if (same) lofted = r
+      if (same && !refused) lofted = r
     }
   }
   // paint keeps a solid when it covers whole faces (below), so a design that must stay exact takes it
@@ -953,10 +977,10 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
   if (req.history.exact) req = { ...req, exact: true }
   const made = new Set<number>()
   // which operations the engine makes exact bodies for is asked once, by the first step that needs to know
-  let has: Promise<Set<string>> | undefined
+  let has: ReturnType<typeof exactOps> | undefined
   const uses = new Set<number>()
   inUse.add(uses)
-  const solids: Solids = { keep: !!((req.exact || req.exactLofts) && o.keepsBodies), lofts: !!req.exactLofts, made: (b) => (made.add(b), uses.add(b)), has: async (op) => (await (has ??= exactOps(call))).has(op) }
+  const solids: Solids = { keep: !!((req.exact || req.exactLofts) && o.keepsBodies), lofts: !!req.exactLofts, made: (b) => (made.add(b), uses.add(b)), has: async (op) => (await (has ??= exactOps(call))).ops.has(op), limit: async () => (await (has ??= exactOps(call))).maxSolidText }
   try {
     return await replaySteps(call, req, o, solids, (b) => uses.add(b))
   } finally {

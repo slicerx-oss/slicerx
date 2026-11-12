@@ -2,12 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // An exact design whose part's solid grows past the largest solid text a part keeps: the step that grew it is refused
 // with the size and the limit in the reply, and the design is unchanged. One just under the limit goes through.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { MAX_SOLID_TEXT, clearReplayCache, solidTooBig, unstopped, type StepParams } from '@slicerx/cad-history'
+import { MAX_SOLID_TEXT, clearReplayCache, solidTooBig, tooBigOf, unstopped, type StepParams } from '@slicerx/cad-history'
 import { Designs } from '../src/design'
+import { geomEngine } from '../src/geom'
 
 const tri = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }
 const box: StepParams = { op: 'shape.extrude', frame: { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, spec: { distanceMm: 5, operation: 'new' } }
@@ -51,4 +52,19 @@ it('refuses a cut whose solid passes the limit, with the size and the limit, and
   await h.add(d, 0, box)
   await expect(h.add(d, 0, hole)).rejects.toThrow(`Exact replay stopped: ${unstopped(solidTooBig(MAX_SOLID_TEXT + 1, true))}. The design is unchanged.`)
   expect(d.history.steps).toHaveLength(1)
+})
+
+// sx-geom refusing a body too big for it: the size and limit ride on the error, which the replay turns into the same
+// sentence; an older sx-geom's error has its sentence alone
+it.each([
+  [{ error: 'brep: the body is too big for the kernel', tooBig: { size: 9_000_000, limit: 5_000_000 } }, { size: 9_000_000, limit: 5_000_000 }],
+  [{ error: 'brep: the body is too big for the kernel' }, undefined],
+] as const)("the engine's error carries its size and limit when it gives them (%#)", async (reply, tooBig) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sx-geom-too-big-'))
+  dirs.push(dir)
+  const refusing = join(dir, 'refusing.cjs')
+  writeFileSync(refusing, `process.stdin.resume(); process.stdin.on("end", () => { process.stdout.write(${JSON.stringify(JSON.stringify(reply))}); process.exit(1) });`)
+  const e = await geomEngine(process.execPath, 5000)(refusing, {}).catch((x: unknown) => x)
+  expect((e as Error).message).toBe(reply.error)
+  expect(tooBigOf(e)).toEqual(tooBig)
 })
