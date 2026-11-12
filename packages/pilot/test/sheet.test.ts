@@ -52,10 +52,10 @@ describe('pilot.sheet', () => {
     expect(JSON.parse(seen[0]!)).toMatchObject({ ok: true, result: answer })
   })
 
-  it('refuses a sheet with a repeated key, a lookup without its page, or a value outside its own bounds', async () => {
+  it('refuses a sheet with a repeated key, a lookup that names no page, or a value outside its own bounds', async () => {
     for (const dims of [
       [DIMS[1], DIMS[1]],
-      [{ ...DIMS[0], sourceUrl: undefined }],
+      [{ ...DIMS[0], sourceUrl: undefined, sourceTitle: undefined }],
       [{ ...DIMS[1], value: 9 }],
       [{ ...DIMS[0], sourceUrl: 'javascript:alert(1)' }],
     ]) {
@@ -63,6 +63,26 @@ describe('pilot.sheet', () => {
       expect(events.some((e) => e.type === 'sheet'), JSON.stringify(dims)).toBe(false)
       expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
     }
+  })
+
+  it('shows a looked-up value with the page title alone, when the lookup gave no link', async () => {
+    const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims: [{ ...DIMS[0], sourceUrl: undefined }] } }] }], () => ({}))
+    const sheet = events.find((e) => e.type === 'sheet')
+    expect(sheet).toBeDefined()
+    expect((sheet as { sheet: { dims: { sourceTitle?: string; sourceUrl?: string }[] } }).sheet.dims[0]).toMatchObject({ sourceTitle: 'apple.com' })
+  })
+
+  it('shows a count row with no place among sizes that have one, since a count is no length on the part', async () => {
+    const at = { a: [0, 0, 0], b: [40, 0, 0] }
+    const dims = [
+      { key: 'length', label: 'Length', value: 40, unit: 'mm', source: 'asked', at },
+      { key: 'spokes', label: 'Spokes', value: 6, unit: 'mm', source: 'guess' },
+      { key: 'rows', label: 'Rows', value: 2, unit: 'mm', kind: 'count', source: 'guess' },
+    ]
+    const shown = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Wheel', dims, part: PART } }] }], () => ({}))
+    expect(shown.some((e) => e.type === 'sheet')).toBe(true)
+    const width = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Wheel', dims: [...dims, { key: 'width', label: 'Width', value: 8, unit: 'mm', source: 'guess' }], part: PART } }] }], () => ({}))
+    expect(width.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('row 4 (Width) needs at') })
   })
 
   it('refuses a sheet of several sizes with no part to draw, and keeps a one-row sheet', async () => {
@@ -183,7 +203,6 @@ describe('pilot.sheet', () => {
       ['a row max of 100001', row(0, { max: 100_001 }), 'row 1 (Length) max is outside'],
       ['a row at coordinate of 10001 mm', row(1, { at: { ...at, b: [10_001, 0, 0] } }), 'row 2 (Bore) needs at'],
       ['a row at point of 4 coordinates', row(1, { at: { ...at, off: [0, -8, 0, 1] } }), 'row 2 (Bore) needs at'],
-      ['a row at missing off', row(1, { at: { a: at.a, b: at.b } }), 'row 2 (Bore) needs at'],
       ['an angle at with r 0.05', row(1, { at: { c: [0, 0, 0], from: [1, 0, 0], to: [0, 1, 0], r: 0.05 } }), 'row 2 (Bore) needs at'],
       ['an angle at with r 10001', row(1, { at: { c: [0, 0, 0], from: [1, 0, 0], to: [0, 1, 0], r: 10_001 } }), 'row 2 (Bore) needs at'],
       ['an angle at with only c, from and r', row(1, { at: { c: [0, 0, 0], from: [1, 0, 0], r: 10 } }), 'row 2 (Bore) needs at'],
@@ -193,6 +212,12 @@ describe('pilot.sheet', () => {
       const parsed = sheetTool().input.safeParse({ title: 'Sizes', dims, ...patch })
       expect(parsed.success).toBe(false)
       expect(parsed.error!.issues.map((i) => i.message).join('; ')).toContain(named)
+    })
+
+    it('takes a length with no off, and draws it with none, so the drawing moves its callout off the part', () => {
+      const parsed = sheetTool().input.safeParse({ title: 'Sizes', dims: [dims[0], { ...dims[1], at: { a: at.a, b: at.b } }], part: [extrude] })
+      expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true)
+      expect(sheetOf(parsed.data as unknown as Parameters<typeof sheetOf>[0]).dims[1]!.at).toEqual({ a: at.a, b: at.b, off: [0, 0, 0] })
     })
 
     it('takes each kind at its bounds', () => {
@@ -374,7 +399,7 @@ describe('pilot.sheet', () => {
     expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: dims('count') }).success).toBe(true)
     expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: [{ key: 'width', label: 'Width', value: 4, unit: 'mm', source: 'guess' }] }).success).toBe(true)
     for (const bad of ['deg', 'number', 2]) expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: dims(bad) }).success, String(bad)).toBe(false)
-    expect(sheetTool().version).toBe('1.3.0')
+    expect(sheetTool().version).toBe('1.4.0')
     const seen: string[] = []
     const p = pilot([
       { calls: [{ name: 'pilot.sheet', args: { title: 'Odd sizes', fits: true, views: ['front'], dims: [{ ...dims('count')[0], at: { a: [0, 0, 0], b: [10, 0, 0], off: [0, 0, 5] } }, { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', kind: 'length', source: 'guess', at: { a: [0, 0, 0], b: [0, 10, 0], off: [0, 0, 5] } }], part: PART } }] },
