@@ -3,12 +3,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Lofts the native engine could not make exact, which a replay made as mesh lofts with no note (`exactLoftsQuiet`):
 // the app counts them with each step's reason (quietLofts) and says so on the debug console only. Nothing reaches the
-// step list or a toast.
+// step list or a toast. The agent bridge's state shows them.
 import { afterEach, expect, it, vi } from 'vitest'
 import { clearReplayCache, HISTORY_VERSION } from '@slicerx/cad-history'
 import { setGeomProvider } from '../src/geom/client'
 import { noteQuietLofts, quietLofts } from '../src/cad/history/exact-flag'
 import { runReplay } from '../src/cad/history/ops'
+import { appState } from '../src/agent-bridge/page'
+import { get } from '../src/state/store'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -48,4 +50,11 @@ it('takes them from a replay, which the app asks for without the field: the prov
   expect('exactLofts' in asked[0]!).toBe(false)
   expect(quietLofts().count).toBe(before + 1)
   expect(quietLofts().steps['q-c']).toBe('A reason.')
+})
+
+it("shows them in the agent bridge's state, beside the engine's answers", () => {
+  vi.spyOn(console, 'debug').mockImplementation(() => {})
+  noteQuietLofts([{ step: 'q-d', why: 'Another reason.' }])
+  const geometry = appState(get())['geometry'] as { exactLofts?: { count: number; steps: Record<string, string> } }
+  expect(geometry.exactLofts).toEqual(quietLofts())
 })
