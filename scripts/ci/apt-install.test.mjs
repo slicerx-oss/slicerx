@@ -63,9 +63,11 @@ function setup({ installed = [], report = '' } = {}) {
   return root
 }
 
-function deb(dir, pkg, version) {
+// a cached .deb; the cache records the release it was filled for (noble, the release run() gives by default)
+function deb(dir, pkg, version, release = 'noble') {
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, `${pkg}_${version}_amd64.deb`), `Package: ${pkg}\nVersion: ${version}\n`)
+  if (release !== null) writeFileSync(join(dir, 'release'), `${release}\n`)
 }
 
 function run(root, script, args, env = {}) {
@@ -101,6 +103,30 @@ describe('apt-install.sh', () => {
     assert.match(r.log[0], /\bb 2\.0\b/)
     assert.doesNotMatch(r.log[0], /\ba 1\.0\b|\bc 9\.0\b/)
     assert.match(r.out, /installed from the cache, with no mirror/)
+  })
+
+  it('empties a cache filled for another release and installs from the mirror, never its files', () => {
+    const root = setup()
+    const cache = join(root, 'cache')
+    deb(cache, 'a', '1.5.2', 'noble')
+    const r = run(root, 'apt-install.sh', ['--cache', cache, 'a'], { SX_APT_SUITE: 'resolute' })
+    assert.equal(r.status, 0, r.out)
+    assert.ok(!r.log.some((l) => l.startsWith('dpkg -i')), r.log.join('\n'))
+    assert.match(r.out, /the cache holds 1 files for noble, not resolute: emptied/)
+    assert.ok(!existsSync(join(cache, 'a_1.5.2_amd64.deb')))
+    assert.equal(readFileSync(join(cache, 'release'), 'utf8').trim(), 'resolute')
+    assert.match(r.log.at(-1), / install -f -y --no-install-recommends a$/)
+  })
+
+  it('treats a cache that records no release as another release', () => {
+    const root = setup()
+    const cache = join(root, 'cache')
+    deb(cache, 'a', '1.0', null)
+    const r = run(root, 'apt-install.sh', ['--cache', cache, 'a'])
+    assert.equal(r.status, 0, r.out)
+    assert.ok(!r.log.some((l) => l.startsWith('dpkg -i')), r.log.join('\n'))
+    assert.match(r.out, /for a release it does not record, not noble: emptied/)
+    assert.equal(readFileSync(join(cache, 'release'), 'utf8').trim(), 'noble')
   })
 
   it('downloads into the cache on a cold one when the mirror answers', () => {

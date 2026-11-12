@@ -29,6 +29,8 @@ suite=$1 status=$(realpath "$2") dir=$3
 shift 3
 mkdir -p "$dir/partial"
 dir=$(realpath "$dir")
+# apt-install.sh uses the files only on this release
+echo "$suite" >"$dir/release"
 
 keyring=${SX_APT_KEYRING:-/usr/share/keyrings/ubuntu-archive-keyring.gpg}
 archive=${SX_APT_ARCHIVE:-http://archive.ubuntu.com/ubuntu}
