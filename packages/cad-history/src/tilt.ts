@@ -5,6 +5,7 @@
 // built on a leaning one leans with it about that step's foot (StepTilt.about). The lean is kept beside the step's
 // own numbers and laid on them as the step replays, so an edit of a size, a move or a section afterwards keeps it, the
 // timeline shows the same steps, and undoing the edit takes it back. A pattern made of the step copies the leaning one.
+import { meshPieces } from '@slicerx/contracts/mesh-pieces'
 import { BED_FRAME, type HistoryMesh, type LoftProfile, type Step, type StepParams, type StepTilt } from './model'
 import { movedParams } from './design-frame'
 import type { Mat4, SketchLoop, Vec2, Vec3 } from './types'
@@ -103,39 +104,8 @@ const PIECE_GAP_MM = 0.05
  */
 function partPieces(m: Pick<HistoryMesh, 'positions' | 'indices'>): number[][] {
   const p = m.positions
-  const ix = m.indices
-  const n = Math.floor(p.length / 3)
-  const root = Array.from({ length: n }, (_, i) => i)
-  const find = (a: number): number => {
-    while (root[a] !== a) a = root[a] = root[root[a]!]!
-    return a
-  }
-  const join = (a: number, b: number): void => {
-    const ra = find(a)
-    const rb = find(b)
-    if (ra !== rb) root[rb] = ra
-  }
-  const seen = new Map<string, number>()
-  for (let i = 0; i < n; i++) {
-    // welded to 1 micrometer, as the app's and the server's body splits weld corners
-    const key = `${Math.round(p[i * 3]! * 1000)},${Math.round(p[i * 3 + 1]! * 1000)},${Math.round(p[i * 3 + 2]! * 1000)}`
-    const j = seen.get(key)
-    if (j === undefined) seen.set(key, i)
-    else join(j, i)
-  }
-  for (let t = 0; t + 2 < ix.length; t += 3) {
-    join(ix[t]!, ix[t + 1]!)
-    join(ix[t]!, ix[t + 2]!)
-  }
-  const byRoot = new Map<number, number[]>()
-  for (let i = 0; i < n; i++) {
-    const r = find(i)
-    const list = byRoot.get(r)
-    if (list) list.push(i)
-    else byRoot.set(r, [i])
-  }
   // pieces whose boxes meet lean as one
-  const groups = [...byRoot.values()].map((verts) => {
+  const groups = meshPieces(p, m.indices).vertices().map((verts) => {
     const lo: Vec3 = [Infinity, Infinity, Infinity]
     const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
     for (const i of verts)

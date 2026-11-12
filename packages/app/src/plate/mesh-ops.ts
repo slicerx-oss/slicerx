@@ -3,62 +3,26 @@
 // Mesh edits the app does itself: split into connected pieces, merge objects into one, and the
 // basic primitives. Pure, on the contracts' MeshPart buffers (mm, Z up). Booleans (negative
 // volumes) need sx-geom and are not here.
-import { packNormal, unpackNormal, type MeshPart, type PrimitiveSpec } from '@slicerx/contracts'
+import { meshPieces, packNormal, unpackNormal, type MeshPart, type PrimitiveSpec } from '@slicerx/contracts'
 import { apply, identity, multiply, type Mat4, type Vec3 } from './transform'
 
-/** Groups triangles that share a vertex position (welded to 1 um) into connected pieces. */
+/** Groups triangles that share a vertex position (welded to 1 um) into connected pieces (meshPieces). */
 export function components(part: MeshPart): MeshPart[] {
   const pos = part.positions
   const idx = part.indices
-  const vcount = pos.length / 3
-  // Weld equal positions so meshes stored as triangle soup still connect.
-  const weld = new Int32Array(vcount)
-  const seen = new Map<string, number>()
-  for (let v = 0; v < vcount; v++) {
-    const key = `${Math.round((pos[v * 3] ?? 0) * 1000)},${Math.round((pos[v * 3 + 1] ?? 0) * 1000)},${Math.round((pos[v * 3 + 2] ?? 0) * 1000)}`
-    const first = seen.get(key)
-    if (first === undefined) {
-      seen.set(key, v)
-      weld[v] = v
-    } else weld[v] = first
-  }
-  const parent = new Int32Array(vcount)
-  for (let v = 0; v < vcount; v++) parent[v] = v
-  const find = (x: number): number => {
-    while (parent[x] !== x) {
-      parent[x] = parent[parent[x]!]!
-      x = parent[x]!
-    }
-    return x
-  }
-  const union = (a: number, b: number) => {
-    const ra = find(a)
-    const rb = find(b)
-    if (ra !== rb) parent[ra] = rb
-  }
-  for (let t = 0; t + 2 < idx.length; t += 3) {
-    const a = weld[idx[t]!]!
-    union(a, weld[idx[t + 1]!]!)
-    union(a, weld[idx[t + 2]!]!)
-  }
-  const groups = new Map<number, number[]>()
-  for (let t = 0; t + 2 < idx.length; t += 3) {
-    const root = find(weld[idx[t]!]!)
-    let g = groups.get(root)
-    if (!g) groups.set(root, (g = []))
-    g.push(t)
-  }
-  if (groups.size <= 1) return [part]
+  const groups = meshPieces(pos, idx).triangles
+  if (groups.length <= 1) return [part]
   const out: MeshPart[] = []
   let n = 0
   // a piece keeps its triangles' exact normals, six numbers per triangle in the same order
   const normals = part.normals?.length === idx.length * 2 ? part.normals : undefined
-  for (const tris of groups.values()) {
+  for (const tris of groups) {
     const remap = new Map<number, number>()
     const p: number[] = []
     const ix: number[] = []
     const nm = normals ? new Int16Array(tris.length * 6) : undefined
-    for (const [j, t] of tris.entries()) {
+    for (const [j, tri] of tris.entries()) {
+      const t = 3 * tri
       nm?.set(normals!.subarray(2 * t, 2 * t + 6), 6 * j)
       for (let k = 0; k < 3; k++) {
         const v = idx[t + k]!

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Minimal STL reading and writing for the MCP host: triangle soup in, stats
 // and a combined plate out. The real loaders live in sx-core.
+import { meshPieces } from '@slicerx/contracts'
 
 export interface MeshStats {
   triangles: number
@@ -105,49 +106,14 @@ export function writeBinaryStl(pos: Float32Array): Buffer {
  * comes back as the input.
  */
 export function splitBodies(pos: Float32Array): Float32Array[] {
-  const count = Math.floor(pos.length / 9)
-  const corner = new Map<string, number>()
-  const parent: number[] = []
-  const find = (x: number): number => {
-    while (parent[x] !== x) {
-      parent[x] = parent[parent[x]!]!
-      x = parent[x]!
-    }
-    return x
-  }
-  const node = (i: number): number => {
-    const key = `${Math.round((pos[i] ?? 0) * 1000)},${Math.round((pos[i + 1] ?? 0) * 1000)},${Math.round((pos[i + 2] ?? 0) * 1000)}`
-    let id = corner.get(key)
-    if (id === undefined) {
-      id = parent.length
-      parent.push(id)
-      corner.set(key, id)
-    }
-    return id
-  }
-  const triRoot: number[] = []
-  for (let t = 0; t < count; t++) {
-    const a = node(t * 9)
-    const b = node(t * 9 + 3)
-    const c = node(t * 9 + 6)
-    const ra = find(a)
-    parent[find(b)] = ra
-    parent[find(c)] = ra
-  }
-  for (let t = 0; t < count; t++) triRoot.push(find(node(t * 9)))
-  const shells = new Map<number, number[]>()
-  triRoot.forEach((r, t) => {
-    const s = shells.get(r)
-    if (s) s.push(t)
-    else shells.set(r, [t])
-  })
-  if (shells.size < 2) return [pos]
+  const shells = meshPieces(pos).triangles
+  if (shells.length < 2) return [pos]
   const soup = (tris: number[]): Float32Array => {
     const out = new Float32Array(tris.length * 9)
     tris.forEach((t, k) => out.set(pos.subarray(t * 9, t * 9 + 9), k * 9))
     return out
   }
-  const list = [...shells.values()].map((tris) => {
+  const list = shells.map((tris) => {
     const p = soup(tris)
     const s = meshStats(p)
     let v = 0
