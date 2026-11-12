@@ -498,10 +498,10 @@ fn a_cut_of_a_held_body_is_the_cut_of_its_saved_text() {
             "{key} in {after:?}"
         );
     }
-    // a lofted block's four sides are flat spline surfaces. The held body keeps them as they were made; reading
-    // saved text brings them back as planes. Each route is held to what it gives, so a change on either is seen.
-    assert_eq!(held, json!({ "cone": 1, "nurbs": 4, "plane": 2 }));
-    assert_eq!(loaded, json!({ "cone": 1, "plane": 6 }));
+    // a lofted block's four sides are flat spline surfaces. The held body keeps them as they were made and reading
+    // saved text brings them back as planes; sorted into kinds, a flat face is a plane on both routes
+    assert_eq!(held, loaded);
+    assert_eq!(held, json!({ "cone": 1, "plane": 6 }));
     assert_eq!(
         run("brep.free", &json!({ "body": body })),
         json!({ "freed": true })

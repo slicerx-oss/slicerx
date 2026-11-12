@@ -736,7 +736,7 @@ const char* surface_name(SmSurface* s)
         return sx_extruded_cylinder(*s, ax, r) ? "cylinder" : "extrusion";
     }
     // a tapered extrude makes its flat sides as ruled surfaces, flat to 1e-5 mm
-    case SmBSplineSurface_TYPE: return s->IsPlanar(1e-4) ? "plane" : "nurbs";
+    case SmBSplineSurface_TYPE: return s->IsPlanar(kSxFlatKindMm) ? "plane" : "nurbs";
     case SmBlendSurface_TYPE: return "blend";
     case SmOffsetSurface_TYPE: return "offset";
     default: break;

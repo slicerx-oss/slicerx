@@ -262,6 +262,8 @@ mod ffi {
         // faces and their surfaces
         fn GetSurface(self: &SmFace) -> *mut SmSurface;
         fn GetType(self: &SmSurface) -> SmLong;
+        #[cxx_name = "sx_flat"]
+        fn flat(surface: &SmSurface, within_mm: f64) -> Result<bool>;
         #[cxx_name = "sx_extruded_cylinder"]
         fn extruded_cylinder(
             surface: &SmSurface,
@@ -1137,6 +1139,18 @@ pub(crate) fn take_over(number: i64) -> Option<Solid> {
 }
 
 impl FaceRef<'_> {
+    /// Whether the kernel's own test finds the face's surface within `mm` of one plane.
+    pub(crate) fn flat_within(&self, mm: f64) -> bool {
+        let _kernel = held();
+        // SAFETY: the face belongs to a solid that is borrowed for as long as `self` lives, so it is live.
+        let raw = unsafe { self.ptr.as_ref() }.GetSurface().cast_const();
+        // SAFETY: a face's surface belongs to the same solid; null (no surface) is handled.
+        let Some(surface) = (unsafe { raw.as_ref() }) else {
+            return false;
+        };
+        mm.is_finite() && mm > 0.0 && matches!(ffi::flat(surface, mm), Ok(true))
+    }
+
     pub(crate) fn shape(&self) -> Shape {
         let _kernel = held();
         // SAFETY: the face belongs to a solid that is borrowed for as long as `self` lives, so it is live.
