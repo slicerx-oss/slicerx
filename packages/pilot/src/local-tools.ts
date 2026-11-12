@@ -96,7 +96,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
       'svg',
       'tolerance_mm',
     ] },
-  'design.steps': { tokens: 107, description: true, fields: ['design'] },
+  'design.steps': { tokens: 107, fields: ['design'] },
   'design.timeline': { tokens: 97, description: true },
   'design.undo': { tokens: 74, description: true, fields: ['design'] },
   'diagnose': { tokens: 104, description: true, fields: ['symptom'] },
