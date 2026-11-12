@@ -128,9 +128,11 @@ fn main() {
     };
     #[cfg(feature = "agent-bridge")]
     let builder = builder.manage(agent_bridge::Relay::default());
+    // The Model engine's process, started on its first call. A build without the feature has no such state.
+    #[cfg(feature = "native-geom")]
+    let builder = builder.manage(std::sync::Arc::new(geom_host::Engine::app()));
     let app = builder
         .manage(slicing::Slicer::default())
-        .manage(geom_engine())
         .manage(files::OpenFiles::default())
         .manage(link::Bridge::default())
         .manage(opened::Pending::default())
@@ -331,14 +333,6 @@ fn main() {
         }
     });
 }
-
-#[cfg(feature = "native-geom")]
-fn geom_engine() -> std::sync::Arc<geom_host::Engine> {
-    std::sync::Arc::new(geom_host::Engine::app())
-}
-
-#[cfg(not(feature = "native-geom"))]
-fn geom_engine() {}
 
 #[cfg(feature = "connect")]
 fn watch_state() -> watch::Watch {
