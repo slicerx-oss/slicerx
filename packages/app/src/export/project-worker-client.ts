@@ -108,7 +108,9 @@ export async function writeProjectInWorker(input: ProjectInput): Promise<Uint8Ar
       for (const [j, object] of plate.objects.entries()) {
         for (const [k, part] of object.parts.entries()) {
           await breather()
-          const copy = structuredClone(part)
+          // exact normals are never saved in a project
+          const { normals: _unsaved, ...kept } = part
+          const copy = structuredClone(kept)
           send({ part: { at: [i, j, k], part: copy } }, buffersIn(copy))
         }
         for (const [part, layers] of Object.entries(object.paint ?? {})) {

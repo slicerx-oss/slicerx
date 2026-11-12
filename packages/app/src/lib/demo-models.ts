@@ -113,7 +113,9 @@ function standUp(part: MeshPart, lift: number): MeshPart {
     indices[t + 1] = part.indices[t + 2] ?? 0
     indices[t + 2] = part.indices[t + 1] ?? 0
   }
-  return { ...part, positions, indices }
+  // axes swapped: any exact normals the part had no longer fit it
+  const { normals: _stale, ...rest } = part
+  return { ...rest, positions, indices }
 }
 
 function rect(w: number, d: number): Pt[] {
