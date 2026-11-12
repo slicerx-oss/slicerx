@@ -10,7 +10,7 @@ select plan(7);
 
 select is(public.mimir_turn_model('slicerx', 'step'), 'claude-sonnet-5-5', 'SlicerX steps up to Sonnet 5.5 on the step tier');
 select is(public.mimir_turn_model('slicerx', 'base'), 'claude-haiku-5-5', 'and stays on Haiku 5.5 on the base tier');
-select is(public.mimir_turn_model('layermate', 'step'), 'claude-haiku-5-5', 'an edition without a step-up gets Haiku 5.5, not an error');
+select is(public.mimir_turn_model('slicerx-web', 'step'), 'claude-haiku-5-5', 'an edition without a step-up gets Haiku 5.5, not an error');
 
 delete from public.mimir_prices where model = 'claude-sonnet-5-5';
 select is(public.mimir_turn_model('slicerx', 'step'), 'claude-haiku-5-5', 'a step-up model without a price falls back to Haiku 5.5');
