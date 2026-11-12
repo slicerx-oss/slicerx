@@ -18,7 +18,7 @@ import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
 import { get, set, toast, useApp, type PlateEntry, type SubPick } from '../state/store'
-import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, type Kind } from './edges'
+import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, fitsOf, sameEdge, setLimit, withFits, type EdgeFit, type Kind } from './edges'
 import { followed } from '@slicerx/cad-history'
 import { editing, nowOf, saveStep } from './history/ops'
 import { editingNumber } from './history/step-number'
@@ -33,8 +33,10 @@ interface Picked {
   objectId: string
   partIndex: number
   edges: EdgeRef[]
-  /** The last edge.pick, for its limits and its loop. */
+  /** The last edge.pick, for its loop. */
   last: EdgePick | null
+  /** What each picked edge was offered, for the most the whole set takes. */
+  fits?: EdgeFit[]
 }
 
 const movedEdge = (e: EdgeRef, now: Now): EdgeRef => ({ a: now.point(e.a), b: now.point(e.b), face: now.dir(e.face), ...(e.center ? { center: now.point(e.center) } : {}), ...(e.keys ? { keys: e.keys } : {}) })
@@ -49,7 +51,7 @@ function editState(): { index: number; picked: Picked; kind: Kind; size: string;
   const edges = (q.op === 'edge.fillet' || q.op === 'edge.chamfer' ? q.edges : p.edges).map((e) => movedEdge(e, now))
   return {
     index: ed.index,
-    picked: { objectId: ed.entry.id, partIndex: Math.max(0, ed.step.part), edges, last: null },
+    picked: { objectId: ed.entry.id, partIndex: Math.max(0, ed.step.part), edges, last: null, fits: [] },
     kind: p.op === 'edge.fillet' ? 'fillet' : 'chamfer',
     size: String(p.op === 'edge.fillet' ? p.radiusMm : p.distanceMm),
     size2: p.op === 'edge.chamfer' && p.distance2Mm !== undefined ? String(p.distance2Mm) : '',
@@ -62,7 +64,7 @@ export function FilletTool() {
   const words = useLengthWords()
   const [edit] = useState(editState)
   const [kind, setKind] = useDraft<Kind>('kind', () => edit?.kind ?? filletKindHint() ?? 'fillet')
-  const [picked, setPicked] = useDraft<Picked | null>('picked', edit?.picked ?? null, follow((p, now) => p && { ...p, edges: p.edges.map((e) => movedEdge(e, now)), last: null }))
+  const [picked, setPicked] = useDraft<Picked | null>('picked', edit?.picked ?? null, follow((p, now) => p && { ...p, edges: p.edges.map((e) => movedEdge(e, now)), last: null, fits: [] }))
   useDraftObject(picked?.objectId)
   const [size, setSize] = useDraft('size', edit?.size ?? '1')
   const [size2, setSize2] = useDraft('size2', edit?.size2 ?? '')
@@ -166,7 +168,7 @@ export function FilletTool() {
           hits.current = [...hits.current.filter((h) => !sameEdge(h.edge, p.edge)), { edge: p.edge, triangle, point }]
           const cur = live.current.picked
           const same = cur && cur.objectId === objectId && cur.partIndex === partIndex
-          setPicked({ objectId, partIndex, edges: addEdge(same ? cur.edges : [], p.edge, Boolean(hit.shift) && Boolean(same)), last: p })
+          setPicked({ objectId, partIndex, edges: addEdge(same ? cur.edges : [], p.edge, Boolean(hit.shift) && Boolean(same)), last: p, fits: withFits(same ? (cur.fits ?? []) : [], fitsOf(p, false)) })
         },
         (e: unknown) => setNote(errorText(e)),
       )
@@ -206,14 +208,15 @@ export function FilletTool() {
     if (!picked || !p) return
     const more = p.loop.filter((x) => x.supported).map((x) => x.edge)
     const skipped = p.loop.length - more.length
-    setPicked({ ...picked, edges: more.reduce((acc, e) => (acc.some((x) => sameEdge(x, e)) ? acc : [...acc, e]), picked.edges) })
+    setPicked({ ...picked, edges: more.reduce((acc, e) => (acc.some((x) => sameEdge(x, e)) ? acc : [...acc, e]), picked.edges), fits: withFits(picked.fits ?? [], fitsOf(p, true)) })
     if (skipped) setNote(`${skipped} ${skipped === 1 ? 'edge' : 'edges'} of the loop cannot be rounded and stay as they are.`)
   }
 
   const s1 = num(size)
   const s2 = size2.trim() === '' ? null : num(size2)
   const sizeOk = Number.isFinite(s1) && s1 > 0 && (s2 === null || (Number.isFinite(s2) && s2 > 0))
-  const limit = picked?.last ? (kind === 'fillet' ? picked.last.maxRadiusMm : Math.min(...picked.last.maxDistanceMm)) : null
+  // the most every picked edge takes together, not just the last one picked
+  const limit = picked ? setLimit(kind, picked.edges, picked.fits ?? []) : null
 
   // The live preview, a moment after the last change. A newer change cancels the one running; a size that does not
   // read or that the engine refuses keeps the last good preview, with the error.
@@ -280,7 +283,7 @@ export function FilletTool() {
       <Choice id="edge-kind" label="Edge shape" bare value={kind} onChange={setKind} options={[{ value: 'fillet', label: 'Fillet' }, { value: 'chamfer', label: 'Chamfer' }]} />
       <Num id="edge-size" label={kind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={size} onChange={setSize} onEnter={() => void apply()} />
       {kind === 'chamfer' ? <Num id="edge-size2" label="Other face, if different" unit="mm" value={size2} onChange={setSize2} onEnter={() => void apply()} /> : null}
-      {limit !== null && Number.isFinite(limit) ? <Note>At most {words(limit)} on the last picked edge.</Note> : null}
+      {limit !== null && Number.isFinite(limit) ? <Note>At most {words(limit)} on the picked {n === 1 ? 'edge' : 'edges'}.</Note> : null}
       <Row label={picked?.last ? `${picked.last.loop.length} edges around this face` : 'Pick an edge to offer its loop'}>
         <Button size="sm" className="tp-pill" data-tip="cad.edgeLoop" disabled={!picked?.last || busy} onClick={wholeLoop}>Whole loop</Button>
       </Row>

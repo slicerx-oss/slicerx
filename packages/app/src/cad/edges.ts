@@ -7,7 +7,7 @@ import type { Vec3 } from '../geom/cad'
 import { fromGeom, toGeom } from '../geom/client'
 import { get, markStale } from '../state/store'
 import { commitMade, goneError, placedNow } from './commit'
-import { edgeOp, type EdgeRef } from './edge-api'
+import { edgeOp, type EdgePick, type EdgeRef } from './edge-api'
 import type { StepParams } from '@slicerx/cad-history'
 import { reserveStepId, withStep } from './history/record'
 
@@ -71,6 +71,33 @@ export function sameEdge(x: Pick<EdgeRef, 'a' | 'b'>, y: Pick<EdgeRef, 'a' | 'b'
 export function addEdge(edges: readonly EdgeRef[], e: EdgeRef, shift: boolean): EdgeRef[] {
   if (!shift) return [e]
   return edges.some((x) => sameEdge(x, e)) ? edges.filter((x) => !sameEdge(x, e)) : [...edges, e]
+}
+
+/** The largest round and bevel a picked edge was offered with: its own when it was picked alone, the loop's when it came
+ * with Whole loop, since the ops hold the edges of a loop to what they take together. */
+export interface EdgeFit {
+  edge: EdgeRef
+  radiusMm: number
+  distanceMm: number
+}
+
+/** The fits of the edges a pick added: the picked edge alone, or every supported edge of its loop at the loop's limit. */
+export function fitsOf(p: EdgePick, whole: boolean): EdgeFit[] {
+  if (!whole) return [{ edge: p.edge, radiusMm: p.maxRadiusMm, distanceMm: Math.min(...p.maxDistanceMm) }]
+  const distanceMm = Math.min(...p.loopMaxDistanceMm)
+  return p.loop.filter((l) => l.supported).map((l) => ({ edge: l.edge, radiusMm: p.loopMaxRadiusMm, distanceMm }))
+}
+
+/** Fits with newer ones in front of older ones for the same edge. */
+export function withFits(fits: readonly EdgeFit[], more: readonly EdgeFit[]): EdgeFit[] {
+  return [...fits.filter((f) => !more.some((m) => sameEdge(m.edge, f.edge))), ...more]
+}
+
+/** The most a kind takes on every edge of the set, or null when no picked edge has a fit (the tool opened on a step). */
+export function setLimit(kind: Kind, edges: readonly EdgeRef[], fits: readonly EdgeFit[]): number | null {
+  const held = edges.map((e) => fits.find((f) => sameEdge(f.edge, e))).filter((f): f is EdgeFit => !!f)
+  if (!held.length) return null
+  return Math.min(...held.map((f) => (kind === 'fillet' ? f.radiusMm : f.distanceMm)))
 }
 
 /** The engine's edge op name and size fields for a kind and typed sizes. */
