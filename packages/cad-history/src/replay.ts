@@ -39,10 +39,14 @@ type Faces = NonNullable<HistoryMesh['faces']>
 interface Flat {
   name: string
   slot: number
-  positions: number[]
-  indices: number[]
+  /** Lists from a mesh step, or the typed arrays an exact solid's tessellation came in. */
+  positions: ArrayLike<number>
+  indices: ArrayLike<number>
   /** The engine's faces with their keys, carried from step to step as the tools carry them. */
   faces?: Faces
+  /** The solid's own corner normals for these triangles (HistoryMesh.normals); a step that changes the triangles
+   * drops them, as it drops paint. */
+  normals?: Int16Array
   /** The part's paint; a step that changes its triangles drops it. */
   paint?: PaintTexts
   /** The exact solid the triangles came from, until a step runs on the mesh. Only ever the kernel's own output from
@@ -95,11 +99,11 @@ export function missSentence(report: { miss?: Miss; volumeChangeMm3?: number }, 
 }
 
 /**
- * The part with a step's result mesh, its faces with it. Its paint goes: the triangles it named are not there any
- * more. `dropped` is told when there was paint, for the step's note.
+ * The part with a step's result mesh, its faces with it. Its paint and its exact normals go: the triangles they named
+ * are not there any more. `dropped` is told when there was paint, for the step's note.
  */
-const next = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }, dropped?: () => void): Flat => {
-  const { faces: _old, paint, smb: _smb, body: _body, unmeshed: _keys, primitive: _made, ...rest } = part
+const next = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }, dropped?: () => void): Flat => {
+  const { faces: _old, paint, normals: _normals, smb: _smb, body: _body, unmeshed: _keys, primitive: _made, ...rest } = part
   if (paint && dropped) dropped()
   return { ...rest, positions: m.positions, indices: m.indices, ...(m.faces ? { faces: m.faces } : {}) }
 }
@@ -126,7 +130,7 @@ const BODY_NUMBERS = 200_000
 const bodyRefs = new Map<number, number>()
 const unheld = new Set<number>()
 
-const sizeOf = (parts: readonly Flat[]) => parts.reduce((n, p) => n + p.positions.length + p.indices.length + (p.unmeshed ? BODY_NUMBERS : 0), 0)
+const sizeOf = (parts: readonly Flat[]) => parts.reduce((n, p) => n + p.positions.length + p.indices.length + (p.normals?.length ?? 0) + (p.unmeshed ? BODY_NUMBERS : 0), 0)
 
 function hold(parts: readonly Flat[], by: 1 | -1): void {
   for (const p of parts) {
@@ -258,7 +262,11 @@ const meshOnly = ({ smb: _smb, body: _body, unmeshed: _keys, ...rest }: Flat): F
 
 const meshedAll = (call: EngineCall, parts: Flat[]): Promise<Flat[]> => (parts.some((p) => p.unmeshed) ? Promise.all(parts.map((p) => meshed(call, p))) : Promise.resolve(parts))
 
-const meshOf = (p: Flat) => ({ positions: p.positions, indices: p.indices, ...(p.faces ? { faces: p.faces } : {}) })
+/** A list as the engine's mesh steps read it: a typed array from a tessellation is copied to a plain list here only. */
+const listed = (v: ArrayLike<number>): number[] => (Array.isArray(v) ? (v as number[]) : Array.from(v))
+
+/** A part's mesh as a mesh step takes it. */
+const meshOf = (p: Flat) => ({ positions: listed(p.positions), indices: listed(p.indices), ...(p.faces ? { faces: Array.isArray(p.faces.ids) ? p.faces : { ...p.faces, ids: listed(p.faces.ids) } } : {}) })
 
 /**
  * The edges of a fillet or chamfer step that are still there: an edge whose ends both sat on a face a
@@ -374,11 +382,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     found.notes[s.id] = PAINT_DROPPED
   }
   // A result in world space, back in the part's frame. Only the name and slot carry over: paint goes, as in next().
-  const local = (m: { positions: number[]; indices: number[] }, like: Pick<Flat, 'name' | 'slot' | 'paint'>): Flat => {
+  const local = (m: { positions: ArrayLike<number>; indices: ArrayLike<number> }, like: Pick<Flat, 'name' | 'slot' | 'paint'>): Flat => {
     if (like.paint) dropped()
     return flat(bakeMesh({ name: like.name, slot: like.slot, ...m }, invert(s.transform)))
   }
-  const keep = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }) => next(part, m, dropped)
+  const keep = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }) => next(part, m, dropped)
   const newBody = (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') === 'new') || ((p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && (p.operation ?? 'new') === 'new')
   if (p.op === 'parts.add') return [...out, ...p.parts.map(flat)]
   if (p.op === 'boolean' || p.op === 'plane.cut' || p.op === 'split' || p.op === 'mirror') return partsStep(call, s, p, out, dropped)
@@ -637,7 +645,7 @@ function localPlane(s: Step, plane: { point: Vec3; normal: Vec3 }): { point: Vec
   return { point: point(inv, plane.point), normal: unit3(direction(inv, plane.normal)) }
 }
 
-const hasTriangles = (m: { indices?: ArrayLike<number> } | undefined): m is { positions: number[]; indices: number[]; faces?: Faces } => (m?.indices?.length ?? 0) >= 3
+const hasTriangles = (m: { indices?: ArrayLike<number> } | undefined): m is { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces } => (m?.indices?.length ?? 0) >= 3
 
 /** Steps that change which parts there are: combining parts, cutting one in two, splitting it to fit, mirroring it. */
 async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[], dropped: () => void): Promise<Flat[]> {
