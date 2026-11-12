@@ -6,7 +6,7 @@
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, MovedFace, Vec3 } from './types'
-import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
+import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type SkippedEdge, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 import { repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
@@ -269,7 +269,7 @@ function keptEdges<E>(s: Step, edges: readonly E[], gone: ReadonlySet<string>): 
 
 /** What a step found its faces by on this replay, and what it noticed. */
 interface Found {
-  keys: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
+  keys: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[]; skipped?: SkippedEdge[] }>
   notes: Record<string, string>
   /** Steps the exact kernel failed on this replay, which ran on the mesh. */
   fellBack: string[]
@@ -282,7 +282,12 @@ interface Found {
 export function withFound(p: StepParams, f: NonNullable<ReplayResult['found']>[string] | undefined): StepParams {
   if (f?.faceKey && p.op === 'face.push') return { ...p, faceKey: f.faceKey }
   if (f?.openKeys && p.op === 'shell') return { ...p, open: p.open.map((o, j) => (f.openKeys![j] ? { ...o, key: f.openKeys![j]! } : o)) }
-  if (f?.edgeKeys && (p.op === 'edge.fillet' || p.op === 'edge.chamfer')) return { ...p, edges: p.edges.map((e, j) => (f.edgeKeys![j] ? { ...e, keys: f.edgeKeys![j]! } : e)) }
+  if (p.op === 'edge.fillet' || p.op === 'edge.chamfer') {
+    // the edges a step left out the first time it ran are kept with it, so a later replay that leaves out others says so
+    const skipped = p.skipped === undefined && f?.skipped ? { skipped: f.skipped.map((x) => x.index) } : {}
+    if (f?.edgeKeys) return { ...p, ...skipped, edges: p.edges.map((e, j) => (f.edgeKeys![j] ? { ...e, keys: f.edgeKeys![j]! } : e)) }
+    return { ...p, ...skipped }
+  }
   return p
 }
 
@@ -296,7 +301,10 @@ function unkeyed(p: StepParams): StepParams {
     return rest
   }
   if (p.op === 'shell') return { ...p, open: p.open.map(({ key: _key, ...o }) => o) }
-  if (p.op === 'edge.fillet' || p.op === 'edge.chamfer') return { ...p, edges: p.edges.map(({ keys: _keys, ...e }) => e) }
+  if (p.op === 'edge.fillet' || p.op === 'edge.chamfer') {
+    const { skipped: _skipped, ...rest } = p
+    return { ...rest, edges: p.edges.map(({ keys: _keys, ...e }) => e) }
+  }
   return p
 }
 
@@ -506,7 +514,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         const { op: _op, ...rest } = p
         const edges = keptEdges(s, p.edges, gone)
         if (!edges.length) break
-        const r = (await call(p.op, { mesh: item(part), ...rest, edges })) as { mesh: Flat; refs?: EdgeRef[]; notes?: string[] }
+        const { skipped: before, ...ask } = rest
+        const r = (await call(p.op, { mesh: item(part), ...ask, edges })) as { mesh: Flat; refs?: EdgeRef[]; notes?: string[]; skipped?: SkippedEdge[] }
         // The keys each edge was found by, in the step's own order, for the step to keep.
         const keys: ([number, number] | null)[] = p.edges.map((e) => e.keys ?? null)
         let changed = false
@@ -518,8 +527,16 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
             changed = true
           }
         })
-        if (changed) found.keys[s.id] = { edgeKeys: keys }
-        if (r.notes?.length) found.notes[s.id] = r.notes.map((n) => n.charAt(0).toUpperCase() + n.slice(1)).join('. ') + '.'
+        // what was left out, by the step's own edge numbers
+        const skipped = r.skipped?.map((x) => ({ ...x, index: p.edges.indexOf(edges[x.index]!) }))
+        if (changed || skipped) found.keys[s.id] = { ...(changed ? { edgeKeys: keys } : {}), ...(skipped ? { skipped } : {}) }
+        const notes = r.notes?.map((n) => n.charAt(0).toUpperCase() + n.slice(1)) ?? []
+        const now = (skipped ?? []).map((x) => x.index)
+        if (before && skipped && JSON.stringify(before) !== JSON.stringify(now)) {
+          const list = (l: number[]) => (l.length ? l.map((i) => i + 1).join(', ') : 'none')
+          notes.unshift(`This step now leaves edges ${list(now)} as they were; when it was made it left ${list(before)}`)
+        }
+        if (notes.length) found.notes[s.id] = notes.join('. ') + '.'
         out[i] = keep(part, r.mesh)
         break
       }
@@ -752,7 +769,8 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   for (let i = 0; i < start; i++) {
     if (steps[i]!.suppressed) continue
     const note = found.notes[steps[i]!.id]
-    status[i] = note ? { state: 'done', note } : { state: 'done' }
+    const left = found.keys[steps[i]!.id]?.skipped
+    status[i] = { state: 'done', ...(note ? { note } : {}), ...(left ? { skipped: left } : {}) }
   }
   for (let i = start; i < effective.length; i++) {
     if (req.before === i) before = parts
@@ -765,7 +783,8 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
     try {
       parts = s.params.op === 'pattern' ? await patternStep(call, s, effective.slice(0, i), parts, fonts, moved, gone, found, req.exact, solids, !!history.exact) : await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
       const note = found.notes[s.id]
-      status[i] = note ? { state: 'done', note } : { state: 'done' }
+      const left = found.keys[s.id]?.skipped
+      status[i] = { state: 'done', ...(note ? { note } : {}), ...(left ? { skipped: left } : {}) }
       const had = keysOf(s.params)
       if (had) ran[s.id] = [had, keysOf(withFound(s.params, found.keys[s.id]))]
       remember(keys[i]!, parts, { gone, moved, found, ran })

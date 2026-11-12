@@ -80,14 +80,14 @@ const REFUSALS: readonly Refusal[] = [
     test: /picked face is curved\. Pick the edge from the flat face|meet along a round; pick both from the flat face they share/i,
     title: 'Picked on a curve',
     shown: 'Fillet and chamfer take an edge from the flat face beside it, so the step was not made. Picking the edges again from that flat face fixes it.',
-    hint: `The edges were picked from a curved face, or from different faces where they meet along a round. Pick them again with geom.edge_pick on the flat face they share and send its loop or chain. ${NEVER_QUOTE}`,
+    hint: `The edges were picked from a curved face, or from different faces where they meet along a round. Pick them again with geom.edge_pick on the flat face they share and send its loopRef or chainRef. ${NEVER_QUOTE}`,
   },
   {
     // edge.rs: the same point of a round named by more than two picked edges
     test: /meet at one point along a round; pick each edge once/i,
     title: 'Edge picked twice',
     shown: 'Some edges were picked more than once where they meet along a curve, so the step was not made. Picking each edge once fixes it.',
-    hint: `The edges list repeats an edge along a round. Send each edge once (an edge pick's loop or chain already lists each once). ${NEVER_QUOTE}`,
+    hint: `The edges list repeats an edge along a round. Send each edge once, or send the edge pick's loopRef or chainRef, which names each once. ${NEVER_QUOTE}`,
   },
   {
     // edge.rs: an edge the round tool cannot follow: both faces curved, an angle that changes along a round, or an

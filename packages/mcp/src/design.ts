@@ -86,7 +86,9 @@ export class Designs implements DesignHost {
     const st = r.status[r.status.length - 1]
     if (st?.state !== 'done') throw new ToolInputError(`The step did not go through: ${unstopped(st?.message ?? 'the steps before it are broken')}. The design is unchanged.`, 'invalid_input', { design: d.id })
     guard()
-    this.keep(d, history, r)
+    // a fillet or chamfer that left edges out keeps which, so a later replay that leaves out others says so
+    const made = st.skipped && (params.op === 'edge.fillet' || params.op === 'edge.chamfer') && params.skipped === undefined ? appendStep(d.history, { ...step, params: { ...params, skipped: st.skipped.map((x) => x.index) } }) : history
+    this.keep(d, made, r)
     d.redo = []
     const committed = receipt ? structuredClone(d) : d
     return { step: committed.history.steps[committed.history.steps.length - 1]!, revision: this.revision(d.id), design: committed }

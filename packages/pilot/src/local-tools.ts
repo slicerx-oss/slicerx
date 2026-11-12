@@ -120,9 +120,9 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
     ] },
   'geom.boolean': { tokens: 287, fields: ['design', 'feature', 'model', 'part', 'with[]', 'with_parts'] },
   'geom.build': { tokens: 319, description: true, fields: ['design', 'feature', 'name', 'slot', 'subtract'] },
-  'geom.chamfer': { tokens: 385, fields: ['design', 'edges[]', 'feature', 'model', 'part'] },
+  'geom.chamfer': { tokens: 385, fields: ['feature', 'part'] },
   'geom.cut': { tokens: 446, description: true, fields: ['connector', 'design', 'feature', 'keep', 'model', 'part', 'plane', 'plane.at'] },
-  'geom.edge_pick': { tokens: 434, fields: ['design', 'face', 'face.at', 'face.normal', 'face.part', 'face.topology', 'face.triangle', 'model'] },
+  'geom.edge_pick': { tokens: 434, fields: ['face', 'face.at', 'face.normal', 'face.part', 'face.topology', 'face.triangle'] },
   'geom.emboss': { tokens: 451, description: true, fields: ['depth_mm', 'design', 'feature', 'model', 'name', 'point', 'size_mm', 'slot', 'text', 'up'] },
   'geom.extrude': { tokens: 1007, description: true, fields: [
       'design',
@@ -153,7 +153,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
       'model',
     ] },
   'geom.faces': { tokens: 254, fields: ['design', 'format', 'model', 'part'] },
-  'geom.fillet': { tokens: 384, fields: ['design', 'edges[]', 'feature', 'model', 'part', 'tolerance_mm'] },
+  'geom.fillet': { tokens: 384, fields: ['feature', 'part'] },
   'geom.fit_check': { tokens: 228, description: true, fields: ['design', 'material', 'part'] },
   'geom.hole': { tokens: 620, fields: ['axis', 'center', 'counterbore', 'countersink', 'depth_mm', 'design', 'face', 'feature', 'label', 'model', 'part'] },
   'geom.hole_edit': { tokens: 803, fields: [

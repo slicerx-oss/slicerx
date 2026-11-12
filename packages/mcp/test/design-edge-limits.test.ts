@@ -41,7 +41,7 @@ describe('a client sizes a round from the pick', () => {
     const d = (await ok('slicerx_design_new', { name: 'Rounded box' })).design
     await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 30, heightMm: 20, cornerRadiusMm: 3 }, distance_mm: 6, name: 'Box' })
 
-    const e = await h.call('slicerx_geom_edge_pick', { design: d, face: { at: [0, -9.9, 6], normal: [0, 0, 1] } })
+    const e = await h.call('slicerx_geom_edge_pick', { design: d, face: { at: [0, -9.9, 6], normal: [0, 0, 1] }, list_edges: true })
     expect(e.isError, text(e)).toBeFalsy()
     const pick = data<{ output: Pick }>(e).output
     expect(pick.supported).toBe(true)
@@ -54,7 +54,7 @@ describe('a client sizes a round from the pick', () => {
     const loop = pick.loop.filter((l) => l.supported).map((l) => l.edge)
 
     // what the pick offers for the loop goes through; a little more is refused
-    const over = await h.call('slicerx_geom_fillet', { design: d, edges: loop, radius_mm: pick.loopMaxRadiusMm + 0.05 })
+    const over = await h.call('slicerx_geom_fillet', { design: d, edges: loop, radius_mm: pick.loopMaxRadiusMm + 0.05, all_or_nothing: true })
     expect(over.isError).toBe(true)
     expect(text(over)).toMatch(/does not fit/)
     const once = await ok('slicerx_geom_fillet', { design: d, edges: loop, radius_mm: 1 })

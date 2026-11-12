@@ -69,41 +69,68 @@ export function profileOffPath(frame: FaceFrame | undefined, loops: readonly Ske
   return `profile: its loop sits ${mm(off)} mm from where the path starts (${start.map(mm).join(', ')}), and the profile is carried as it sits. Loop points are [u, v] from the profile frame's origin, so with the origin on the path's start a loop around it is centered at [0, 0].`
 }
 
-/** Distance from a point to a triangle (closest point on the triangle, Ericson 5.1.5). */
-function distance(q: V3, [a, b, c]: [V3, V3, V3]): number {
+/** The closest point to `q` on a triangle (Ericson 5.1.5). */
+function closest(q: V3, [a, b, c]: [V3, V3, V3]): V3 {
   const ab = sub(b, a)
   const ac = sub(c, a)
   const ap = sub(q, a)
   const d1 = dot(ab, ap)
   const d2 = dot(ac, ap)
-  if (d1 <= 0 && d2 <= 0) return len(ap)
+  if (d1 <= 0 && d2 <= 0) return a
   const bp = sub(q, b)
   const d3 = dot(ab, bp)
   const d4 = dot(ac, bp)
-  if (d3 >= 0 && d4 <= d3) return len(bp)
+  if (d3 >= 0 && d4 <= d3) return b
   const vc = d1 * d4 - d3 * d2
   if (vc <= 0 && d1 >= 0 && d3 <= 0) {
     const s = d1 / (d1 - d3)
-    return len(sub(q, [a[0] + ab[0] * s, a[1] + ab[1] * s, a[2] + ab[2] * s]))
+    return [a[0] + ab[0] * s, a[1] + ab[1] * s, a[2] + ab[2] * s]
   }
   const cp = sub(q, c)
   const d5 = dot(ab, cp)
   const d6 = dot(ac, cp)
-  if (d6 >= 0 && d5 <= d6) return len(cp)
+  if (d6 >= 0 && d5 <= d6) return c
   const vb = d5 * d2 - d1 * d6
   if (vb <= 0 && d2 >= 0 && d6 <= 0) {
     const s = d2 / (d2 - d6)
-    return len(sub(q, [a[0] + ac[0] * s, a[1] + ac[1] * s, a[2] + ac[2] * s]))
+    return [a[0] + ac[0] * s, a[1] + ac[1] * s, a[2] + ac[2] * s]
   }
   const va = d3 * d6 - d5 * d4
   if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
     const s = (d4 - d3) / (d4 - d3 + (d5 - d6))
-    return len(sub(q, [b[0] + (c[0] - b[0]) * s, b[1] + (c[1] - b[1]) * s, b[2] + (c[2] - b[2]) * s]))
+    return [b[0] + (c[0] - b[0]) * s, b[1] + (c[1] - b[1]) * s, b[2] + (c[2] - b[2]) * s]
   }
   const den = 1 / (va + vb + vc)
   const v = vb * den
   const w = vc * den
-  return len(sub(q, [a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w]))
+  return [a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w]
+}
+
+/** Distance from a point to a triangle. */
+function distance(q: V3, t: [V3, V3, V3]): number {
+  return len(sub(q, closest(q, t)))
+}
+
+/** How far a loop or chain reference's point may sit off its face, once an earlier step ate into the face. */
+const SET_REACH_MM = 25
+
+/**
+ * The flat face a loop or chain reference names: the triangle facing `normal` nearest `at`, and the point on it nearest
+ * `at`. A round an earlier step made along the loop moves the face's edge in from the point; the face is still the one
+ * nearest that faces that way. Undefined when there is none within SET_REACH_MM.
+ */
+export function setFace(tris: readonly Pick<Tri, 'p' | 'n' | 'area'>[], at: V3, normal: V3): { triangle: number; at: V3 } | undefined {
+  const want = unit(normal)
+  if (!want) return undefined
+  let best: { triangle: number; at: V3; gap: number } | undefined
+  tris.forEach((t, i) => {
+    // flat faces only: the facets of a round lean off the normal by their step
+    if (t.area <= 0 || dot(t.n, want) < 0.9999) return
+    const p = closest(at, t.p)
+    const gap = len(sub(at, p))
+    if (gap <= SET_REACH_MM && (!best || gap < best.gap)) best = { triangle: i, at: p, gap }
+  })
+  return best && { triangle: best.triangle, at: best.at }
 }
 
 /** STL coordinates are float32, so a point typed from a reply can be off by a few micrometers. */
@@ -378,6 +405,18 @@ function slotOk(i: { slot?: number | undefined; design?: string | undefined; ope
 const edgeRef = z
   .object({ a: vec3, b: vec3, face: vec3, center: vec3.optional(), keys: z.tuple([z.number(), z.number()]).optional() })
   .describe('An edge as slicerx_geom_edge_pick returns it: end points a and b, the normal of its first face, and on a design the keys of its two faces; pass it as is')
+const edgeSet = z
+  .object({ set: z.enum(['loop', 'chain']), at: vec3, normal: vec3 })
+  .describe('A whole loop or chain as slicerx_geom_edge_pick returns it (loopRef, chainRef): picked again from this point on the face when the step is made, so it still finds the loop after an earlier step changed it')
+const edgeItem = z.union([edgeSet, edgeRef])
+// What a local model is shown, whose whole context is small: the same fields, enums and required ones, without the
+// texts (each costs its context on every turn). The tool's own input still takes and checks the call.
+const localEdges = z
+  .array(z.union([z.object({ set: z.enum(['loop', 'chain']), at: vec3, normal: vec3 }), z.object({ a: vec3, b: vec3, face: vec3, center: vec3.optional(), keys: z.tuple([z.number(), z.number()]).optional() })]))
+  .min(1)
+  .max(256)
+const localModel = z.string().min(1).optional()
+const localDesign = z.string().min(1).optional()
 
 /** Refuses a spline segment with no points and a closed spline of fewer than 3; the schema leaves the counts out to stay short. */
 function splinesOk(loops: readonly object[]): void {
@@ -712,27 +751,44 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const edgePick = defineTool({
     name: 'geom.edge_pick',
-    version: '1.5.0',
+    version: '2.0.0',
     source: 'command',
     permission: 'read',
     description:
-      'Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face\'s normal. Returns the edge (pass it to slicerx_geom_fillet or slicerx_geom_chamfer as is), its length, whether it is convex, whether it can be filleted and why not, the largest radius and bevel that fit this edge (maxRadiusMm, maxDistanceMm) and every edge of its chain (chainMaxRadiusMm) and of its loop (loopMaxRadiusMm), the limits the fillet and chamfer enforce on that set, the tangent chain it belongs to, and the loop of every edge around that face.',
+      'Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face\'s normal. Returns loopRef and chainRef first: the loop of edges around that face and the tangent chain of the picked edge, each as one entry that slicerx_geom_fillet and slicerx_geom_chamfer take as is (loopEdges, chainEdges: how many edges each names). Then the edge itself (pass it as is too), its length, whether it is convex, whether it can be filleted and why not, and the largest radius and bevel that fit this edge (maxRadiusMm, maxDistanceMm), every edge of its chain (chainMaxRadiusMm, chainMaxDistanceMm) and every edge of its loop the ops take (loopMaxRadiusMm, loopMaxDistanceMm). With list_edges it also lists each edge of the chain and the loop.',
     localDescription:
-      'Pick an edge for a fillet or chamfer on a model or design: a point on a flat face near (or on) the edge and that face\'s normal. Returns the edge (pass it as is to geom.fillet or geom.chamfer), its length, whether it is convex, whether it can be filleted (and why not), the largest radius and bevel for this edge, its chain and its loop (chainMaxRadiusMm, loopMaxRadiusMm: what the ops take on that set), its tangent chain and the loop of edges around that face.',
-    input: z.object({ model: modelOrDesign, design: designArg.optional(), face: faceRef.describe('The face the edge bounds: {"at":[x,y,z] near the edge,"normal":[x,y,z]} or {"triangle":n}') }),
+      'Pick an edge for a fillet or chamfer on a model or design: a point on a flat face near (or on) the edge and that face\'s normal. Returns loopRef and chainRef (the loop of that face and the edge\'s tangent chain, one entry each for geom.fillet or geom.chamfer), the edge (pass it as is), its length, whether it is convex, whether it can be filleted (and why not), the largest radius and bevel for this edge, its chain and its loop (chainMaxRadiusMm, loopMaxRadiusMm).',
+    input: z.object({
+      model: modelOrDesign,
+      design: designArg.optional(),
+      face: faceRef.describe('The face the edge bounds: {"at":[x,y,z] near the edge,"normal":[x,y,z]} or {"triangle":n}'),
+      list_edges: z.boolean().optional().describe('Also return every edge of the chain and the loop (chain, loop); loopRef and chainRef name them in one entry'),
+    }),
+    // a local model passes loopRef or chainRef and needs no per-edge lists
+    localInput: z.object({ model: localModel, design: localDesign, face: faceRef.describe('The face the edge bounds: {"at":[x,y,z] near the edge,"normal":[x,y,z]} or {"triangle":n}') }),
     async run(i) {
       oneOf(i)
       if (i.face.topology) throw new ToolInputError('A face reference does not uniquely select an edge. Edge topology references are not supported yet.', 'not_supported')
       let out: Record<string, unknown>
+      let face: { at: V3; normal: V3 }
       if (i.design) {
         const d = designOf(i.design)
         const f = pickIn(d, i.face)
+        face = { at: f.at, normal: f.normal }
         out = { ...(await engine('edge.pick', { mesh: item(d, f.part), triangle: f.triangle, at: f.at })), part: f.part }
       } else {
         const stlPath = await path(i.model!)
-        out = await call('edge.pick', { mesh: { stlPath }, ...(await pick(stlPath, i.face)) })
+        const p = await pick(stlPath, i.face)
+        face = { at: p.at, normal: triangles(stlPath)[p.triangle]!.n }
+        out = await call('edge.pick', { mesh: { stlPath }, ...p })
       }
-      return { summary: out['supported'] ? `Picked an edge of ${String(out['lengthMm'])} mm, fillet up to ${String(out['maxRadiusMm'])} mm` : `Picked an edge that cannot be filleted: ${String(out['reason'] ?? '')}`, output: lean(out) }
+      // the whole loop and chain as one entry each, which the fillet and chamfer take as they are
+      const { chain, loop, ...rest } = out as { chain: unknown[]; loop: { supported: boolean }[] } & Record<string, unknown>
+      // -0 from a triangle normal reads as 0
+      const ref = { at: face.at, normal: face.normal.map((v) => v + 0) }
+      const sets = { loopRef: { set: 'loop', ...ref }, chainRef: { set: 'chain', ...ref }, loopEdges: loop.filter((l) => l.supported).length, chainEdges: chain.length }
+      const output = { ...sets, ...rest, ...(i.list_edges ? { chain, loop } : {}) }
+      return { summary: out['supported'] ? `Picked an edge of ${String(out['lengthMm'])} mm, fillet up to ${String(out['maxRadiusMm'])} mm` : `Picked an edge that cannot be filleted: ${String(out['reason'] ?? '')}`, output: lean(output) }
     },
   })
 
@@ -1455,53 +1511,112 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  const edges = z.array(edgeRef).min(1).max(256)
+  const edges = z.array(edgeItem).min(1).max(256).describe('The edges: loopRef or chainRef from slicerx_geom_edge_pick for a whole loop or chain, or single edges as it returns them')
+  const allOrNothing = z.boolean().optional().describe('true: refuse the whole step when any edge cannot be done. Default false: do the edges that can be done, leave the rest as they were and list them in skipped')
   const plural = (n: number): string => `${n} edge${n === 1 ? '' : 's'}`
-  const edgePart = (d: Design, e: { edges: z.infer<typeof edges>; part?: number | undefined }): number => e.part ?? partAt(d, e.edges[0]!.a)
+  type Ref = z.infer<typeof edgeRef>
+  /**
+   * The edges a call names, with each loop or chain reference picked again on the part as it is now, so it still holds
+   * after an earlier step changed the part. `from` is the place in the call's list each edge came from.
+   */
+  const expand = async (list: readonly z.infer<typeof edgeItem>[], on: { design: Design; part?: number | undefined } | { stlPath: string }): Promise<{ edges: Ref[]; from: number[]; part?: number }> => {
+    const out: Ref[] = []
+    const from: number[] = []
+    let part: number | undefined
+    for (const [n, e] of list.entries()) {
+      if (!('set' in e)) {
+        out.push(e)
+        from.push(n)
+        continue
+      }
+      let p: Record<string, unknown> | undefined
+      const gone = () => new ToolInputError(`edges.${n}: no flat face faces (${e.normal.join(', ')}) within ${SET_REACH_MM} mm of (${e.at.join(', ')}) any more; pick the edge again with slicerx_geom_edge_pick`, 'invalid_input')
+      if ('design' in on) {
+        const d = on.design
+        for (const [k, mesh] of d.parts.entries()) {
+          if (on.part !== undefined && k !== on.part) continue
+          const f = setFace(partTriangles(bakeMesh(mesh, d.transform)), e.at, e.normal)
+          if (!f) continue
+          part ??= k
+          p = await engine('edge.pick', { mesh: item(d, k), triangle: f.triangle, at: f.at })
+          break
+        }
+      } else {
+        const f = setFace(triangles(on.stlPath), e.at, e.normal)
+        if (f) p = await call('edge.pick', { mesh: { stlPath: on.stlPath }, triangle: f.triangle, at: f.at })
+      }
+      if (!p) throw gone()
+      const got = e.set === 'loop' ? (p['loop'] as { edge: Ref; supported: boolean }[]).filter((l) => l.supported).map((l) => l.edge) : (p['chain'] as Ref[])
+      if (!got.length) throw new ToolInputError(`edges.${n}: the ${e.set} there has no edge a fillet or chamfer takes`, 'invalid_input')
+      for (const g of got) {
+        out.push(g)
+        from.push(n)
+      }
+    }
+    return { edges: out, from, ...(part !== undefined ? { part } : {}) }
+  }
+  /** A refusal of a stale single edge says a loop or chain reference holds where a single edge does not. */
+  const REPICK = '. A loopRef or chainRef from slicerx_geom_edge_pick is picked again when the step is made, so it still finds the edges after an earlier step changed them'
+  const stale = /pick it again|no sharp edge between two flat faces there/
+  const repick = (e: unknown): unknown => {
+    if (e instanceof Error && stale.test(e.message)) e.message = e.message.replace(/\.? The design is unchanged\.$/, '') + REPICK + (/The design is unchanged\.$/.test(e.message) ? '. The design is unchanged.' : '')
+    return e
+  }
+  /** The edges a step left as they were, by their place in the step's edges (index) and in the call's list (input). */
+  const leftOut = (list: readonly { index: number; code: string; message: string }[] | undefined, from: number[]) => (list ?? []).map((x) => ({ index: x.index, input: from[x.index] ?? x.index, code: x.code, message: x.code === 'not_found' && stale.test(x.message) ? x.message + REPICK : x.message }))
+  const withSkipped = (o: { summary: string; output: Record<string, unknown> }, skipped: ReturnType<typeof leftOut>) => ({
+    summary: skipped.length ? `${o.summary}. Left ${plural(skipped.length)} as ${skipped.length === 1 ? 'it was' : 'they were'} (skipped)` : o.summary,
+    output: { ...o.output, skipped },
+  })
+  const addEdgeStep = async (d: Design, i: { part?: number | undefined; edges: readonly z.infer<typeof edgeItem>[]; feature?: string | undefined }, params: (edges: Extract<StepParams, { op: 'edge.fillet' }>['edges']) => StepParams, verb: string) => {
+    const x = await expand(i.edges, { design: d, part: i.part })
+    await designs().add(d, i.part ?? x.part ?? partAt(d, x.edges[0]!.a), params(plain(x.edges)), undefined, withFeature(i.feature)).catch((e: unknown) => { throw repick(e) })
+    return withSkipped(stepOut(d, verb), leftOut(d.status[d.status.length - 1]?.skipped, x.from))
+  }
 
   const fillet = defineTool({
     name: 'geom.fillet',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Round straight edges on a flat face with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. Edges along a round (a rounded rectangle\'s outline, a cone\'s base rim) become one mitered round. Take the edges from slicerx_geom_edge_pick (its chain or loop picks several). With "design" it adds a step to the design; with a model it writes the new STL.',
+      'Round straight edges on a flat face with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. Edges along a round (a rounded rectangle\'s outline, a cone\'s base rim) become one mitered round. Take the edges from slicerx_geom_edge_pick: its loopRef or chainRef for a whole loop or chain, or single edges. An edge that cannot be done (too small for the radius, a corner it cannot blend) is left as it was and listed in skipped with a code and the reason, and the rest are done; all_or_nothing refuses the whole step instead. With "design" it adds a step to the design; with a model it writes the new STL.',
     localDescription:
-      'Round straight edges on a flat face to radius_mm, along rounds too (rounded rectangle loops, cone rims); take the edges from geom.edge_pick. With design it adds a step; with a model, an STL. More: kb.search "modeling tools".',
-    input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, part: partArg, edges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional().describe('Chord tolerance of the round, default 0.01 mm') }),
+      'Round straight edges on a flat face to radius_mm, along rounds too (rounded rectangle loops, cone rims); take the edges from geom.edge_pick as given (or its loopRef or chainRef); edges it cannot do are listed in skipped. With design (a design id) it adds a step; with model (an STL path), an STL. More: kb.search "modeling tools".',
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, part: partArg, edges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional().describe('Chord tolerance of the round, default 0.01 mm'), all_or_nothing: allOrNothing }),
+    // a local model does what it can (all_or_nothing is for MCP clients) and sees the edge entries without their texts
+    localInput: z.object({ model: localModel, design: localDesign, feature: featureArg, part: partArg, edges: localEdges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional() }),
     async run(i) {
       oneOf(i)
-      if (i.design) {
-        const d = designOf(i.design)
-        await designs().add(d, edgePart(d, i), { op: 'edge.fillet', edges: plain(i.edges), radiusMm: i.radius_mm, ...(i.tolerance_mm !== undefined ? { toleranceMm: i.tolerance_mm } : {}) }, undefined, withFeature(i.feature))
-        return stepOut(d, 'Filleted')
-      }
-      const { model, design: _d, part: _p, ...rest } = i
-      const out = await call('edge.fillet', { mesh: { stlPath: await path(model!) }, ...rest })
-      return { summary: `Filleted ${plural(i.edges.length)} at ${i.radius_mm} mm`, output: out }
+      const tolerance = i.tolerance_mm !== undefined ? { toleranceMm: i.tolerance_mm } : {}
+      if (i.design) return addEdgeStep(designOf(i.design), i, (edges) => ({ op: 'edge.fillet', edges, radiusMm: i.radius_mm, ...tolerance, allOrNothing: i.all_or_nothing ?? false }), 'Filleted')
+      const stlPath = await path(i.model!)
+      const x = await expand(i.edges, { stlPath })
+      const out = await call('edge.fillet', { mesh: { stlPath }, edges: x.edges, radiusMm: i.radius_mm, ...tolerance, allOrNothing: i.all_or_nothing ?? false }).catch((e: unknown) => { throw repick(e) })
+      return withSkipped({ summary: `Filleted ${plural(x.edges.length)} at ${i.radius_mm} mm`, output: out }, leftOut(out['skipped'] as Parameters<typeof leftOut>[0], x.from))
     },
   })
 
   const chamfer = defineTool({
     name: 'geom.chamfer',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description:
-      "Bevel straight edges on a flat face, along rounds too (a rounded rectangle's outline, a cone's base rim), set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick. With \"design\" it adds a step to the design; with a model it writes the new STL.",
+      "Bevel straight edges on a flat face, along rounds too (a rounded rectangle's outline, a cone's base rim), set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick: its loopRef or chainRef for a whole loop or chain, or single edges. An edge that cannot be done is left as it was and listed in skipped with a code and the reason, and the rest are done; all_or_nothing refuses the whole step instead. With \"design\" it adds a step to the design; with a model it writes the new STL.",
     localDescription:
-      "Bevel straight edges on a flat face, along rounds too, set back distance_mm on the edge's own face and distance2_mm (optional, else distance_mm) on the other; take the edges from geom.edge_pick. With design it adds a step; with a model, an STL. More: kb.search \"modeling tools\".",
-    input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, part: partArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
+      "Bevel straight edges on a flat face, along rounds too, set back distance_mm on the edge's own face and distance2_mm (optional, else distance_mm) on the other; take the edges from geom.edge_pick as given (or its loopRef or chainRef); edges it cannot do are listed in skipped. With design (a design id) it adds a step; with model (an STL path), an STL. More: kb.search \"modeling tools\".",
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, part: partArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional(), all_or_nothing: allOrNothing }),
+    // as the fillet's: no all_or_nothing and the edge entries without their texts on a local turn
+    localInput: z.object({ model: localModel, design: localDesign, feature: featureArg, part: partArg, edges: localEdges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
     async run(i) {
       oneOf(i)
-      if (i.design) {
-        const d = designOf(i.design)
-        await designs().add(d, edgePart(d, i), { op: 'edge.chamfer', edges: plain(i.edges), distanceMm: i.distance_mm, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}) }, undefined, withFeature(i.feature))
-        return stepOut(d, 'Chamfered')
-      }
-      const { model, design: _d, part: _p, ...rest } = i
-      const out = await call('edge.chamfer', { mesh: { stlPath: await path(model!) }, ...rest })
-      return { summary: `Chamfered ${plural(i.edges.length)} at ${i.distance_mm} mm`, output: out }
+      const second = i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}
+      if (i.design) return addEdgeStep(designOf(i.design), i, (edges) => ({ op: 'edge.chamfer', edges, distanceMm: i.distance_mm, ...second, allOrNothing: i.all_or_nothing ?? false }), 'Chamfered')
+      const stlPath = await path(i.model!)
+      const x = await expand(i.edges, { stlPath })
+      const out = await call('edge.chamfer', { mesh: { stlPath }, edges: x.edges, distanceMm: i.distance_mm, ...second, allOrNothing: i.all_or_nothing ?? false }).catch((e: unknown) => { throw repick(e) })
+      return withSkipped({ summary: `Chamfered ${plural(x.edges.length)} at ${i.distance_mm} mm`, output: out }, leftOut(out['skipped'] as Parameters<typeof leftOut>[0], x.from))
     },
   })
 

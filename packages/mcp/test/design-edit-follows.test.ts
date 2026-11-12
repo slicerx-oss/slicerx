@@ -29,7 +29,7 @@ async function start(corner: number) {
   const d = (await ok('slicerx_design_new', { name: 'Box' })).design
   const box = await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 30, heightMm: 20, cornerRadiusMm: corner }, distance_mm: 6, name: 'Box' })
   const pick = async (at: V3) => {
-    const r = await h.call('slicerx_geom_edge_pick', { design: d, face: { at, normal: [0, 0, 1] } })
+    const r = await h.call('slicerx_geom_edge_pick', { design: d, face: { at, normal: [0, 0, 1] }, list_edges: true })
     expect(r.isError, text(r)).toBeFalsy()
     return data<{ output: { edge: unknown; supported: boolean; loop: { edge: unknown; supported: boolean }[] } }>(r).output
   }

@@ -313,6 +313,7 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
     ...(st?.message ? { message: st.message } : {}),
     ...(st?.note ? { note: st.note } : {}),
     ...loftStations(s),
+    ...(st?.skipped?.length ? { skipped: st.skipped } : {}),
   }
 }
 
@@ -562,7 +563,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   const STEPS_TEXT = 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.'
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     // a local model gets the steps without the loft stations' words, which only the cloud follow-up guidance uses

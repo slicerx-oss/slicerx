@@ -138,6 +138,17 @@ pub struct EdgeReport {
     pub boolean: BooleanReport,
 }
 
+/// An edge a call left as it was, and why.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Skipped {
+    /// its place in the request, from 0
+    pub index: usize,
+    /// one of `not_found`, `face_reference`, `unsupported`, `does_not_fit`, `overlap`, `round_join`, `corner`
+    pub code: &'static str,
+    pub message: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct EdgeResult {
     pub mesh: TriMesh,
@@ -148,6 +159,8 @@ pub struct EdgeResult {
     pub refs: Vec<EdgeRef>,
     /// What was found another way than asked, in words ("edge 1 was split in two; ...").
     pub notes: Vec<String>,
+    /// the edges left as they were, when the call may leave some
+    pub skipped: Vec<Skipped>,
 }
 
 struct Region {
@@ -1358,8 +1371,12 @@ fn sweep(chain: &[(usize, Geom)], p: Profile, closed: bool) -> Result<TriMesh> {
 /// Edges in a row along a round, each with its number in the request.
 type Chain = Vec<(usize, Geom)>;
 
+/// What `chains` fails with: the places in `geoms` of the edges it is about, and why.
+type ChainFail = (Vec<usize>, Error);
+
 /// Runs of edges that meet along a round, turned one way, and whether each closes a loop; `nums` as the request counts.
-fn chains(geoms: &[Geom], nums: &[usize]) -> Result<Vec<(Chain, bool)>> {
+/// a failure names the edges it is about, as places in `geoms`
+fn chains(geoms: &[Geom], nums: &[usize]) -> std::result::Result<Vec<(Chain, bool)>, ChainFail> {
     let mut at: HashMap<Key, Vec<(usize, usize)>> = HashMap::new();
     for (i, g) in geoms.iter().enumerate() {
         for (e, p) in [g.a, g.b].into_iter().enumerate() {
@@ -1377,12 +1394,16 @@ fn chains(geoms: &[Geom], nums: &[usize]) -> Result<Vec<(Chain, bool)>> {
             let last = l.pop().unwrap_or_default();
             format!("{} and {last}", l.join(", "))
         };
+        let all = || list.iter().map(|x| x.0).collect::<Vec<_>>();
         let [(i, ei), (j, ej)] = list[..] else {
-            return Err(Error::invalid(
-                "edges",
-                format!(
-                    "edges {} meet at one point along a round; pick each edge once",
-                    names()
+            return Err((
+                all(),
+                Error::invalid(
+                    "edges",
+                    format!(
+                        "edges {} meet at one point along a round; pick each edge once",
+                        names()
+                    ),
                 ),
             ));
         };
@@ -1392,11 +1413,14 @@ fn chains(geoms: &[Geom], nums: &[usize]) -> Result<Vec<(Chain, bool)>> {
             || gi.ends[ei].runs_on != Some(gi.ra)
             || gj.ends[ej].runs_on != Some(gj.ra)
         {
-            return Err(Error::invalid(
-                "edges",
-                format!(
-                    "edges {} meet along a round; pick both from the flat face they share",
-                    names()
+            return Err((
+                all(),
+                Error::invalid(
+                    "edges",
+                    format!(
+                        "edges {} meet along a round; pick both from the flat face they share",
+                        names()
+                    ),
                 ),
             ));
         }
@@ -1542,24 +1566,50 @@ fn overlap(a: &[V2], b: &[V2], eps: f64) -> bool {
     true
 }
 
+/// a failure of the tools and the edges it is about, as places in the list asked for (none: the whole call)
+struct EdgeFail {
+    at: Vec<usize>,
+    err: Error,
+}
+
+impl From<Error> for EdgeFail {
+    fn from(err: Error) -> Self {
+        Self { at: Vec::new(), err }
+    }
+}
+
+fn on(at: Vec<usize>) -> impl FnOnce(Error) -> EdgeFail {
+    move |err| EdgeFail { at, err }
+}
+
+/// the tools for `edges`, which the request numbers `num` (from 1)
 #[allow(clippy::too_many_lines, reason = "checks, pieces and corners in one pass")]
-fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
+fn tools(
+    mesh: &TriMesh,
+    edges: &[EdgeRef],
+    num: &[usize],
+    profile: Profile,
+) -> std::result::Result<Tools, EdgeFail> {
     mesh.validate("mesh")?;
     let profile = check_profile(profile)?;
     if edges.is_empty() {
-        return Err(Error::invalid("edges", "pick at least one edge"));
+        return Err(Error::invalid("edges", "pick at least one edge").into());
     }
     let faces = Faces::new(mesh);
-    for e in edges {
+    for (i, e) in edges.iter().enumerate() {
         if let Some(keys) = e.keys {
-            let identities = mesh.faces.as_ref().ok_or_else(|| {
-                Error::invalid(
-                    "faceReference",
-                    "the face reference is missing; repair the reference before editing",
-                )
-            })?;
+            let identities = mesh
+                .faces
+                .as_ref()
+                .ok_or_else(|| {
+                    Error::invalid(
+                        "faceReference",
+                        "the face reference is missing; repair the reference before editing",
+                    )
+                })
+                .map_err(on(vec![i]))?;
             for key in keys {
-                crate::faces::resolve_key(mesh, identities, key)?;
+                crate::faces::resolve_key(mesh, identities, key).map_err(on(vec![i]))?;
             }
         }
     }
@@ -1568,10 +1618,13 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         .iter()
         .enumerate()
         .map(|(i, e)| match relocate(mesh, e) {
-            Some((_, true)) => Err(Error::invalid(
-                "faceReference",
-                format!("edge {} was split; repair the reference before editing", i + 1),
-            )),
+            Some((_, true)) => Err(EdgeFail {
+                at: vec![i],
+                err: Error::invalid(
+                    "faceReference",
+                    format!("edge {} was split; repair the reference before editing", num[i]),
+                ),
+            }),
             Some((r, false)) => Ok(r),
             None if e.keys.is_some() => {
                 let same_rim = e.center.is_some()
@@ -1581,18 +1634,21 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
                 if same_rim {
                     Ok(*e)
                 } else {
-                    Err(Error::invalid(
-                        "faceReference",
-                        format!(
-                            "edge {} has a missing face reference; repair the reference before editing",
-                            i + 1
+                    Err(EdgeFail {
+                        at: vec![i],
+                        err: Error::invalid(
+                            "faceReference",
+                            format!(
+                                "edge {} has a missing face reference; repair the reference before editing",
+                                num[i]
+                            ),
                         ),
-                    ))
+                    })
                 }
             }
             None => Ok(keyed(mesh, e)),
         })
-        .collect::<Result<_>>()?;
+        .collect::<std::result::Result<_, EdgeFail>>()?;
     // an edge asked for twice is cut once: a second tool on the same edge leaves slivers the boolean cannot close
     let tol = REF_MM.max(faces.size * 1e-7);
     let mut notes = Vec::new();
@@ -1601,8 +1657,7 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         match once.iter().find(|(_, o)| same_edge(o, e, tol)) {
             Some(&(j, _)) => notes.push(format!(
                 "edge {} is edge {} again and was taken once",
-                i + 1,
-                j + 1
+                num[i], num[j]
             )),
             None => once.push((i, e)),
         }
@@ -1612,15 +1667,15 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
     let mut straight = Vec::new();
     for &(i, e) in &once {
         if e.center.is_some() {
-            rims.push((i + 1, rim::of_ref(mesh, e, i + 1)?));
+            rims.push((i, num[i], rim::of_ref(mesh, e, num[i]).map_err(on(vec![i]))?));
         } else {
-            straight.push((i + 1, e));
+            straight.push((i, num[i], e));
         }
     }
     let geoms = straight
         .iter()
-        .map(|&(n, e)| resolve(&faces, n, e))
-        .collect::<Result<Vec<_>>>()?;
+        .map(|&(i, n, e)| resolve(&faces, n, e).map_err(on(vec![i])))
+        .collect::<std::result::Result<Vec<_>, EdgeFail>>()?;
     let mut strips: Vec<(usize, usize, [V3; 4])> = Vec::new();
     for (i, g) in geoms.iter().enumerate() {
         let widths = match profile {
@@ -1630,7 +1685,7 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         for (side, &w) in widths.iter().enumerate() {
             if !fits(&faces, g, side, w) {
                 let max = max_width(&faces, g, side);
-                return Err(match profile {
+                return Err(on(vec![straight[i].0])(match profile {
                     Profile::Chamfer { d1, d2 } => {
                         if side == 1 && (d2 - d1).abs() > 0.0 {
                             fit_error("distance2Mm", d2, max)
@@ -1649,7 +1704,7 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
                         let w = max_width(&faces, g, 0).min(max_width(&faces, g, 1));
                         fit_error("radiusMm", radius, w * (g.phi * 0.5).m_tan())
                     }
-                });
+                }));
             }
             let r = if side == 0 { g.ra } else { g.rb };
             if let Some(q) = g.strip(side, w) {
@@ -1675,14 +1730,16 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
                     Profile::Chamfer { d1, .. } => ("distanceMm", d1),
                     Profile::Fillet { radius, .. } => ("radiusMm", radius),
                 };
-                return Err(Error::invalid(
-                    what,
-                    format!(
-                        "{v} mm does not fit; edges {} and {} would overlap on one face",
-                        i + 1,
-                        j + 1
+                return Err(EdgeFail {
+                    at: vec![straight[i].0, straight[j].0],
+                    err: Error::invalid(
+                        what,
+                        format!(
+                            "{v} mm does not fit; edges {} and {} would overlap on one face",
+                            straight[i].1, straight[j].1
+                        ),
                     ),
-                ));
+                });
             }
         }
     }
@@ -1691,12 +1748,12 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         notes,
         ..Tools::default()
     };
-    for &(n, ref r) in &rims {
+    for &(i, n, ref r) in &rims {
         let widths = r.widths(profile);
         for (side, &w) in widths.iter().enumerate() {
             if w > r.room[side] + 1e-9 {
                 let max = (r.room[side] * 1000.0 + 1e-6).floor() / 1000.0;
-                return Err(match profile {
+                return Err(on(vec![i])(match profile {
                     Profile::Chamfer { d1, d2 } if side == 1 && (d2 - d1).abs() > 0.0 => {
                         fit_error("distance2Mm", d2, max)
                     }
@@ -1709,10 +1766,10 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
                             (w * (r.geom().phi * 0.5).m_tan() * 1000.0 + 1e-6).floor() / 1000.0,
                         )
                     }
-                });
+                }));
             }
         }
-        let m = r.tool(profile, n)?;
+        let m = r.tool(profile, n).map_err(on(vec![i]))?;
         if r.convex {
             out.cut.push(m);
         } else {
@@ -1731,14 +1788,21 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
             length_mm: g.len,
         });
     }
-    let nums: Vec<usize> = straight.iter().map(|s| s.0).collect();
-    for (chain, closed) in chains(&geoms, &nums)? {
+    let nums: Vec<usize> = straight.iter().map(|s| s.1).collect();
+    let place = |k: &[usize]| k.iter().map(|&k| straight[k].0).collect::<Vec<_>>();
+    let chained = chains(&geoms, &nums).map_err(|(k, err)| EdgeFail { at: place(&k), err })?;
+    for (chain, closed) in chained {
         let (n, g) = chain[0];
+        let at: Vec<usize> = chain
+            .iter()
+            .filter_map(|c| straight.iter().find(|s| s.1 == c.0).map(|s| s.0))
+            .collect();
         let m = if chain.len() == 1 {
-            piece(&g, profile, n)?
+            piece(&g, profile, n)
         } else {
-            sweep(&chain, profile, closed)?
-        };
+            sweep(&chain, profile, closed)
+        }
+        .map_err(on(at))?;
         if g.convex {
             out.cut.push(m);
         } else {
@@ -1757,15 +1821,18 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         for (v, list) in corners {
             let gs: Vec<Geom> = list.iter().map(|&i| geoms[i]).collect();
             if gs.len() != 3 {
-                return Err(Error::invalid(
-                    "edges",
-                    format!(
-                        "the corner at ({:.3}, {:.3}, {:.3}) joins more than three fillets; leave some of its edges out",
-                        v[0], v[1], v[2]
+                return Err(EdgeFail {
+                    at: place(&list),
+                    err: Error::invalid(
+                        "edges",
+                        format!(
+                            "the corner at ({:.3}, {:.3}, {:.3}) joins more than three fillets; leave some of its edges out",
+                            v[0], v[1], v[2]
+                        ),
                     ),
-                ));
+                });
             }
-            let m = sphere_corner(&faces, v, &gs, radius, tolerance)?;
+            let m = sphere_corner(&faces, v, &gs, radius, tolerance).map_err(on(place(&list)))?;
             if gs[0].convex {
                 out.cut.push(m);
             } else {
@@ -1975,11 +2042,101 @@ fn span_of(mesh: &TriMesh, run: &[(u32, u32)]) -> Option<(V3, V3, f64)> {
     Some((lo.1, hi.1, hi.0 - lo.0))
 }
 
+/// what a failure says, as a code a client can switch on
+fn code_of(e: &Error) -> &'static str {
+    let s = e.to_string();
+    let has = |w: &str| s.contains(w);
+    if matches!(
+        e,
+        Error::Invalid {
+            what: "faceReference",
+            ..
+        }
+    ) || has("face reference")
+    {
+        "face_reference"
+    } else if has("cannot blend") || has("more than three fillets") {
+        "corner"
+    } else if has("overlap") {
+        "overlap"
+    } else if has("meet along a round") || has("meet at one point along a round") {
+        "round_join"
+    } else if has("does not fit") || has("reaches past") || has("too short") {
+        "does_not_fit"
+    } else if has("no sharp edge") || has("not there any more") || has("more than one edge matches") {
+        "not_found"
+    } else {
+        "unsupported"
+    }
+}
+
+/// The tools for `edges`; with `skip`, an edge that fails is left out and the rest go on, the later one of a pair
+/// or corner that fails together. A call that can do none of them fails as the first one did.
+fn tools_skipping(
+    mesh: &TriMesh,
+    edges: &[EdgeRef],
+    profile: Profile,
+    skip: bool,
+) -> Result<(Tools, Vec<Skipped>)> {
+    let mut left: Vec<usize> = (0..edges.len()).collect();
+    let mut skipped: Vec<Skipped> = Vec::new();
+    let mut first = None;
+    loop {
+        let list: Vec<EdgeRef> = left.iter().map(|&i| edges[i]).collect();
+        let num: Vec<usize> = left.iter().map(|&i| i + 1).collect();
+        match tools(mesh, &list, &num, profile) {
+            Ok(mut t) => {
+                if !skipped.is_empty() {
+                    // every edge keeps its place in the refs, as asked when it was left out
+                    let mut refs = edges.to_vec();
+                    for (k, &i) in left.iter().enumerate() {
+                        refs[i] = t.refs[k];
+                    }
+                    t.refs = refs;
+                    skipped.sort_by_key(|x| x.index);
+                }
+                return Ok((t, skipped));
+            }
+            Err(f) if !skip || f.at.is_empty() => return Err(first.unwrap_or(f.err)),
+            Err(f) => {
+                let k = f.at.iter().copied().max().unwrap_or(0);
+                let i = left.remove(k);
+                let message = match &f.err {
+                    Error::Invalid { why, .. } | Error::Geometry { why, .. } => why.clone(),
+                    e => e.to_string(),
+                };
+                skipped.push(Skipped {
+                    index: i,
+                    code: code_of(&f.err),
+                    message,
+                });
+                if first.is_none() {
+                    first = Some(f.err);
+                }
+                if left.is_empty() {
+                    return Err(first.unwrap_or_else(|| Error::invalid("edges", "pick at least one edge")));
+                }
+            }
+        }
+    }
+}
+
 pub fn apply(
     mesh: &TriMesh,
     edges: &[EdgeRef],
     profile: Profile,
     opts: &BooleanOptions,
+) -> Result<EdgeResult> {
+    apply_some(mesh, edges, profile, opts, false)
+}
+
+/// `apply`, leaving out the edges that fail when `skip` is set (each in `skipped`, with why).
+pub fn apply_some(
+    mesh: &TriMesh,
+    edges: &[EdgeRef],
+    profile: Profile,
+    opts: &BooleanOptions,
+    skip: bool,
 ) -> Result<EdgeResult> {
     // the round's strips follow every vertex along the edge: the faces the edges touch from their corners alone
     // first (a round edge, a circle, every flat face as before)
@@ -1990,7 +2147,7 @@ pub fn apply(
         crate::remesh::coarsen_flat_touching(mesh, &segments)
     };
     let mesh = &coarse;
-    let t = tools(mesh, edges, profile)?;
+    let (t, skipped) = tools_skipping(mesh, edges, profile, skip)?;
     let mut solid = Solid::new(mesh)?;
     let v0 = solid.volume();
     let mut last = None;
@@ -2013,6 +2170,15 @@ pub fn apply(
         return Err(Error::invalid("edges", "pick at least one edge"));
     };
     let out = boolean::tidy(out, &mut r);
+    let mut notes = t.notes;
+    for x in &skipped {
+        let why = x
+            .message
+            .split_once(": ")
+            .filter(|(h, _)| h.starts_with("edge "))
+            .map_or(x.message.as_str(), |(_, w)| w);
+        notes.push(format!("edge {} was left as it was: {why}", x.index + 1));
+    }
     if r.empty || out.triangles.is_empty() {
         return Err(Error::geometry("edges", "the change removes the whole body"));
     }
@@ -2033,12 +2199,23 @@ pub fn apply(
         edges: t.edges,
         corners: t.corners,
         refs: t.refs,
-        notes: t.notes,
+        notes,
+        skipped,
     })
 }
 
 pub fn preview(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<(TriMesh, TriMesh)> {
-    let t = tools(mesh, edges, profile)?;
+    preview_some(mesh, edges, profile, false).map(|(cut, join, _)| (cut, join))
+}
+
+/// `preview`, leaving out the edges that fail when `skip` is set.
+pub fn preview_some(
+    mesh: &TriMesh,
+    edges: &[EdgeRef],
+    profile: Profile,
+    skip: bool,
+) -> Result<(TriMesh, TriMesh, Vec<Skipped>)> {
+    let (t, skipped) = tools_skipping(mesh, edges, profile, skip)?;
     let mut cut = TriMesh::default();
     for m in &t.cut {
         cut.append(m);
@@ -2047,7 +2224,7 @@ pub fn preview(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<(T
     for m in &t.join {
         join.append(m);
     }
-    Ok((cut, join))
+    Ok((cut, join, skipped))
 }
 
 #[cfg(test)]
@@ -2266,6 +2443,71 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("split") && error.contains("repair"), "{error}");
+    }
+
+    #[test]
+    fn a_call_that_may_leave_edges_out_does_the_rest() {
+        let mut b = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
+        crate::faces::with_key_salt(Some(1), || crate::faces::base_keys(&mut b));
+        let split = keyed(&b, &pick(&b, [0.0, 0.0, 1.0], [20.0, 0.1, 20.0]).edge);
+        let back = keyed(&b, &pick(&b, [0.0, 0.0, 1.0], [20.0, 29.9, 20.0]).edge);
+        let notch = build::box_mesh([10.0, -1.0, 10.0], [14.0, 5.0, 21.0]);
+        let m = crate::faces::with_key_salt(Some(2), || {
+            boolean::boolean(&[b], &[notch], BoolOp::Difference, &BooleanOptions::default())
+                .unwrap()
+                .0
+        });
+        let opts = BooleanOptions::default();
+        let err = apply(&m, &[split, back], chamfer(1.0), &opts)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("split"), "{err}");
+        let r = apply_some(&m, &[split, back], chamfer(1.0), &opts, true).unwrap();
+        sound(&r);
+        assert_eq!(r.skipped.len(), 1);
+        assert_eq!((r.skipped[0].index, r.skipped[0].code), (0, "face_reference"));
+        // the back edge alone: 40 mm at 0.5 mm2
+        assert!(
+            (r.report.volume_change_mm3 + 20.0).abs() < 1e-6,
+            "{}",
+            r.report.volume_change_mm3
+        );
+        assert_eq!(r.refs.len(), 2);
+        assert_eq!(r.refs[0], split);
+        assert!(
+            r.notes.iter().any(|n| n.starts_with("edge 1 was left as it was")),
+            "{:?}",
+            r.notes
+        );
+        // with nothing it can do, it fails as the first edge did
+        let none = apply_some(&m, &[split], chamfer(1.0), &opts, true)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(none, err);
+        assert!(none.contains("split"), "{none}");
+    }
+
+    #[test]
+    fn a_corner_it_cannot_blend_leaves_the_last_of_its_edges_sharp() {
+        let m = l_bracket();
+        let inner = e([4.0, 0.0, 4.0], [4.0, 20.0, 4.0], [0.0, 0.0, 1.0]);
+        let side = [0.0, -1.0, 0.0];
+        let a = e([4.0, 0.0, 4.0], [30.0, 0.0, 4.0], side);
+        let b = e([4.0, 0.0, 4.0], [4.0, 0.0, 25.0], side);
+        let r = apply_some(&m, &[inner, a, b], fillet(1.0), &BooleanOptions::default(), true).unwrap();
+        sound(&r);
+        assert_eq!(r.skipped.len(), 1);
+        assert_eq!((r.skipped[0].index, r.skipped[0].code), (2, "corner"));
+        assert!(
+            r.skipped[0].message.contains("cannot blend"),
+            "{}",
+            r.skipped[0].message
+        );
+        // nothing left out when every edge goes through
+        let ok = apply_some(&m, &[inner, a], fillet(1.0), &BooleanOptions::default(), true).unwrap();
+        assert!(ok.skipped.is_empty());
+        let same = apply(&m, &[inner, a], fillet(1.0), &BooleanOptions::default()).unwrap();
+        assert_eq!(ok.mesh, same.mesh);
     }
 
     #[test]
