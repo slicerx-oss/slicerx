@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // design.edit_step's tilt leans what an extrude or a loft made about its foot, in place: the timeline keeps one step,
 // a pattern made of it leans with it, a later size edit keeps the lean, steps after it (a cut) still go through, and
-// a saved project reads the lean back. A lean into another step's shape is refused with that step by name. Engine
+// a saved project reads the lean back. A lean into another step's shape, by the step or by a copy a pattern made of
+// it, is refused with that step by name. Engine
 // replies are recorded in fixtures/design-tilt.json.gz.
 import { describe, expect, it } from 'vitest'
 import { historyFiles, parseHistories, type History } from '@slicerx/cad-history'
@@ -51,6 +52,8 @@ const block = (w: number, d: number, h: number, cx: number, cy: number, z = 0, o
 })
 const post = (dia: number, h: number, cx: number, cy: number, z: number) => ({ frame: top(z), shape: { type: 'circle', diameterMm: dia }, placement: { center: [cx, cy] }, distance_mm: h, operation: 'join' })
 const r1 = (n: number) => Math.round(n * 10) / 10
+// a twelve-sided section about (cx, 0), r across its corners
+const gon = (cx: number, r: number) => Array.from({ length: 12 }, (_, k) => [cx + r * Math.cos((k * Math.PI) / 6), r * Math.sin((k * Math.PI) / 6)])
 const DEG = Math.PI / 180
 
 describe('design.edit_step tilt', () => {
@@ -73,8 +76,8 @@ describe('design.edit_step tilt', () => {
   it('leans a lofted body and the copies a pattern made of it', async () => {
     const t = await start()
     await t.ok('slicerx_geom_extrude', { design: t.design, ...block(100, 12, 4, 50, 0, 0, 'new') })
-    const ring = (z: number, r: number) => ({ frame: top(z), loops: [{ type: 'circle', center: [15, 0], diameterMm: r * 2 }] })
-    await t.ok('slicerx_geom_loft', { design: t.design, part: 0, operation: 'join', smooth: true, profiles: [ring(4, 3), ring(10, 2.8), ring(16, 2.6)] })
+    const ring = (z: number, r: number) => ({ frame: top(z), loops: [{ points: gon(15, r) }] })
+    await t.ok('slicerx_geom_loft', { design: t.design, part: 0, operation: 'join', profiles: [ring(4, 3), ring(10, 2.8), ring(16, 2.6)] })
     await t.ok('slicerx_geom_array', { design: t.design, part: 0, merge: true, steps: [2], spec: { kind: 'linear', count: 3, step: [30, 0, 0] } })
     const out = await t.ok('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'y', degrees: 20 } })
     expect(out.output.steps.map((s) => s.state)).toEqual(['done', 'done', 'done'])
@@ -118,6 +121,22 @@ describe('design.edit_step tilt', () => {
     expect(text(r)).toMatch(/runs it into step 3, Rectangle extrude 20 mm/)
     const steps = await t.ok('slicerx_design_steps', { design: t.design })
     expect(steps.output.steps[1]!.leans).toBeUndefined()
+  })
+
+  it('refuses a lean whose pattern copy runs into another step, naming it', async () => {
+    const t = await start()
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...block(100, 12, 4, 50, 0, 0, 'new') })
+    const ring = (z: number, r: number) => ({ frame: top(z), loops: [{ points: gon(10, r) }] })
+    await t.ok('slicerx_geom_loft', { design: t.design, part: 0, operation: 'join', profiles: [ring(4, 3), ring(10, 2.8), ring(16, 2.6)] })
+    await t.ok('slicerx_geom_array', { design: t.design, part: 0, merge: true, steps: [2], spec: { kind: 'linear', count: 3, step: [30, 0, 0] } })
+    // a wall 1 mm past the third copy only: the step itself, at x 10, has nothing near it
+    await t.ok('slicerx_geom_extrude', { design: t.design, part: 0, ...block(2, 12, 16, 75, 0, 4) })
+    const { r } = await t.call('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'x', degrees: 25 } })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toMatch(/runs it into step 4, Rectangle extrude 16 mm/)
+    // the other way the copies lean away from the wall, and the lean is kept
+    const out = await t.ok('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: '-x', degrees: 25 } })
+    expect(out.output.steps[1]).toMatchObject({ leans: { degrees: 25, toward: '-x' } })
   })
 
   it('leans only what an extrude or a loft made', async () => {
