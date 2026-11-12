@@ -572,7 +572,7 @@ pub fn allow_brep_text(on: bool) {
 /// An exact solid op of sx-brep. A body lasts only as long as the process that made it. Bodies sent back as
 /// `{"smb": text}` are a cache the app keeps for itself, not an input: the kernel's reader trusts its text, so a
 /// request may carry one only with `SX_BREP_DEV=1` (developers, and tests that run one process per call).
-/// A body the engine holds itself (`exact.rs`) is answered there.
+/// The engine holds every body itself and answers from its table (`exact.rs`).
 #[cfg(feature = "brep")]
 fn brep_op(op: &str, req: &Value, enc: MeshOut) -> Result<Value> {
     let carries_text = req
@@ -586,11 +586,7 @@ fn brep_op(op: &str, req: &Value, enc: MeshOut) -> Result<Value> {
             "takes a body number; a body as text needs SX_BREP_DEV=1",
         ));
     }
-    if let Some(answer) = crate::exact::answer(op, req, matches!(enc, MeshOut::Raw)) {
-        return answer;
-    }
-    let reply = sx_brep::call(op, &req.to_string()).map_err(|e| Error::geometry("brep", e))?;
-    serde_json::from_str(&reply).map_err(|e| Error::Json(e.to_string()))
+    crate::exact::answer(op, req, matches!(enc, MeshOut::Raw))
 }
 
 fn import_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {

@@ -5,6 +5,7 @@
 // changes a body makes a new one, so a caller can keep earlier steps.
 #include "json.h"
 #include "sx_keys.h"
+#include "sx_surface.h"
 
 #include <SmApiBrep.h>
 #include <SmApiCurves.h>
@@ -728,7 +729,12 @@ const char* surface_name(SmSurface* s)
     case SmSphere_TYPE: return "sphere";
     case SmTorus_TYPE: return "torus";
     case SmSurfOfRevolution_TYPE: return "revolution";
-    case SmSurfOfExtrusion_TYPE: return "extrusion";
+    case SmSurfOfExtrusion_TYPE: {
+        // an arc run along its axis is the cylinder its surface reads as (cpp/sx_surface.h)
+        SmAxis2Placement ax;
+        double r = 0;
+        return sx_extruded_cylinder(*s, ax, r) ? "cylinder" : "extrusion";
+    }
     // a tapered extrude makes its flat sides as ruled surfaces, flat to 1e-5 mm
     case SmBSplineSurface_TYPE: return s->IsPlanar(1e-4) ? "plane" : "nurbs";
     case SmBlendSurface_TYPE: return "blend";
@@ -792,19 +798,11 @@ Value surface_of(SmSurface* s)
         return v;
     }
     if (s->GetType() == SmSurfOfExtrusion_TYPE) {
-        // an arc of a sketch run straight along its axis is a piece of a cylinder; the kernel keeps it as an
-        // extrusion, as it makes cylinders only from whole circles
-        auto* e = static_cast<SmSurfOfExtrusion*>(s);
-        SmBSplineCurve* gen = e->GetGenCurve();
-        SmVector3d d = e->GetExtrusionVector();
-        double a0 = 0, a1 = 0, len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-        if (!gen || len <= 0 || !gen->IsArc(16, 1e-6, ax, rad, a0, a1)) return Value();
-        SmVector3d z = ax.GetZAxis();
-        double along = (d.x * z.x + d.y * z.y + d.z * z.z) / len;
-        if (std::fabs(std::fabs(along) - 1) > 1e-9) return Value();
+        // an arc run along its axis (cpp/sx_surface.h)
+        if (!sx_extruded_cylinder(*s, ax, rad)) return Value();
         v.set("kind", "cylinder");
         v.set("origin", xyz(ax.GetOrigin()));
-        v.set("axis", xyz(z));
+        v.set("axis", xyz(ax.GetZAxis()));
         v.set("radius", rad);
         return v;
     }

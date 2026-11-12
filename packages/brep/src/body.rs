@@ -246,7 +246,7 @@ pub enum Surface {
     Spline,
     /// A curve turned about an axis, where the kernel keeps it that way and not as one of the kinds above.
     Revolved,
-    /// A curve run along a straight line.
+    /// A curve run along a straight line; an arc run along its own axis reads as a cylinder instead.
     Extruded,
     /// A blend between surfaces.
     Blend,

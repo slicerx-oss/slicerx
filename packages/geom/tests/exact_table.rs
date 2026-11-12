@@ -13,7 +13,7 @@ use sx_brep::Body;
 use sx_geom::fm::Fm;
 use sx_geom::{exact, normals};
 
-// the old table's count is the whole process's, so the tests here run one at a time
+// the older operations' table is the whole process's, so the tests here run one at a time
 static ONE: Mutex<()> = Mutex::new(());
 
 fn alone() -> MutexGuard<'static, ()> {
@@ -144,10 +144,31 @@ impl Drop for Kept {
     }
 }
 
-/// A body of the old table, freed when the test lets go of it.
+/// An older operation called directly, past the engine: its own answer, with any body it makes in its own table.
+fn older(op: &str, req: &Value) -> String {
+    sx_brep::call(op, &req.to_string()).unwrap_or_else(|e| panic!("{op}: {e}"))
+}
+
+/// A body in the older operations' own table, made by one of them directly, freed when the test lets go of it.
 struct Old(Value);
 
+impl Old {
+    fn made(op: &str, req: &Value) -> Self {
+        let reply: Value = serde_json::from_str(&older(op, req)).expect("reply is JSON");
+        Self(reply["body"].clone())
+    }
+}
+
 impl Drop for Old {
+    fn drop(&mut self) {
+        let _ = sx_brep::call("free", &json!({ "body": self.0 }).to_string());
+    }
+}
+
+/// A body an operation made through the engine, which holds it; freed when the test lets go of it.
+struct Made(Value);
+
+impl Drop for Made {
     fn drop(&mut self) {
         let _ = text("brep.free", &json!({ "body": self.0 }));
     }
@@ -580,7 +601,7 @@ fn same_faces(name: &str, new: &Value, old: &Value) {
 fn same_info(name: &str, held: u32, old_body: &Value) {
     let (a, b) = (
         run("brep.info", &json!({ "body": held })),
-        run("brep.info", &json!({ "body": old_body })),
+        serde_json::from_str::<Value>(&older("info", &json!({ "body": old_body }))).expect("reply is JSON"),
     );
     assert_eq!(a["manifold"], b["manifold"], "{name}");
     assert_eq!(a["faces"], b["faces"], "{name}");
@@ -610,16 +631,12 @@ fn a_held_body_tessellates_to_the_old_op_s_triangles() {
     let _one = alone();
     for shape in shapes() {
         let name = shape.name;
-        let old_body = Old(run("brep.primitive", &shape.old)["body"].clone());
+        let old_body = Old::made("primitive", &shape.old);
         // the old op does not read `meshOutput`: its answer is the same with it
-        let reply = text("brep.tessellate", &json!({ "body": old_body.0 })).expect("the old op's mesh");
+        let reply = older("tessellate", &json!({ "body": old_body.0 }));
         assert_eq!(
-            text(
-                "brep.tessellate",
-                &json!({ "body": old_body.0, "meshOutput": "raw" })
-            )
-            .as_ref(),
-            Ok(&reply),
+            older("tessellate", &json!({ "body": old_body.0, "meshOutput": "raw" })),
+            reply,
             "{name}"
         );
         assert!(sx_geom::json::take_out_files().is_empty(), "{name}");
@@ -694,15 +711,17 @@ fn a_freed_body_is_gone_and_the_count_comes_back() {
     let held = exact::count();
     let a = exact::hold(Body::cuboid([0.0; 3], [1.0; 3]).unwrap(), Vec::new()).unwrap();
     let b = exact::hold(Body::sphere([0.0; 3], 2.0).unwrap(), Vec::new()).unwrap();
-    assert!(exact::is_handle(u64::from(a)) && a >= exact::FIRST);
-    assert!(b > a);
+    assert!(a >= 1 && b > a);
     assert_eq!(exact::count(), held + 2);
     assert_eq!(bodies(), start + 2);
-    // the old table's bodies count beside them, and its numbers stay its own
-    let old = Old(run("brep.box", &json!({ "min": [0, 0, 0], "max": [1, 1, 1] }))["body"].clone());
-    assert!(!exact::is_handle(old.0.as_u64().unwrap()));
+    // a body an older operation makes is held here beside them, under the next number, and the older table keeps
+    // nothing
+    let made = Made(run("brep.box", &json!({ "min": [0, 0, 0], "max": [1, 1, 1] }))["body"].clone());
+    let number = u32::try_from(made.0.as_u64().unwrap()).unwrap();
+    assert!(number > b && exact::with(number, |_| ()).is_some());
     assert_eq!(bodies(), start + 3);
-    assert_eq!(exact::count(), held + 2);
+    assert_eq!(exact::count(), held + 3);
+    assert_eq!(older("count", &json!({})), r#"{"bodies":0}"#);
 
     assert_eq!(run("brep.free", &json!({ "body": a })), json!({ "freed": true }));
     assert_eq!(bodies(), start + 2);
@@ -734,77 +753,78 @@ fn a_freed_body_is_gone_and_the_count_comes_back() {
         );
         refused("brep.tessellate", &json!({ "body": freed }))
     };
-    assert_eq!(old_gone, gone, "the old table's words");
+    assert_eq!(old_gone, gone, "a body an older operation made, once freed");
 
     // a number is never given out twice
     let c = exact::hold(Body::cuboid([0.0; 3], [1.0; 3]).unwrap(), Vec::new()).unwrap();
     assert!(c > b);
     assert!(exact::free(c) && !exact::free(c));
     assert!(exact::free(b));
-    drop(old);
+    drop(made);
     assert_eq!(bodies(), start);
     assert_eq!(exact::count(), held);
 }
 
 #[test]
-fn the_old_ops_but_save_refuse_a_held_body_and_save_leaves_it_held() {
+fn the_older_operations_take_a_held_body_and_leave_it_held() {
     if !sx_brep::KERNEL {
         return;
     }
     let _one = alone();
     let kept = Kept::new(Body::cuboid([0.0; 3], [10.0; 3]).unwrap());
-    let old = Old(run("brep.box", &json!({ "min": [5, 5, 5], "max": [15, 15, 15] }))["body"].clone());
+    let other = Made(run("brep.box", &json!({ "min": [5, 5, 5], "max": [15, 15, 15] }))["body"].clone());
     let start = bodies();
-    let not_yet = |field: &str| format!("brep: {field}: this operation cannot work on this body yet");
     let gone = |field: &str| format!("brep: {field}: no such body (freed, or from an earlier session)");
-    let union = |a: &Value, b: &Value| refused("brep.boolean", &json!({ "op": "union", "a": a, "b": b }));
-    assert_eq!(union(&json!(kept.0), &old.0), not_yet("a"));
-    assert_eq!(union(&old.0, &json!(kept.0)), not_yet("b"));
+    let union = |a: &Value, b: &Value| text("brep.boolean", &json!({ "op": "union", "a": a, "b": b }));
+    let volume = |body: &Value| {
+        run("brep.info", &json!({ "body": body }))["volumeMm3"]
+            .as_f64()
+            .unwrap()
+    };
+    let about = |v: f64, want: f64| (v - want).abs() <= 1e-6 * want;
+    // in either place, with a body an older operation made: two cubes of 1000 that share 125
+    for (a, b) in [(json!(kept.0), other.0.clone()), (other.0.clone(), json!(kept.0))] {
+        let joined: Value = serde_json::from_str(&union(&a, &b).expect("joined")).unwrap();
+        let joined = Made(joined["body"].clone());
+        assert!(about(volume(&joined.0), 1875.0), "{}", volume(&joined.0));
+        assert_eq!(bodies(), start + 1);
+    }
     let plane = json!({ "point": [0, 0, 5], "normal": [0, 0, 1] });
-    assert_eq!(
-        refused("brep.cut", &json!({ "body": kept.0, "plane": plane })),
-        not_yet("body")
-    );
-    // save answers the text the old load reads; the body it describes is the held one, which stays held
+    let halves = run("brep.cut", &json!({ "body": kept.0, "plane": plane }));
+    let (below, above) = (Made(halves["below"].clone()), Made(halves["above"].clone()));
+    assert!(about(volume(&below.0), 500.0) && about(volume(&above.0), 500.0));
+    drop((below, above));
+    // save answers the text the load reads; the body it describes is the held one, which stays held
     let saved = run("brep.save", &json!({ "body": kept.0 }));
     assert!(saved["smb"].as_str().is_some_and(|smb| !smb.is_empty()));
     sx_geom::json::allow_brep_text(true);
-    let loaded = Old(run("brep.load", &json!({ "body": saved }))["body"].clone());
+    let loaded = Made(run("brep.load", &json!({ "body": saved }))["body"].clone());
     sx_geom::json::allow_brep_text(false);
-    same_info("a saved box", kept.0, &loaded.0);
+    assert!(about(volume(&loaded.0), 1000.0));
     drop(loaded);
     assert!(exact::with(kept.0, |_| ()).is_some());
-    assert_eq!(
-        refused("brep.extrude", &json!({ "target": kept.0, "operation": "join" })),
-        not_yet("target")
-    );
 
     let freed = {
         let body = exact::hold(Body::cuboid([0.0; 3], [1.0; 3]).unwrap(), Vec::new()).unwrap();
         assert!(exact::free(body));
         json!(body)
     };
-    assert_eq!(union(&freed, &old.0), gone("a"));
-    assert_eq!(union(&old.0, &freed), gone("b"));
+    assert_eq!(union(&freed, &other.0), Err(gone("a")));
+    assert_eq!(union(&other.0, &freed), Err(gone("b")));
     assert_eq!(
         refused("brep.cut", &json!({ "body": freed, "plane": plane })),
         gone("body")
     );
     assert_eq!(refused("brep.save", &json!({ "body": freed })), gone("body"));
-    // the old table says the same of a number of its own that it does not have
-    let old_freed = {
-        let body = run("brep.box", &json!({ "min": [0, 0, 0], "max": [1, 1, 1] }))["body"].clone();
-        run("brep.free", &json!({ "body": body }));
-        body
-    };
-    assert_eq!(union(&old_freed, &old.0), gone("a"));
+    assert_eq!(
+        refused("brep.extrude", &json!({ "target": freed, "operation": "join" })),
+        gone("target")
+    );
 
-    // nothing was made or lost, and the held body is as it was
+    // nothing was lost, the older table holds nothing, and the held body is as it was
     assert_eq!(bodies(), start);
+    assert_eq!(older("count", &json!({})), r#"{"bodies":0}"#);
     assert_eq!(read(kept.0).triangles.len(), 12);
-    // the old ops still work on the old table's own bodies
-    let joined = Old(run("brep.boolean", &json!({ "op": "union", "a": old.0, "b": old.0 }))["body"].clone());
-    assert!(joined.0.is_number());
 }
 
 #[test]
@@ -826,8 +846,8 @@ fn chord_and_angle_have_the_old_op_s_limits() {
     let fine = triangles(json!({ "body": kept.0, "chordMm": 0.01, "angleDeg": 5 }));
     assert!(coarse < default && default < fine, "{coarse} {default} {fine}");
 
-    // out of range, a held body and one of the old table are refused in the same words
-    let old = Old(run("brep.primitive", &json!({ "type": "sphere", "diameterMm": 20 }))["body"].clone());
+    // out of range, a body held from the start and one an older operation made are refused in the same words
+    let old = Made(run("brep.primitive", &json!({ "type": "sphere", "diameterMm": 20 }))["body"].clone());
     for (limits, said) in [
         (json!({ "chordMm": -1 }), "brep: chordMm: must be 0 or more"),
         (
@@ -882,8 +902,16 @@ fn keys_are_one_per_face_or_none_and_bodies_may_be_used_from_inside_a_call() {
         Err("keys: must be one for each face of the body, or none".to_owned())
     );
     assert_eq!(exact::count(), held);
+    // a key is written on its face, which holds whole numbers below 2^52 (the ones JSON carries exactly)
+    let wide = exact::hold(
+        Body::cuboid([0.0; 3], [1.0; 3]).unwrap(),
+        vec![7, 0, 1 << 52, 3, 2, 1],
+    )
+    .map_err(|e| e.to_string());
+    assert_eq!(wide, Err("brep: keys: must be below 2^52".to_owned()));
+    assert_eq!(exact::count(), held);
 
-    let keys = vec![7, 0, u64::MAX, 3, 2, 1];
+    let keys = vec![7, 0, (1 << 52) - 1, 3, 2, 1];
     let a = exact::hold(Body::cuboid([0.0; 3], [1.0; 3]).unwrap(), keys.clone()).unwrap();
     let listed: Vec<u64> = read(a).answer["faces"]
         .as_array()

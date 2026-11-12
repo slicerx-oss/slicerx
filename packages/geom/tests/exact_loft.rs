@@ -257,7 +257,7 @@ fn keyed_both_ways(profiles: &Value, opts: &Value) -> Keyed {
     // the mesh loft's own answer does not change: the same points, triangles, faces and keys
     assert_eq!(beside.mesh, alone.mesh);
     assert!(alone.mesh.faces.as_ref().is_some_and(|f| !f.keys.is_empty()));
-    assert!(table::is_handle(u64::from(handle)));
+    assert!(table::with(handle, |_| ()).is_some());
     assert_eq!(table::count(), start + 1);
     let (planes, keys) = table::with(handle, |held| {
         let mesh = held.body.tessellate(&Tessellation::default()).unwrap();
@@ -544,7 +544,7 @@ fn an_exact_loft_s_reply_is_the_loft_s_own_plus_the_body() {
             let asked = op("sketch.loft", &request);
             let reply: Value = serde_json::from_str(&asked).unwrap();
             let handle = reply["body"].as_u64().expect("a body");
-            assert!(table::is_handle(handle));
+            assert!(u32::try_from(handle).is_ok_and(|h| table::with(h, |_| ()).is_some()));
             let keys = reply["bodyKeys"].as_array().expect("its keys");
             // every byte of the loft's own reply, with the two fields added
             let rest = without(

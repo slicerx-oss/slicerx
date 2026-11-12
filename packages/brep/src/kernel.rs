@@ -100,6 +100,7 @@ const CONE: c_long = 15012;
 const CYLINDER: c_long = 15013;
 const SPHERE: c_long = 15014;
 const TORUS: c_long = 15015;
+const EXTRUSION: c_long = 15030;
 /// The angle under which the kernel itself calls two directions parallel (`SM_ANG_TOL_DEG`).
 const ANGLE_TOL_DEG: f64 = 0.5;
 /// A curve that claims to be nothing more than its control points (`SM_CF_UNSPECIFIED`).
@@ -261,6 +262,12 @@ mod ffi {
         // faces and their surfaces
         fn GetSurface(self: &SmFace) -> *mut SmSurface;
         fn GetType(self: &SmSurface) -> SmLong;
+        #[cxx_name = "sx_extruded_cylinder"]
+        fn extruded_cylinder(
+            surface: &SmSurface,
+            frame: Pin<&mut SmAxis2Placement>,
+            radius: &mut f64,
+        ) -> bool;
         fn GetPosition(self: &SmPlane) -> &SmAxis2Placement;
         fn GetCanonical(self: &SmCylinder, frame: Pin<&mut SmAxis2Placement>, radius: &mut f64) -> SmLong;
         unsafe fn GetCanonical(
@@ -1209,6 +1216,11 @@ impl FaceRef<'_> {
                     minor: b,
                 }
             }
+            // an arc run along its axis reads as the cylinder it is, as the older `tessellate` reads it
+            EXTRUSION if ffi::extruded_cylinder(surface, frame.pin_mut(), &mut a) => Shape::Cylinder {
+                at: placement(&frame),
+                radius: a,
+            },
             _ => other,
         }
     }
