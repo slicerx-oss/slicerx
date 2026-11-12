@@ -530,9 +530,108 @@ fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Va
         Some(v) => Some(item(v, "target", files)?),
     };
     let tool = sketch_loft::loft_with(&profiles, &opts)?;
+    let asked: bool = field_or_default(req, "exact")?;
+    #[cfg(feature = "brep")]
+    let (tool, exact) = {
+        let mut tool = tool;
+        let exact = if asked {
+            Some(loft_exact(
+                req,
+                &profiles,
+                &opts,
+                op,
+                target.is_some(),
+                &mut tool,
+            )?)
+        } else {
+            None
+        };
+        (tool, exact)
+    };
+    // a build without the kernel's code makes no exact body and says so
+    #[cfg(not(feature = "brep"))]
+    let exact = asked.then(|| json!({ "exact": { "made": false, "why": NO_KERNEL } }));
     let world = target.as_ref().map(Item::world);
-    let r = face::apply(tool, op, world.as_ref())?;
-    tool_reply(r, target.as_ref(), op, enc, loft_stored)
+    let mut r = face::apply(tool, op, world.as_ref())?;
+    if exact.is_some() {
+        // the tool in the reply is the mesh loft as it is without the ask: the keys put on it so the boolean
+        // hands them on are the result's to carry
+        if let Some(f) = r.tool.faces.as_mut() {
+            f.keys.clear();
+        }
+    }
+    let mut v = tool_reply(r, target.as_ref(), op, enc, loft_stored)?;
+    if let Some(Value::Object(fields)) = exact {
+        for (key, x) in fields {
+            insert(&mut v, &key, x);
+        }
+    }
+    Ok(v)
+}
+
+/// What a build without the kernel answers a loft asked to be exact.
+#[cfg(feature = "cad")]
+const NO_KERNEL: &str = "This build has no exact kernel.";
+
+/// What a loft asked to be exact (`exact`) adds to its reply. The reply is otherwise the one the loft gives without
+/// the ask, byte for byte: the mesh loft is made either way and `tool` is its mesh, which gets the keys its faces
+/// would have had anyway.
+///
+/// When the body is made: `body`, its number in the engine's table, and `bodyKeys`, its faces' keys in face order
+/// (0 for none); or, with `save`, `bodySmb`, the body as the text `brep.load` reads, for a caller whose engine does
+/// not outlive the call. Unlike the brep ops, `save` leaves no body in the table and sends no number beside the
+/// text. When it is not made: `exact`, with `made` false and `why` in one sentence. A loft the mesh path can make
+/// is never an error because of the ask.
+#[cfg(all(feature = "cad", feature = "brep"))]
+fn loft_exact(
+    req: &Value,
+    profiles: &[sketch_loft::Profile],
+    opts: &sketch_loft::Options,
+    op: face::Operation,
+    on_target: bool,
+    tool: &mut TriMesh,
+) -> Result<Value> {
+    let save: bool = field_or_default(req, "save")?;
+    let not_made = |why: &str| json!({ "exact": { "made": false, "why": why } });
+    if !sx_brep::KERNEL {
+        return Ok(not_made(NO_KERNEL));
+    }
+    if on_target || op != face::Operation::New {
+        return Ok(not_made("An exact loft is made only as a new body for now."));
+    }
+    let handle = match sketch_loft::exact::hold_through(profiles, opts, tool) {
+        Ok(handle) => handle,
+        Err(e) => return Ok(not_made(&sentence(&e))),
+    };
+    if save {
+        let text = crate::exact::with(handle, |held| held.body.saved(&held.keys));
+        crate::exact::free(handle);
+        return Ok(match text {
+            Some(Ok(smb)) => json!({ "bodySmb": smb }),
+            Some(Err(e)) => not_made(&sentence(&Error::geometry("loft", e.to_string()))),
+            None => not_made("The exact body could not be kept."),
+        });
+    }
+    let keys = crate::exact::with(handle, |held| held.keys.clone()).unwrap_or_default();
+    Ok(json!({ "body": handle, "bodyKeys": keys }))
+}
+
+/// Why an exact body was not made, as one sentence: the refusal's own words, started with a capital and ended.
+#[cfg(all(feature = "cad", feature = "brep"))]
+fn sentence(e: &Error) -> String {
+    let why = match e {
+        Error::Geometry { why, .. } | Error::Invalid { why, .. } => why.clone(),
+        other => other.to_string(),
+    };
+    let mut letters = why.chars();
+    let mut out: String = letters
+        .next()
+        .map(|first| first.to_uppercase().chain(letters).collect())
+        .unwrap_or_default();
+    if !out.ends_with('.') {
+        out.push('.');
+    }
+    out
 }
 
 /// [`boolean::storage_mesh`] for a loft, refused with what a loft can change: it has no cut or placement
