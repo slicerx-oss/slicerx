@@ -12,23 +12,23 @@ import { DEFAULT_CONFIG } from '../src/config'
 import { INPUT_REFUSAL_FAILS, STRUGGLE_FAILS } from '../src/models'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
 import { createPilot } from '../src/runtime'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 import { sheetTool } from '../src/index'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
 const AUTO = { ...DEFAULT_CONFIG, provider: 'anthropic', model: 'claude-haiku-5-5', models: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, billing: 'key' as const, auto: true, webSearch: false }
 
 /** A tool named design.new, which makes the runtime build with the design tools (the mimir tab). */
-const DESIGN_NEW = defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', description: 'design.new for the test', input: z.object({}), async run() { return { summary: 'ok' } } }) as PilotTool<never>
+const DESIGN_NEW = defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'design.new for the test', input: z.object({}), async run() { return { summary: 'ok' } } }) as PilotTool<never>
 /** A lookup that finds nothing: a real failure, not a refusal of its input. */
-const MISSING = defineTool({ name: 'parts.lookup', version: '1.0.0', source: 'command', permission: 'read', description: 'parts.lookup for the test', input: z.object({ name: z.string() }), async run(i) { return { ok: false, summary: `"${i.name}" is not in the standard parts table` } } }) as PilotTool<never>
+const MISSING = defineTool({ name: 'parts.lookup', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'parts.lookup for the test', input: z.object({ name: z.string() }), async run(i) { return { ok: false, summary: `"${i.name}" is not in the standard parts table` } } }) as PilotTool<never>
 /** An MCP tool that throws its refusal of the input, as ToolInputError does (code invalid_input), or another code. Not a design tool, whose failures never count (building takes tries). */
 const throwing = (code: string) =>
   defineTool({
     name: 'project.info',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'project.info for the test',
     input: z.object({}),
     async run() {
