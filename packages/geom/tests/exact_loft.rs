@@ -656,7 +656,10 @@ fn the_hull_s_and_a_block_s_edges_are_on_the_curves_their_faces_were_given() {
         ("block", block, json!({}), 15.0),
     ] {
         let lofted = exact::lofted(&rails_of(&profiles, &opts)).unwrap_or_else(|e| panic!("{name}: {e}"));
-        println!("EDGES {name}: the edges are {:e} mm from the curves given", lofted.off_mm);
+        println!(
+            "EDGES {name}: the edges are {:e} mm from the curves given",
+            lofted.off_mm
+        );
         assert!(lofted.off_mm <= 1e-9 * size, "{name}: {:e} mm", lofted.off_mm);
     }
 }

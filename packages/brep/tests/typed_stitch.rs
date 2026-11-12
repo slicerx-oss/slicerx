@@ -279,7 +279,12 @@ fn the_edges_of_joined_faces_are_on_the_curves_the_faces_were_given() {
     let cubic_block = tower(square(10.0, 0.0), square(10.0, 5.0), cubic);
     let tapered = tower(square(10.0, 0.0), square(6.0, 10.0), cubic);
     let big = tower(square(400.0, 0.0), square(400.0, 200.0), line);
-    for (name, sheets, size) in [("block", block, 5.0), ("block on cubic rails", cubic_block, 5.0), ("tapered block", tapered, 10.0), ("block 400 mm", big, 200.0)] {
+    for (name, sheets, size) in [
+        ("block", block, 5.0),
+        ("block on cubic rails", cubic_block, 5.0),
+        ("tapered block", tapered, 10.0),
+        ("block 400 mm", big, 200.0),
+    ] {
         let (_, order, off) = Body::stitched_off(&sheets).unwrap_or_else(|why| panic!("{name}: {why}"));
         assert_eq!(order.len(), 6, "{name}");
         println!("EDGES {name}: the edges are {off:e} mm from the curves given");
@@ -295,11 +300,41 @@ fn block_with_a_bowed_top(bow: f64) -> Vec<Sheet> {
     let mut sheets = tower(square(10.0, 0.0), top, line);
     // a cubic's middle is three quarters of the way out to its two inner control points
     let out = bow * 4.0 / 3.0;
-    let at = |t: f64| [top[0][0] + (top[1][0] - top[0][0]) * t, top[0][1] - out, top[0][2]];
+    let at = |t: f64| {
+        [
+            top[0][0] + (top[1][0] - top[0][0]) * t,
+            top[0][1] - out,
+            top[0][2],
+        ]
+    };
     let mut sides = ring(&top);
     sides[0] = Path::Cubics(vec![[top[0], at(1.0 / 3.0), at(2.0 / 3.0), top[1]]]);
     sheets[5] = Sheet::Flat(sides);
     sheets
+}
+
+/// A drum of radius 10 mm and 5 mm high: one face skinned across 36 straight rails around it and back onto the
+/// first, and each end a flat face inside one closed curve through the rails' ends, a cubic from each to the next
+/// with even-step tangents. The skin runs its own smooth curve through those ends, which is not that one: between
+/// the rails they are about 5e-4 mm apart.
+fn drum() -> Vec<Sheet> {
+    let at = |k: usize, z: f64| {
+        let (s, c) = (std::f64::consts::TAU * f64::from(u32::try_from(k % 36).unwrap()) / 36.0).sin_cos();
+        [10.0 * c, 10.0 * s, z]
+    };
+    let rails: Vec<Path> = (0..=36).map(|k| line(at(k, 0.0), at(k, 5.0))).collect();
+    let rim = |z: f64| {
+        let spans: Vec<[P; 4]> = (0..36)
+            .map(|k| {
+                let (p0, p1, p2, p3) = (at(k + 35, z), at(k, z), at(k + 1, z), at(k + 2, z));
+                let ahead = [0, 1, 2].map(|i| p1[i] + (p2[i] - p0[i]) / 6.0);
+                let behind = [0, 1, 2].map(|i| p2[i] - (p3[i] - p1[i]) / 6.0);
+                [p1, ahead, behind, p2]
+            })
+            .collect();
+        Sheet::Flat(vec![Path::Cubics(spans)])
+    };
+    vec![Sheet::Skinned(rails), rim(0.0), rim(5.0)]
 }
 
 #[test]
@@ -307,18 +342,23 @@ fn faces_joined_off_the_curves_they_were_given_are_refused() {
     if !sx_brep::KERNEL {
         return;
     }
-    // within a billionth of the size the two are one curve
+    // a side bowed 5e-4 mm off its neighbor's line between two corners: the gap the kernel reports shows it
     let (_, _, off) = Body::stitched_off(&block_with_a_bowed_top(1e-10)).expect("a block");
     assert!(off <= 5e-9, "{off:e}");
-    // 5e-4 mm apart between the corners: the gap the kernel reports does not see it, the edges read back do
     let why = Body::stitched(&block_with_a_bowed_top(5e-4)).expect_err("a refusal");
+    assert!(matches!(why, Error::Apart { .. }), "{why}");
+    // a closed rim about 5e-4 mm off the skin it is joined to: the gap the kernel reports does not show it, the
+    // edges read back do
+    let why = Body::stitched(&drum()).expect_err("a refusal");
+    println!("EDGES drum: {why}");
     let Error::Moved { off_mm } = &why else {
         panic!("{why}");
     };
-    println!("EDGES bowed top: {why}");
-    assert!((1e-4..=5.0001e-4).contains(off_mm), "{off_mm:e}");
+    assert!((1e-4..=1e-3).contains(off_mm), "{off_mm:e}");
     assert_eq!(
         why.to_string(),
-        format!("stitch: the faces were joined along a side {off_mm:.3e} mm off the curves they were given; they must meet on them")
+        format!(
+            "stitch: the faces were joined along a side {off_mm:.3e} mm off the curves they were given; they must meet on them"
+        )
     );
 }

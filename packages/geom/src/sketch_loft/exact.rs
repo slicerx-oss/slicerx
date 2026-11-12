@@ -36,6 +36,9 @@ pub struct Lofted {
     pub body: Body,
     /// What each face of the body is, in the body's face order.
     pub parts: Vec<Part>,
+    /// How far the body's edges are from the rails and the lines its faces were given, in mm, as the join reads
+    /// them back.
+    pub off_mm: f64,
 }
 
 fn kernel(e: &sx_brep::Error) -> Error {
@@ -142,10 +145,11 @@ fn sheets(rails: &Rails) -> Result<(Vec<Sheet>, Vec<Part>)> {
 /// solid, each with its reason; then no body is left behind.
 pub fn lofted(rails: &Rails) -> Result<Lofted> {
     let (sheets, parts) = sheets(rails)?;
-    let (body, order) = Body::stitched(&sheets).map_err(|e| kernel(&e))?;
+    let (body, order, off_mm) = Body::stitched_off(&sheets).map_err(|e| kernel(&e))?;
     Ok(Lofted {
         body,
         parts: order.iter().map(|&s| parts[s]).collect(),
+        off_mm,
     })
 }
 
