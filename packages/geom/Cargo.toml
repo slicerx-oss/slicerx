@@ -86,7 +86,7 @@ read-fonts = { version = "=0.44.0", default-features = false, features = ["std"]
 # Apache-2.0, and zune-jpeg also Zlib.
 png = { version = "=0.18.1", optional = true }
 serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = "=1.0.151"
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
 thiserror = "=2.0.21"
 zune-jpeg = { version = "=0.5.15", optional = true }
 

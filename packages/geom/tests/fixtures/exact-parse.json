@@ -1,0 +1,126 @@
+{
+  "replies": {
+    "width 60, call 1": {
+      "digest": "b16c1db0cc916a2c",
+      "numbers": 2034
+    },
+    "width 70.125, call 1": {
+      "digest": "e4e34e044a9f3b26",
+      "numbers": 2750
+    },
+    "width 70.125, call 2": {
+      "digest": "40e942cd187e995a",
+      "numbers": 4395
+    },
+    "width 70.125, call 3": {
+      "digest": "c8564a69a30c7362",
+      "numbers": 5988
+    },
+    "width 70.125, call 4": {
+      "digest": "04291f66b7f2b5a6",
+      "numbers": 7523
+    },
+    "width 70.125, call 5": {
+      "digest": "01cea0bdd4d28faf",
+      "numbers": 7143
+    },
+    "width 70.125, call 6": {
+      "digest": "23a1e7d316a5ec0c",
+      "numbers": 9373
+    },
+    "width 70.125, call 7": {
+      "digest": "d672196820d55aa0",
+      "numbers": 11054
+    },
+    "width 72.5, call 1": {
+      "digest": "7286abafa5c4e413",
+      "numbers": 3146
+    },
+    "width 72.5, call 2": {
+      "digest": "6a9063fe82cd8afa",
+      "numbers": 4780
+    },
+    "width 72.5, call 3": {
+      "digest": "436cd9d8ed5884f9",
+      "numbers": 6505
+    },
+    "width 72.5, call 4": {
+      "digest": "80ad9524a3113f93",
+      "numbers": 8051
+    },
+    "width 72.5, call 5": {
+      "digest": "540a3eaf19c89b10",
+      "numbers": 7385
+    },
+    "width 72.5, call 6": {
+      "digest": "3cd3c723ec2ddbcb",
+      "numbers": 9758
+    },
+    "width 72.5, call 7": {
+      "digest": "8bcb3ee3f23db74a",
+      "numbers": 11593
+    },
+    "width 80, call 1": {
+      "digest": "f0cd3297bd84bf00",
+      "numbers": 3762
+    },
+    "width 80, call 2": {
+      "digest": "98ba38db3b39fcd8",
+      "numbers": 5341
+    },
+    "width 80, call 3": {
+      "digest": "23cbcff8a2ffc176",
+      "numbers": 7055
+    },
+    "width 80, call 4": {
+      "digest": "d72f84277b7ab229",
+      "numbers": 8612
+    },
+    "width 80, call 5": {
+      "digest": "4bf22ec050ced6b3",
+      "numbers": 8199
+    },
+    "width 80, call 6": {
+      "digest": "474c570c9d49995b",
+      "numbers": 10506
+    },
+    "width 80, call 7": {
+      "digest": "c32831baf3708880",
+      "numbers": 12264
+    },
+    "width 82.75, call 1": {
+      "digest": "253a4c8619a3ec23",
+      "numbers": 4015
+    },
+    "width 82.75, call 2": {
+      "digest": "0628f90e7710764a",
+      "numbers": 5649
+    },
+    "width 82.75, call 3": {
+      "digest": "a66dc30b247f48b0",
+      "numbers": 7319
+    },
+    "width 82.75, call 4": {
+      "digest": "ff468785cc6e37dc",
+      "numbers": 8898
+    },
+    "width 82.75, call 5": {
+      "digest": "210016643d176e93",
+      "numbers": 8331
+    },
+    "width 82.75, call 6": {
+      "digest": "c2b861ea8acd6dab",
+      "numbers": 10660
+    },
+    "width 82.75, call 7": {
+      "digest": "dff2b73051e5a13e",
+      "numbers": 12484
+    }
+  },
+  "saved": {
+    "bits": "3fefffffffffb000",
+    "case": "width 80, call 3",
+    "reply": "/mesh/faces/table/12/radius",
+    "text": "0.9999999999977263"
+  }
+}
