@@ -155,6 +155,14 @@ async function checked(card: Locator): Promise<void> {
   await expect(card.getByTestId('mimir-send-status')).not.toHaveText(/^Checking /, { timeout: 30_000 })
 }
 
+/**
+ * Waits until the reply's working steps above the send card have closed to their one line. They close as the card
+ * shows, after a short fade, and the card moves up as they do, so a place on the card is read only after this.
+ */
+async function settled(page: Page): Promise<void> {
+  await expect(page.getByTestId('mimir-loop-live')).toHaveCount(0)
+}
+
 /** Moves every object on the plate 15 mm along X, as a drag in the view does. */
 async function movePlate(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -386,6 +394,7 @@ test.describe('a print run in the mimir chat', () => {
     await expect(card.getByTestId('mimir-send-status')).toContainText('Tick the bed check to print.')
     await shots(page, info, 'bed-unticked', card, false)
     // ticked, Print turns on; unticked again, off; the button keeps its box either way
+    await settled(page)
     const before = await print.boundingBox()
     await bed.check()
     await expect(print).toBeEnabled()
