@@ -4,6 +4,7 @@
 // WebAssembly module (scripts/build-wasm.sh). Bodies live in a table here and are named by number; every op that
 // changes a body makes a new one, so a caller can keep earlier steps.
 #include "json.h"
+#include "sx_keys.h"
 
 #include <SmApiBrep.h>
 #include <SmApiCurves.h>
@@ -40,6 +41,7 @@
 #include <fstream>
 #include <map>
 #include <random>
+#include <set>
 #include <sstream>
 #include <tuple>
 
@@ -50,6 +52,8 @@ namespace {
 
 std::map<long, SmBrep*> bodies;
 long next_id = 1;
+// the numbers in `bodies` whose body an owner outside this table only lent (the hand-over, at the end of this file)
+std::set<long> lent;
 
 const double kPi = 3.14159265358979323846;
 
@@ -102,8 +106,8 @@ void check(long st, const char* what);
 // a face's key says which step made it, the same in every replay (sx-geom's faces.rs makes mesh keys the same
 // way). Keys are 52 bits, kept in two attributes since long is 32 bits on the web; booleans carry them to the
 // faces that come from a face
-const ULONG kKeyLow = 20101, kKeyHigh = 20102;
-const unsigned long long kKeyHalf = (1ULL << 26) - 1;
+const ULONG kKeyLow = kSxKeyLow, kKeyHigh = kSxKeyHigh;
+const unsigned long long kKeyHalf = (1ULL << kSxKeyHalfBits) - 1;
 
 unsigned long long face_key(SmFace* f)
 {
@@ -115,7 +119,7 @@ unsigned long long face_key(SmFace* f)
         if (id == kKeyLow) lo = (unsigned long long)static_cast<SmLongAttribute*>(as[i])->GetValue() & kKeyHalf;
         if (id == kKeyHigh) hi = (unsigned long long)static_cast<SmLongAttribute*>(as[i])->GetValue() & kKeyHalf;
     }
-    return (hi << 26) | lo;
+    return (hi << kSxKeyHalfBits) | lo;
 }
 
 void set_key(SmFace* f, unsigned long long key)
@@ -127,7 +131,7 @@ void set_key(SmFace* f, unsigned long long key)
     if (!key) return;
     SmContext& cx = *SmApiGetOrCreateContext();
     f->AddAttribute(new (cx) SmLongAttribute(kKeyLow, long(key & kKeyHalf), SM_AB_COPY));
-    f->AddAttribute(new (cx) SmLongAttribute(kKeyHigh, long((key >> 26) & kKeyHalf), SM_AB_COPY));
+    f->AddAttribute(new (cx) SmLongAttribute(kKeyHigh, long((key >> kSxKeyHalfBits) & kKeyHalf), SM_AB_COPY));
 }
 
 // the request's keySalt; each body a call makes gets the next number, as each mesh a step makes does in sx-geom
@@ -1770,6 +1774,8 @@ Value run(const std::string& op, const Value& r)
     } else if (op == "free") {
         const Value& v = r["body"];
         auto it = v.kind == Value::Number ? bodies.find(long(v.n)) : bodies.end();
+        // a lent body is its owner's to free
+        if (it != bodies.end() && lent.count(it->first)) throw Error("body", "is lent; its owner frees it");
         if (it != bodies.end()) {
             delete it->second;
             bodies.erase(it);
@@ -1868,5 +1874,44 @@ char* sx_brep_call(const char* op, const char* request)
 }
 
 void sx_brep_free(char* reply_text) { std::free(reply_text); }
+
+// The hand-over between this table and bodies owned as Rust values (src/handover.rs). Temporary: these three, `lent`
+// and its check in `free` go when the last operation that takes or makes a body here is made over typed bodies (the
+// ROUTED list in src/handover.rs is empty). They are three and not two because they differ in who owns the body
+// afterwards: taking a lent number back out never deletes, and adopting hands the body to the caller, who deletes it.
+
+// a body its owner keeps, under a number for the operations here to read. Each works on a copy of a body it is
+// given, so the body comes to no harm
+long sx_brep_lend(SmBrep* body)
+{
+    long id = next_id;
+    // marked first: a number that is marked and not in the table is harmless, the other way round is not
+    lent.insert(id);
+    try {
+        bodies[id] = body;
+    } catch (...) {
+        lent.erase(id);
+        throw;
+    }
+    ++next_id;
+    return id;
+}
+
+// takes a lent number out again. The body is not deleted: it was never this table's
+void sx_brep_take_back(long number)
+{
+    if (lent.erase(number)) bodies.erase(number);
+}
+
+// a body an operation here made, out of the table and into the caller's hands, who deletes it; null for a number
+// the table does not have and for one that is only lent
+SmBrep* sx_brep_adopt(long number)
+{
+    auto it = lent.count(number) ? bodies.end() : bodies.find(number);
+    if (it == bodies.end()) return nullptr;
+    SmBrep* b = it->second;
+    bodies.erase(it);
+    return b;
+}
 
 }
