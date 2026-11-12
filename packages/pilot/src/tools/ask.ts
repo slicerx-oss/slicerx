@@ -210,7 +210,7 @@ const dim = z.object({
 const UNITS_OF_KIND: Record<(typeof SIZE_KINDS)[number], readonly ('mm' | 'deg' | '%')[]> = { count: ['mm'], angle: ['mm', 'deg'], length: ['mm', '%'] }
 const KIND_OF_UNIT = { mm: 'length', deg: 'angle', '%': 'length' } as const
 
-type SheetIn = { title: string; views: PilotSheet['views']; dims: z.infer<typeof dim>[]; part?: SolidIn[] | undefined; design?: string | undefined }
+type SheetIn = { title: string; views: PilotSheet['views']; dims: z.infer<typeof dim>[]; part?: SolidIn[] | undefined; design?: string | undefined; fits?: boolean | undefined }
 
 /** Every field the sheet's part and places are missing or have wrong, with the row or part named. */
 export function sheetProblems(i: SheetIn): Issue[] {
@@ -234,6 +234,7 @@ export function sheetOf(i: SheetIn): Omit<PilotSheet, 'id'> {
     dims: i.dims.map(({ at: a, ...d }) => ({ ...d, ...(a ? { at: placeOf(a) } : {}) }) as PilotDim),
     ...(i.part ? { part: i.part.map(solidOf) } : {}),
     ...(i.design ? { design: i.design } : {}),
+    ...(i.fits ? { fits: true } : {}),
   }
 }
 
@@ -243,13 +244,13 @@ const unplacedRow = (d: { label: string }, n: number): string => `row ${n + 1} (
 export function sheetTool(): PilotTool<never> {
   return defineTool({
     name: 'pilot.sheet',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
-      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess, and kind count or angle for a row that is a count or an angle. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
+      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on). Set fits when a size must fit something the person has or something the part holds (a shelf it clamps, a phone it carries, a screw it takes), where a wrong size wastes a print: that sheet waits for them to confirm or edit. Without fits (a display model, a part at its default size) the sheet shows and you build with its sizes at once; the person changes one after. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess, and kind count or angle for a row that is a count or an angle. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
     localDescription:
-      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance) and wait for a confirm or edit; use it whenever a size matters and you are unsure. Give each its best value, unit, source and kind for a count or angle. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at. New part: part, its solids as built (hollow walls as outline plus hole, lid beside base), never stand-in boxes. Built part: design, its id.',
+      'Before building a part, show a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance). Use it whenever a size matters and you are unsure. Give each its best value, unit, source and kind for a count or angle. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at. New part: part, its solids as built (hollow walls as outline plus hole, lid beside base), never stand-in boxes. Built part: design, its id.',
     input: z
       .object({
         title: z.string().min(2).max(60),
@@ -257,6 +258,7 @@ export function sheetTool(): PilotTool<never> {
         dims: z.array(dim).min(1).max(30),
         part: z.array(solid).optional(),
         design: z.string().min(1).max(80).optional().describe('Id of a built design the sheet shows; at is then in its coordinates'),
+        fits: z.boolean().optional().describe('A size must fit something the person has: only then the sheet waits for a confirm'),
       })
       .refine((i) => new Set(i.dims.map((d) => d.key)).size === i.dims.length, 'each dimension needs its own key')
       .refine((i) => i.dims.every((d) => (d.min === undefined || d.value >= d.min) && (d.max === undefined || d.value <= d.max)), 'a value is outside its own min and max')
@@ -287,6 +289,8 @@ export function sheetTool(): PilotTool<never> {
         return { ok: false, summary: `Set aside; the person wrote instead: "${answer.said}".${sizes} Build nothing from this sheet: do what they wrote, and show a new sheet if sizes still need confirming (words never confirm one).`, output: answer }
       }
       if (!answer.confirmed) return { ok: false, summary: 'Canceled; build nothing until the sizes are confirmed', output: answer }
+      // nobody was asked: the sizes stand as shown, and the person changes one after
+      if (answer.auto) return { summary: `Shown; build with these sizes now (it fits nothing the person has, so it does not wait). Say the size in the reply; the person can change it after`, output: answer }
       const n = answer.changed.length
       return { summary: n ? `Confirmed, ${n} size${n === 1 ? '' : 's'} changed` : 'Confirmed as shown', output: answer }
     },

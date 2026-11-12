@@ -232,13 +232,13 @@ describe('the default answer to a clarifying question', () => {
     expect(run.noBuild).toBe('asked')
   })
 
-  it('approves a plan card with Go, as the person would', async () => {
+  it('goes ahead with a sheet and a plan at their default sizes, nobody asked', async () => {
     const plan = { calls: [{ name: 'design.plan', args: { part: 'Cable organizer', units: 'mm', features: [{ name: 'base', kind: 'extrude', sizes: { length: 100 } }], assumptions: [], questions: [] } }] }
     const sheet = { calls: [{ name: 'pilot.sheet', args: { title: 'Tray size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }] }
     const client = createScriptedClient([sheet, plan, build, { text: 'Started it.' }], { chunk: false })
     const run = await runPrompt(P, { geom: undefined, client })
     expect(run.calls).toEqual(['pilot.sheet', 'design.plan', 'pilot.sheet', 'design.new', 'geom.extrude'])
-    expect(JSON.stringify(client.requests[1]?.messages)).toContain('Confirmed as shown')
+    expect(JSON.stringify(client.requests[1]?.messages)).toContain('Shown; build with these sizes now')
     expect(JSON.stringify(client.requests[2]?.messages)).toContain('\\"accepted\\":true')
     expect(run.answered).toBe(false)
   })

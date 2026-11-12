@@ -645,6 +645,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
   const sheets = new Map<string, (values: Record<string, number> | null, said?: string) => void>()
   const lastSheet = new Map<string, PilotSheet>()
+  // Sheets and question cards that went ahead with nobody asked, the newest few: an answer given on one after is no
+  // error, and changes nothing (a size changed after goes through a follow-up)
+  const wentAhead = new Set<string>()
   // Question cards and sheets each session has waiting on the person: no push to go on fires past one (planGoesOn)
   const facing = new Map<string, number>()
   const face = (sessionId: string, by: 1 | -1): void => {
@@ -656,6 +659,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // confirmation carries over to later runs of the chat (a plan answered in the next message needs no second sheet)
   // until a run starts a part with it; the run after that asks again.
   const confirmed = new Set<string>()
+  // Sessions whose sizes must fit something: the last new part's sheet had fits. Their plan waits for the person's Go;
+  // any other plan at its default size goes straight through.
+  const fitSizes = new Set<string>()
   // Sessions whose approved plan (design.plan) has pieces that print assembled and move, until that part's building
   // starts: their sheets get the fit rule's gaps. The value is whether the plan's part has started its design yet, so a
   // second design.new (another part) ends it, as does the first body built, an approved plan without such pieces, or
@@ -1112,9 +1118,18 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // only built-in tools write the print run; a plugin's tool never gets the handle
     const builtin = isBuiltin(tool)
     if (runBook && builtin) ctx.run = runHandle(runBook, sessionId)
-    ctx.ask = (q) =>
+    ctx.ask = (q, askOpts) =>
       new Promise<AskAnswer>((resolve, reject) => {
         const askId = `ask_${newId()}`
+        // answered at once, nobody asked: the card shows with the answer it went ahead with
+        if (askOpts?.auto !== undefined && q.choices.some((c) => c.id === askOpts.auto)) {
+          wentAhead.add(askId)
+          for (const old of [...wentAhead].slice(0, Math.max(0, wentAhead.size - 50))) wentAhead.delete(old)
+          emit({ type: 'ask', askId, title: q.title, question: q.question, choices: q.choices })
+          emit({ type: 'ask_answered', askId, choiceId: askOpts.auto, auto: true })
+          resolve({ id: askOpts.auto })
+          return
+        }
         const onAbort = (): void => {
           asks.delete(askId)
           face(sessionId, -1)
@@ -1138,6 +1153,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         signal.addEventListener('abort', onAbort, { once: true })
         emit({ type: 'ask', askId, title: q.title, question: q.question, choices: q.choices })
       })
+    ctx.confirmsPlan = () => fitSizes.has(sessionId) || printInPlace.has(sessionId)
     ctx.sheet = (draft) =>
       new Promise((resolve, reject) => {
         // a print-in-place plan's sheet shows the fit rule's gaps as guesses, over any gap mimir guessed; the person's stand
@@ -1148,11 +1164,19 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           face(sessionId, -1)
           reject(new Error('Run canceled.'))
         }
-        face(sessionId, 1)
-        sheets.set(sheet.id, (given, said) => {
-          signal.removeEventListener('abort', onAbort)
-          face(sessionId, -1)
-          const answer = answerOf(sheet, given, said)
+        // a sheet whose sizes must fit something, or one for pieces that print assembled and move, waits for the person;
+        // any other shows and goes ahead with its sizes at once. A new part's sheet says whether its sizes must fit.
+        const auto = draft.fits !== true && !printInPlace.has(sessionId)
+        if (!sheet.design) {
+          if (draft.fits === true) fitSizes.add(sessionId)
+          else fitSizes.delete(sessionId)
+        }
+        const finish = (given: Record<string, number> | null, said: string | undefined, nobodyAsked: boolean): void => {
+          if (!nobodyAsked) {
+            signal.removeEventListener('abort', onAbort)
+            face(sessionId, -1)
+          }
+          const answer: PilotSheetAnswer = nobodyAsked ? { ...answerOf(sheet, given, said), auto: true } : answerOf(sheet, given, said)
           // the latest sheet's answer stands: a cancel takes back an earlier confirmation; words that set it aside
           // leave an earlier one as it was. A sheet of a part already built confirms no new part, and takes none
           // back, whether it is confirmed or canceled.
@@ -1171,11 +1195,20 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           const p = planned.get(sessionId)
           if (answer.confirmed && printInPlace.has(sessionId) && p && answer.changed.some((k) => !GAP_KEYS.has(k))) plans.stale(p.planId)
           if (answer.confirmed && printInPlace.has(sessionId)) gapSheet.add(sessionId)
-          emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
+          emit(nobodyAsked ? { type: 'sheet_answered', sheetId: sheet.id, answer, auto: true } : { type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
-        })
-        signal.addEventListener('abort', onAbort, { once: true })
+        }
         lastSheet.set(sessionId, sheet)
+        if (auto) {
+          wentAhead.add(sheet.id)
+          for (const old of [...wentAhead].slice(0, Math.max(0, wentAhead.size - 50))) wentAhead.delete(old)
+          emit({ type: 'sheet', sheet })
+          finish({}, undefined, true)
+          return
+        }
+        face(sessionId, 1)
+        sheets.set(sheet.id, (given, said) => finish(given, said, false))
+        signal.addEventListener('abort', onAbort, { once: true })
         emit({ type: 'sheet', sheet })
       })
     if (opts.sheetDesign) ctx.sheetDesign = opts.sheetDesign
@@ -1787,6 +1820,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     },
     async answerSheet(sheetId: string, values: Record<string, number> | null, said?: string): Promise<void> {
       const done = sheets.get(sheetId)
+      if (!done && wentAhead.has(sheetId)) return
       if (!done) throw new Error(`No open sheet ${sheetId}`)
       sheets.delete(sheetId)
       // words written while the sheet waited set it aside, with any sizes already typed on it (the values)
@@ -1806,6 +1840,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     },
     async answer(askId: string, choiceId: string | null, said?: string): Promise<void> {
       const open = asks.get(askId)
+      // a card that went ahead with nobody asked takes no answer after
+      if (!open && wentAhead.has(askId)) return
       if (!open) throw new Error(`No open question ${askId}`)
       // only one of the question's own choices is a pick; anything else would reach the tool as an answer it never offered
       if (choiceId !== null && !open.ids.has(choiceId)) throw new Error(`Not one of this question's answers: ${choiceId}`)

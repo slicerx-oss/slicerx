@@ -18,7 +18,7 @@ const DIMS = [
   { key: 'lean', label: 'Lean angle', value: 70, unit: 'deg', min: 45, max: 85, source: 'guess', at: { c: [20, -35, 6], from: [1, 0, 0], to: [0.34, 0, 0.94], r: 18 } },
 ]
 const PART = [{ plane: 'xz', points: [[0, 0], [80, 0], [80, 6], [0, 6]], from: -35, to: 35 }]
-const SHEET = { name: 'pilot.sheet', args: { title: 'Phone stand sizes', views: ['front', 'side'], dims: DIMS, part: PART } }
+const SHEET = { name: 'pilot.sheet', args: { title: 'Phone stand sizes', fits: true, views: ['front', 'side'], dims: DIMS, part: PART } }
 
 async function play(steps: ScriptStep[], answer?: (sheet: PilotSheet) => Record<string, number> | null) {
   const p = pilot(steps)
@@ -357,7 +357,7 @@ describe('pilot.sheet', () => {
     ]
     const seen: string[] = []
     const p = pilot([
-      { calls: [{ name: 'pilot.sheet', args: { title: 'Gear sizes', views: ['front'], dims: gear, part: PART } }] },
+      { calls: [{ name: 'pilot.sheet', args: { title: 'Gear sizes', fits: true, views: ['front'], dims: gear, part: PART } }] },
       (messages) => {
         const last = messages.at(-1)
         seen.push(last?.role === 'tool' ? last.content : '')
@@ -374,10 +374,10 @@ describe('pilot.sheet', () => {
     expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: dims('count') }).success).toBe(true)
     expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: [{ key: 'width', label: 'Width', value: 4, unit: 'mm', source: 'guess' }] }).success).toBe(true)
     for (const bad of ['deg', 'number', 2]) expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: dims(bad) }).success, String(bad)).toBe(false)
-    expect(sheetTool().version).toBe('1.2.0')
+    expect(sheetTool().version).toBe('1.3.0')
     const seen: string[] = []
     const p = pilot([
-      { calls: [{ name: 'pilot.sheet', args: { title: 'Odd sizes', views: ['front'], dims: [{ ...dims('count')[0], at: { a: [0, 0, 0], b: [10, 0, 0], off: [0, 0, 5] } }, { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', kind: 'length', source: 'guess', at: { a: [0, 0, 0], b: [0, 10, 0], off: [0, 0, 5] } }], part: PART } }] },
+      { calls: [{ name: 'pilot.sheet', args: { title: 'Odd sizes', fits: true, views: ['front'], dims: [{ ...dims('count')[0], at: { a: [0, 0, 0], b: [10, 0, 0], off: [0, 0, 5] } }, { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', kind: 'length', source: 'guess', at: { a: [0, 0, 0], b: [0, 10, 0], off: [0, 0, 5] } }], part: PART } }] },
       (messages) => {
         const last = messages.at(-1)
         seen.push(last?.role === 'tool' ? last.content : '')

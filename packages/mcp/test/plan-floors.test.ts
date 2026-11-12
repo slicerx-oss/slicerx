@@ -39,7 +39,8 @@ async function plan(input: PlanInput, opts: { nozzleMm?: number; machine?: typeo
     if (opts.edit) card.editPlan('plan-1', opts.edit(structuredClone(shown!)))
     return { id: planChoiceId(PLAN_GO, 'plan-1') }
   }
-  const ctx = { ask, context: { machine: opts.machine ?? p1s } } as unknown as ToolContext
+  // a card the person answers: one that waits for their Go (sizes that fit something)
+  const ctx = { ask, confirmsPlan: () => true, context: { machine: opts.machine ?? p1s } } as unknown as ToolContext
   const out = await tool.run(tool.input.parse(input) as never, ctx)
   return { out, answer: out.output as PlanAnswer, shown: shown as unknown as PartPlan, card }
 }

@@ -28,7 +28,7 @@ function geom(name: string, ran: string[]): PilotTool<never> {
   }) as PilotTool<never>
 }
 
-const SHEET = { name: 'pilot.sheet', args: { title: 'Box', dims: [{ key: 'w', label: 'Width', value: 40, unit: 'mm', source: 'asked' }] } }
+const SHEET = { name: 'pilot.sheet', args: { title: 'Box', fits: true, dims: [{ key: 'w', label: 'Width', value: 40, unit: 'mm', source: 'asked' }] } }
 const EXTRUDE = { name: 'geom.extrude', args: {} }
 
 async function play(steps: ScriptStep[], opts: { sheet?: boolean; answer?: Record<string, number> | null; runs?: number } = {}) {

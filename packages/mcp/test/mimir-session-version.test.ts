@@ -25,11 +25,12 @@ it('slicerx_mimir_dismiss is 1.1.0 and says it sets a waiting size sheet aside, 
   expect((tool?.input as unknown as { shape: Record<string, { description?: string }> }).shape['sheetId']?.description).toMatch(/only when this is given/)
 })
 
-it('slicerx_app_sheet_ask and pilot.sheet are 1.2.0 and say a part can be a revolve, sweep or loft', () => {
+it('slicerx_app_sheet_ask is 1.2.0 and pilot.sheet 1.3.0, and both say a part can be a revolve, sweep or loft', () => {
   const ask = appSheetTools({ call: async () => ({}) } as unknown as AppLinkCaller, 'SlicerX').find((t) => t.name === 'app.sheet_ask')
   const sheet = sheetTool()
+  expect(ask?.version).toBe('1.2.0')
+  expect(sheet.version).toBe('1.3.0')
   for (const tool of [ask, sheet]) {
-    expect(tool?.version, tool?.name).toBe('1.2.0')
     expect(tool?.description, tool?.name).toMatch(/revolve, sweep or loft/)
   }
   // both take a bent tube as the sweep it is built as

@@ -392,7 +392,7 @@ describe("the hinged box's stop on its first failed check", () => {
       input: z.record(z.string(), z.unknown()),
       run: async (_a, ctx) => {
         if (kind === 'ask') void ctx.ask!({ title: 'Lid', question: 'Should the lid snap shut?', choices: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] }).catch(() => undefined)
-        else void ctx.sheet!({ title: 'Lid sizes', dims: [{ key: 'gap', label: 'Lid gap', value: 0.4, unit: 'mm', source: 'guess' }] } as never).catch(() => undefined)
+        else void ctx.sheet!({ title: 'Lid sizes', fits: true, dims: [{ key: 'gap', label: 'Lid gap', value: 0.4, unit: 'mm', source: 'guess' }] } as never).catch(() => undefined)
         return { summary: 'shown' }
       },
     }) as PilotTool<never>
