@@ -271,13 +271,25 @@ describe('the send card', () => {
     }
     await card({ status })
     await checked()
+    const slot = () => screen.getByTestId('mimir-send').querySelector('[data-row="Slot"] .sheet-rec-v')?.textContent
+    expect(slot()).toBe('A2, PETG, Black')
+    // every state Print takes from the tick on, render by render: a click lands on whichever one is on screen
+    const states: boolean[] = []
+    const seen = new MutationObserver(() => states.push(printButton().disabled))
+    seen.observe(printButton(), { attributes: true, attributeFilter: ['disabled'] })
     fireEvent.click(bedBox())
     // the tick starts a fresh reading: until it is back, Print is off and the card says it is checking
     await waitFor(() => expect(screen.getByTestId('mimir-send-status').textContent).toMatch(/^Checking/))
     expect(printButton().disabled).toBe(true)
+    // the last reading stays on the card meanwhile, so nothing on it moves under the person's pointer
+    expect(slot()).toBe('A2, PETG, Black')
     await waitFor(() => expect(release).not.toBeNull())
+    expect(states).toEqual([])
     release!()
     await waitFor(() => expect(printButton().disabled).toBe(false))
+    seen.disconnect()
+    // Print came on once, from the fresh reading, and was never on in between
+    expect(states).toEqual([false])
   })
 
   it('Not now cancels without touching the ledger', async () => {
