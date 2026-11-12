@@ -17,6 +17,7 @@ import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason
 import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
 import { meshStats } from './mesh'
 import { movedStep, sizedStep } from './step-reshape'
+import { leanRow, tiltedStep, tiltInput, tiltProblem } from './step-tilt'
 import { FORMS_MAX, partForms } from './part-form'
 import { bodyOf, sectionEdited, SHAPE_WORDS, stationRows } from './section-edit'
 import { onPlate, seatShift, seatWords, standingOn, supportArea, surfaceAt } from './section-follow'
@@ -313,6 +314,7 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
     ...(st?.message ? { message: st.message } : {}),
     ...(st?.note ? { note: st.note } : {}),
     ...loftStations(s),
+    ...leanRow(s),
   }
 }
 
@@ -562,7 +564,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   const STEPS_TEXT = 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.'
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     // a local model gets the steps without the loft stations' words, which only the cloud follow-up guidance uses
@@ -587,14 +589,15 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
       size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
       move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
+      tilt: tiltInput.optional().describe("Lean what an extrude or a loft made (a post, a pole, a chimney, a column) about its foot, in place: the step keeps its sizes and the steps after it stay, a pattern made of it leans with it, and a later size or move of the step keeps the lean. Refused, naming the step, when the lean would run it into another step's shape or lift it off what it stands on"),
       section: sectionInput.optional().describe("Reshape a loft (a car body, fuselage, bottle, vase) by its stations, as slicerx_design_steps lists them front to back; its shapeWords give the edit for what the person said. Parts standing on the body are re-seated on its new top, and the answer says what moved, what now hangs past an edge, and what now needs supports"),
     })
-  // a local model edits steps without the section edit and the follow-up's size and move, which stay with the cloud ones
-  const editLocalInput = editInput.omit({ section: true, size: true, move: true })
+  // a local model edits steps without the section edit, the tilt and the follow-up's size and move, which stay with the cloud ones
+  const editLocalInput = editInput.omit({ section: true, size: true, move: true, tilt: true })
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -613,6 +616,14 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         const { bind: _bind, ...unbound } = next
         next = { ...unbound, params: r.params }
         said.push(`${r3(r.was)} mm to ${r3(i.size.mm)} mm along ${i.size.axis}`)
+      }
+      if (i.tilt) {
+        const r = tiltedStep(next, i.tilt)
+        if (typeof r === 'string') throw new ToolInputError(r)
+        const why = await tiltProblem(designs, d, k, next, r.step)
+        if (why) throw new ToolInputError(why)
+        next = r.step
+        said.push(r.said)
       }
       if (i.section) {
         if (s.params.op !== 'sketch.loft') throw new ToolInputError('section: only a loft is edited by its sections; change this step by size, move or value')

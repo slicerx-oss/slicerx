@@ -163,6 +163,15 @@ export interface Step {
    * as a sketch an extrude draws on does; nothing else links them, since the step keeps its own copy of the loops.
    */
   uses?: string[]
+  /** What the step made leans this way, turned about its foot (tilt.ts); laid on params as the step replays. */
+  tilt?: StepTilt
+}
+
+/** A step's lean: `up` (the step's own up when it was given) turned toward `toward` by `degrees`, both in params' frame. */
+export interface StepTilt {
+  degrees: number
+  up: Vec3
+  toward: Vec3
 }
 
 export interface History {

@@ -5,6 +5,7 @@
 import { productName } from '@slicerx/contracts/brand'
 import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
 import { pinnedOlder, type PlaceOf } from './design-frame'
+import { readTilt } from './tilt'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC, SKETCH_ANCHORS } from './file'
 import { MAX_STEPS_REPEATED, stepPatternProblem, type StepPattern } from './pattern'
 import { idNumber, MAX_PROJECTION, type Projection, type ProjectSource } from './project'
@@ -282,6 +283,8 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...(typeof s['feature'] === 'string' && s['feature'].trim() ? { feature: s['feature'].trim().slice(0, 60) } : {}),
       // the sketches a loft or sweep was made from, which hide while it is live
       ...usesOf(s['uses']),
+      // the lean an edit gave what the step made
+      ...readTilt(s['tilt']),
     })
   }
   return { version: 1, base, steps, ...(v['exact'] === true ? { exact: true } : {}), ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}), ...placedOf(v['placed']) }

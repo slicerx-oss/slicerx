@@ -6,6 +6,7 @@
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, MovedFace, Vec3 } from './types'
+import { withTilt } from './tilt'
 import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
@@ -714,7 +715,8 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   // the shapes base parts were made as change an exact replay's parts, so they are in its key
   let k = req.exact ? hash(meshHash(history.base), JSON.stringify(['exact', !!history.exact, history.base.map((m) => m.primitive ?? 0)])) : meshHash(history.base)
   const baseKey = k
-  const effective = steps.map((s) => followed(s, steps))
+  // a step's lean is laid on its numbers here, so its key, its pattern copies and what follows it see the lean
+  const effective = steps.map((s) => withTilt(followed(s, steps)))
   for (const s of effective) {
     k = hash(k, s.suppressed ? `-${s.id}` : JSON.stringify([s.part, s.transform, unkeyed(s.params), s.params.op === 'shape.extrude' && s.params.font ? fontDigest(req.fonts?.[s.params.font]) : 0, s.params.op === 'edge.fillet' || s.params.op === 'edge.chamfer' ? (s.follow ?? 0) : 0]))
     keys.push(k)
