@@ -120,16 +120,18 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
 
     const e = await h.call('slicerx_geom_edge_pick', { model, face: { at: [15, 0, 10], normal: [0, 0, 1] } })
     expect(e.isError, JSON.stringify(e.content)).toBeFalsy()
-    const edge = data<{ output: { edge: EdgeRef; supported: boolean; lengthMm: number; loop: { edge: EdgeRef; supported: boolean }[] } }>(e).output
+    const edge = data<{ output: { edge: EdgeRef; supported: boolean; lengthMm: number; loopRef: object; loopEdges: number; loop?: unknown } }>(e).output
     expect(edge.supported).toBe(true)
     expect(edge.lengthMm).toBeCloseTo(30)
-    expect(edge.loop).toHaveLength(4)
+    // the loop comes as one reference; its edges only when asked for
+    expect(edge.loopEdges).toBe(4)
+    expect(edge.loop).toBeUndefined()
 
     const ch = await h.call('slicerx_geom_chamfer', { model, edges: [edge.edge], distance_mm: 1 })
     expect(ch.isError, JSON.stringify(ch.content)).toBeFalsy()
     expect(6000 - data<{ output: MeshOut }>(ch).output.volumeMm3).toBeCloseTo(15, 2)
 
-    const f = await h.call('slicerx_geom_fillet', { model, edges: edge.loop.map((l) => l.edge), radius_mm: 2 })
+    const f = await h.call('slicerx_geom_fillet', { model, edges: [edge.loopRef], radius_mm: 2 })
     expect(f.isError, JSON.stringify(f.content)).toBeFalsy()
     const rounded = data<{ output: MeshOut }>(f).output
     // each edge loses (4 - pi) mm2 of cross section along its length

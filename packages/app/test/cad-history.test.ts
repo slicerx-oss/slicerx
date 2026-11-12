@@ -9,7 +9,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { deflateRawSync } from 'node:zlib'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
-import { appendStep, capOf, clearReplayCache, decodeMeshes, encodeMeshes, findTriangle, followed, historyFiles, parseHistories, replayHistory, stepName, withNumber, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
+import { appendStep, capOf, clearReplayCache, decodeMeshes, encodeMeshes, findTriangle, followed, historyFiles, parseHistories, replayHistory, stepName, withFound, withNumber, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
 import { withStep } from '../src/cad/history/record'
 import { allPlates } from '../src/plate/plates'
 import { applyHistory, beginEdit, cancelEdit, deleteStep, editing, runReplay, saveEdit, setParams, setSuppressed } from '../src/cad/history/ops'
@@ -159,6 +159,38 @@ describe('replay', () => {
     expect(calls).toBe(1)
     expect(topZ(r3.before![0]!)).toBeCloseTo(17)
     expect(volume(r3.parts[0]!)).toBeLessThan(volume(r2.parts[0]!))
+  })
+
+  it('keeps the edges a fillet left as they were, and says so when a later replay leaves out others', async () => {
+    let left = [1]
+    const asked: Record<string, unknown>[] = []
+    // the engine's answer for a fillet that may leave edges out: the mesh and which edges it left
+    const engine = (op: string, r: unknown) => {
+      if (op !== 'edge.fillet') return call(op, r)
+      const req = r as { mesh: { mesh: unknown } } & Record<string, unknown>
+      asked.push(req)
+      return Promise.resolve({ mesh: req.mesh.mesh, skipped: left.map((index) => ({ index, code: 'does_not_fit', message: '3 mm does not fit on this face' })) })
+    }
+    const edges: StepParams & { op: 'edge.fillet' } = { op: 'edge.fillet', radiusMm: 3, allOrNothing: false, edges: [{ a: [0, 0, 10], b: [10, 0, 10], face: [0, 0, 1] }, { a: [10, 0, 10], b: [10, 5, 10], face: [0, 0, 1] }] }
+    const h = withStep({ parts: base() as MeshPart[], transform: T }, 0, edges)
+    const r = await replayHistory(engine, { history: h })
+    expect(r.status[0]).toMatchObject({ state: 'done', skipped: [{ index: 1, code: 'does_not_fit' }] })
+    expect(r.status[0]!.note).toBeUndefined()
+    expect(asked[0]).toMatchObject({ allOrNothing: false })
+    // the step keeps which edges it left out, and that record never goes to the engine
+    const kept = withFound(h.steps[0]!.params, r.found?.[h.steps[0]!.id])
+    expect(kept).toMatchObject({ skipped: [1] })
+    const again: History = { ...h, steps: [{ ...h.steps[0]!, params: kept }] }
+    clearReplayCache()
+    const same = await replayHistory(engine, { history: again })
+    expect(asked[1]).not.toHaveProperty('skipped')
+    expect(same.status[0]!.note).toBeUndefined()
+    // an upstream change that leaves out another set is said in words on the step
+    left = [0, 1]
+    clearReplayCache()
+    const other = await replayHistory(engine, { history: again })
+    expect(other.status[0]!.state).toBe('done')
+    expect(other.status[0]!.note).toBe('This step now leaves edges 1, 2 as they were; when it was made it left 2.')
   })
 
   it('replays without a suppressed step', async () => {
