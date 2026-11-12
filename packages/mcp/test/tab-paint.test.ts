@@ -40,7 +40,7 @@ describe('the tab paint tools', () => {
   it('applying color paint in a filament past the last adds it and says so', async () => {
     const p = project(2)
     let seq = 0
-    const preview = defineTool({ name: 'paint.preview', version: '1.1.0', source: 'command', permission: 'read', description: 'test', input: z.object({ layer: z.string().default('color'), state: z.number() }), async run() {
+    const preview = defineTool({ name: 'paint.preview', version: '1.1.0', source: 'command', permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false }, description: 'test', input: z.object({ layer: z.string().default('color'), state: z.number() }), async run() {
       return { summary: 'Preview', output: { preview: `p${++seq}` } }
     } }) as PilotTool<never>
     const apply = defineTool({ name: 'paint.apply', version: '1.1.0', source: 'command', permission: 'slice', description: 'test', input: z.object({ preview: z.string() }), async run() {
