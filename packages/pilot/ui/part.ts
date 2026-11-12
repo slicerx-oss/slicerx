@@ -61,6 +61,9 @@ const BUILDERS: ReadonlySet<string> = new Set([
   'geom.subtract',
 ])
 
+/** True for a design step that changes the design (a read, such as a measure, does not). */
+export const changesDesign = (tool: string): boolean => BUILDERS.has(tool)
+
 /** The design an ok design step changed, or null for any other call. */
 function changedDesign(row: ToolRowModel): string | null {
   if (row.state !== 'ok' || !BUILDERS.has(row.tool)) return null

@@ -17,6 +17,8 @@ import { Summary } from './summary'
 import { Think } from './think'
 import { ToolGroup, type StepWords } from './tool-group'
 import { Bubble, PilotTurn } from './turn'
+import { WorkLoop } from './work-loop'
+import { loopSegments, loopStopped, type Segment } from './work-loop-model'
 
 export interface ApprovalHandlers {
   onApprove: (request: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
@@ -113,6 +115,29 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
   }
 })
 
+/**
+ * A turn's blocks in the mimir tab: its working steps folded into loops (work-loop.tsx), the rest as blocks. A loop is
+ * live while it is the running turn's last segment; a run stopped in it says so on its line.
+ */
+function Segments({ segments, live, stopped, showThinking, approvals, words, parts, transcript, replay }: { segments: Segment[]; live: boolean; stopped: boolean; showThinking: boolean; approvals: ApprovalHandlers; words: StepWords; parts: PartHandlers; transcript: Transcript; replay: boolean }) {
+  return (
+    <>
+      {segments.map((g, k) => {
+        if (g.kind === 'loop') {
+          const last = k === segments.length - 1
+          return <WorkLoop key={g.loop.id} loop={g.loop} live={live && last} stopped={loopStopped(g.loop) || (stopped && last)} words={words} showThinking={showThinking} />
+        }
+        if (g.kind === 'made') {
+          const made = createdPart(g.row)
+          return made ? <PartCard key={g.row.callId} part={made} handlers={parts} /> : null
+        }
+        const b = g.block
+        return <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} {...(b.kind === 'run' ? { run: runShown(b, transcript.printRun), replay } : b.kind === 'approval' && b.builtin === true ? { run: transcript.printRun } : {})} />
+      })}
+    </>
+  )
+}
+
 /** The integrations a reply used, by name; the built-in printer tools (`printer.*`) are no integration and are left out. */
 function usedNames(used: string[] | undefined, plugins: PluginLoad[] | null | undefined): string[] {
   return (used ?? []).flatMap((id) => plugins?.find((p) => p.id === id)?.name ?? [])
@@ -135,10 +160,14 @@ export function TranscriptView({ transcript, showThinking, approvals, words, par
             {t.user !== null ? <Bubble text={t.user} where={t.where} attachments={t.attachments} /> : null}
             <PilotTurn>
               {/* the part card already shows what happened, so the turn's permission line is dropped */}
-              {(part ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks).map((b) => (
-                <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} {...(b.kind === 'run' ? { run: runShown(b, transcript.printRun), replay: t.replay } : b.kind === 'approval' && b.builtin === true ? { run: transcript.printRun } : {})} />
-              ))}
-              {/* a design built step by step keeps its rows, and gets one card after them */}
+              {words && parts ? (
+                <Segments segments={loopSegments(part ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks, words)} live={t === last && transcript.status === 'running'} stopped={t === last && transcript.status === 'stopped'} showThinking={showThinking} approvals={approvals} words={words} parts={parts} transcript={transcript} replay={t.replay} />
+              ) : (
+                (part ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks).map((b) => (
+                  <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} {...(b.kind === 'run' ? { run: runShown(b, transcript.printRun), replay: t.replay } : b.kind === 'approval' && b.builtin === true ? { run: transcript.printRun } : {})} />
+                ))
+              )}
+              {/* a design built step by step gets one card after its steps */}
               {part?.built && parts ? <PartCard part={part} handlers={parts} /> : null}
               {part && parts && done ? <FollowUpChips part={part} handlers={parts} /> : null}
               <UsedLine names={usedNames(t.used, transcript.plugins)} />
