@@ -400,3 +400,27 @@ fn timing_a_million_triangles() {
 fn small(v: u32) -> f32 {
     f32::from(u16::try_from(v).unwrap())
 }
+
+/// Kernel bodies live in the process from call to call, until freed, as they do in the browser's worker.
+#[cfg(feature = "brep")]
+#[test]
+fn kernel_bodies_last_from_call_to_call() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let mut input = frame(
+        1,
+        "brep.box",
+        &json!({ "min": [0, 0, 0], "max": [10, 10, 10] }),
+        vec![],
+    );
+    input.extend(frame(2, "brep.count", &json!({}), vec![]));
+    let replies = run(&input);
+    let body = replies[0].0["result"]["body"].as_u64().unwrap();
+    assert_eq!(replies[1].0["result"]["bodies"], 1);
+    let mut input = frame(3, "brep.free", &json!({ "body": body }), vec![]);
+    input.extend(frame(4, "brep.count", &json!({}), vec![]));
+    let replies = run(&input);
+    assert_eq!(replies[0].0["result"]["freed"], true);
+    assert_eq!(replies[1].0["result"]["bodies"], 0);
+}
