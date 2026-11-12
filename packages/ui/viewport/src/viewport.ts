@@ -69,7 +69,7 @@ import { PickRings, type PickRing } from './pick-rings'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, freeNdc, NO_INSETS, PoseWatch, reducedMotion, type Insets } from './camera'
 import { BASELINE_LOOK, lookProblems, type ViewportLook } from './look'
-import { cadLook, edgeLook, isCad, MaterialCache, setEdgeResolution, setMaterialLook, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
+import { cadEdgesFor, cadLook, edgeLook, isCad, MaterialCache, setEdgeResolution, setMaterialLook, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
 import { buildObject, disposeObject, sharedFinal, wideEdges, type AsyncPartBuild, type ObjectEntry, type PartEntry, type SharedParts } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
@@ -1260,11 +1260,13 @@ class ViewportImpl implements Viewport {
         const e = edgeLook(this.renderMode, this.display)
         // the CAD look draws its edges wide; the thin lines stay for the other looks
         const wide = e.edge === 'cad' && e.visible
-        p.edges.material = e.edge === 'xray' ? sh.edgeXray : e.edge === 'cad' ? sh.edgeCad : sh.edgeDark
+        // a part too dark for the CAD look's dark edges takes light ones
+        const cadEdges = cadEdgesFor(this.renderMode, this.partColor(p))
+        p.edges.material = e.edge === 'xray' ? sh.edgeXray : e.edge === 'cad' ? cadEdges.thin : sh.edgeDark
         p.edges.visible = e.visible && !wide
         if (wide) {
-          const w = wideEdges(p, sh.edgeCadWide)
-          w.material = sh.edgeCadWide
+          const w = wideEdges(p, cadEdges.wide)
+          w.material = cadEdges.wide
           w.visible = true
         }
         else if (p.wide) p.wide.visible = false
@@ -1661,6 +1663,11 @@ class ViewportImpl implements Viewport {
     const cutting = this.cutPreview.entry?.id === objectId
     if (cutting) this.cutPreview.detach()
     p.mesh.material = this.mats.get(this.renderMode, { color: this.partColor(p), finish: p.finish })
+    if (edgeLook(this.renderMode, this.display).edge === 'cad') {
+      const cadEdges = cadEdgesFor(this.renderMode, this.partColor(p))
+      p.edges.material = cadEdges.thin
+      if (p.wide) p.wide.material = cadEdges.wide
+    }
     if (cutting) this.syncCutPreview()
     this.invalidate()
   }
