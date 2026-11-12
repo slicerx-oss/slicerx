@@ -194,6 +194,18 @@ describe('in the transcript', () => {
     expect(t4.turns[0]!.blocks[0]).not.toHaveProperty('dismissed')
   })
 
+  it('folds an answer given with nobody asked as auto, and hands auto to the card hook', () => {
+    const t1 = foldEvents([ask], startTurn(emptyTranscript(), { user: 'Make a plate' }, 0))
+    const t2 = foldEvents([{ type: 'ask_answered', askId: 'a1', choiceId: 'same', auto: true }], t1)
+    expect(t2.turns[0]!.blocks[0]).toMatchObject({ kind: 'choice', picked: 'same', auto: true })
+    const seen: boolean[] = []
+    render(<TranscriptView transcript={t2} showThinking={false} approvals={{ onApprove: async () => undefined, onCancel: async () => undefined, onChoose: vi.fn(async () => undefined), choiceCard: (props) => (seen.push(props.auto === true), null) }} />)
+    expect(seen.at(-1)).toBe(true)
+    // a person's answer is never auto
+    const t3 = foldEvents([{ type: 'ask_answered', askId: 'a1', choiceId: 'same' }], t1)
+    expect(t3.turns[0]!.blocks[0]).not.toHaveProperty('auto')
+  })
+
   it('routes Cancel to the dismiss handler and shows the dismissed answer the run sent back', () => {
     const onDismiss = vi.fn(async () => undefined)
     const t = foldEvents([ask], startTurn(emptyTranscript(), { user: 'Hi' }, 0))

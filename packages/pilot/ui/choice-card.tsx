@@ -21,6 +21,8 @@ export interface ChoiceCardProps {
   said?: string | undefined
   /** Turns the question down without a pick; without it the card has no Cancel. */
   onDismiss?: ((askId: string) => Promise<void>) | undefined
+  /** It was answered at once with nobody asked (the run went ahead with `picked`). */
+  auto?: boolean | undefined
 }
 
 /**

@@ -90,6 +90,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-plan-status` | The plan card's status beside its buttons: waiting, approved (with a check) or sent back for changes |
 | `mimir-plan-change` | Not yet on a waiting plan card: mimir changes the plan before it builds |
 | `mimir-plan-go` | Go on a waiting plan card: mimir builds the part to the plan |
+| `mimir-plan-auto` | On a plan card approved at its default size with nobody asked (`data-auto` on `mimir-plan-card`), in place of its buttons: the line saying to ask to resize or change it |
 | `mimir-plan-why` | On a plan change card (`data-amends` holds the approved plan's planId): why the build asks to change the plan |
 | `mimir-plan-was` | Beside a size on a plan change card: the value the approved plan has |
 | `mimir-send` | The send card in place of the approval card for mimir's own printer.queue: the printer, each filament's slot, the time, the grams and the file; `data-request-id` is the request, `data-state` is off, ready, approved or closed |
@@ -102,7 +103,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-slice-open` | Open in Slice on `mimir-slice`: shows that plate in the Slice tab |
 | `mimir-progress` | The progress card in the conversation for a print mimir's run started: the printer, the file, the layer, the time left and a bar; `data-state` is the printer's state while it prints, then `finished`, `failed` or `canceled` |
 | `mimir-progress-still` | The camera still on `mimir-progress`, refreshed every 30 s while the printer prints; absent for a printer without a camera |
-| `mimir-sheet-record` | A dimension sheet as it stays in the conversation: a numbered row per size (the number is its callout), guesses marked (`data-guess`), each row `data-dim` with its key; while it waits in the tab its rows are fields |
+| `mimir-sheet-record` | A dimension sheet as it stays in the conversation: a numbered row per size (the number is its callout), guesses marked (`data-guess`), each row `data-dim` with its key; while it waits in the tab its rows are fields; `data-auto` when it went ahead with its sizes with nobody asked |
 | `mimir-sheet-source` | The page the looked-up sizes came from, once in the record's header |
 | `mimir-sheet-confirm` | Confirm sizes and build, on a sheet still waiting; it confirms the sheet with the record's values |
 | `mimir-sheet-status` | The record's status beside its buttons: the assumed values (`data-assumed`) while guesses remain, then whether it was confirmed or canceled |

@@ -99,7 +99,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
     case 'sheet':
       return <SheetRecord sheet={block.sheet} answer={block.answer} bound={block.bound !== undefined} actionable={!block.replay} values={approvals.sheetValues} onEdit={block.replay ? undefined : approvals.onEditSheet} onConfirm={approvals.onConfirmSheet} onCancel={approvals.onCancelSheet} onOpen={approvals.onOpenSheet} />
     case 'choice': {
-      const props: ChoiceCardProps = { askId: block.askId, title: block.title, question: block.question, choices: block.choices, picked: block.picked, actionable: !block.replay, onChoose: approvals.onChoose, dismissed: block.dismissed === true, said: block.said, onDismiss: approvals.onDismiss }
+      const props: ChoiceCardProps = { askId: block.askId, title: block.title, question: block.question, choices: block.choices, picked: block.picked, actionable: !block.replay, onChoose: approvals.onChoose, dismissed: block.dismissed === true, said: block.said, onDismiss: approvals.onDismiss, auto: block.auto === true }
       return approvals.choiceCard?.(props) ?? <ChoiceCard {...props} />
     }
     case 'summary':
