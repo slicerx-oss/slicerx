@@ -399,6 +399,13 @@ Files, all in `scripts/ci/`:
 - `gh-download.sh <url> <file>`: one GitHub release download for a CI step (binaryen, gitleaks, cargo-deny), signed in
   with `GITHUB_TOKEN` from the environment when set (passed to curl on stdin, never in its arguments) and retried with
   `--retry 5 --retry-all-errors --retry-delay 10`. The caller checks the sha256 and caches the file with `actions/cache`.
+- `net-retry.sh <command...>`: runs a command that downloads something up to 4 times, with 10, 30 and 60 seconds between
+  the tries, annotating each failed try with its exit code, and exits with the command's own code after the last one.
+  `ci.yml` runs `pnpm install --frozen-lockfile` and `rustup toolchain install` through it (the toolchain step first
+  skips the download when the version, components and targets in `rust-toolchain.toml` are already installed, see
+  `SX_TOOLCHAIN_INSTALL`), and `playwright-chromium.sh` and `install-binaryen.sh` use it for their downloads. It never
+  wraps a test command; those keep the flaky rule below. `SX_NET_RETRY_DELAYS` (seconds, space separated) replaces the
+  pauses, for its test.
 - `ort-fetch.sh key | fetch <dir>`: the static ONNX Runtime library that the ort-sys build script would download, fetched
   in its own step of the hosted `rust (ubuntu-latest)` job with `curl --retry 5 --retry-all-errors`, checked against a
   sha256 pinned in the script (on a cache hit too), extracted, and pointed to with `ORT_LIB_LOCATION` so the build makes

@@ -9,7 +9,7 @@
 #
 # The archive is kept in the second folder (default: <dir>), which a job can cache. An archive there that matches the
 # SHA-256 is used without a request; otherwise it is downloaded with the job's GITHUB_TOKEN when set (see
-# scripts/ci/gh-download.sh).
+# scripts/ci/gh-download.sh), and that download is tried again up to 3 more times (scripts/ci/net-retry.sh).
 set -eu
 version=133
 case ${1:-} in
@@ -39,7 +39,7 @@ mkdir -p "$dir" "$dl"
 if [ -f "$dl/$file" ] && [ "$(sha_of "$dl/$file")" = "$sum" ]; then
   echo "install-binaryen: using $file from $dl" >&2
 else
-  sh "$(dirname "$0")/ci/gh-download.sh" "https://github.com/WebAssembly/binaryen/releases/download/version_$version/$file" "$dl/$file" >&2
+  sh "$(dirname "$0")/ci/net-retry.sh" sh "$(dirname "$0")/ci/gh-download.sh" "https://github.com/WebAssembly/binaryen/releases/download/version_$version/$file" "$dl/$file" >&2
 fi
 got=$(sha_of "$dl/$file")
 if [ "$got" != "$sum" ]; then
