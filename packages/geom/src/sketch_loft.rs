@@ -333,10 +333,11 @@ pub enum Match {
 /// Profiles made of straight lines alone are matched exactly as [`loft_with`] matches them, so every rail is a curve
 /// the mesh loft samples: each stretch between neighboring rails is its own piece, a line on every ring.
 ///
-/// When any profile has an arc, a circle or an ellipse, the profiles are matched piece to piece instead (line to
-/// line and arc to arc; where the pieces differ each profile is split where the other's corners land on it, by how
-/// far along it they are, at the least twist or at the landmarks), and `density` sets how many rails each piece
-/// gets. Places along an ellipse go by the angle that maps it to a circle, not by its true length. These rails are
+/// When any profile has an arc, a circle, an ellipse or a spline, the profiles are matched piece to piece instead
+/// (line to line, arc to arc and spline to spline; where the pieces differ each profile is split where the other's
+/// corners land on it, by how far along it they are, at the least twist or at the landmarks), and `density` sets how
+/// many rails each piece gets. Places along an ellipse go by the angle that maps it to a circle, not by its true
+/// length; places along a spline go by its length. These rails are
 /// not the mesh loft's: it matches flattened points by count, so its sides lean where profiles flatten to different
 /// counts. Profiles that cannot be matched this way come back as [`Match::Unmatched`].
 ///
