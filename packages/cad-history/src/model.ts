@@ -172,6 +172,8 @@ export interface StepTilt {
   degrees: number
   up: Vec3
   toward: Vec3
+  /** The point it turns about when another step's lean carries it; its own foot when absent. */
+  about?: Vec3
 }
 
 export interface History {

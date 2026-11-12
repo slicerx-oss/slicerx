@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A step's lean (Step.tilt): what an extrude or a loft made, turned about its foot so its top leans one way by some
-// degrees. The lean is kept beside the step's own numbers and laid on them as the step replays, so an edit of a size,
-// a move or a section afterwards keeps it, the timeline shows one step, and undoing the edit takes it back. A pattern
-// made of the step copies the leaning one.
-import { BED_FRAME, type LoftProfile, type Step, type StepParams, type StepTilt } from './model'
+// A step's lean (Step.tilt): what an extrude, a loft or an added part (a post, a cylinder) made, turned about its foot
+// so its top leans one way by some degrees; each added part leans about its own foot. A step built on a leaning one
+// leans with it about that step's foot (StepTilt.about). The lean is kept beside the step's own numbers and laid on
+// them as the step replays, so an edit of a size, a move or a section afterwards keeps it, the timeline shows the
+// same steps, and undoing the edit takes it back. A pattern made of the step copies the leaning one.
+import { BED_FRAME, type HistoryMesh, type LoftProfile, type Step, type StepParams, type StepTilt } from './model'
 import { movedParams } from './design-frame'
 import type { Mat4, SketchLoop, Vec2, Vec3 } from './types'
 
@@ -72,13 +73,74 @@ export function tiltMatrix(t: StepTilt, foot: Vec3): Mat4 | null {
   return [r[0][0], r[1][0], r[2][0], 0, r[0][1], r[1][1], r[2][1], 0, r[0][2], r[1][2], r[2][2], 0, foot[0] - rf[0]!, foot[1] - rf[1]!, foot[2] - rf[2]!, 1]
 }
 
-/** A step's numbers with its lean laid on them; the step as it is when it has none or cannot lean. */
+/** The foot of one added part: the middle of its lowest points along `up`, within 0.5 mm of the lowest. */
+export function partFoot(m: Pick<HistoryMesh, 'positions'>, up: Vec3): Vec3 | null {
+  const p = m.positions
+  let low = Infinity
+  for (let i = 0; i + 2 < p.length; i += 3) low = Math.min(low, p[i]! * up[0] + p[i + 1]! * up[1] + p[i + 2]! * up[2])
+  if (!Number.isFinite(low)) return null
+  const lo: Vec3 = [Infinity, Infinity, Infinity]
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    if (p[i]! * up[0] + p[i + 1]! * up[1] + p[i + 2]! * up[2] > low + 0.5) continue
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k]!, p[i + k]!)
+      hi[k] = Math.max(hi[k]!, p[i + k]!)
+    }
+  }
+  return [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
+}
+
+/** A part's points turned by `m`; its faces keep their keys, and the shape it was made as no longer fits. */
+function turnedPart(part: HistoryMesh, m: Mat4): HistoryMesh {
+  const p = part.positions
+  const out = new Float32Array(p.length)
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    const [x, y, z] = [p[i]!, p[i + 1]!, p[i + 2]!]
+    out[i] = m[0]! * x + m[4]! * y + m[8]! * z + m[12]!
+    out[i + 1] = m[1]! * x + m[5]! * y + m[9]! * z + m[13]!
+    out[i + 2] = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!
+  }
+  const { primitive: _shape, ...rest } = part
+  return { ...rest, positions: out }
+}
+
+/**
+ * A step's numbers with its lean laid on them; the step as it is when it has none or cannot lean. A lean with `about`
+ * turns about that point (a step carried by the one it stands on); one without turns about the step's own foot, each
+ * added part about its own.
+ */
 export function tiltedParams(p: StepParams, t: StepTilt | undefined): StepParams {
   if (!t || t.degrees === 0) return p
-  const foot = tiltFoot(p, t.up)
+  if (p.op === 'parts.add') {
+    const parts = p.parts.map((part) => {
+      const foot = t.about ?? partFoot(part, t.up)
+      const m = foot ? tiltMatrix(t, foot) : null
+      return m ? turnedPart(part, m) : part
+    })
+    return { ...p, parts }
+  }
+  const foot = t.about ?? tiltFoot(p, t.up)
   const m = foot ? tiltMatrix(t, foot) : null
-  return m ? movedParams(p, m) : p
+  if (!m) return p
+  // a carried step sinks a hair into the step it stands on before it turns: faces that met flat would otherwise meet
+  // as slivers once both turn, which a join refuses
+  return movedParams(p, t.about ? sunk(m, t.up) : m)
 }
+
+/** `m` after a move of SINK_MM against `up`. */
+function sunk(m: Mat4, up: Vec3): Mat4 {
+  const d: Vec3 = [-up[0] * SINK_MM, -up[1] * SINK_MM, -up[2] * SINK_MM]
+  const at: Vec3 = [m[0]! * d[0] + m[4]! * d[1] + m[8]! * d[2], m[1]! * d[0] + m[5]! * d[1] + m[9]! * d[2], m[2]! * d[0] + m[6]! * d[1] + m[10]! * d[2]]
+  const out = [...m]
+  out[12] = m[12]! + at[0]
+  out[13] = m[13]! + at[1]
+  out[14] = m[14]! + at[2]
+  return out
+}
+
+/** How far a carried step sinks into the step it stands on, mm: well under any size a printer makes. */
+export const SINK_MM = 0.01
 
 /** The step as it replays: its lean laid on its numbers. */
 export function withTilt(s: Step): Step {
@@ -94,5 +156,6 @@ export function readTilt(v: unknown): Pick<Step, 'tilt'> {
   const up = vec(o['up'])
   const toward = vec(o['toward'])
   if (typeof d !== 'number' || !Number.isFinite(d) || Math.abs(d) > 89 || d === 0 || !up || !toward) return {}
-  return { tilt: { degrees: d, up, toward } }
+  const about = Array.isArray(o['about']) && o['about'].length === 3 && o['about'].every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 100_000) ? (o['about'] as Vec3) : undefined
+  return { tilt: { degrees: d, up, toward, ...(about ? { about } : {}) } }
 }

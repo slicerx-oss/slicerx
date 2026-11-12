@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// design.edit_step's tilt leans what an extrude or a loft made about its foot, in place: the timeline keeps one step,
-// a pattern made of it leans with it, a later size edit keeps the lean, steps after it (a cut) still go through, and
-// a saved project reads the lean back. A lean into another step's shape, by the step or by a copy a pattern made of
-// it, is refused with that step by name. Engine
-// replies are recorded in fixtures/design-tilt.json.gz.
+// design.edit_step's tilt leans what an extrude, a loft or an added part made about its foot, in place, and the steps
+// built on it lean with it: the timeline keeps the same steps, a pattern made of it leans with it, a later size edit
+// keeps the lean, steps after it (a cut) still go through, and a saved project reads the lean back. A lean into another
+// step's shape, by the step or by a copy a pattern made of it, is refused with that step by name, and so is one a cut
+// into its top cannot follow. Engine replies are recorded in fixtures/design-tilt.json.gz.
 import { describe, expect, it } from 'vitest'
 import { historyFiles, parseHistories, type History } from '@slicerx/cad-history'
 import { connect, data, text } from './helpers'
@@ -50,10 +50,11 @@ const block = (w: number, d: number, h: number, cx: number, cy: number, z = 0, o
   distance_mm: h,
   operation,
 })
-const post = (dia: number, h: number, cx: number, cy: number, z: number) => ({ frame: top(z), shape: { type: 'circle', diameterMm: dia }, placement: { center: [cx, cy] }, distance_mm: h, operation: 'join' })
-const r1 = (n: number) => Math.round(n * 10) / 10
 // a twelve-sided section about (cx, 0), r across its corners
 const gon = (cx: number, r: number) => Array.from({ length: 12 }, (_, k) => [cx + r * Math.cos((k * Math.PI) / 6), r * Math.sin((k * Math.PI) / 6)])
+// a twelve-sided post, `dia` across its corners, standing at (cx, cy) on the plane at z
+const post = (dia: number, h: number, cx: number, cy: number, z: number) => ({ frame: top(z), shape: { type: 'sketch', loops: [{ points: gon(0, dia / 2) }] }, placement: { center: [cx, cy] }, distance_mm: h, operation: 'join' })
+const r1 = (n: number) => Math.round(n * 10) / 10
 const DEG = Math.PI / 180
 
 describe('design.edit_step tilt', () => {
@@ -139,25 +140,80 @@ describe('design.edit_step tilt', () => {
     expect(out.output.steps[1]).toMatchObject({ leans: { degrees: 25, toward: '-x' } })
   })
 
-  it('leans only what an extrude or a loft made', async () => {
+  it('leans a post an added part made, about its own foot', async () => {
+    const t = await start()
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...block(40, 40, 5, 20, 20, 0, 'new') })
+    await t.ok('slicerx_geom_build', { design: t.design, name: 'Post', solids: [{ type: 'cylinder', origin: [36, 20, 5], axis: [0, 0, 1], diameterMm: 4, heightMm: 20 }] })
+    const out = await t.ok('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'x', degrees: 20 } })
+    expect(out.output.steps[1]).toMatchObject({ state: 'done', leans: { degrees: 20, toward: 'x' } })
+    const reach = 36 + 20 * Math.sin(20 * DEG) + 2 * Math.cos(20 * DEG)
+    expect(r1(out.output.minMm[0] + out.output.sizeMm[0])).toBeCloseTo(r1(reach), 0)
+  })
+
+  it('leans a cap built on a post with the post, and stands both up again', async () => {
+    const t = await start()
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...block(40, 40, 5, 20, 20, 0, 'new') })
+    await t.ok('slicerx_geom_extrude', { design: t.design, part: 0, ...post(4, 20, 20, 36, 5) })
+    await t.ok('slicerx_geom_extrude', { design: t.design, part: 0, ...post(6, 2, 20, 36, 25) })
+    const out = await t.ok('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'y', degrees: 20 } })
+    expect(out.summary).toContain('step 3 built on it leans with it')
+    expect(out.output.steps[2]).toMatchObject({ state: 'done', leans: { degrees: 20, toward: 'y' } })
+    // the cap's far top edge, turned with the post about the post's foot at y 36, 5 mm up
+    const reach = 36 + 22 * Math.sin(20 * DEG) + 3 * Math.cos(20 * DEG)
+    expect(r1(out.output.minMm[1] + out.output.sizeMm[1])).toBeCloseTo(r1(reach), 0)
+    const back = await t.ok('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'y', degrees: 0 } })
+    expect(back.output.steps[1]!.leans).toBeUndefined()
+    expect(back.output.steps[2]!.leans).toBeUndefined()
+    expect(back.output.sizeMm[1]).toBeCloseTo(40, 1)
+  })
+
+  it('leans every copy of a patterned cap with its patterned post', async () => {
+    const t = await start()
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...block(50, 40, 5, 25, 20, 0, 'new') })
+    await t.ok('slicerx_geom_extrude', { design: t.design, part: 0, ...post(4, 20, 10, 36, 5) })
+    await t.ok('slicerx_geom_extrude', { design: t.design, part: 0, ...post(6, 2, 10, 36, 25) })
+    await t.ok('slicerx_geom_array', { design: t.design, part: 0, merge: true, steps: [2, 3], spec: { kind: 'linear', count: 3, step: [12, 0, 0] } })
+    await t.ok('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'y', degrees: 20 } })
+    // cut across the caps' middle, 21 mm along the leaning posts: every cap sits 21 sin 20 toward y
+    const cut = await t.h.call('slicerx_geom_measure', { design: t.design, part: 0, section: { plane: { origin: [25, 30, 5 + 21 * Math.cos(20 * DEG)], normal: [0, 0, 1] } } })
+    const loops = data<{ output: { section: { loops: { outer: number[][] }[] } } }>(cut).output.section.loops
+    const middles = loops.map((l) => [(Math.min(...l.outer.map((p) => p[0]!)) + Math.max(...l.outer.map((p) => p[0]!))) / 2, (Math.min(...l.outer.map((p) => p[1]!)) + Math.max(...l.outer.map((p) => p[1]!))) / 2])
+    expect(middles.map(([x]) => r1(x!)).sort((a, b) => a - b)).toEqual([10, 22, 34])
+    for (const [, y] of middles) expect(y).toBeCloseTo(36 + 21 * Math.sin(20 * DEG), 0)
+  })
+
+  it('refuses a lean that a cut into the top cannot follow, naming the cut', async () => {
+    const t = await start()
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...block(40, 40, 5, 20, 20, 0, 'new') })
+    await t.ok('slicerx_geom_extrude', { design: t.design, part: 0, ...block(8, 8, 20, 20, 20, 5) })
+    await t.ok('slicerx_geom_subtract', { design: t.design, part: 0, label: 'Slot', solids: [{ type: 'box', min: [19, 14, 20], max: [21, 26, 26] }] })
+    const { r } = await t.call('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'x', degrees: 10 } })
+    expect(r.isError, text(r)).toBe(true)
+    expect(text(r)).toContain('step 3, Slot, works on it and cannot lean with it')
+  })
+
+  it('leans only what an extrude, a loft or an added part made', async () => {
     const t = await start()
     await t.ok('slicerx_geom_extrude', { design: t.design, ...block(20, 20, 10, 10, 10, 0, 'new') })
     await t.ok('slicerx_geom_cut', { design: t.design, part: 0, plane: { axis: 'z', at: 5 }, keep: 'both' })
     const { r } = await t.call('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'x', degrees: 10 } })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('only what an extrude or a loft made leans')
+    expect(text(r)).toContain('only what an extrude, a loft or an added part made leans')
   })
 })
 
 describe('a saved lean', () => {
   it('reads back from a saved project, and a damaged one reads as none', () => {
     const tilt = { degrees: 12, up: [0, 0, 1], toward: [1, 0, 0] }
+    const carried = { ...tilt, about: [20, 36, 5] }
     const step = { id: 's1', part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'shape.extrude', shape: { type: 'circle', diameterMm: 4 }, spec: { distanceMm: 20, operation: 'new' } } }
-    const h = { version: 1, base: [], steps: [{ ...step, tilt }, { ...step, id: 's2', tilt: { degrees: 'far', up: [0, 0, 1], toward: [1, 0, 0] } }] } as unknown as History
+    const h = { version: 1, base: [], steps: [{ ...step, tilt }, { ...step, id: 's2', tilt: { degrees: 'far', up: [0, 0, 1], toward: [1, 0, 0] } }, { ...step, id: 's3', tilt: carried }] } as unknown as History
     const files = historyFiles([{ id: 'a', history: h }], new Map([['a', 3]]))
     const map = new Map(files.map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
     const back = parseHistories(map, new Set(['3'])).get('3')
     expect(back?.steps[0]?.tilt).toEqual(tilt)
     expect(back?.steps[1]?.tilt).toBeUndefined()
+    // a lean another step's carried, with the point it turns about
+    expect(back?.steps[2]?.tilt).toEqual(carried)
   })
 })
