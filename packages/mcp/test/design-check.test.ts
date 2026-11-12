@@ -1196,6 +1196,90 @@ describe('design.check gives a plan one fix round', () => {
   })
 })
 
+describe('a part that passed its check, broken by a later change', () => {
+  // the spacer passes as built; a follow-up change then breaks it (here the plan is put again 1 mm taller, as a part
+  // changed away from its plan would read): the check says to fix or undo that change in the same turn, and never stops
+  const tall: PartPlan = { ...boxPlan, overall: { x: 40, y: 20, z: 6 } }
+  type Out = { pass: boolean; stop?: string; repeated?: boolean; brokenByChange?: boolean }
+  function run() {
+    const plans = createPlanRegistry()
+    const tool = designToolset(hostOf([boxDesign('d1', 'Spacer')]), {}, { plans }).find((t) => t.name === 'design.check')!
+    const check = async () => {
+      const r = await tool.run(tool.input.parse({ planId: 'box-1' }), {} as ToolContext)
+      return { summary: r.summary, out: r.output as Out }
+    }
+    return { plans, check }
+  }
+
+  it('says to fix the change now or undo it, with no stop and no question, however often it fails', async () => {
+    const { plans, check } = run()
+    plans.put(boxPlan, 'd1', 'card')
+    expect((await check()).out.pass).toBe(true)
+    plans.put(tall, 'd1', 'card')
+    const first = await check()
+    expect(first.out.pass).toBe(false)
+    expect(first.out.stop).toBeUndefined()
+    expect(first.out.brokenByChange).toBe(true)
+    expect(first.summary).toContain('The part was built to plan box-1 before this change, so the change broke it. Fix that change now, in this turn')
+    expect(first.summary).toContain('Do not stop or ask the person how to go on, and make whatever else they asked for.')
+    const second = await check()
+    expect(second.out.stop).toBeUndefined()
+    expect(second.out.repeated).toBeUndefined()
+    expect(second.summary).toContain('undo the change that broke it now')
+    // a third failure still measures the part and still asks for the undo, never the old closed answer
+    const third = await check()
+    expect(third.out.repeated).toBeUndefined()
+    expect(third.summary).toContain('undo the change that broke it now')
+    // undone: it passes, and a later break starts over at "fix it"
+    plans.put(boxPlan, 'd1', 'card')
+    expect((await check()).out.pass).toBe(true)
+    plans.put(tall, 'd1', 'card')
+    expect((await check()).summary).toContain('Fix that change now, in this turn')
+  })
+
+  it('treats a change the person asked for after a build that never passed the same way: fix or undo, no stop', async () => {
+    const { plans, check } = run()
+    plans.put(tall, 'd1', 'card')
+    await check()
+    // the build used its fix round and stopped
+    expect((await check()).out.stop).toMatch(/fix round is used/)
+    // the person then asks for a change: it reopens, and a check it breaks is fixed or undone, never a stop
+    plans.asked('box-1', 'add window slits')
+    const after = await check()
+    expect(after.out.stop).toBeUndefined()
+    expect(after.out.brokenByChange).toBe(true)
+    expect((await check()).out.repeated).toBeUndefined()
+  })
+
+  it('checks a part changed after its build stopped on the fix round again, and never repeats the stop', async () => {
+    const plans = createPlanRegistry()
+    const d = boxDesign('d1', 'Spacer')
+    const tool = designToolset(hostOf([d]), {}, { plans }).find((t) => t.name === 'design.check')!
+    const check = async () => {
+      const r = await tool.run(tool.input.parse({ planId: 'box-1' }), {} as ToolContext)
+      return { summary: r.summary, out: r.output as Out }
+    }
+    plans.put(tall, 'd1', 'card')
+    await check()
+    expect((await check()).out.stop).toMatch(/fix round is used/)
+    // unchanged: the closed answer again
+    expect((await check()).out.repeated).toBe(true)
+    // a later request adds a step to the part: the check measures again, fix or undo, no stop
+    d.history = { ...d.history, steps: [...d.history.steps, { id: 'later', part: 0, params: { op: 'repair' }, transform: IDENTITY } as never] }
+    const after = await check()
+    expect(after.out.repeated).toBeUndefined()
+    expect(after.out.stop).toBeUndefined()
+    expect(after.out.brokenByChange).toBe(true)
+  })
+
+  it('leaves a part that never passed on its one fix round, as before', async () => {
+    const { plans, check } = run()
+    plans.put(tall, 'd1', 'card')
+    expect((await check()).out.stop).toBeUndefined()
+    expect((await check()).out.stop).toMatch(/fix round is used/)
+  })
+})
+
 type Check = { pass: boolean; planId: string; design: string; items: { name: string; want: string; got: string; pass: boolean }[]; body: BodyFacts }
 
 const geom = useGeomEngine('design-check-replies')

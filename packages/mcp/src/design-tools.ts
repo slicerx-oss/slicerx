@@ -8,7 +8,7 @@ import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { assumptionsInput, colorBands, createPlanRegistry, designCheck, FIX_ROUNDS, fixRoundOpen, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, partPlanSchema, plannedFloor, plannedHoleMm, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
+import { assumptionsInput, changeBroke, colorBands, createPlanRegistry, designCheck, FIX_ROUNDS, fixRoundOpen, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, type PartPlan, partPlanSchema, type PlanEntry, plannedFloor, plannedHoleMm, PlanOwnedError, type PlanRegistry, printsTogether, stalePlanNote, supersededPlanNote } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -857,6 +857,13 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       // answered it never will
       if (entry.superseded) throw new ToolInputError(supersededPlanNote(entry.plan.part))
       if (entry.stale) throw new ToolInputError(stalePlanNote(entry.plan.part, opts.cardSide === true))
+      // a part changed since its fix round was used (a later request built on it): the check runs again, and a failure
+      // is fixed or undone like any change after the build, never the old stop
+      if (entry.closed && entry.design) {
+        const now = designs.list().find((x) => x.id === entry.design)
+        const at = (entry.closed.output as { stepsAtClose?: number }).stepsAtClose
+        if (now && (at === undefined || now.history.steps.length !== at)) plans.reopenAfterBuild(entry.plan.planId)
+      }
       // the fix round is used: the same answer again, with no new geometry work
       if (entry.closed) return { summary: `Plan ${entry.plan.planId} has had its fix round, so the part was not checked again. Its last check: ${entry.closed.summary}`, output: { ...entry.closed.output, repeated: true } }
       const { design: d, how } = builtFrom(entry, i.design)
@@ -894,12 +901,18 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       if (failed.length === 1 && isNamingMiss(failed[0]!) && plans.waiveNaming(entry.plan.planId, open)) return { summary: `${summary}. This miss does not use the fix round.`, output }
       const failedChecks = plans.checked(entry.plan.planId, result.pass, open)
       if (result.pass) return { summary, output }
+      // a part that passed before and fails now was broken by a later change (a follow-up's slits cut too deep): it is
+      // fixed or undone in the same turn, and never ends the building or holds up the person's next request
+      if (entry.passedOnce || entry.followUp) {
+        const broke = changeBroke(entry.plan.planId, entry.failsSincePass ?? 1)
+        return { summary: `${summary}. ${broke}`, output: { ...output, brokenByChange: true } }
+      }
       // the first miss: the fix round is open, said in the result itself, since a bare list of failed items read as the
       // end of the build and the reply stopped there instead of fixing them
       if (failedChecks <= FIX_ROUNDS) return { summary: `${summary}. ${fixRoundOpen(entry.plan.planId)}`, output }
       // the second miss: one fix round was the limit, so mimir stops here and says what is off
       const stop = `The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan ${entry.plan.planId} again returns this same result.`
-      const last = { summary: `${summary}. ${stop}`, output: { ...output, stop } }
+      const last = { summary: `${summary}. ${stop}`, output: { ...output, stop, stepsAtClose: d.history.steps.length } }
       plans.close(entry.plan.planId, last)
       return last
     },
