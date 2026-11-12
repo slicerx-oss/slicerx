@@ -89,6 +89,57 @@ impl Slicer {
     pub fn gcode(&self, id: u32) -> Option<Vec<u8>> {
         lock(&self.results).get(&id).map(|o| o.gcode.clone())
     }
+
+    /// What the slicer holds now, for the agent bridge's health (agent_bridge::health).
+    #[cfg(feature = "agent-bridge")]
+    pub fn held(&self) -> Held {
+        let (meshes_len, meshes_bytes) = {
+            let meshes = lock(&self.meshes);
+            (meshes.len(), meshes.values().map(|m| mesh_bytes(m)).sum())
+        };
+        let (results_len, results_bytes) = {
+            let results = lock(&self.results);
+            (
+                results.len(),
+                results.values().map(|o| o.gcode.len() + o.sxpv.len()).sum(),
+            )
+        };
+        Held {
+            meshes_len,
+            meshes_bytes,
+            results_len,
+            results_bytes,
+            kept_sessions: lock(&self.kept.sessions).len(),
+        }
+    }
+}
+
+/// What the slicer holds, for the agent bridge's health: meshes and slice results by count and bytes (geometry and
+/// paint for a mesh, G-code and the preview not yet sent for a result), and the prepared sessions kept.
+#[cfg(feature = "agent-bridge")]
+pub struct Held {
+    pub meshes_len: usize,
+    pub meshes_bytes: usize,
+    pub results_len: usize,
+    pub results_bytes: usize,
+    pub kept_sessions: usize,
+}
+
+/// About how many bytes a mesh's parts and volumes take: positions, triangles and paint, by capacity.
+#[cfg(feature = "agent-bridge")]
+fn mesh_bytes(mesh: &Mesh) -> usize {
+    fn vec<T>(v: &Vec<T>) -> usize {
+        v.capacity() * size_of::<T>()
+    }
+    let part = |p: &sx_core::MeshPart| {
+        vec(&p.positions)
+            + vec(&p.triangles)
+            + vec(&p.paint)
+            + vec(&p.support_paint)
+            + vec(&p.seam_paint)
+            + vec(&p.fuzzy_paint)
+    };
+    mesh.parts.iter().map(part).sum::<usize>() + mesh.volumes.iter().map(|v| part(&v.part)).sum::<usize>()
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {

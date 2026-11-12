@@ -44,6 +44,12 @@ fn streams() -> &'static Mutex<HashMap<u32, tauri::async_runtime::JoinHandle<()>
     STREAMS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// How many model streams run now, for the agent bridge's health.
+#[cfg(feature = "agent-bridge")]
+pub fn streams_len() -> usize {
+    streams().lock().unwrap_or_else(PoisonError::into_inner).len()
+}
+
 fn error_chunk(e: &sx_llm::Error) -> LlmChunk {
     match e {
         sx_llm::Error::Http {
