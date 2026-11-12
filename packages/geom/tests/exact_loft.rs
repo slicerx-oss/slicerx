@@ -15,8 +15,9 @@ use sx_geom::face::{self, Operation};
 use sx_geom::faces;
 use sx_geom::fm::Fm;
 use sx_geom::mesh::TriMesh;
-use sx_geom::sketch_loft::exact::{self, Part};
-use sx_geom::sketch_loft::{self, Density, Match, Options, Profile, Rails};
+use sx_geom::sketch_loft::exact::{self, Kind, Part};
+use sx_geom::sketch_loft::{self, Curve, Density, Match, Options, Profile, Rails};
+use sx_geom::sketch_spline;
 use sx_geom::vec3::{self, V3};
 
 /// seven stations of a hull across x, six points each
@@ -387,7 +388,7 @@ fn what_cannot_be_made_exact_is_refused_and_nothing_is_kept() {
             &json!([level(0.0, &circle(20.0)), level(20.0, &circle(24.0))]),
             &json!({})
         ),
-        "loft: an exact loft is made only through profiles of straight lines for now; these have an arc, a circle or an ellipse"
+        "loft: an exact loft is made only through profiles of straight lines and splines for now; these have an arc, a circle or an ellipse"
     );
     assert_eq!(
         refused(&hull(), &json!({ "thicken": { "thicknessMm": 1 } })),
@@ -614,7 +615,7 @@ fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
     let cases = [
         (
             json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &circle(24.0))] }),
-            "An exact loft is made only through profiles of straight lines for now; these have an arc, a circle or an ellipse.",
+            "An exact loft is made only through profiles of straight lines and splines for now; these have an arc, a circle or an ellipse.",
         ),
         (
             json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &spline)] }),
@@ -758,4 +759,401 @@ fn a_loft_s_flat_sides_are_planes_among_the_five_kinds_and_its_curved_sides_are_
     );
     free(body);
     assert_eq!(table::count(), start);
+}
+
+/// Lofts through sections of a straight top and a spline below: three D sections, and the 18 sections of a hull
+/// drawn by hand (its stations with a straight deck and a spline from deck edge to deck edge through the keel).
+const SPLINE_LOFTS: &str = include_str!("fixtures/exact-loft-splines.json");
+
+fn spline_loft(name: &str) -> Value {
+    let all: Value = serde_json::from_str(SPLINE_LOFTS).unwrap();
+    all[name].clone()
+}
+
+/// The profiles and options of a loft request.
+fn request_parts(request: &Value) -> (Vec<Profile>, Options) {
+    let opts = json!({ "smooth": request["smooth"].as_bool().unwrap_or(false) });
+    parsed(&request["profiles"], &opts)
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    Sha256::digest(bytes).iter().fold(String::new(), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
+}
+
+#[test]
+fn the_mesh_loft_of_spline_sections_is_the_same_to_the_byte() {
+    // the replies before spline pieces were matched, recorded from the code the change starts from
+    let circle = json!({ "type": "circle", "center": [0, 0], "diameterMm": 20.0 });
+    let spline = json!({ "type": "spline", "points": [[10, 0], [0, 8], [-10, 0], [0, -8]] });
+    for (name, request, want) in [
+        (
+            "D sections",
+            spline_loft("dSections"),
+            "4bd25dd36c211d3cc0f592fac23df379ac2bc67208ec653707157ba609b97f9a",
+        ),
+        (
+            "hull of 18 sections",
+            spline_loft("hull18"),
+            "938b933be5b10ea85366f0692fb991bf554380f7b74d5764715450762a95f5df",
+        ),
+        (
+            "circle to a closed spline",
+            json!({ "profiles": [level(0.0, &circle), level(20.0, &spline)] }),
+            "aa6f0c1dcb856151e03f0eb3d98d53e5069bae7b96cd40e4d2c8c6d0f6e91f5b",
+        ),
+    ] {
+        let reply = sx_geom::json::call("sketch.loft", &request.to_string()).unwrap();
+        assert_eq!(sha256(reply.as_bytes()), want, "{name}");
+    }
+}
+
+/// The points of a section as drawn, in space: its straight piece and its spline, each piece cut into `per` steps.
+fn drawn_section(section: &Value, per: usize) -> Vec<V3> {
+    let v3 = |v: &Value| -> V3 { [0, 1, 2].map(|i| v[i].as_f64().unwrap()) };
+    let v2 = |v: &Value| -> [f64; 2] { [v[0].as_f64().unwrap(), v[1].as_f64().unwrap()] };
+    let frame = &section["frame"];
+    let (origin, u, v) = (v3(&frame["origin"]), v3(&frame["u"]), v3(&frame["v"]));
+    let lp = &section["loops"][0];
+    let segments = lp["segments"].as_array().unwrap();
+    let start = v2(&segments[0]["to"]);
+    let spline = &segments[1];
+    let mut through = vec![start];
+    through.extend(spline["points"].as_array().unwrap().iter().map(v2));
+    through.push(v2(&spline["to"]));
+    // the straight piece from the loop's start, then the spline back to it
+    let top = v2(&lp["start"]);
+    #[allow(clippy::cast_precision_loss, reason = "a step count")]
+    let mut flat: Vec<[f64; 2]> = (0..=per)
+        .map(|i| {
+            let f = i as f64 / per as f64;
+            [top[0] + (start[0] - top[0]) * f, top[1] + (start[1] - top[1]) * f]
+        })
+        .collect();
+    for b in sketch_spline::spans(&through, false) {
+        flat.extend(sketch_spline::flatten(&b, per));
+    }
+    flat.iter()
+        .map(|p| vec3::add(origin, vec3::add(vec3::scale(u, p[0]), vec3::scale(v, p[1]))))
+        .collect()
+}
+
+/// The farthest any of `points` is from the triangles `triangles` over `positions`. The triangles are filed in a
+/// grid of `cell` mm, and the cells are searched outward from each point until no unsearched cell could hold a
+/// nearer triangle.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "grid cells of a body a few hundred mm across"
+)]
+fn farthest_from(points: &[V3], positions: &[V3], triangles: &[[u32; 3]], cell: f64) -> f64 {
+    use std::collections::HashMap;
+    let key = |p: V3| p.map(|c| (c / cell).floor() as i64);
+    let mut grid: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
+    for (i, t) in triangles.iter().enumerate() {
+        let corners = t.map(|v| positions[v as usize]);
+        let (lo, hi) = (
+            key([0, 1, 2].map(|a| corners.iter().map(|c| c[a]).fold(f64::INFINITY, f64::min))),
+            key([0, 1, 2].map(|a| corners.iter().map(|c| c[a]).fold(f64::NEG_INFINITY, f64::max))),
+        );
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    grid.entry([x, y, z]).or_default().push(i);
+                }
+            }
+        }
+    }
+    let near = |p: V3| -> f64 {
+        let at = key(p);
+        let mut best = f64::INFINITY;
+        for r in 0_i64..1000 {
+            for x in -r..=r {
+                for y in -r..=r {
+                    for z in -r..=r {
+                        if x.abs().max(y.abs()).max(z.abs()) != r {
+                            continue;
+                        }
+                        for &i in grid.get(&[at[0] + x, at[1] + y, at[2] + z]).into_iter().flatten() {
+                            let [a, b, c] = triangles[i].map(|v| positions[v as usize]);
+                            let q = sx_geom::hollow::closest_point_on_triangle(p, a, b, c);
+                            best = best.min(vec3::len(vec3::sub(q, p)));
+                        }
+                    }
+                }
+            }
+            // any triangle not yet searched is more than r cells away
+            if best <= r as f64 * cell {
+                break;
+            }
+        }
+        best
+    };
+    points.iter().map(|&p| near(p)).fold(0.0, f64::max)
+}
+
+/// Whether the mesh loft is the reference an exact loft of `profiles` is held to. The mesh loft flattens every
+/// section into a ring of points and joins the rings point for point by count. Where a section is straight lines
+/// alone, or one whole circle or ellipse, that keeps each corner on the corners of the sections beside it (or there
+/// is no corner), so its sides are the loft's own. Where a section mixes corners with curves, the curves flatten to
+/// different counts on different sections and the mesh loft joins a corner of one section to a point along the curve
+/// of the next, so its side leans off the corners between sections. There the exact loft is held to the drawing: the
+/// sections as drawn at their stations, and its corner rails, which join the drawn corners as the loft defines them.
+fn mesh_loft_keeps_corners(profiles: &Value) -> bool {
+    profiles.as_array().unwrap().iter().all(|p| {
+        p["loops"].as_array().unwrap().iter().all(|lp| {
+            let kind = lp["type"].as_str().unwrap_or("path");
+            let segments = lp["segments"].as_array().map_or(&[][..], Vec::as_slice);
+            matches!(kind, "circle" | "ellipse") || segments.iter().all(|s| s["type"] == "line")
+        })
+    })
+}
+
+/// The farthest any of `points` is from the edges of a tessellated body, as their polylines.
+fn farthest_from_edges(points: &[V3], body: &sx_brep::Mesh) -> f64 {
+    let segments: Vec<(V3, V3)> = body
+        .edges
+        .iter()
+        .flat_map(|e| {
+            e.points
+                .windows(2)
+                .map(|w| (body.positions[w[0] as usize], body.positions[w[1] as usize]))
+        })
+        .collect();
+    points
+        .iter()
+        .map(|&p| {
+            segments
+                .iter()
+                .map(|&(a, b)| {
+                    let d = vec3::sub(b, a);
+                    let l2 = vec3::dot(d, d);
+                    let f = if l2 > 0.0 {
+                        (vec3::dot(vec3::sub(p, a), d) / l2).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    vec3::len(vec3::sub(vec3::add(a, vec3::scale(d, f)), p))
+                })
+                .fold(f64::INFINITY, f64::min)
+        })
+        .fold(0.0, f64::max)
+}
+
+/// How far the exact body of a loft is from its mesh loft, each way.
+struct Measured {
+    body_to_mesh: f64,
+}
+
+/// Every corner rail of `rails` runs from drawn corner to drawn corner of `sections`, and the body's deck edges lie
+/// on it within 0.01 mm all along it, not only at the sections; says how far, in mm.
+fn corner_rails_checked(name: &str, rails: &Rails, sections: &[Value], body: &sx_brep::Mesh) -> f64 {
+    let mut rail_to_edges = 0.0f64;
+    for piece in &rails.pieces {
+        let rail = &rails.rails[piece.first % rails.rails.len()];
+        for (k, ring) in rails.rings.iter().enumerate() {
+            let at = if k < rail.len() {
+                rail[k][0]
+            } else {
+                rail[k - 1][3]
+            };
+            assert!(
+                ring.corners[piece.first],
+                "{name}: rail {} is no corner on section {}",
+                piece.first,
+                k + 1
+            );
+            assert_eq!(
+                at.map(f64::to_bits),
+                ring.points[piece.first].map(f64::to_bits),
+                "{name}"
+            );
+            let corner = ring.flat[piece.first];
+            let section = &sections[k]["loops"][0];
+            let drawn: Vec<[f64; 2]> = [&section["start"], &section["segments"][0]["to"]]
+                .iter()
+                .map(|v| [v[0].as_f64().unwrap(), v[1].as_f64().unwrap()])
+                .collect();
+            assert!(
+                drawn
+                    .iter()
+                    .any(|d| vec3::len([d[0] - corner[0], d[1] - corner[1], 0.0]) <= 1e-12),
+                "{name}"
+            );
+        }
+        let along: Vec<V3> = rail
+            .iter()
+            .flat_map(|b| (0..64).map(move |i| bezier_at(b, f64::from(i) / 64.0)))
+            .chain(rail.last().map(|b| b[3]))
+            .collect();
+        rail_to_edges = rail_to_edges.max(farthest_from_edges(&along, body));
+    }
+    assert!(rail_to_edges <= sx_brep::DRAWN_MM, "{name}: {rail_to_edges} mm");
+    rail_to_edges
+}
+
+/// The exact loft of `request`, a loft of sections each a straight top and a spline below, checked against its
+/// drawing:
+/// - a solid with its edges on the curves its faces were given;
+/// - each straight piece's side a ruled face (a deck stays flat), each spline piece's side skinned, the ends flat;
+/// - every drawn section within 0.01 mm of the body at its station;
+/// - every corner rail running from drawn corner to drawn corner, and the body's deck edges on those rails within
+///   0.01 mm all along them, not only at the stations.
+///
+/// Says how far the body, the mesh loft and the drawn sections are from each other, and gives the distances to the
+/// mesh loft. Those are held here only where the mesh loft keeps corners ([`mesh_loft_keeps_corners`]).
+fn spline_loft_checked(name: &str, request: &Value) -> Measured {
+    let (profiles, opts) = request_parts(request);
+    let lofted = exact::lofted_through(&profiles, &opts, &Density::default(), exact::MOST_DOUBLINGS)
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+    let rails = &lofted.rails;
+    let size = rails
+        .rings
+        .iter()
+        .flat_map(|r| r.points.iter().flatten())
+        .fold(1.0f64, |m, c| m.max(c.abs()));
+    println!(
+        "EDGES {name}: the edges are {:e} mm from the curves given; drawn sections {:e} mm off at the stations as read \
+         back, after {} doublings",
+        lofted.off_mm, lofted.drawn_mm, lofted.doublings
+    );
+    assert!(lofted.off_mm <= 1e-9 * size, "{name}: {:e} mm", lofted.off_mm);
+    assert!(
+        lofted.drawn_mm <= sx_brep::DRAWN_MM,
+        "{name}: {} mm",
+        lofted.drawn_mm
+    );
+    assert_eq!(lofted.kinds.len(), lofted.parts.len());
+    for (part, kind) in lofted.parts.iter().zip(&lofted.kinds) {
+        let want = match *part {
+            Part::Side(k) if rails.pieces[k].curves.iter().all(|c| *c == Curve::Line) => Kind::Ruled,
+            Part::Side(k) => {
+                assert!(
+                    rails.pieces[k]
+                        .curves
+                        .iter()
+                        .all(|c| matches!(c, Curve::Spline { .. })),
+                    "{name}"
+                );
+                Kind::Skinned
+            }
+            Part::First | Part::Last => Kind::Flat,
+        };
+        assert_eq!(*kind, want, "{name}: {part:?}");
+    }
+    let volume = lofted.body.volume().expect("volume");
+    assert!(volume > 0.0, "{name}: {volume}");
+    // a tessellation fine enough to measure to a hundredth of a millimeter, checked by its volume
+    let body = lofted
+        .body
+        .tessellate(&Tessellation {
+            chord_mm: 1e-4,
+            max_edge_mm: 0.25,
+            ..Tessellation::default()
+        })
+        .expect("a mesh");
+    let tessellated: f64 = body
+        .triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|v| body.positions[v as usize]);
+            vec3::dot(a, vec3::cross(b, c)) / 6.0
+        })
+        .sum();
+    assert!(
+        (tessellated - volume).abs() <= 1e-4 * volume,
+        "{name}: {tessellated} against {volume}"
+    );
+    let cell = 0.5;
+    // every drawn section at its station
+    let sections = request["profiles"].as_array().unwrap();
+    let mut drawn_to_body = 0.0f64;
+    for (k, section) in sections.iter().enumerate() {
+        let off = farthest_from(
+            &drawn_section(section, 256),
+            &body.positions,
+            &body.triangles,
+            cell,
+        );
+        assert!(
+            off <= sx_brep::DRAWN_MM,
+            "{name}: section {} is {off} mm off the body",
+            k + 1
+        );
+        drawn_to_body = drawn_to_body.max(off);
+    }
+    let rail_to_edges = corner_rails_checked(name, rails, sections, &body);
+    let mesh = sketch_loft::loft_with(&profiles, &opts).unwrap();
+    let body_to_mesh = farthest_from(&body.positions, &mesh.positions, &mesh.triangles, cell);
+    let mesh_to_body = farthest_from(&mesh.positions, &body.positions, &body.triangles, cell);
+    let drawn: Vec<V3> = sections.iter().flat_map(|s| drawn_section(s, 256)).collect();
+    let drawn_to_mesh = farthest_from(&drawn, &mesh.positions, &mesh.triangles, cell);
+    println!(
+        "DIST {name}: drawn sections to body {drawn_to_body:.6} mm, corner rails to the body's edges \
+         {rail_to_edges:.6} mm, body to mesh loft {body_to_mesh:.6} mm, mesh loft to body {mesh_to_body:.6} mm, \
+         drawn sections to mesh loft {drawn_to_mesh:.6} mm, volume {volume:.6} mm3"
+    );
+    if mesh_loft_keeps_corners(&request["profiles"]) {
+        assert!(body_to_mesh <= 0.01 && mesh_to_body <= 0.01, "{name}");
+    }
+    Measured { body_to_mesh }
+}
+
+#[test]
+fn d_sections_loft_into_a_solid_held_to_their_drawing() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let mut request = spline_loft("dSections");
+    assert!(!mesh_loft_keeps_corners(&request["profiles"]));
+    let straight = spline_loft_checked("D sections, straight", &request);
+    // A record of the mesh loft missing the corners, as measured on 2026-11-12: it joins station 2's deck corner
+    // (8, 0, 12) to points on station 1's spline, so the body's deck edge, which runs corner to corner, is this far
+    // from it between the stations. A later piece makes the mesh loft keep corners; then this becomes the normal
+    // rule, within 0.01 mm both ways.
+    assert!(
+        (0.70..=0.76).contains(&straight.body_to_mesh),
+        "the mesh loft misses the corners by {} mm, not about 0.729",
+        straight.body_to_mesh
+    );
+    request["smooth"] = json!(true);
+    spline_loft_checked("D sections, smooth", &request);
+}
+
+#[test]
+fn a_hull_of_18_hand_drawn_sections_lofts_into_a_solid_held_to_its_drawing() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let request = spline_loft("hull18");
+    assert!(!mesh_loft_keeps_corners(&request["profiles"]));
+    spline_loft_checked("hull of 18 sections", &request);
+}
+
+#[test]
+fn a_loft_too_coarse_to_hold_its_drawing_is_refused_in_words() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let (profiles, opts) = request_parts(&spline_loft("dSections"));
+    // two rails a piece and no doubling: the spline's skin cuts straight across its bend
+    let coarse = Density {
+        arc_step_deg: 180.0,
+        least: 2,
+    };
+    let start = table::count();
+    assert_eq!(
+        exact::lofted_through(&profiles, &opts, &coarse, 0)
+            .expect_err("a refusal")
+            .to_string(),
+        "loft: the exact solid came out more than 0.01 mm from a drawn section"
+    );
+    assert_eq!(table::count(), start);
+    // allowed to double, the same rails come close enough
+    let doubled = exact::lofted_through(&profiles, &opts, &coarse, 6).expect("doubled until it holds");
+    assert!(doubled.doublings > 0 && doubled.drawn_mm <= sx_brep::DRAWN_MM);
 }

@@ -630,7 +630,8 @@ fn drop_small_components(m: &mut TriMesh, min_volume: f64) {
     *m = out;
 }
 
-pub(crate) fn closest_point_on_triangle(p: V3, a: V3, b: V3, c: V3) -> V3 {
+/// The point of the triangle `a`, `b`, `c` nearest `p`.
+pub fn closest_point_on_triangle(p: V3, a: V3, b: V3, c: V3) -> V3 {
     let (ab, ac, ap) = (vec3::sub(b, a), vec3::sub(c, a), vec3::sub(p, a));
     let (d1, d2) = (vec3::dot(ab, ap), vec3::dot(ac, ap));
     if d1 <= 0.0 && d2 <= 0.0 {
