@@ -69,7 +69,7 @@ import { PickRings, type PickRing } from './pick-rings'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, freeNdc, NO_INSETS, PoseWatch, reducedMotion, type Insets } from './camera'
 import { BASELINE_LOOK, lookProblems, type ViewportLook } from './look'
-import { cadLook, edgeLook, MaterialCache, setEdgeResolution, setMaterialLook, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
+import { cadLook, edgeLook, isCad, MaterialCache, setEdgeResolution, setMaterialLook, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
 import { buildObject, disposeObject, sharedFinal, wideEdges, type AsyncPartBuild, type ObjectEntry, type PartEntry, type SharedParts } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
@@ -1075,7 +1075,7 @@ class ViewportImpl implements Viewport {
     this.stage.bakePendingContact()
     this.stage.placeViewLights(this.camera)
     // the handles draw over the finished picture, so their contrast colors reach the screen untouched by the grade
-    this.pipeline.render(veilFrame ? this.veilScene : this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, danger, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++, overlay: veilFrame ? [] : this.handleGroups })
+    this.pipeline.render(veilFrame ? this.veilScene : this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, danger, silhouette: isCad(this.renderMode) && this.mode === 'prepare', frameIndex: this.frameIdx++, overlay: veilFrame ? [] : this.handleGroups })
     // the new decor holds its programs now, so what it replaced can go without them being compiled again
     this.stage.releaseRetired()
     // the bare backdrop is in the drawing buffer now: it stays over the view as a still, and the scene draws beneath
@@ -1490,7 +1490,7 @@ class ViewportImpl implements Viewport {
         kept++
         continue
       }
-      const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : this.renderMode === 'cad' ? sh.edgeCad : sh.edgeDark, this.asyncBuild(obj), this.sharedParts)
+      const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : isCad(this.renderMode) ? sh.edgeCad : sh.edgeDark, this.asyncBuild(obj), this.sharedParts)
       this.builtFrom.set(obj.id, obj.parts.map((p): BuiltArrays => [p.positions, p.indices, p.normals]))
       this.objects.set(obj.id, entry)
       this.stage.objectsRoot.add(entry.group)

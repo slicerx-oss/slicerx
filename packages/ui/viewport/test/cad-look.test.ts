@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Model's CAD look: every part takes one neutral gray with dark feature edges, drawn even in the shaded style; Slice's
-// looks keep the filament colors and their edges only in the edges style.
+// looks keep the filament colors and their edges only in the edges style. mimir's CAD look is the same look with each
+// part in its filament color.
 import { describe, expect, it } from 'vitest'
 import { BoxGeometry, Color, type MeshPhysicalMaterial } from 'three'
-import { CAD_EDGE_PX, cadLook, edgeLook, MaterialCache, sharedMaterials } from '../src/materials'
+import { CAD_EDGE_PX, cadLook, edgeLook, isCad, MaterialCache, setMaterialLook, sharedMaterials } from '../src/materials'
+import { BASELINE_LOOK } from '../src/look'
 import { buildObject, wideEdges } from '../src/model'
 
 describe('the CAD look', () => {
@@ -19,6 +21,52 @@ describe('the CAD look', () => {
     expect(Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b)).toBeLessThan(0.08)
     // Slice's studio look keeps the filament's color
     expect(cache.get('studio', { color: '#ff0000', finish: 'basic' })).not.toBe(a)
+  })
+
+  it('in filament colors, draws each part in its own color with the CAD finish, one material per color', () => {
+    const cache = new MaterialCache()
+    const a = cache.get('cadColor', { color: '#c0392b', finish: 'silk' }) as MeshPhysicalMaterial
+    const b = cache.get('cadColor', { color: '#2e86c1', finish: 'basic' }) as MeshPhysicalMaterial
+    const shared = sharedMaterials().cad
+    expect(a).not.toBe(b)
+    expect(a).not.toBe(shared)
+    // the same color is the same material, whatever the finish: the CAD look has one finish
+    expect(cache.get('cadColor', { color: '#c0392b', finish: 'matte' })).toBe(a)
+    expect('#' + a.color.getHexString()).toBe('#c0392b')
+    expect('#' + b.color.getHexString()).toBe('#2e86c1')
+    for (const m of [a, b]) {
+      expect(m.roughness).toBe(shared.roughness)
+      expect(m.clearcoat).toBe(shared.clearcoat)
+      expect(m.envMapIntensity).toBe(shared.envMapIntensity)
+      expect(m.polygonOffset).toBe(true)
+    }
+    // the gray look stays one material for every color
+    expect(cache.get('cad', { color: '#c0392b', finish: 'basic' })).toBe(shared)
+    expect(cache.get('studio', { color: '#c0392b', finish: 'basic' })).not.toBe(a)
+    // both draw the CAD edges and outline
+    expect(isCad('cadColor')).toBe(true)
+    expect(isCad('cad')).toBe(true)
+    expect(isCad('studio')).toBe(false)
+    expect(edgeLook('cadColor', 'shaded')).toEqual({ edge: 'cad', visible: true })
+    expect(edgeLook('cadColor', 'wireframe').visible).toBe(false)
+    cache.dispose()
+  })
+
+  it('in filament colors, keeps each part on the CAD finish when a look changes it', () => {
+    const cache = new MaterialCache()
+    const m = cache.get('cadColor', { color: '#7d3c98', finish: 'basic' }) as MeshPhysicalMaterial
+    const look = structuredClone(BASELINE_LOOK)
+    look.materials.cad.roughness = 0.81
+    look.materials.cad.clearcoat = 0.05
+    setMaterialLook(look, '#2f3241', null)
+    try {
+      expect(m.roughness).toBe(0.81)
+      expect(m.clearcoat).toBe(0.05)
+      expect('#' + m.color.getHexString()).toBe('#7d3c98')
+    } finally {
+      setMaterialLook(null, '#2f3241', null)
+      cache.dispose()
+    }
   })
 
   it('draws dark feature edges in every style but wireframe, and Slice only in the edges style', () => {
