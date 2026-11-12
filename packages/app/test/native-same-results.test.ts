@@ -298,7 +298,7 @@ function firstCall(native: CallLog[], wasm: CallLog[]): Difference['call'] | und
     for (const where of ['request', 'reply'] as const) {
       const d = where === 'request' ? firstDifference(n.request, w.request) : firstDifference(n.error ?? n.reply, w.error ?? w.reply)
       if (!d) continue
-      const ulps = typeof d.native === 'number' && typeof d.wasm === 'number' ? ulpsApart(d.native, d.wasm) : undefined
+      const ulps = typeof d.native === 'number' && typeof d.wasm === 'number' && !(Number.isInteger(d.native) && Number.isInteger(d.wasm)) ? ulpsApart(d.native, d.wasm) : undefined
       return { index: i + 1, op: n.op, where, path: d.path, native: shown(d.native), wasm: shown(d.wasm), ...(ulps !== undefined ? { ulps } : {}) }
     }
   }
@@ -413,7 +413,8 @@ function plain(v: unknown): unknown {
 }
 
 const serveBin = process.env['SLICERX_GEOM_SERVE_BIN']
-const serveArgs = JSON.parse(process.env['SLICERX_GEOM_SERVE_ARGS'] ?? '[]') as string[]
+// the desktop app's binary in its engine mode by default: started without it, the binary would open the whole app
+const serveArgs = JSON.parse(process.env['SLICERX_GEOM_SERVE_ARGS'] ?? '["--sx-geom-engine"]') as string[]
 const HELLO = Buffer.from('SXGEOM1\n')
 
 /**
@@ -450,16 +451,23 @@ function processEngine(log: (c: CallLog) => void): NativeEngine {
     w.resolve(frame)
   }
   const start = () => {
-    const c = spawn(serveBin!, serveArgs, { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, SX_GEOM_SERVE_CHILD: 'plain' } })
+    const c = spawn(serveBin!, serveArgs, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, SX_GEOM_SERVE_CHILD: 'plain' } })
     generation++
     held = Buffer.alloc(0)
     hello = false
+    // the end of what the engine wrote to stderr, shown when it ends without being asked to
+    let said = ''
+    c.stderr!.on('data', (d: Buffer) => void (said = (said + d.toString()).slice(-4000)))
     c.stdout!.on('data', (d: Buffer) => {
       held = held.length ? Buffer.concat([held, d]) : d
       take()
     })
-    c.on('exit', (code) => {
-      if (child === c) child = null
+    c.on('exit', (code, signal) => {
+      if (child === c) {
+        child = null
+        console.warn(`the native engine process ended unasked (code ${code}, signal ${signal})${said ? `; its last stderr:
+${said}` : ''}`)
+      }
       waiting?.reject(new EngineEnded(code))
       waiting = null
     })
