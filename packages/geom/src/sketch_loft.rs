@@ -82,11 +82,50 @@ pub fn loft(profiles: &[Profile]) -> Result<TriMesh> {
 
 /// The loft through `profiles` as `opts` asks: smooth sides through the profiles, the last joined back to the first,
 /// or the sides thickened into a shell (which open profiles need).
-#[allow(
-    clippy::too_many_lines,
-    reason = "one pass from the profiles to the mesh, each step named"
-)]
 pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
+    let LinedUp {
+        sections,
+        wrap,
+        open,
+        size,
+    } = lined_up(profiles, opts)?;
+    let count = sections.len();
+    let (rows, spans) = if opts.smooth {
+        smooth_rows(&sections, wrap)?
+    } else {
+        (
+            sections.iter().map(|s| s.ring.clone()).collect(),
+            (0..count).collect(),
+        )
+    };
+    let caps = (!opts.closed && opts.thicken.is_none()).then(|| (&sections[0], &sections[count - 1]));
+    let surface = build_rows(&rows, &[rows[0].len()], &spans, !open, wrap, caps, size)?;
+    if let Some(t) = &opts.thicken {
+        return thicken::thicken(&surface, t);
+    }
+    if (opts.smooth || opts.closed) && crate::boolean::Solid::new(&surface).is_ok_and(|s| s.self_intersects())
+    {
+        return Err(Error::geometry(
+            "loft",
+            "the lofted body runs into itself; space the profiles further apart or make them smaller",
+        ));
+    }
+    Ok(surface)
+}
+
+/// A loft's rings matched point to point and lined up along it, before its sides are made.
+struct LinedUp {
+    sections: Vec<Section>,
+    /// On a closed loft, where the last ring's first point lands on the first ring.
+    wrap: Option<usize>,
+    /// The profiles are open chains.
+    open: bool,
+    /// The largest coordinate of any ring point, at least 1.
+    size: f64,
+}
+
+/// Whether the profiles are open chains, or why they and `opts` make no loft.
+fn checked(profiles: &[Profile], opts: &Options) -> Result<bool> {
     let least = if opts.closed { 3 } else { 2 };
     if profiles.len() < least {
         return Err(Error::invalid(
@@ -122,6 +161,17 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
             "open profiles make a surface; give thicken to make it a solid",
         ));
     }
+    Ok(open)
+}
+
+/// The profiles' rings as the loft's sides join them: matched point to point, wound one way and turned to the least
+/// twist; see [`loft`].
+#[allow(
+    clippy::too_many_lines,
+    reason = "one pass from the profiles to the matched rings, each step named"
+)]
+fn lined_up(profiles: &[Profile], opts: &Options) -> Result<LinedUp> {
+    let open = checked(profiles, opts)?;
     let mut rings = Vec::with_capacity(profiles.len());
     for (k, p) in profiles.iter().enumerate() {
         rings.push((frame_of(p)?, ring_of(k, p)?));
@@ -220,27 +270,12 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
             least_twist(&sections[count - 1], &sections[0])
         }
     });
-    let (rows, spans) = if opts.smooth {
-        smooth_rows(&sections, wrap)?
-    } else {
-        (
-            sections.iter().map(|s| s.ring.clone()).collect(),
-            (0..count).collect(),
-        )
-    };
-    let caps = (!opts.closed && opts.thicken.is_none()).then(|| (&sections[0], &sections[count - 1]));
-    let surface = build_rows(&rows, &[rows[0].len()], &spans, !open, wrap, caps, size)?;
-    if let Some(t) = &opts.thicken {
-        return thicken::thicken(&surface, t);
-    }
-    if (opts.smooth || opts.closed) && crate::boolean::Solid::new(&surface).is_ok_and(|s| s.self_intersects())
-    {
-        return Err(Error::geometry(
-            "loft",
-            "the lofted body runs into itself; space the profiles further apart or make them smaller",
-        ));
-    }
-    Ok(surface)
+    Ok(LinedUp {
+        sections,
+        wrap,
+        open,
+        size,
+    })
 }
 
 /// The way the loft goes at each profile, from the profiles' middles; a `closed` loft runs around.
@@ -1022,13 +1057,9 @@ pub(crate) fn steps(b: &[V3; 4]) -> f64 {
     (most / (8.0 * SMOOTH_TOL_MM)).sqrt().ceil().max(1.0)
 }
 
-/// The rows of a smooth loft and the span each row's strip to the next belongs to. Each ring point follows its own
-/// centripetal Catmull-Rom curve through the matching point of every profile. An open loft's curves are held along the
-/// first profile's axes so they do not dip or bulge past the profiles (`kept_span`), and its ends mirror their
-/// neighbors. A ring (`wrap`, the last ring's start on the first) runs around, its curves as they are: turning about
-/// its middle is its shape, and as few as three profiles of it share a coordinate where its curves must still bow.
-/// Every span is cut into as many rows as its most bent curve needs to stay within the tolerance.
-fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>>, Vec<usize>)> {
+/// The curve each ring point follows over span `s`, from section `s` to the next (on a ring, `wrap`, the last span
+/// runs back to the first section); see [`smooth_rows`].
+fn span_curves(sections: &[Section], wrap: Option<usize>, s: usize) -> Vec<[V3; 4]> {
     let count = sections.len();
     let n = sections[0].ring.len();
     #[allow(
@@ -1052,8 +1083,31 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
             sections[k as usize].ring[i]
         }
     };
-    let spans = if wrap.is_some() { count } else { count - 1 };
     let axes = [sections[0].frame.u, sections[0].frame.v, sections[0].frame.w];
+    #[allow(clippy::cast_possible_wrap, reason = "profile counts are small")]
+    let k = s as isize;
+    (0..n)
+        .map(|i| {
+            let (p0, p1, p2, p3) = (pt(k - 1, i), pt(k, i), pt(k + 1, i), pt(k + 2, i));
+            if wrap.is_some() {
+                span(p0, p1, p2, p3)
+            } else {
+                kept_span(p0, p1, p2, p3, &axes)
+            }
+        })
+        .collect()
+}
+
+/// The rows of a smooth loft and the span each row's strip to the next belongs to. Each ring point follows its own
+/// centripetal Catmull-Rom curve through the matching point of every profile. An open loft's curves are held along the
+/// first profile's axes so they do not dip or bulge past the profiles (`kept_span`), and its ends mirror their
+/// neighbors. A ring (`wrap`, the last ring's start on the first) runs around, its curves as they are: turning about
+/// its middle is its shape, and as few as three profiles of it share a coordinate where its curves must still bow.
+/// Every span is cut into as many rows as its most bent curve needs to stay within the tolerance.
+fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>>, Vec<usize>)> {
+    let count = sections.len();
+    let n = sections[0].ring.len();
+    let spans = if wrap.is_some() { count } else { count - 1 };
     let mut rows = Vec::new();
     let mut of = Vec::new();
     #[allow(
@@ -1061,18 +1115,7 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
         reason = "a ring's spans run around past its last section"
     )]
     for s in 0..spans {
-        #[allow(clippy::cast_possible_wrap, reason = "profile counts are small")]
-        let k = s as isize;
-        let curves: Vec<[V3; 4]> = (0..n)
-            .map(|i| {
-                let (p0, p1, p2, p3) = (pt(k - 1, i), pt(k, i), pt(k + 1, i), pt(k + 2, i));
-                if wrap.is_some() {
-                    span(p0, p1, p2, p3)
-                } else {
-                    kept_span(p0, p1, p2, p3, &axes)
-                }
-            })
-            .collect();
+        let curves = span_curves(sections, wrap, s);
         let most = curves.iter().map(steps).fold(1.0f64, f64::max);
         #[allow(clippy::cast_precision_loss, reason = "a small constant")]
         if most > MAX_SPAN_ROWS as f64 {
