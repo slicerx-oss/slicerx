@@ -46,7 +46,9 @@ it('measures faces in world coordinates and permits readback while a step is bei
   const transform = [...entry.transform]
   transform[12] = 40
   transform[13] = 50
-  set({ plate: [{ ...entry, transform }], historyEdit: { objectId: design } as never })
+  const moved = { ...entry, transform }
+  // a step open for editing, whole: the object as it was before the view rolled back is kept beside it
+  set({ plate: [moved], historyEdit: { objectId: design, index: 0, original: moved } })
   const result = await runCall('geom.measure', { design, a: { at: [40, 50, 8], normal: [0, 0, 1] }, b: { at: [40, 50, 0], normal: [0, 0, -1] } })
   expect(result).toMatchObject({ output: { measurement: { distanceMm: 8 } } })
   expect(JSON.stringify(result)).not.toMatch(/positions|indices/)
