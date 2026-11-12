@@ -2,7 +2,7 @@
 
 Exact solids for SlicerX's modeling tools. Bodies are boundary representations on the SMLib kernel (NVIDIA usd-brep, Apache-2.0), so a hole as deep as the part, a cut flush with a face or a hundred holes in a plate come out as closed solids with exact volumes. `tessellate` turns a body into the welded triangle mesh the rest of SlicerX uses, each triangle labeled with the face it came from.
 
-The kernel's source is not in this repository. `scripts/fetch-smlib.sh` downloads it at the pinned commit, checks its SHA-256, unpacks the kernel and its C API into a cache (`~/.cache/slicerx/smlib/<commit>`, or `SX_SMLIB_CACHE`) and prints the directory. `build.rs` compiles it from there, or from `SX_SMLIB_DIR`. Without it the crate builds a stand-in that answers every call with an error, so `cargo build --workspace` never needs the kernel; `SX_BREP_REQUIRE=1` makes a missing kernel a build error instead.
+The kernel's source is not in this repository. `scripts/fetch-smlib.sh` downloads it at the pinned commit, checks its SHA-256, unpacks the kernel and its C API into a cache (`~/.cache/slicerx/smlib/<commit>`, or `SX_SMLIB_CACHE`) and prints the directory. `build.rs` compiles it from there, or from `SX_SMLIB_DIR`. Without it the crate builds a stand-in that answers every call with an error, so `cargo build --workspace` never needs the kernel; `SX_BREP_REQUIRE=1` makes a missing kernel a build error instead. A build without the `typed` feature needs no C++ compiler either. With it, the `cxx` crate compiles one small C++ file of its own runtime even when the kernel is absent, so that feature needs a C++ compiler in every build.
 
 ```sh
 sh packages/brep/scripts/fetch-smlib.sh
@@ -62,6 +62,32 @@ Eleven kernel routines and all of `SmIntegrator.cpp` cite Numerical Recipes, who
 `sx_brep::call(op, request_json) -> Result<String, String>`, with the operations listed in `src/lib.rs`: `box`, `cylinder`, `primitive`, `extrude`, `boolean`, `subtract`, `cut`, `fillet`, `chamfer`, `push`, `hole`, `info`, `tessellate`, `free` and `count`. Bodies stay in the kernel, named by number, until freed. An op that changes a body makes a new one and leaves its inputs as they were. `KERNEL` says whether the build has the kernel.
 
 The kernel runs on one thread: `cpp/tbb` stands in for the oneTBB headers it includes and runs its loops in order. Calls take a lock.
+
+## Rust types
+
+The `typed` feature (off by default; `sx-geom`'s `brep` feature turns it on) adds the kernel as Rust values beside the JSON call. They reach the kernel's own API through a `cxx` bridge, with no JSON and no body table in between.
+
+```rust
+use sx_brep::{Body, Tessellation};
+
+let body = Body::cylinder([0.0, 0.0, 0.0], 10.0, 20.0)?;
+let mesh = body.tessellate(&Tessellation::default())?;
+```
+
+- `Body` owns its kernel solid and frees it when dropped. `Body::cuboid`, `cylinder`, `cone` and `sphere` make one. `volume`, `bounds`, `faces` and `edges` read it.
+- `Face` and `Edge` borrow their body, so they cannot outlive it. A face gives its `Surface`: the kernel's own type, with exact parameters for a plane, cylinder, cone, sphere and torus, and the kind alone for the rest. An edge gives its faces, its `Curve` kind, whether it is tangent or sharp, and its ends.
+- `Body::tessellate` takes a chord, a curve angle, a surface angle, a largest edge and an aspect ratio, and returns a `Mesh`: the kernel's own shared vertices (nothing is welded by rounding), the triangles, the face of each, the surface normal at each triangle corner, the surface of every face, and every edge with its two faces, curve kind, tangent or sharp, and its points as indices into the positions. A triangle whose kernel normal is missing, not finite or against its winding at any corner has no normals, and neither has a triangle at a cone's tip, where the surface has no single normal. The kernel's mesh does not say which edge a triangle side lies on, so an edge's points are found from the mesh itself: where triangles of its two faces meet, or along a seam where the kernel keeps two normal records for one vertex of a face.
+- `Error` says what went wrong in words: an input refused before the kernel was asked, the kernel's status, a result that is not a solid, or the faces that failed to tessellate.
+
+Every body is checked as it is made. Inputs are refused first (a radius of 0, a size that is not a number), since the kernel accepts some of them: it reports success for a sphere of radius -1. The result is then read back, and a body that is not closed, not one manifold solid, or has no positive volume is dropped and refused.
+
+All `unsafe` code of the feature is in `src/kernel.rs`, next to the bridge. `cpp/sx_kernel.h` gives the bridge the names it needs and checks at compile time the sizes, field offsets and type codes the Rust side relies on. Neither holds modeling code. The typed calls take the same lock as `call`, and a body stays on the thread that made it (it is neither `Send` nor `Sync`).
+
+Without the kernel's source the types are still there, and every way to make a body answers `Error::NoKernel`.
+
+```sh
+SX_BREP_REQUIRE=1 cargo test -p sx-brep --release --features typed
+```
 
 ## WebAssembly
 
