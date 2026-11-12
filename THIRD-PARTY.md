@@ -25,6 +25,7 @@ Exact solids for the modeling tools come from SMLib and its C API, SM_API, by NV
 | Crate | License | Used for |
 | --- | --- | --- |
 | manifold-rust 0.15.0 | Apache-2.0 | Mesh booleans in sx-geom |
+| cxx 1.0.205 (with cxxbridge-macro, cxxbridge-flags and link-cplusplus; cxx-build at build time) | MIT or Apache-2.0 | Calling the SMLib kernel's C++ from Rust in sx-brep |
 | spade 2.15.1 (with robust, smallvec, hashbrown and num-traits) | MIT or Apache-2.0 | Constrained Delaunay triangulation of flat faces in sx-geom (remesh.rs) |
 | read-fonts 0.44.0 (with font-types 0.12.5 and bytemuck) | MIT or Apache-2.0 | Reading the font for text solids in sx-geom: its tables and CFF outlines. TrueType outlines are drawn by sx-geom (outline.rs). |
 | png 0.18.1 and zune-jpeg 0.5.15 (with zune-core 0.5.3) | MIT or Apache-2.0; zune-jpeg and zune-core also Zlib | Reading PNG and JPEG textures for paint from a texture in sx-geom (texture/image.rs) |
