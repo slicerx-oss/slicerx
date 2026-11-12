@@ -7,8 +7,8 @@
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { applyPush, pickPushFace } from '../src/cad/push'
-import { addEdge, applyEdges, edgeDistance, edgeParams, sameEdge } from '../src/cad/edges'
-import { edgePreview, filletSketch, pickEdge } from '../src/cad/edge-api'
+import { addEdge, applyEdges, edgeDistance, edgeParams, fitsOf, sameEdge, setLimit, withFits } from '../src/cad/edges'
+import { edgePreview, filletSketch, pickEdge, type EdgePick } from '../src/cad/edge-api'
 import { clearReplayCache, followsOf, stepName } from '@slicerx/cad-history'
 import { runReplay, setParams } from '../src/cad/history/ops'
 import { fromLoops, rectangle, straightCorners, toLoops, type Entity } from '../src/cad/sketch-model'
@@ -17,6 +17,8 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
+
+type V3 = [number, number, number]
 
 useGeomEngine('cad-fillet-replies')
 
@@ -42,6 +44,28 @@ describe('edge picks', () => {
     expect(edgeDistance([5, 3, 0], e1)).toBeCloseTo(3)
     expect(edgeDistance([-4, 3, 0], e1)).toBeCloseTo(5)
     expect(edgeParams('chamfer', [e1], 1, 2)).toEqual({ op: 'edge.chamfer', edges: [e1], distanceMm: 1, distance2Mm: 2 })
+  })
+
+  it('offers the most the whole set takes, not what the last picked edge takes alone', () => {
+    // a straight side of a rounded box holds a 6 mm round alone; its loop, with the 3 mm corners, holds 3 mm
+    const corner = { a: [0, 0, 0] as V3, b: [0, 5, 0] as V3, face: [0, 0, 1] as V3 }
+    const pick = (edge: typeof e1, max: number): EdgePick => ({
+      edge, lengthMm: 10, faces: [], dihedralDeg: 90, convex: true, supported: true,
+      maxDistanceMm: [max, max], maxRadiusMm: max, chainMaxDistanceMm: [max, max], chainMaxRadiusMm: max,
+      loopMaxDistanceMm: [2.5, 3], loopMaxRadiusMm: 3, chain: [edge], loop: [{ edge: e1, supported: true }, { edge: corner, supported: true }],
+    })
+    const side = pick(e1, 6)
+    let fits = withFits([], fitsOf(side, false))
+    expect(setLimit('fillet', [e1], fits)).toBe(6)
+    // Whole loop holds every edge of it to the loop's limit, the side picked on its own before included
+    fits = withFits(fits, fitsOf(side, true))
+    expect(setLimit('fillet', [e1, corner], fits)).toBe(3)
+    expect(setLimit('chamfer', [e1, corner], fits)).toBe(2.5)
+    fits = withFits(fits, fitsOf(pick(e2, 8), false))
+    expect(setLimit('fillet', [e1, corner, e2], fits)).toBe(3)
+    // an edge taken off the set no longer limits it, and a set opened on a step has nothing to offer
+    expect(setLimit('fillet', [e2], fits)).toBe(8)
+    expect(setLimit('fillet', [e1], [])).toBeNull()
   })
 })
 

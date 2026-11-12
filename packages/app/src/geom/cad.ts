@@ -406,6 +406,12 @@ export interface EdgePick {
   /** The widest bevel that fits on each face, measured on the face from the edge. */
   maxDistanceMm: [number, number]
   maxRadiusMm: number
+  /** The largest bevel and round every edge of the chain takes, as the ops enforce on the chain together. */
+  chainMaxDistanceMm: [number, number]
+  chainMaxRadiusMm: number
+  /** The same over every supported edge of the loop. */
+  loopMaxDistanceMm: [number, number]
+  loopMaxRadiusMm: number
   /** This edge and the edges continuing it tangentially, in order. */
   chain: EdgeRef[]
   /** Every edge around the picked face's ring holding this edge, starting with it. */
