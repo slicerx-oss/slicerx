@@ -224,6 +224,13 @@ function flaredSection(): [number, number][] {
   return [[-2, 0], [2, 0], ...top, [-7, 5]]
 }
 
+/** A band above flaredSection's cut, `lift` mm over it: its bottom the cut's own strips, flaring out to 18 mm 3 mm up. */
+function bandAbove(lift: number): [number, number][] {
+  const bottom: [number, number][] = []
+  for (let y = -7; y <= 7 + 1e-9; y += 0.1) bottom.push([Math.round(y * 10) / 10, 5 + lift])
+  return [...bottom, [9, 8 + lift], [-9, 8 + lift]]
+}
+
 describe('the thinnest wall at a sharp edge or point', () => {
   it('a body cut flat at a band line, flaring out to the cut, reads its body, and its knife rim only as a tip', () => {
     // the top's rays near each rim meet the flared side a hair under it, as in a lofted body split at a band line that read
@@ -233,6 +240,22 @@ describe('the thinnest wall at a sharp edge or point', () => {
     expect(r.tip!.mm).toBeLessThan(0.8)
     expect(Math.abs(r.tip!.at[1])).toBeGreaterThan(6.2)
     expect(r.tip!.at[2]).toBeCloseTo(5, 1)
+  })
+
+  it('a rim at a cut shared with a neighboring part reads as wall, as two bands of one body do; apart, it stays a tip', () => {
+    // the flared body above with a band above it: the band's bottom is the body's cut face, so the two print as one body
+    // there and the rim is as thin as it reads (owner, 2026-11-12)
+    const lower = prism(flaredSection(), 40)
+    const upper = prism(bandAbove(0), 40)
+    const alone = minWall([lower])
+    expect(alone.mm!).toBeGreaterThanOrEqual(0.8)
+    const banded = minWall([lower, upper])
+    expect(banded.mm!).toBeLessThan(0.8)
+    expect(banded.mm!).toBeLessThanOrEqual(alone.tip!.mm + 1e-9)
+    // a band 1 mm above the cut shares no face with it: the rim stays a tip
+    const lifted = minWall([lower, prism(bandAbove(1), 40)])
+    expect(lifted.mm!).toBeGreaterThanOrEqual(0.8)
+    expect(lifted.tip!.mm).toBeLessThan(0.8)
   })
 
   it('a cone coming to a point reads its body, and the point only as a tip', () => {
