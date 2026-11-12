@@ -9,7 +9,7 @@
 )]
 
 use crate::error::{Error, Result};
-use crate::stitch::Sheet;
+use crate::stitch::{Boundary, Path, Sheet};
 use crate::values::{Params, Polygons, Shape, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -38,6 +38,10 @@ pub(crate) fn cone(_base: Vec3, _base_radius: f64, _top_radius: f64, _height: f6
 }
 
 pub(crate) fn sphere(_center: Vec3, _radius: f64) -> Result<Solid> {
+    Err(Error::NoKernel)
+}
+
+pub(crate) fn skin_boundaries(_rails: &[Path]) -> Result<Vec<Boundary>> {
     Err(Error::NoKernel)
 }
 
