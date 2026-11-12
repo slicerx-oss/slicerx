@@ -559,12 +559,15 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
+  const STEPS_TEXT = 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.'
   const steps = defineTool({
     name: 'design.steps',
     version: '1.3.0',
     source: 'command',
     permission: 'read',
-    description: 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed. A loft step lists its stations front to back, and the answer then carries shapeWords: what people say about a lofted body\'s shape and the section edit that answers each.',
+    // a local model gets the steps without the loft stations' words, which only the cloud follow-up guidance uses
+    description: `${STEPS_TEXT} A loft step lists its stations front to back, and the answer then carries shapeWords: what people say about a lofted body's shape and the section edit that answers each.`,
+    localDescription: STEPS_TEXT,
     input: z.object({ design: designArg }),
     async run(i) {
       const d = designs.get(i.design)
