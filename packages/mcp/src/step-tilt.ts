@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // design.edit_step's tilt: what an extrude, a loft or an added part (a post, a cylinder) made leans one way about its
-// foot, kept on the step (Step.tilt) so the timeline shows the same step edited. The steps built on it (standing on
-// its upper half) lean with it about its foot, in the same edit; one that a turn cannot carry (a box cut, a band of
-// paint, a rounded edge) refuses the lean by name. Before it is kept, what the leaning steps make alone, with each copy
+// foot (each separate piece of an added part about its own), kept on the step (Step.tilt) so the timeline shows the
+// same step edited. The steps built on it (standing on its upper half) lean with it about its foot, in the same edit;
+// one that a turn cannot carry (a box cut, a band of paint, a rounded edge) refuses the lean by name. Before it is kept, what the leaning steps make alone, with each copy
 // a pattern of them makes, is measured against what each other step makes alone with its copies: a lean that pushes
 // one of them into another step's shape, or lifts it off everything it stood on, is refused with that step by name.
-import { direction, invert, multiply, partFoot, replayHistory, stepCopyMoves, stepName, tiltFoot, withTilt, type Design, type DesignHost, type HistoryMesh, type Step, type StepParams, type StepTilt, type Vec3 } from '@slicerx/cad-history'
+import { direction, invert, multiply, nearestFoot, partFeet, replayHistory, stepCopyMoves, stepName, tiltFoot, withTilt, type Design, type DesignHost, type HistoryMesh, type Step, type StepParams, type StepTilt, type Vec3 } from '@slicerx/cad-history'
 import { z } from 'zod'
 
 export const TILT_TOWARD = ['x', '-x', 'y', '-y'] as const
@@ -156,14 +156,14 @@ export async function carriedSteps(host: DesignHost, d: Design, k: number, now: 
   const up0 = (now.tilt ?? was.tilt)?.up
   if (!up0) return []
   // steps an earlier lean of this one carried turn about one of its feet: they follow the new lean, or stand up with it
-  const feet0: Vec3[] = (was.params.op === 'parts.add' ? was.params.parts.map((p) => partFoot(p, up0)) : [tiltFoot(was.params, up0)]).filter((f): f is Vec3 => f !== null)
+  const feet0: Vec3[] = was.params.op === 'parts.add' ? was.params.parts.flatMap((p) => partFeet(p, up0)) : [tiltFoot(was.params, up0)].filter((f): f is Vec3 => f !== null)
   const carriedBefore = (x: Step): boolean => !!x.tilt?.about && feet0.some((f) => Math.hypot(f[0] - x.tilt!.about![0], f[1] - x.tilt!.about![1], f[2] - x.tilt!.about![2]) < 1e-6)
   const before: Leaning[] = []
   for (let j = k + 1; j < all.length; j++) {
     const x = all[j]!
     if (!carriedBefore(x)) continue
     const { tilt: _t, ...upright } = x
-    before.push({ k: j, was: x, now: now.tilt ? { ...x, tilt: { ...now.tilt, about: x.tilt!.about! } } : upright })
+    before.push({ k: j, was: x, now: now.tilt ? { ...x, tilt: { ...now.tilt, about: x.tilt!.about!, ...(x.tilt!.feet ? { feet: x.tilt!.feet } : {}) } } : upright })
   }
   if (!now.tilt) return before
   const base = await alone(host, was, [])
@@ -185,12 +185,14 @@ export async function carriedSteps(host: DesignHost, d: Design, k: number, now: 
     const [lo, hi] = height(b)
     return { body: b, mid: (lo + hi) / 2, box: boxOf(b) }
   })
-  // the foot each carried step turns about: step k's own, or the foot of the added part of it nearest the step
-  const feet: Vec3[] = (was.params.op === 'parts.add' ? was.params.parts.map((p) => partFoot(p, up)) : [tiltFoot(was.params, up)]).filter((f): f is Vec3 => f !== null)
+  // the foot each carried step turns about: step k's own, or of the separate pieces of its added parts (each leans
+  // about its own foot) the one under what it stood on, nearest the step
+  const feet: Vec3[] = was.params.op === 'parts.add' ? was.params.parts.flatMap((p) => partFeet(p, up)) : [tiltFoot(was.params, up)].filter((f): f is Vec3 => f !== null)
   if (!feet.length) return []
-  const footFor = (b: Box): Vec3 => {
-    const c: Vec3 = [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2, b[0][2]]
-    return feet.reduce((a, f) => (Math.hypot(f[0] - c[0], f[1] - c[1]) < Math.hypot(a[0] - c[0], a[1] - c[1]) ? f : a))
+  const footFor = (on: Box, mine: Box): Vec3 => {
+    const under = feet.filter((f) => near(spot(f), on, 0.05))
+    const c: Vec3 = [(mine[0][0] + mine[1][0]) / 2, (mine[0][1] + mine[1][1]) / 2, (mine[0][2] + mine[1][2]) / 2]
+    return nearestFoot(under.length ? under : feet, c, up)!
   }
   const out: Leaning[] = [...before]
   for (let j = k + 1; j < all.length; j++) {
@@ -200,17 +202,19 @@ export async function carriedSteps(host: DesignHost, d: Design, k: number, now: 
     if (SOLID.has(x.params.op) && !isCut(x)) {
       const bodies = await alone(host, x, [])
       if (!bodies?.length) continue
-      let on: Box | null = null
+      let on: { holder: Box; mine: Box } | null = null
       for (const b of bodies) {
         const [lo] = height(b)
         for (const h of holders) {
           if (lo < h.mid || !near(boxOf(b), h.box, 0.05)) continue
-          if ((await meet(host, b, h.body)).touch) on = h.box
+          if ((await meet(host, b, h.body)).touch) on = { holder: h.box, mine: boxOf(b) }
         }
       }
       if (!on) continue
       if (x.tilt) return `tilt: step ${j + 1}, ${stepName(x)}, stands on it and leans on its own; stand it upright first, or lean it with its own step`
-      out.push({ k: j, was: x, now: { ...x, tilt: { ...now.tilt!, about: footFor(on) } } })
+      // an added part carried by separate pieces: each of its pieces turns about the foot it stands over
+      const each = x.params.op === 'parts.add' && feet.length > 1 ? { feet } : {}
+      out.push({ k: j, was: x, now: { ...x, tilt: { ...now.tilt!, about: footFor(on.holder, on.mine), ...each } } })
       for (const b of bodies) {
         const [lo, hi] = height(b)
         holders.push({ body: b, mid: (lo + hi) / 2, box: boxOf(b) })
