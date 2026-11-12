@@ -32,6 +32,7 @@ import { isGeomStuckFinal } from '@slicerx/contracts/geom-limits'
 import { conversationFileBytes, modelFiles } from './attach'
 import { Channel } from './channel'
 import { plainEngine } from './engine-words'
+import { asksSheet } from './sheet-ask'
 import { ASSISTANT_NAME } from './name'
 import { decide, normalizePolicy, policyMayGrant } from './gate'
 import { EMPTY_KB_INDEX, createKnowledgeBase, type KbSkill, type KnowledgeBase } from './kb/kb'
@@ -722,8 +723,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Sessions whose sizes must fit something: the last new part's sheet had fits. Their plan waits for the person's Go;
   // any other plan at its default size goes straight through.
   const fitSizes = new Set<string>()
+  // Sessions whose message this turn asked to see the sheet, the sizes or the drawing (asksSheet): a sheet then waits
+  const sheetAskedIn = new Set<string>()
   // The built design each session's run follows up on (a follow-up turn), while that run goes: a build into it is no new
-  // part, and no sheet in it waits on the person
+  // part
   const followed = new Map<string, string>()
   // Sessions whose approved plan (design.plan) has pieces that print assembled and move, until that part's building
   // starts: their sheets get the fit rule's gaps. The value is whether the plan's part has started its design yet, so a
@@ -1246,11 +1249,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           face(sessionId, -1)
           reject(new Error('Run canceled.'))
         }
-        // a sheet whose sizes must fit something, or one for pieces that print assembled and move, waits for the person;
-        // any other, and every sheet in a follow-up on a built design, shows and goes ahead with its sizes at once. A sheet
-        // of a part already built (design) waits, follow-up or not: it builds nothing new and is there for the person to
-        // read and edit over its drawing. A new part's sheet says whether its sizes must fit.
-        const auto = !sheet.design && (followed.has(sessionId) || (draft.fits !== true && !printInPlace.has(sessionId)))
+        // a sheet waits for the person when they asked this turn to see the sheet, the sizes or the drawing, when a size
+        // on it must fit something, or for pieces that print assembled and move; any other, a follow-up's or a new part's,
+        // a built design's or not, shows and goes ahead with its sizes at once. A new part's sheet says whether its sizes
+        // must fit.
+        const auto = !sheetAskedIn.has(sessionId) && draft.fits !== true && !printInPlace.has(sessionId)
         if (!sheet.design) {
           if (draft.fits === true) fitSizes.add(sessionId)
           else fitSizes.delete(sessionId)
@@ -2020,6 +2023,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     },
     run(sessionId: string, message: string, runOpts: { signal?: AbortSignal; context?: PilotContext; attachments?: PilotAttachment[] } = {}): AsyncIterable<PilotEvent> {
       const signal = runOpts.signal ?? new AbortController().signal
+      // this turn's words only: an ask to see a sheet holds for the turn that asked
+      if (asksSheet(message)) sheetAskedIn.add(sessionId)
+      else sheetAskedIn.delete(sessionId)
       // Without a machine from the caller, the open project's printer, filament and nozzle stand in.
       const given: PilotContext = runOpts.context ?? {}
       const machine = given.machine ? undefined : opts.project?.()?.machine()
