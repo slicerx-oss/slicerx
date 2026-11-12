@@ -37,6 +37,8 @@ type PlanToolInput = z.infer<typeof PlanToolInputSchema>
 export interface PlanAnswer {
   planId: string
   accepted: boolean
+  /** Approved as shown with nobody asked: a part at its default size that fits nothing the person has. */
+  auto?: true
   /** The plan with the person's edits, when they changed anything before Go, or when the card raised a size. */
   edits?: PartPlan
   /** For an approved plan with printInPlace: the smallest gaps moving pieces need on this printer, per side. */
@@ -244,11 +246,11 @@ export function createCardPlans(plans: PlanRegistry) {
   function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile; designs?: () => readonly { id: string; name: string; parts: readonly unknown[] }[] } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.5.0',
+      version: '1.6.0',
       source: 'command',
       permission: 'read',
       description:
-        `Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size; a thing made of parts in different colors, such as a ship or a rocket, is planned assembled as it looks finished, one part per color, with the overall size of the whole, never as pieces laid apart unless the person asked for that), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. A size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless they print in place, with the bore it gives around a pin; a wall or pin under two nozzle lines; a hole under the nozzle) is raised on the card with a line saying why. A plan with a hinge or a pin piece says whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption); one that says neither, or both, is refused. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, the edited plan when they changed anything or a size was raised (build from that), and raised, each size raised from what to what. Not accepted: build nothing and ask what to change. A part of one feature skips the plan. When the build finds an approved size it cannot keep, call it again with amends (the plan's planId) and reason (why, in a sentence the person reads): the person sees the changed sizes beside the old ones, raised to this printer's floors as a new plan's are, and presses Go or Not yet. Sizes only, once per fix round and never after the stop result; Go keeps the planId and its fix round and returns revision and changes, Not yet leaves the plan as approved. A new plan that only changes the sizes of a part already built from an approved plan is refused: fix the part in its design, or change the sizes with amends.`,
+        `Before the first geometry step of a part with two or more features, show the person the plan. It waits for their Go only when a size must fit something (a sheet with fits) or pieces print assembled and move; any other plan, at its default size, is approved as shown at once, so build it then. The plan gives the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size; a thing made of parts in different colors, such as a ship or a rocket, is planned assembled as it looks finished, one part per color, with the overall size of the whole, never as pieces laid apart unless the person asked for that), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. A size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless they print in place, with the bore it gives around a pin; a wall or pin under two nozzle lines; a hole under the nozzle) is raised on the card with a line saying why. A plan with a hinge or a pin piece says whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption); one that says neither, or both, is refused. On a plan that waits, the person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, the edited plan when they changed anything or a size was raised (build from that), and raised, each size raised from what to what. Not accepted: build nothing and ask what to change. A part of one feature skips the plan. When the build finds an approved size it cannot keep, call it again with amends (the plan's planId) and reason (why, in a sentence the person reads): the person sees the changed sizes beside the old ones, raised to this printer's floors as a new plan's are, and presses Go or Not yet. Sizes only, once per fix round and never after the stop result; Go keeps the planId and its fix round and returns revision and changes, Not yet leaves the plan as approved. A new plan that only changes the sizes of a part already built from an approved plan is refused: fix the part in its design, or change the sizes with amends.`,
       localDescription:
         `Before the first geometry step of a part with 2+ features, show the plan and wait: part, units, features in build order with sizes and kind (kinds: count or angle for each such size), overall and holes if known, assumptions, questions. printInPlace pieces: keep the gaps where they meet ${RULE_MIN}; pieces with a gap size print in place unless printInPlace is false. Build from the accepted plan, else build nothing and ask. More: kb.search "modeling tools".`,
       input: PlanToolInputSchema,
@@ -257,11 +259,15 @@ export function createCardPlans(plans: PlanRegistry) {
       args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}${i.amends ? `, amends ${i.amends}` : ''}`,
       async run(i, ctx) {
         if (!ctx.ask) return { ok: false, summary: 'Nobody here can approve a plan' }
+        // a plan waits for the person's Go only when its sizes must fit something (a sheet with fits) or its pieces print
+        // assembled and move; any other, at its default size, shows on its card and is approved as shown at once
+        const waits = (p: PlanInput | PartPlan): boolean => ctx.confirmsPlan?.() === true || printsTogether(p) || (Array.isArray(p.printInPlace) && p.printInPlace.length > 0)
+        const askFor = (p: PlanInput | PartPlan): NonNullable<ToolContext['ask']> => (q) => ctx.ask!(q, waits(p) ? undefined : { auto: q.choices.find((c) => c.id.startsWith(`${PLAN_GO}:`))!.id })
         // sizes under the printer's floors are raised before the card shows, so the plan approved is one the build can
         // match; the gaps are the ones design.check holds the part to
         const limits = runFitLimits(ctx.context, opts.fitProfile?.())
         const floors = planFloors(limits)
-        if (i.amends !== undefined) return amend(i, i.amends, ctx.ask, floors, limits)
+        if (i.amends !== undefined) return amend(i, i.amends, askFor(planById(i.amends) ?? i), floors, limits)
         if (i.reason !== undefined) throw new ToolInputError('reason: give a reason only with amends, to change an approved plan')
         const { amends: _a, reason: _r, ...input } = i
         // a part built from an approved plan is fixed where it is; planning it again would start it over
@@ -281,7 +287,8 @@ export function createCardPlans(plans: PlanRegistry) {
         const plan: PartPlan = printsTogether(input) ? { ...raisedPlan, assumptions: [PRINTS_TOGETHER, ...raisedPlan.assumptions] } : raisedPlan
         const shown = structuredClone(plan)
         remember(plan)
-        const picked = await ctx.ask({
+        const auto = !waits(plan)
+        const picked = await askFor(plan)({
           title: 'Plan',
           question: `Build ${input.part} from this plan?`,
           choices: [
@@ -300,8 +307,8 @@ export function createCardPlans(plans: PlanRegistry) {
         // the next design built is this plan's part
         unbuilt = plan.planId
         const edited = !samePlan(latest, shown)
-        const answer: PlanAnswer = edited || raised.length ? { planId: plan.planId, accepted: true, edits: latest } : { planId: plan.planId, accepted: true }
-        return approved(answer, latest, { edited, raised, floors, limits, said: edited ? 'Approved with changes' : 'Approved as shown' })
+        const answer: PlanAnswer = { ...(edited || raised.length ? { planId: plan.planId, accepted: true, edits: latest } : { planId: plan.planId, accepted: true }), ...(auto ? { auto: true as const } : {}) }
+        return approved(answer, latest, { edited, raised, floors, limits, said: auto ? 'Approved as shown at its default size (it fits nothing the person has, so the card does not wait): build it now, and give its size in the reply; the person changes it after' : edited ? 'Approved with changes' : 'Approved as shown' })
       },
     }) as PilotTool<never>
   }

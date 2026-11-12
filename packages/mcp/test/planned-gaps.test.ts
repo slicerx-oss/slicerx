@@ -84,7 +84,7 @@ describe('design.plan states the gaps moving pieces need', () => {
   const approve = async (sizes: Record<string, number>, printInPlace: string[] | null = null) => {
     const p = plan(sizes, printInPlace)
     const { planId: _, ...input } = p
-    const ctx = { context: { machine: { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 } }, ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as unknown as ToolContext
+    const ctx = { context: { machine: { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 } }, confirmsPlan: () => true, ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as unknown as ToolContext
     return tool().run(input as never, ctx)
   }
 

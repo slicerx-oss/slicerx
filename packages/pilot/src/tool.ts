@@ -92,8 +92,16 @@ export interface ToolContext {
    * Asks the person a question with fixed answers and waits for the answer: the picked choice id, or `ASK_DISMISSED`
    * when they turned the question down, with what they wrote instead in `said`. Absent where nobody can answer.
    */
-  ask?(question: { title: string; question: string; choices: PilotChoice[] }): Promise<AskAnswer>
-  /** Shows a dimension sheet and waits for the person to confirm or edit it; absent where nobody can answer. */
+  ask?(question: { title: string; question: string; choices: PilotChoice[] }, opts?: { auto?: string }): Promise<AskAnswer>
+  /**
+   * Whether this run's sizes must fit something (a sheet with fits), or its plan prints pieces assembled that move: a
+   * plan card then waits for the person's Go. Otherwise a plan at its default size is approved as shown (ask with auto).
+   */
+  confirmsPlan?(): boolean
+  /**
+   * Shows a dimension sheet and waits for the person to confirm or edit it; absent where nobody can answer. A sheet
+   * without fits shows and is confirmed as shown at once.
+   */
   sheet?(sheet: Omit<PilotSheet, 'id'>): Promise<PilotSheetAnswer>
   /** True when a built design with this id is there for a sheet to draw; absent where the host has no plate. */
   sheetDesign?(id: string): boolean
