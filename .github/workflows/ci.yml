@@ -22,6 +22,10 @@ on:
         description: Run the rust test parts on the self-hosted Linux runners as the merge queue does (core-a and core-b, and crates unless RUST_CRATES_ON_PC is false)
         type: boolean
         default: true
+      geom_windows:
+        description: Run the Windows kernel checks (desktop-geom-windows) once on the GPU runners, before GEOM_WINDOWS_LANE is on
+        type: boolean
+        default: false
       rust_parts:
         description: Run the macOS and Windows Rust parts as a push to main does, to validate their split before merging
         type: boolean
@@ -1042,6 +1046,57 @@ jobs:
         run: |
           msg="The desktop build with the native Model engine or its tests failed. This job is advisory and does not block merging."
           echo "::warning title=Native Model engine failed (advisory)::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+
+  # The same kernel checks as desktop-geom on Windows, on the project's GPU runners (label sx-gpu). Rust is one shared
+  # read-only install on that machine (RUSTUP_HOME below, 1.98.1 as rust-toolchain.toml pins, with wasm32 so rustup
+  # never tries to add a target); each runner keeps its own writable CARGO_HOME, kernel source cache and target dir
+  # in its _work folder, outside the workspace, so they stay warm between runs. Every cargo step holds the machine's
+  # heavy lock as an engine hold, so it never runs beside a GPU browser run. Advisory, like desktop-geom. The first run
+  # on each runner is cold (the kernel source fetch and a full build), so its holds are long: that is why the job stays
+  # behind GEOM_WINDOWS_LANE, and why a manual run with geom_windows comes first.
+  desktop-geom-windows:
+    needs: detect
+    if: (github.event_name == 'workflow_dispatch' && inputs.geom_windows) || (needs.detect.outputs.desktop_geom == 'true' && needs.detect.outputs.queued != 'true' && github.event_name != 'merge_group' && vars.GEOM_WINDOWS_LANE == 'true')
+    runs-on: [self-hosted, sx-gpu]
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
+    env:
+      SX_BREP_REQUIRE: '1'
+      RUSTUP_HOME: 'C:\builds\runner-gpu-shared\rustup'
+      RUSTUP_AUTO_INSTALL: '0'
+    steps:
+      - run: git config --global core.longpaths true
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+      - run: git clean -ffdxq -e node_modules
+      - name: Per-runner Rust folders
+        run: |
+          w=$(dirname "$(cygpath "$RUNNER_TEMP")")
+          mkdir -p "$w/cargo-home" "$w/smlib-cache" "$w/geom-target"
+          echo "CARGO_HOME=$(cygpath -w "$w/cargo-home")" >> "$GITHUB_ENV"
+          echo "SX_SMLIB_CACHE=$(cygpath -w "$w/smlib-cache")" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$(cygpath -w "$w/geom-target")" >> "$GITHUB_ENV"
+          echo "/c/builds/runner-gpu-shared/cargo/bin" >> "$GITHUB_PATH"
+      - run: rustc --version && cargo --version
+      - name: Locate the required kernel
+        run: |
+          kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
+          echo "SX_SMLIB_DIR=$(cygpath -w "$kernel")" >> "$GITHUB_ENV"
+      # The shell embeds the frontend when it compiles; a placeholder page is enough to compile and test it.
+      - name: Placeholder frontend
+        run: mkdir -p apps/desktop/dist && echo '<!doctype html><title>ci</title>' > apps/desktop/dist/index.html
+      - run: bash scripts/ci/heavy.sh --class engine timeout 1500 cargo clippy --locked -p slicerx-desktop --features native-geom --all-targets -- -D warnings
+      - run: bash scripts/ci/heavy.sh --class engine timeout 900 cargo test --locked -p slicerx-desktop --features native-geom --bin slicerx geom_host
+      - run: bash scripts/ci/heavy.sh --class engine timeout 900 cargo test --locked -p sx-geom --features brep --test serve --test brep_free
+      - run: bash scripts/ci/heavy.sh --class engine timeout 1500 cargo build --locked -p slicerx-desktop --features native-geom
+      - if: failure()
+        run: |
+          msg="The Windows desktop build with the native Model engine or its tests failed. This job is advisory and does not block merging."
+          echo "::warning title=Native Model engine failed on Windows (advisory)::$msg"
           echo "$msg" >> "$GITHUB_STEP_SUMMARY"
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
