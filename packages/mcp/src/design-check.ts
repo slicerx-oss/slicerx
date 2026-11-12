@@ -537,11 +537,6 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
     const all = [...found, ...surplus].map((f) => f.diameterMm)
     const got = all.length ? `${holeSizes(all)} diameter${notes.length ? ` (${notes.join(', ')})` : ''}` : count === 1 ? 'no hole' : 'no holes'
     const pass = short === 0 && surplus.length === 0 && found.every((f) => Math.abs(f.diameterMm - want) <= HOLE_MM)
-    // a recess (a dent that does not go through) on a curved side reads as no hole: its feature step stands for it
-    if (hole.recess && !pass && !found.length && !surplus.length) {
-      items.push({ name: hole.name, want: `${count === 1 ? '' : `${count} x `}${mm(want)} diameter recess`, got: 'not measured: a recess is checked by its feature step', pass: true, warning: 'not measured as a hole; look over the recesses on the part' })
-      continue
-    }
     items.push({ name: hole.name, want: `${count === 1 ? '' : `${count} x `}${mm(want)} diameter`, got, pass })
   }
   // a plan that lists its holes has no others; one without the list says nothing about holes
