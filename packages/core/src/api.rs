@@ -2200,6 +2200,17 @@ pub fn check_plate_until(
     meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
     asked: &(dyn Fn() -> bool + Sync),
 ) -> Result<crate::collide::check::PlateCheck> {
+    check_plate_counted(req, meshes, asked).map(|(check, _)| check)
+}
+
+/// [`check_plate_until`] with how much work the check did: how many triangles of the objects' surfaces its walks read.
+/// Only a build with debug assertions (the tests') keeps the count; a release build answers 0.
+#[doc(hidden)]
+pub fn check_plate_counted(
+    req: &SliceRequest,
+    meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
+    asked: &(dyn Fn() -> bool + Sync),
+) -> Result<(crate::collide::check::PlateCheck, u64)> {
     use std::sync::atomic::{AtomicBool, Ordering};
     let said = AtomicBool::new(false);
     // `asked` is still read every time, so a caller can count the reads.
@@ -2233,19 +2244,20 @@ pub fn check_plate_until(
         &session,
         zones,
     );
-    let mut out = match model {
-        Some(model) if !session.is_interleaved() => {
+    let (mut out, reads) = match model {
+        Some(mut model) if !session.is_interleaved() => {
             // The settings a slice runs with: the request's, on the session's filament map.
             let mut run = session.mapped_config(&config);
             if !run.variant_sources.is_empty() {
                 let _ = run.to_mut().refresh_variants()?;
             }
-            crate::collide::check::run(&session, model, &run, stop)?
+            let check = crate::collide::check::run(&session, &mut model, &run, stop)?;
+            (check, model.reads())
         }
-        _ => crate::collide::check::PlateCheck::default(),
+        _ => (crate::collide::check::PlateCheck::default(), 0),
     };
     out.micros = timer.micros();
-    Ok(out)
+    Ok((out, reads))
 }
 
 /// Packs every object of a request's plate on the bed ([`PlatePlacement::Arrange`], [`crate::arrange`]) and writes

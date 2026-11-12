@@ -216,9 +216,57 @@ pub(crate) struct Surface {
     /// Per triangle, the first cell it is listed in (`[x, y]` from the surface's corner), so a query over many cells
     /// takes it once.
     first: Vec<[u32; 2]>,
+    /// How many triangles queries have read.
+    reads: Reads,
+}
+
+/// A count of triangle reads ([`Surface::reads`]): the plate check's work, which a test can bound where a clock would
+/// move with the machine's load. Only builds with debug assertions keep it; in the others it is empty and counts
+/// nothing.
+#[derive(Debug, Default)]
+struct Reads(#[cfg(debug_assertions)] std::sync::atomic::AtomicU64);
+
+impl Reads {
+    #[cfg_attr(
+        not(debug_assertions),
+        allow(clippy::unused_self, reason = "the counting build adds to self")
+    )]
+    fn add(&self) {
+        #[cfg(debug_assertions)]
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(debug_assertions)]
+    fn get(&self) -> u64 {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[allow(clippy::unused_self, reason = "the counting build reads the count from self")]
+    fn get(&self) -> u64 {
+        0
+    }
+}
+
+impl Clone for Reads {
+    #[cfg(debug_assertions)]
+    fn clone(&self) -> Self {
+        Self(std::sync::atomic::AtomicU64::new(self.get()))
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn clone(&self) -> Self {
+        Self()
+    }
 }
 
 impl Surface {
+    /// How many triangles queries have read so far ([`Self::tri`]); 0 in a build without debug assertions, which
+    /// keeps no count.
+    pub(crate) fn reads(&self) -> u64 {
+        self.reads.get()
+    }
+
     pub(crate) fn of_object(obj: &PlateObject) -> Self {
         let (mut pts, mut tris) = (Vec::new(), Vec::new());
         let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
@@ -264,6 +312,7 @@ impl Surface {
             cells: Vec::new(),
             boxes: Vec::with_capacity(tris.len()),
             first: Vec::with_capacity(tris.len()),
+            reads: Reads::default(),
         };
         for (i, t) in tris.iter().enumerate() {
             let Some(t3) = out.corners(t) else {
@@ -315,6 +364,7 @@ impl Surface {
 
     /// Triangle `i`'s corners.
     fn tri(&self, i: u32) -> Option<[[f64; 3]; 3]> {
+        self.reads.add();
         self.corners(self.tris.get(i as usize)?)
     }
 

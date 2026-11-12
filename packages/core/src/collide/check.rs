@@ -140,7 +140,7 @@ struct Object<'a> {
 /// says so, the check ends with [`crate::error::Error::Cancelled`] instead of a part of its answer.
 pub(crate) fn run(
     session: &SliceSession,
-    mut model: Model,
+    model: &mut Model,
     config: &PrintConfig,
     stop: &(dyn Fn() -> bool + Sync),
 ) -> crate::error::Result<PlateCheck> {
@@ -179,7 +179,7 @@ pub(crate) fn run(
         offset += sub.plan_count();
         below_top = below_top.max(sub.plate_top());
     }
-    let model = &model;
+    let model = &*model;
     let n = objects.len().min(model.objects.len());
     let kept = objects.get(..n).unwrap_or_default();
     let indexed: Vec<(usize, &Object<'_>)> = kept.iter().enumerate().collect();
