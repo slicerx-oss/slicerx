@@ -837,6 +837,182 @@ fn profiles_that_cannot_be_matched_say_why() {
     );
 }
 
+/// whether every rail of `r` has a twin in `other` once each of its points is passed through `flip`
+fn mirrored(r: &Rails, other: &Rails, flip: impl Fn(V3) -> V3) -> bool {
+    let n = r.rails.len();
+    let same = |a: V3, b: V3| vec3::len(vec3::sub(a, b)) < 1e-6;
+    n == other.rails.len()
+        && (0..n).all(|i| {
+            (0..n).any(|j| {
+                r.rings
+                    .iter()
+                    .zip(&other.rings)
+                    .all(|(g, h)| same(flip(g.points[i]), h.points[j]))
+            })
+        })
+}
+
+fn across_x(p: V3) -> V3 {
+    [-p[0], p[1], p[2]]
+}
+
+fn across_y(p: V3) -> V3 {
+    [p[0], -p[1], p[2]]
+}
+
+/// a profile at `z` turned `deg` about the loft
+fn turned(z: f64, deg: f64, lp: &Value) -> Value {
+    let (s, c) = deg.to_radians().m_sin_cos();
+    json!({
+        "frame": { "origin": [0, 0, z], "normal": [0, 0, 1], "u": [c, s, 0], "v": [-s, c, 0] },
+        "loops": [lp],
+    })
+}
+
+/// The share of the shorter piece beside a corner within which another profile's corner is that corner.
+const SNAP_SHARE: f64 = 0.05;
+
+/// Fails when a rail that starts a piece lies within the snap reach of a ring's own corner without being one of
+/// that ring's own corners: the least width a matched piece may have beside a corner.
+fn no_slivers(r: &Rails) {
+    for (k, g) in r.rings.iter().enumerate() {
+        let n = g.points.len();
+        // how far along the ring each point is
+        let mut at = vec![0.0; n + 1];
+        for i in 0..n {
+            at[i + 1] = at[i] + vec3::len(vec3::sub(g.points[(i + 1) % n], g.points[i]));
+        }
+        let gap = |a: usize, b: usize| {
+            let d = (at[a] - at[b]).abs();
+            d.min(at[n] - d)
+        };
+        let own: Vec<usize> = (0..n).filter(|&i| g.corners[i]).collect();
+        for (c, &i) in own.iter().enumerate() {
+            let m = own.len();
+            let shorter = gap(i, own[(c + 1) % m]).min(gap(i, own[(c + m - 1) % m]));
+            // the ring's chords are a little shorter than its arcs
+            let reach = 0.98 * SNAP_SHARE * shorter;
+            for p in &r.pieces {
+                assert!(
+                    g.corners[p.first] || gap(p.first, i) > reach,
+                    "ring {k}: rail {} is {} from the corner at {i}, within {reach}",
+                    p.first,
+                    gap(p.first, i)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_sharp_corner_takes_the_end_of_a_facing_round() {
+    // the square's corners land 0.66 mm from where the rounds end, within a twentieth of its 24 mm sides
+    let profiles = json!([
+        at(0.0, &square([0.0, 0.0], 24.0)),
+        at(20.0, &rounded(30.0, 20.0, 4.0))
+    ]);
+    let r = rails_of(&profiles, &json!({}));
+    assert_eq!(r.pieces.len(), 8);
+    let own = |k: usize| r.rings[k].corners.iter().filter(|&&c| c).count();
+    assert_eq!((own(0), own(1)), (4, 8));
+    // each round pairs with a stretch of the square's side that ends at its corner
+    let rounds: Vec<&sketch_loft::Piece> = r.pieces.iter().filter(|p| p.curves[1].curved()).collect();
+    assert_eq!(rounds.len(), 4);
+    for p in rounds {
+        assert_eq!(p.curves[0], Curve::Line);
+        let end = (p.first + p.stretches) % r.rings[0].points.len();
+        assert!(r.rings[0].corners[p.first] != r.rings[0].corners[end], "{p:?}");
+    }
+    // no swirl: the rails mirror across both of the shapes' mirror lines
+    assert!(mirrored(&r, &r, across_x) && mirrored(&r, &r, across_y));
+    no_slivers(&r);
+    // the same rails with the rounded rectangle first
+    let back = json!([
+        at(0.0, &rounded(30.0, 20.0, 4.0)),
+        at(20.0, &square([0.0, 0.0], 24.0))
+    ]);
+    let b = rails_of(&back, &json!({}));
+    assert_eq!(b.pieces.len(), 8);
+    assert!(mirrored(&b, &b, across_x) && mirrored(&b, &b, across_y));
+    no_slivers(&b);
+}
+
+#[test]
+fn mirrored_profiles_get_mirrored_rails() {
+    let shape = rounded(30.0, 20.0, 4.0);
+    for deg in [7.0, 20.0, 33.0, 45.0] {
+        let one = json!([at(0.0, &square([0.0, 0.0], 24.0)), turned(20.0, deg, &shape)]);
+        // a rounded rectangle turned the other way is its mirror image
+        let other = json!([at(0.0, &square([0.0, 0.0], 24.0)), turned(20.0, -deg, &shape)]);
+        let (a, b) = (rails_of(&one, &json!({})), rails_of(&other, &json!({})));
+        assert_eq!(a.pieces.len(), b.pieces.len(), "{deg}");
+        assert!(mirrored(&a, &b, across_x), "{deg}");
+        no_slivers(&a);
+    }
+    no_slivers(&rails_of(
+        &json!([
+            at(0.0, &square([0.0, 0.0], 20.0)),
+            at(15.0, &polygon(6, 9.0)),
+            at(30.0, &circle([0.0, 0.0], 14.0)),
+        ]),
+        &json!({}),
+    ));
+}
+
+#[test]
+fn a_sharp_corner_facing_the_middle_of_a_short_round_splits_it_in_half() {
+    // both ends of each 1.57 mm round are as near the square's corner, so neither takes its rail
+    let profiles = json!([
+        at(0.0, &square([0.0, 0.0], 24.0)),
+        at(20.0, &rounded(24.0, 24.0, 1.0))
+    ]);
+    let r = rails_of(&profiles, &json!({}));
+    assert_eq!(r.pieces.len(), 12);
+    let own = |k: usize| r.rings[k].corners.iter().filter(|&&c| c).count();
+    assert_eq!((own(0), own(1)), (4, 8));
+    assert!(mirrored(&r, &r, across_x) && mirrored(&r, &r, across_y));
+    for i in (0..r.rings[0].points.len()).filter(|&i| r.rings[0].corners[i]) {
+        let q = r.rings[1].flat[i];
+        // the square's corner meets the round at its middle, on the diagonal
+        assert!(
+            (q[0].abs() - q[1].abs()).abs() < 1e-6 && !r.rings[1].corners[i],
+            "{q:?}"
+        );
+    }
+    // a round too short to matter still keeps both its ends: the nearer takes the corner's rail
+    let tiny = json!([
+        at(0.0, &square([0.0, 0.0], 24.0)),
+        at(20.0, &rounded(25.0, 24.0, 0.3))
+    ]);
+    let t = rails_of(&tiny, &json!({}));
+    let own = |k: usize| t.rings[k].corners.iter().filter(|&&c| c).count();
+    assert_eq!((t.pieces.len(), own(0), own(1)), (8, 4, 8));
+}
+
+#[test]
+fn a_landmark_keeps_its_rail_from_a_corner_within_reach() {
+    let mark = |mut p: Value, l: [f64; 2]| {
+        p["landmarks"] = json!([l]);
+        p
+    };
+    // the mark sits 0.3 mm along the bottom line from the end of a round, where the square's corner would take that end
+    let profiles = json!([
+        mark(at(0.0, &square([0.0, 0.0], 24.0)), [-12.0, -12.0]),
+        mark(at(20.0, &rounded(30.0, 20.0, 4.0)), [-10.7, -10.0]),
+    ]);
+    let r = rails_of(&profiles, &json!({}));
+    let (sq, rr) = (&r.rings[0], &r.rings[1]);
+    let i = (0..sq.flat.len())
+        .find(|&i| near(sq.flat[i], [-12.0, -12.0]))
+        .unwrap();
+    assert!(near(rr.flat[i], [-10.7, -10.0]) && sq.corners[i] && rr.corners[i]);
+    // the round's end keeps a rail of its own
+    let j = (0..rr.flat.len())
+        .find(|&j| near(rr.flat[j], [-11.0, -10.0]))
+        .unwrap();
+    assert!(rr.corners[j] && !sq.corners[j] && j != i);
+}
+
 /// two matched rings seen from above: each ring, the rails between paired points, and a dot where a piece starts
 fn picture(r: &Rails) -> String {
     use std::fmt::Write as _;

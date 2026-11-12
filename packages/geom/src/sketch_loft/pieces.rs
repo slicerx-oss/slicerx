@@ -7,7 +7,7 @@
 // a corner's place is copied from rail to rail and never worked out twice, so places are compared as they are
 #![allow(clippy::float_cmp)]
 
-use super::{LANDMARK_TOL_MM, MAX_RING, Profile, alongs, centroid, frame_of, landmarked, ring_of};
+use super::{LANDMARK_TOL_MM, MAX_RING, Profile, alongs, frame_of, landmarked, ring_of};
 use crate::error::Error;
 use crate::fm::Fm;
 use crate::sketch::{self, CurveLoop, Loop};
@@ -18,10 +18,22 @@ use std::f64::consts::TAU;
 /// this near a corner of the next is that corner, so no piece (and later no face) comes out thinner than a point marked
 /// by hand could tell apart.
 pub(super) const SAME_PLACE_MM: f64 = LANDMARK_TOL_MM;
-/// The least a matched piece measures along any profile, mm; thinner ones are refused.
+/// The share of the shorter piece beside a profile's own corner within which another profile's corner landing there
+/// is that corner. Without it a sharp corner that lands just beside the end of a facing round makes a sliver piece,
+/// and sliver faces are a hazard for every exact operation that comes after. A 24 mm square against a 30 by 20
+/// rectangle rounded at 4 mm lands its corners 0.661 mm from where the rounds' ends land on it and 0.641 mm from
+/// those ends on the rectangle. The share is taken on every profile that owns one of the two corners, and either
+/// one passing joins them: here the square's 24 mm sides reach 1.2 mm, where the rectangle's 6.28 mm rounds alone
+/// would reach 0.314 mm and join nothing. So a rail leans by at most this share of a piece of the profile that owns
+/// the corner. `SAME_PLACE_MM` stays the least reach.
+const SNAP_SHARE: f64 = 0.05;
+/// The least a matched piece measures along any profile, mm; thinner ones are refused. Also how near two corners'
+/// claims on one rail are a tie.
 const THIN_MM: f64 = 1e-6;
-/// The points each profile is sampled at to find the least twist, evenly along it.
+/// About how many points each profile is sampled at to find the least twist.
 const TWIST_SAMPLES: usize = 360;
+/// The offsets around a profile tried for the least twist before the best is closed in on.
+const TWIST_TURNS: usize = 120;
 
 /// One piece of a profile in its plane, between two ring points.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -321,6 +333,17 @@ impl Outline {
         self.at[self.parts.len()]
     }
 
+    /// 0 with corners, 1 a closed curve that is no circle, 2 a circle.
+    fn roundness(&self) -> u8 {
+        if !self.free {
+            0
+        } else if matches!(self.parts[0].curve, Curve::Arc { .. }) {
+            2
+        } else {
+            1
+        }
+    }
+
     /// The same outline wound the other way, from the same start.
     fn reversed(&self) -> Self {
         Self::new(self.parts.iter().rev().map(Part::reversed).collect())
@@ -360,6 +383,19 @@ impl Outline {
     fn gap(&self, a: f64, b: f64) -> f64 {
         let d = (a - b).rem_euclid(self.total());
         d.min(self.total() - d)
+    }
+
+    /// How near the place `t` another profile's corner is the same place: `SNAP_SHARE` of the shorter piece beside it
+    /// when it is one of this outline's corners, and never less than `SAME_PLACE_MM`.
+    fn reach(&self, t: f64) -> f64 {
+        let n = self.parts.len();
+        let len = |i: usize| self.at[i + 1] - self.at[i];
+        self.corners()
+            .iter()
+            .position(|&c| c == t)
+            .map_or(SAME_PLACE_MM, |i| {
+                SAME_PLACE_MM.max(SNAP_SHARE * len(i).min(len((i + n - 1) % n)))
+            })
     }
 
     /// `t`, or the corner within `SAME_PLACE_MM` of it.
@@ -476,23 +512,41 @@ struct Lined {
     outline: Outline,
     frame: Frame,
     center: V3,
-    /// Its twist samples, each from the center.
-    about: Vec<V3>,
+    /// Its twist samples: where along the outline each is, the share of the outline it stands for, and the point
+    /// from the center.
+    samples: Vec<(f64, f64, V3)>,
 }
 
 impl Lined {
     fn new(outline: Outline, frame: Frame) -> Self {
         let total = outline.total();
-        let pts: Vec<V3> = (0..TWIST_SAMPLES)
-            .map(|i| frame.at(outline.point(total * i as f64 / TWIST_SAMPLES as f64), 0.0))
-            .collect();
-        let center = centroid(&pts);
-        let about = pts.iter().map(|&p| vec3::sub(p, center)).collect();
+        // each piece is sampled evenly about its own middle, so a shape and its mirror image are sampled at
+        // mirrored points wherever each was started
+        let mut samples = Vec::with_capacity(TWIST_SAMPLES + outline.parts.len());
+        for i in 0..outline.parts.len() {
+            let len = outline.at[i + 1] - outline.at[i];
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a share of the sample count"
+            )]
+            let m = ((TWIST_SAMPLES as f64 * len / total).round() as usize).max(1);
+            for j in 0..m {
+                let t = outline.at[i] + len * (j as f64 + 0.5) / m as f64;
+                samples.push((t, len / (m as f64 * total), frame.at(outline.point(t), 0.0)));
+            }
+        }
+        let center = samples
+            .iter()
+            .fold([0.0; 3], |c, &(_, w, p)| vec3::add(c, vec3::scale(p, w)));
+        for sample in &mut samples {
+            sample.2 = vec3::sub(sample.2, center);
+        }
         Self {
             outline,
             frame,
             center,
-            about,
+            samples,
         }
     }
 
@@ -504,8 +558,10 @@ impl Lined {
 
 /// Where `a` and `b` line up with the least twist: a place on each that match. Profiles with as many pieces as each
 /// other, line for line and arc for arc at some turn, match corner to corner at the best such turn. Any others match
-/// by how far along each is, at the offset with the least summed squared distance between their samples, each profile
-/// taken about its own center as the mesh loft takes them.
+/// by how far along each is, at the offset with the least summed squared distance between matching places, each
+/// profile taken about its own center as the mesh loft takes them. Of turns or offsets that twist as little as each
+/// other the first is taken; they are as good as each other only on shapes that repeat, where each gives the same
+/// rails.
 ///
 /// Also says which of the two it was: whether the pieces pair.
 fn least_twist(a: &Lined, b: &Lined) -> ((f64, f64), bool) {
@@ -531,27 +587,44 @@ fn least_twist(a: &Lined, b: &Lined) -> ((f64, f64), bool) {
             return ((oa.at[0], ob.at[s]), true);
         }
     }
-    let m = TWIST_SAMPLES;
-    let cost = |s: usize| -> f64 {
-        (0..m)
-            .map(|i| {
-                let e = vec3::sub(a.about[i], b.about[(i + s) % m]);
-                vec3::dot(e, e)
+    // The samples of the profile with corners are matched to places on the other, found exactly; of two without
+    // corners, the one that is no circle. A circle has no place its samples could start from that means anything.
+    let (from, to, way) = if oa.roundness() <= ob.roundness() {
+        (a, b, 1.0)
+    } else {
+        (b, a, -1.0)
+    };
+    // how far apart the profiles are with `b` the share `turn` of the way around ahead of `a`
+    let cost = |turn: f64| -> f64 {
+        let (tf, tt) = (from.outline.total(), to.outline.total());
+        from.samples
+            .iter()
+            .map(|&(t, w, p)| {
+                let e = vec3::sub(p, to.about_center((t / tf + way * turn) * tt));
+                w * vec3::dot(e, e)
             })
             .sum()
     };
-    let costs: Vec<f64> = (0..m).map(cost).collect();
-    let s = (0..m).fold(0, |best, s| if costs[s] < costs[best] { s } else { best });
-    // the lowest point of the parabola through the best offset and its two neighbors, so a shape that mirrors
-    // itself is matched to its mirror line and not to the nearest sample
-    let (lo, mid, hi) = (costs[(s + m - 1) % m], costs[s], costs[(s + 1) % m]);
-    let bend = lo - 2.0 * mid + hi;
-    let part = if bend > 0.0 {
-        (0.5 * (lo - hi) / bend).clamp(-0.5, 0.5)
-    } else {
-        0.0
-    };
-    let t = ((s as f64 + part) / m as f64 * ob.total()).rem_euclid(ob.total());
+    let step = 1.0 / TWIST_TURNS as f64;
+    let costs: Vec<f64> = (0..TWIST_TURNS).map(|s| cost(s as f64 * step)).collect();
+    let s = (0..TWIST_TURNS).fold(0, |best, s| if costs[s] < costs[best] { s } else { best });
+    // Close in on the offset that twists as much half a step to either side of it. On a shape that mirrors itself
+    // that is its mirror line, to the last bit that tells, so mirrored profiles get mirrored rails.
+    let lean = |turn: f64| cost(turn + step / 2.0) - cost(turn - step / 2.0);
+    let (mut lo, mut hi) = ((s as f64 - 1.0) * step, (s as f64 + 1.0) * step);
+    let mut turn = s as f64 * step;
+    if lean(lo) < 0.0 && lean(hi) > 0.0 {
+        for _ in 0..60 {
+            let mid = f64::midpoint(lo, hi);
+            if lean(mid) < 0.0 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        turn = f64::midpoint(lo, hi);
+    }
+    let t = (turn * ob.total()).rem_euclid(ob.total());
     // a hair under no offset comes around as the whole way
     let t = if t < ob.total() { t } else { 0.0 };
     ((0.0, ob.snapped(t)), false)
@@ -656,9 +729,15 @@ struct Rail {
     own: Vec<bool>,
 }
 
-/// Carries `rails` on to profile `k` through `map` (from profile `k - 1`; none for the first) and adds the profile's
-/// own `breaks`. A break within `SAME_PLACE_MM` of where a rail lands, on this profile or the one before, is that
-/// rail; any other starts a rail of its own, taken back through `maps` to the earlier profiles.
+/// Carries `rails` on to profile `k` through `maps` and adds the profile's own `breaks`. A break is the rail that
+/// lands within reach of it ([`Outline::reach`]), measured on this profile or on an earlier profile that has the
+/// rail as a corner of its own; any other break starts a rail of its own, taken back through `maps` to the earlier
+/// profiles.
+///
+/// No two breaks become one rail, so the profile keeps every corner and every piece: when two are within reach of
+/// the same rail the nearer takes it. When they are equally near (a sharp corner facing the middle of a short
+/// round), neither takes it and the rail stays between them, so a shape that mirrors itself is matched to its
+/// mirror image.
 fn join(rails: &mut Vec<Rail>, outlines: &[Outline], maps: &[Map], k: usize, breaks: &[f64]) {
     let o = &outlines[k];
     if k > 0 {
@@ -667,29 +746,50 @@ fn join(rails: &mut Vec<Rail>, outlines: &[Outline], maps: &[Map], k: usize, bre
             r.own.push(false);
         }
     }
-    for &c in breaks {
-        let before = (k > 0).then(|| maps[k - 1].back(c));
-        let near = |r: &Rail| {
-            !r.own[k]
-                && (o.gap(r.at[k], c) <= SAME_PLACE_MM
-                    || before.is_some_and(|x| outlines[k - 1].gap(r.at[k - 1], x) <= SAME_PLACE_MM))
-        };
-        if let Some(r) = rails
-            .iter_mut()
-            .filter(|r| near(r))
-            .min_by(|x, y| o.gap(x.at[k], c).total_cmp(&o.gap(y.at[k], c)))
-        {
-            r.at[k] = c;
-            r.own[k] = true;
-            continue;
+    // each break's place on every profile so far
+    let places: Vec<Vec<f64>> = breaks
+        .iter()
+        .map(|&c| {
+            let mut at = vec![c; k + 1];
+            for j in (0..k).rev() {
+                at[j] = maps[j].back(at[j + 1]);
+            }
+            at
+        })
+        .collect();
+    // the rail each break would take and how far from it the rail lands
+    let wants: Vec<Option<(usize, f64)>> = places
+        .iter()
+        .map(|at| {
+            let near = |r: &Rail| {
+                o.gap(r.at[k], at[k]) <= o.reach(at[k])
+                    || (0..k)
+                        .any(|j| r.own[j] && outlines[j].gap(r.at[j], at[j]) <= outlines[j].reach(r.at[j]))
+            };
+            rails
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| !r.own[k] && near(r))
+                .map(|(i, r)| (i, o.gap(r.at[k], at[k])))
+                .min_by(|x, y| x.1.total_cmp(&y.1))
+        })
+        .collect();
+    for (b, at) in places.into_iter().enumerate() {
+        let taken = wants[b].filter(|&(i, gap)| {
+            // the nearest claim wins, and a tie goes to neither
+            wants
+                .iter()
+                .enumerate()
+                .all(|(other, w)| other == b || w.is_none_or(|(j, g)| j != i || g > gap + THIN_MM))
+        });
+        if let Some((i, _)) = taken {
+            rails[i].at[k] = at[k];
+            rails[i].own[k] = true;
+        } else {
+            let mut own = vec![false; k + 1];
+            own[k] = true;
+            rails.push(Rail { at, own });
         }
-        let mut at = vec![c; k + 1];
-        for j in (0..k).rev() {
-            at[j] = maps[j].back(at[j + 1]);
-        }
-        let mut own = vec![false; k + 1];
-        own[k] = true;
-        rails.push(Rail { at, own });
     }
 }
 
@@ -944,10 +1044,9 @@ mod tests {
         )
     }
 
-    /// The rails of a square joined to a square whose second corner sits `off` further along.
-    fn joined(off: f64) -> Vec<Rail> {
+    /// The rails of a square joined to a square with breaks of its own at `second`, places matched by how far along.
+    fn joined(first: &[f64], second: &[f64]) -> Vec<Rail> {
         let outlines = [square(10.0), square(10.0)];
-        // by how far along, not corner to corner: the second square is taken as cut at other places
         let maps = [Map {
             a: vec![0.0],
             b: vec![0.0],
@@ -955,23 +1054,55 @@ mod tests {
             tb: 40.0,
         }];
         let mut rails = Vec::new();
-        join(&mut rails, &outlines, &maps, 0, &[0.0, 10.0, 20.0, 30.0]);
-        join(&mut rails, &outlines, &maps, 1, &[0.0, 10.0 + off, 20.0, 30.0]);
+        join(&mut rails, &outlines, &maps, 0, first);
+        join(&mut rails, &outlines, &maps, 1, second);
         rails
     }
 
     #[test]
-    fn corners_within_the_tolerance_are_one_rail() {
-        let inside = joined(SAME_PLACE_MM * 0.9);
+    fn places_within_the_tolerance_are_one_rail() {
+        // marks along a side, no corner near: only the least reach holds
+        let inside = joined(&[5.0], &[5.0 + SAME_PLACE_MM * 0.9]);
+        assert_eq!(inside.len(), 1);
+        // the rail takes each profile's own place
+        assert_eq!(inside[0].at[1].to_bits(), (5.0 + SAME_PLACE_MM * 0.9).to_bits());
+        assert!(inside[0].own[0] && inside[0].own[1]);
+        let outside = joined(&[5.0], &[5.0 + SAME_PLACE_MM * 1.1]);
+        assert_eq!(outside.len(), 2);
+        assert!(outside[0].own[0] && !outside[0].own[1], "{outside:?}");
+    }
+
+    #[test]
+    fn a_place_within_the_share_of_a_corner_s_sides_is_that_corner() {
+        // the corner at 10 has 10 mm sides, so it reaches half a millimeter
+        let corners = [0.0, 10.0, 20.0, 30.0];
+        let reach = SNAP_SHARE * 10.0;
+        let inside = joined(&corners, &[10.0 + reach * 0.9]);
         assert_eq!(inside.len(), 4);
-        // the rail takes each profile's own corner
         let r = inside.iter().find(|r| r.at[0] == 10.0).unwrap();
-        assert_eq!(r.at[1].to_bits(), (10.0 + SAME_PLACE_MM * 0.9).to_bits());
-        assert!(r.own[0] && r.own[1]);
-        let outside = joined(SAME_PLACE_MM * 1.1);
+        assert!(r.own[1] && r.at[1] == 10.0 + reach * 0.9, "{r:?}");
+        let outside = joined(&corners, &[10.0 + reach * 1.1]);
         assert_eq!(outside.len(), 5);
-        let r = outside.iter().find(|r| r.at[0] == 10.0).unwrap();
-        assert!(r.own[0] && !r.own[1], "{r:?}");
+        // the same from the other side: the corner is the later profile's own
+        let later = joined(&[10.0 + reach * 0.9], &corners);
+        assert_eq!(later.len(), 4);
+        assert_eq!(joined(&[10.0 + reach * 1.1], &corners).len(), 5);
+    }
+
+    #[test]
+    fn two_places_never_take_one_rail() {
+        let corners = [0.0, 10.0, 20.0, 30.0];
+        // both within reach of the corner at 10: the nearer takes it and the other keeps a rail of its own
+        let both = joined(&corners, &[9.9, 10.3]);
+        assert_eq!(both.len(), 5);
+        let r = both.iter().find(|r| r.at[0] == 10.0).unwrap();
+        assert!(r.own[1] && r.at[1] == 9.9, "{r:?}");
+        assert!(both.iter().any(|r| r.at[1] == 10.3 && r.own[1] && !r.own[0]));
+        // equally near: neither takes it, and the corner's rail stays between them
+        let tie = joined(&corners, &[9.75, 10.25]);
+        assert_eq!(tie.len(), 6);
+        let r = tie.iter().find(|r| r.at[0] == 10.0).unwrap();
+        assert!(!r.own[1] && r.at[1] == 10.0, "{r:?}");
     }
 
     #[test]
