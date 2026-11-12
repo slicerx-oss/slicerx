@@ -143,9 +143,9 @@ describe('agents', () => {
     expect(go.enabled?.()).toBe(false)
   })
 
-  it('may start a new project with the slice permission; the discard question stays with the person', () => {
+  it('may start a new project only with the remove permission; the discard question stays with the person', () => {
     const fresh = builtinCommands({} as Host, []).find((c) => c.id === 'project-new')!
-    expect(fresh.tool?.permission).toBe('slice')
+    expect(fresh.tool?.permission).toBe('remove')
   })
 
   it('Ask mimir in the command bar opens the tab and hands the words over, and Mod+/ is its shortcut', () => {
