@@ -64,7 +64,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
       holes.push({ part, at: loop.at, axis: loop.axis, diameterMm })
     }
   }
-  const wall = minWall(world, checkWallBudget(), undefined, undefined, opts.nozzleMm)
+  const wall = minWall(world, checkWallBudget(), undefined, opts.nozzleMm)
   const shaping = d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint')
   let gaps: Pick<BodyFacts, 'fit' | 'fitWhy'> = {}
   if (fit)
@@ -300,26 +300,27 @@ function roundHole(points: readonly V3[], n: V3): { at: V3; diameterMm: number }
   return { at, diameterMm: 2 * most }
 }
 
-/** How much work the thinnest wall may take. Past it the wall is reported as not measured, never as a guess. */
+/**
+ * How much work the thinnest wall may take, for each part on its own. Past it the wall is reported as not measured,
+ * never as a guess, unless a wall under the floor was read already: that part fails whatever else it holds. The work is
+ * counted, not timed, so a loaded machine reads the same wall a quiet one does.
+ */
 export interface WallBudget {
-  /** Facets over every part together. */
+  /** Facets of one part. */
   maxFacets: number
-  /** Wall-clock time in ms (the app measures on its main thread). */
-  maxMs: number
+  /** Steps of work in one part: each facet a ray is tested against, each grid cell it passes, each facet a check of a taper or a flat patch looks at. */
+  maxWork: number
 }
 /**
  * A curved part hollowed by the voxel shell (a lofted bottle shelled to 2 mm) comes back with about 600,000 facets and
- * measures in under a second, so the facet cap leaves room for one that size; the time limit stops a slower one.
+ * reads its wall in about 23 million steps, under a second on a quiet machine, so the caps leave room for one that
+ * size, about two and a half times over in work; a part copied (an arrayed detail) is read once.
  */
-export const WALL_BUDGET: WallBudget = { maxFacets: 1_000_000, maxMs: 1500 }
+export const WALL_BUDGET: WallBudget = { maxFacets: 1_000_000, maxWork: 60_000_000 }
 
-/**
- * The budget design.check reads the wall with. Tests and recorded replays set SX_WALL_COUNT_ONLY=1 and drop the time
- * limit, keeping the facet cap, so a loaded runner reads the same wall a quiet one does.
- */
+/** The budget design.check reads the wall with: counted work, the same on every machine. */
 export function checkWallBudget(): WallBudget {
-  const env = typeof process === 'undefined' ? undefined : process.env['SX_WALL_COUNT_ONLY']
-  return env === '1' ? { ...WALL_BUDGET, maxMs: Infinity } : WALL_BUDGET
+  return WALL_BUDGET
 }
 
 /**
@@ -352,18 +353,35 @@ const MAX_ENTRIES = 4_000_000
  * ray starts from: the cosine between their two normals is under -`opposed` (OPPOSED unless given). Needles, specks and
  * flat patches narrower than LEDGE_MM across measure no wall.
  */
-export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now(), opposed = OPPOSED, nozzleMm = WALL_NOZZLE_MM): WallReading {
-  const facets = meshes.reduce((n, m) => n + Math.floor(m.indices.length / 3), 0)
-  if (facets > budget.maxFacets) return { mm: null, why: TOO_DENSE }
-  const start = now()
-  const late = (): boolean => now() - start > budget.maxMs
-  if (late()) return { mm: null, why: TOO_DENSE }
+export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, opposed = OPPOSED, nozzleMm = WALL_NOZZLE_MM, used?: { work: number }): WallReading {
   const nozzle = Number.isFinite(nozzleMm) && nozzleMm > 0 ? nozzleMm : WALL_NOZZLE_MM
+  // the floor design.check holds the wall to (twice the nozzle), which is also the tip zone
+  const floor = 2 * nozzle
   const read: PartReading = { best: Infinity, tip: Infinity, tipAt: [0, 0, 0] }
-  for (const m of meshes) if (!partWall(m, read, late, opposed, 2 * nozzle)) return { mm: null, why: TOO_DENSE }
   const r3 = (v: number): number => Math.round(v * 1000) / 1000
-  const tip = read.tip < read.best ? { tip: { mm: r3(read.tip), at: read.tipAt.map((v) => Math.round(v * 100) / 100) as V3 } } : {}
-  return { mm: Number.isFinite(read.best) ? r3(read.best) : null, ...tip }
+  const reading = (): WallReading => {
+    const tip = read.tip < read.best ? { tip: { mm: r3(read.tip), at: read.tipAt.map((v) => Math.round(v * 100) / 100) as V3 } } : {}
+    return { mm: Number.isFinite(read.best) ? r3(read.best) : null, ...tip }
+  }
+  const seen: Mesh[] = []
+  for (const m of meshes) {
+    // a part that is another one moved (an arrayed copy) has its walls: it is read once
+    if (seen.some((o) => moved(o, m))) continue
+    seen.push(m)
+    const done = Math.floor(m.indices.length / 3) <= budget.maxFacets && partWall(m, read, budget.maxWork, opposed, floor, used)
+    // out of budget: a wall under the floor read already fails the part, whatever else it holds; else not measured
+    if (!done) return read.best < floor ? reading() : { mm: null, why: TOO_DENSE }
+  }
+  return reading()
+}
+
+/** Whether part `b` is part `a` moved: the same facets on the same corners, each corner shifted by the same amount. */
+function moved(a: Mesh, b: Mesh): boolean {
+  if (a.indices.length !== b.indices.length || a.positions.length !== b.positions.length || a.positions.length < 3) return false
+  for (let i = 0; i < a.indices.length; i++) if (a.indices[i] !== b.indices[i]) return false
+  const shift = [0, 1, 2].map((k) => b.positions[k]! - a.positions[k]!)
+  for (let i = 0; i < a.positions.length; i++) if (Math.abs(b.positions[i]! - a.positions[i]! - shift[i % 3]!) > 1e-6) return false
+  return true
 }
 
 /** The thinnest wall away from tips so far, and the thinnest reading under the floor at a tip, with where its ray started. */
@@ -398,13 +416,15 @@ function shareEdge(tri: Float64Array, a: number, b: number): boolean {
 }
 
 /**
- * Reads one part's thinnest wall into `read`, keeping what is thinner there already; false when `late` says the time
- * ran out. `zone` is both the floor and the tip zone: a reading under it whose faces meet within it of the
+ * Reads one part's thinnest wall into `read`, keeping what is thinner there already; false when its work passes
+ * `maxWork` steps (counted into `used` when given). `zone` is both the floor and the tip zone: a reading under it whose faces meet within it of the
  * ray's start (tapers) is a tip, kept apart from the wall.
  */
-function partWall(m: Mesh, read: PartReading, late: () => boolean, opposed: number, zone: number): boolean {
+function partWall(m: Mesh, read: PartReading, maxWork: number, opposed: number, zone: number, used?: { work: number }): boolean {
   const tris = Math.floor(m.indices.length / 3)
   if (tris === 0) return true
+  // the steps of work so far: facets tested against a ray, cells passed, facets a taper or flat patch check looks at
+  let work = 0
   // every facet's corners, nine numbers each
   const tri = new Float64Array(tris * 9)
   const lo = [Infinity, Infinity, Infinity]
@@ -489,7 +509,11 @@ function partWall(m: Mesh, read: PartReading, late: () => boolean, opposed: numb
   const flat = new Int8Array(tris)
   let best = read.best
   for (let t = 0; t < tris; t++) {
-    if ((t & 255) === 0 && late()) return false
+    if ((t & 255) === 0 && work > maxWork) {
+      if (used) used.work += work
+      read.best = Math.min(read.best, best)
+      return false
+    }
     const b = t * 9
     const e10 = tri[b + 3]! - tri[b]!
     const e11 = tri[b + 4]! - tri[b + 1]!
@@ -534,6 +558,7 @@ function partWall(m: Mesh, read: PartReading, late: () => boolean, opposed: numb
     let faces = true
     for (;;) {
       const c = (i2 * n1 + i1) * n0 + i0
+      work += 1 + start[c + 1]! - start[c]!
       for (let q = start[c]!; q < start[c + 1]!; q++) {
         const f = items[q]!
         if (f === t || tested[f] === t) continue
@@ -584,6 +609,7 @@ function partWall(m: Mesh, read: PartReading, late: () => boolean, opposed: numb
     }
   }
   read.best = best
+  if (used) used.work += work
   return true
 
   /**
@@ -615,6 +641,7 @@ function partWall(m: Mesh, read: PartReading, late: () => boolean, opposed: numb
       for (let c1 = a1; c1 <= z1; c1++)
         for (let c0 = a0; c0 <= z0; c0++) {
           const c = (c2 * n1 + c1) * n0 + c0
+          work += 1 + start[c + 1]! - start[c]!
           for (let q = start[c]!; q < start[c + 1]!; q++)
             for (let j = 0; j < 3; j++) {
               const at = items[q]! * 9 + j * 3
@@ -658,6 +685,7 @@ function partWall(m: Mesh, read: PartReading, late: () => boolean, opposed: numb
         for (let c1 = a1; c1 <= z1; c1++)
           for (let c0 = a0; c0 <= z0; c0++) {
             const c = (c2 * n1 + c1) * n0 + c0
+            work += 1 + start[c + 1]! - start[c]!
             for (let q = start[c]!; q < start[c + 1]!; q++) {
               const f = items[q]!
               if (inPatch.has(f)) continue

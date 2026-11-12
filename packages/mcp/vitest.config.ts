@@ -5,7 +5,6 @@
 // machine, but 3 to 6 s in the merge queue's crates part beside the other suites, so vitest's 5 s default failed a
 // first try now and then (errors.test.ts, the sxlock and stock catalog tests before it). Later tests in a file take
 // well under a second. As in packages/app, settings and embed, a test gets a minute; a real hang still fails.
-// SX_WALL_COUNT_ONLY=1: design.check reads the wall by its facet cap alone, so a loaded runner reads what a quiet one does.
 import { defineConfig } from 'vitest/config'
 
-export default defineConfig({ test: { testTimeout: 60_000, hookTimeout: 60_000, env: { SX_WALL_COUNT_ONLY: '1' } } })
+export default defineConfig({ test: { testTimeout: 60_000, hookTimeout: 60_000 } })

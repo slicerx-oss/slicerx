@@ -269,7 +269,7 @@ describe('the thinnest wall at a sharp edge or point', () => {
 
   it('takes the tip zone from the nozzle: two nozzle widths', () => {
     // with a 0.2 mm nozzle the floor and the zone are 0.4 mm, so the rim's readings over 0.4 mm count as wall
-    const r = minWall([prism(flaredSection(), 40)], undefined, undefined, undefined, 0.2)
+    const r = minWall([prism(flaredSection(), 40)], undefined, undefined, 0.2)
     expect(r.tip === undefined || r.tip.mm < 0.4).toBe(true)
   })
 })

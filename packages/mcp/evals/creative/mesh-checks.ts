@@ -260,11 +260,12 @@ export interface WallReport {
 }
 
 /**
- * Which parts have every facet read: the ones design.check reads (WALL_BUDGET's facet cap), with more time, so a slow
- * machine reads the same wall. A finer mesh than that has sub-millimeter ledges and sharp rims whose rays read
- * almost nothing though the wall is whole, and design.check does not read it either: it is sampled.
+ * Which parts have every facet read: the ones design.check reads (WALL_BUDGET's facet cap, over every part together as
+ * before), with far more work, about the minute this allowed when it was timed, counted so a slow machine reads the
+ * same wall. A finer mesh than that has sub-millimeter ledges and sharp rims whose rays read almost nothing though the
+ * wall is whole, and design.check does not read it either: it is sampled.
  */
-const EVERY_FACET: WallBudget = { maxFacets: WALL_BUDGET.maxFacets, maxMs: 60_000 }
+const EVERY_FACET: WallBudget = { maxFacets: WALL_BUDGET.maxFacets, maxWork: 1_500_000_000 }
 
 /** Low percentile of the thickness samples that counts as the wall: thin regions win, one stray corner ray does not. */
 const WALL_PERCENTILE = 0.02
@@ -276,7 +277,7 @@ const WALL_PERCENTILE = 0.02
 export function minWall(parts: MeshPart[], maxSamples = 600): WallReport {
   // every facet first, the way design.check reads the wall, so a pinch that no sample lands on is still found
   const facets = parts.reduce((n, p) => n + Math.floor(p.indices.length / 3), 0)
-  const every = facets ? wallFromEvery(parts, EVERY_FACET) : { mm: null }
+  const every = facets && facets <= EVERY_FACET.maxFacets ? wallFromEvery(parts, EVERY_FACET) : { mm: null }
   if (every.mm !== null) return { minWallMm: every.mm, samples: facets, how: 'every facet' }
   const thick: number[] = []
   for (const part of parts) {

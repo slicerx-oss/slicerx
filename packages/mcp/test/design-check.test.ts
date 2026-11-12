@@ -466,20 +466,25 @@ describe('minWall', () => {
 
   it('over the budget, says not measured (part too dense) and never a number', () => {
     const m = denseWithThinPlate()
-    expect(minWall([m], { maxFacets: 1000, maxMs: 60_000 })).toEqual({ mm: null, why: 'part too dense' })
-    // out of time: a clock that jumps a minute at every look
-    let t = 0
-    expect(minWall([m], { maxFacets: 1_000_000, maxMs: 1000 }, () => (t += 60_000))).toEqual({ mm: null, why: 'part too dense' })
+    expect(minWall([m], { maxFacets: 1000, maxWork: Infinity })).toEqual({ mm: null, why: 'part too dense' })
+    // out of work: too little to reach the plate
+    expect(minWall([m], { maxFacets: 1_000_000, maxWork: 1000 })).toEqual({ mm: null, why: 'part too dense' })
     expect(designCheck(bracket, { ...built, minWallMm: null, minWallWhy: 'part too dense' }, 0.4).pass).toBe(false)
   })
 
-  it('measures a hollowed curved part as dense as a voxel shell leaves it, within the time budget', () => {
+  it('measures a hollowed curved part as dense as a voxel shell leaves it, within the work budget', () => {
     // a 70 mm square bottle lofted into a round neck and shelled to 2 mm comes back from the voxel hollow as about
     // 583,000 facets; here a 70 mm box with a 2 mm wall, its 24 facets each split into 156 by 156
     const m = finely([...boxTris([0, 0, 0], [70, 70, 70]), ...boxTris([2, 2, 2], [68, 68, 68]).map(([a, b, c]): Tri => [a, c, b])], 156)
     expect(m.indices.length / 3).toBe(584_064)
-    // a clock that never moves, so a slow runner reads the facet cap and not its own speed
-    expect(minWall([m], WALL_BUDGET, () => 0)).toEqual({ mm: 2 })
+    // the budget is counted work, so a slow runner reads what a fast one does
+    const used = { work: 0 }
+    expect(minWall([m], WALL_BUDGET, undefined, undefined, used)).toEqual({ mm: 2 })
+    // and the same count every run
+    const again = { work: 0 }
+    minWall([m], WALL_BUDGET, undefined, undefined, again)
+    expect(again.work).toBe(used.work)
+    expect(used.work).toBeLessThan(WALL_BUDGET.maxWork)
   })
 
   it('a gap between two bodies of one part is not a wall, even across a facet turned the wrong way', () => {

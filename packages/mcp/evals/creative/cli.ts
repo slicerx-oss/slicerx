@@ -28,9 +28,8 @@
 // capture got the note too (stamped planGoesOn). The log rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other mimir evals.
 // A replay exits 1 when a scored recording no longer replays as captured: it diverges from what the model read, leaves
 // recorded replies unused or ends early. A recording keeps the model's own miss, so a part that fails a check is
-// reported and counted in the pass rate, never an exit 1. A replay reads the thinnest wall by its facet cap alone
-// (SX_WALL_COUNT_ONLY=1, as the mcp tests do), so a loaded machine reads the wall a quiet one does; a live run reads
-// it with the app's limits.
+// reported and counted in the pass rate, never an exit 1. design.check reads the thinnest wall within counted work
+// (body-facts.ts WALL_BUDGET), so a loaded machine reads the wall a quiet one does, live or replayed.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
@@ -53,8 +52,6 @@ function arg(name: string, fallback?: string): string | undefined {
 const flag = (name: string): boolean => process.argv.includes(`--${name}`)
 
 const mode = arg('mode', 'replay') === 'live' ? 'live' : 'replay'
-// design.check reads the wall by its facet cap alone in a replay, with no time limit (body-facts.ts checkWallBudget)
-if (mode === 'replay' && process.env['SX_WALL_COUNT_ONLY'] === undefined) process.env['SX_WALL_COUNT_ONLY'] = '1'
 const ids = arg('prompt')?.split(',').filter(Boolean)
 const selected = ids ? CREATIVE_PROMPTS.filter((p) => ids.includes(p.id)) : CREATIVE_PROMPTS
 if (!selected.length) {
