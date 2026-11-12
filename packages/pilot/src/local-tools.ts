@@ -104,7 +104,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
   'duet.status': { tokens: 65, description: true, fields: ['printerId'] },
   'elegoo.status': { tokens: 62, description: true, fields: ['printerId'] },
   'estimate': { tokens: 136, description: true, fields: ['deadline', 'machineRatePerHour', 'startAt'] },
-  'geom.array': { tokens: 632, description: true, fields: [
+  'geom.array': { tokens: 632, fields: [
       'design',
       'feature',
       'merge',

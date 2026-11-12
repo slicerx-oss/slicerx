@@ -199,21 +199,26 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
     },
   })
 
-  const arraySpec = z
-    .discriminatedUnion('kind', [
-      z.object({ kind: z.literal('linear'), count: z.number().int().min(2).max(500), step: vec3.describe('Offset between neighbors, mm'), count2: z.number().int().min(1).max(500).optional(), step2: vec3.optional().describe('Offset between rows, mm'), onSurface: z.literal(true).optional().describe('With steps: each copy slides onto the part\'s surface where it lands and turns to it, so a row of slits, windows or dents along a curved side keeps the first one\'s depth') }),
-      z.object({ kind: z.literal('circular'), count: z.number().int().min(2).max(500), center: vec3, axis: vec3.optional().describe('Default +Z'), angleDeg: z.number().min(1).max(360).optional().describe('Total angle; default 360'), rotateCopies: z.boolean().optional().describe('Turn each copy with the circle; default true') }),
-    ])
-    .describe('{"kind":"linear","count":4,"step":[25,0,0]} for a row (count2 and step2 make a grid), or {"kind":"circular","count":6,"center":[0,0,0]} around an axis')
+  const linearSpec = z.object({ kind: z.literal('linear'), count: z.number().int().min(2).max(500), step: vec3.describe('Offset between neighbors, mm'), count2: z.number().int().min(1).max(500).optional(), step2: vec3.optional().describe('Offset between rows, mm') })
+  const circularSpec = z.object({ kind: z.literal('circular'), count: z.number().int().min(2).max(500), center: vec3, axis: vec3.optional().describe('Default +Z'), angleDeg: z.number().min(1).max(360).optional().describe('Total angle; default 360'), rotateCopies: z.boolean().optional().describe('Turn each copy with the circle; default true') })
+  const ARRAY_SPEC_TEXT = '{"kind":"linear","count":4,"step":[25,0,0]} for a row (count2 and step2 make a grid), or {"kind":"circular","count":6,"center":[0,0,0]} around an axis'
+  const arraySpec = z.discriminatedUnion('kind', [linearSpec.extend({ onSurface: z.literal(true).optional().describe('With steps: each copy slides onto the part\'s surface where it lands and turns to it, so a row of slits, windows or dents along a curved side keeps the first one\'s depth') }), circularSpec]).describe(ARRAY_SPEC_TEXT)
+  // a local model's row has no onSurface, which only the cloud display guidance asks for; the tool takes it from either
+  const localArraySpec = z.discriminatedUnion('kind', [linearSpec, circularSpec]).describe(ARRAY_SPEC_TEXT)
 
+  const arrayInput = z.object({ model: modelOpt, design: designArg.optional(), feature: featureArg, part: partArg, spec: arraySpec, merge: z.boolean().default(true).describe('false: separate copies instead of one body'), steps: stepsArg })
+  // a local model gets the description without the onSurface sentence
+  const ARRAY_TEXT = 'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy.'
   const array = defineTool({
     name: 'geom.array',
     version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy. On a curved side, set onSurface on the row so each copy follows the surface.',
-    input: z.object({ model: modelOpt, design: designArg.optional(), feature: featureArg, part: partArg, spec: arraySpec, merge: z.boolean().default(true).describe('false: separate copies instead of one body'), steps: stepsArg }),
+      `${ARRAY_TEXT} On a curved side, set onSurface on the row so each copy follows the surface.`,
+    localDescription: ARRAY_TEXT,
+    input: arrayInput,
+    localInput: arrayInput.extend({ spec: localArraySpec }),
     async run(i) {
       designOrModel(i)
       const spec = JSON.parse(JSON.stringify(i.spec)) as Extract<StepParams, { op: 'array.merged' }>['spec'] & { onSurface?: true }
