@@ -17,6 +17,11 @@ export const LOOK_PX = 512
  * change has to move for a person to see it at that view. Below it, the change is strengthened once before the reply.
  */
 export const VISIBLE_FLOOR_PCT = 2
+/**
+ * How far an edge prism reaches past the edge it draws, in widths: half a width along the edge and half a width each
+ * way across it (edgeLines), so a corner sits half of root 3 widths (written out, 0.866) from the edge's end.
+ */
+const EDGE_REACH = 0.8660254037844386
 /** How far two pixels' colors may differ (summed over red, green and blue) and still read as the same. */
 const SAME_COLOR = 60
 
@@ -225,7 +230,7 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
   const looked = new Map<string, Drawn>()
   return defineTool({
     name: 'design.look',
-    version: '1.1.1',
+    version: '1.1.2',
     source: 'command',
     permission: 'read',
     title: 'Look at the model',
@@ -265,8 +270,14 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
           const e = edgeLines(m.positions, m.indices, width)
           if (e) objects.push({ mesh: e, transform: T, slot: 1, color: '#1a1a1a' })
         }
-        // a shared frame: a speck at two far corners of both designs' box, so before and after are drawn alike
-        if (frame) for (const c of [lo, hi]) objects.push({ mesh: { positions: [c[0]!, c[1]!, c[2]!, c[0]! + 0.01, c[1]!, c[2]!, c[0]!, c[1]! + 0.01, c[2]!], indices: [0, 1, 2] }, transform: T, slot: 1 })
+        // a shared frame: a speck at two far corners of both designs' box, so before and after are drawn alike. The
+        // engine frames the picture on everything drawn, and an edge prism's corners reach past the model (EDGE_REACH),
+        // so the specks sit that far outside the box: no edge reaches past them, and a change that moves the model's
+        // extent draws a picture the same size as the one before it
+        if (frame) {
+          const reach = EDGE_REACH * width
+          for (const c of [lo.map((v) => v - reach), hi.map((v) => v + reach)]) objects.push({ mesh: { positions: [c[0]!, c[1]!, c[2]!, c[0]! + 0.01, c[1]!, c[2]!, c[0]!, c[1]! + 0.01, c[2]!], indices: [0, 1, 2] }, transform: T, slot: 1 })
+        }
         const r = (await host.call('render', { objects, view, size: LOOK_PX, image: true, ...(colors.length ? { colors: colors.slice(0, 32) } : {}) })) as { pngBase64?: string }
         return r.pngBase64
       }
