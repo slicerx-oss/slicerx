@@ -332,6 +332,12 @@ export interface PilotSheet {
   part?: PilotSheetSolid[]
   /** The built design the sheet changes: the drawing shows it as built, and the rows' places are in its frame. */
   design?: string
+  /**
+   * A size on it must fit something the person has, or something the part holds, so a wrong size wastes a print: the
+   * sheet waits for the person. Without it the sheet shows its sizes and the build goes on with them at once; the person
+   * changes a size after.
+   */
+  fits?: boolean
 }
 
 /** A sheet row tied to the step it sets, so editing the row after the build edits that step's main number. */
@@ -354,6 +360,8 @@ export interface PilotSheetAnswer {
   values: Record<string, number>
   changed: string[]
   said?: string
+  /** Nobody was asked: the sheet showed and the build went ahead with its sizes (no fits). */
+  auto?: true
 }
 
 /** One answer on a choice card. */
@@ -464,10 +472,10 @@ export type PilotEvent =
    * The person's answer to a question. A dismissed question (turned down, no choice picked) has `dismissed` set and an
    * empty `choiceId`; `said` is what they wrote instead, when they wrote something.
    */
-  | { type: 'ask_answered'; askId: string; choiceId: string; dismissed?: true; said?: string }
+  | { type: 'ask_answered'; askId: string; choiceId: string; dismissed?: true; said?: string; auto?: true }
   /** The sizes a part needs, for the person to confirm or edit; the run waits until they do. */
   | { type: 'sheet'; sheet: PilotSheet }
-  | { type: 'sheet_answered'; sheetId: string; answer: PilotSheetAnswer }
+  | { type: 'sheet_answered'; sheetId: string; answer: PilotSheetAnswer; auto?: true }
   /** After the build: which rows set which steps of which design. */
   | { type: 'sheet_bound'; sheetId: string; design: string; binds: PilotSheetBind[] }
   | { type: 'lookup'; lookup: PilotLookup }

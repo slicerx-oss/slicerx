@@ -61,8 +61,10 @@ async function planAndCheck(input: Omit<PartPlan, 'planId'>, machine: PilotMachi
   const card = createCardPlans(createPlanRegistry())
   const tools = tabToolset(boxHost(), card, { nozzleMm: () => machine.nozzle, newPlanId: () => 'plan_1' })
   const tool = (name: string) => tools.find((t) => t.name === name)!
+  // a card the person answers: one that waits for their Go (sizes that fit something)
   const ctx = {
     context: { project: 'creative', machine, objects: [] },
+    confirmsPlan: () => true,
     ask: async (q: { choices: { id: string }[] }) => {
       const shown = card.planById('plan_1')!
       if (edit) card.editPlan('plan_1', edit(shown))

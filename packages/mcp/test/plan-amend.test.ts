@@ -71,8 +71,10 @@ function tab(answers: ('go' | 'not yet')[] = [], newPlanId: () => string = () =>
   const tools = tabToolset(boxHost(), card, { nozzleMm: () => machine.nozzle, newPlanId })
   const tool = (name: string) => tools.find((t) => t.name === name)!
   const cards: { title: string; question: string; id: string; plan: PartPlan | null }[] = []
+  // cards the person answers: ones that wait for their Go (sizes that fit something)
   const ctx = {
     context: { project: 'creative', machine, objects: [] },
+    confirmsPlan: () => true,
     ask: async (q: { title: string; question: string; choices: { id: string }[] }) => {
       const id = q.choices[0]!.id.slice(PLAN_GO.length + 1)
       cards.push({ title: q.title, question: q.question, id, plan: card.planById(id) })
@@ -99,7 +101,7 @@ const taller = (p: PlanInput, z: number): PlanInput => ({ ...p, features: p.feat
 describe('design.plan with amends', () => {
   it('tells the model a first plan takes no reason: amends and reason are for changing an approved plan', () => {
     const plan = tabToolset(boxHost(), createCardPlans(createPlanRegistry()), { nozzleMm: () => machine.nozzle }).find((t) => t.name === 'design.plan')!
-    expect(plan.version).toBe('1.5.0')
+    expect(plan.version).toBe('1.6.0')
     const props = toolSpec(plan).inputSchema.properties as Record<string, { description?: string }>
     expect(props['amends']?.description).toMatch(/only to change a plan the person approved/i)
     expect(props['reason']?.description).toMatch(/only with amends/i)
