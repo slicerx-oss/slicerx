@@ -366,12 +366,12 @@ rm -f "$dir.engine-starve"
 # 900) seconds old, it keeps its turn as a CI waiter does, and does both.
 echo 1 > "$dir.slots"
 echo 2 > "$dir.gpu-slots"
-gpu_hold g7
+gpu_hold g7e
 SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --e2e sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/e4.child" 2> "$tmp/e4.err" > /dev/null &
 e4=$!; lpids="$lpids $!"; sleep 3
 name="a manual --e2e waiter blocked by a --gpu run says so once, naming the holder"
 ok eval '[ "$(grep -c "^heavy.sh: waiting:" "$tmp/e4.err")" = 1 ] \
-  && grep -q "waiting: a --gpu run holds or is handed a GPU slot (pid $g7); it gives its turn back" "$tmp/e4.err"'
+  && grep -q "waiting: a --gpu run holds or is handed a GPU slot (pid $g7e); it gives its turn back" "$tmp/e4.err"'
 name="it gives the only slot to a plain waiter behind it"
 waiter 10 w21
 ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
@@ -388,7 +388,7 @@ name="SX_HEAVY_RESERVE_AFTER overrides <lock>.reserve-after"
 SX_HEAVY_RESERVE_AFTER=900 waiter 10 w23
 ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
 name="the --e2e waiter runs once the --gpu run is gone"
-release g7 "$g7"; wait_for "$tmp/e4.child"; lpids="$lpids $(cat "$tmp/e4.child")"
+release g7e "$g7e"; wait_for "$tmp/e4.child"; lpids="$lpids $(cat "$tmp/e4.child")"
 ok eval 'grep -qx "class e2e" "$dir/owner"'
 release e4 "$e4"
 rm -f "$dir.reserve-after" "$dir.gpu-slots"
@@ -621,15 +621,119 @@ release mo "$mo"
 ok eval '[ "$(head -n 1 "$dir/owner")" = "pid 1 since 2026-01-01 00:00:00: new holder" ]'
 rm -rf "$dir"
 
-# A waiter that is not a CI job is queued as one once its ticket is SX_HEAVY_PROMOTE_AFTER seconds old.
+# A manual waiter (class 3) is queued as a CI one (class 2) once its ticket is SX_HEAVY_PROMOTE_AFTER seconds old.
 name="a manual ticket is promoted to a CI one after SX_HEAVY_PROMOTE_AFTER and still runs"
 : > "$tmp/order"
 hold pr; pr=$!
 SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=30 SX_HEAVY_PROMOTE_AFTER=2 bash "$heavy" sh -c 'echo P >> "$1"' sh "$tmp/order" > /dev/null 2>&1 &
 pP=$!; lpids="$lpids $!"; sleep 4
-promoted=$(ls "$dir.queue" | grep -c '^0-')
+promoted=$(ls "$dir.queue" | grep -c '^2-')
 release pr "$pr"; wait "$pP"; rc=$?
 ok eval '[ "$promoted" = 1 ] && [ "$rc" = 0 ] && [ "$(cat "$tmp/order")" = P ] && grep -q "	promote	" "$tmp/history.log"'
+
+# Classes: merge-queue CI jobs (a gh-readonly-queue/ ref) first, then the machine's priority labels
+# (<lock>.priority-labels), other CI jobs and manual holds last. The ticket and the record name the kind and the ref.
+mq_env() { env RUNNER_ENVIRONMENT=self-hosted GITHUB_REF=refs/heads/gh-readonly-queue/main/pr-1-0123abc "$@"; }
+# Waits until the queue holds $1 tickets (a waiter in Git Bash can take a few seconds to start on a busy machine).
+wait_q() { for _ in $(seq 100); do [ "$(ls "$dir.queue" 2> /dev/null | wc -l)" -ge "$1" ] && return 0; sleep 0.2; done; return 1; }
+name="a merge-queue job goes first, then a priority label, then another CI job, then a manual hold"
+: > "$tmp/order"
+printf 'other-label\nprio-x\r\n' > "$dir.priority-labels"
+hold c1; c1=$!
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" sh -c 'echo "$1" >> "$2"' sh A "$tmp/order" > /dev/null 2>&1 &
+pA=$!; lpids="$lpids $!"; wait_q 1
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 RUNNER_ENVIRONMENT=self-hosted bash "$heavy" sh -c 'echo "$1" >> "$2"' sh C "$tmp/order" > /dev/null 2>&1 &
+pC=$!; lpids="$lpids $!"; wait_q 2
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 SX_HEAVY_LABEL=prio-x bash "$heavy" sh -c 'echo "$1" >> "$2"' sh L "$tmp/order" > /dev/null 2>&1 &
+pL=$!; lpids="$lpids $!"; wait_q 3
+mq_env SX_HEAVY_LOCK="$lock" SX_HEAVY_WAIT=60 bash "$heavy" sh -c 'cat "$3/owner" > "$4"; echo "$1" >> "$2"' sh M "$tmp/order" "$dir" "$tmp/rec.mq" > /dev/null 2>&1 &
+pM=$!; lpids="$lpids $!"; wait_q 4
+classes=$(ls "$dir.queue" | cut -c1 | sort | tr -d '\n')
+mq_ticket=$(cat "$dir.queue"/0-* 2> /dev/null)
+release c1 "$c1"; wait "$pA" "$pC" "$pL" "$pM"
+ok eval '[ "$(tr "\n" " " < "$tmp/order")" = "M L C A " ] && [ "$classes" = 0123 ]'
+name="the merge-queue ticket and record name the kind and the ref, and its history lines say so"
+ok eval 'grep -qx "kind merge-queue" <<< "$mq_ticket" && grep -qx "ref refs/heads/gh-readonly-queue/main/pr-1-0123abc" <<< "$mq_ticket" \
+  && grep -qx "priority merge-queue" "$tmp/rec.mq" && grep -qx "ref refs/heads/gh-readonly-queue/main/pr-1-0123abc" "$tmp/rec.mq" \
+  && grep -q "	take	plain	.*waited [0-9]* s, priority merge-queue	" "$tmp/history.log"'
+name="SX_HEAVY_PRIORITY=merge-queue and a merge_group event queue as merge-queue jobs; a label not in the list does not"
+SX_HEAVY_LOCK=$lock SX_HEAVY_PRIORITY=merge-queue bash "$heavy" sh -c 'cat "$1/owner" > "$2"' sh "$dir" "$tmp/rec.a"
+SX_HEAVY_LOCK=$lock GITHUB_EVENT_NAME=merge_group bash "$heavy" sh -c 'cat "$1/owner" > "$2"' sh "$dir" "$tmp/rec.b"
+SX_HEAVY_LOCK=$lock SX_HEAVY_LABEL=prio bash "$heavy" sh -c 'cat "$1/owner" > "$2"' sh "$dir" "$tmp/rec.c"
+SX_HEAVY_LOCK=$lock SX_HEAVY_PRIORITY=ci bash "$heavy" sh -c 'cat "$1/owner" > "$2"' sh "$dir" "$tmp/rec.d"
+ok eval 'grep -qx "priority merge-queue" "$tmp/rec.a" && grep -qx "priority merge-queue" "$tmp/rec.b" && grep -qx "priority manual" "$tmp/rec.c" \
+  && grep -qx "priority ci" "$tmp/rec.d"'
+
+# With 3 slots or more, manual holds keep to one less than the slots (SX_HEAVY_MANUAL_SLOTS, <lock>.manual-slots), so
+# a CI job always finds one; a priority label does not count.
+echo 3 > "$dir.slots"
+hold m1; m1=$!
+hold m2; m2=$!
+name="with 3 slots and two manual holds, a third manual waiter waits with a slot free, and says why"
+waiter 3 w30
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.3" ] && grep -q "waiting: manual holds use 2 of the 2 plain slots they may hold" "$tmp/waiter.out"'
+name="a CI waiter takes the free slot at once"
+RUNNER_ENVIRONMENT=self-hosted waiter 10 w31
+ok eval '[ "$rc" = 0 ] && [ $secs -le 4 ]'
+name="so does a priority label"
+SX_HEAVY_LABEL=prio-x waiter 10 w32
+ok eval '[ "$rc" = 0 ] && [ $secs -le 4 ]'
+name="SX_HEAVY_MANUAL_SLOTS=3 lets the manual waiter in, and <lock>.manual-slots 0 does too"
+SX_HEAVY_MANUAL_SLOTS=3 waiter 10 w33; r1=$rc
+echo 0 > "$dir.manual-slots"; waiter 10 w34; r2=$rc; rm -f "$dir.manual-slots"
+ok eval '[ "$r1" = 0 ] && [ "$r2" = 0 ]'
+release m2 "$m2"
+name="a record from an older heavy.sh that names an Actions run counts as CI, one that does not as manual"
+# m1 holds the first slot; the fakes go into the second (and third).
+fake2() { rm -rf "$dir.$1" && mkdir "$dir.$1" && printf 'pid %s since 2026-01-01 00:00:00: fake\n%s\n' "$$" "$2" > "$dir.$1/owner"; }
+fake2 2 "$(my_identity right)
+session run o/r/1/1 job x"
+waiter 10 w35; r1=$rc
+fake2 2 "$(my_identity right)"
+waiter 3 w36; r2=$rc
+rm -rf "$dir.2" "$dir.3"
+ok eval '[ "$r1" = 0 ] && [ "$r2" = 75 ]'
+
+# A waiting engine ticket that must wait for the GPU lane keeps a free slot from the tickets of later classes.
+echo 1 > "$dir.gpu-slots"
+gpu_hold g10
+name="while a merge-queue engine waiter waits for a --gpu run, a CI and a manual waiter leave it the last free slot"
+SX_HEAVY_LOCK=$lock RUNNER_ENVIRONMENT=self-hosted bash "$heavy" sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/c2.child" > /dev/null 2>&1 &
+c2=$!; wait_for "$tmp/c2.child"; lpids="$lpids $(cat "$tmp/c2.child") $!"
+: > "$tmp/order"
+mq_env SX_HEAVY_LOCK="$lock" SX_HEAVY_WAIT=60 bash "$heavy" --class engine sh -c 'echo "$1" >> "$2"' sh E "$tmp/order" > /dev/null 2>&1 &
+pE=$!; lpids="$lpids $!"; wait_q 1
+RUNNER_ENVIRONMENT=self-hosted waiter 3 w37; r1=$rc
+waiter 3 w38; r2=$rc
+ok eval '[ "$r1" = 75 ] && [ "$r2" = 75 ] && [ ! -d "$dir.3" ] && [ ! -s "$tmp/order" ]'
+name="a merge-queue plain waiter still takes it, and the engine waiter runs once the --gpu run ends"
+mq_env SX_HEAVY_LOCK="$lock" SX_HEAVY_WAIT=10 bash "$heavy" true > /dev/null 2>&1; r1=$?
+release g10 "$g10"; t0=$SECONDS; wait "$pE"; secs=$((SECONDS - t0))
+ok eval '[ "$r1" = 0 ] && [ $secs -le 5 ] && [ "$(cat "$tmp/order")" = E ]'
+release m1 "$m1"; release c2 "$c2"
+rm -f "$dir.gpu-slots" "$dir.slots" "$dir.priority-labels"
+
+# A manual hold whose command and label ended with status 124 twice in a row is refused the third time (status 77),
+# with the machine's advice; a status 0 clears the count, and it starts again SX_HEAVY_TIMEOUT_RESET s (default an
+# hour) after the last one. CI jobs are never refused.
+echo 124 > "$tmp/t124.rc"
+t_run() { SX_HEAVY_LOCK=$lock SX_HEAVY_LABEL=${T_LABEL:-slow} bash "$heavy" sh -c 'exit $(cat "$1")' sh "$tmp/t124.rc" 2> "$tmp/t124.err"; }
+echo 'Move it to the build box.' > "$dir.timeout-advice"
+name="a manual command that ended with status 124 twice in a row is refused the third time, with the advice"
+t_run; r1=$?; t_run; r2=$?; t_run; r3=$?
+ok eval '[ "$r1" = 124 ] && [ "$r2" = 124 ] && [ "$r3" = 77 ] && grep -q "status 124 (its time limit) 2 times in a row.*Move it to the build box\." "$tmp/t124.err" \
+  && grep -q "	refuse	plain	.*	slow	.*status 124 2 times in a row" "$tmp/history.log"'
+name="another label, a CI job and SX_HEAVY_TIMEOUT_REFUSE=0 still run"
+T_LABEL=other t_run; r1=$?
+RUNNER_ENVIRONMENT=self-hosted t_run; r2=$?
+SX_HEAVY_TIMEOUT_REFUSE=0 t_run; r3=$?
+ok eval '[ "$r1" = 124 ] && [ "$r2" = 124 ] && [ "$r3" = 124 ]'
+name="the count starts again SX_HEAVY_TIMEOUT_RESET s after the last one, and a status 0 clears it"
+sleep 2; echo 0 > "$tmp/t124.rc"
+SX_HEAVY_TIMEOUT_RESET=1 t_run; r1=$?
+echo 124 > "$tmp/t124.rc"; t_run; r2=$?; t_run; r3=$?; t_run; r4=$?
+ok eval '[ "$r1" = 0 ] && [ "$r2" = 124 ] && [ "$r3" = 124 ] && [ "$r4" = 77 ]'
+rm -rf "$dir.timeouts" "$dir.timeout-advice" "$dir"
 
 # Reap on take: right after its take a holder judges the other slots once, in the background, by the waiters' rules.
 # A job cancelled past its traps leaves a dead holder, and with a free slot beside it no waiter waits to judge it.

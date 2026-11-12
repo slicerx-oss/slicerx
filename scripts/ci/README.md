@@ -18,8 +18,9 @@ home (default `~/ci`), never in a developer's working tree.
 A newer push replaces a run still waiting; a run in progress always finishes first. The nightly run has its own slot.
 Every run holds the machine's heavy-work lock (`heavy.sh`, default `~/.slicerx-heavy.lock`, or `SX_HEAVY_LOCK`).
 Release builds, kit builds and other heavy jobs on the same machine take it too (`scripts/ci/heavy.sh <command>`), so
-a run never competes with a build for the CPU and timing tests stay honest. Waiters are served in arrival order, CI
-jobs first (a self-hosted runner, or `SX_HEAVY_PRIORITY=ci`), and
+a run never competes with a build for the CPU and timing tests stay honest. Waiters are served in arrival order
+within four classes: merge-queue CI jobs first, then holds with one of the machine's priority labels, then other CI
+jobs (a self-hosted runner, or `SX_HEAVY_PRIORITY=ci`), then manual holds (see Classes below), and
 `SX_HEAVY_WAIT=<seconds>` makes one give up (exit 75) after that long.
 
 ## Results
@@ -212,8 +213,8 @@ was judged.
 From WSL, Windows programs run through `/init`, as WSL's binfmt entry would run them: a distro with systemd can lose
 that entry, and then `powershell.exe` and `wsl.exe` fail when called directly.
 
-Waiters take a ticket in `<lock>.queue`, named `<class>-<seconds>-<sequence>-<side>-<pid>`, so CI tickets sort first
-and tickets from the same second keep their order. Admission is decided under a short `mkdir` gate (`<lock>.gate`,
+Waiters take a ticket in `<lock>.queue`, named `<class>-<seconds>-<sequence>-<side>-<pid>`, so the classes sort in
+order and tickets from the same second keep their order. Admission is decided under a short `mkdir` gate (`<lock>.gate`,
 held only for the decision and cleared when older than 30 s): the deciding waiter walks the queue from its head, hands
 the free slots to the tickets in order, and takes one only if one is left for its own ticket, so several slots freeing
 at once never let in more waiters than there are slots, and back-to-back holds by others never pass a waiter over. A
@@ -231,10 +232,47 @@ driver) is left running, and after the grace once more its slots are freed so th
 from an older `heavy.sh` gets this machine's max hold for its class. A holder whose slot was taken over leaves it to
 its new holder when it ends.
 
-Promotion: a waiter that is not a CI job (and not `--all`) is queued as one once its ticket is
-`SX_HEAVY_PROMOTE_AFTER` seconds old (the number in `<lock>.promote-after`, default 1800, 0 for never): its ticket is
-renamed from class 1 to class 0 and sorts by its time with the CI tickets, so CI jobs that queued after it no longer
-go first and two CI runs per merge cannot starve an agent's run.
+Classes: each ticket's class is its first character, and the classes go in this order.
+
+- 0, a merge-queue CI job: a run on a `refs/heads/gh-readonly-queue/` ref (`GITHUB_REF`), a `merge_group` event, or
+  `SX_HEAVY_PRIORITY=merge-queue`. A merge-queue job holds up every pull request in the queue behind it, so it never
+  waits for anything else.
+- 1, a hold whose `SX_HEAVY_LABEL` is one of the lines of `<lock>.priority-labels`, a machine setting for the few
+  manual jobs that are worth more than a pull request run (none when there is no file).
+- 2, any other CI job.
+- 3, a manual hold: anything else.
+
+The ticket's lines name its kind (`kind merge-queue`, `label`, `ci` or `manual`) and its `ref` and `label` when it
+has them, and the holder record names it too (`priority <kind>`), so a look at the queue or a slot shows why a job
+went first. Every history line of the first two kinds ends its details with
+`priority merge-queue` or `priority label`. A record from an older `heavy.sh` has no such line: it counts as CI when
+its session names an Actions run, else as manual.
+
+A later class never takes a slot an earlier one waits for. The free slots go to the tickets in queue order, as
+before, and a waiting `--e2e` or engine ticket of an earlier class that cannot run yet (a `--gpu` run holds) keeps a
+free slot from every waiter of a later class, so it starts the moment the GPU lane lets it. A `--all` waiter gives back
+what it holds, and takes nothing, while any ticket of an earlier class waits.
+
+Manual holds keep to `SX_HEAVY_MANUAL_SLOTS` plain slots at once (the number in `<lock>.manual-slots`; with no
+setting, one less than the slots on a machine with 3 or more, and no limit on a smaller one; 0 for no limit), so a CI
+job always finds a slot that no manual build is holding for its full time limit. A manual waiter at the limit says so
+in its `heavy.sh: waiting:` line. `--gpu` holds use their own slots and do not count, and neither do holds with a
+priority label.
+
+Promotion: a manual waiter (not `--all`) is queued as a CI one once its ticket is `SX_HEAVY_PROMOTE_AFTER` seconds old
+(the number in `<lock>.promote-after`, default 1800, 0 for never): its ticket is renamed from class 3 to class 2 and
+sorts by its time with the CI tickets, so CI jobs that queued after it no longer go first and two CI runs per merge
+cannot starve an agent's run. It never passes a merge-queue job or a priority label, and it still counts as a manual
+hold for the slot limit.
+
+Timeouts: a manual hold whose command ended with status 124 (its own `timeout`, or the max hold below)
+`SX_HEAVY_TIMEOUT_REFUSE` times in a row (the number in `<lock>.timeout-refuse`, default 2, 0 for never), with the
+same label and command, is refused before it queues: `heavy.sh` exits 77 without running it, prints the first line of
+`<lock>.timeout-advice` (a machine setting that says where such a job should go instead), and logs a `refuse` line. A
+third try would hold a slot for its whole time limit again while CI waits. The count is kept per label and command in
+`<lock>.timeouts/`; a status 0 clears it, and it starts again once the last status 124 is `SX_HEAVY_TIMEOUT_RESET`
+seconds old (the number in `<lock>.timeout-reset`, default 3600). CI jobs are never refused, and a job that really
+needs one longer hold runs with `SX_HEAVY_TIMEOUT_REFUSE=0`.
 
 Each take and release is also a line in `history.log` beside the lock (time, mode, slots, side and pid, user, label,
 session, rc and hold time on release, command), as are take-overs (`clear`, with `dead holder` or `stale holder`),

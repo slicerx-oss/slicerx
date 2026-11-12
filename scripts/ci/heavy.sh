@@ -41,6 +41,20 @@
 #                                              KILL after SX_HEAVY_KILL_GRACE seconds (default 60), and heavy.sh exits
 #                                              124; a command that outlives KILL as well (stuck in a GPU driver) is left
 #                                              running and its slots are freed after that many seconds more
+#   SX_HEAVY_PRIORITY=merge-queue | ci         queue as a merge-queue CI job or as another CI job (a run on a
+#                                              gh-readonly-queue/ ref or a merge_group event is a merge-queue one, a
+#                                              self-hosted runner's other runs are CI ones)
+#   <lock>.priority-labels                     a machine setting: SX_HEAVY_LABEL values, one per line, whose holds queue
+#                                              behind merge-queue CI jobs and ahead of every other CI job
+#   SX_HEAVY_MANUAL_SLOTS=<n>                  how many plain slots the manual holds (neither CI jobs nor priority
+#                                              labels) may hold at once (default: the number in <lock>.manual-slots, or
+#                                              one less than the slots when there are 3 or more; 0: no limit)
+#   SX_HEAVY_TIMEOUT_REFUSE=<n>                a manual hold whose command, with the same label, ended with status 124
+#                                              this many times in a row is refused the next time, with status 77
+#                                              (default: the number in <lock>.timeout-refuse, or 2; 0: never); the text
+#                                              in <lock>.timeout-advice says where to run it instead
+#   SX_HEAVY_TIMEOUT_RESET=<seconds>           how long after the last status 124 that count starts again (default:
+#                                              the number in <lock>.timeout-reset, or 3600); a status 0 clears it
 #   SX_HEAVY_PROMOTE_AFTER=<seconds>           how old a waiter's ticket that is not a CI job's (and not --all) must
 #                                              be before it queues as one, ahead of the CI tickets that came after it
 #                                              (default: the number in <lock>.promote-after, or 1800; 0: never)
@@ -71,18 +85,22 @@
 # line names the pid, the start and the command; the lines after it the holder's side and process identity, its user,
 # and its SX_HEAVY_LABEL and session when there are any.
 #
-# Waiters take a ticket in <lock>.queue, named <class>-<seconds>-<sequence>-<side>-<pid>[-all|-e2e|-gpu|-engine], where class
-# 0 is a CI job (SX_HEAVY_PRIORITY=ci, or a self-hosted runner) and 1 anything else, so CI jobs go first and the rest
-# are served in arrival order; the sequence number orders the tickets taken in the same second. Admission is decided
-# under a gate (<lock>.gate, a directory held for the moment of a decision), so no two waiters decide at once: the
-# waiter walks the queue from its head and hands the free slots to the tickets ahead of it in order, and takes one
-# only when one is left for its own. A freed slot thus goes to the oldest ticket that may use it, never to the waiter
+# Waiters take a ticket in <lock>.queue, named <class>-<seconds>-<sequence>-<side>-<pid>[-all|-e2e|-gpu|-engine], where
+# class 0 is a merge-queue CI job, 1 a hold with one of the machine's priority labels, 2 any other CI job
+# (SX_HEAVY_PRIORITY=ci, or a self-hosted runner) and 3 anything else (a manual hold), so the classes go in that order
+# and each is served in arrival order; the sequence number orders the tickets taken in the same second. The ticket's
+# lines name its kind (merge-queue, label, ci or manual), and its Actions ref and label when it has them. A waiting
+# --e2e or engine ticket that cannot run yet keeps a free slot for itself from every ticket of a later class, so a
+# later class never takes a slot an earlier one waits for, and the manual holds keep to SX_HEAVY_MANUAL_SLOTS plain
+# slots, so CI always finds one. Admission is decided under a gate (<lock>.gate, a directory held for the moment of a
+# decision), so no two waiters decide at once: the waiter walks the queue from its head and hands the free slots to
+# the tickets ahead of it in order, and takes one only when one is left for its own. A freed slot thus goes to the oldest ticket that may use it, never to the waiter
 # that happens to look first, and in a poll no more waiters get in than there are free slots.
 #
 # A --all waiter at the head takes the slots one by one as they free up, and the tickets behind it get none, so it is
-# not passed over; a --all waiter behind another one gives back what it holds. A --all waiter that is not a CI job
-# (class 1) also gives back what it holds, and takes nothing, while any CI ticket waits: CI jobs never wait for a manual
-# --all run to collect the machine. It goes when no CI ticket is waiting. A CI --all waiter keeps its slots. Slots a
+# not passed over; a --all waiter behind another one gives back what it holds. A --all waiter also gives back what it
+# holds, and takes nothing, while any ticket of an earlier class waits: CI jobs never wait for a manual --all run to
+# collect the machine. It goes when none is waiting. A --all waiter keeps its slots beside its own class. Slots a
 # --all waiter holds while it still waits (its ticket still in the queue) are not an exclusive run: its ticket's place
 # in the queue counts, as every other ticket's does. A --e2e holder's record says "class e2e";
 # while one holds or is handed a slot, no other --e2e waiter takes one (two browser suites drawing software WebGL
@@ -110,7 +128,7 @@
 # with a plain slot free for it, no --gpu ticket is handed a GPU slot, and it starts as soon as the --gpu runs end, or
 # at twice that age beside a --gpu run that still holds, so the GPU lane costs an engine hold at most that long.
 #
-# A manual (class 1) --e2e waiter that cannot run yet (a --gpu run or another --e2e run blocks it) gives its turn back:
+# A manual (class 3) --e2e waiter that cannot run yet (a --gpu run or another --e2e run blocks it) gives its turn back:
 # it keeps its place in the queue but holds nobody back, so the waiters behind it use what is free meanwhile. Once its
 # ticket is SX_HEAVY_RESERVE_AFTER seconds old (default 900) it keeps its turn as a CI waiter does from the start: the
 # free slot it needs is kept for it, and the --gpu waiters behind it wait, so it is never starved. Each time what
@@ -120,12 +138,18 @@
 # older than that hold, twice the grace and 5 minutes more, even when the holder cannot be proved dead: by then the
 # holder's own heavy.sh should have stopped the command and let go, so it is stuck, or gone on a side that cannot be
 # asked. A record with no hold line (from an older heavy.sh) gets the max hold of its class on this machine. A holder
-# whose slot was taken over leaves it alone when it ends. A waiter's ticket that is not a CI job's is renamed to a CI
-# one once it is SX_HEAVY_PROMOTE_AFTER seconds old, so a steady stream of CI jobs cannot starve it.
+# whose slot was taken over leaves it alone when it ends. A manual ticket (class 3) is renamed to class 2 once it is
+# SX_HEAVY_PROMOTE_AFTER seconds old, so a steady stream of CI jobs cannot starve it; it never passes a merge-queue job
+# or a priority label, and it stays a manual hold for SX_HEAVY_MANUAL_SLOTS.
 #
-# The history log gets a line for every take, release, take-over, give-up, timeout, kill, abandon and promotion: the
-# time, the event, the mode, the slots, the side and pid, the user, the label, the session, the details and the
-# command, separated by tabs. It is renamed to <history>.1 at about 1 MB.
+# A manual hold whose command ran into its time limit (status 124) SX_HEAVY_TIMEOUT_REFUSE times in a row, with the
+# same label, within SX_HEAVY_TIMEOUT_RESET seconds of the last one, is refused before it queues (status 77, a refuse
+# line in the history): a third try would hold a slot as long again for nothing. The count is kept in <lock>.timeouts,
+# one file per label and command.
+#
+# The history log gets a line for every take, release, take-over, give-up, timeout, kill, abandon, promotion and
+# refusal: the time, the event, the mode, the slots, the side and pid, the user, the label, the session, the details
+# and the command, separated by tabs. It is renamed to <history>.1 at about 1 MB.
 #
 # Windows (Git Bash) and WSL on one machine share one lock when both name the same directory on the Windows drive,
 # for example C:\Users\<user>\.slicerx-heavy.lock (a C:\ path works on both sides). The record names the holder's
@@ -194,6 +218,10 @@ reserve_read() {
   setting reserve_after "${SX_HEAVY_RESERVE_AFTER:-}" reserve-after 900
   setting engine_starve "${SX_HEAVY_ENGINE_STARVE:-}" engine-starve 240
   setting promote_after "${SX_HEAVY_PROMOTE_AFTER:-}" promote-after 1800
+  # How many plain slots the manual holds may hold at once: with 3 slots or more, all but one, so a CI job always
+  # finds one free.
+  setting manual_slots "${SX_HEAVY_MANUAL_SLOTS:-}" manual-slots ""
+  [ -n "$manual_slots" ] || { manual_slots=0; [ "$slots" -lt 3 ] || manual_slots=$((slots - 1)); }
 }
 reserve_read
 # The max hold on this machine for a holder of class $2 (e2e, gpu or anything else), into variable $1: the machine
@@ -346,9 +374,24 @@ me=$(identity)
 q=$lock.queue
 gate=$lock.gate
 mkdir -p "$q" 2> /dev/null
-# CI jobs (a self-hosted runner, or SX_HEAVY_PRIORITY=ci) queue ahead of other waiters; a holder always finishes.
-prio=1
-if [ "${SX_HEAVY_PRIORITY:-}" = ci ] || [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then prio=0; fi
+# The waiter's kind and the class its ticket sorts by: merge-queue CI jobs (0) first, then holds with one of the
+# machine's priority labels (1), other CI jobs (2: a self-hosted runner, or SX_HEAVY_PRIORITY=ci) and manual holds
+# (3). A holder always finishes. The Actions ref goes into the ticket and the record, so the queue shows why.
+gh_ref=$(one_line "${GITHUB_REF:-}")
+kind=manual
+case ${SX_HEAVY_PRIORITY:-}:${GITHUB_EVENT_NAME:-}:$gh_ref in
+  merge-queue:* | *:merge_group:* | *:refs/heads/gh-readonly-queue/*) kind=merge-queue ;;
+esac
+if [ "$kind" = manual ] && [ -n "$label" ] && [ -f "$lock.priority-labels" ]; then
+  while IFS= read -r sx_l || [ -n "$sx_l" ]; do
+    sx_l=${sx_l%"$cr"}
+    [ -n "$sx_l" ] && [ "$sx_l" = "$label" ] && { kind=label; break; }
+  done 2> /dev/null < "$lock.priority-labels"
+fi
+if [ "$kind" = manual ] && { [ "${SX_HEAVY_PRIORITY:-}" = ci ] || [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; }; then kind=ci; fi
+case $kind in merge-queue) prio=0 ;; label) prio=1 ;; ci) prio=2 ;; *) prio=3 ;; esac
+# The history's details name the two kinds that go ahead of CI.
+case $kind in merge-queue | label) prio_note=", priority $kind" ;; *) prio_note= ;; esac
 ticket= held=() gated= ran= t_run= timed_out=
 if stat -c %Y / > /dev/null 2>&1; then gnu_stat=1; else gnu_stat=; fi
 mtime() { if [ -n "$gnu_stat" ]; then stat -c %Y "$1" 2> /dev/null; else stat -f %m "$1" 2> /dev/null; fi; }
@@ -358,7 +401,7 @@ now() { date +%s; }
 hist_line() {
   [ -n "$hist" ] || return 0
   { printf '%s\t%s\t%s\t%s\t%s:%s\t%s\t%s\t%s\t%s\t%s\n' "$(date '+%FT%T%z')" "$1" "$mode" "$2" "$side" $$ "$user" \
-    "$label" "$session" "$3${engine:+, class engine}" "$(one_line "$cmd")" >> "$hist"; } 2> /dev/null
+    "$label" "$session" "$3${engine:+, class engine}$prio_note" "$(one_line "$cmd")" >> "$hist"; } 2> /dev/null
 }
 # Renames the history to <history>.1 at about 1 MB. Called under the gate only, so two waiters never rotate at once.
 hist_rotate() {
@@ -401,7 +444,20 @@ seq_next() {
   { printf '%s\n' "$s" > "$q/.seq"; } 2> /dev/null
   printf %06d "$s"
 }
-new_ticket() { ticket=$q/$prio-$(now)-$1-$side-$$${all:+-all}${e2e:+-e2e}${gpu:+-gpu}${engine:+-engine}; touch "$ticket" 2> /dev/null; }
+# A new ticket, with lines naming its kind, and its Actions ref and label when it has them.
+new_ticket() {
+  ticket=$q/$prio-$(now)-$1-$side-$$${all:+-all}${e2e:+-e2e}${gpu:+-gpu}${engine:+-engine}
+  { printf 'kind %s\n%s%s' "$kind" "${gh_ref:+ref $gh_ref
+}" "${label:+label $label
+}" > "$ticket"; } 2> /dev/null || touch "$ticket" 2> /dev/null
+}
+# The kind of ticket $1, into tk: its kind line, or for a ticket from an older heavy.sh (no lines), ci for class 0 or 2
+# and manual for the rest.
+ticket_kind() {
+  local l=
+  { read -r l < "$1"; } 2> /dev/null
+  case $l in 'kind '*) tk=${l#kind } ;; *) case ${1##*/} in [02]-*) tk=ci ;; *) tk=manual ;; esac ;; esac
+}
 refresh() { [ -z "$ticket" ] || touch "$ticket" 2> /dev/null || { mkdir -p "$q" 2> /dev/null; touch "$ticket" 2> /dev/null; }; }
 
 # Windows refuses to remove a directory another process is looking into (a waiter reading the record), and a slot
@@ -419,6 +475,66 @@ release() {
   done
   gate_drop
   [ -z "$ran" ] || hist_line release "$slots_held" "rc $rc, held $((SECONDS - t_run)) s${timed_out:+, stopped at the max hold of $max_hold s}"
+  t124_note "$rc"
+}
+# Manual holds that end with status 124 (the command's own time limit or the max hold) are counted per label and
+# command in <lock>.timeouts/<checksum>: "count", "time" (the last one), "label" and "command" lines. t124_on is set by
+# t124_check for a manual hold while the refusal is on; t124_file is this hold's file, named only when it is needed
+# (the checksum costs a few processes, and most holds neither time out nor have a count); c124 and l124 its count and
+# the time of the last one.
+t124_on= t124_file= c124=0 l124=0
+t124_name() {
+  local sum
+  [ -z "$t124_file" ] || return 0
+  sum=$(printf '%s\t%s' "$label" "$cmd" | cksum 2> /dev/null | tr -c '0-9\n' '-')
+  sum=${sum%%$nl*}
+  [ -n "$sum" ] && t124_file=$lock.timeouts/$sum
+}
+t124_read() {
+  local k v
+  c124=0 l124=0
+  [ -f "$t124_file" ] || return 0
+  while IFS=' ' read -r k v || [ -n "$k" ]; do
+    v=${v%"$cr"}
+    case $k in count) c124=$v ;; time) l124=$v ;; esac
+  done 2> /dev/null < "$t124_file"
+  case $c124 in '' | *[!0-9]*) c124=0 ;; esac
+  case $l124 in '' | *[!0-9]*) c124=0 l124=0 ;; esac
+  # The count starts again once the last one is $t124_reset s old.
+  [ $(($(now) - l124)) -lt "$t124_reset" ] || c124=0
+}
+# Refuses this hold, before it queues, when its command and label ended with status 124 $t124_refuse times in a row.
+t124_check() {
+  local advice= ago
+  [ "$kind" = manual ] || return 0
+  setting t124_refuse "${SX_HEAVY_TIMEOUT_REFUSE:-}" timeout-refuse 2
+  setting t124_reset "${SX_HEAVY_TIMEOUT_RESET:-}" timeout-reset 3600
+  [ "$t124_refuse" -gt 0 ] || return 0
+  t124_on=1
+  compgen -G "$lock.timeouts/*" > /dev/null || return 0
+  t124_name || return 0
+  t124_read
+  [ "$c124" -ge "$t124_refuse" ] || return 0
+  { IFS= read -r advice < "$lock.timeout-advice"; } 2> /dev/null
+  advice=${advice%"$cr"} ago=$(($(now) - l124))
+  echo "heavy.sh: this command${label:+ (label $label)} ended with status 124 (its time limit) $c124 times in a row, the last $ago s ago, so it is not run again here for $((t124_reset - ago)) s. ${advice:-Run it on a machine with more room, or ask for one longer hold.}" >&2
+  hist_line refuse "" "status 124 $c124 times in a row, the last $ago s ago"
+  t124_on=
+  exit 77
+}
+# After the command: a status 124 adds one to the count, a status 0 clears it, and any other status leaves it.
+t124_note() {
+  [ -n "$t124_on" ] && [ -n "$ran" ] || return 0
+  case $1 in
+    0) compgen -G "$lock.timeouts/*" > /dev/null && t124_name && [ -e "$t124_file" ] && rm -f "$t124_file" 2> /dev/null ;;
+    124)
+      t124_name || return 0
+      t124_read
+      mkdir -p "${t124_file%/*}" 2> /dev/null
+      { printf 'count %s\ntime %s\nlabel %s\ncommand %s\n' $((c124 + 1)) "$(now)" "$label" "$(one_line "$cmd")" > "$t124_file.$$" &&
+        mv -f "$t124_file.$$" "$t124_file"; } 2> /dev/null || rm -f "$t124_file.$$" 2> /dev/null ;;
+  esac
+  return 0
 }
 # Whether slot $1 still holds this holder's record: a slot taken over (its holder judged stale) may have a new holder.
 ours() {
@@ -432,8 +548,9 @@ trap 'exit 143' TERM
 # Takes a free slot: writes this holder's record into it at once, so no waiter ever finds it without one for long.
 take() {
   mkdir "$1" 2> /dev/null || return 1
-  printf 'pid %s since %s: %s\n%s\nuser %s\nhold %s grace %s\n%s%s%s' $$ "$(date '+%F %T')" "${all:+(all slots) }$(one_line "$cmd")" \
-    "$me" "$user" "$max_hold" "$grace" "${label:+label $label
+  printf 'pid %s since %s: %s\n%s\nuser %s\nhold %s grace %s\npriority %s\n%s%s%s%s' $$ "$(date '+%F %T')" \
+    "${all:+(all slots) }$(one_line "$cmd")" "$me" "$user" "$max_hold" "$grace" "$kind" "${gh_ref:+ref $gh_ref
+}" "${label:+label $label
 }" "${session:+session $session
 }" "${e2e:+class e2e
 }${gpu:+class gpu
@@ -442,14 +559,20 @@ take() {
   held+=("$1")
 }
 mine() { local d; for d in ${held[@]+"${held[@]}"}; do [ "$d" = "$1" ] && return 0; done; return 1; }
-# Reads the record in slot $1: r_head its first line, r_class e2e, gpu or engine, r_label its label, r_side its side.
+# Reads the record in slot $1: r_head its first line, r_class e2e, gpu or engine, r_label its label, r_side its side,
+# r_kind its kind (a record from an older heavy.sh has none: ci when it names an Actions run, else manual).
 read_rec() {
-  local l n=0
-  r_head= r_class= r_label= r_side=
+  local l n=0 r_run=
+  r_head= r_class= r_label= r_side= r_kind=
   while IFS= read -r l || [ -n "$l" ]; do
     n=$((n + 1)); [ $n = 1 ] && r_head=$l
-    case $l in 'class e2e') r_class=e2e ;; 'class gpu') r_class=gpu ;; 'class engine') r_class=engine ;; 'label '*) r_label=${l#label } ;; 'side '*) r_side=${l#side } ;; esac
+    case $l in
+      'class e2e') r_class=e2e ;; 'class gpu') r_class=gpu ;; 'class engine') r_class=engine ;;
+      'label '*) r_label=${l#label } ;; 'side '*) r_side=${l#side } ;; 'priority '*) r_kind=${l#priority } ;;
+      'session run '*) r_run=1 ;;
+    esac
   done 2> /dev/null < "$1/owner"
+  [ -n "$r_kind" ] || if [ -n "$r_run" ]; then r_kind=ci; else r_kind=manual; fi
 }
 # The holders, for the waiting message.
 holders_of() {
@@ -533,7 +656,7 @@ sweep() {
     case $m in '' | *[!0-9]*) continue ;; esac
     if [ "$t" != "$ticket" ] && [ $((t0 - m)) -ge 120 ]; then rm -f "$t"; continue; fi
     case ${t##*/} in
-      [01]-*) ;;
+      [0-3]-*) ;;
       *)
         [ -n "$old_warned" ] && continue
         old_warned=1
@@ -546,18 +669,18 @@ old_warned=
 
 # Helpers for decide, with no subshells (a fork is slow in Git Bash): wn, a holder's short name from read_rec; add, a
 # name appended to the comma list in variable $1; tt, ticket $1's queue time; keeps_turn, whether --e2e ticket $1 keeps
-# its turn while it cannot run: a CI ticket always, a manual one once it is $reserve_after s old; starved, whether
+# its turn while it cannot run: one of class 0 to 2 always, a manual one once it is $reserve_after s old; starved, whether
 # engine ticket $1 has waited $engine_starve s or more, and so takes the next turn.
 who() { local p=${r_head#pid }; p=${p%% *}; wn="pid $p${r_label:+ [$r_label]}"; }
 add() { local cur=${!1}; printf -v "$1" '%s' "$cur${cur:+, }$2"; }
-ticket_time() { tt=${1##*/}; tt=${tt#[01]-}; tt=${tt%%-*}; case $tt in '' | *[!0-9]*) tt=$tnow ;; esac; }
+ticket_time() { tt=${1##*/}; tt=${tt#[0-3]-}; tt=${tt%%-*}; case $tt in '' | *[!0-9]*) tt=$tnow ;; esac; }
 starved() {
   case ${1##*/} in *-engine) ;; *) return 1 ;; esac
   ticket_time "$1"
   [ $((tnow - tt)) -ge "$engine_starve" ]
 }
 keeps_turn() {
-  case ${1##*/} in 0-*) return 0 ;; esac
+  case ${1##*/} in [0-2]-*) return 0 ;; esac
   ticket_time "$1"
   [ $((tnow - tt)) -ge "$reserve_after" ]
 }
@@ -566,9 +689,9 @@ last_why=
 # as every waiter would; takes this waiter's slot when one is left for it. Sets admitted, and front when the waiter is
 # near enough to the head to judge the holders on every poll.
 decide() {
-  local d t p F=0 GF=0 PE=0 e2e_blk= gpu_blk= excl_blk= excl_ahead= all_ahead= ci_ahead= ahead=0 gahead=0
+  local d t p F=0 GF=0 PE=0 e2e_blk= gpu_blk= excl_blk= excl_ahead= all_ahead= hi_ahead= ahead=0 gahead=0
   local e2e_by= gpu_by= excl_by= ahead_by= engine_by= all_by= tnow tt wn why key
-  local est= est_by= gwant= gwant_by= gx= gf gb age=0 left
+  local est= est_by= gwant= gwant_by= gx= gf gb age=0 left MU=0 man_by= mcap= tc tk tm mfull
   admitted= front= tnow=$(now)
   reserve_read
   # F: free plain slots. e2e_blk: an --e2e run holds or is handed a plain slot, so no other --e2e may take one.
@@ -586,10 +709,12 @@ decide() {
       *': (all slots) '*)
         # A --all waiter still collecting slots runs nothing in them yet.
         p=${r_head#pid }; p=${p%% *}
-        if [ -n "$r_side" ] && compgen -G "$q/[01]-*-$r_side-$p-all" > /dev/null; then continue; fi
+        if [ -n "$r_side" ] && compgen -G "$q/[0-3]-*-$r_side-$p-all" > /dev/null; then continue; fi
         excl_blk=1; add excl_by "$wn" ;;
     esac
     [ "$r_class" = engine ] && { PE=$((PE + 1)); add engine_by "$wn"; }
+    # MU: plain slots manual holds hold, or that are handed to manual tickets ahead in the walk.
+    [ "$r_kind" = manual ] && { MU=$((MU + 1)); add man_by "$wn"; }
   done
   # GF: free GPU slots. gpu_blk: a --gpu run holds a GPU slot or is handed one, so no --e2e or --all may start, and
   # engine waiters keep to $geng slots.
@@ -620,8 +745,16 @@ decide() {
   for t in "$q"/*; do
     [ -e "$t" ] || continue
     [ "$t" = "$ticket" ] && break
-    # ci_ahead: a CI ticket waits (CI tickets sort first, so for a class 1 ticket every one of them is ahead).
-    case ${t##*/} in 0-*) ci_ahead=1 ;; esac
+    # hi_ahead: a ticket of an earlier class waits (classes sort first, so every one of them is ahead). tm: a manual
+    # hold's ticket, and mfull: it gets no slot, as the manual holds already hold or are handed all theirs.
+    tc=${t##*/} tm= mfull=
+    tc=${tc:0:1}
+    [ "$tc" -lt "$prio" ] 2> /dev/null && hi_ahead=1
+    ticket_kind "$t"
+    if [ "$tk" = manual ]; then
+      tm=1
+      [ "$manual_slots" -gt 0 ] && [ "$MU" -ge "$manual_slots" ] && mfull=1
+    fi
     case ${t##*/} in
       *-gpu)
         # First in line for a free GPU slot; handed it unless the engine holds or an engine waiter's turn keep it out.
@@ -636,21 +769,28 @@ decide() {
         ahead=$((ahead + 1))
         if { [ -z "$e2e_blk" ] && [ -z "$gpu_blk" ]; } || keeps_turn "$t"; then
           excl_ahead=1; add ahead_by "ticket ${t##*/}"
-          if [ -z "$e2e_blk" ] && [ "$F" -gt 0 ]; then F=$((F - 1)) e2e_blk=1; add e2e_by "ticket ${t##*/}"; fi
+          if [ -z "$e2e_blk" ] && [ "$F" -gt 0 ] && [ -z "$mfull" ]; then
+            F=$((F - 1)) e2e_blk=1 MU=$((MU + ${tm:-0})); add e2e_by "ticket ${t##*/}"
+          fi
         fi ;;
       *-all) ahead=$((ahead + 1)) excl_ahead=1 all_ahead=1 F=0; add ahead_by "ticket ${t##*/}" ;;
       *-engine)
         # Handed a slot while no --gpu run holds or is about to get one, or, once it has waited $engine_starve s, a
-        # slot kept for its turn while the --gpu runs end.
+        # slot kept for its turn while the --gpu runs end. One of an earlier class than this waiter that must wait for
+        # the GPU lane still keeps a free slot from it.
         ahead=$((ahead + 1))
-        if [ "$F" -gt 0 ] && { starved "$t" || { [ -z "$gpu_blk" ] && [ -z "$gwant" ]; } || [ "$PE" -lt "$geng" ]; }; then
-          F=$((F - 1)) PE=$((PE + 1)); add engine_by "ticket ${t##*/}"
+        if [ "$F" -gt 0 ] && [ -z "$mfull" ] && { starved "$t" || { [ -z "$gpu_blk" ] && [ -z "$gwant" ]; } || [ "$PE" -lt "$geng" ]; }; then
+          F=$((F - 1)) PE=$((PE + 1)) MU=$((MU + ${tm:-0})); add engine_by "ticket ${t##*/}"
+        elif [ "$F" -gt 0 ] && [ -z "$mfull" ] && [ "$tc" -lt "$prio" ] 2> /dev/null; then
+          F=$((F - 1)); add all_by "ticket ${t##*/}"
         fi ;;
       *)
         ahead=$((ahead + 1))
-        [ "$F" -gt 0 ] && F=$((F - 1)) ;;
+        [ "$F" -gt 0 ] && [ -z "$mfull" ] && F=$((F - 1)) MU=$((MU + ${tm:-0})) ;;
     esac
   done
+  # mcap: this waiter is a manual hold, and the manual holds already hold or are handed all the slots they may.
+  [ "$kind" = manual ] && [ "$manual_slots" -gt 0 ] && [ "$MU" -ge "$manual_slots" ] && mcap=1
   if [ -n "$gpu" ]; then [ "$gahead" -lt "$gslots" ] && front=1; else [ "$ahead" -lt "$slots" ] && front=1; fi
   # What blocks this waiter, said in one line each time it changes.
   why= key=
@@ -659,6 +799,7 @@ decide() {
   case $mode in
     plain)
       if [ "$F" = 0 ]; then why="every slot is held or handed to a ticket ahead (${all_by:-queue ahead})"
+      elif [ -n "$mcap" ]; then why="manual holds use $MU of the $manual_slots plain slots they may hold (${man_by:-queue ahead})"
       elif [ -z "$engine" ] || [ "$PE" -lt "$geng" ] || [ "$age" -ge $((2 * engine_starve)) ]; then :
       elif [ "$age" -ge "$engine_starve" ]; then
         left=$((2 * engine_starve - age))
@@ -671,6 +812,7 @@ decide() {
       fi ;;
     e2e)
       if [ "$F" = 0 ]; then why="every slot is held or handed to a ticket ahead (${all_by:-queue ahead})"
+      elif [ -n "$mcap" ]; then why="manual holds use $MU of the $manual_slots plain slots they may hold (${man_by:-queue ahead})"
       elif [ -n "$e2e_blk" ]; then why="another --e2e run holds or is handed a slot ($e2e_by)"
       elif [ -n "$gpu_blk" ]; then why="a --gpu run holds or is handed a GPU slot ($gpu_by)"; fi ;;
     gpu)
@@ -691,7 +833,7 @@ decide() {
   last_why=$key
   case $mode in
     plain | e2e)
-      [ "$F" -gt 0 ] || return 0
+      [ "$F" -gt 0 ] && [ -z "$mcap" ] || return 0
       # An engine waiter: no --gpu run holds or is about to get a GPU slot; past $engine_starve s, only the --gpu runs
       # that hold count; past twice that, none.
       if [ -n "$engine" ] && [ "$PE" -ge "$geng" ] && [ "$age" -lt $((2 * engine_starve)) ]; then
@@ -704,9 +846,9 @@ decide() {
       [ -z "$excl_blk" ] && [ -z "$excl_ahead" ] && [ "$GF" -gt 0 ] && [ "$PE" -le "$geng" ] && [ -z "$est" ] || return 0
       for d in "${gpu_dirs[@]}"; do take "$d" && { admitted=1; return 0; }; done ;;
     all)
-      if [ -n "$all_ahead" ] || { [ "$prio" = 1 ] && [ -n "$ci_ahead" ]; }; then
-        # Another --all waits ahead: give back what this one holds, or the two would wait for each other. Not a CI
-        # job while a CI ticket waits: give back what it holds and take nothing, so the CI jobs run first.
+      if [ -n "$all_ahead" ] || [ -n "$hi_ahead" ]; then
+        # Another --all waits ahead: give back what this one holds, or the two would wait for each other. While a
+        # ticket of an earlier class waits: give back what it holds and take nothing, so that class runs first.
         if [ "${#held[@]}" -gt 0 ]; then
           for d in "${held[@]}"; do rm -rf "$d" 2> /dev/null; done
           held=()
@@ -752,19 +894,20 @@ if [ -z "$all$e2e$gpu$engine" ]; then
   done
 fi
 
-# Renames this waiter's ticket from class 1 to class 0 once it is $promote_after s old, under the gate: it then sorts
-# with the CI tickets by its time, ahead of every CI job that queued after it. A --all waiter is never promoted (it
+# Renames this waiter's manual ticket from class 3 to class 2 once it is $promote_after s old, under the gate: it then
+# sorts with the other CI tickets by its time, ahead of every one that queued after it, and still behind the merge-queue
+# jobs and priority labels; it stays a manual hold for the manual slot limit. A --all waiter is never promoted (it
 # would take the whole machine from CI).
 promote() {
   local tt tnow new
   [ "$promote_after" -gt 0 ] && [ -z "$all" ] && [ -n "$ticket" ] || return 0
-  case ${ticket##*/} in 1-*) ;; *) return 0 ;; esac
+  case ${ticket##*/} in 3-*) ;; *) return 0 ;; esac
   tnow=$(now); ticket_time "$ticket"
   [ $((tnow - tt)) -ge "$promote_after" ] || return 0
-  new=$q/0-${ticket##*/1-}
+  new=$q/2-${ticket##*/3-}
   mv -f "$ticket" "$new" 2> /dev/null || return 0
   ticket=$new
-  echo "heavy.sh: waited $((tnow - tt)) s behind CI jobs; now queued as one, ahead of those that came after it" >&2
+  echo "heavy.sh: waited $((tnow - tt)) s behind CI jobs; now queued as one, ahead of those that came after it (behind merge-queue jobs and priority labels)" >&2
   hist_line promote "" "ticket ${ticket##*/}, waited $((tnow - tt)) s"
 }
 
@@ -988,6 +1131,7 @@ settle() {
   hist_line cache-drop "" "settled $settled; read $((SECONDS - settle_from)) s past the answer; asked by $settle_who"
   exit 0
 }
+t124_check
 cache_check
 
 t0=$SECONDS next=0 judged=0
