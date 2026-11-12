@@ -84,6 +84,7 @@ The chain and loop sizes are 0 when `supported` is false, and rounded down to wh
 | `edges` | EdgeRef[] | one or more |
 | `distanceMm` | number | set back on the edge's first face (`face`), above 0, at most 1000 |
 | `distance2Mm` | number? | set back on the second face; equal to `distanceMm` when absent |
+| `allOrNothing` | boolean? | default true: any edge that fails fails the call. false: the edges that fail are left as they were and listed in `skipped` (see below) |
 | `options` | BooleanOptions | optional |
 
 ### edge.fillet
@@ -94,6 +95,7 @@ The chain and loop sizes are 0 when `supported` is false, and rounded down to wh
 | `edges` | EdgeRef[] | one or more |
 | `radiusMm` | number | above 0, at most 1000 |
 | `toleranceMm` | number? | chord tolerance of the round, default 0.01, from 0.001 to 1 |
+| `allOrNothing` | boolean? | as for `edge.chamfer` |
 | `options` | BooleanOptions | optional |
 
 The round is a tessellated circular arc tangent to both faces, with its points on the arc and its chords inside it. Its segment count follows from the chord tolerance, so a fillet removes (or a concave one adds) slightly more than the exact round, at most the chord tolerance deep.
@@ -109,6 +111,20 @@ Behavior:
 - A fillet corner where three filleted edges meet gets a spherical patch when the three edges have the same radius, are all convex or all concave, and no two faces at the corner meet at less than 90 degrees. Any other three edge fillet corner fails in words: `edges: the corner at (x, y, z) joins three fillets this tool cannot blend; leave one of its edges out or make it a chamfer`.
 - An edge that ends against a wall stops at the wall.
 - An edge listed more than once (the same ends either way round, or the same round edge) is cut once; `notes` says so, as `edge 2 is edge 1 again and was taken once`, and `refs` still has one entry per edge asked for.
+
+With `allOrNothing: false` an edge that fails is left as it was and the rest are cut. The reply then always has `skipped`, empty when every edge was cut: `{index, code, message}` per edge left, `index` counting from 0 in request order and `message` the sentence the call would have failed with. `notes` adds `edge 3 was left as it was: ...` for each. When a failure names several edges (two strips that overlap, a corner it cannot blend), the last of them is left out and the rest tried again, so a corner keeps two of its three rounds. A call that can cut none of its edges fails as the first edge did. Absent, the call is all or nothing as before, byte for byte.
+
+| Code | When |
+| --- | --- |
+| `does_not_fit` | the size is wider than the face beside the edge, or the edge is too short for it |
+| `overlap` | its strip would overlap another edge's on one face |
+| `corner` | a corner of three or more rounds it cannot blend |
+| `round_join` | edges along a round picked from different faces, or one point of a round named more than twice |
+| `not_found` | no sharp edge there any more, or more than one matches (pick it again) |
+| `face_reference` | a face key the edge was kept by is missing or split |
+| `unsupported` | any other reason `edge.pick` gives for not supporting the edge |
+
+A history step keeps `allOrNothing` as given and, once it has run, `skipped`: the indexes it left out when it was made. A replay that leaves out the same edges is quiet; one that leaves out others (an earlier step changed so a round no longer fits) is still done, and its status note reads `This step now leaves edges 2, 5 as they were; when it was made it left 2.` Each step status of such a step has `skipped` with the codes of this replay.
 
 Errors, all plain sentences:
 - `edges: pick at least one edge`
@@ -151,6 +167,12 @@ Errors:
 - `radiusMm: 5 mm does not fit at corner 3 of loop 1; at most 2.5 mm` (also for distances, and when two rounded corners would overlap on one segment)
 - `corners: corner 3 of loop 1 is straight` (no turn to round)
 - `radiusMm: must be above 0 (at most 1000 mm)`, likewise the distances
+
+## Through the MCP
+
+`slicerx_geom_edge_pick` returns `loopRef` and `chainRef` first: `{set: "loop" | "chain", at, normal}`, the picked face's point and normal, which `slicerx_geom_fillet` and `slicerx_geom_chamfer` take in `edges` beside single edges, with `loopEdges` and `chainEdges` saying how many edges each names. The per-edge `chain` and `loop` lists come only with `list_edges: true`. The ops pick a reference again on the part as it is when the step is made (the flat face facing `normal` nearest `at`, within 25 mm) and store the edges it names, so a step keeps plain edges and replays as before. A reference picked before an earlier round ate into its face still finds the face; a single edge that round moved is refused with `pick it again`, and the refusal says a loopRef or chainRef holds. One reference stands for any number of edges, so a whole outline of 300 edges is one entry, and the 256 entry cap of `edges` is not raised.
+
+The MCP ops default to `all_or_nothing: false`, store `allOrNothing` on the step, and always reply with `skipped` (`index` in the step's edges, `input` the entry of `edges` it came from, `code`, `message`). `slicerx_design_steps` lists a step's `skipped` beside its state. The app's fillet tool sends no `allOrNothing`, so it stays all or nothing.
 
 ## Build
 

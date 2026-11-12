@@ -943,13 +943,18 @@ fn edge_op(req: &Value, enc: MeshOut, files: FileLoader<'_>, fillet: bool) -> Re
     let edges: Vec<edge::EdgeRef> = field(req, "edges")?;
     let profile = edge_profile(req, fillet)?;
     let opts: BooleanOptions = field_or_default(req, "options")?;
-    let r = edge::apply(&it.world(), &edges, profile, &opts)?;
+    let all: bool = field_or(req, "allOrNothing", true)?;
+    let r = edge::apply_some(&it.world(), &edges, profile, &opts, !all)?;
     let mut v = mesh_report(&it.to_local(&r.mesh)?, enc);
     insert(&mut v, "report", to_value(&r.report)?);
     insert(&mut v, "edges", to_value(&r.edges)?);
     insert(&mut v, "corners", to_value(&r.corners)?);
     insert(&mut v, "refs", to_value(&r.refs)?);
     insert(&mut v, "notes", to_value(&r.notes)?);
+    // only a call that may leave edges out says which it did
+    if !all {
+        insert(&mut v, "skipped", to_value(&r.skipped)?);
+    }
     Ok(v)
 }
 
@@ -958,8 +963,13 @@ fn edge_preview_op(req: &Value, enc: MeshOut, files: FileLoader<'_>, fillet: boo
     let it = item_field(req, "mesh", files)?;
     let edges: Vec<edge::EdgeRef> = field(req, "edges")?;
     let profile = edge_profile(req, fillet)?;
-    let (cut, join) = edge::preview(&it.world(), &edges, profile)?;
-    Ok(json!({ "cut": enc.mesh(&cut), "join": enc.mesh(&join) }))
+    let all: bool = field_or(req, "allOrNothing", true)?;
+    let (cut, join, skipped) = edge::preview_some(&it.world(), &edges, profile, !all)?;
+    let mut v = json!({ "cut": enc.mesh(&cut), "join": enc.mesh(&join) });
+    if !all {
+        insert(&mut v, "skipped", to_value(&skipped)?);
+    }
+    Ok(v)
 }
 
 #[cfg(feature = "cad")]
