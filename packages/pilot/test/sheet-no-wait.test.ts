@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, sheetTool, type ScriptStep } from '../src/index'
 import { SHEET_FIRST_NOTE } from '../src/runtime'
+import { asksSheet } from '../src/sheet-ask'
 import { defineTool, type PilotTool, type ToolContext } from '../src/tool'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
@@ -102,7 +103,7 @@ describe('a sheet that fits nothing the person has', () => {
     expect(confirms()).toBe(true)
   })
 
-  it('waits for the person on a sheet of a part already built, with no fits, so its drawing stays up to read and edit', async () => {
+  it('waits for the person on a sheet they asked to see, with no fits, so its drawing stays up to read and edit', async () => {
     const { ran, say } = setup([{ calls: [{ name: 'geom.build', args: {} }] }, { calls: [{ name: 'pilot.sheet', args: { title: 'Box', design: 'd1', dims: [ROW] } }] }, { text: 'Here are its sizes.' }])
     const events: PilotEvent[] = await say('show me the sheet of the box', true)
     const shown = events.find((e) => e.type === 'sheet')
@@ -127,13 +128,41 @@ describe('a sheet that fits nothing the person has', () => {
 describe('a follow-up on a part already built', () => {
   const built: ScriptStep[] = [{ calls: [sheet()] }, { calls: [{ name: 'geom.build', args: {} }] }, { calls: [{ name: 'design.check', args: { planId: 'p1' } }] }, { text: 'Built.' }]
 
-  it('adds a body to that part with no sheet, and a sheet it shows does not wait, even one with fits', async () => {
-    const { ran, say } = setup([...built, { calls: [{ name: 'geom.build', args: { design: 'd1' } }] }, { calls: [sheet(true)] }, { text: 'Added a rim.' }])
+  it('adds a body to that part with no sheet, and a plain sheet it shows does not wait', async () => {
+    const { ran, say } = setup([...built, { calls: [{ name: 'geom.build', args: { design: 'd1' } }] }, { calls: [sheet()] }, { text: 'Added a rim.' }])
     await say('make a planter')
     ran.length = 0
     const events = await say('add a rim')
     expect(ran).toEqual(['look', 'build d1', 'compare'])
     expect(events.filter((e) => e.type === 'sheet_answered')).toEqual([expect.objectContaining({ auto: true })])
+  })
+
+  it('waits on a sheet the person asked to see, with the built design on it', async () => {
+    const { say } = setup([...built, { calls: [{ name: 'pilot.sheet', args: { title: 'Planter', design: 'd1', dims: [ROW] } }] }, { text: 'Here are its sizes.' }])
+    await say('make a planter')
+    const events = await say('show me the dimension sheet', true)
+    expect(events.find((e) => e.type === 'sheet')).toMatchObject({ sheet: { design: 'd1' } })
+    const answered = events.filter((e) => e.type === 'sheet_answered')
+    expect(answered).toHaveLength(1)
+    expect(answered[0]).not.toHaveProperty('auto')
+    expect(results(events)).toContain('Confirmed as shown')
+  })
+
+  it('goes ahead on a resize that shows a sheet with the built design on it', async () => {
+    const { say } = setup([...built, { calls: [{ name: 'pilot.sheet', args: { title: 'Planter', design: 'd1', dims: [{ ...ROW, value: 60 }] } }] }, { text: 'Resized.' }])
+    await say('make a planter')
+    const events = await say('make it 60 mm wide')
+    expect(events.find((e) => e.type === 'sheet')).toMatchObject({ sheet: { design: 'd1' } })
+    expect(events.filter((e) => e.type === 'sheet_answered')).toEqual([expect.objectContaining({ auto: true })])
+  })
+
+  it('waits on a sheet whose sizes must fit something', async () => {
+    const { say } = setup([...built, { calls: [{ name: 'geom.build', args: { design: 'd1' } }] }, { calls: [sheet(true)] }, { text: 'Added a rim.' }])
+    await say('make a planter')
+    const events = await say('add a rim that fits my 40 mm saucer', true)
+    const answered = events.filter((e) => e.type === 'sheet_answered')
+    expect(answered).toHaveLength(1)
+    expect(answered[0]).not.toHaveProperty('auto')
   })
 
   it('still holds a new part started in another design', async () => {
@@ -154,5 +183,17 @@ describe('a question answered at once', () => {
     expect(ask).toBeDefined()
     expect(answered).toMatchObject({ choiceId: 'b', auto: true })
     expect(results(events)).toContain('Picked b')
+  })
+})
+
+describe('asksSheet reads an ask to see the sheet from the words', () => {
+  it('takes an ask to see the sheet, the sizes or the drawing', () => {
+    for (const m of ['show me the dimension sheet', "Show me the dimension sheet for the box's main sizes", 'Main sizes of the print, please', 'What are the main sizes of my stand design?', 'let me see the drawing', 'show me the sizes, then make it wider'])
+      expect(asksSheet(m), m).toBe(true)
+  })
+
+  it('takes no change, a new part or a resize as one', () => {
+    for (const m of ['make it 60 mm wide', 'add a rim', 'make the lid 2 mm thicker', 'change the sizes to fit my phone', 'make a planter', 'and a saucer'])
+      expect(asksSheet(m), m).toBe(false)
   })
 })
