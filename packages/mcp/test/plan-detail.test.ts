@@ -8,7 +8,7 @@
 import type { PilotMachine } from '@slicerx/contracts'
 import { type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
-import { type BodyFacts, createPlanRegistry, designCheck, partPlanSchema, type PartPlan } from '../src/design-check'
+import { type BodyFacts, colorBands, createPlanRegistry, designCheck, partPlanSchema, type PartPlan } from '../src/design-check'
 import { DEFAULT_BED, DETAIL_HELP, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem } from '../src/plan-detail'
 import { PLAN_GO, type PlanInput } from '../src/tab-tools'
 import { createCardPlans, designToolset, tabToolset } from '../src/toolset'
@@ -167,10 +167,10 @@ describe('detailProblem: the rules are about the object', () => {
     expect(featuresFloor({ repeats: ['a', 'b', 'c', 'd', 'e'] }, 'display')).toEqual({ count: 10, why: '8 at display model, 2 more for 5 repeated details' })
   })
 
-  it('wants each body\'s color, and a body painted in two colors split at its line', () => {
+  it('wants each body\'s color, and a body of two colors as its lightest color with the other a band feature', () => {
     expect(detailProblem({ ...house, colors: undefined })).toContain("colors: give each feature's color as the real thing is painted")
     for (const two of ['white and yellow', 'white/yellow', 'white, yellow'])
-      expect(detailProblem({ ...house, colors: { ...house.colors, Walls: two } })).toContain(`colors: Walls is ${two}; split it at its color line into one feature per color`)
+      expect(detailProblem({ ...house, colors: { ...house.colors, Walls: two } })).toContain(`colors: Walls is ${two}; give it its lightest large color, and each other color its own band feature with its color and its heights as sizes`)
     const { Roof: _roof, ...noRoof } = house.colors!
     expect(detailProblem({ ...house, colors: noRoof })).toContain('colors: say what color Roof is')
     expect(detailProblem({ ...house, colors: { ...house.colors, Garden: 'green' } })).toContain('colors: Garden is not a planned feature')
@@ -226,9 +226,9 @@ function tab() {
 }
 
 describe('design.plan with a detail level', () => {
-  it('is 1.9.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
+  it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.9.0')
+    expect(t.tool.version).toBe('1.10.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
@@ -244,7 +244,7 @@ describe('design.plan with a detail level', () => {
     const d = tab().tool.description
     expect(d).toContain('display for a model of a real thing named without sizes (the default)')
     expect(d).toContain('a flat-sided one (a house, a bookshelf) can be extruded')
-    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'a loft between two ellipses, offset for the rake, then arrayed', 'Repeated small parts are one part, then array and mirror', 'Each color band of the real thing (a stripe, a trim line, a two tone split) is its own part', 'a bottom lifting at the ends', 'split at its line into one feature per color'])
+    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'a loft between two ellipses, offset for the rake, then arrayed', 'Repeated small parts are one part, then array and mirror', 'is built whole in its lightest large color, and each darker band is its own feature', 'painted by direction top', 'its levels are continuous too', 'gives its lean in degrees as a size named rake', 'Plan the features a person recognizes the real thing by', 'a bottom lifting at the ends', 'each darker band its own feature, with its color and its heights as sizes, painted on by height'])
       expect(d).toContain(step)
     await expect(tab().run({ ...car, proportions: undefined })).rejects.toThrow(DETAIL_HELP)
   })
@@ -380,5 +380,31 @@ describe('a stepped body plans each level tall enough to read', () => {
     })
     expect(detailProblem(stories(2))).toContain('tiers: Tower, a level of Tower, is 2 mm tall, which reads as a thin slab at the whole-model view; give each level at least 3 mm')
     expect(detailProblem(stories(3)) ?? '').not.toContain('thin slab')
+  })
+})
+
+describe('display rules any kind of object can use', () => {
+  // a house: white walls with a dark plinth band painted on below 6 mm, and a chimney leaning 8 degrees
+  const banded = {
+    ...withFeature(house, 'Chimney', { sizes: { width: 8, depth: 8, height: 20, rake: 8 }, kinds: { rake: 'angle' } }),
+    colors: { ...house.colors, 'Plinth band': 'dark gray' },
+    features: [...withFeature(house, 'Chimney', { sizes: { width: 8, depth: 8, height: 20, rake: 8 }, kinds: { rake: 'angle' } }).features, { name: 'Plinth band', kind: 'paint', sizes: { below: 6 } }],
+  } as PlanInput
+  // a toy car: a white body with a blue band painted from 4 to 9 mm, and mirrors raked back 15 degrees
+  const striped = {
+    ...withFeature(car, 'Mirrors', { sizes: { width: 3, height: 2, depth: 2, rake: 15 }, kinds: { rake: 'angle' } }),
+    colors: { ...car.colors, Body: 'white', 'Side band': 'blue' },
+    features: [...withFeature(car, 'Mirrors', { sizes: { width: 3, height: 2, depth: 2, rake: 15 }, kinds: { rake: 'angle' } }).features, { name: 'Side band', kind: 'paint', sizes: { from: 4, to: 9 } }],
+  } as PlanInput
+
+  it('plans a light body with a darker band painted on by height, and an upright raked, on a building and on a vehicle', () => {
+    for (const plan of [banded, striped]) expect(detailProblem(plan), plan.part).toBeNull()
+    expect(colorBands(banded as unknown as PartPlan)).toEqual([{ name: 'Plinth band', color: 'dark gray', lo: 'bottom', hi: 6 }])
+    expect(colorBands(striped as unknown as PartPlan)).toEqual([{ name: 'Side band', color: 'blue', lo: 4, hi: 9 }])
+  })
+
+  it('refuses one feature of two colors on either, with the way to plan it', () => {
+    expect(detailProblem({ ...house, colors: { ...house.colors, Walls: 'white and gray' } })).toContain('give it its lightest large color, and each other color its own band feature')
+    expect(detailProblem({ ...car, colors: { ...car.colors, Body: 'white and blue' } })).toContain('give it its lightest large color, and each other color its own band feature')
   })
 })

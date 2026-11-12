@@ -59,7 +59,7 @@ export const planDetailFields = {
   colors: z
     .record(text(60), text(40))
     .optional()
-    .describe('Display and fine: each feature\'s color as the real thing is painted, by feature name, such as {"Lower body": "red"}. A body the real thing paints in two or more colors (a stripe, a trim line, a two tone split) is split at its line into one feature per color'),
+    .describe('Display and fine: each feature\'s color as the real thing is painted, by feature name, such as {"Lower body": "red"}. A body the real thing paints in two or more colors is built in its lightest large color, and each darker band (a stripe, a trim line) is its own feature with its color here and its heights as sizes, painted on by height'),
   scale: z
     .union([z.number().positive(), z.string().trim().regex(/^(1\s*:\s*)?\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
     .optional()
@@ -180,7 +180,7 @@ export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: stri
   if (plan.features.length < least.count)
     problems.push(`features: a ${name} plan of this object has at least ${least.count} features (${least.why}); this one has ${plan.features.length}. Add the real thing's parts you left out: each color band as its own feature, the parts that stand on the main body, and its smaller details, each repeated one built once and patterned`)
   const colors = Object.entries(plan.colors ?? {})
-  if (!colors.length) problems.push(`colors: give each feature's color as the real thing is painted, such as {"Lower body": "red"}; a body painted in two colors is split at its line into two features`)
+  if (!colors.length) problems.push(`colors: give each feature's color as the real thing is painted, such as {"Lower body": "red"}; a body painted in two or more colors is built in its lightest large color with each darker band its own feature, its heights as sizes`)
   else {
     const colored = new Set<string>()
     for (const [name, color] of colors) {
@@ -190,7 +190,7 @@ export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: stri
         continue
       }
       colored.add(name.trim().toLowerCase())
-      if (TWO_COLORS.test(color)) problems.push(`colors: ${f.name} is ${color.trim()}; split it at its color line into one feature per color, so each prints in its own filament`)
+      if (TWO_COLORS.test(color)) problems.push(`colors: ${f.name} is ${color.trim()}; give it its lightest large color, and each other color its own band feature with its color and its heights as sizes, painted on by height, so each prints in its own filament`)
     }
     for (const n of [...(plan.curved ?? []), ...(plan.flat ?? [])])
       if (feature(n) && !colored.has(n.trim().toLowerCase())) problems.push(`colors: say what color ${n} is`)
@@ -335,7 +335,7 @@ export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, lev
  * lines in the plan tool's description and in each refusal, never a recipe for one object.
  */
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a top line rising toward the ends, a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Each color band of the real thing (a stripe, a trim line, a two tone split) is its own part, split at its line, so paint follows the shape. Sizes of the parts on it (chimneys, wheels, doors) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. A tapered or raked round part (a chimney, a leg, a spout) is a loft between two ellipses, offset for the rake, then arrayed. Repeated small parts are one part, then array and mirror'
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a top line rising toward the ends, a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. A body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built; a band a person sees from the whole-model view is a real share of the side, not a sliver. Faces that read as their own surface from above (a flat top, a roof, a floor) may take their own color, painted by direction top, so the top view has contrast. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Where the real thing is one continuous body along most of its length, its levels are continuous too, each stepped in from the one below, and the parts standing on it stand on its top level. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. An upright the real thing leans (a chimney, a table leg, a lamp post) gives its lean in degrees as a size named rake; a tapered or raked round part is a loft between two ellipses, offset for the rake, then arrayed, its cap or band leaning with it. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, at their real count, color and lean, with the detail its size can carry: a repeated detail the scale leaves at least two nozzle widths wide is built in rows on every side that has it (a row on a curved side follows the side), and anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror'
 
 /** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
 export interface LoftSections {
