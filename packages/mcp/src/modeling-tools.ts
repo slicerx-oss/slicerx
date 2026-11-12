@@ -405,7 +405,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const build = defineTool({
     name: 'geom.build',
-    version: '1.6.0',
+    version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,

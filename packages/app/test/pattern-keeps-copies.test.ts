@@ -166,8 +166,12 @@ describe('a row that follows a curved side', () => {
   })
 })
 
-/** An exact engine: brep.extrude cuts answer touches false where `misses` says, by the frame's x origin. */
-function exactEngine(misses: (x: number) => boolean) {
+/**
+ * An exact engine that misses with the copies `misses` names: a brep.extrude cut of one copy (found by its frame's x
+ * origin, `copyOf`) answers touches false; a cut of every copy's outline at once (a row on an exact solid is one kernel
+ * call, its outline k being copy k + 2) names the ones that missed in `missed`, or touches nothing when all did.
+ */
+function exactEngine(misses: (copy: number) => boolean, copyOf: (x: number) => number) {
   const sent: { op: string; req: R }[] = []
   let n = 0
   const call = async (op: string, request: unknown) => {
@@ -175,9 +179,10 @@ function exactEngine(misses: (x: number) => boolean) {
     sent.push({ op, req })
     if (op === 'brep.tessellate') return { ...tri(1), faceIds: [0], faces: [{ id: 0, type: 'plane', surface: { kind: 'plane', normal: [0, 0, 1], offset: 0 }, key: 77 }] }
     if (op === 'brep.extrude' && req['target'] !== undefined) {
-      const x = (req['frame'] as { origin: number[] }).origin[0]!
-      if (misses(x)) return { touches: false }
-      return { touches: true, body: 1, bodySmb: `cut-${++n}` }
+      const outlines = req['polygons'] as unknown[]
+      const missed = outlines.length > 1 ? outlines.flatMap((_, k) => (misses(k + 2) ? [k] : [])) : misses(copyOf((req['frame'] as { origin: number[] }).origin[0]!)) ? [0] : []
+      if (missed.length === outlines.length) return { touches: false }
+      return { touches: true, body: 1, bodySmb: `cut-${++n}`, ...(outlines.length > 1 ? { missed } : {}) }
     }
     if (op.startsWith('brep.')) return { body: 1, bodySmb: `${op.slice(5)}-${++n}` }
     return { mesh: tri(1), removedVolumeMm3: 1 }
@@ -195,22 +200,24 @@ describe('a pattern of steps on exact solids', () => {
   const slotCopy = (x: number) => Math.round((x + 15) / 6) + 1
 
   it('keeps the landing copies exact and names the ones that miss', async () => {
-    const e = exactEngine((x) => [3, 4].includes(slotCopy(x)))
+    const e = exactEngine((k) => [3, 4].includes(k), slotCopy)
     const r = await replayHistory(e.call, { history: exact(box, slot, slots(5)) })
     expect(r.status[2]).toEqual({ state: 'done', note: 'Copies 3 and 4 did not reach the part and were left out.', copies: { total: 5, kept: 3, missed: [3, 4] } })
     expect(r.exactFellBack).toBeUndefined()
     expect(e.sent.some((s) => s.op === 'subtract' || s.op === 'shape.extrude')).toBe(false)
+    // the copies go in one kernel call
+    expect(e.sent.filter((s) => s.op === 'brep.extrude')).toHaveLength(3)
     expect(r.status.every((s) => s.note !== EXACT_FELL_BACK)).toBe(true)
   })
 
   it('breaks when no copy lands, in a strict exact design too', async () => {
-    const e = exactEngine((x) => slotCopy(x) > 1)
+    const e = exactEngine((k) => k > 1, slotCopy)
     const r = await replayHistory(e.call, { history: exact(box, slot, slots(3)) })
     expect(r.status[2]).toEqual({ state: 'broken', message: NO_COPY_LANDS })
   })
 
   it('runs as before when every copy lands', async () => {
-    const e = exactEngine(() => false)
+    const e = exactEngine(() => false, slotCopy)
     const r = await replayHistory(e.call, { history: exact(box, slot, slots(3)) })
     expect(r.status[2]).toEqual({ state: 'done', copies: { total: 3, kept: 3, missed: [] } })
   })
