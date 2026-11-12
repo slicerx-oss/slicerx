@@ -55,6 +55,7 @@ pub mod measure;
 pub mod mesh;
 #[cfg(feature = "nest")]
 pub mod nest;
+pub mod normals;
 pub mod orient;
 #[cfg(feature = "text")]
 pub mod outline;
