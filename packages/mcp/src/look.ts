@@ -265,8 +265,17 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
           const e = edgeLines(m.positions, m.indices, width)
           if (e) objects.push({ mesh: e, transform: T, slot: 1, color: '#1a1a1a' })
         }
-        // a shared frame: a speck at two far corners of both designs' box, so before and after are drawn alike
-        if (frame) for (const c of [lo, hi]) objects.push({ mesh: { positions: [c[0]!, c[1]!, c[2]!, c[0]! + 0.01, c[1]!, c[2]!, c[0]!, c[1]! + 0.01, c[2]!], indices: [0, 1, 2] }, transform: T, slot: 1 })
+        // a shared frame: a speck at each of the eight corners of both designs' box, padded past the edge lines, so the
+        // picture's size and framing come from the frame alone and before and after are drawn alike, pixel for pixel. With a
+        // speck at only two corners, raised letters made taller drew 512 x 328 before and 512 x 329 after, which could
+        // not be compared.
+        if (frame) {
+          const pad = width * 4
+          for (let k = 0; k < 8; k++) {
+            const c = [k & 1 ? hi[0]! + pad : lo[0]! - pad, k & 2 ? hi[1]! + pad : lo[1]! - pad, k & 4 ? hi[2]! + pad : lo[2]! - pad]
+            objects.push({ mesh: { positions: [c[0]!, c[1]!, c[2]!, c[0]! + 0.01, c[1]!, c[2]!, c[0]!, c[1]! + 0.01, c[2]!], indices: [0, 1, 2] }, transform: T, slot: 1 })
+          }
+        }
         const r = (await host.call('render', { objects, view, size: LOOK_PX, image: true, ...(colors.length ? { colors: colors.slice(0, 32) } : {}) })) as { pngBase64?: string }
         return r.pngBase64
       }
