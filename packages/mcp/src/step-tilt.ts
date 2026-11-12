@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // design.edit_step's tilt: what an extrude or a loft made leans one way about its foot, kept on the step (Step.tilt)
-// so the timeline shows the same step edited. Before it is kept, what the step makes alone is measured against what
-// each other step makes alone: a lean that pushes it into another step's shape, or lifts it off everything it stood
-// on, is refused with the step it hits by name.
-import { direction, replayHistory, stepName, withTilt, type Design, type DesignHost, type HistoryMesh, type Step, type StepParams, type StepTilt, type Vec3 } from '@slicerx/cad-history'
+// so the timeline shows the same step edited. Before it is kept, what the step makes alone, with each copy a pattern
+// of it makes, is measured against what each other step makes alone with its copies: a lean that pushes the step or a
+// copy into another step's shape, or lifts it off everything it stood on, is refused with the step it hits by name.
+import { direction, invert, multiply, replayHistory, stepCopyMoves, stepName, withTilt, type Design, type DesignHost, type HistoryMesh, type Step, type StepParams, type StepTilt, type Vec3 } from '@slicerx/cad-history'
 import { z } from 'zod'
 
 export const TILT_TOWARD = ['x', '-x', 'y', '-y'] as const
@@ -46,16 +46,32 @@ export function tiltedStep(s: Step, t: TiltInput): { step: Step; said: string } 
   return { step: deg === 0 ? rest : { ...rest, tilt }, said: `it leans ${r1(deg)} degrees toward ${t.toward} (was ${r1(was)})${other}` }
 }
 
-/** What the step makes on its own, as a new body; null when it does not go through alone. */
-async function alone(host: DesignHost, s: Step): Promise<HistoryMesh | null> {
+/**
+ * What the step makes on its own, as new bodies: its own, and one for each copy every live pattern of it on its part
+ * makes, so a leaning step leans its copies too and another step's copies stand where they stand. Null when one does
+ * not go through alone.
+ */
+async function alone(host: DesignHost, s: Step, steps: readonly Step[]): Promise<HistoryMesh[] | null> {
   const p = withTilt(s).params
   const params = (p.op === 'shape.extrude' ? { ...p, spec: { ...p.spec, operation: 'new' } } : { ...p, operation: 'new' }) as StepParams
-  try {
-    const r = await replayHistory((op, request) => host.call(op, request), { history: { version: 1, base: [], steps: [{ id: `${s.id}~alone`, part: 0, transform: s.transform, params }] } })
-    return r.status[0]?.state === 'done' ? (r.parts[0] ?? null) : null
-  } catch {
-    return null
+  const at = [s.transform]
+  for (const x of steps) {
+    if (x.params.op !== 'pattern' || x.suppressed || x.part !== s.part || !x.params.steps.includes(s.id)) continue
+    const fromWorld = invert(x.transform)
+    // each copy as the pattern lands it: the step's own frame moved by the copy's move (cad-history patternStep)
+    for (const move of stepCopyMoves(x.params.spec)) at.push(multiply(s.transform, invert(multiply(fromWorld, multiply(move, x.transform)))))
   }
+  const out: HistoryMesh[] = []
+  for (const [k, transform] of at.entries()) {
+    try {
+      const r = await replayHistory((op, request) => host.call(op, request), { history: { version: 1, base: [], steps: [{ id: `${s.id}~${k}`, part: 0, transform, params }] } })
+      if (r.status[0]?.state !== 'done' || !r.parts[0]) return null
+      out.push(r.parts[0])
+    } catch {
+      return null
+    }
+  }
+  return out
 }
 
 type Box = [Vec3, Vec3]
@@ -98,32 +114,38 @@ async function meet(host: DesignHost, a: HistoryMesh, b: HistoryMesh): Promise<{
  * null when it can. `was` is the step before the edit, `now` after it.
  */
 export async function tiltProblem(host: DesignHost, d: Design, k: number, was: Step, now: Step): Promise<string | null> {
-  const [before, after] = await Promise.all([alone(host, was), alone(host, now)])
+  const all = d.history.steps
+  const [before, after] = await Promise.all([alone(host, was, all), alone(host, now, all)])
   if (!after) return 'tilt: leaning that far, the step no longer goes through on its own; lean it less'
-  if (!before) return null
-  const own = volume(before)
-  const reach = boxOf(after)
+  if (!before || before.length !== after.length) return null
+  const reach = after.map(boxOf)
   const hits: string[] = []
-  let stood = 0
-  let stands = 0
-  for (const [j, x] of d.history.steps.entries()) {
-    if (j === k || x.suppressed || x.part !== was.part || !SOLID.has(x.params.op) || d.status[j]?.state === 'broken') continue
-    const cut = x.params.op === 'shape.extrude' ? x.params.spec.operation === 'cut' : (x.params as { operation?: string }).operation === 'cut'
-    if (cut) continue
-    const them = await alone(host, x)
-    if (!them || !near(boxOf(them), reach, 1)) {
-      if (them && near(boxOf(them), boxOf(before), 0.05)) stood++
-      continue
+  for (const [c, mine] of before.entries()) {
+    const own = volume(mine)
+    let stood = 0
+    let stands = 0
+    for (const [j, x] of all.entries()) {
+      if (j === k || x.suppressed || x.part !== was.part || !SOLID.has(x.params.op) || d.status[j]?.state === 'broken') continue
+      const cut = x.params.op === 'shape.extrude' ? x.params.spec.operation === 'cut' : (x.params as { operation?: string }).operation === 'cut'
+      if (cut) continue
+      for (const them of (await alone(host, x, all)) ?? []) {
+        const was0 = near(boxOf(them), boxOf(mine), 0.05)
+        if (!near(boxOf(them), reach[c]!, 1)) {
+          if (was0) stood++
+          continue
+        }
+        const [m0, m1] = await Promise.all([meet(host, mine, them), meet(host, after[c]!, them)])
+        if (m0.touch) stood++
+        if (m1.touch) stands++
+        // what it stood on takes the dip of its foot as it turns; anything else takes next to nothing
+        const more = m1.shared - m0.shared
+        const name = `step ${j + 1}, ${stepName(x)}`
+        if (more > 0.5 && more > own * (m0.touch ? 0.25 : 0.02) && !hits.some((h) => h.startsWith(name))) hits.push(`${name}${c ? ` (copy ${c + 1})` : ''}`)
+      }
     }
-    const [m0, m1] = await Promise.all([meet(host, before, them), meet(host, after, them)])
-    if (m0.touch) stood++
-    if (m1.touch) stands++
-    // what it stood on takes the dip of its foot as it turns; anything else takes next to nothing
-    const more = m1.shared - m0.shared
-    if (more > 0.5 && more > own * (m0.touch ? 0.25 : 0.02)) hits.push(`step ${j + 1}, ${stepName(x)} (${r1(more)} mm3 more inside it)`)
+    if (!hits.length && stood > 0 && stands === 0) return `tilt: leaning that way lifts ${c ? `copy ${c + 1}` : 'it'} off what it stood on; lean it less`
   }
   if (hits.length) return `tilt: leaning that way runs it into ${hits.join(' and ')}; lean it less, the other way, or move it first`
-  if (stood > 0 && stands === 0) return 'tilt: leaning that way lifts it off what it stood on; lean it less'
   return null
 }
 
