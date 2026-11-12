@@ -4,7 +4,7 @@
 // the sizes a part is built from that waits for the person to confirm or edit them, and a record shown as a card with
 // its source. None changes anything; they are how mimir checks with the person and shows what it found.
 import type { PilotDim, PilotDimAt, PilotSheet, PilotSheetBind, PilotSheetSolid } from '@slicerx/contracts'
-import { dimText, SIZE_KINDS } from '@slicerx/contracts/size-kind'
+import { dimText, kindOf, SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
@@ -79,7 +79,7 @@ const outline = z.array(xy)
 const plane = z.enum(['xy', 'xz', 'yz'])
 const at = z
   .object({ a: xyz.optional(), b: xyz.optional(), off: xyz.optional(), c: xyz.optional(), from: xyz.optional(), to: xyz.optional(), r: num.optional() })
-  .describe('Where the size sits, in the part\'s mm, Z up. A length: a and b its ends, off the move out to draw it, e.g. {"a":[0,0,0],"b":[80,0,0],"off":[0,-10,0]}. An angle: corner c, directions from and to, arc radius r.')
+  .describe('Where the size sits, in the part\'s mm, Z up. A length: a and b its ends, off the move out to draw it (left out, the drawing moves it off the part itself), e.g. {"a":[0,0,0],"b":[80,0,0],"off":[0,-10,0]}. An angle: corner c, directions from and to, arc radius r. Every row of a sheet of several sizes needs it but a count.')
 const solid = z
   .object({
     kind: z.enum(['extrude', 'revolve', 'sweep', 'loft']).optional(),
@@ -164,13 +164,14 @@ function solidProblems(x: SolidIn, n: number): Issue[] {
 const atOk = (a: AtIn): boolean => {
   const v = (p: readonly number[] | undefined): boolean => pt(p, 3)
   if (a.c !== undefined || a.from !== undefined || a.to !== undefined || a.r !== undefined) return v(a.c) && v(a.from) && v(a.to) && a.r !== undefined && a.r >= 0.1 && a.r <= MM
-  return v(a.a) && v(a.b) && v(a.off)
+  // a length's offset may be left out: the drawing then moves its callout off the part on its own
+  return v(a.a) && v(a.b) && (a.off === undefined || v(a.off))
 }
 
 /** A row's place as the sheet carries it: a straight size or an angle, nothing else. */
 function placeOf(a: AtIn): PilotDimAt {
   const v = (p: number[] | undefined) => p as V3
-  return a.c ? { c: v(a.c), from: v(a.from), to: v(a.to), r: a.r! } : { a: v(a.a), b: v(a.b), off: v(a.off) }
+  return a.c ? { c: v(a.c), from: v(a.from), to: v(a.to), r: a.r! } : { a: v(a.a), b: v(a.b), off: a.off ? v(a.off) : [0, 0, 0] }
 }
 
 /** A part's solid as the sheet carries it: only its own kind's fields. */
@@ -199,7 +200,7 @@ const dim = z.object({
   kind: z.enum(SIZE_KINDS).optional(),
   min: num.optional(),
   max: num.optional(),
-  source: z.enum(['asked', 'lookup', 'photo', 'guess']).describe('asked: the person said it; lookup: from a page (give sourceTitle and sourceUrl); photo: measured from their photo; guess: your best guess'),
+  source: z.enum(['asked', 'lookup', 'photo', 'guess']).describe('asked: the person said it; lookup: from a page (give sourceTitle, and sourceUrl when the lookup gave one); photo: measured from their photo; guess: your best guess'),
   sourceTitle: z.string().min(1).max(80).optional(),
   sourceUrl: z.url({ protocol: /^https?$/ }).optional(),
   note: z.string().max(160).optional(),
@@ -244,7 +245,7 @@ const unplacedRow = (d: { label: string }, n: number): string => `row ${n + 1} (
 export function sheetTool(): PilotTool<never> {
   return defineTool({
     name: 'pilot.sheet',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description:
@@ -256,13 +257,13 @@ export function sheetTool(): PilotTool<never> {
         title: z.string().min(2).max(60),
         views: z.array(z.enum(['front', 'top', 'side', 'iso'])).min(1).max(4).default(['top', 'front', 'side', 'iso']),
         dims: z.array(dim).min(1).max(30),
-        part: z.array(solid).optional(),
+        part: z.array(solid).optional().describe('The new part as it will be built, needed for a sheet of several sizes unless design names a built one'),
         design: z.string().min(1).max(80).optional().describe('Id of a built design the sheet shows; at is then in its coordinates'),
         fits: z.boolean().optional().describe('A size must fit something the person has: only then the sheet waits for a confirm'),
       })
       .refine((i) => new Set(i.dims.map((d) => d.key)).size === i.dims.length, 'each dimension needs its own key')
       .refine((i) => i.dims.every((d) => (d.min === undefined || d.value >= d.min) && (d.max === undefined || d.value <= d.max)), 'a value is outside its own min and max')
-      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined), 'a looked-up value needs its sourceUrl')
+      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined || d.sourceTitle !== undefined), 'a looked-up value needs its sourceTitle, or its sourceUrl')
       .superRefine((i, ctx) => {
         for (const p of sheetProblems(i)) ctx.addIssue({ code: 'custom', path: p.path, message: p.message })
       }),
@@ -274,7 +275,8 @@ export function sheetTool(): PilotTool<never> {
       if (i.dims.length > 1 && !i.part?.length && !i.design) return { ok: false, inputRefused: true, summary: 'Not shown: a sheet of several sizes needs part: [solid, ...], the part as it will be built (each solid an extrude {"plane", "points", "from", "to"}, or a revolve, sweep or loft for a round, bent or tapered body), or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
       // a design that is not on the plate would show the sheet with no drawing, so mimir hears of it instead
       if (i.design && ctx.sheetDesign && !ctx.sheetDesign(i.design)) return { ok: false, inputRefused: true, summary: `Not shown: no built design ${i.design} on the plate; use the design id geom.info gives, or give part instead.` }
-      const unplaced = i.dims.length > 1 ? i.dims.flatMap((d, n) => (d.at ? [] : [unplacedRow(d, n)])) : []
+      // a count (windows: 4) is no length on the part, so it shows in the list with no callout
+      const unplaced = i.dims.length > 1 ? i.dims.flatMap((d, n) => (d.at || kindOf(d.key, d.kind) === 'count' ? [] : [unplacedRow(d, n)])) : []
       if (unplaced.length) return { ok: false, inputRefused: true, summary: `Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. ${unplaced.join('; ')}. Send it again with them.` }
       const answer = await ctx.sheet(sheetOf(i))
       // words written while it waited set it aside: they are the person's answer, as for a dismissed question

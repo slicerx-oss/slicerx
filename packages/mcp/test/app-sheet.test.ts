@@ -44,7 +44,7 @@ describe('app sheet tools', () => {
   it('is 1.2.0 and passes each row\'s kind on to the app', async () => {
     const call = vi.fn(async () => ({ sheetId: 'csheet_4', state: 'waiting' }))
     const [ask] = appSheetTools({ call } as unknown as AppLinkCaller, 'SlicerX')
-    expect(ask!.version).toBe('1.2.0')
+    expect(ask!.version).toBe('1.3.0')
     await ask!.run(ask!.input.parse({ ...SHEET, dims: [{ ...SHEET.dims[0], key: 'spokes', kind: 'count' }] }) as never, {} as never)
     expect(call).toHaveBeenCalledWith('sheet.ask', expect.objectContaining({ dims: [expect.objectContaining({ key: 'spokes', kind: 'count' })] }))
   })
