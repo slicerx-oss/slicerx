@@ -37,7 +37,7 @@ export function parseResume(v: Record<string, unknown>): ResumePlan {
   }
 }
 
-/** The remaining part moved down so it sits on the bed for slicing. */
+/** The remaining part moved down so it sits on the bed for slicing. A straight move, so exact normals still fit. */
 export function dropToBed(p: MeshPart, byMm: number): MeshPart {
   const out = new Float32Array(p.positions.length)
   for (let k = 0; k < p.positions.length; k++) out[k] = (p.positions[k] ?? 0) - (k % 3 === 2 ? byMm : 0)
