@@ -118,6 +118,18 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
     return { summary, images: image && png ? [{ mime: 'image/png' as const, data: png }] : undefined }
   }
 
+  const previewInput = z.object({
+    design: designArg,
+    layer: layerArg,
+    state: paintState().describe('For color the filament slot, 1 to 32 (1 is the first); 0 clears paint'),
+    target: targetArg,
+    part: z.number().int().min(0).optional().describe('Paint one part, from 0; absent: every part (a seed paints the part under its point)'),
+    max_depth: z.number().int().min(0).max(10).optional().describe('How finely a height band splits triangles at its edges, each level halving them; left out, deep enough that the edge is within 0.04 mm of its height (6 to 10)'),
+    view: z.enum(['fit', 'iso', 'top', 'front']).default('fit'),
+    size: z.number().int().min(64).max(2048).optional(),
+    image: z.boolean().default(false),
+    whole: z.boolean().optional().describe('With target part on a part already painted in bands: true when the person said the whole part ("the whole body", "all of it"); without it the person picks the band on a one-tap question'),
+  })
   const preview = defineTool({
     name: 'paint.preview',
     version: '1.3.0',
@@ -125,18 +137,9 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
     permission: 'read',
     description:
       'See what painting a design would do, without changing it: the triangles and area a target paints on each part, its connected regions, and a picture framed on them (the PNG only with image: true). Targets in words: the whole part, faces facing a direction ("the bottom" is direction bottom; "the top cap" is direction top with pick largest), a height band, a point grown into a region (smart fill or bucket), or one state for another. Show the person the preview, then apply it with slicerx_paint_apply and its preview id.',
-    input: z.object({
-      design: designArg,
-      layer: layerArg,
-      state: paintState().describe('For color the filament slot, 1 to 32 (1 is the first); 0 clears paint'),
-      target: targetArg,
-      part: z.number().int().min(0).optional().describe('Paint one part, from 0; absent: every part (a seed paints the part under its point)'),
-      max_depth: z.number().int().min(0).max(10).optional().describe('How finely a height band splits triangles at its edges, each level halving them; left out, deep enough that the edge is within 0.04 mm of its height (6 to 10)'),
-      view: z.enum(['fit', 'iso', 'top', 'front']).default('fit'),
-      size: z.number().int().min(64).max(2048).optional(),
-      image: z.boolean().default(false),
-      whole: z.boolean().optional().describe('With target part on a part already painted in bands: true when the person said the whole part ("the whole body", "all of it"); without it the person picks the band on a one-tap question'),
-    }),
+    input: previewInput,
+    // a local model's form leaves out whole, which only the cloud follow-up guidance asks for
+    localInput: previewInput.omit({ whole: true }),
     async run(i, ctx) {
       const d = designs.get(i.design)
       let target = storedTarget(i.target)

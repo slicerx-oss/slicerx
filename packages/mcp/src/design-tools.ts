@@ -435,6 +435,16 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
+  const editStepInput = z.object({
+    design: designArg,
+    step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id'),
+    value: z.number().min(-10_000).max(10_000).optional().describe('The new main number'),
+    suppressed: z.boolean().optional(),
+    label: z.string().max(120).optional().describe('A name for the step; empty for the one made from its numbers'),
+    feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
+    size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
+    move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
+  })
   const edit = defineTool({
     name: 'design.edit_step',
     version: '1.4.0',
@@ -442,16 +452,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     permission: 'slice',
     description:
       `Edit one step of a design and replay the steps after it, as editing a step in ${productName()}'s history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, rename it, or set the plan feature it builds. Setting a number clears that step's expression binding; renaming or suppressing it keeps the binding. Steps after it that no longer work are reported broken with the reason; edit them, or edit this one back.`,
-    input: z.object({
-      design: designArg,
-      step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id'),
-      value: z.number().min(-10_000).max(10_000).optional().describe('The new main number'),
-      suppressed: z.boolean().optional(),
-      label: z.string().max(120).optional().describe('A name for the step; empty for the one made from its numbers'),
-      feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
-      size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
-      move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
-    }),
+    input: editStepInput,
+    // a local model's form leaves out the follow-up's size and move, which only the cloud follow-up line asks for
+    localInput: editStepInput.omit({ size: true, move: true }),
     async run(i) {
       const d = designs.get(i.design)
       const k = stepIndex(d, i.step)
