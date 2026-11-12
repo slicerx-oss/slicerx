@@ -327,6 +327,9 @@ mod tests {
 
     fn child(mode: &'static str) -> Command {
         let mut c = Command::new(std::env::current_exe().unwrap());
+        // `start` sets this for every engine command; it is set here too, where the shell's check of each
+        // `Command::new` looks for it.
+        crate::launch::no_window(&mut c);
         c.args([
             "geom_host::tests::engine_child",
             "--exact",
