@@ -10,6 +10,7 @@
     "./features/phone": "./src/features/phone/controller.ts",
     "./features/phone/sealed": "./src/features/phone/sealed.ts",
     "./first-run/preset-import": "./src/first-run/preset-import.ts",
+    "./geom/native": "./src/geom/native-provider.ts",
     "./link/watch-support": "./src/link/watch-support.ts",
     "./pilot-connect/agents": "./src/pilot-connect/agents.ts",
     "./pilot-connect/browser-cloud": "./src/pilot-connect/browser-cloud.ts",
