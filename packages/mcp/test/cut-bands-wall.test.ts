@@ -5,6 +5,7 @@
 // on a cut the band shares with the next, so it is read as wall and design.check's wall fails under 0.1 mm; the same
 // body cut once, its lower band alone, keeps its rim as a tip. The tools run as the mimir tab runs them, on a design
 // host with the geometry engine (replies recorded in fixtures/cut-bands-wall.json.gz).
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { headlessDesignHost } from '../evals/creative/design-host'
 import { bodyFacts } from '../src/body-facts'
@@ -19,16 +20,18 @@ const HIGH = 6.7
 const L = 125
 const r3 = (n: number) => Math.round(n * 1000) / 1000
 
+// cos and sin of a quarter turn in four steps, written out, not computed: Math.cos and Math.sin may differ in the last
+// bit from one platform's build to another's, which changes the engine requests the recording is keyed by. These are
+// the values the recording was made with; a test checks them against Math.
+const QUARTER: readonly (readonly [number, number])[] = [[1, 0], [0.9238795325112867, 0.3826834323650898], [0.7071067811865476, 0.7071067811865475], [0.38268343236508984, 0.9238795325112867], [6.123233995736766e-17, 1]]
+
 /** Half a section, from the top edge down the side and round the lower curve to the bottom's middle: [y, z]. */
 function halfSection(ht: number, hb: number, zb: number, zt: number): [number, number][] {
   const r = Math.max(0.05, Math.min(1.6, hb * 0.9, (zt - zb) * 0.45))
   const top = Math.min(0.7, (zt - zb - r) * 0.3)
   const pts: [number, number][] = [[ht, zt]]
   for (let k = 0; k < 3; k++) pts.push([ht + ((hb - ht) * k) / 3, zt - top + ((zb + r - (zt - top)) * k) / 3])
-  for (let k = 0; k <= 4; k++) {
-    const a = (k / 4) * (Math.PI / 2)
-    pts.push([hb - r + r * Math.cos(a), zb + r - r * Math.sin(a)])
-  }
+  for (const [c, s] of QUARTER) pts.push([hb - r + r * c, zb + r - r * s])
   pts.push([(hb - r) * 0.5, zb])
   return pts
 }
@@ -66,7 +69,18 @@ async function wall(host: ReturnType<typeof headlessDesignHost>, design: string)
   return r.items.find((i) => i.name === 'minimum wall')!
 }
 
+// the hash of the sections as JSON: the numbers the recorded loft requests were made from
+const PROFILES_HASH = '64a284ba4dbb6be2'
+
 describe('color bands cut from a lofted body', () => {
+  it('builds the body from the same numbers on every platform', () => {
+    expect(createHash('sha256').update(JSON.stringify(profiles())).digest('hex').slice(0, 16)).toBe(PROFILES_HASH)
+    QUARTER.forEach(([c, s], k) => {
+      expect(Math.abs(c - Math.cos((k / 4) * (Math.PI / 2)))).toBeLessThan(1e-15)
+      expect(Math.abs(s - Math.sin((k / 4) * (Math.PI / 2)))).toBeLessThan(1e-15)
+    })
+  })
+
   it('three bands that share their cuts fail the wall at the rims; one band alone keeps its rim as a tip', async () => {
     const host = headlessDesignHost(engine)
     const tools = tabToolset(host, createCardPlans(createPlanRegistry()), { nozzleMm: () => 0.4 })
