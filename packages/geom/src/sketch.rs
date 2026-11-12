@@ -1170,6 +1170,30 @@ pub fn curves(loops: &[Loop]) -> Result<Vec<CurveProfile>> {
         .collect())
 }
 
+/// One drawn piece of a loop as it ends, with a spline segment's points before its end.
+pub(crate) type Drawn = (Prim, Vec<V2>);
+
+/// A loop drawn with segments, piece by piece: its start, and each segment as it ends, with a spline segment's points
+/// before its end (none for a line or an arc). The last piece ends on the start exactly, as [`curves`] closes its
+/// loops.
+pub(crate) fn drawn_pieces(l: usize, lp: &Loop) -> Result<(V2, Vec<Drawn>)> {
+    let r = flatten(l, lp).map_err(|i| Error::invalid("sketch", i.message))?;
+    let start = r.pts[0];
+    let mut pieces: Vec<Drawn> = r
+        .prims
+        .iter()
+        .zip(&lp.segments)
+        .map(|(&p, sg)| match p {
+            Prim::Spline { .. } => (p, sg.points.clone()),
+            Prim::Line { .. } | Prim::Arc { .. } => (p, Vec::new()),
+        })
+        .collect();
+    if let Some((Prim::Line { to } | Prim::Spline { to }, _)) = pieces.last_mut() {
+        *to = start;
+    }
+    Ok((start, pieces))
+}
+
 /// whether the loop is a spline or has a spline segment
 pub fn has_spline(lp: &Loop) -> bool {
     lp.kind.as_deref() == Some("spline") || lp.segments.iter().any(|s| s.kind == "spline")
