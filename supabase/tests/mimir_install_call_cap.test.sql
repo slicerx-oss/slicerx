@@ -12,6 +12,8 @@ grant all on t to service_role;
 update public.mimir_limits set register_key_hash = public.mimir_token_hash(edition || '-key') where not signed_in;
 -- the $0.50 install day these numbers were written for (0023 made it $1)
 update public.mimir_limits set install_daily_micros = 500000 where edition = 'slicerx';
+-- the $2 address day these numbers were written for (0035 made it $20)
+update public.mimir_limits set ip_daily_micros = 2000000 where edition = 'slicerx';
 create function pg_temp.reg(p_edition text, p_ip text) returns text language plpgsql as $$
 declare v text;
 begin
