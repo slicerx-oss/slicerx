@@ -627,7 +627,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const limits = entry.plan.printInPlace || together ? runFitLimits(ctx?.context, { ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() }) : undefined
       // a part that holds something (its plan sets a floor) has its floor read; the plan's own holes may open through it
       const floor = plannedFloor(entry.plan) ? { plannedHoleMm: plannedHoleMm(entry.plan) } : undefined
-      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined, { hook: hasHookLip(entry.plan), nozzleMm, ...(floor ? { floor } : {}) })
+      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined, { hook: hasHookLip(entry.plan), nozzleMm, ...(floor ? { floor } : {}), ...(entry.plan.holes?.some((h) => h.recess) ? { recesses: true } : {}) })
       const result = designCheck(entry.plan, body, nozzleMm, limits, together)
       const failed = result.items.filter((x) => !x.pass)
       const which = `${d.name} (${d.id}, ${how})`

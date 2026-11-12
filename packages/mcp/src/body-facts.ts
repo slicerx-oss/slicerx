@@ -6,7 +6,7 @@
 // and geom.hole do), its feature steps with the planned feature each was tagged with, and its thinnest wall (a ray
 // from each facet inward to the far side, through a grid of the facets, within a budget, skipping slivers and ledges
 // a join leaves), when asked, the hook on its upright stem (hook-lip.ts) and, when asked, the floor of a part that holds
-// something (holder-floor.ts).
+// something (holder-floor.ts), and for a plan with recess rows, its blind openings on any face (recesses.ts).
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import type { BodyFacts, FitLimits, FloorFacts } from './design-check'
@@ -14,6 +14,7 @@ import { fitFacts } from './fit-facts'
 import { floorOpenings } from './holder-floor'
 import { hookOn, surfacePoints } from './hook-lip'
 import { loftSections } from './plan-detail'
+import { recessesOf } from './recesses'
 
 type V3 = [number, number, number]
 type Mesh = Pick<HistoryMesh, 'positions' | 'indices'>
@@ -32,7 +33,7 @@ const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3
  * `hook`, how far the hook on its upright stem rises at its tip, and with `floor`, where each part's cavity opens
  * through its bottom (holes up to `floor.plannedHoleMm` across left out, as the plan's own).
  */
-export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; nozzleMm?: number; floor?: { plannedHoleMm: number } } = {}): Promise<BodyFacts> {
+export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; nozzleMm?: number; floor?: { plannedHoleMm: number }; recesses?: boolean } = {}): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
   // closed as geom.info and the slicer read it: corners at the same point of the part's own positions are one vertex,
   // whatever their indices
@@ -87,6 +88,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     ...(wall.tip ? { minWallTip: wall.tip } : {}),
     ...gaps,
     ...(opts.hook ? hookFacts(world) : {}),
+    ...(opts.recesses ? { recesses: world.flatMap((w) => recessesOf(w)).map((r) => ({ round: r.round, widthMm: r.widthMm, lengthMm: r.lengthMm, depthMm: r.depthMm })) } : {}),
     ...(opts.floor ? { floor: floorFacts(world, d.parts.map((p) => p.name), opts.floor.plannedHoleMm) } : {}),
   }
 }

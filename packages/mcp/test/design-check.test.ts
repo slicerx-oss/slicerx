@@ -48,14 +48,24 @@ describe('designCheck', () => {
   })
 
   it('a recess or a through hole the body reads as none fails', () => {
-    // a toy boat's portholes, 1 mm dents in its curved side
-    const boat: PartPlan = { ...bracket, holes: [{ name: 'portholes', diameter: 1, count: 12, recess: true }] }
-    const r = designCheck(boat, { ...built, holes: [] }, 0.4)
-    expect(failed(r)).toEqual(['portholes'])
-    const through = designCheck({ ...boat, holes: [{ name: 'portholes', diameter: 1, count: 12 }] }, { ...built, holes: [] }, 0.4)
-    expect(failed(through)).toEqual(['portholes'])
-    // a recess the body does read is held to its size as a hole is
-    expect(failed(designCheck(boat, { ...built, holes: Array.from({ length: 12 }, () => ({ diameterMm: 2 })) }, 0.4))).toEqual(['portholes'])
+    // a row of 1 mm round dents in a curved side
+    const dented: PartPlan = { ...bracket, holes: [{ name: 'dents', diameter: 1, count: 12, recess: true }] }
+    const dent = (widthMm: number) => ({ round: true, widthMm, lengthMm: widthMm, depthMm: 0.6 })
+    const r = designCheck(dented, { ...built, holes: [], recesses: [] }, 0.4)
+    expect(failed(r)).toEqual(['dents'])
+    expect(r.items.find((i) => i.name === 'dents')!.got).toBe('no recess')
+    expect(designCheck(dented, { ...built, holes: [] }, 0.4).items.find((i) => i.name === 'dents')!.got).toBe('not read')
+    const through = designCheck({ ...dented, holes: [{ name: 'dents', diameter: 1, count: 12 }] }, { ...built, holes: [] }, 0.4)
+    expect(failed(through)).toEqual(['dents'])
+    // a recess the body does read is held to its size and count as a hole is
+    const wide = designCheck(dented, { ...built, holes: [], recesses: Array.from({ length: 12 }, () => dent(2)) }, 0.4)
+    expect(failed(wide)).toEqual(['dents'])
+    expect(wide.items.find((i) => i.name === 'dents')!.got).toBe('none at that size; read 12 x 2 mm round')
+    const short = designCheck(dented, { ...built, holes: [], recesses: Array.from({ length: 9 }, () => dent(1.02)) }, 0.4)
+    expect(short.items.find((i) => i.name === 'dents')).toMatchObject({ pass: false, got: '9 x 1 mm round (3 short)' })
+    expect(failed(designCheck(dented, { ...built, holes: [], recesses: Array.from({ length: 12 }, () => dent(1.02)) }, 0.4))).toEqual([])
+    // a through hole is not a recess: twelve 1 mm holes leave the row unmet
+    expect(failed(designCheck(dented, { ...built, holes: Array.from({ length: 12 }, () => ({ diameterMm: 1 })), recesses: [] }, 0.4))).toContain('dents')
   })
 
   it('a 6 mm hole built at 5 mm fails that item only', () => {
