@@ -57,6 +57,12 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
     const s = d.history.steps[d.history.steps.length - 1]
     return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
   }
+  /** As added, with a pattern step's note: the copies it left out, which missed the part, named. */
+  const addedPattern = (d: Design, verb: string) => {
+    const r = added(d, verb)
+    const note = d.status[d.status.length - 1]?.note
+    return note ? { ...r, summary: `${r.summary}. ${note.replace(/\.$/, '')}` } : r
+  }
   /** The text laid out on the step's frame against the picked face's outline, both in that frame. */
   const textFitOn = async (ds: DesignHost, d: Design, f: { part: number; triangle: number }, frame: FaceFrame, at: V3, text: string, sizeMm: number) => {
     const part = d.parts[f.part]!
@@ -178,7 +184,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const mirror = defineTool({
     name: 'geom.mirror',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -190,7 +196,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         if (!i.copy) throw new ToolInputError('copy: a mirror of steps keeps them and adds their mirror image; leave copy out')
         const { ids, part } = repeated(d, i.steps, i.part)
         await ds.add(d, part, { op: 'pattern', steps: ids, spec: { kind: 'mirror', plane: planeOf(i.plane) } }, undefined, withFeature(i.feature))
-        return added(d, `Mirrored ${ids.length} step${ids.length === 1 ? '' : 's'}`)
+        return addedPattern(d, `Mirrored ${ids.length} step${ids.length === 1 ? '' : 's'}`)
       }
       await ds.add(d, i.part ?? 0, { op: 'mirror', plane: planeOf(i.plane), copy: i.copy }, undefined, withFeature(i.feature))
       // a mirror image a hair from another part, as its source is: the source's step moves and the image follows
@@ -211,7 +217,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   const ARRAY_TEXT = 'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy.'
   const array = defineTool({
     name: 'geom.array',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -232,7 +238,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         const [ds, d] = designOf(i.design)
         const { ids, part } = repeated(d, i.steps, i.part)
         await ds.add(d, part, { op: 'pattern', steps: ids, spec }, undefined, withFeature(i.feature))
-        return added(d, `Patterned ${ids.length} step${ids.length === 1 ? '' : 's'}, ${copies} copies`)
+        return addedPattern(d, `Patterned ${ids.length} step${ids.length === 1 ? '' : 's'}, ${copies} copies`)
       }
       if (i.design) {
         const [ds, d] = designOf(i.design)

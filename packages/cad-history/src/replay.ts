@@ -10,9 +10,9 @@ import { withTilt } from './tilt'
 import { IDENTITY, bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type LoftProfile, type Mat4, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
-import { repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
+import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { EXACT_FELL_BACK, ExactBroken, exactOps, exactStep, fromSolid, meshed, rigidFrame, solidTooBig, type Solids } from './exact'
+import { EXACT_FELL_BACK, ExactBroken, ExactMissed, exactOps, exactStep, fromSolid, meshed, rigidFrame, solidTooBig, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -258,6 +258,11 @@ export function engineReason(err: unknown): string {
 
 class Broken extends Error {}
 
+/** A step that did not reach the part: a pattern leaves that copy out (copiesLanded), anywhere else the step breaks. */
+class Missed extends Broken {}
+
+const missed = (e: unknown): boolean => e instanceof Missed || e instanceof ExactMissed
+
 const meshOnly = ({ smb: _smb, body: _body, unmeshed: _keys, ...rest }: Flat): Flat => rest
 
 const meshedAll = (call: EngineCall, parts: Flat[]): Promise<Flat[]> => (parts.some((p) => p.unmeshed) ? Promise.all(parts.map((p) => meshed(call, p))) : Promise.resolve(parts))
@@ -474,7 +479,10 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: p.operation, target: item(part) } : p.op === 'sketch.sweep' ? { ...sweepOpts(p), operation: p.operation, target: item(part) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
         const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean; miss?: Miss; volumeChangeMm3?: number; watertight?: boolean } }
         const joins = (p.op === 'shape.extrude' ? p.spec.operation : p.operation) === 'join'
-        if (!r.report.touches) throw new Broken(missSentence(r.report, joins))
+        if (!r.report.touches) {
+          const why = missSentence(r.report, joins)
+          throw why === INSIDE ? new Broken(why) : new Missed(why)
+        }
         out[i] = keep(part, r.mesh)
         // the step lands, and says so, when the engine reads the part it left as open
         if (r.report.watertight === false) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${NOT_CLOSED}` : NOT_CLOSED
@@ -483,7 +491,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       case 'subtract': {
         // as the tool sends it: the part with its transform, answered in the part's frame with the cut's faces
         const r = (await call('subtract', { mesh: item(part), solids: p.solids })) as { mesh: Flat; removedVolumeMm3: number; watertight?: boolean }
-        if (!(r.removedVolumeMm3 > 0)) throw new Broken('The shape no longer reaches the part.')
+        if (!(r.removedVolumeMm3 > 0)) throw new Missed('The shape no longer reaches the part.')
         out[i] = keep(part, r.mesh)
         // a cut the same size as a wall it meets can leave the part open: it lands, and says so, as a join does
         if (r.watertight === false) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${NOT_CLOSED}` : NOT_CLOSED
@@ -604,7 +612,7 @@ function copyParams(p: StepParams): StepParams {
  * transform moved by the copy's move, so each lands where the copy is, with no value of theirs rewritten. Copies get
  * their own ids, so the faces they make get keys of their own; what they find or note is the pattern's.
  */
-async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false, solids?: Solids, strict = false): Promise<Flat[]> {
+async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false, solids?: Solids, strict = false, inCopy?: number): Promise<Flat[]> {
   const p = s.params
   if (p.op !== 'pattern') return parts
   const byId = new Map(earlier.map((x) => [x.id, x]))
@@ -637,9 +645,13 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
     if (!Array.isArray(follow)) throw new Broken(`Copy ${follow.copy}: ${follow.why}`)
     moves = follow
   }
+  const left: number[] = []
   for (const [k, move] of moves.entries()) {
     // the copy's move in the part's own frame, undone at each step's transform: the step then lands moved by it
     const back = invert(multiply(fromWorld, multiply(move, toWorld)))
+    // a copy that misses the part is left out whole: the parts go back to how they were before its first step
+    const before = out
+    let miss = false
     for (const [j, x] of live.entries()) {
       const copy: Step = { id: `${s.id}#${k + 2}.${j + 1}`, part: x.part, transform: multiply(x.transform, back), params: copyParams(x.params) }
       try {
@@ -651,13 +663,15 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
           const own = new Set(inner.steps)
           const movedEarlier = earlier.map((e) => (own.has(e.id) ? { ...e, id: `${e.id}${tag}`, transform: multiply(e.transform, back), params: copyParams(e.params) } : e))
           for (const e of movedEarlier) if (e.id.endsWith(tag) && !e.suppressed) out = await runStep(call, e, out, fonts, moved, gone, found, exact, solids, strict)
-          out = await patternStep(call, { ...copy, params: { ...inner, steps: inner.steps.map((id) => `${id}${tag}`) } }, movedEarlier, out, fonts, moved, gone, found, exact, solids, strict)
+          out = await patternStep(call, { ...copy, params: { ...inner, steps: inner.steps.map((id) => `${id}${tag}`) } }, movedEarlier, out, fonts, moved, gone, found, exact, solids, strict, k + 2)
           continue
         }
         out = await runStep(call, copy, out, fonts, moved, gone, found, exact, solids, strict)
       } catch (e) {
         if ((e as { name?: string }).name === 'AbortError') throw e
-        throw new Broken(`Copy ${k + 2}: ${e instanceof Error ? e.message : String(e)}`)
+        if (!missed(e)) throw new Broken(`Copy ${k + 2}: ${e instanceof Error ? e.message : String(e)}`)
+        miss = true
+        out = before
       } finally {
         const note = found.notes[copy.id]
         if (note && note !== EXACT_FELL_BACK && !notes.includes(note)) notes.push(note)
@@ -672,8 +686,13 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
           if (!notes.includes(EXACT_FELL_BACK)) notes.push(EXACT_FELL_BACK)
         }
       }
+      if (miss) break
     }
+    if (miss) left.push(k + 2)
   }
+  const landed = copiesLanded(moves.map((_, k) => k + 2), left, inCopy)
+  if (landed.broken) throw new Missed(landed.broken)
+  if (landed.note) notes.unshift(landed.note)
   if (notes.length) found.notes[s.id] = notes.join(' ')
   return out
 }

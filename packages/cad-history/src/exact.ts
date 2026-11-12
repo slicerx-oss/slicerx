@@ -88,6 +88,9 @@ export const EXACT_FELL_BACK = 'The exact solid could not do this step, so it ra
 /** Thrown for an answer that is the step's real outcome, not a kernel failure (no fallback). */
 export class ExactBroken extends Error {}
 
+/** A join or cut that did not reach the part: a pattern leaves that copy out, as the mesh path does. */
+export class ExactMissed extends ExactBroken {}
+
 /**
  * The engine's answer to brep.tessellate, in either form it comes in. The numbers are lists or typed arrays. `faces`
  * is one entry per face, or the face table with its keys beside it; `faceIds` names each triangle's face. `normals`
@@ -451,7 +454,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...(p.spec.taperDeg ? { taperDeg: p.spec.taperDeg } : {}), ...(into === null ? {} : { target: into, operation: op }), ...kept })
         if (into !== null) {
           // a join or cut that misses changes nothing; the kernel makes no body then
-          if (!(r as { touches?: boolean }).touches) throw new ExactBroken('The shape no longer reaches the part.')
+          if (!(r as { touches?: boolean }).touches) throw new ExactMissed('The shape no longer reaches the part.')
           out[s.part] = await part(target!, r)
           return out
         }

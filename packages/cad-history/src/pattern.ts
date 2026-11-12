@@ -191,3 +191,50 @@ export function repeatProblem(s: Pick<Step, 'part' | 'params'>): string | null {
   if (p.op === 'paint' && p.target.kind !== 'seed') return 'A pattern repeats paint from a point; this step paints by side or height, which already covers the part.'
   return null
 }
+
+/** What a step pattern's copies came to: the copy numbers kept and left out (the steps themselves are copy 1), and what the step says. */
+export interface CopiesLanded {
+  kept: number[]
+  missed: number[]
+  /** The step's note naming the copies left out, or null when every copy landed. */
+  note: string | null
+  /** Why the step breaks, when no copy landed; null otherwise. */
+  broken: string | null
+  /** False when the engine did not say which copies missed (an older engine): every copy counts as kept. */
+  known: boolean
+}
+
+/** The sentence a pattern breaks with when none of its copies reach the part. */
+export const NO_COPY_LANDS = 'None of the copies reach the part, so the pattern adds nothing.'
+
+/** Copy numbers in words, runs of three or more as "2 to 5": "2, 4 and 7", "2 to 5 and 30". */
+function copyNumbers(ns: readonly number[]): string {
+  const runs: string[] = []
+  for (let i = 0; i < ns.length; ) {
+    let j = i
+    while (j + 1 < ns.length && ns[j + 1] === ns[j]! + 1) j++
+    if (j - i >= 2) runs.push(`${ns[i]} to ${ns[j]}`)
+    else for (let k = i; k <= j; k++) runs.push(String(ns[k]))
+    i = j + 1
+  }
+  return runs.length === 1 ? runs[0]! : `${runs.slice(0, -1).join(', ')} and ${runs[runs.length - 1]}`
+}
+
+/**
+ * A step pattern keeps the copies that land and leaves out the ones that miss the part, naming them in the step's note;
+ * it breaks only when none land. `copies` are the copy numbers tried (2 on), `missed` those that did not reach the part,
+ * both paths deciding a miss their own way (the mesh path by each copy's step, the exact one by the kernel's reply).
+ * `missed` null is unknown (an engine that does not say): the caller keeps its own check, and every copy counts as kept.
+ * `inCopy` is the copy of an outer pattern this one runs in: there it never breaks, as that copy's own steps landed.
+ */
+export function copiesLanded(copies: readonly number[], missed: readonly number[] | null, inCopy?: number): CopiesLanded {
+  if (missed === null) return { kept: [...copies], missed: [], note: null, broken: null, known: false }
+  const out = new Set(missed)
+  const left = copies.filter((c) => out.has(c))
+  const kept = copies.filter((c) => !out.has(c))
+  if (!left.length) return { kept, missed: [], note: null, broken: null, known: true }
+  if (!kept.length && inCopy === undefined) return { kept, missed: left, note: null, broken: NO_COPY_LANDS, known: true }
+  const one = left.length === 1
+  const said = `${one ? 'opy' : 'opies'} ${copyNumbers(left)} did not reach the part and ${one ? 'was' : 'were'} left out.`
+  return { kept, missed: left, note: inCopy === undefined ? `C${said}` : `In copy ${inCopy}, c${said}`, broken: null, known: true }
+}
