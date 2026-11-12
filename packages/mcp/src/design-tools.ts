@@ -450,7 +450,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       label: z.string().max(120).optional().describe('A name for the step; empty for the one made from its numbers'),
       feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
       size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
-      move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a deck raised 6 mm. Copies a pattern made of it follow'),
+      move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
     }),
     async run(i) {
       const d = designs.get(i.design)
