@@ -244,7 +244,8 @@ journey.describe('the mimir tab fits a phone', () => {
     await askTab(page, 'Print this on my Bay 6 in green PLA')
     const sheet = page.getByTestId('mimir-sheet-record').last()
     await expect(sheet).toBeVisible({ timeout: 30_000 })
-    await sheet.getByTestId('mimir-sheet-confirm').click()
+    // the clip at its default size goes ahead with nobody asked
+    await expect(sheet).toContainText('Confirmed as shown')
     const card = page.getByTestId('mimir-send').last()
     await expect(card).toBeVisible({ timeout: 120_000 })
     await expect(card.getByTestId('mimir-send-status')).not.toHaveText(/^Checking /, { timeout: 30_000 })
