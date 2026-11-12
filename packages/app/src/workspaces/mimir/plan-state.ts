@@ -16,8 +16,11 @@ import { mimirPlans } from './plans'
 
 /** The card plans this window has seen (shown on a card or opened with a project), oldest first. */
 const seen = new Set<string>()
-/** Per plan: its design's step ids when mimir last worked on it, and whether its last check passed. */
-const runs = new Map<string, { steps?: string[]; passed?: true }>()
+/**
+ * Per plan: its design's step ids when mimir last worked on it, whether its last check passed, and whether its design
+ * was ever checked (a later change undoes the pass, never the check: the design stays a follow-up's).
+ */
+const runs = new Map<string, { steps?: string[]; passed?: true; checked?: true }>()
 /** The plan the person approved last. */
 let last: string | null = null
 /** An approved plan opened with a project before its part was started: the next design built ties to it. */
@@ -64,6 +67,7 @@ function noteRun(name: string, input: unknown, out: { ok?: boolean; output?: unk
   if (name === 'design.check') {
     if (typeof o.planId !== 'string' || out.ok === false) return
     const run = runs.get(o.planId) ?? {}
+    run.checked = true
     if (o.pass === true) run.passed = true
     else delete run.passed
     runs.set(o.planId, run)
@@ -141,7 +145,7 @@ export function restorePlans(saved: SavedPlans, objectOf: (fileId: string) => st
     if (row.closed) mimirPlans.close(planId, row.closed)
     seen.delete(planId)
     seen.add(planId)
-    runs.set(planId, { ...(row.steps ? { steps: row.steps } : {}), ...(row.passed ? { passed: true as const } : {}) })
+    runs.set(planId, { ...(row.steps ? { steps: row.steps } : {}), ...(row.passed ? { passed: true as const, checked: true as const } : {}) })
   }
   if (saved.last && cardEntry(saved.last)) {
     last = saved.last
@@ -178,7 +182,8 @@ export function checkedDesign(): string | undefined {
   if (!last) return undefined
   const e = cardEntry(last)
   if (!e?.design || !get().plate.some((p) => p.id === e.design && p.history)) return undefined
-  return e.closed || e.failedChecks || e.passed || e.passedOnce || runs.get(last)?.passed ? e.design : undefined
+  const run = runs.get(last)
+  return e.closed || e.failedChecks || e.passed || e.passedOnce || run?.passed || run?.checked ? e.design : undefined
 }
 
 /** Forgets the plan state (tests, with the registry's clear). */
