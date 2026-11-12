@@ -22,6 +22,8 @@ function setup(steps: ScriptStep[], shares: number[], pass = true) {
     input: z.object({ name: z.string(), design: z.string().optional() }),
     async run(i) {
       log.push(`extrude ${i.name}`)
+      // a step the tool refuses leaves the design as it was
+      if (i.name === 'Refused') return { ok: false, summary: 'That step could not be made, so the part is unchanged' }
       return { summary: `Built ${i.name}`, output: { design: i.design ?? 'd1' } }
     },
   })
@@ -117,6 +119,16 @@ describe('a follow-up on a built design', () => {
     expect(log).toEqual(['look d1', 'extrude Funnel', 'compare d1 9'])
     const last = (client.requests as { messages: { role: string; images?: unknown[] }[] }[]).at(-1)!
     expect(last.messages.flatMap((m) => m.images ?? [])).toHaveLength(1)
+  })
+
+  it('measures only a step that changed the design: a refused change is not measured, nor counted under the floor', async () => {
+    const { log, say, sent } = setup([...built, x('Refused'), x('Vents'), { text: 'Added vents.' }, x('Bigger vents'), { text: 'Made the vents larger.' }], [1, 6])
+    await say('make a boat')
+    log.length = 0
+    await say('add deck details')
+    // one measure for the vents, under the floor, so the change goes back once to be strengthened
+    expect(log).toEqual(['look d1', 'extrude Refused', 'extrude Vents', 'compare d1 1', 'extrude Bigger vents', 'compare d1 6'])
+    expect(sent().flat()).toContain(STRENGTHEN_NOTE(1, 2))
   })
 
   it('answers at once when the change shows', async () => {

@@ -1805,6 +1805,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // meant for the part it would have started, and the model could not know that design's id yet, so they would land
       // on the part already started; they are skipped, and reads still run
       let restartRefused = false
+      // whether a call in this step changed the followed design: a refused or skipped one did not
+      let changedFollow = false
       for (const call of toolCalls) {
         // a held run waits here, before its next tool call; a canceled one answers the calls it never made
         await whileHeld(sessionId, signal)
@@ -1849,6 +1851,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           continue
         }
         const res = await execute(call, sessionId, context, watch, signal, citations, cards, stops, loader)
+        if (follow && call.name !== 'design.save' && res.message.startsWith('{"ok":true') && changesDesign(call) && designOf(call) === follow) changedFollow = true
         if (call.name === 'design.new' && res.message.includes(`"code":"${SAME_PART}"`)) restartRefused = true
         stepOn(sessionId, call, res.message)
         if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || refusals >= INPUT_REFUSAL_FAILS || checkMissed)) {
@@ -1872,7 +1875,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         }
       }
       // each step that changed the followed design is measured against the look before the change, for the model to read
-      if (follow && !signal.aborted && toolCalls.some((c) => c.name !== 'design.look' && c.name !== 'design.save' && changesDesign(c) && designOf(c) === follow)) {
+      if (follow && !signal.aborted && changedFollow) {
         measured = await lookAt(follow, true, true)
         if (measured) {
           const low = measured.pct < measured.floor
