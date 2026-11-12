@@ -26,10 +26,12 @@ describe('the design tab routing rule', () => {
     expect(designSteps('a box with a lid, a lip, rounded corners and a vent slot')).toBe(5)
   })
 
-  it('stays on huginn for a short text request', () => {
-    expect(designTier('Make me a 30 mm cube')).toBe(HUGINN)
-    expect(designTier('A bracket with two 5 mm holes and a fillet')).toBe(HUGINN)
-    expect(designTier('A 608 bearing hub with a chamfer, a boss and holes')).toBe(HUGINN)
+  it('starts a short new part on muninn, and a short change to the design on huginn', () => {
+    expect(designTier('Make me a 30 mm cube')).toBe(MUNINN)
+    expect(designTier('A bracket with two 5 mm holes and a fillet')).toBe(MUNINN)
+    expect(designTier('A 608 bearing hub with a chamfer, a boss and holes')).toBe(MUNINN)
+    expect(designTier('Make it 10 mm taller', [], { design: true })).toBe(HUGINN)
+    expect(designTier('Add a 2 mm fillet to the top edges', [], { design: true })).toBe(HUGINN)
   })
 
   it(`moves to muninn at ${MANY_STEPS} distinct features`, () => {
@@ -44,12 +46,12 @@ describe('the design tab routing rule', () => {
     expect(designTier('a plate with a pattern of 12 holes')).toBe(MUNINN)
   })
 
-  it('stays on huginn for a picture or a PDF alone, and for other files', () => {
-    expect(designTier('build this', [file('a.png', 'image/png')])).toBe(HUGINN)
-    expect(designTier('build this', [file('a.jpg', 'image/jpeg')])).toBe(HUGINN)
-    expect(designTier('build this', [file('drawing.pdf', 'application/pdf')])).toBe(HUGINN)
-    expect(designTier('build this', [file('notes.txt', 'text/plain')])).toBe(HUGINN)
-    expect(designTier('build this', [])).toBe(HUGINN)
+  it('routes a new part from a picture, a PDF or another file as one from words', () => {
+    expect(designTier('build this', [file('a.png', 'image/png')])).toBe(MUNINN)
+    expect(designTier('build this', [file('a.jpg', 'image/jpeg')])).toBe(MUNINN)
+    expect(designTier('build this', [file('drawing.pdf', 'application/pdf')])).toBe(MUNINN)
+    expect(designTier('build this', [file('notes.txt', 'text/plain')])).toBe(MUNINN)
+    expect(designTier('build this', [])).toBe(MUNINN)
   })
 })
 
@@ -78,7 +80,7 @@ const COMMANDS: CommandSpec[] = [
   { id: 'project-new', title: 'New project', section: 'plate', tool: { permission: 'slice' }, run: () => ({ started: true }) },
 ]
 
-function tabPilot(steps: ScriptStep[], opts: { config?: Partial<typeof AUTO>; failing?: boolean; cad?: boolean; others?: PilotTool<never>[]; tabs?: string[] } = {}) {
+function tabPilot(steps: ScriptStep[], opts: { config?: Partial<typeof AUTO>; failing?: boolean; cad?: boolean; others?: PilotTool<never>[]; tabs?: string[]; design?: boolean } = {}) {
   const client = createScriptedClient(steps, { chunk: false })
   const pilot = createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport },
@@ -87,6 +89,7 @@ function tabPilot(steps: ScriptStep[], opts: { config?: Partial<typeof AUTO>; fa
     client,
     ...(opts.cad ? { scope: 'cad' as const } : {}),
     ...(opts.tabs ? { tabs: opts.tabs } : {}),
+    ...(opts.design ? { hasDesign: () => true } : {}),
     commands: opts.cad ? COMMANDS.filter((c) => c.section !== 'slice') : COMMANDS,
     tools: [geomTool('design.new'), geomTool('geom.extrude', !opts.failing), geomTool('geom.fillet', !opts.failing), geomTool('geom.info'), ...(opts.others ?? [])],
   })
@@ -250,17 +253,25 @@ describe('the tab runtime', () => {
     }
   })
 
-  it('builds a short request on huginn from start to finish, through every design tool call', async () => {
+  it('builds a short new part on muninn from start to finish, through every design tool call, and says so once', async () => {
     const { pilot, client } = tabPilot(BUILD)
     const ev = await run(pilot, 'A bracket with two 5 mm holes and a fillet')
+    expect(models(client)).toEqual(Array(6).fill('claude-sonnet-5-5'))
+    expect(switches(ev)).toEqual([{ type: 'model_switch', model: 'claude-sonnet-5-5', label: 'Sonnet 5.5', reason: 'request' }])
+    expect(ev.find((e) => e.type === 'start')).toMatchObject({ model: 'claude-sonnet-5-5', route: { reason: 'new_part' } })
+  })
+
+  it('changes a design on huginn from start to finish, through every design tool call', async () => {
+    const { pilot, client } = tabPilot(BUILD, { design: true })
+    const ev = await run(pilot, 'Add a 2 mm fillet to the top edges')
     expect(models(client)).toEqual(Array(6).fill('claude-haiku-5-5'))
     expect(switches(ev)).toEqual([])
     expect(ev.find((e) => e.type === 'start')).toMatchObject({ model: 'claude-haiku-5-5' })
   })
 
   it('stays on huginn when design calls fail', async () => {
-    const { pilot, client } = tabPilot(BUILD, { failing: true })
-    const ev = await run(pilot, 'A bracket with two 5 mm holes')
+    const { pilot, client } = tabPilot(BUILD, { failing: true, design: true })
+    const ev = await run(pilot, 'Add a 2 mm fillet to the top edges')
     expect(ev.filter((e) => e.type === 'tool_result' && !e.ok).length).toBeGreaterThanOrEqual(2)
     expect(new Set(models(client))).toEqual(new Set(['claude-haiku-5-5']))
     expect(switches(ev)).toEqual([])
@@ -288,20 +299,20 @@ describe('the tab runtime', () => {
   })
 
   it('ignores the design-to-muninn flag of a provider weak at building', async () => {
-    const { pilot, client } = tabPilot(BUILD, { config: { deepDesign: true } })
-    await run(pilot, 'A bracket with two 5 mm holes')
+    const { pilot, client } = tabPilot(BUILD, { config: { deepDesign: true }, design: true })
+    await run(pilot, 'Add a 2 mm fillet to the top edges')
     expect(new Set(models(client))).toEqual(new Set(['claude-haiku-5-5']))
   })
 
-  it('builds on huginn for a picture or a PDF alone', async () => {
+  it('builds a new part from a picture or a PDF on muninn, as from words', async () => {
     for (const [message, files] of [
       ['Build this', [file('sketch.jpg', 'image/jpeg')]],
       ['Build the part on this drawing', [file('drawing.pdf', 'application/pdf')]],
     ] as const) {
       const { pilot, client } = tabPilot(BUILD)
       const ev = await run(pilot, message, [...files])
-      expect(new Set(models(client)), message).toEqual(new Set(['claude-haiku-5-5']))
-      expect(switches(ev), message).toEqual([])
+      expect(new Set(models(client)), message).toEqual(new Set(['claude-sonnet-5-5']))
+      expect(ev.find((e) => e.type === 'start'), message).toMatchObject({ route: { reason: 'new_part' } })
     }
   })
 
@@ -318,11 +329,11 @@ describe('the tab runtime', () => {
     }
   })
 
-  it('routes each message on its own: a plain follow-up goes back to huginn', async () => {
-    const { pilot, client } = tabPilot([{ text: 'Read it.' }, { text: 'Made it thicker.' }])
+  it('routes each message on its own: a change to the part just made goes back to huginn', async () => {
+    const { pilot, client } = tabPilot([{ calls: [{ name: 'design.new', args: {} }] }, { text: 'Started it.' }, { text: 'Made it taller.' }])
     await run(pilot, 'A box with a lid, a lip, rounded corners and vents')
-    await run(pilot, 'Make the base 4 mm thick')
-    expect(models(client)).toEqual(['claude-sonnet-5-5', 'claude-haiku-5-5'])
+    await run(pilot, 'Make it 10 mm taller')
+    expect(models(client)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'])
   })
 
   it('never switches without Auto: one pinned model, and mimir cloud', async () => {

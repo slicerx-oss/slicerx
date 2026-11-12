@@ -4,6 +4,8 @@
 // huginn takes quick looks (check-ins, frame reads, short answers) on a small, fast vision
 // model; muninn thinks deeply (diagnosis, tune-from-failure, planning) on the large one.
 import type { PilotConfig, PilotRoute } from '@slicerx/contracts'
+import { turnKind, turnNeeds } from './toolsets'
+import { turnSet } from './turnsets'
 
 export const HUGINN = 'huginn'
 export const MUNINN = 'muninn'
@@ -19,9 +21,9 @@ const DEEP = /\b(why\b|diagnos|fail(ed|ure|s)?\b|went wrong|what happened|tune|f
 
 /**
  * Tools whose work needs muninn; a run that reaches one moves to muninn for the rest. The part generators
- * (text_to_part, make_model) are not here: huginn builds most parts as well as muninn does on the bench, so a build
- * moves up only for its request (designRoute), a failed design check, real tool failures, or a key weak at building
- * parts (`deepDesign`; runtime.ts).
+ * (text_to_part, make_model) are not here: a request for a new part starts on muninn (designRoute), and a build
+ * otherwise moves up only for a failed design check, real tool failures, or a key weak at building parts
+ * (`deepDesign`; runtime.ts).
  */
 export const MUNINN_TOOLS: ReadonlySet<string> = new Set([
   'diagnose',
@@ -133,7 +135,7 @@ export function designSteps(prompt: string): number {
 
 /** The tier a request starts on and why, for the run's start event and the read-back. */
 export type Route = PilotRoute & { tier: Tier }
-/** Why Auto started a run on its tier: deep work, many steps, a part that works with another, sizes only the person knows, or none. (`attachment` is no longer given; saved sessions still carry it.) */
+/** Why Auto started a run on its tier: deep work, many steps, a part that works with another, sizes only the person knows, a new part, or none. (`attachment` is no longer given; saved sessions still carry it.) */
 export type RouteReason = PilotRoute['reason']
 
 /**
@@ -194,43 +196,70 @@ const MECHANISM =
   /\b(?:print[- ]in[- ]place|mesh(?:es|ing)?|interlock(?:s|ing)?|pivot(?:s|ing)?|moving parts?|moves? (?:along|against|relative)|slides? (?:in|on|along|over|into|inside)|slide rail|matching \w+|mating|snap(?:s|ped)? together|fit(?:s)? together|(?:two|2) (?:parts|pieces|halves|leaves)|assembly|assembled)\b/
 
 /**
- * Where a design request starts, and why. Auto stays on huginn unless the part takes many steps (a gear, thread or
- * pattern, or `MANY_STEPS` distinct features named), works with another part (see MECHANISM), or needs a size only
- * the person knows (see personSizes). A picture or PDF alone does not move it: huginn reads a drawing as well as
- * muninn does on the bench, at a tenth of the cost. A run that fails a design check moves up while it runs (runtime.ts).
+ * What a route knows about the chat a request is in: whether it holds a design to shape (runtime.ts designedNow), and
+ * whether it has the design tools (the mimir tab; true unless said).
  */
-export function designRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
-  void files
+export interface RouteChat {
+  design?: boolean
+  designs?: boolean
+}
+
+/**
+ * Whether a request in the mimir tab asks for a new part or model, read with the classifiers that pick each turn's
+ * tools rather than a list of its own: it is a design turn (turnKind of turnNeeds, as the runtime reads the turn in the
+ * tab: a request to slice, print or send, a printer question or a settings change is not one, and a request that names
+ * none of these is), and the turn starts on a new part's set (turnSet). With a design in the chat, a request that only
+ * changes or shapes it keeps to that design.
+ */
+export function asksNewPart(prompt: string, files: readonly DesignRequestFiles[] = [], chat: Pick<RouteChat, 'design'> = {}): boolean {
+  if (turnKind(turnNeeds(prompt, { sliceToPrint: true }), { designs: true }) !== 'design') return false
+  const design = chat.design === true
+  return turnSet(prompt, files, design ? 'edit' : undefined, { design }) === 'build'
+}
+
+/**
+ * Where a design request starts, and why. Auto starts it on muninn when the part takes many steps (a gear, thread or
+ * pattern, or `MANY_STEPS` distinct features named), works with another part (see MECHANISM), needs a size only the
+ * person knows (see personSizes), or, with the design tools, is a new part or model at all (see asksNewPart): muninn
+ * drafts the plan the build follows, and its plans hold the shapes a request names where huginn's flatten them, for a
+ * few percent more a build. A chat without the design tools builds with a part generator and drafts no plan.
+ * A picture or PDF alone does not move it. A request that only changes a design stays on huginn; a run that fails a
+ * design check moves up while it runs (runtime.ts).
+ */
+export function designRoute(prompt: string, files: readonly DesignRequestFiles[] = [], chat: RouteChat = {}): Route {
   const text = prompt.toLowerCase()
   if (MANY_FEATURES.test(text) || designSteps(prompt) >= MANY_STEPS) return { tier: MUNINN, reason: 'many_steps' }
   if (MECHANISM.test(text)) return { tier: MUNINN, reason: 'mechanism' }
   if (personSizes(prompt)) return { tier: MUNINN, reason: 'person_sizes' }
+  if (chat.designs !== false && asksNewPart(prompt, files, chat)) return { tier: MUNINN, reason: 'new_part' }
   return { tier: HUGINN, reason: 'default' }
 }
 
 /** The tier a design request starts on (see designRoute). */
-export function designTier(prompt: string, files: readonly DesignRequestFiles[] = []): Tier {
-  return designRoute(prompt, files).tier
+export function designTier(prompt: string, files: readonly DesignRequestFiles[] = [], chat: RouteChat = {}): Tier {
+  return designRoute(prompt, files, chat).tier
 }
 
 /**
  * Where a request starts in the mimir tab, which designs and slices in one conversation, and why: muninn for deep work
  * (a failure to diagnose, a profile to tune, a job to plan; see tierForPrompt), else as designRoute decides for a build.
- * Chat that builds nothing names no features and nothing of the person's, so it stays on huginn.
+ * A request to slice, print or send, a printer question or a settings change builds nothing, so it stays on huginn; a
+ * change to the chat's design does too.
  */
-export function tabRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
+export function tabRoute(prompt: string, files: readonly DesignRequestFiles[] = [], chat: RouteChat = {}): Route {
   if (tierForPrompt(prompt) === MUNINN) return { tier: MUNINN, reason: 'deep' }
-  return designRoute(prompt, files)
+  return designRoute(prompt, files, chat)
 }
 
 /**
  * Where a request starts in a chat without the design tools, and why: muninn for deep work (see tierForPrompt), and
  * for a request to make a part, as designRoute decides (many steps, a part that works with another, a size only the
- * person knows). A picture or PDF alone does not move it. Any other request starts on huginn; a muninn tool, a failed
- * design check or failures can still move the run up later. A part tool alone does not.
+ * person knows; a new part alone does not, as there is no plan to draft). A picture or PDF alone does not move it. Any
+ * other request starts on huginn; a muninn tool, a failed design check or failures can still move the run up later. A
+ * part tool alone does not.
  */
-export function chatRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
+export function chatRoute(prompt: string, files: readonly DesignRequestFiles[] = [], chat: RouteChat = {}): Route {
   if (tierForPrompt(prompt) === MUNINN) return { tier: MUNINN, reason: 'deep' }
-  if (BUILD.test(prompt)) return designRoute(prompt, files)
+  if (BUILD.test(prompt)) return designRoute(prompt, files, { ...chat, designs: false })
   return { tier: HUGINN, reason: 'default' }
 }

@@ -57,7 +57,7 @@ import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
 // the opening turn of a plan the open project holds (planSeed), which is no message of the person's
 import { PLAN_SEED_NOTE } from './plan-left'
-import { chatRoute, HUGINN, INPUT_REFUSAL_FAILS, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
+import { chatRoute, HUGINN, INPUT_REFUSAL_FAILS, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Route, type Tier } from './models'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
 import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
 
@@ -1860,7 +1860,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const machine = given.machine ? undefined : opts.project?.()?.machine()
       const context: PilotContext = machine ? { ...given, machine } : given
       // with the design tools a request routes by what it carries as well as its words; elsewhere by its words, and for a build by its files too
-      const route = designs ? tabRoute(message, runOpts.attachments) : chatRoute(message, runOpts.attachments)
+      const chat = { design: designedNow(sessionId) }
+      const routed = designs ? tabRoute(message, runOpts.attachments, chat) : chatRoute(message, runOpts.attachments, chat)
+      // a local model's runs route as before: a new part alone moves only a cloud or key run up
+      const route: Route = local && routed.reason === 'new_part' ? { tier: HUGINN, reason: 'default' } : routed
       const startTier = route.tier
       // the start says why Auto picked its model, so a client reading the session sees it; a pinned model has no pick
       const auto = modelFor(opts.config, HUGINN) !== modelFor(opts.config, MUNINN)

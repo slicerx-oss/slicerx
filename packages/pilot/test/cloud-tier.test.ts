@@ -62,7 +62,7 @@ const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown
 const NO_APPROVALS = { register: async () => undefined, grant: async () => undefined, deny: async () => undefined } as unknown as ApprovalHost
 const CLOUD = { ...DEFAULT_CONFIG, provider: 'mimir-cloud', model: HAIKU, baseUrl: BASE, billing: 'key' as const, webSearch: false }
 
-async function run(t: LlmTransport, message: string, opts: { design?: boolean; attachments?: PilotAttachment[] } = {}): Promise<PilotEvent[]> {
+async function run(t: LlmTransport, message: string, opts: { design?: boolean; attachments?: PilotAttachment[]; hasDesign?: boolean } = {}): Promise<PilotEvent[]> {
   const pilot = createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: t },
     config: CLOUD,
@@ -70,6 +70,7 @@ async function run(t: LlmTransport, message: string, opts: { design?: boolean; a
     builtins: false,
     // the mimir tab gives its runtime the design tools, and Auto then routes a build by the request
     tools: opts.design ? [designNew] : [],
+    ...(opts.hasDesign ? { hasDesign: () => true } : {}),
   })
   const ev: PilotEvent[] = []
   for await (const e of pilot.run('ses_1', message, opts.attachments ? { attachments: opts.attachments } : {})) ev.push(e)
@@ -124,13 +125,53 @@ describe('mimir cloud asks for the stronger model on hard turns', () => {
     expect(tiers(sent)).toEqual(['base', 'base', 'step', 'step'])
   })
 
-  it("the tab's many-step part sends step", async () => {
+  it("the tab's many-step part and every new part send step; a change to the design sends base", async () => {
     const { t, sent } = proxy([{ text: 'Building it.' }])
     await run(t, 'A spur gear with 20 teeth and a 5 mm bore', { design: true })
     expect(tiers(sent)).toEqual(['step'])
     const plain = proxy([{ text: 'Building it.' }])
     await run(plain.t, 'Make me a 30 mm cube', { design: true })
-    expect(tiers(plain.sent)).toEqual(['base'])
+    expect(tiers(plain.sent)).toEqual(['step'])
+    const change = proxy([{ text: 'Made it taller.' }])
+    await run(change.t, 'Make it 10 mm taller', { design: true, hasDesign: true })
+    expect(tiers(change.sent)).toEqual(['base'])
+  })
+
+  it('a slice, a printer question or a settings change in the tab sends base', async () => {
+    for (const message of ['slice it for the A1', 'Is my printer online?', 'Set infill to 20%']) {
+      const { t, sent } = proxy([{ text: 'Done.' }])
+      await run(t, message, { design: true, hasDesign: true })
+      expect(tiers(sent), message).toEqual(['base'])
+    }
+  })
+})
+
+describe('a new part in the tab on mimir cloud', () => {
+  it('says once that the stronger model answers when the proxy steps up', async () => {
+    const { t, sent } = proxy([{ text: 'How tall should it be?' }], [SONNET])
+    const ev = await run(t, 'build a toy rocket', { design: true })
+    expect(tiers(sent)).toEqual(['step'])
+    expect(ev.filter((e) => e.type === 'model_switch')).toEqual([{ type: 'model_switch', model: SONNET, label: 'Sonnet 5.5', reason: 'request' }])
+    expect(ev.find((e) => e.type === 'start')).toMatchObject({ model: HAIKU })
+  })
+
+  it('goes on the base model with no error, no second call and no line when the edition has no step-up or the caps refuse it', async () => {
+    // the proxy answers the step hint with the base model (mimir_turn_model for an edition without a step-up, or the
+    // fallback past the daily caps)
+    const { t, sent } = proxy([{ text: 'How tall should it be?' }], [HAIKU])
+    const ev = await run(t, 'build a toy rocket', { design: true })
+    expect(sent).toHaveLength(1)
+    expect(tiers(sent)).toEqual(['step'])
+    expect(ev.some((e) => e.type === 'error')).toBe(false)
+    expect(ev.filter((e) => e.type === 'model_switch')).toEqual([])
+    expect(ev.at(-1)).toMatchObject({ type: 'done', stopReason: 'end' })
+  })
+
+  it('names the base model when the proxy falls back after a stronger turn', async () => {
+    const look = { calls: [{ name: 'no_such_tool', args: {} }] }
+    const { t } = proxy([look, { text: 'How tall should it be?' }], [SONNET, HAIKU])
+    const ev = await run(t, 'build a toy rocket', { design: true })
+    expect(ev.filter((e) => e.type === 'model_switch').map((e) => (e as { label: string }).label)).toEqual(['Sonnet 5.5', 'Haiku 5.5'])
   })
 })
 

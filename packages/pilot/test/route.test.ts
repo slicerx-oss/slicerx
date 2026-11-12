@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Auto's routing by the request: a build that needs a size only the person knows (their own object, a mating size, a
-// mating part) starts on muninn, in the full chat and in the design tab; a part with its sizes given stays on
-// huginn. The run's start event carries the pick and why, on Auto only.
+// mating part) starts on muninn, in the full chat and in the design tab; in the design tab every new part does too,
+// while a change to the chat's design stays on huginn; in a chat without the design tools a part with its sizes given
+// stays on huginn. The run's start event carries the pick and why, on Auto only.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotAttachment, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG } from '../src/config'
@@ -22,6 +23,10 @@ const MECHANISM = [
 ]
 /** Plain parts that share words with the above but do not work with another part. */
 const PLAIN = ['A 40 mm slide for a toy marble run', 'A rail 80 mm long with two 4 mm holes', 'Make me a 30 mm cube']
+/** Changes to a design the chat already has. */
+const CHANGES = ['Make it 10 mm taller', 'Add a 2 mm fillet to the top edges', 'Put a 5 mm hole through the middle']
+/** Requests that build nothing: a slice, a printer question, settings changes and a question about the part. */
+const NOT_BUILDS = ['slice it for the A1', 'Is my printer online?', 'Set infill to 20%', 'Use 0.16 mm layers', 'why is the wall thin?']
 
 const file = (name: string, type: string): PilotAttachment => ({ id: name, name, type, bytes: 10, url: `data:${type};base64,AAAA` })
 const drawing = [file('drawing.png', 'image/png')]
@@ -95,20 +100,30 @@ describe('the design tab route', () => {
     for (const p of ASK) expect(designRoute(p), p).toEqual({ tier: MUNINN, reason: 'person_sizes' })
   })
 
-  it('keeps a drawing alone on huginn: a picture or PDF no longer moves a design run', () => {
-    for (const id of LADDER) expect(designRoute(FROM_DRAWING, drawing), id).toEqual({ tier: HUGINN, reason: 'default' })
-    expect(designRoute(FROM_DRAWING, [file('drawing.pdf', 'application/pdf')])).toEqual({ tier: HUGINN, reason: 'default' })
+  it('starts a part from a drawing as one from words: the new part moves it, not the picture or PDF', () => {
+    for (const id of LADDER) expect(designRoute(FROM_DRAWING, drawing), id).toEqual({ tier: MUNINN, reason: 'new_part' })
+    expect(designRoute(FROM_DRAWING, [file('drawing.pdf', 'application/pdf')])).toEqual({ tier: MUNINN, reason: 'new_part' })
+    expect(designRoute(FROM_DRAWING)).toEqual({ tier: MUNINN, reason: 'new_part' })
+  })
+
+  it('starts every new part on muninn, and a change to the design on huginn', () => {
+    for (const p of ['make me a desk tidy', 'Design a bracket for a 25 mm pipe', 'build a toy rocket']) {
+      expect(designRoute(p), p).toEqual({ tier: MUNINN, reason: 'new_part' })
+      expect(designRoute(p, [], { design: true }), p).toEqual({ tier: MUNINN, reason: 'new_part' })
+    }
+    for (const p of CHANGES) expect(designRoute(p, [], { design: true }), p).toEqual({ tier: HUGINN, reason: 'default' })
+    for (const p of NOT_BUILDS) expect(designRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
   })
 
   it('moves a part that works with another part to muninn, by how it is described', () => {
     for (const p of MECHANISM) expect(designRoute(p), p).toEqual({ tier: MUNINN, reason: 'mechanism' })
     // a drawing does not take that away, and a plain part with the same nouns stays put
     expect(designRoute(MECHANISM[0]!, drawing)).toEqual({ tier: MUNINN, reason: 'mechanism' })
-    for (const p of PLAIN) expect(designRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
+    for (const p of PLAIN) expect(designRoute(p), p).toEqual({ tier: MUNINN, reason: 'new_part' })
   })
 
-  it('keeps a sized part on huginn, and names a many-step part as that', () => {
-    expect(designRoute('Make me a 30 mm cube')).toEqual({ tier: HUGINN, reason: 'default' })
+  it('starts a sized part on muninn as a new part, and names a many-step part as that', () => {
+    expect(designRoute('Make me a 30 mm cube')).toEqual({ tier: MUNINN, reason: 'new_part' })
     expect(designRoute('a spur gear, module 1, 20 teeth')).toEqual({ tier: MUNINN, reason: 'many_steps' })
   })
 })
@@ -116,13 +131,21 @@ describe('the design tab route', () => {
 describe('the tab route, for designing and slicing in one chat', () => {
   it('routes a build as the design route does', () => {
     for (const p of ASK) expect(tabRoute(p), p).toEqual({ tier: MUNINN, reason: 'person_sizes' })
-    for (const id of LADDER) expect(tabRoute(FROM_DRAWING, drawing), id).toEqual({ tier: HUGINN, reason: 'default' })
+    for (const id of LADDER) expect(tabRoute(FROM_DRAWING, drawing), id).toEqual({ tier: MUNINN, reason: 'new_part' })
     for (const p of MECHANISM) expect(tabRoute(p), p).toEqual({ tier: MUNINN, reason: 'mechanism' })
     expect(tabRoute('a spur gear, module 1, 20 teeth')).toEqual({ tier: MUNINN, reason: 'many_steps' })
+    for (const p of ['make me a desk tidy', 'Design a bracket for a 25 mm pipe', 'build a toy rocket']) expect(tabRoute(p), p).toEqual({ tier: MUNINN, reason: 'new_part' })
   })
 
-  it('keeps sized parts and plain chat on huginn, and starts deep work deep', () => {
-    for (const p of [...GIVEN, ...KNOWN, ...CHAT]) expect(tabRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
+  it('starts sized parts on muninn as new parts, keeps chat that builds nothing and changes on huginn, and starts deep work deep', () => {
+    // a part that names a camera or a wall reads to the turn kinds as a design turn and a printer or settings one
+    // (mixed), so it stays on huginn
+    const mixed = (p: string) => /camera|wall/.test(p)
+    for (const p of [...GIVEN, ...KNOWN].filter((p) => !mixed(p))) expect(tabRoute(p), p).toEqual({ tier: MUNINN, reason: 'new_part' })
+    for (const p of [...GIVEN, ...KNOWN].filter(mixed)) expect(tabRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
+    for (const p of [...CHAT, ...NOT_BUILDS.filter((p) => !p.startsWith('why'))]) expect(tabRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
+    for (const p of CHANGES) expect(tabRoute(p, [], { design: true }), p).toEqual({ tier: HUGINN, reason: 'default' })
+    expect(tabRoute('why is the wall thin?')).toEqual({ tier: MUNINN, reason: 'deep' })
     expect(tabRoute('Why did my print fail?')).toEqual({ tier: MUNINN, reason: 'deep' })
     expect(tabRoute('Plan 12 strong PETG brackets by Friday')).toEqual({ tier: MUNINN, reason: 'deep' })
   })
@@ -135,8 +158,9 @@ describe('the chat route without the design tools', () => {
     for (const p of MECHANISM.map((m) => `Make this. ${m}`)) expect(chatRoute(p), p).toEqual({ tier: MUNINN, reason: 'mechanism' })
   })
 
-  it('keeps sized parts and plain chat on huginn, and deep work stays deep', () => {
+  it('keeps sized parts and plain chat on huginn, and deep work stays deep: a new part alone moves only the design tab', () => {
     for (const p of [...GIVEN, ...KNOWN, ...CHAT]) expect(chatRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
+    for (const p of ['make me a desk tidy', 'build a toy rocket']) expect(chatRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
     expect(chatRoute('Why did my print fail?')).toEqual({ tier: MUNINN, reason: 'deep' })
   })
 
@@ -172,9 +196,10 @@ async function first(message: string, opts: { auto?: boolean; designs?: boolean 
 const checkTool = (pass: boolean) => defineTool({ name: 'design.check', version: '1.0.0', source: 'command', permission: 'read', description: 'design.check for the test', input: z.object({}), async run() { return { summary: pass ? 'all checks pass' : '2 of 9 checks fail', output: { pass } } } }) as PilotTool<never>
 const failingBuild = defineTool({ name: 'design.extrude', version: '1.0.0', source: 'command', permission: 'read', description: 'design.extrude for the test', input: z.object({}), async run() { return { ok: false, summary: 'no profile' } } }) as PilotTool<never>
 
+/** A run in the design tab on a chat that already has a design, so a change to it starts on huginn. */
 async function runWith(message: string, script: Parameters<typeof createScriptedClient>[0], tools: PilotTool<never>[]): Promise<{ models: string[]; switches: string[] }> {
   const client = createScriptedClient(script, { chunk: false })
-  const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport }, config: AUTO, policy: DEFAULT_POLICY, client, builtins: false, tools: [DESIGN_NEW, ...tools] })
+  const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport }, config: AUTO, policy: DEFAULT_POLICY, client, builtins: false, tools: [DESIGN_NEW, ...tools], hasDesign: () => true })
   const ev: PilotEvent[] = []
   for await (const e of pilot.run('s', message)) ev.push(e)
   return { models: client.requests.filter((r) => !r.webSearch).map((r) => r.model), switches: ev.filter((e) => e.type === 'model_switch').map((e) => (e as { reason: string }).reason) }
@@ -182,15 +207,15 @@ async function runWith(message: string, script: Parameters<typeof createScripted
 
 describe('a design run that misses its plan', () => {
   it('steps up to muninn after a failed design check, and says so once', async () => {
-    const r = await runWith('Make me a 30 mm cube', [{ calls: [{ name: 'design.check', args: {} }] }, { text: 'It is off.' }], [checkTool(false)])
+    const r = await runWith('Make it 10 mm taller', [{ calls: [{ name: 'design.check', args: {} }] }, { text: 'It is off.' }], [checkTool(false)])
     expect(r.models).toEqual(['claude-haiku-5-5', 'claude-sonnet-5-5'])
     expect(r.switches).toEqual(['struggle'])
   })
 
   it('stays on huginn when the check passes, and when a build call fails', async () => {
-    const ok = await runWith('Make me a 30 mm cube', [{ calls: [{ name: 'design.check', args: {} }] }, { text: 'Matches.' }], [checkTool(true)])
+    const ok = await runWith('Make it 10 mm taller', [{ calls: [{ name: 'design.check', args: {} }] }, { text: 'Matches.' }], [checkTool(true)])
     expect(ok.models).toEqual(['claude-haiku-5-5', 'claude-haiku-5-5'])
-    const build = await runWith('Make me a 30 mm cube', [{ calls: [{ name: 'design.extrude', args: {} }] }, { calls: [{ name: 'design.extrude', args: {} }] }, { text: 'Done.' }], [failingBuild])
+    const build = await runWith('Make it 10 mm taller', [{ calls: [{ name: 'design.extrude', args: {} }] }, { calls: [{ name: 'design.extrude', args: {} }] }, { text: 'Done.' }], [failingBuild])
     expect(build.models).toEqual(['claude-haiku-5-5', 'claude-haiku-5-5', 'claude-haiku-5-5'])
     expect(build.switches).toEqual([])
   })
@@ -251,6 +276,22 @@ describe('the run on Auto', () => {
     const { start, models } = await first(GIVEN[0]!)
     expect(models).toEqual(['claude-haiku-5-5'])
     expect(start).toMatchObject({ model: 'claude-haiku-5-5', route: { tier: HUGINN, reason: 'default' } })
+  })
+
+  it('asks its first question on muninn for a new part in the design tab and says why at the start', async () => {
+    const { start, models } = await first('build a toy rocket', { designs: true })
+    expect(models).toEqual(['claude-sonnet-5-5'])
+    expect(start).toMatchObject({ model: 'claude-sonnet-5-5', route: { tier: MUNINN, reason: 'new_part' } })
+  })
+
+  it('starts a new part on huginn for a local model, as before', async () => {
+    const client = createScriptedClient([{ text: 'How tall?' }], { chunk: false })
+    const config = { ...AUTO, provider: 'openai-compatible', models: { huginn: 'local-small', muninn: 'local-large' } }
+    const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport }, config, policy: DEFAULT_POLICY, client, builtins: false, tools: [DESIGN_NEW] })
+    const ev: PilotEvent[] = []
+    for await (const e of pilot.run('s', 'build a toy rocket')) ev.push(e)
+    expect(client.requests.filter((r) => !r.webSearch).map((r) => r.model)).toEqual(['local-small'])
+    expect(ev.find((e) => e.type === 'start')).toMatchObject({ model: 'local-small', route: { tier: HUGINN, reason: 'default' } })
   })
 
   it('carries no route when one model is pinned', async () => {
