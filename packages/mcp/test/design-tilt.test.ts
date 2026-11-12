@@ -5,6 +5,7 @@
 // keeps the lean, steps after it (a cut) still go through, and a saved project reads the lean back. A lean into another
 // step's shape, by the step or by a copy a pattern made of it, is refused with that step by name, and so is one a cut
 // into its top cannot follow. Engine replies are recorded in fixtures/design-tilt.json.gz.
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { historyFiles, parseHistories, type History } from '@slicerx/cad-history'
 import { connect, data, text } from './helpers'
@@ -50,12 +51,36 @@ const block = (w: number, d: number, h: number, cx: number, cy: number, z = 0, o
   distance_mm: h,
   operation,
 })
+// cos and sin at twelve even turns, and cos 20 degrees, written out, not computed: Math.cos and Math.sin may differ in
+// the last bit from one platform's build to another's, which changes the engine requests the recording is keyed by.
+// These are the values the recording was made with; a test checks them against Math.
+const AROUND_12: readonly (readonly [number, number])[] = [
+  [1, 0], [0.8660254037844387, 0.49999999999999994], [0.5000000000000001, 0.8660254037844386], [6.123233995736766e-17, 1],
+  [-0.4999999999999998, 0.8660254037844387], [-0.8660254037844387, 0.49999999999999994], [-1, 1.2246467991473532e-16], [-0.8660254037844388, -0.4999999999999997],
+  [-0.5000000000000004, -0.8660254037844385], [-1.8369701987210297e-16, -1], [0.5000000000000001, -0.8660254037844386], [0.8660254037844384, -0.5000000000000004],
+]
 // a twelve-sided section about (cx, 0), r across its corners
-const gon = (cx: number, r: number) => Array.from({ length: 12 }, (_, k) => [cx + r * Math.cos((k * Math.PI) / 6), r * Math.sin((k * Math.PI) / 6)])
+const gon = (cx: number, r: number) => AROUND_12.map(([c, s]) => [cx + r * c, r * s])
 // a twelve-sided post, `dia` across its corners, standing at (cx, cy) on the plane at z
 const post = (dia: number, h: number, cx: number, cy: number, z: number) => ({ frame: top(z), shape: { type: 'sketch', loops: [{ points: gon(0, dia / 2) }] }, placement: { center: [cx, cy] }, distance_mm: h, operation: 'join' })
 const r1 = (n: number) => Math.round(n * 10) / 10
 const DEG = Math.PI / 180
+const COS_20 = 0.9396926207859084
+
+// the hash of the sections and the measured plane's height as JSON: the numbers the recorded requests were made from
+const INPUTS_HASH = 'e06347e691be0ec6'
+
+describe('the tilt tests\' inputs', () => {
+  it('are the same numbers on every platform', () => {
+    expect(createHash('sha256').update(JSON.stringify({ posts: [gon(0, 3), gon(15, 6), gon(10, 4)], plane: 5 + 21 * COS_20 })).digest('hex').slice(0, 16)).toBe(INPUTS_HASH)
+    // and the written-out numbers are what they stand for, to within a bit or two
+    AROUND_12.forEach(([c, s], k) => {
+      expect(Math.abs(c - Math.cos((k * Math.PI) / 6))).toBeLessThan(1e-15)
+      expect(Math.abs(s - Math.sin((k * Math.PI) / 6))).toBeLessThan(1e-15)
+    })
+    expect(Math.abs(COS_20 - Math.cos(20 * DEG))).toBeLessThan(1e-15)
+  })
+})
 
 describe('design.edit_step tilt', () => {
   it('leans an extrude about its foot as the same step, and stands it up again at 0', async () => {
@@ -175,7 +200,7 @@ describe('design.edit_step tilt', () => {
     await t.ok('slicerx_geom_array', { design: t.design, part: 0, merge: true, steps: [2, 3], spec: { kind: 'linear', count: 3, step: [12, 0, 0] } })
     await t.ok('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'y', degrees: 20 } })
     // cut across the caps' middle, 21 mm along the leaning posts: every cap sits 21 sin 20 toward y
-    const cut = await t.h.call('slicerx_geom_measure', { design: t.design, part: 0, section: { plane: { origin: [25, 30, 5 + 21 * Math.cos(20 * DEG)], normal: [0, 0, 1] } } })
+    const cut = await t.h.call('slicerx_geom_measure', { design: t.design, part: 0, section: { plane: { origin: [25, 30, 5 + 21 * COS_20], normal: [0, 0, 1] } } })
     const loops = data<{ output: { section: { loops: { outer: number[][] }[] } } }>(cut).output.section.loops
     const middles = loops.map((l) => [(Math.min(...l.outer.map((p) => p[0]!)) + Math.max(...l.outer.map((p) => p[0]!))) / 2, (Math.min(...l.outer.map((p) => p[1]!)) + Math.max(...l.outer.map((p) => p[1]!))) / 2])
     expect(middles.map(([x]) => r1(x!)).sort((a, b) => a - b)).toEqual([10, 22, 34])
