@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Bodies as Rust values: the four primitives against their exact volumes and surfaces, what is refused before the
-// kernel is asked, and what a build without the kernel answers.
+// kernel is asked, and what a build without the kernel answers. Empty without the typed feature, so a workspace test
+// run that names every test target passes over it.
+#![cfg(feature = "typed")]
 use std::f64::consts::PI;
 use sx_brep::{Body, Curve, Error, Surface};
 
