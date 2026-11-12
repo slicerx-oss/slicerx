@@ -9,7 +9,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clearReplayCache, HISTORY_VERSION, replayHistory, type EngineCall, type History, type StepParams } from '@slicerx/cad-history'
-import type { MeshPart } from '@slicerx/contracts'
+import { unpackNormal, type MeshPart } from '@slicerx/contracts'
 import { CANCEL_GRACE_MS, IDLE_MS, setGeomProvider, usesWorker } from '../src/geom/client'
 import { decodeFrame, encodeFrame, EngineEnded, nativeProvider, type NativeEngine } from '../src/geom/native-provider'
 import { withStep } from '../src/cad/history/record'
@@ -472,7 +472,12 @@ function processEngine(): NativeEngine & { times: { op: string; ms: number }[]; 
     async end() {
       const c = child
       child = null
-      c?.kill()
+      if (!c || c.exitCode !== null || c.signalCode !== null) return
+      // gone before the next call starts another, so its exit is never taken for the next call's
+      await new Promise((resolve) => {
+        c.once('exit', resolve)
+        c.kill()
+      })
     },
   }
 }
@@ -555,6 +560,86 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
     } finally {
       await engine.end()
     }
+  }, 120_000)
+
+  it.skipIf(process.env['SX_NATIVE_KERNEL'] !== '1')("hands an exact loft's triangles to the page with the solid's own normals and faces", async () => {
+    const engine = processEngine()
+    const p = nativeProvider(engine)
+    // a 20 by 10 mm block lofted 15 mm up: two flat caps and four flat sides
+    const level = (z: number) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [{ points: [[-10, -5], [10, -5], [10, 5], [-10, 5]] }] })
+    const profiles = [level(0), level(15)]
+    // the ask cad-history makes for a new lofted body in a replay that keeps bodies (replay.ts)
+    const ask = { profiles, operation: 'new', exact: true, withKeys: true, keySalt: 77 }
+    const step = { id: 'loft-1', part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'sketch.loft', profiles, operation: 'new', name: 'Block' } }
+    const replay = { history: { version: HISTORY_VERSION, base: [], steps: [step], exact: true }, exact: true }
+    type Part = { positions: ArrayLike<number>; indices: ArrayLike<number>; normals?: Int16Array; faces?: { ids: ArrayLike<number>; table: { kind: string }[]; keys?: number[] } }
+    const lines: string[] = []
+    try {
+      expect((await p.call<{ ops: string[] }>('exact.ops', {})).ops).toContain('sketch.loft')
+      const made = await p.call<{ body?: number; bodyKeys?: number[] }>('sketch.loft', ask)
+      expect(typeof made.body).toBe('number')
+      expect(made.bodyKeys).toHaveLength(6)
+      for (const chordMm of [0.01, 0.002, 0.0005]) {
+        const t = await p.call<Solid & { faces: { table: { kind: string; normal?: number[] }[]; keys?: number[] } }>('brep.tessellate', { body: made.body, chordMm })
+        expect(t.positions).toBeInstanceOf(Float32Array)
+        expect(t.indices).toBeInstanceOf(Uint32Array)
+        const triangles = t.indices.length / 3
+        expect(Number.isInteger(triangles) && triangles >= 12).toBe(true)
+        expect(t.normals).toBeInstanceOf(Int16Array)
+        expect(t.normals).toHaveLength(triangles * 6)
+        expect(t.faceIds).toBeInstanceOf(Uint32Array)
+        expect(t.faceIds).toHaveLength(triangles)
+        const table = t.faces.table
+        expect(table).toHaveLength(6)
+        expect(t.faces.keys).toEqual(made.bodyKeys)
+        // every triangle on a face of the table, and every face with triangles
+        expect([...t.faceIds!].every((f) => f < table.length)).toBe(true)
+        expect(new Set(t.faceIds).size).toBe(table.length)
+        // each corner's normal is unit length and lies along its flat face's own normal, which the winding gives
+        const n = [0, 0, 0]
+        const at = (i: number, k: number) => t.positions[3 * t.indices[i]! + k]!
+        let caps = 0
+        for (let tri = 0; tri < triangles; tri++) {
+          const e1 = [0, 1, 2].map((k) => at(3 * tri + 1, k) - at(3 * tri, k))
+          const e2 = [0, 1, 2].map((k) => at(3 * tri + 2, k) - at(3 * tri, k))
+          const c = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!]
+          const len = Math.hypot(c[0]!, c[1]!, c[2]!)
+          if (Math.abs(c[2]! / len) > 0.999) caps++
+          for (let corner = 0; corner < 3; corner++) {
+            expect(unpackNormal(t.normals!, 6 * tri + 2 * corner, n, 0)).toBe(true)
+            expect(Math.abs(Math.hypot(n[0]!, n[1]!, n[2]!) - 1)).toBeLessThan(1e-6)
+            const cos = (n[0]! * c[0]! + n[1]! * c[1]! + n[2]! * c[2]!) / len
+            // the pack holds a direction to about 1e-4 radians
+            expect(Math.acos(Math.min(1, cos))).toBeLessThan(1e-3)
+          }
+        }
+        expect(caps).toBeGreaterThanOrEqual(4)
+        const read = (a: ArrayBufferView) => (a.byteLength < a.buffer.byteLength ? 'in place' : 'copied')
+        lines.push(`chordMm ${chordMm}: ${triangles} triangles, normals ${read(t.normals!)} at frame byte ${t.normals!.byteOffset}, face ids ${read(t.faceIds!)} at ${t.faceIds!.byteOffset}`)
+      }
+
+      // through a replay, as the app runs one: the part keeps the normals and the faces' keys
+      const first = await p.call<{ parts: Part[]; status: { state: string }[]; exactFellBack?: string[] }>('history.replay', replay)
+      expect(first.status).toEqual([{ state: 'done' }])
+      expect(first.exactFellBack).toBeUndefined()
+      expect(first.parts[0]!.normals).toHaveLength(first.parts[0]!.indices.length * 2)
+      expect(first.parts[0]!.faces!.keys).toHaveLength(6)
+
+      // the process ends: its body number is never sent to the next one, and a replay there makes its own
+      await engine.end()
+      await expect(p.call('brep.tessellate', { body: made.body })).rejects.toThrow(/interrupted/)
+      const again = await p.call<{ body?: number }>('sketch.loft', ask)
+      expect(typeof again.body).toBe('number')
+      expect(again.body).not.toBe(made.body)
+      const second = await p.call<{ parts: Part[]; status: { state: string }[] }>('history.replay', replay)
+      expect(second.status).toEqual([{ state: 'done' }])
+      expect(second.parts[0]!.normals).toHaveLength(second.parts[0]!.indices.length * 2)
+      expect(Array.from(second.parts[0]!.normals!)).toEqual(Array.from(first.parts[0]!.normals!))
+      expect(second.parts[0]!.faces!.keys).toEqual(first.parts[0]!.faces!.keys)
+    } finally {
+      await engine.end()
+    }
+    console.log(lines.join('\n'))
   }, 120_000)
 
   it.skipIf(process.env['SX_NATIVE_BENCH'] !== '1')('times a replay and a million-triangle call', async () => {
