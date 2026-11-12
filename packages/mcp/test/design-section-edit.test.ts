@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A follow-up reshapes a lofted body by its sections: design.edit_step's section edit makes one station fuller or
-// finer, moves it, adds or takes out a station, raises a line toward the ends or leans an end out, on a hull, a car
+// finer, moves it, adds or takes out a station, raises a line toward the ends or leans an end out, on a pod, a car
 // body and a bottle alike. What stood on the body is re-seated on its new top at the steps that made it, and the answer
 // says plainly when a part now hangs past the edge or when an end now needs supports, keeping the edit as asked.
 import { describe, expect, it } from 'vitest'
@@ -51,11 +51,11 @@ async function start() {
 
 const r1 = (n: number) => Math.round(n * 10) / 10
 
-// a hull section: half-breadth w, height h, a flat top closing it
-const hullSection = (w: number, h: number): [number, number][] => [[w, h], [w * 0.95, h * 0.5], [w * 0.7, h * 0.1], [0, 0], [-w * 0.7, h * 0.1], [-w * 0.95, h * 0.5], [-w, h]]
+// a pod section: half-breadth w, height h, a flat top closing it
+const podSection = (w: number, h: number): [number, number][] => [[w, h], [w * 0.95, h * 0.5], [w * 0.7, h * 0.1], [0, 0], [-w * 0.7, h * 0.1], [-w * 0.95, h * 0.5], [-w, h]]
 const across = (x: number) => ({ origin: [x, 0, 0], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] })
-// the hull runs along x, its fine end (the front) at x 0
-const HULL = [[0, 4], [30, 10], [60, 12], [90, 11], [120, 8]].map(([x, w]) => ({ frame: across(x!), loops: [{ points: hullSection(w!, 10) }] }))
+// the pod runs along x, its fine end (the front) at x 0
+const POD = [[0, 4], [30, 10], [60, 12], [90, 11], [120, 8]].map(([x, w]) => ({ frame: across(x!), loops: [{ points: podSection(w!, 10) }] }))
 
 // a car body: chamfered boxes along y, the low nose at y 0
 const carSection = (w: number, h: number): [number, number][] => [[-w / 2 + 1, 0], [w / 2 - 1, 0], [w / 2, 3], [w / 2, h - 3], [w / 2 - 3, h], [-w / 2 + 3, h], [-w / 2, h - 3], [-w / 2, 3]]
@@ -71,19 +71,19 @@ const loftStep = (profiles: unknown[]): Step => ({ id: 's1', part: 0, params: { 
 
 describe('the section edit, read from the sections', () => {
   it('names the stations front to back on all three bodies', () => {
-    const hull = bodyOf(loftStep(HULL))
+    const pod = bodyOf(loftStep(POD))
     const car = bodyOf(loftStep(CAR))
     const bottle = bodyOf(loftStep(BOTTLE))
-    if (typeof hull === 'string' || typeof car === 'string' || typeof bottle === 'string') throw new Error('no body')
-    // the fine end is the front of the hull and the car; the top is the front of a standing bottle
-    expect(hull.stations.map((s) => r1(s.t))).toEqual([0, 30, 60, 90, 120])
+    if (typeof pod === 'string' || typeof car === 'string' || typeof bottle === 'string') throw new Error('no body')
+    // the fine end is the front of the pod and the car; the top is the front of a standing bottle
+    expect(pod.stations.map((s) => r1(s.t))).toEqual([0, 30, 60, 90, 120])
     expect(car.stations.map((s) => r1(s.t))).toEqual([0, 20, 50, 80, 100])
     expect(bottle.stations.map((s) => r1(s.t))).toEqual([80, 65, 55, 40, 0])
     expect(bottle.upright).toBe(true)
   })
 
-  it('answers every entry of the words table on the hull and the car, and on the bottle or says why not', () => {
-    for (const [name, profiles] of [['hull', HULL], ['car', CAR], ['bottle', BOTTLE]] as const) {
+  it('answers every entry of the words table on the pod and the car, and on the bottle or says why not', () => {
+    for (const [name, profiles] of [['pod', POD], ['car', CAR], ['bottle', BOTTLE]] as const) {
       for (const entry of SHAPE_WORDS.words) {
         const r = sectionEdited(loftStep(profiles as unknown[]), entry.edit as SectionEdit)
         const upright = name === 'bottle'
@@ -94,32 +94,32 @@ describe('the section edit, read from the sections', () => {
     }
   })
 
-  it('takes ship, car and bottle words for the generic names', () => {
-    const bow = sectionEdited(loftStep(HULL), { station: 'nose', scale: { width: 1.25 } })
+  it('takes pod, car and bottle words for the generic names', () => {
+    const front = sectionEdited(loftStep(POD), { station: 'nose', scale: { width: 1.25 } })
     const nose = sectionEdited(loftStep(CAR), { station: 'nose', scale: { width: 1.25 } })
     const shoulder = sectionEdited(loftStep(BOTTLE), { station: 'shoulder', scale: 1.15 })
-    if (typeof bow === 'string' || typeof nose === 'string' || typeof shoulder === 'string') throw new Error(`refused: ${String(bow)} ${String(nose)} ${String(shoulder)}`)
-    expect(bow.said[0]).toBe('station 1 (front) 8 to 10 mm wide')
+    if (typeof front === 'string' || typeof nose === 'string' || typeof shoulder === 'string') throw new Error(`refused: ${String(front)} ${String(nose)} ${String(shoulder)}`)
+    expect(front.said[0]).toBe('station 1 (front) 8 to 10 mm wide')
     expect(nose.said[0]).toBe('station 1 (front) 34 to 42.5 mm wide')
     // the shoulder is the station just above the widest
     expect(shoulder.said[0]).toBe('station 3 24 to 27.6 mm wide, 24 to 27.6 mm deep')
-    const sheer = sectionEdited(loftStep(HULL), { line: { which: 'roofline', front: 4 } })
-    if (typeof sheer === 'string') throw new Error(sheer)
-    expect(sheer.said[0]).toBe('the top line rises 4 mm at the front, eased toward the middle')
+    const top = sectionEdited(loftStep(POD), { line: { which: 'roofline', front: 4 } })
+    if (typeof top === 'string') throw new Error(top)
+    expect(top.said[0]).toBe('the top line rises 4 mm at the front, eased toward the middle')
   })
 
   it('refuses a station that is not there, naming the ones that are', () => {
-    expect(sectionEdited(loftStep(HULL), { station: 9, width: 10 })).toMatch(/has 5 stations, 1 \(front\) to 5 \(back\)/)
-    expect(sectionEdited(loftStep(HULL), { station: 'funnel', width: 10 })).toMatch(/"funnel" is no station/)
-    expect(sectionEdited(loftStep(HULL), { add: 200 })).toMatch(/not between two stations/)
+    expect(sectionEdited(loftStep(POD), { station: 9, width: 10 })).toMatch(/has 5 stations, 1 \(front\) to 5 \(back\)/)
+    expect(sectionEdited(loftStep(POD), { station: 'handle', width: 10 })).toMatch(/"handle" is no station/)
+    expect(sectionEdited(loftStep(POD), { add: 200 })).toMatch(/not between two stations/)
   })
 })
 
 describe('design.edit_step section', () => {
-  it('makes the bow of a hull fuller, adds and removes a station, and lists the stations', async () => {
+  it('makes the nose of a pod fuller, adds and removes a station, and lists the stations', async () => {
     const { ok } = await start()
-    const d = (await ok('slicerx_design_new', { name: 'Toy boat' })).output.design
-    await ok('slicerx_geom_loft', { design: d, profiles: HULL, name: 'Hull' })
+    const d = (await ok('slicerx_design_new', { name: 'Pod' })).output.design
+    await ok('slicerx_geom_loft', { design: d, profiles: POD, name: 'Body' })
     const steps = await ok('slicerx_design_steps', { design: d })
     expect(steps.output.steps[0]!.stations!.map((s) => s.width)).toEqual([8, 20, 24, 22, 16])
     expect(steps.output.shapeWords?.names.front).toContain('nose')
@@ -134,33 +134,33 @@ describe('design.edit_step section', () => {
     expect(removed.output.steps.every((s) => s.state === 'done')).toBe(true)
   })
 
-  it('lowers a hull: the deck joined on it and the deckhouse standing on it come down with it, the waterline paint stays', async () => {
+  it('lowers a pod: the top joined on it and the cab standing on it come down with it, the band paint stays', async () => {
     const { ok } = await start()
-    const d = (await ok('slicerx_design_new', { name: 'Toy boat' })).output.design
-    await ok('slicerx_geom_loft', { design: d, profiles: HULL, name: 'Hull' })
+    const d = (await ok('slicerx_design_new', { name: 'Pod' })).output.design
+    await ok('slicerx_geom_loft', { design: d, profiles: POD, name: 'Body' })
     await ok('slicerx_geom_extrude', { design: d, part: 0, operation: 'join', frame: { origin: [30, 0, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 20, heightMm: 8 }, distance_mm: 2 })
-    await ok('slicerx_geom_extrude', { design: d, operation: 'new', frame: { origin: [80, 0, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 6, name: 'Deckhouse' })
+    await ok('slicerx_geom_extrude', { design: d, operation: 'new', frame: { origin: [80, 0, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 6, name: 'Cab' })
     const pv = await ok('slicerx_paint_preview', { design: d, layer: 'color', state: 2, target: { kind: 'height', below: 3 }, part: 0 })
     await ok('slicerx_paint_apply', { preview: (pv.output as unknown as { preview: string }).preview })
     const lower = await ok('slicerx_design_edit_step', { design: d, step: 1, section: { station: 'all', scale: { height: 0.7 } } })
     expect(lower.summary).toContain('every station 70% as tall')
-    expect(lower.summary).toContain('re-seated on the new top of Hull: step 2')
-    expect(lower.summary).toContain('down 3 mm, Deckhouse down 3 mm')
-    const [hull, house] = lower.output.parts
-    expect(r1(hull!.sizeMm[2])).toBe(9)
-    expect(r1(house!.minMm[2])).toBe(7)
-    expect(Object.values(hull!.paintedTriangles ?? {}).reduce((a, b) => a + b, 0)).toBeGreaterThan(0)
+    expect(lower.summary).toContain('re-seated on the new top of Body: step 2')
+    expect(lower.summary).toContain('down 3 mm, Cab down 3 mm')
+    const [pod, cab] = lower.output.parts
+    expect(r1(pod!.sizeMm[2])).toBe(9)
+    expect(r1(cab!.minMm[2])).toBe(7)
+    expect(Object.values(pod!.paintedTriangles ?? {}).reduce((a, b) => a + b, 0)).toBeGreaterThan(0)
     expect(lower.output.steps.every((s) => s.state === 'done')).toBe(true)
   })
 
-  it('says plainly that a deckhouse now hangs past the side of a hull made narrower than it', async () => {
+  it('says plainly that a cab now hangs past the side of a pod made narrower than it', async () => {
     const { ok } = await start()
-    const d = (await ok('slicerx_design_new', { name: 'Toy boat' })).output.design
-    await ok('slicerx_geom_loft', { design: d, profiles: HULL, name: 'Hull' })
-    await ok('slicerx_geom_extrude', { design: d, operation: 'new', frame: { origin: [60, 0, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 20, heightMm: 16 }, distance_mm: 6, name: 'Deckhouse' })
+    const d = (await ok('slicerx_design_new', { name: 'Pod' })).output.design
+    await ok('slicerx_geom_loft', { design: d, profiles: POD, name: 'Body' })
+    await ok('slicerx_geom_extrude', { design: d, operation: 'new', frame: { origin: [60, 0, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 20, heightMm: 16 }, distance_mm: 6, name: 'Cab' })
     const narrow = await ok('slicerx_design_edit_step', { design: d, step: 1, section: { station: 'all', scale: { width: 0.5 } } })
-    expect(narrow.summary).toMatch(/Deckhouse now hangs \d+(\.\d)? mm past the edge of Hull: move or resize it, or edit the station under it/)
-    expect(narrow.output.warnings?.some((w) => w.startsWith('Deckhouse now hangs'))).toBe(true)
+    expect(narrow.summary).toMatch(/Cab now hangs \d+(\.\d)? mm past the edge of Body: move or resize it, or edit the station under it/)
+    expect(narrow.output.warnings?.some((w) => w.startsWith('Cab now hangs'))).toBe(true)
     // still standing on the top it had: not lifted, not buried
     expect(r1(narrow.output.parts[1]!.minMm[2])).toBe(10)
   })
