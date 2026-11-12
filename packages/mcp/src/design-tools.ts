@@ -839,7 +839,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.16.0',
+    version: '1.17.0',
     source: 'command',
     permission: 'read',
     description:
@@ -900,7 +900,17 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       // a miss only on how a part of several pieces is named is not the part's fault: once per plan it keeps the fix round
       if (failed.length === 1 && isNamingMiss(failed[0]!) && plans.waiveNaming(entry.plan.planId, open)) return { summary: `${summary}. This miss does not use the fix round.`, output }
       const failedChecks = plans.checked(entry.plan.planId, result.pass, open)
-      if (result.pass) return { summary, output }
+      if (result.pass) {
+        // a display model's finished reply gives its size and offers another, rather than asking about size up front
+        const detail = (entry.plan as { detail?: string }).detail
+        if (detail === 'display' || detail === 'fine') {
+          const b = body.size
+          const long = Math.round(Math.max(b.x, b.y))
+          const printer = ctx?.context?.machine?.printer
+          return { summary: `${summary}. In the reply, give its size (${long} mm long, ${Math.round(Math.min(b.x, b.y))} mm wide and ${Math.round(b.z)} mm tall, fits ${printer ? `the ${printer}` : 'the bed'}) and offer a resize as a follow-up: half size, or a length the person types`, output }
+        }
+        return { summary, output }
+      }
       // a part that passed before and fails now was broken by a later change (a follow-up's slits cut too deep): it is
       // fixed or undone in the same turn, and never ends the building or holds up the person's next request
       if (entry.passedOnce || entry.followUp) {

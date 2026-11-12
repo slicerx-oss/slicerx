@@ -89,6 +89,42 @@ interface DetailPlan {
   real?: readonly { feature?: string | undefined; size?: string | undefined; mm?: number | undefined }[] | undefined
   tiers?: Readonly<Record<string, readonly string[]>> | undefined
   overall?: { x: number; y: number; z: number } | undefined
+  /** The person's words gave the size: the plan keeps it, and the bed fill does not apply. */
+  personSize?: boolean | undefined
+}
+
+/** The least height of one level of a stepped body (an upper block, a story), so it reads as a level. */
+export const LEVEL_MIN_MM = 3
+
+/** A printer's usable build volume, mm: the printable area on both axes and the printable height. */
+export interface Bed {
+  x: number
+  y: number
+  z: number
+}
+/** The build volume a plan is sized for when no printer is chosen. */
+export const DEFAULT_BED: Bed = { x: 256, y: 256, z: 256 }
+/** A display model the person gave no size for fills this share of the bed (its longest side, held to the other two and the height). */
+export const DISPLAY_FILL = 0.85
+/** How far a display model's planned size may sit from that fill, either way, as a share. */
+export const DISPLAY_FILL_SLACK = 0.06
+
+/**
+ * The size a display model with no size from the person is planned at: its overall scaled so its longest side fills
+ * DISPLAY_FILL of the bed's longer side, unless its other side or its height would pass that share of the bed's other
+ * side or height first. Null when it already sits within DISPLAY_FILL_SLACK of that size.
+ */
+export function displaySize(overall: { x: number; y: number; z: number }, bed: Bed): { x: number; y: number; z: number; by: string } | null {
+  const long = Math.max(overall.x, overall.y)
+  const short = Math.min(overall.x, overall.y)
+  const ways: [number, string][] = [
+    [(DISPLAY_FILL * Math.max(bed.x, bed.y)) / long, 'its length'],
+    [short > 0 ? (DISPLAY_FILL * Math.min(bed.x, bed.y)) / short : Infinity, 'its width'],
+    [overall.z > 0 ? (DISPLAY_FILL * bed.z) / overall.z : Infinity, 'its height'],
+  ]
+  const [k, by] = ways.reduce((a, b) => (b[0] < a[0] ? b : a))
+  if (!(long > 0) || Math.abs(k - 1) <= DISPLAY_FILL_SLACK) return null
+  return { x: overall.x * k, y: overall.y * k, z: overall.z * k, by }
 }
 
 /** A feature kind that builds through sections: a loft, a revolve or a sweep. */
@@ -114,7 +150,7 @@ const CURVED_HOW = (floor: number): string =>
  * Why a display or fine plan does not hold the detail rules, in words that say what to plan instead; null when it
  * does, or when the plan is basic or names no level.
  */
-export function detailProblem(plan: DetailPlan): string | null {
+export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: string | undefined }): string | null {
   const level = plan.detail
   if (!level || level === 'basic') return null
   const floor = SECTIONS_FLOOR[level]
@@ -160,6 +196,19 @@ export function detailProblem(plan: DetailPlan): string | null {
       if (feature(n) && !colored.has(n.trim().toLowerCase())) problems.push(`colors: say what color ${n} is`)
   }
   problems.push(...scaleProblems(plan, feature), ...massProblems(plan, feature), ...tierProblems(plan, feature))
+  // no size from the person: a display model is sized to the printer it prints on, not to a scale it picked itself
+  if (bed && !plan.personSize) {
+    const b = bed.bed
+    const where = bed.printer ? `${bed.printer}'s usable ${r1(b.x)} x ${r1(b.y)} x ${r1(b.z)} mm` : `a ${r1(b.x)} x ${r1(b.y)} x ${r1(b.z)} mm build volume, as no printer is chosen`
+    if (!plan.overall) problems.push(`overall: give the overall size; a ${name} the person gave no size for fills about ${Math.round(DISPLAY_FILL * 100)}% of ${where}`)
+    else {
+      const want = displaySize(plan.overall, b)
+      if (want)
+        problems.push(
+          `overall: the person gave no size, so a ${name} is planned to fill about ${Math.round(DISPLAY_FILL * 100)}% of ${where}, set by ${want.by}: plan it ${r1(want.x)} x ${r1(want.y)} x ${r1(want.z)} mm, not ${r1(plan.overall.x)} x ${r1(plan.overall.y)} x ${r1(plan.overall.z)}, and set scale (the real length over the planned length) and every size from that. When the person gave a size, keep theirs and set personSize`,
+        )
+    }
+  }
   if (!plan.proportions?.trim()) problems.push(`proportions: say where the proportions come from, a lookup (web.lookup) or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"`)
   if (plan.repeats === undefined) problems.push('repeats: list the real object\'s repeated details (windows, wheels, slats, vents), or give an empty list when it has none')
   else if (plan.repeats.length && !plan.features.some((f) => PATTERN.test(f.kind ?? '') || PATTERN.test(f.name)))
@@ -247,7 +296,16 @@ function tierProblems(plan: DetailPlan, feature: FeatureOf): string[] {
       out.push(`tiers: give the levels of ${b} from the bottom up; a body the real thing builds in steps or stories (a stepped roof, a tower, a tiered cake) lists each level as its own feature, a single block lists only itself`)
   for (const [body, levels] of tiers) {
     if (!feature(body)) out.push(`tiers: ${body} is not a planned feature`)
-    for (const l of levels) if (!feature(l)) out.push(`tiers: ${l}, a level of ${body}, is not a planned feature; plan each level as its own feature`)
+    for (const l of levels) {
+      const f = feature(l)
+      if (!f) {
+        out.push(`tiers: ${l}, a level of ${body}, is not a planned feature; plan each level as its own feature`)
+        continue
+      }
+      // a level is a story a person sees at the whole-model view, not a slab: a slab at true scale reads as a line
+      const h = Object.entries(f.sizes).find(([k]) => HEIGHT.test(k.trim()))?.[1]
+      if (levels.length > 1 && h !== undefined && h < LEVEL_MIN_MM) out.push(`tiers: ${f.name}, a level of ${body}, is ${r1(h)} mm tall, which reads as a thin slab at the whole-model view; give each level at least ${LEVEL_MIN_MM} mm, a story with walls, even past its true scale`)
+    }
   }
   return out
 }
