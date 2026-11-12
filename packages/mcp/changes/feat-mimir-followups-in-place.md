@@ -5,5 +5,5 @@
 
 ### Changed
 
-- `slicerx_design_plan` 1.7.0 (from 1.6.0), in the mimir tab, takes `asked` with `amends`: the person's own words for a change they asked for in their latest message. It goes in with no card, since their message is the go, may add features, and may change how a feature is made. Without `asked`, an amend still needs a `reason` and a card.
+- `slicerx_design_plan` 1.8.0 (from 1.7.0), in the mimir tab, takes `asked` with `amends`: the person's own words for a change they asked for in their latest message. It goes in with no card, since their message is the go, may add features, and may change how a feature is made. Without `asked`, an amend still needs a `reason` and a card.
 - `slicerx_geom_extrude` 1.11.0 (from 1.10.0): a join that raises a body (a level or a story added on top) lifts the parts that stood on it onto its new top in the same call, at the steps that made them, with their paint, and the answer names each one and how far it moved. A part no step made is named with how deep it now sits, for the client to move it.
