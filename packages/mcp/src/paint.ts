@@ -135,7 +135,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       view: z.enum(['fit', 'iso', 'top', 'front']).default('fit'),
       size: z.number().int().min(64).max(2048).optional(),
       image: z.boolean().default(false),
-      whole: z.boolean().optional().describe('With target part on a part already painted in bands: true when the person said the whole part ("the whole hull", "all of it"); without it the person picks the band on a one-tap question'),
+      whole: z.boolean().optional().describe('With target part on a part already painted in bands: true when the person said the whole part ("the whole body", "all of it"); without it the person picks the band on a one-tap question'),
     }),
     async run(i, ctx) {
       const d = designs.get(i.design)
@@ -164,7 +164,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
             const bands = r.states.map((s) => `filament ${s.state} over ${Math.round(s.areaMm2)} mm2`)
             return `${d.parts[r.part]!.name} is painted in bands: ${bands.join(', ')}, and the rest in its own filament`
           })
-          throw new ToolInputError(`target: ${said.join('; ')}. Painting the whole part would cover every band: paint the band the person most likely means with a height target (below the waterline of a hull, such as {"kind":"height","below":4}) and say which band you took; if two bands fit equally, ask with two choices`)
+          throw new ToolInputError(`target: ${said.join('; ')}. Painting the whole part would cover every band: paint the band the person most likely means with a height target (below the band line, such as {"kind":"height","below":4}) and say which band you took; if two bands fit equally, ask with two choices`)
         }
       }
       // a height band's edge lands on its height (the step keeps the depth, so a replay paints the same)
