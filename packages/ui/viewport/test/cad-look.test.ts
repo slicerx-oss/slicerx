@@ -5,8 +5,8 @@
 // part in its filament color.
 import { describe, expect, it } from 'vitest'
 import { BoxGeometry, Color, type MeshPhysicalMaterial } from 'three'
-import { CAD_EDGE_ON_DARK, CAD_EDGE_PX, cadEdgesFor, cadLook, edgeLook, isCad, MaterialCache, setMaterialLook, sharedMaterials } from '../src/materials'
-import { contrastRatio, displayHex, SCENE } from '../src/palette'
+import { CAD_EDGE_ON_DARK, CAD_EDGE_PX, cadBodyHex, cadEdgesFor, cadLook, edgeLook, isCad, MaterialCache, setMaterialLook, sharedMaterials } from '../src/materials'
+import { contrastRatio, hexToRgb, SCENE } from '../src/palette'
 import { BASELINE_LOOK } from '../src/look'
 import { buildObject, wideEdges } from '../src/model'
 
@@ -78,12 +78,12 @@ describe('the CAD look', () => {
         const edge = cadLook(bgTop).edge
         // a black hull: the dark edge is lost on it, so the light edge draws, thin and wide
         const black = cadEdgesFor('cadColor', '#101012')
-        expect(contrastRatio(displayHex('#101012'), edge)).toBeLessThan(3)
+        expect(contrastRatio(cadBodyHex('#101012'), edge)).toBeLessThan(3)
         expect(black.light).toBe(true)
         expect(black.thin).toBe(sh.edgeCadLight)
         expect(black.wide).toBe(sh.edgeCadWideLight)
         expect('#' + black.wide.color.getHexString()).toBe(CAD_EDGE_ON_DARK)
-        expect(contrastRatio(displayHex('#101012'), CAD_EDGE_ON_DARK)).toBeGreaterThanOrEqual(3)
+        expect(contrastRatio(cadBodyHex('#101012'), CAD_EDGE_ON_DARK)).toBeGreaterThanOrEqual(3)
         // a cream lamp shade keeps today's dark edge
         const cream = cadEdgesFor('cadColor', '#efe6cf')
         expect(cream.light).toBe(false)
@@ -99,6 +99,32 @@ describe('the CAD look', () => {
       }
     })
   }
+
+  it('in filament colors, lifts a near-black part so its faces part by their light, and leaves other colors as shown', () => {
+    const lum = (hex: string) => {
+      const [r, g, b] = hexToRgb(hex)
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const cache = new MaterialCache()
+    try {
+      // a black hull: drawn lifted, but still black to the eye (well under a third of white)
+      const black = cadBodyHex('#101012')
+      expect(lum(black)).toBeGreaterThanOrEqual(69)
+      expect(lum(black)).toBeLessThan(85)
+      expect('#' + (cache.get('cadColor', { color: '#101012', finish: 'basic' }) as MeshPhysicalMaterial).color.getHexString()).toBe(black)
+      // a deep navy keeps its hue: blue stays the strongest channel
+      const [r, g, b] = hexToRgb(cadBodyHex('#14213d'))
+      expect(b).toBeGreaterThan(r)
+      expect(b).toBeGreaterThan(g)
+      // a light part and a mid one draw as they are
+      expect(cadBodyHex('#efe6cf')).toBe('#efe6cf')
+      expect(cadBodyHex('#c0392b')).toBe('#c0392b')
+      // the gray look is untouched
+      expect(cache.get('cad', { color: '#101012', finish: 'basic' })).toBe(sharedMaterials().cad)
+    } finally {
+      cache.dispose()
+    }
+  })
 
   it('draws dark feature edges in every style but wireframe, and Slice only in the edges style', () => {
     expect(edgeLook('cad', 'shaded')).toEqual({ edge: 'cad', visible: true })

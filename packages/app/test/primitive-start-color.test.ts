@@ -46,6 +46,19 @@ describe('a shape added in the app', () => {
     expect(drawn()).toEqual([OFF_WHITE])
   })
 
+  it('keeps a black filament black in what it stores and sends: the lift is the view drawing it', async () => {
+    await addPrimitive(loader, 'box', 'object')
+    setSlot(1, { color: '#101012' })
+    expect(get().slotSetup[1]!.color).toBe('#101012')
+    expect(resolveSlots(get())[0]!.color).toBe('#101012')
+    // the view is handed the filament's own color, in Model and in Slice; only the CAD look's drawing lifts it
+    // (packages/ui/viewport/test/cad-look.test.ts)
+    for (const modelMode of ['design', 'slice'] as const) {
+      set({ modelMode })
+      expect(drawn()).toEqual(['#101012'])
+    }
+  })
+
   it('starts a shape on another filament in that filament color', () => {
     expect(startColor(2)).toBe(resolveSlots(get(), 2)[1]!.color)
     expect(startColor(2)).not.toBe(brandAccent())

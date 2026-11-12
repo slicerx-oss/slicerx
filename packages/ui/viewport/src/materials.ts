@@ -23,7 +23,7 @@ import {
   type WebGLProgramParametersWithUniforms,
 } from 'three'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
-import { HEAT_RAMP, SCENE, contrastRatio, displayHex, type SceneColors } from './palette'
+import { HEAT_RAMP, SCENE, contrastRatio, displayHex, hexToRgb, type SceneColors } from './palette'
 import type { ViewportLook } from './look'
 import type { DisplayStyle, FilamentFinish, RenderMode } from './types'
 
@@ -322,11 +322,32 @@ function followCad(m: MeshPhysicalMaterial, from: MeshPhysicalMaterial): void {
   }
 }
 
+/**
+ * The lightness (0 to 255, weighted as displayHex weighs it) the CAD look lifts a very dark part to. Under the CAD
+ * lights a black body's faces all land near black, so only its edges showed the shape; lifted, its lit top reads near
+ * 27 percent lightness and its sides near 9, still black to the eye.
+ */
+const CAD_DARK_FLOOR = 70
+
+/**
+ * The color the CAD look draws a part in: the filament color as the view shows it, a very dark one lifted evenly in all
+ * three channels to the floor so its faces part by their light and its hue stays. Only the drawing changes: the part's
+ * stored and saved color is the filament's own.
+ */
+export function cadBodyHex(color: string): string {
+  const shown = displayHex(color)
+  const [r, g, b] = hexToRgb(shown)
+  const l = 0.2126 * r + 0.7152 * g + 0.0722 * b
+  if (l >= CAD_DARK_FLOOR) return shown
+  const up = CAD_DARK_FLOOR - l
+  return '#' + [r, g, b].map((v) => Math.min(255, Math.round(v + up)).toString(16).padStart(2, '0')).join('')
+}
+
 /** The CAD body in a part's filament color: the CAD finish and edges, the color the Slice tab shows. */
 function cadMaterial(color: string): MeshPhysicalMaterial {
   const s = sharedMaterials()
   const m = s.cad.clone()
-  m.color = lin(displayHex(color))
+  m.color = lin(cadBodyHex(color))
   followCad(m, s.cad)
   tinted.add(m)
   return m
@@ -411,7 +432,7 @@ const EDGE_CONTRAST = 3
 export function cadEdgesFor(mode: RenderMode, color: string): { thin: LineBasicMaterial; wide: LineMaterial; light: boolean } {
   const s = sharedMaterials()
   if (mode === 'cadColor') {
-    const body = displayHex(color)
+    const body = cadBodyHex(color)
     const dark = contrastRatio(body, cadEdgeHex)
     if (dark < EDGE_CONTRAST && contrastRatio(body, CAD_EDGE_ON_DARK) > dark) return { thin: s.edgeCadLight, wide: s.edgeCadWideLight, light: true }
   }
