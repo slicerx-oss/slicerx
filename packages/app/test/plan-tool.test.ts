@@ -25,7 +25,14 @@ const BOX: PlanInput = {
   questions: [],
 }
 
-const script = (args: Record<string, unknown>): MimirScript[] => [{ id: 'plan', match: /plan/, steps: [{ calls: [{ name: 'design.plan', args }] }, { text: 'Done.' }] }]
+/**
+ * A sizes sheet whose sizes must fit something (fits), confirmed as shown before the plan: after it the plan waits for
+ * the person's Go, as these tests are about a plan that waits. A context given by
+ * hand says so with confirmsPlan.
+ */
+const FITS_SHEET = { name: 'pilot.sheet', args: { title: 'Box sizes', views: ['iso'], fits: true, dims: [{ key: 'width', label: 'Width', value: 80, unit: 'mm', source: 'guess' }] } }
+
+const script = (args: Record<string, unknown>): MimirScript[] => [{ id: 'plan', match: /plan/, steps: [{ calls: [FITS_SHEET] }, { calls: [{ name: 'design.plan', args }] }, { text: 'Done.' }] }]
 
 /** Runs one message; `answer` sees each question and says how to answer it. */
 async function run(args: Record<string, unknown>, answer: (e: Extract<PilotEvent, { type: 'ask' }>) => string | null): Promise<PilotEvent[]> {
@@ -33,6 +40,7 @@ async function run(args: Record<string, unknown>, answer: (e: Extract<PilotEvent
   const out: PilotEvent[] = []
   for await (const e of p.run('s', 'plan a box')) {
     out.push(e)
+    if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, {})
     if (e.type === 'ask') {
       const id = answer(e)
       if (id !== null) void p.answer!(e.askId, id)
@@ -41,7 +49,11 @@ async function run(args: Record<string, unknown>, answer: (e: Extract<PilotEvent
   return out
 }
 
-const result = (ev: PilotEvent[]) => ev.find((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result')!
+/** design.plan's result, after the fits sheet's. */
+const result = (ev: PilotEvent[]) => {
+  const call = ev.find((e): e is Extract<PilotEvent, { type: 'tool_call' }> => e.type === 'tool_call' && e.tool === 'design.plan')!
+  return ev.find((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.callId === call.callId)!
+}
 
 describe('design.plan', () => {
   it('is in the tab toolset, as a read tool', () => {
@@ -114,6 +126,7 @@ describe('design.plan', () => {
     const ev: PilotEvent[] = []
     for await (const e of p.run('s', 'plan a box')) {
       ev.push(e)
+      if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, {})
       if (e.type === 'ask') {
         planId = planOfChoices(e.choices)!
         void p.answer!(e.askId, null, 'make it taller')
@@ -188,7 +201,7 @@ describe('design.plan', () => {
   it(`keeps the last ${PLAN_KEEP} plans, the oldest going first`, async () => {
     const tool = planTool()
     const ids: string[] = []
-    const ctx = { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[1]!.id }) } as never
+    const ctx = { confirmsPlan: () => true, ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[1]!.id }) } as never
     for (let n = 0; n <= PLAN_KEEP; n++) {
       const out = await tool.run(BOX as never, ctx)
       ids.push((out.output as { planId: string }).planId)
@@ -203,6 +216,7 @@ describe('design.plan', () => {
     const tool = planTool({ newId: () => 'plan:with:colons' })
     let seen: string | null = null
     const out = await tool.run(BOX as never, {
+      confirmsPlan: () => true,
       ask: async (q: { choices: { id: string }[] }) => {
         seen = planOfChoices(q.choices)
         return { id: q.choices[0]!.id }
@@ -230,14 +244,15 @@ describe("the tab's design.plan", () => {
 })
 
 describe('design.plan and design.check share one registry', () => {
-  const go = { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never
-  const no = { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[1]!.id }) } as never
+  const go = { confirmsPlan: () => true, ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never
+  const no = { confirmsPlan: () => true, ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[1]!.id }) } as never
   /** A stand-in for a design tool: design.new answers with its design id, a geometry step takes one. */
   const fake = (name: string, permission: 'read' | 'slice', output?: unknown): PilotTool<never> =>
     defineTool({ name, version: '1.0.0', source: 'command', permission, description: `${name} stand-in for the test`, input: z.object({ design: z.string().optional() }), run: async () => ({ summary: name, output }) }) as PilotTool<never>
 
   it('a plan made on the card is the one the shared registry holds, edits included', async () => {
     const out = await planTool().run(BOX as never, {
+      confirmsPlan: () => true,
       ask: async (q: { choices: { id: string }[] }) => {
         const id = planOfChoices(q.choices)!
         expect(editPlan(id, { ...planById(id)!, features: [{ ...BOX.features[0]!, sizes: { ...BOX.features[0]!.sizes, wall: 2.4 } }, BOX.features[1]!] })).toBe(true)
@@ -305,7 +320,7 @@ describe('design.plan and design.check share one registry', () => {
   it("the scripted check reads the person's last card plan; a client's plan put after it changes nothing", async () => {
     const step = SCRIPTS.find((x) => x.id === 'check')!.steps[0] as (m: never[]) => { calls?: { name: string; args: { planId: string } }[] }
     expect(step([]).calls).toBeUndefined()
-    const { planId } = (await planTool().run(BOX as never, { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never)).output as { planId: string }
+    const { planId } = (await planTool().run(BOX as never, { confirmsPlan: () => true, ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never)).output as { planId: string }
     expect(step([]).calls?.[0]).toEqual({ name: 'design.check', args: { planId } })
     // an MCP client puts its own plan after the card's (design.put_plan)
     mimirPlans.put({ planId: 'client-9', ...BOX, part: 'Steered' }, undefined, 'client')
