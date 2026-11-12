@@ -243,7 +243,8 @@ export function ToolGroup({ rows: all, words }: { rows: ToolRowModel[]; words?: 
   // In plain words, calls whose result shows as its own card have no row.
   const rows = words ? all.filter((r) => words(r) !== null) : all
   const running = rows.some((r) => r.state === 'running')
-  const warn = rows.some(actionable)
+  // in plain words the folded line reads the last step, so a failed last step shows the alert, never the check
+  const warn = rows.some(actionable) || (words !== undefined && !running && rows.at(-1)?.state === 'bad')
   // Pictures (a camera frame) stay visible with the group folded; they are what the user asked to see.
   const images = rows.flatMap((r) => r.display.filter((d) => d.kind === 'image'))
   if (rows.length === 0) return null
