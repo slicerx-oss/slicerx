@@ -12,10 +12,10 @@ describe('design.look in the conversation', () => {
     { type: 'start', sessionId: 's_look', model: 'claude-sonnet-5-5' },
     { type: 'tool_call', callId: 'c1', tool: 'design.look', source: 'command', input: { design: 'obj_1' } },
     { type: 'tool_result', callId: 'c1', ok: true, summary: 'Looked at the model' },
-    { type: 'text', delta: 'Beveled the deck houses.' },
+    { type: 'text', delta: 'Beveled the seat edges.' },
     { type: 'done', stopReason: 'end' },
   ] as unknown as PilotEvent[]
-  const store = { list: async () => [{ id: 's_look', title: 'Toy boat', status: 'done', startedAt: '2026-11-11T00:00:00Z' }], read: async () => events } as unknown as SessionStore
+  const store = { list: async () => [{ id: 's_look', title: 'Toy car', status: 'done', startedAt: '2026-11-11T00:00:00Z' }], read: async () => events } as unknown as SessionStore
 
   it('reads back as a step an MCP client sees', async () => {
     setSessionSource({ store, messages: () => [{ text: 'add bevels', attachments: [] }] })
