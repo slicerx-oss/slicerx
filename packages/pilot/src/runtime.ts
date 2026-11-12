@@ -365,6 +365,16 @@ export const WRAP_NOTE = 'Stop here and reply to the user now, without tools, in
  * the notice).
  */
 export const SLOW_DOWN_WAIT_MS = 20_000
+/** A model request lost to the network (no answer at all) is sent once more after this wait, without counting as a turn. */
+export const NETWORK_RETRY_MS = 2_000
+/** What the run says when the connection dropped twice in a row: plain words, nothing of the transport's. */
+export const NETWORK_LINE = 'The connection to the model dropped twice in a row, so nothing was done this time. Send the message again.'
+/** A request that got no answer: the connection dropped or the host could not be reached (a transport error with no status). */
+function networkLost(e: unknown): boolean {
+  const x = e as { name?: unknown; status?: unknown; message?: unknown }
+  if (x && x.name === 'TransportError' && x.status === 0) return true
+  return typeof x?.message === 'string' && /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|network error/i.test(x.message)
+}
 export const SLOW_DOWN_GIVE_UP_MS = 60_000
 export { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE }
 /** A step cut off at the output limit before it said or called anything. */
@@ -1468,6 +1478,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     // how long the run has waited on slow_down refusals in a row
     let slowed = 0
+    // a request lost to the network is sent once more before the run says so (NETWORK_RETRY_MS, NETWORK_LINE)
+    let netRetried = false
     // the run's limits; an approved plan raises them to fit its features (planLimits)
     let maxSteps = opts.config.maxSteps
     let maxToolCalls = opts.config.maxToolCalls
@@ -1534,6 +1546,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let raw: unknown[] | undefined
       let thinkingStart: number | null = null
       let failed: string | null = null
+      let netDown = false
       let failedCode: string | undefined
       let cut = false
       const model = modelFor(opts.config, tier)
@@ -1602,6 +1615,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             case 'error':
               failed = ev.message
               failedCode = ev.code
+              netDown = networkLost({ message: ev.message })
               break
             case 'done':
               raw = ev.raw
@@ -1615,6 +1629,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           break
         }
         failed = errorText(e)
+        netDown = networkLost(e)
       }
       if (thinkingStart !== null) emit({ type: 'thinking_done', ms: now() - thinkingStart })
       if (text) emit({ type: 'text_done' })
@@ -1641,12 +1656,30 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         stopReason = 'max_steps'
         break
       }
+      if (failed !== null && netDown && !text && toolCalls.length === 0) {
+        // the request never reached the model (the connection dropped): send the same step once more, unseen; a
+        // second loss in a row ends the run with one plain line instead of the transport's words
+        if (!netRetried) {
+          netRetried = true
+          await sleep(NETWORK_RETRY_MS, signal)
+          if (signal.aborted) {
+            stopReason = 'canceled'
+            break
+          }
+          step--
+          continue
+        }
+        emit({ type: 'error', message: NETWORK_LINE, retryable: true, code: 'network' })
+        stopReason = 'error'
+        break
+      }
       if (failed !== null) {
         emit({ type: 'error', message: failed, retryable: true, ...(failedCode ? { code: failedCode } : {}) })
         stopReason = 'error'
         break
       }
       slowed = 0
+      netRetried = false
       const spoke = text.trim() !== ''
       if (spoke) {
         said = true
