@@ -24,6 +24,11 @@ export interface ReplayRequest {
   before?: number
   /** Run the steps the B-rep kernel has on parts that carry an exact solid (exact.ts); a developer flag for now. */
   exact?: boolean
+  /**
+   * Ask the engine for an exact solid on a new lofted body, and nothing else of `exact`. A loft the engine makes no
+   * body for is today's mesh loft with no note on its step; its reason comes back in `exactLoftsQuiet`.
+   */
+  exactLofts?: boolean
 }
 
 export interface ReplayOptions {
@@ -311,6 +316,8 @@ interface Found {
   copies: Record<string, PatternCopies>
   /** Steps the exact kernel failed on this replay, which ran on the mesh. */
   fellBack: string[]
+  /** New-body lofts asked exact by `exactLofts` alone that the engine made no body for, with its reason. */
+  quiet: { step: string; why: string }[]
 }
 
 /**
@@ -428,10 +435,15 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   // A new body lofted where the engine makes exact lofts itself is asked for as one. The op takes no transform, so
   // the profiles go in the part's own frame and the body comes back there, as every later exact step expects it.
   let lofted: { mesh: { positions: number[]; indices: number[] } } | undefined
-  if (exact && solids && p.op === 'sketch.loft' && (p.operation ?? 'new') === 'new' && (await solids.has?.('sketch.loft'))) {
-    // a loft the engine made no body for runs on the mesh, with the engine's own sentence on the step
+  if ((exact || solids?.lofts) && solids && p.op === 'sketch.loft' && (p.operation ?? 'new') === 'new' && (await solids.has?.('sketch.loft'))) {
+    // a loft the engine made no body for runs on the mesh, with the engine's own sentence on the step; asked by
+    // `exactLofts` alone, the step has no note and the sentence goes to the quiet list
     const fell = (why: string) => {
       if (strict) throw new Broken(`Exact operation failed: ${why}`)
+      if (!exact) {
+        found.quiet.push({ step: s.id, why })
+        return
+      }
       found.notes[s.id] = why
       found.fellBack.push(s.id)
     }
@@ -852,7 +864,7 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
   let has: Promise<Set<string>> | undefined
   const uses = new Set<number>()
   inUse.add(uses)
-  const solids: Solids = { keep: !!(req.exact && o.keepsBodies), made: (b) => (made.add(b), uses.add(b)), has: async (op) => (await (has ??= exactOps(call))).has(op) }
+  const solids: Solids = { keep: !!((req.exact || req.exactLofts) && o.keepsBodies), lofts: !!req.exactLofts, made: (b) => (made.add(b), uses.add(b)), has: async (op) => (await (has ??= exactOps(call))).has(op) }
   try {
     return await replaySteps(call, req, o, solids, (b) => uses.add(b))
   } finally {
@@ -874,14 +886,15 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   const steps = history.steps
   const status: StepStatus[] = steps.map((s) => (s.suppressed ? { state: 'suppressed' } : { state: 'skipped' }))
   const moved: Record<string, MovedFace> = {}
-  const found: Found = { keys: {}, notes: {}, copies: {}, fellBack: [] }
+  const found: Found = { keys: {}, notes: {}, copies: {}, fellBack: [], quiet: [] }
   // Pushes whose face went through the part.
   let gone = new Set<string>()
   // Keys after each step; a step's key covers everything that can change its result. The face and edge keys a replay
   // finds and the app saves are left out (unkeyed), so saving them keeps the key; a hit checks them instead (fits).
   const keys: string[] = []
   // the shapes base parts were made as change an exact replay's parts, so they are in its key
-  let k = req.exact ? hash(meshHash(history.base), JSON.stringify(['exact', !!history.exact, history.base.map((m) => m.primitive ?? 0)])) : meshHash(history.base)
+  // and a replay that asks for exact lofts alone makes other parts than one that asks for none
+  let k = req.exact ? hash(meshHash(history.base), JSON.stringify(['exact', !!history.exact, history.base.map((m) => m.primitive ?? 0)])) : req.exactLofts ? hash(meshHash(history.base), 'exactLofts') : meshHash(history.base)
   const baseKey = k
   // a step's lean is laid on its numbers here, so its key, its pattern copies and what follows it see the lean
   const effective = steps.map((s) => withTilt(followed(s, steps)))
@@ -922,7 +935,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       break
     }
   }
-  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, copies: {}, fellBack: [] }, ran: {} })
+  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, copies: {}, fellBack: [], quiet: [] }, ran: {} })
   const fonts = req.fonts ?? {}
   let before: Flat[] | undefined = req.before === 0 ? history.base.map(flat) : req.before !== undefined && req.before <= start && req.before > 0 ? known(req.before - 1) : undefined
   for (let i = 0; i < start; i++) {
@@ -957,7 +970,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   if (before) before = await meshedAll(call, before)
   const made = madeAfter(steps, keys, status, parts)
   // the solids stay in the cache here: the caller gets meshes, and a project or an undo step never holds one
-  return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}), ...(req.exact ? { meshParts: meshIndices } : {}) }
+  return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}), ...(found.quiet.length ? { exactLoftsQuiet: found.quiet } : {}), ...(req.exact ? { meshParts: meshIndices } : {}) }
 }
 
 /**
