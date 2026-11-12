@@ -27,6 +27,8 @@ import type {
 import { z } from 'zod'
 import type { GeomHost, HistoryHost, ModelSearchHost, ProfilesHost, ProjectExportHost, SetupHost, ShareHost } from './hosts'
 import type { KnowledgeBase } from './kb/kb'
+import { keepDescriptions } from './local-schema'
+import { LOCAL_TOOLS } from './local-tools'
 import type { PilotProject } from './project'
 import type { RunHandle } from './run/print-run'
 import type { LlmImage } from './provider/types'
@@ -328,9 +330,11 @@ function sameTuple(s: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * The tool as a local model gets it (runtime.ts): its localDescription when it has one, and its input schema (its
- * localInput when it has one) without the keywords that say nothing (leanSchema). The tool takes and checks exactly the same input either way; a cloud
- * model and MCP clients get toolSpec.
+ * The tool as a local model gets it (runtime.ts): its localDescription when it has one, else its description only when
+ * its row in LOCAL_TOOLS (local-tools.ts) says so, and its input schema (its localInput when it has one) without the
+ * keywords that say nothing (leanSchema) and with only the field descriptions its row lists. Text that is not listed
+ * reaches cloud turns only. The tool takes and checks exactly the same input either way; a cloud model and MCP clients
+ * get toolSpec.
  */
 export function localToolDef(t: PilotTool<never> | PilotTool<unknown>): { name: string; description: string; parameters: ToolSpec['inputSchema'] } {
   const shown = t.localInput ? { ...t, input: t.localInput } : t
@@ -342,7 +346,9 @@ export function localToolDef(t: PilotTool<never> | PilotTool<unknown>): { name: 
     // no input form: every object keeps additionalProperties as published
     input = undefined
   }
-  return { name: t.name, description: t.localDescription ?? t.description, parameters: leanSchema(spec.inputSchema, input) as ToolSpec['inputSchema'] }
+  const row = LOCAL_TOOLS[t.name]
+  const description = t.localDescription ?? (row?.description ? t.description : '')
+  return { name: t.name, description, parameters: keepDescriptions(leanSchema(spec.inputSchema, input), new Set(row?.fields ?? [])) as ToolSpec['inputSchema'] }
 }
 
 /** Default display form of arguments: `--key value` pairs, quoted when they contain spaces. */
