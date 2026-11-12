@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A follow-up on a design already built (a toy pod made longer, a drawer added to a desk organizer, a house roof
+// A follow-up on a design already built (a toy car made longer, a drawer added to a desk organizer, a house roof
 // recolored) is made in that design at once: no size sheet and no plan card, the plan changed with the person's words,
 // a built size changed at the step that made it, and the reply ends on what changed, with no question.
 import { describe, expect, it } from 'vitest'

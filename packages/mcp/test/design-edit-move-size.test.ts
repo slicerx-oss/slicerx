@@ -78,11 +78,11 @@ describe('design.edit_step size and move', () => {
     expect(painted(lifted.output)).toBeGreaterThan(0)
   })
 
-  it('makes a toy boat hull longer by editing its loft along its length', async () => {
+  it('makes a lofted pod body longer by editing its loft along its length', async () => {
     const { ok } = await start()
-    const d = (await ok('slicerx_design_new', { name: 'Toy boat' })).output.design
+    const d = (await ok('slicerx_design_new', { name: 'Pod' })).output.design
     const section = (x: number, half: number) => ({ frame: { origin: [x, 0, 0], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] }, loops: [{ points: [[-half, 0], [half, 0], [half, 12], [-half, 12]] }] })
-    await ok('slicerx_geom_loft', { design: d, profiles: [section(0, 4), section(40, 12), section(80, 6)], name: 'Hull' })
+    await ok('slicerx_geom_loft', { design: d, profiles: [section(0, 4), section(40, 12), section(80, 6)], name: 'Body' })
     const longer = await ok('slicerx_design_edit_step', { design: d, step: 1, size: { axis: 'x', mm: 100 } })
     expect(r1(longer.output.sizeMm[0])).toBe(100)
     expect(r1(longer.output.parts[0]!.minMm[0])).toBe(0)
