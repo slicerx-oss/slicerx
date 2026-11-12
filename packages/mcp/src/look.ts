@@ -4,7 +4,6 @@
 // nicer", a part word that names nothing in the plan). It draws the design at 512 px with its crease and open edges as
 // dark lines, from above at an angle and, when asked, from the side along its long side, in the project's filament
 // colors and its paint. The picture goes back to the model of the turn only; the tab shows the call as one plain line.
-import { inflateSync } from 'node:zlib'
 import { bakeMesh, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
@@ -21,22 +20,62 @@ export const VISIBLE_FLOOR_PCT = 2
 /** How far two pixels' colors may differ (summed over red, green and blue) and still read as the same. */
 const SAME_COLOR = 60
 
-/** An RGB(A) 8-bit PNG decoded to its pixels, as the engine's render writes it; null for any other kind. */
-export function decodePng(b64: string): { w: number; h: number; px: Uint8Array; ch: number } | null {
-  const buf = Buffer.from(b64, 'base64')
-  if (buf.readUInt32BE(0) !== 0x89504e47) return null
+/** A base64 string's bytes, with no node builtin: the page has no Buffer. */
+function fromBase64(b64: string): Uint8Array {
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+/** Every byte a stream gives, joined. Read with a reader: node's Response.arrayBuffer needs Buffer. */
+async function readAll(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader()
+  const parts: Uint8Array[] = []
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parts.push(value)
+  }
+  return joinBytes(parts)
+}
+
+function joinBytes(parts: readonly Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let at = 0
+  for (const p of parts) {
+    out.set(p, at)
+    at += p.length
+  }
+  return out
+}
+
+/** A zlib stream inflated with the platform's DecompressionStream, which both the page and node have. */
+function inflate(data: Uint8Array): Promise<Uint8Array> {
+  return readAll(new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate')))
+}
+
+const u32 = (b: Uint8Array, at: number): number => ((b[at]! << 24) | (b[at + 1]! << 16) | (b[at + 2]! << 8) | b[at + 3]!) >>> 0
+
+/**
+ * An RGB(A) 8-bit PNG decoded to its pixels, as the engine's render writes it; null for any other kind. It uses no node
+ * builtin, so it runs in the app's page as it does in node.
+ */
+export async function decodePng(b64: string): Promise<{ w: number; h: number; px: Uint8Array; ch: number } | null> {
+  const buf = fromBase64(b64)
+  if (buf.length < 8 || u32(buf, 0) !== 0x89504e47) return null
   let at = 8
   let w = 0
   let h = 0
   let ch = 0
-  const idat: Buffer[] = []
-  while (at < buf.length) {
-    const len = buf.readUInt32BE(at)
-    const type = buf.toString('latin1', at + 4, at + 8)
+  const idat: Uint8Array[] = []
+  while (at + 8 <= buf.length) {
+    const len = u32(buf, at)
+    const type = String.fromCharCode(buf[at + 4]!, buf[at + 5]!, buf[at + 6]!, buf[at + 7]!)
     const data = buf.subarray(at + 8, at + 8 + len)
     if (type === 'IHDR') {
-      w = data.readUInt32BE(0)
-      h = data.readUInt32BE(4)
+      w = u32(data, 0)
+      h = u32(data, 4)
       if (data[8] !== 8 || data[12] !== 0) return null
       ch = data[9] === 6 ? 4 : data[9] === 2 ? 3 : 0
       if (!ch) return null
@@ -44,8 +83,10 @@ export function decodePng(b64: string): { w: number; h: number; px: Uint8Array; 
     else if (type === 'IEND') break
     at += 12 + len
   }
-  const raw = inflateSync(Buffer.concat(idat))
+  if (!w || !h || !idat.length) return null
+  const raw = await inflate(joinBytes(idat)).catch(() => null)
   const stride = w * ch
+  if (!raw || raw.length < h * (stride + 1)) return null
   const px = new Uint8Array(h * stride)
   for (let y = 0; y < h; y++) {
     const f = raw[y * (stride + 1)]!
@@ -77,9 +118,8 @@ export function decodePng(b64: string): { w: number; h: number; px: Uint8Array; 
  * The share of the model's pixels (covered before or after, in percent) whose color changed between two pictures of
  * one framing; the background is the top left pixel's color.
  */
-export function changedShare(before: string, after: string): number | null {
-  const a = decodePng(before)
-  const b = decodePng(after)
+export async function changedShare(before: string, after: string): Promise<number | null> {
+  const [a, b] = await Promise.all([decodePng(before), decodePng(after)])
   if (!a || !b || a.w !== b.w || a.h !== b.h) return null
   const bg = (img: typeof a, i: number) => Math.abs(img.px[i]! - img.px[0]!) + Math.abs(img.px[i + 1]! - img.px[1]!) + Math.abs(img.px[i + 2]! - img.px[2]!) > SAME_COLOR
   let covered = 0
@@ -185,7 +225,7 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
   const looked = new Map<string, Drawn>()
   return defineTool({
     name: 'design.look',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'read',
     title: 'Look at the model',
@@ -235,7 +275,7 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
         if (!was) return { ok: false, summary: `No earlier look at ${d.name} in this conversation to compare with; look at it first, before the change` }
         const frame = bounds([was, now])
         const [a, b] = [await draw(was, 'iso', false, frame), await draw(now, 'iso', false, frame)]
-        const share = a && b ? changedShare(a, b) : null
+        const share = a && b ? await changedShare(a, b) : null
         if (share === null || !b) return { ok: false, summary: 'The change could not be measured' }
         const pct = Math.round(share * 10) / 10
         const below = share < VISIBLE_FLOOR_PCT
