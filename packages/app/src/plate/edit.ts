@@ -17,6 +17,7 @@ import { moveToNewPlates, switchPlate, type NewPlateLayout } from './plates'
 import { selectedEntry } from './select'
 import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, modelOrigin, scaleToSize, setScale, withTrs, type Box, type Mat4, type Trs, type Vec3 } from './transform'
 import { brandAccent, objectPalette } from '../edition'
+import { startColor } from '../filament/slots'
 import { cadShown, modelMode } from '../state/model-mode'
 
 // selection lives in ./select (light, loads with the shell); these names stay importable from here
@@ -545,12 +546,12 @@ export async function addPrimitive(host: Loader, shape: PrimitiveShape, as: 'obj
     const history = src.history ? (await import('../cad/history/record')).withStep(src, -1, { op: 'parts.add', parts: [partMesh], label: `Add ${mesh.name.toLowerCase()}` }) : undefined
     // with the landing moves the object has as it is written (placedNow)
     const { placedNow } = await import('../cad/commit')
-    set({ plate: get().plate.map((p) => (p.id === src.id ? { ...p, handle, parts, colors: [...p.colors, p.colors[src.parts.findIndex((q) => q.slot === slot)] ?? p.colors[0] ?? brandAccent()], ...(history ? { history: placedNow(history, p) } : {}) } : p)) })
+    set({ plate: get().plate.map((p) => (p.id === src.id ? { ...p, handle, parts, colors: [...p.colors, p.colors[src.parts.findIndex((q) => q.slot === slot)] ?? startColor(slot)], ...(history ? { history: placedNow(history, p) } : {}) } : p)) })
     markStale()
     return src.id
   }
   const handle = await host.loadParts(mesh.name, [mesh])
-  const entry: PlateEntry = { id: newObjectId(), name: mesh.name, handle, parts: [mesh], colors: [brandAccent()], transform: compose({ position: [bed.widthMm / 2, bed.depthMm / 2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
+  const entry: PlateEntry = { id: newObjectId(), name: mesh.name, handle, parts: [mesh], colors: [startColor(mesh.slot)], transform: compose({ position: [bed.widthMm / 2, bed.depthMm / 2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
   if (cadShown() && modelMode() !== 'slice') {
     const own = bounds([mesh], identity())
     const size: Vec3 = own ? [own.max[0] - own.min[0], own.max[1] - own.min[1], 0] : [sizeMm, sizeMm, 0]

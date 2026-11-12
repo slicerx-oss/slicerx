@@ -7,7 +7,7 @@ import { resolveConfig } from '../adapters/settings'
 import { sectionOf } from '@slicerx/settings/defaults'
 import { fromGeom, geom, type GeomMesh } from '../geom/client'
 import { arrange } from '../plate/arrange'
-import { resolveSlots } from '../filament/slots'
+import { resolveSlots, startColor } from '../filament/slots'
 import { addPlate } from '../plate/plates'
 import { compose } from '../plate/transform'
 import { get, markStale, set, toast, type PlateEntry } from '../state/store'
@@ -15,7 +15,6 @@ import { layerIndexAt } from './gcode'
 import { filamentName, nozzleText, tunedPresetName, tuneContext, tuneKey } from './tuned'
 import type { CalibPrinter } from './plan'
 import { calibTest, checkValues, DEFAULT_CTX, resultSettings, type CalibCtx, type CalibId, type Cfg } from './tests'
-import { brandAccent } from '../edition'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -146,7 +145,7 @@ export async function addCalibrationPlate(host: Loader, id: CalibId, values: Rec
     const part = fromGeom(o.mesh, o.name, slot)
     const handle = await host.loadParts(o.name, [part])
     const entryId = calibEntryId()
-    entries.push({ id: entryId, name: o.name, handle, parts: [part], colors: [brandAccent()], transform: compose({ position: [o.offsetMm[0] + shift[0], o.offsetMm[1] + shift[1], 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })
+    entries.push({ id: entryId, name: o.name, handle, parts: [part], colors: [startColor(slot)], transform: compose({ position: [o.offsetMm[0] + shift[0], o.offsetMm[1] + shift[1], 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })
     if (Object.keys(o.settings).length) objectSettings[entryId] = o.settings
   }
   const plateId = addPlate()
