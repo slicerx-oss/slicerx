@@ -213,7 +213,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')
   // one plan registry for design.check and geom.fit_check, which records the fit checks design.check asks for
   const plans = opts.plans ?? createPlanRegistry()
-  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs, plans }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs, plans, sketchVia, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm } : {}) }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine), { plans, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm! } : {}) }), ...paintTools(designs)] : [])] : []
+  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs, plans, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm } : {}) }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs, plans, sketchVia, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm } : {}) }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine), { plans, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm! } : {}) }), ...paintTools(designs)] : [])] : []
   // Without an engine here, the design tools still work on the app's project, through the link.
   const here = appLink && !designs ? [...built, ...designToolset(NO_ENGINE_HOST).filter((t) => APP_DESIGN_TOOLS.has(t.name) && !built.some((b) => b.name === t.name))] : built
   // The plate edits go to the app's shown plate too, unless this server's own project has the object.

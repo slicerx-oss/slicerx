@@ -22,6 +22,7 @@ import { FORMS_MAX, partForms } from './part-form'
 import { bodyOf, sectionEdited, SHAPE_WORDS, stationRows } from './section-edit'
 import { onPlate, seatShift, seatWords, standingOn, supportArea, surfaceAt } from './section-follow'
 import { maker } from './sunk'
+import { keepOpenLimits, plansMoving } from './seat'
 
 type V3 = [number, number, number]
 
@@ -857,7 +858,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.17.0',
+    version: '1.18.0',
     source: 'command',
     permission: 'read',
     description:
@@ -903,7 +904,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const floor = plannedFloor(entry.plan) ? { plannedHoleMm: plannedHoleMm(entry.plan) } : undefined
       // a plan with a color band has the part's paint read, to meet the band by paint as well as by a step
       const bands = colorBands(entry.plan)
-      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined, { hook: hasHookLip(entry.plan), nozzleMm, ...(floor ? { floor } : {}), ...(entry.plan.holes?.some((h) => h.recess) ? { recesses: true } : {}), ...(bands.length ? { bands: { colors: bands.flatMap((b) => (b.color ? [b.color] : [])), filaments: opts.filamentColors?.() } } : {}) })
+      // parts a hair apart are read on a plan whose pieces neither move nor print together; those keep their gaps
+      const loose = plansMoving(entry.plan) || together ? undefined : keepOpenLimits(nozzleMm, opts.fitProfile?.().layerHeightMm)
+      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined, { hook: hasHookLip(entry.plan), nozzleMm, ...(loose ? { loose } : {}), ...(floor ? { floor } : {}), ...(entry.plan.holes?.some((h) => h.recess) ? { recesses: true } : {}), ...(bands.length ? { bands: { colors: bands.flatMap((b) => (b.color ? [b.color] : [])), filaments: opts.filamentColors?.() } } : {}) })
       const result = designCheck(entry.plan, body, nozzleMm, limits, together)
       const failed = result.items.filter((x) => !x.pass)
       const which = `${d.name} (${d.id}, ${how})`

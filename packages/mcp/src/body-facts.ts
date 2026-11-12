@@ -12,6 +12,7 @@ import { notClosedWords, partClosure } from './closure'
 import { colorWord, colorWordHex } from '@slicerx/pilot'
 import type { BodyFacts, FitLimits, FloorFacts, PaintedRegion } from './design-check'
 import { fitFacts } from './fit-facts'
+import { looseGaps, looseText, movingParts, partsNear } from './seat'
 import { floorOpenings } from './holder-floor'
 import { hookOn, surfacePoints } from './hook-lip'
 import { loftSections } from './plan-detail'
@@ -34,7 +35,7 @@ const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3
  * `hook`, how far the hook on its upright stem rises at its tip, and with `floor`, where each part's cavity opens
  * through its bottom (holes up to `floor.plannedHoleMm` across left out, as the plan's own).
  */
-export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; nozzleMm?: number; floor?: { plannedHoleMm: number }; recesses?: boolean; bands?: { colors: readonly string[]; filaments?: readonly string[] | undefined } } = {}): Promise<BodyFacts> {
+export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; nozzleMm?: number; loose?: FitLimits; floor?: { plannedHoleMm: number }; recesses?: boolean; bands?: { colors: readonly string[]; filaments?: readonly string[] | undefined } } = {}): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
   // closed as geom.info and the slicer read it: corners at the same point of the part's own positions are one vertex,
   // whatever their indices
@@ -73,6 +74,18 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     } catch (e) {
       gaps = { fitWhy: e instanceof Error ? e.message : String(e) }
     }
+  // two parts a hair apart: the gaps under the gap a printer keeps open, without pieces that move
+  let loose: Pick<BodyFacts, 'loose'> = {}
+  // only parts whose boxes come within the gap of another's are measured: most designs need no engine call
+  const moving = movingParts(d)
+  const near = opts.loose ? partsNear(d, opts.loose.sideMm, moving) : []
+  if (opts.loose && near.length >= 2)
+    try {
+      const f = await fitFacts(host, d, opts.loose, near)
+      if (f.bodies.length >= 2) loose = { loose: { keepMm: opts.loose.sideMm, bodies: f.bodies.length, gaps: looseGaps(f, moving).map((g) => looseText(f, g)) } }
+    } catch {
+      // not measured: the item is left out rather than failed
+    }
   return {
     size: bounds(world),
     holes: sameHoles(holes).map((h) => ({ diameterMm: h.diameterMm })),
@@ -88,6 +101,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     ...(wall.why ? { minWallWhy: wall.why } : {}),
     ...(wall.tip ? { minWallTip: wall.tip } : {}),
     ...gaps,
+    ...loose,
     ...(opts.hook ? hookFacts(world) : {}),
     ...(opts.recesses ? { recesses: world.flatMap((w) => recessesOf(w)).map((r) => ({ round: r.round, widthMm: r.widthMm, lengthMm: r.lengthMm, depthMm: r.depthMm })) } : {}),
     ...(opts.floor ? { floor: floorFacts(world, d.parts.map((p) => p.name), opts.floor.plannedHoleMm) } : {}),

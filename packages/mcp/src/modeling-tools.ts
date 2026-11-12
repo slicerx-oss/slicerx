@@ -7,6 +7,8 @@ import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, MAX_STEPS_RE
 import type { DesignHost } from '@slicerx/cad-history'
 import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, stepIndex, type Design, type PiecePlans } from './design-tools'
 import { ToolInputError } from './errors'
+import type { FitProfile } from './fit-facts'
+import { seatNew, seatPattern } from './seat'
 import { modelArg, vec3, type GeomCall } from './args'
 
 /** Files used only by model-file calls; a live design uses its host instead. */
@@ -40,13 +42,16 @@ const designOrModel = (i: { model?: string | undefined; design?: string | undefi
 
 const partArg = z.number().int().min(0).optional().describe('With a design: the part to work on, from 0; absent: every part')
 
-export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost | undefined; /** The plans a new part's piece name comes from (pieceNameFor). */ plans?: PiecePlans | undefined }): PilotTool<never>[] {
+export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost | undefined; /** The plans a new part's piece name comes from (pieceNameFor). */ plans?: PiecePlans | undefined; /** The nozzle, mm, for the gap a new part is seated across (seat.ts); 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; /** The layer height the part prints with, for the same. */ fitProfile?: (() => FitProfile) | undefined }): PilotTool<never>[] {
   const call = deps.files.call
   const meshOut = deps.files.mesh
   const designOf = (id: string): [DesignHost, Design] => {
     if (!deps.designs) throw new ToolInputError('Designs need the sx-geom engine, which this server did not find.', 'not_supported')
     return [deps.designs, deps.designs.get(id)]
   }
+  const seatOpts = () => ({ nozzleMm: deps.nozzleMm?.(), layerHeightMm: deps.fitProfile?.().layerHeightMm, plans: deps.plans })
+  /** An answer with what seating said after it, if anything. */
+  const withSeat = <T extends { summary: string }>(out: T, said: string): T => (said ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${said}` } : out)
   const added = (d: Design, verb: string) => {
     const s = d.history.steps[d.history.steps.length - 1]
     return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
@@ -172,7 +177,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const mirror = defineTool({
     name: 'geom.mirror',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -187,7 +192,9 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         return added(d, `Mirrored ${ids.length} step${ids.length === 1 ? '' : 's'}`)
       }
       await ds.add(d, i.part ?? 0, { op: 'mirror', plane: planeOf(i.plane), copy: i.copy }, undefined, withFeature(i.feature))
-      return added(d, 'Mirrored')
+      // a mirror image a hair from another part, as its source is: the source's step moves and the image follows
+      const said = i.copy ? await seatPattern(ds, d, i.part ?? 0, seatOpts()) : ''
+      return withSeat(added(d, 'Mirrored'), said)
     },
   })
 
@@ -200,7 +207,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const array = defineTool({
     name: 'geom.array',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -224,7 +231,9 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         const [ds, d] = designOf(i.design)
         if (i.merge) {
           await ds.add(d, i.part ?? -1, { op: 'array.merged', spec }, undefined, withFeature(i.feature))
-          return added(d, `Arrayed ${copies} copies`)
+          // copies a hair from another part, as the source is: the source's step moves and the copies follow
+          const said = i.part !== undefined ? await seatPattern(ds, d, i.part, seatOpts()) : ''
+          return withSeat(added(d, `Arrayed ${copies} copies`), said)
         }
         // Separate copies are new parts, placed where the engine puts each copy; the first is the part itself. The step
         // records the part copied, so a plan can name copy k as the part's own number plus k - 1 (design.check).
@@ -235,8 +244,11 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         const back = invert(d.transform)
         const parts = r.transforms.slice(1).map((t, k) => ({ ...bakeMesh({ name: `${src.name} ${k + 2}`, slot: src.slot, positions: Array.from(src.positions), indices: Array.from(src.indices) }, multiply(back, t)) }))
         // a name the project file would drop on reopening is not recorded, so the copies match the same way after it
+        const n = d.parts.length
         await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate`, ...(keepsArrayOf(src.name) ? { arrayOf: src.name } : {}) }, undefined, withFeature(i.feature))
-        return added(d, `Arrayed ${copies} separate copies`)
+        // separate copies a hair from another part are named, not moved
+        const said = await seatNew(ds, d, Array.from({ length: Math.max(0, d.parts.length - n) }, (_, k) => n + k), seatOpts())
+        return withSeat(added(d, `Arrayed ${copies} separate copies`), said)
       }
       const out = await call('array', { mesh: await meshOut(i.model!), spec, merge: i.merge })
       return { summary: `Arrayed ${copies} copies${i.merge ? '' : ', as transforms'}`, output: out }
@@ -365,7 +377,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const build = defineTool({
     name: 'geom.build',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,
@@ -387,9 +399,13 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         // a part that builds a print-in-place piece of the design's plan takes the plan's name for it
         const piece = pieceNameFor(deps.plans, d, i.feature, i.name)
         const part: HistoryMesh = { name: piece ?? i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices, ...(shape ? { primitive: shape } : {}) }
+        const n = d.parts.length
         await ds.add(d, -1, { op: 'parts.add', parts: [part], label: `Add ${part.name}` }, undefined, withFeature(i.feature))
+        // a new part a hair from another (under the gap a printer keeps open) is seated on it, as this step
+        const seat = await seatNew(ds, d, Array.from({ length: Math.max(0, d.parts.length - n) }, (_, k) => n + k), { nozzleMm: deps.nozzleMm?.(), layerHeightMm: deps.fitProfile?.().layerHeightMm, plans: deps.plans })
         const built = added(d, 'Built')
-        return piece ? { ...built, summary: `${built.summary}${pieceNameNote(piece, i.name)}` } : built
+        const named = piece ? { ...built, summary: `${built.summary}${pieceNameNote(piece, i.name)}` } : built
+        return seat ? { ...named, summary: `${named.summary.replace(/[.\s]+$/, '')}. ${seat}` } : named
       }
       const out = await call('build', { solids: i.solids, ...(i.subtract ? { subtract: i.subtract } : {}) })
       return { summary: `Built a model from ${i.solids.length} solid${i.solids.length === 1 ? '' : 's'}`, output: out }

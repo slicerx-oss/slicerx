@@ -267,6 +267,6 @@ describe('geom.array copies of a part whose name has edges', () => {
 describe('the array tool', () => {
   it('is at 1.5.0, since it repeats chosen design steps on their part', () => {
     const tool = modelingTools({ files: { call: async () => ({}), mesh: async () => ({ stlPath: '' }) } }).find((t) => t.name === 'geom.array')!
-    expect(tool.version).toBe('1.5.0')
+    expect(tool.version).toBe('1.6.0')
   })
 })
