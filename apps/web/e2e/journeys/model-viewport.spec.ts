@@ -248,10 +248,14 @@ test.describe('Model CAD look', () => {
     // drawn wide (1.5 px), not as 1 px GL lines, and outlined where the model meets what is behind it
     expect(model.wide).toBe(true)
     await expect.poll(async () => (await look(page)).silhouette).toBe(true)
+    // Model's colors once its look has settled (the silhouette pass is on): a design's colors follow its filaments in a
+    // store update of their own after the open, so the first frame in Model may still show the file's
+    const modelColors = (await look(page)).colors
     await sliceTab(page).click()
     await expect.poll(async () => (await look(page)).mode).not.toBe('cadColor')
-    // the same filament colors as Slice, on the CAD finish
-    expect((await look(page)).colors).toEqual(model.colors)
+    // the same filament colors as Slice, on the CAD finish, polled like the mode: Slice's part colors can reach the view
+    // in a plate update after the one that flips the mode
+    await expect.poll(async () => (await look(page)).colors).toEqual(modelColors)
     expect((await look(page)).wide).toBe(false)
     await expect.poll(async () => (await look(page)).silhouette).toBe(false)
   })
