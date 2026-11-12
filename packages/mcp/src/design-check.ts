@@ -127,6 +127,11 @@ export interface BodyFacts {
   size: { x: number; y: number; z: number }
   /** The round holes found in it, each once. */
   holes: { diameterMm: number }[]
+  /**
+   * Read only for a plan with recess rows (recesses.ts): the blind openings on any face, flat or curved, each round (its
+   * width the diameter) or a slit (width across, length along), with its depth. Absent when not read.
+   */
+  recesses?: { round: boolean; widthMm: number; lengthMm: number; depthMm: number }[] | undefined
   /** The steps in its history that shape it (paint and suppressed steps left out). */
   features: number
   /** Those steps' names, in order, when known: with no step tagged, a planned feature is matched to the steps named for it. */
@@ -528,7 +533,10 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
     items.push({ name: 'overall size', want: `${want.map(r2).join(' x ')} mm${inches}`, got, pass: pass || near?.pass === true, ...(warning ? { warning } : {}) })
   }
 
-  const { rows, extra } = matchHoles(plan.holes ?? [], body.holes, scale)
+  // a recess row is held to the blind openings read on the part, never to its holes
+  const holeRows = (plan.holes ?? []).filter((h) => !h.recess)
+  const recessRows = (plan.holes ?? []).filter((h) => h.recess)
+  const { rows, extra: extraHoles } = matchHoles(holeRows, body.holes, scale)
   for (const { hole, found, surplus } of rows) {
     const want = hole.diameter * scale
     const count = hole.count ?? 1
@@ -538,6 +546,14 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
     const got = all.length ? `${holeSizes(all)} diameter${notes.length ? ` (${notes.join(', ')})` : ''}` : count === 1 ? 'no hole' : 'no holes'
     const pass = short === 0 && surplus.length === 0 && found.every((f) => Math.abs(f.diameterMm - want) <= HOLE_MM)
     items.push({ name: hole.name, want: `${count === 1 ? '' : `${count} x `}${mm(want)} diameter`, got, pass })
+  }
+  const recessed = recessItems(recessRows, body.recesses, scale)
+  items.push(...recessed.items)
+  // a round recess in a flat face reads as a hole too: the ones a recess row took are not extra holes
+  const extra = [...extraHoles]
+  for (const w of recessed.widths) {
+    const k = extra.findIndex((h) => Math.abs(h.diameterMm - w) <= HOLE_MM)
+    if (k >= 0) extra.splice(k, 1)
   }
   // a plan that lists its holes has no others; one without the list says nothing about holes
   if (plan.holes) for (const h of extra) items.push({ name: `extra hole, ${mm(h.diameterMm)}`, want: 'no hole (not in the plan)', got: `${mm(h.diameterMm)} diameter`, pass: false })
@@ -933,6 +949,52 @@ function holeSizes(diameters: number[]): string {
 }
 
 type PlannedHole = NonNullable<PartPlan['holes']>[number]
+
+/**
+ * Each recess row against the blind openings read on the part: as many as its count whose width (a round one's
+ * diameter, a slit's width across) is within HOLE_MM of the planned diameter, closest first, each opening once. A row
+ * with fewer fails, saying what was read. `widths` are the round openings taken, each of which may also read as a hole.
+ */
+function recessItems(rows: readonly PlannedHole[], found: BodyFacts['recesses'], scale: number): { items: CheckItem[]; widths: number[] } {
+  const items: CheckItem[] = []
+  const widths: number[] = []
+  const used = new Set<number>()
+  const all = found ?? []
+  for (const row of rows) {
+    const want = row.diameter * scale
+    const count = row.count ?? 1
+    const near = all
+      .map((r, j) => ({ r, j, off: Math.abs(r.widthMm - want) }))
+      .filter((x) => !used.has(x.j) && x.off <= HOLE_MM)
+      .sort((a, b) => a.off - b.off || a.j - b.j)
+      .slice(0, count)
+    for (const x of near) {
+      used.add(x.j)
+      // only a round one also reads as a hole in a flat face
+      if (x.r.round) widths.push(x.r.widthMm)
+    }
+    const words = (rs: readonly NonNullable<BodyFacts['recesses']>[number][]): string => {
+      // a rim read on a curved side is off by hundredths from one opening to the next: name them to a tenth
+      const tenth = (v: number): string => `${Math.round(v * 10) / 10} mm`
+      const by = new Map<string, number>()
+      for (const r of rs) {
+        const k = r.round ? `${tenth(r.widthMm)} round` : `${tenth(r.widthMm)} by ${tenth(r.lengthMm)} slit`
+        by.set(k, (by.get(k) ?? 0) + 1)
+      }
+      return [...by].map(([k, n]) => (n === 1 ? k : `${n} x ${k}`)).join(', ')
+    }
+    const others = all.filter((_, j) => !used.has(j))
+    const got = near.length
+      ? `${words(near.map((x) => x.r))}${near.length < count ? ` (${count - near.length} short)` : ''}`
+      : found === undefined
+        ? 'not read'
+        : others.length
+          ? `none at that size; read ${words(others)}`
+          : 'no recess'
+    items.push({ name: row.name, want: `${count === 1 ? '' : `${count} x `}${mm(want)} recess`, got, pass: near.length === count })
+  }
+  return { items, widths }
+}
 type FoundHole = BodyFacts['holes'][number]
 
 /**
