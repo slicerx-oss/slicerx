@@ -381,14 +381,26 @@ export const NETWORK_LINE = 'The connection to the model dropped twice in a row,
  */
 export const visibleNote = (pct: number, floor: number): string =>
   pct < floor
-    ? `Measured: the change so far moved ${pct}% of the whole-model view, under the ${floor}% a person sees at that view. Strengthen it once before you answer, sized from the model: a bevel or round a real share of the part it is on (a quarter of that part's thinnest side or more), windows tall and wide enough to read at the whole-model view, more curve as a change a person notices. A part too thin or small to show the change (a deck slab about 1 mm thick) first gets the size it needs (raise it to a real deck height), and the reply says so.`
+    ? `Measured: the change so far moved ${pct}% of the whole-model view, under the ${floor}% a person sees at that view. Strengthen it once before you answer, scaled from the model and this measure: rebuilt at the same sizes it measures the same. ${growLine(pct, floor)} A cut into a face of the same color (a recess, slits, windows) shows only its edges, so give it contrast as well: a rim or floor built in a contrasting color, or a darker color on what you added. Size what you add as a share of the part it sits on: a slit or window about a third of that side's height, a vent or hatch a real share of its deck, a recess with a rim; repeated details in rows along every side with room, spaced from the model. A part too thin or small to show the change (a deck slab about 1 mm thick) first gets the size it needs, and the reply says so.`
     : `Measured: the change so far moved ${pct}% of the whole-model view. Say that share in the reply.`
+/**
+ * How much bigger a change under the floor must get to show: the measure is a share of the view's area, so each size
+ * grows by the square root of the shortfall, with a margin, from 1.5 times up to 4 times (a change that showed nothing).
+ */
+export function growBy(pct: number, floor: number): number {
+  if (!(pct > 0)) return 4
+  return Math.min(4, Math.max(1.5, Math.round(Math.sqrt(floor / pct) * 1.25 * 10) / 10))
+}
+const growLine = (pct: number, floor: number): string =>
+  pct > 0
+    ? `Grow each size a person sees by about ${growBy(pct, floor)} times (width and height of each slit, window or vent, a recess's opening), or add more of them along the free length.`
+    : `Nothing showed at all: check it was built where it can be seen, then make it about ${growBy(pct, floor)} times larger.`
 /** After one strengthening: the change still reads small, so the reply says so instead of going round again. */
 export const stillLowNote = (pct: number, floor: number): string =>
   `Measured: the change now moved ${pct}% of the whole-model view, still under the ${floor}%. If it is done, answer, and say the change is subtle at the whole-model view and what would make it show.`
 /** Said once when a run ends with its change still under the floor: one more pass, then the reply. */
 export const STRENGTHEN_NOTE = (pct: number, floor: number): string =>
-  `Before you answer: the change moved only ${pct}% of the whole-model view, under the ${floor}% a person sees. Make it visible now as the measured note said, once, then answer with the new share.`
+  `Before you answer: the change moved only ${pct}% of the whole-model view, under the ${floor}% a person sees. Make it visible now as the measured note said, once: ${pct > 0 ? `about ${growBy(pct, floor)} times the sizes` : 'built where it shows, larger'}, or with contrast, never the same sizes again. Then answer with the new share.`
 
 /**
  * The design an earlier run built and checked against its plan (pass or fail), by id, or null: a run on it is a
