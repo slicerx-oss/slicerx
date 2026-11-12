@@ -15,6 +15,7 @@ import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { notClosedWords, partClosure, type Closure } from './closure'
 import { partBoxes, roundTenth, sunkNote, sunkParts } from './sunk'
 import { movedStep } from './step-reshape'
+import { seatNew } from './seat'
 import { gapMm, gapSentence, nozzleOr } from './design-check'
 import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
 import type { PlanRegistry } from './design-check'
@@ -517,6 +518,15 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const designs = (): DesignHost => deps.designs!
   /** A new body's name when it builds a print-in-place piece of the design's plan (pieceNameFor); undefined keeps the one given. */
   const newPiece = (d: Design, i: { operation: string; feature?: string | undefined; name?: string | undefined }): string | undefined => (i.operation === 'new' ? pieceNameFor(deps.plans, d, i.feature, i.name) : undefined)
+  /**
+   * A new body a hair from another part (under the gap a printer keeps open) is seated on it as the same step; the
+   * answer gains what was seated or left (seat.ts). `n` is the part count before the step.
+   */
+  const seated = async <T extends { summary: string }>(d: Design, operation: string, n: number, out: T): Promise<T> => {
+    if (operation !== 'new') return out
+    const said = await seatNew(designs(), d, Array.from({ length: Math.max(0, d.parts.length - n) }, (_, k) => n + k), { nozzleMm: deps.nozzleMm?.(), layerHeightMm: deps.fitProfile?.().layerHeightMm, plans: deps.plans })
+    return said ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${said}` } : out
+  }
   /** A step's answer that says so when its new body took the plan's piece name. */
   const pieceNamed = (out: { summary: string; output: Record<string, unknown> }, piece: string | undefined, given: string | undefined) => (piece ? { ...out, summary: `${out.summary}${pieceNameNote(piece, given)}` } : out)
   const readImage = (p: string): Uint8Array => {
@@ -828,7 +838,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.11.0',
+    version: '1.12.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -869,6 +879,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: piece ?? i.name, slot: i.slot })
         const on = i.operation === 'join' ? (part ?? 0) : -1
         const before = on >= 0 ? partBoxes(d) : []
+        const n = d.parts.length
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
         // parts that stood on the body this raised are lifted onto its new top, at the steps that made them, with
         // their paint; the answer says so
@@ -886,7 +897,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           })
           await replayChange(designs(), d, { ...d.history, steps })
         }
-        const out = pieceNamed(stepOut(d, verb), piece, i.name)
+        const out = await seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name))
         const lifted = liftable.map((s) => `${d.parts[s.part]!.name} ${roundTenth(s.depthMm)} mm`).join(', ')
         const said = [lifted ? `Lifted ${lifted} onto the new top of ${d.parts[on]!.name}, at the steps that made them` : '', on >= 0 ? sunkNote(d, on, sunk) : ''].filter(Boolean).join('. ')
         return said ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${said}` } : out
@@ -900,7 +911,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.9.0',
+    version: '1.10.0',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -931,8 +942,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
         const piece = newPiece(d, i)
         const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: piece ?? i.name, slot: i.slot })
+        const n = d.parts.length
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
-        return pieceNamed(stepOut(d, 'Revolved'), piece, i.name)
+        return seated(d, i.operation, n, pieceNamed(stepOut(d, 'Revolved'), piece, i.name))
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch revolves on a design; give its id as design')
       if (!i.loops) throw new ToolInputError('loops: give the loops to revolve')
@@ -963,7 +975,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -994,8 +1006,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const profiles = i.sketches ? i.sketches.map((id) => finished(id, d.id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
         const piece = newPiece(d, i)
         const params: StepParams = loftParams({ profiles, ...loftOpts, operation: i.operation, name: piece ?? i.name, slot: i.slot })
+        const n = d.parts.length
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
-        return pieceNamed(stepOut(d, verb), piece, i.name)
+        return seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name))
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
       const profiles = i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, plane(f.frame)))
@@ -1015,7 +1028,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.10.0',
+    version: '1.11.0',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale, twist_deg and end_profile taper, turn and reshape it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
@@ -1076,8 +1089,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points, ...smooth } : { frame: frameOf(qf), loops: pathLoops! }
         const piece = newPiece(d, i)
         const params: StepParams = sweepParams({ profile, path, thicken: th, ...law, ...morph, operation: i.operation, name: piece ?? i.name, slot: i.slot })
+        const n = d.parts.length
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
-        return pieceNamed(stepOut(d, verb), piece, i.name)
+        return seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name))
       }
       if (i.profile_sketch || i.path_sketch) throw new ToolInputError(`${i.profile_sketch ? 'profile_sketch' : 'path_sketch'}: finished sketches sweep on a design; give its id as design`)
       const path = points ? { points, ...smooth } : { ...plane(qf), loops: pathLoops }

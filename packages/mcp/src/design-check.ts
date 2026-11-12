@@ -171,6 +171,12 @@ export interface BodyFacts {
   /** Why the gaps were not measured, when the fit check failed. */
   fitWhy?: string | undefined
   /**
+   * Read for a plan whose pieces neither move nor print together, on a design of two or more bodies: the gap a printer
+   * keeps open (half the nozzle), how many bodies there are, and each gap above 0 and under it, in words (seat.ts
+   * looseText). Pieces a thread step marks as moving are left out.
+   */
+  loose?: { keepMm: number; bodies: number; gaps: string[] } | undefined
+  /**
    * Read only for a plan with a hook and a lip (hasHookLip), from the part's upright stem (hook-lip.ts): how far the
    * hook's tip rises above the hook's lowest point toward its end, in mm, or null when nothing reaches out past the
    * stem. Absent when it was not read, or when the part has no upright round stem to read a hook from.
@@ -699,6 +705,8 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
     const under = gaps.filter((g) => !g.pass)
     if (gaps.length) items.push({ name: 'planned gaps', want: `every gap the plan sets ${gapLimitsText(gapLimits)}`, got: under.length ? under.map((g) => g.text).join('; ') : gaps.map((g) => g.text).join(', '), pass: !under.length })
   }
+  // parts a hair apart, under the gap a printer keeps open: neither one piece nor apart
+  if (body.loose) items.push(looseItem(body.loose))
   // a hook with a lip ends in a tip that rises, so what hangs on it does not slide off the end
   if (hasHookLip(plan) && body.hookTipRiseMm !== undefined) {
     const rise = body.hookTipRiseMm
@@ -714,6 +722,14 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   if (floor && body.floor) items.push(floorItem(floor, body.floor))
 
   return { pass: items.every((i) => i.pass), items }
+}
+
+/** Loose parts: no two bodies above 0 and under the gap a printer keeps open, which neither fuse nor print apart. */
+export function looseItem(l: NonNullable<BodyFacts['loose']>): CheckItem {
+  const want = `every part touching the part it stands on, or at least ${mm(l.keepMm)} from it`
+  if (!l.gaps.length) return { name: 'loose parts', want, got: `none among ${l.bodies} bodies`, pass: true }
+  const more = l.gaps.length - NAMED_GAPS
+  return { name: 'loose parts', want, got: `${l.gaps.slice(0, NAMED_GAPS).join('; ')}${more > 0 ? `; and ${more} more` : ''}: move each onto the other, or at least ${mm(l.keepMm)} away`, pass: false }
 }
 
 /**

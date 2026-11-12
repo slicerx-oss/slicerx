@@ -175,7 +175,7 @@ describe('design.check on a print-in-place plan', () => {
     expect(item((await t.check(planOf(['arm', 'PIN'], { planId: 'pip-2' }))).out, 'pieces')).toMatchObject({ got: '2 pieces', pass: true })
   })
 
-  it('a plan without printInPlace gets no pieces or gaps item, and the engine is not asked', async () => {
+  it('a plan without printInPlace gets no pieces or gaps item, and no print-in-place gaps are read', async () => {
     const t = await pinInArm(3.4, 3)
     const { out } = await t.check(planOf(['Arm', 'Pin'], { printInPlace: undefined }))
     expect(out.items.map((i) => i.name)).not.toContain('gaps')

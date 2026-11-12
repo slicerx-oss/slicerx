@@ -63,7 +63,7 @@ function noEngine(): never {
 export function designToolset(host: DesignHost, files: { design?: DesignFiles; cad?: CadFiles; modeling?: ModelingFiles } = {}, opts: DesignToolOptions = {}): PilotTool<never>[] {
   // one registry for design.check and geom.fit_check, which records the fit checks design.check asks for
   const plans = opts.plans ?? createPlanRegistry()
-  return [...designTools(host, files.design ?? NO_DESIGN_FILES, { ...opts, plans }), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, plans }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host, plans })]
+  return [...designTools(host, files.design ?? NO_DESIGN_FILES, { ...opts, plans }), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, plans }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host, plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile })]
 }
 
 /**
