@@ -3,7 +3,7 @@
 // A plan's detail level: basic, display or fine. A display or fine plan names each main body, curved or flat-sided, and
 // the feature that builds it; a curved body is lofted, revolved or swept through smooth sections, never one extrude;
 // its proportions come from a lookup or a stated source; and the real object's repeated details get a pass by
-// pattern. The rules are about the object: a toy boat's hull and a model car's body are curved, a house is flat-sided
+// pattern. The rules are about the object: a toy pod's shell and a model car's body are curved, a house is flat-sided
 // and passes without a loft.
 import type { PilotMachine } from '@slicerx/contracts'
 import { type ToolContext } from '@slicerx/pilot'
@@ -16,29 +16,29 @@ import type { DesignHost } from '@slicerx/cad-history'
 
 const machine: PilotMachine = { printer: 'bambu_a1_mini', material: 'pla', nozzle: 0.4 }
 
-/** A toy boat at display detail: a lofted hull split at its waterline, a cabin, portholes and rail posts arrayed. */
-const boat: PlanInput = {
-  part: 'Toy boat',
+/** A toy pod at display detail: a lofted shell split at its color line, a canopy, vents and studs arrayed. */
+const pod: PlanInput = {
+  part: 'Toy pod',
   units: 'mm',
   detail: 'display',
-  curved: ['Lower hull', 'Upper hull'],
-  flat: ['Cabin'],
-  proportions: 'lookup: a 6 m launch, 2.2 m beam, scaled 1:40',
+  curved: ['Lower shell', 'Upper shell'],
+  flat: ['Canopy'],
+  proportions: 'lookup: a 6 m capsule, 2.2 m wide, scaled 1:40',
   scale: 40,
-  real: [{ feature: 'Lower hull', size: 'length', mm: 6000 }, { feature: 'Cabin', size: 'length', mm: 2000 }],
-  tiers: { Cabin: ['Cabin', 'Cabin roof'] },
-  repeats: ['portholes', 'rail posts'],
-  colors: { 'Lower hull': 'red', 'Upper hull': 'white', 'Deck': 'tan', 'Cabin': 'white', 'Cabin roof': 'blue', 'Rail posts': 'white', 'Mast': 'brown', 'Flag': 'yellow' },
+  real: [{ feature: 'Lower shell', size: 'length', mm: 6000 }, { feature: 'Canopy', size: 'length', mm: 2000 }],
+  tiers: { Canopy: ['Canopy', 'Canopy cap'] },
+  repeats: ['vents', 'studs'],
+  colors: { 'Lower shell': 'red', 'Upper shell': 'white', 'Floor': 'tan', 'Canopy': 'white', 'Canopy cap': 'blue', 'Studs': 'white', 'Antenna': 'brown', 'Fin': 'yellow' },
   features: [
-    { name: 'Lower hull', kind: 'loft', sizes: { length: 150, beam: 55, height: 10, sections: 7 }, kinds: { sections: 'count' } },
-    { name: 'Upper hull', kind: 'loft', sizes: { length: 150, beam: 55, height: 10, sections: 7 }, kinds: { sections: 'count' } },
-    { name: 'Deck', kind: 'extrude', sizes: { length: 140, width: 50, height: 1 } },
-    { name: 'Cabin', kind: 'extrude', sizes: { length: 50, width: 35, height: 15 } },
-    { name: 'Cabin roof', kind: 'extrude', sizes: { length: 54, width: 39, height: 2 } },
-    { name: 'Portholes', kind: 'array cut', sizes: { diameter: 3, pitch: 8, count: 5 }, kinds: { count: 'count' } },
-    { name: 'Rail posts', kind: 'array and mirror', sizes: { diameter: 1, height: 5, count: 12 }, kinds: { count: 'count' } },
-    { name: 'Mast', kind: 'loft', sizes: { height: 40, diameter: 3 } },
-    { name: 'Flag', kind: 'extrude', sizes: { width: 8, height: 5, thickness: 1 } },
+    { name: 'Lower shell', kind: 'loft', sizes: { length: 150, width: 55, height: 10, sections: 7 }, kinds: { sections: 'count' } },
+    { name: 'Upper shell', kind: 'loft', sizes: { length: 150, width: 55, height: 10, sections: 7 }, kinds: { sections: 'count' } },
+    { name: 'Floor', kind: 'extrude', sizes: { length: 140, width: 50, height: 1 } },
+    { name: 'Canopy', kind: 'extrude', sizes: { length: 50, width: 35, height: 15 } },
+    { name: 'Canopy cap', kind: 'extrude', sizes: { length: 54, width: 39, height: 2 } },
+    { name: 'Vents', kind: 'array cut', sizes: { diameter: 3, pitch: 8, count: 5 }, kinds: { count: 'count' } },
+    { name: 'Studs', kind: 'array and mirror', sizes: { diameter: 1, height: 5, count: 12 }, kinds: { count: 'count' } },
+    { name: 'Antenna', kind: 'loft', sizes: { height: 40, diameter: 3 } },
+    { name: 'Fin', kind: 'extrude', sizes: { width: 8, height: 5, thickness: 1 } },
   ],
   assumptions: [],
   questions: [],
@@ -98,8 +98,8 @@ const house: PlanInput = {
 const withFeature = (p: PlanInput, name: string, f: Partial<PlanInput['features'][number]>): PlanInput => ({ ...p, features: p.features.map((x) => (x.name === name ? { ...x, ...f } : x)) })
 
 describe('detailProblem: the rules are about the object', () => {
-  it('passes a toy boat whose curved hull is lofted through 7 sections at its waterline split, with proportions, colors and arrayed portholes', () => {
-    expect(detailProblem(boat)).toBeNull()
+  it('passes a toy pod whose curved shell is lofted through 7 sections at its color line split, with proportions, colors and arrayed vents', () => {
+    expect(detailProblem(pod)).toBeNull()
   })
 
   it('passes a model car whose curved body is lofted through 5 sections', () => {
@@ -110,9 +110,9 @@ describe('detailProblem: the rules are about the object', () => {
     expect(detailProblem(house)).toBeNull()
   })
 
-  it('refuses a curved hull built as a single extrude, and says to loft it through at least 5 sections instead', () => {
-    const p = detailProblem(withFeature(boat, 'Lower hull', { kind: 'extrude', sizes: { length: 150, beam: 55, height: 10 } }))
-    expect(p).toContain('Lower hull builds a curved body, so do not build it as a single extrude')
+  it('refuses a curved shell built as a single extrude, and says to loft it through at least 5 sections instead', () => {
+    const p = detailProblem(withFeature(pod, 'Lower shell', { kind: 'extrude', sizes: { length: 150, width: 55, height: 10 } }))
+    expect(p).toContain('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(p).toContain('plan it as a loft through 5 or more smooth sections along its length')
   })
 
@@ -125,7 +125,7 @@ describe('detailProblem: the rules are about the object', () => {
   })
 
   it('refuses a display plan with no bodies, no proportions or no repeats, each in words that say what to plan', () => {
-    const { curved: _c, flat: _f, proportions: _p, repeats: _r, ...bare } = boat
+    const { curved: _c, flat: _f, proportions: _p, repeats: _r, ...bare } = pod
     const p = detailProblem(bare)!
     expect(p).toContain('curved, flat: a display model plan names the features that build each main body')
     expect(p).toContain('proportions: say where the proportions come from, a lookup (web.lookup) or a stated source')
@@ -140,7 +140,7 @@ describe('detailProblem: the rules are about the object', () => {
   })
 
   it('holds a basic plan, or one with no level, to none of it', () => {
-    const extruded = withFeature(boat, 'Lower hull', { kind: 'extrude' })
+    const extruded = withFeature(pod, 'Lower shell', { kind: 'extrude' })
     expect(detailProblem({ ...extruded, detail: 'basic' })).toBeNull()
     const { detail: _d, ...noLevel } = extruded
     expect(detailProblem(noLevel)).toBeNull()
@@ -154,10 +154,10 @@ describe('detailProblem: the rules are about the object', () => {
 
   it('asks a long object for more features, and one more for each repeated detail past three', () => {
     // 200 x 30 x 40: five times as long as its next size, so its detail spreads along it
-    const long = { ...boat, overall: { x: 200, y: 30, z: 40 } }
+    const long = { ...pod, overall: { x: 200, y: 30, z: 40 } }
     expect(featuresFloor(long, 'display')).toEqual({ count: 10, why: '8 at display model, 2 more for a long object, 5 times as long as its next size' })
     expect(detailProblem(long)).toContain('this one has 9')
-    expect(featuresFloor({ ...boat, overall: { x: 150, y: 55, z: 60 } }, 'display').count).toBe(8)
+    expect(featuresFloor({ ...pod, overall: { x: 150, y: 55, z: 60 } }, 'display').count).toBe(8)
     expect(featuresFloor({ repeats: ['a', 'b', 'c', 'd', 'e'] }, 'display')).toEqual({ count: 10, why: '8 at display model, 2 more for 5 repeated details' })
   })
 
@@ -223,7 +223,7 @@ describe('design.plan with a detail level', () => {
   it('is 1.6.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
     expect(t.tool.version).toBe('1.6.0')
-    await expect(t.run(withFeature(boat, 'Lower hull', { kind: 'extrude' }))).rejects.toThrow('Lower hull builds a curved body, so do not build it as a single extrude')
+    await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
 
@@ -257,60 +257,60 @@ const loftStep = (feature: string, sections: [number, number[][]][]) => ({
   feature,
   params: { op: 'sketch.loft', profiles: sections.map(([x, pts]) => ({ frame: { origin: [x, 0, 0], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] }, loops: [{ points: pts }] })) },
 })
-/** A hull section: flat bottom `b` wide at z `lo`, sides out to `w` at z `lo` + 9, upright to the deck at `hi`. */
-const hullSection = (b: number, w: number, lo: number, hi: number) => [[-b / 2, lo], [b / 2, lo], [w / 2, lo + 9], [w / 2, hi], [-w / 2, hi], [-w / 2, lo + 9]]
+/** A shell section: flat bottom `b` wide at z `lo`, sides out to `w` at z `lo` + 9, upright to the top at `hi`. */
+const shellSection = (b: number, w: number, lo: number, hi: number) => [[-b / 2, lo], [b / 2, lo], [w / 2, lo + 9], [w / 2, hi], [-w / 2, hi], [-w / 2, lo + 9]]
 
-/** A toy boat hull that only narrows toward its ends: every section stands from z 0 to the same deck at z 14. */
-const boxHull = loftStep('Hull', [0, 15, 40, 100, 170, 195, 210, 220, 224].map((x, k) => [x, hullSection([1, 10, 12, 12, 12, 8, 4, 2, 0.6][k]!, [2, 21, 23.5, 23.5, 23.5, 16, 9, 3.6, 1][k]!, 0, 14)] as [number, number[][]]))
-/** The same hull with its keel rising toward the ends and its deck rising toward the bow, as the real thing does. */
-const shapedHull = loftStep('Hull', [0, 15, 40, 100, 170, 195, 210, 220, 224].map((x, k) => [x, hullSection([1, 10, 12, 12, 12, 8, 4, 2, 0.6][k]!, [2, 21, 23.5, 23.5, 23.5, 16, 9, 3.6, 1][k]!, [3, 1, 0, 0, 0, 0.5, 1.5, 3, 5][k]!, [15, 14.3, 14, 14, 14, 14.4, 15, 15.6, 16][k]!)] as [number, number[][]]))
+/** A toy pod shell that only narrows toward its ends: every section stands from z 0 to the same top at z 14. */
+const boxShell = loftStep('Shell', [0, 15, 40, 100, 170, 195, 210, 220, 224].map((x, k) => [x, shellSection([1, 10, 12, 12, 12, 8, 4, 2, 0.6][k]!, [2, 21, 23.5, 23.5, 23.5, 16, 9, 3.6, 1][k]!, 0, 14)] as [number, number[][]]))
+/** The same shell with its bottom rising toward the ends and its top rising toward the front, as the real thing does. */
+const shapedShell = loftStep('Shell', [0, 15, 40, 100, 170, 195, 210, 220, 224].map((x, k) => [x, shellSection([1, 10, 12, 12, 12, 8, 4, 2, 0.6][k]!, [2, 21, 23.5, 23.5, 23.5, 16, 9, 3.6, 1][k]!, [3, 1, 0, 0, 0, 0.5, 1.5, 3, 5][k]!, [15, 14.3, 14, 14, 14, 14.4, 15, 15.6, 16][k]!)] as [number, number[][]]))
 
 describe('sectionsProblem: a curved body changes along its length both ways across it', () => {
-  it('fails a hull whose sections only narrow toward the ends, and names the size that never changes', () => {
-    const [l] = loftSections([boxHull])
-    expect(l!.feature).toBe('Hull')
+  it('fails a shell whose sections only narrow toward the ends, and names the size that never changes', () => {
+    const [l] = loftSections([boxShell])
+    expect(l!.feature).toBe('Shell')
     expect(l!.sections).toHaveLength(9)
-    expect(sectionsProblem('Hull', l!)).toBe(
-      "Hull: all 9 sections span z 0 to 14 mm; only its size in y changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a deck rising toward the bow, a keel rising at the ends, a roof sloping down to a hood), then check again",
+    expect(sectionsProblem('Shell', l!)).toBe(
+      "Shell: all 9 sections span z 0 to 14 mm; only its size in y changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a deck rising toward the bow, a keel rising at the ends, a roof sloping down to a hood), then check again",
     )
   })
 
-  it('passes the same hull with its keel and deck rising toward the ends', () => {
-    expect(sectionsProblem('Hull', loftSections([shapedHull])[0]!)).toBeNull()
+  it('passes the same shell with its bottom and top rising toward the ends', () => {
+    expect(sectionsProblem('Shell', loftSections([shapedShell])[0]!)).toBeNull()
   })
 
-  it('passes a fuselage of circles that taper to its tail, and a raked funnel of one circle carried up at a slant', () => {
+  it('passes a fuselage of circles that taper to its tail, and a raked tube of one circle carried up at a slant', () => {
     const circles = (ds: number[]) => ({ feature: 'Fuselage', params: { op: 'sketch.loft', profiles: ds.map((d, k) => ({ frame: { origin: [k * 20, 0, 10], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] }, loops: [{ type: 'circle', center: [0, 0], diameterMm: d }] })) } })
     expect(sectionsProblem('Fuselage', loftSections([circles([6, 12, 14, 14, 10, 4])])[0]!)).toBeNull()
     // the same 6 mm circle at five heights, each 0.6 mm further aft: its size never changes, so it is not stretched
-    const funnel = { feature: 'Funnel', params: { op: 'sketch.loft', profiles: [0, 1, 2, 3, 4].map((k) => ({ frame: { origin: [0, 0, 20 + k * 5], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [{ type: 'circle', center: [100 - k * 0.6, 0], diameterMm: 6 }] })) } }
-    expect(sectionsProblem('Funnel', loftSections([funnel])[0]!)).toBeNull()
+    const tube = { feature: 'Tube', params: { op: 'sketch.loft', profiles: [0, 1, 2, 3, 4].map((k) => ({ frame: { origin: [0, 0, 20 + k * 5], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [{ type: 'circle', center: [100 - k * 0.6, 0], diameterMm: 6 }] })) } }
+    expect(sectionsProblem('Tube', loftSections([tube])[0]!)).toBeNull()
   })
 
   it('reads only loft steps, and leaves a loft of two sections alone', () => {
-    expect(loftSections([{ feature: 'Cabin', params: { op: 'sketch.extrude' } }, { ...boxHull, suppressed: true }])).toEqual([])
-    const two = loftStep('Mast', [[0, [[0, 0], [1, 0], [1, 1]]], [10, [[0, 0], [1, 0], [1, 1]]]])
-    expect(sectionsProblem('Mast', loftSections([two])[0]!)).toBeNull()
+    expect(loftSections([{ feature: 'Canopy', params: { op: 'sketch.extrude' } }, { ...boxShell, suppressed: true }])).toEqual([])
+    const two = loftStep('Antenna', [[0, [[0, 0], [1, 0], [1, 1]]], [10, [[0, 0], [1, 0], [1, 1]]]])
+    expect(sectionsProblem('Antenna', loftSections([two])[0]!)).toBeNull()
   })
 })
 
 describe('designCheck on a display plan', () => {
-  const plan: PartPlan = { planId: 'boat-1', ...boat, curved: ['Hull'], features: [{ name: 'Hull', kind: 'loft', sizes: { length: 224, sections: 9 } }], overall: { x: 224, y: 23.5, z: 16 } }
-  const body = (l: ReturnType<typeof loftStep>, y = 23.5): BodyFacts => ({ size: { x: 224, y, z: 16 }, holes: [], features: 1, tags: ['Hull'], watertight: true, minWallMm: 1, lofts: loftSections([l]) })
+  const plan: PartPlan = { planId: 'pod-1', ...pod, curved: ['Shell'], features: [{ name: 'Shell', kind: 'loft', sizes: { length: 224, sections: 9 } }], overall: { x: 224, y: 23.5, z: 16 } }
+  const body = (l: ReturnType<typeof loftStep>, y = 23.5): BodyFacts => ({ size: { x: 224, y, z: 16 }, holes: [], features: 1, tags: ['Shell'], watertight: true, minWallMm: 1, lofts: loftSections([l]) })
 
   it('fails a curved body whose sections only narrow toward the ends, and passes one shaped both ways', () => {
-    const box = designCheck(plan, body(boxHull), 0.4)
-    expect(box.items.find((i) => i.name === 'curved bodies')).toMatchObject({ pass: false, got: expect.stringContaining('Hull: all 9 sections span z 0 to 14 mm') })
-    expect(designCheck(plan, body(shapedHull), 0.4).items.find((i) => i.name === 'curved bodies')).toMatchObject({ pass: true, got: 'its loft is shaped along the length' })
+    const box = designCheck(plan, body(boxShell), 0.4)
+    expect(box.items.find((i) => i.name === 'curved bodies')).toMatchObject({ pass: false, got: expect.stringContaining('Shell: all 9 sections span z 0 to 14 mm') })
+    expect(designCheck(plan, body(shapedShell), 0.4).items.find((i) => i.name === 'curved bodies')).toMatchObject({ pass: true, got: 'its loft is shaped along the length' })
     // a basic plan, or one with no level, is never held to it
-    expect(designCheck({ ...plan, detail: 'basic' }, body(boxHull), 0.4).items.map((i) => i.name)).not.toContain('curved bodies')
+    expect(designCheck({ ...plan, detail: 'basic' }, body(boxShell), 0.4).items.map((i) => i.name)).not.toContain('curved bodies')
   })
 
   it('passes an overall size a display model misses by under 5 percent, with a warning and no plan change', () => {
-    const r = designCheck(plan, body(shapedHull, 24.66), 0.4)
+    const r = designCheck(plan, body(shapedShell, 24.66), 0.4)
     expect(r.items[0]).toMatchObject({ name: 'overall size', pass: true, warning: 'y +1.16 mm from the plan, within the 1 mm or 5 percent a display model is held to; no plan change needed, say it in the reply' })
-    expect(designCheck(plan, body(shapedHull, 25.5), 0.4).items[0]!.pass).toBe(false)
+    expect(designCheck(plan, body(shapedShell, 25.5), 0.4).items[0]!.pass).toBe(false)
     // a basic plan keeps the tight 0.2 mm or 1 percent
-    expect(designCheck({ ...plan, detail: 'basic' }, body(shapedHull, 24.66), 0.4).items[0]!.pass).toBe(false)
+    expect(designCheck({ ...plan, detail: 'basic' }, body(shapedShell, 24.66), 0.4).items[0]!.pass).toBe(false)
   })
 })
