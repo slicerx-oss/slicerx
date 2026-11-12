@@ -401,6 +401,50 @@ describe("native provider: a solid's triangles", () => {
     expect(part!.faces!.table).toEqual(solidAnswer().faces.table)
     expect(part!.faces!.keys).toEqual([7, 8])
   })
+
+  it('asks for an exact loft in every replay, with no exact solids asked for', async () => {
+    const s = solidBuffers()
+    const sent: { op: string; request: Record<string, unknown> }[] = []
+    const { engine } = standIn((op, request) => {
+      sent.push({ op, request })
+      if (op === 'exact.ops') return { ops: ['sketch.loft'] }
+      if (op === 'sketch.loft') return { mesh: { positions: [], indices: [] }, report: { watertight: true }, body: FIRST, bodyKeys: [7, 8] }
+      if (op === 'brep.tessellate') return { frame: answerFrame({ id: 1, result: solidAnswer() }, s.buffers) }
+      if (op === 'brep.free') return { freed: true }
+      throw new Error(`unexpected ${op}`)
+    })
+    const p = nativeProvider(engine)
+    const profiles = [{ loops: [] }, { frame: { origin: [0, 0, 20], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [] }]
+    const step = { id: 'loft-2', part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'sketch.loft', profiles, operation: 'new', name: 'Hull' } }
+    const r = await p.call<{ parts: { normals?: Int16Array }[]; status: unknown[]; exactFellBack?: string[] }>('history.replay', { history: { version: HISTORY_VERSION, base: [], steps: [step] } })
+    expect(r.status).toEqual([{ state: 'done' }])
+    expect(r.exactFellBack).toBeUndefined()
+    expect(sent.map((x) => x.op)).toEqual(['exact.ops', 'sketch.loft', 'brep.tessellate'])
+    expect(sent[1]!.request).toMatchObject({ exact: true, withKeys: true })
+    expect(r.parts[0]!.normals).toBeInstanceOf(Int16Array)
+  })
+
+  it("lofts on the mesh with no note when the engine makes no exact body, and gives the reason quietly", async () => {
+    const why = 'These profiles are not covered yet.'
+    const sent: string[] = []
+    const { engine } = standIn((op) => {
+      // a body an earlier test left held is freed by the next replay that keeps bodies, through this engine
+      if (op === 'brep.free') return { freed: true }
+      sent.push(op)
+      if (op === 'exact.ops') return { ops: ['sketch.loft'] }
+      if (op === 'sketch.loft') return { mesh: { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }, report: { watertight: true }, exact: { made: false, why } }
+      throw new Error(`unexpected ${op}`)
+    })
+    const p = nativeProvider(engine)
+    const profiles = [{ loops: [] }, { frame: { origin: [0, 0, 20], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [] }]
+    const step = { id: 'loft-3', part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'sketch.loft', profiles, operation: 'new', name: 'Hull' } }
+    const r = await p.call<{ parts: { normals?: Int16Array }[]; status: unknown[]; exactFellBack?: string[]; exactLoftsQuiet?: unknown }>('history.replay', { history: { version: HISTORY_VERSION, base: [], steps: [step] } })
+    expect(r.status).toEqual([{ state: 'done' }])
+    expect(r.exactFellBack).toBeUndefined()
+    expect(r.exactLoftsQuiet).toEqual([{ step: 'loft-3', why }])
+    expect(sent).toEqual(['exact.ops', 'sketch.loft'])
+    expect('normals' in r.parts[0]!).toBe(false)
+  })
 })
 
 // --- the real engine in a process of its own
@@ -640,6 +684,34 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
       await engine.end()
     }
     console.log(lines.join('\n'))
+  }, 120_000)
+
+  it.skipIf(process.env['SX_NATIVE_KERNEL'] !== '1')('makes a new lofted body exact in a replay without exact solids, and a curved one on the mesh with no note', async () => {
+    const engine = processEngine()
+    const p = nativeProvider(engine)
+    type Part = { indices: ArrayLike<number>; normals?: Int16Array; faces?: { keys?: number[] } }
+    type Out = { parts: Part[]; status: unknown[]; exactFellBack?: string[]; exactLoftsQuiet?: { step: string; why: string }[] }
+    const level = (z: number, loops: unknown[]) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops })
+    const loft = (id: string, loops: unknown[]) => ({ id, part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'sketch.loft', profiles: [level(0, loops), level(15, loops)], operation: 'new', name: 'Block' } })
+    try {
+      // a 20 by 10 mm block lofted 15 mm up, asked as the app asks: no exact solids, no exact design
+      const block = await p.call<Out>('history.replay', { history: { version: HISTORY_VERSION, base: [], steps: [loft('loft-1', [{ points: [[-10, -5], [10, -5], [10, 5], [-10, 5]] }])] } })
+      expect(block.status).toEqual([{ state: 'done' }])
+      expect(block.exactFellBack).toBeUndefined()
+      expect(block.exactLoftsQuiet).toBeUndefined()
+      expect(block.parts[0]!.normals).toHaveLength(block.parts[0]!.indices.length * 2)
+      expect(block.parts[0]!.faces!.keys).toHaveLength(6)
+      // a round section the kernel does not loft exactly yet: today's mesh loft, no note, the engine's reason kept quietly
+      const round = await p.call<Out>('history.replay', { history: { version: HISTORY_VERSION, base: [], steps: [loft('loft-2', [{ type: 'circle', center: [0, 0], diameterMm: 10 }])] } })
+      expect(round.status).toEqual([{ state: 'done' }])
+      expect(round.exactFellBack).toBeUndefined()
+      expect(round.exactLoftsQuiet).toHaveLength(1)
+      expect(round.exactLoftsQuiet![0]!.step).toBe('loft-2')
+      expect(round.exactLoftsQuiet![0]!.why.length).toBeGreaterThan(0)
+      expect('normals' in round.parts[0]!).toBe(false)
+    } finally {
+      await engine.end()
+    }
   }, 120_000)
 
   it.skipIf(process.env['SX_NATIVE_BENCH'] !== '1')('times a replay and a million-triangle call', async () => {

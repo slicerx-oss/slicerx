@@ -37,6 +37,8 @@ export interface ExactPart {
 /** How a replay holds its solids: as text through each call, or (`keep`) as kernel bodies, each one `made` told. */
 export interface Solids {
   keep: boolean
+  /** New-body lofts are asked exact even on a replay that is not (ReplayRequest.exactLofts). */
+  lofts?: boolean
   made: (body: number) => void
   /** Whether the engine makes an exact body for this operation itself (exactOps); asked once a replay. */
   has?: (op: string) => Promise<boolean>

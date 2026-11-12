@@ -258,6 +258,11 @@ export interface ReplayResult {
   /** On a replay with exact solids: the parts that are meshes, by index, beside the exact ones (an added mesh part,
    * or a part a step took to the mesh). */
   meshParts?: number[]
+  /**
+   * New-body lofts asked exact by `exactLofts` alone that the engine made no body for, which are today's mesh lofts
+   * with no note: each step with the engine's reason, for the debug console only. A warm replay lists none again.
+   */
+  exactLoftsQuiet?: { step: string; why: string }[]
 }
 
 export const HISTORY_VERSION = 1
