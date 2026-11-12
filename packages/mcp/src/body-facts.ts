@@ -9,7 +9,7 @@
 // something (holder-floor.ts).
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
-import { TOO_DENSE_WHY, type BodyFacts, type FitLimits, type FloorFacts } from './design-check'
+import type { BodyFacts, FitLimits, FloorFacts } from './design-check'
 import { fitFacts } from './fit-facts'
 import { floorOpenings } from './holder-floor'
 import { hookOn, surfacePoints } from './hook-lip'
@@ -296,7 +296,7 @@ const WALL_NOZZLE_MM = 0.4
 /** A taper's faces close to this share of the gap the ray read within the zone (tapers in partWall). */
 const TAPER_CLOSE = 0.8
 
-const TOO_DENSE = TOO_DENSE_WHY
+const TOO_DENSE = 'part too dense'
 /** Grid cells per part at most, and facet entries over all cells (a facet is listed in each cell its bounds cross). */
 const MAX_CELLS = 1 << 21
 const MAX_ENTRIES = 4_000_000
