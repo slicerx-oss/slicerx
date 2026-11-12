@@ -166,6 +166,8 @@ const backplate: ScriptStep[] = [
         args: {
           title: 'Backplate sizes',
           views: ['top', 'side'],
+          // the plate fits the thermostat on the wall, so its sizes wait for the person
+          fits: true,
           ...drawn(
             [
               row('plate_width', 'Plate width', 150.4, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 60, max: 250 }),
@@ -219,6 +221,8 @@ const box: ScriptStep[] = [
         args: {
           title: 'Box with lid sizes',
           views: ['iso', 'front'],
+          // the box holds something and its lid fits it, so its sizes wait for the person
+          fits: true,
           ...drawn(
             [
               row('width', 'Width', 80, 'guess', { min: 20, max: 250 }),
@@ -351,6 +355,8 @@ function standSheet(phone: { w: number; t: number } | null): StepData {
         args: {
           title: 'Phone stand sizes',
           views: ['side', 'front'],
+          // the stand holds the person's phone, so its sizes wait for the person
+          fits: true,
           ...drawn(
             [
               row('phone_width', 'Phone width', phone?.w ?? 72, how, { ...src, min: 50, max: 100 }),
@@ -484,7 +490,8 @@ export function mountPart(v: Record<string, number>) {
 }
 
 /**
- * A mounting plate: its sizes on the sheet, then its plan on the card. After Go it builds the plate, then its reply
+ * A mounting plate at its default sizes: its sheet and its plan card show, and go ahead with nobody asked (no size
+ * on it must fit something). It builds the plate, then its reply
  * stops to ask whether to add the screw holes the plan already has. The runtime goes on once instead (plan-left.ts) and
  * the chat shows a line that says so; the script then builds the holes, each step tagged with its planned feature, and
  * checks the part against the plan.
@@ -515,7 +522,7 @@ const mountingPlate: ScriptStep[] = [
   (messages) => {
     const v = mountSizes(messages)
     return {
-      text: 'Here is the plan for the mounting plate. Change anything on the card, then press Go.',
+      text: 'Here is the plan for the mounting plate, at its default size.',
       calls: [
         {
           name: 'design.plan',
@@ -784,11 +791,8 @@ const sizesOf: ScriptStep[] = [
     return { text: `Here are the main sizes of the ${e.name}, drawn as it is built.`, calls: [{ name: 'pilot.sheet', args: { title: `${e.name} main sizes`, views: ['front', 'top', 'side', 'iso'], dims: rows, design: e.id } }] }
   },
   (messages) => {
-    const r = lastResult(messages)
-    const changed = Array.isArray(r?.['changed']) ? (r['changed'] as unknown[]).length : 0
-    if (r?.['confirmed'] === true && changed === 0) return { text: 'Those are the sizes it has now.' }
-    // a changed size needs the part's steps edited, which this preview cannot do from a sheet
-    if (r?.['confirmed'] === true) return { text: 'I cannot rebuild it to new sizes here without a model, so it is unchanged. Edit its steps in Model to change those sizes, or connect a model and ask me again.' }
+    // the sheet of a part already built goes ahead as shown with nobody asked: its sizes change after, from Edit sizes
+    if (lastResult(messages)?.['confirmed'] === true) return { text: 'Those are the sizes it has now.' }
     return { text: 'Okay, I left it as it is.' }
   },
 ]

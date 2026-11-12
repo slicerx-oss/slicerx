@@ -62,7 +62,7 @@ export type Block =
   | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean; source?: ToolSource; builtin?: boolean }
   | { kind: 'lookup'; id: string; lookup: PilotLookup }
   /** `picked` is the empty id for a question turned down (`dismissed`); `said` is what the person wrote instead. */
-  | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean; dismissed?: boolean; said?: string }
+  | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean; dismissed?: boolean; said?: string; auto?: boolean }
   | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
@@ -470,7 +470,8 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
     case 'ask_answered':
       return mapBlocks(s, (b) => {
         if (b.kind !== 'choice' || b.askId !== event.askId || b.picked !== null) return b
-        if (event.dismissed !== true) return { ...b, picked: event.choiceId }
+        // answered at once with nobody asked (a plan at its default size): the card shows it went ahead
+        if (event.dismissed !== true) return event.auto ? { ...b, picked: event.choiceId, auto: true } : { ...b, picked: event.choiceId }
         return event.said ? { ...b, picked: event.choiceId, dismissed: true, said: event.said } : { ...b, picked: event.choiceId, dismissed: true }
       })
     case 'approval_resolved':

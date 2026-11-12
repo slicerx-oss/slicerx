@@ -3,7 +3,9 @@
 // The plan card: what mimir means to build, flat in the conversation. Each feature with the sizes that drive it, the
 // overall size and holes when it knows them, what it assumed and what it still needs to know. While the plan waits,
 // sizes are fields the person types into; Go approves it with those edits, Not yet sends mimir back to ask. The buttons
-// keep their places and the status keeps its height once answered, so nothing moves under the chat. A count among a
+// keep their places and the status keeps its height once answered, so nothing moves under the chat. A plan at its
+// default size that went ahead with nobody asked (auto) shows as approved with no buttons, and one line saying how to
+// change it after. A count among a
 // feature's sizes shows with no unit and an angle in degrees, in an inch plan too: by the kind the plan gives it, else
 // by its name (kindOf).
 import { kindOf, sizeLabelKey, sizeText, sizeUnit, wholeCount, type SizeKind } from '@slicerx/contracts/size-kind'
@@ -23,6 +25,9 @@ export function plainLabel(key: string): string {
     .toLowerCase()
   return words ? words[0]!.toUpperCase() + words.slice(1) : key
 }
+
+/** The line an approved-at-once plan card shows in place of its buttons. */
+export const PLAN_AUTO_LINE = 'Built at its default size; ask to resize or change it.'
 
 /** What the card says when its answer could not be delivered. */
 export const PLAN_INACTIVE = `Nothing built. Ask ${ASSISTANT_NAME} again.`
@@ -85,9 +90,11 @@ export interface PlanCardProps {
    * ones, and the build's reason.
    */
   amend?: { was: PartPlan; why: string } | undefined
+  /** It was approved as shown at once, with nobody asked: the build went ahead at its default size. */
+  auto?: boolean | undefined
 }
 
-export function PlanCard({ askId, plan: given, shown = given, picked, actionable, onChoose, dismissed = false, amend }: PlanCardProps) {
+export function PlanCard({ askId, plan: given, shown = given, picked, actionable, onChoose, dismissed = false, amend, auto = false }: PlanCardProps) {
   const [plan, setPlan] = useState(given)
   const [sent, setSent] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -162,7 +169,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
   const base = `plan-${plan.planId}`
 
   return (
-    <div className="lookup-rec sheet-rec plan-rec" role="group" aria-label={`${amend ? 'Plan change' : 'Plan'} for ${plan.part}`} data-testid="mimir-plan-card" data-plan-id={plan.planId} data-amends={amend?.was.planId} data-picked={chosen ?? undefined}>
+    <div className="lookup-rec sheet-rec plan-rec" role="group" aria-label={`${amend ? 'Plan change' : 'Plan'} for ${plan.part}`} data-testid="mimir-plan-card" data-plan-id={plan.planId} data-amends={amend?.was.planId} data-picked={chosen ?? undefined} data-auto={auto || undefined}>
       <div className="sheet-rec-head">
         <span className="lookup-rec-t">
           <Icon name="list" />
@@ -231,7 +238,11 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
           {chosen === go ? <Icon name="check" size={14} /> : null}
           {status}
         </span>
-        {actionable ? (
+        {auto && chosen === go ? (
+          <small className="plan-rec-auto" data-testid="mimir-plan-auto">
+            {PLAN_AUTO_LINE}
+          </small>
+        ) : actionable ? (
           <>
             <Button size="sm" variant="ghost" disabled={!live} data-testid="mimir-plan-change" onClick={() => answer(planChoiceId(PLAN_CHANGE, plan.planId))}>
               Not yet
@@ -253,5 +264,5 @@ export function planChoiceCard(props: ChoiceCardProps): ReactNode {
   const plan = planId ? planById(planId) : null
   if (!planId || !plan) return null
   const amend = amendOf(planId)
-  return <PlanCard key={props.askId} askId={props.askId} plan={plan} shown={shownPlan(planId) ?? plan} picked={props.picked} actionable={props.actionable} onChoose={props.onChoose} dismissed={props.dismissed} amend={amend ? { was: amend.was, why: amend.why } : undefined} />
+  return <PlanCard key={props.askId} askId={props.askId} plan={plan} shown={shownPlan(planId) ?? plan} picked={props.picked} actionable={props.actionable} onChoose={props.onChoose} dismissed={props.dismissed} amend={amend ? { was: amend.was, why: amend.why } : undefined} auto={props.auto} />
 }
