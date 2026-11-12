@@ -1,0 +1,46 @@
+SMLib and SM_API
+
+This build of SlicerX includes SMLib, a B-rep geometry kernel, and its C API,
+SM_API, by NVIDIA Corporation, compiled into the app. Both come from NVIDIA's
+usd-brep repository (https://github.com/NVIDIA-Omniverse/usd-brep) at commit
+c9c5979f04cea8c38213004d4f04df0dcfb40d05, under the Apache License, Version 2.0.
+The license, as NVIDIA ships it with the kernel, is in SMLib-LICENSE.txt in this
+folder.
+
+Copyright (c) 2020-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+Each kernel source file carries NVIDIA's header:
+
+  SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  SPDX-License-Identifier: Apache-2.0
+
+
+Changes SlicerX makes to the kernel's files
+
+SlicerX builds only source/SMLib and source/SM_API from that commit. Before the
+build, it changes these files:
+
+  source/SMLib/src/NL_Math.cpp
+    The bodies of N_SolveQuadraticEq, N_SingleValueDecomposeSolve,
+    N_RealMatrixSingleValueDecompose, N_FuncFindMinima, M_TridiagonalSystem and
+    M_CorneredTridiagonalSystem are each replaced with a call to SlicerX's own
+    version, and the file includes sx_routines.h, which declares them.
+
+  source/SMLib/src/SmMatrix.cpp
+    The bodies of SmMatrix::EigenSystemJacobiSolver, SmMatrix::SVDecompose,
+    SmMatrix::SolveWithSVDMatrices, SmMatrix::LUDecompose and
+    SmMatrix::SolveWithLUMatrix are each replaced with a call to SlicerX's own
+    version, and the file includes sx_routines.h.
+
+  source/SMLib/inc/SmMath.h
+    The smos_Pythag macro is defined as hypot.
+
+  source/SMLib/src/SmIntegrator.cpp
+    Removed. SlicerX's own integrator defines the classes SmIntegrator.h
+    declares.
+
+The replacement routines, the integrator and the wrapper the app calls the
+kernel through are SlicerX's own code, under the Apache License, Version 2.0
+(packages/brep/cpp in the SlicerX source). The rest of the kernel is compiled
+unchanged. The source of this build, with the scripts that fetch the kernel and
+make these changes (packages/brep/scripts), is linked from the About screen.

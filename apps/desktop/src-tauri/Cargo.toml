@@ -21,7 +21,8 @@ connect = ["dep:sx-connect", "dep:sx-permit", "dep:sx-link", "dep:tokio", "dep:t
 cloud = []
 # The Model engine run natively, with the exact kernel, in a process of its own (src/geom_host.rs) for the page's
 # native geometry provider. Off by default: the page uses its geometry worker, and this builds the kernel from source
-# (packages/brep: fetch-smlib.sh, SX_SMLIB_DIR, SX_BREP_REQUIRE=1).
+# (packages/brep: fetch-smlib.sh, SX_SMLIB_DIR, SX_BREP_REQUIRE=1). Release builds turn it on per leg through the
+# edition config (apps/desktop/release/kernel-config.mjs).
 native-geom = ["dep:sx-geom", "sx-geom/brep"]
 # Dev and test builds only: the agent bridge (src/agent_bridge, docs/agent-bridge.md). Never in `default`, never in a
 # release build: apps/desktop/release/check-agent-bridge.mjs fails a release binary or feature set that has it.

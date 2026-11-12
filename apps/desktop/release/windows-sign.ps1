@@ -13,6 +13,9 @@
 # Everything about the signing account comes from the environment; nothing secret is in this file or written to
 # disk. Signing uses the Azure sign-in already saved by Connect-AzAccount (Az.Accounts), through the Artifact
 # Signing DLL. When that sign-in has expired, the script stops and says so; it never opens a sign-in itself.
+#
+# -Release builds the exact kernel in (the desktop crate's native-geom feature) unless SX_RELEASE_KERNEL=0 drops it
+# from that build. The kernel's source is fetched with Git's sh (packages/brep/scripts/fetch-smlib.sh).
 param(
   [string]$File,
   [switch]$Release,
@@ -171,6 +174,24 @@ if ($Release) {
     Run 'geometry module' { sh packages/geom/wasm/scripts/build.sh }
     Run 'edition config' { pnpm --filter @slicerx/desktop tauri:config }
     Run 'sidecars' { node apps/desktop/release/prepare-sidecars.mjs --target $triple --config apps/desktop/src-tauri/gen/edition.conf.json }
+    # The exact kernel: its source at the pinned, hash-checked commit with the routine swap checked (fetch-smlib.sh
+    # prints its folder last), and SX_BREP_REQUIRE=1, so a build without it fails instead of building the stand-in.
+    # kernel-config.mjs turns native-geom on through the edition config and adds the kernel's license files.
+    if ($env:SX_RELEASE_KERNEL -ne '0') {
+      Write-Host '== kernel source'
+      $was = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
+      try { $kernel = (& sh packages/brep/scripts/fetch-smlib.sh | Select-Object -Last 1) } finally { $ErrorActionPreference = $was }
+      if ($LASTEXITCODE -or -not $kernel) { throw "kernel source failed ($LASTEXITCODE)" }
+      # Git's sh names C:\ as /c/; cargo's build script needs the Windows form
+      $kernel = ([string]$kernel).Trim() -replace '^/([A-Za-z])/', '$1:/'
+      if (-not (Test-Path -LiteralPath $kernel -PathType Container)) { throw "fetch-smlib.sh printed $kernel, which is not a folder" }
+      $env:SX_SMLIB_DIR = $kernel
+      $env:SX_BREP_REQUIRE = '1'
+      Run 'kernel config' { node apps/desktop/release/kernel-config.mjs --config apps/desktop/src-tauri/gen/edition.conf.json --kernel $kernel }
+    } else {
+      Write-Host '== kernel: off (SX_RELEASE_KERNEL=0)'
+    }
     # Sidecars are packed into the installers as they are, so they are signed before Tauri bundles them.
     $sidecars = @(Get-ChildItem apps/desktop/src-tauri/binaries -Filter '*.exe' -ErrorAction SilentlyContinue)
     foreach ($s in $sidecars) { Sign-One $s.FullName | Out-Null }
