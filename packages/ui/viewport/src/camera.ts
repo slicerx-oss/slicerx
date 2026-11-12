@@ -3,7 +3,7 @@
 // Camera framing: the product-shot default, view presets, animated moves and
 // near and far planes fitted to the scene so the depth buffer keeps its
 // precision for stacked color parts.
-import { Box3, PerspectiveCamera, Quaternion, Sphere, Spherical, Vector3, type Camera } from 'three'
+import { Box3, Matrix4, PerspectiveCamera, Quaternion, Sphere, Spherical, Vector3, type Camera } from 'three'
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { ViewPreset } from './types'
 
@@ -88,6 +88,28 @@ function nearerThanCube(cam: PerspectiveCamera, box: Box3, sphere: Sphere, dir: 
   return ref > 0 && Number.isFinite(own) ? Math.min(1, own / ref) : 1
 }
 
+/**
+ * The distance that fits `box` looking straight along `dir` at its center: each corner's sideways and upward offset in
+ * the view, over the tangent of the share of the half angle it may fill, measured from that corner's own depth. Exact
+ * for a straight view, where a long part seen end on has a near face much larger than its middle.
+ */
+function straightFit(cam: PerspectiveCamera, box: Box3, dir: Vector3, fillH: number, fillW: number): { target: Vector3; distance: number } {
+  const target = box.getCenter(new Vector3())
+  const basis = new Matrix4().lookAt(dir, new Vector3(), cam.up)
+  const sx = new Vector3().setFromMatrixColumn(basis, 0)
+  const sy = new Vector3().setFromMatrixColumn(basis, 1)
+  const tanH = Math.tan((cam.fov * Math.PI) / 360) * fillH
+  const tanW = Math.tan((cam.fov * Math.PI) / 360) * cam.aspect * fillW
+  const v = new Vector3()
+  let d = 0
+  for (let i = 0; i < 8; i++) {
+    v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(target)
+    const depth = v.dot(dir)
+    d = Math.max(d, depth + Math.abs(v.dot(sx)) / tanW, depth + Math.abs(v.dot(sy)) / tanH)
+  }
+  return { target, distance: Math.max(d, 60) }
+}
+
 /** Pixels of the view that overlays cover on each side (the legend, the layer strip, the playback bar). */
 export interface Insets {
   left: number
@@ -133,6 +155,16 @@ export function freeNdc(w: number, h: number, insets: Insets): { x0: number; x1:
 /** Presets that frame the bed itself around its center, rather than what is on it. */
 const BED_PRESETS: ReadonlySet<ViewPreset> = new Set<ViewPreset>(['bed', 'plate', 'top', 'bottom', 'front', 'back', 'left', 'right'])
 
+/** The straight views: from above, below and each side. */
+const STRAIGHT: ReadonlySet<ViewPreset> = new Set<ViewPreset>(['top', 'bottom', 'front', 'back', 'left', 'right'])
+
+/** The direction from the target to the camera for a straight view; top and bottom lean a hair toward the front. */
+function straightDir(kind: ViewPreset): Vector3 {
+  if (kind === 'top' || kind === 'bottom') return new Vector3(0, kind === 'top' ? 1 : -1, 0.0008).normalize()
+  const side = kind === 'back' ? [0, 0, -1] : kind === 'left' ? [-1, 0, 0] : kind === 'right' ? [1, 0, 0] : [0, 0, 1]
+  return new Vector3(side[0], side[1], side[2])
+}
+
 export class CameraRig {
   move: CameraMove | null = null
   preset: ViewPreset | null = 'iso'
@@ -140,6 +172,11 @@ export class CameraRig {
   free = { fw: 1, fh: 1 }
   /** The free area in the view's normalized coordinates (-1 to 1, y up), off center when overlays cover one side more. */
   freeNdc = { x0: -1, x1: 1, y0: -1, y1: 1 }
+  /**
+   * The straight views (top, bottom, front, back, left and right) frame the model as the isometric view does, rather
+   * than the bed: set while the view shows the design. Slice leaves it off, since its side views show the plate.
+   */
+  frameModel = false
   /** An overlay is on the view, so a framed model fills more of the free area. */
   get covered(): boolean {
     return this.free.fw < 1 || this.free.fh < 1
@@ -182,22 +219,23 @@ export class CameraRig {
       const f = fitDistance(cam, plate, dir, 0.86 * fh, 0.72 * fw)
       target = f.target
       d = f.distance
-    } else if (kind === 'iso') {
+    } else if (kind === 'iso' || (this.frameModel && STRAIGHT.has(kind))) {
       // Product shot: three-quarter view from the front right, slightly high, model filling about 60 percent of the height.
-      dir = new Vector3(0.66, 0.42, 1).normalize()
+      // A straight view of the design frames the model the same way from its own side.
+      dir = kind === 'iso' ? new Vector3(0.66, 0.42, 1).normalize() : straightDir(kind)
       // With overlays on the view (the Preview legend, strip and bar) the model fills more of the free area, never more than it.
-      const f = this.covered ? fitDistance(cam, box, dir, 0.74 * fh, 0.84 * fw) : fitDistance(cam, box, dir, 0.6, 0.72)
+      const fit = kind === 'iso' ? fitDistance : straightFit
+      const f = this.covered ? fit(cam, box, dir, 0.74 * fh, 0.84 * fw) : fit(cam, box, dir, 0.6, 0.72)
       target = f.target
       d = f.distance
     } else if (kind === 'top' || kind === 'bottom') {
       target = new Vector3(0, 0, 0)
-      dir = new Vector3(0, kind === 'top' ? 1 : -1, 0.0008).normalize()
+      dir = straightDir(kind)
       d = distFor(bedSize * 0.74)
     } else {
       // Level with the plate, as the other slicers' side views are: in orthographic the bed is an edge, not a strip.
-      const side = kind === 'back' ? [0, 0, -1] : kind === 'left' ? [-1, 0, 0] : kind === 'right' ? [1, 0, 0] : [0, 0, 1]
       target = new Vector3(0, Math.max(20, sphere.center.y), 0)
-      dir = new Vector3(side[0], side[1], side[2]).normalize()
+      dir = straightDir(kind)
       d = distFor(bedSize * 0.62)
     }
     return { pos: target.clone().addScaledVector(dir, d), target }
@@ -254,7 +292,8 @@ export class CameraRig {
    * move under way ends there too. A view of the whole bed stays put, centered on the new bed. Returns whether it moved.
    */
   followBed(delta: Vector3): boolean {
-    if (delta.lengthSq() === 0 || (this.preset !== null && BED_PRESETS.has(this.preset))) return false
+    // a straight view that frames the model follows it like any other view of the model
+    if (delta.lengthSq() === 0 || (this.preset !== null && BED_PRESETS.has(this.preset) && !(this.frameModel && STRAIGHT.has(this.preset)))) return false
     const m = this.move
     if (m) for (const v of [m.fromPos, m.fromTarget, m.toPos, m.toTarget]) v.add(delta)
     this.camera.position.add(delta)
