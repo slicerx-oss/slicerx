@@ -9,6 +9,7 @@
 #[cfg(sx_brep_kernel)]
 use crate::body::Body;
 use crate::error::{Error, Result};
+use crate::save::{KEYS, SEAL, checksum};
 #[cfg(sx_brep_kernel)]
 use std::ffi::CString;
 #[cfg(sx_brep_kernel)]
@@ -32,18 +33,6 @@ pub(crate) fn body(text: &str) -> Result<Body> {
 
 /// The largest saved body read, as for the JSON `load`.
 const MAX_SAVED_BYTES: usize = 8 * 1024 * 1024;
-/// The line `save` ends a body with: a checksum of everything before it.
-const SEAL: &str = "//sx-brep fnv1a64 ";
-/// The line `save` puts the face keys on, after the kernel's own text.
-const KEYS: &str = "//sx-brep keys";
-
-/// The checksum `save` ends a body with: FNV-1a over the bytes, from the wrapper's own starting value.
-fn checksum(text: &str) -> u64 {
-    text.bytes().fold(1_469_598_103_934_665_603_u64, |h, b| {
-        (h ^ u64::from(b)).wrapping_mul(1_099_511_628_211)
-    })
-}
-
 /// The kernel's own text inside what `save` wrote, once the checksum holds.
 fn saved_text(sealed: &str) -> Result<&str> {
     if sealed.len() > MAX_SAVED_BYTES {

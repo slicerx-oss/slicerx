@@ -69,6 +69,10 @@ impl Solid {
     pub(crate) fn tessellate(&self, _params: Params) -> Result<Polygons> {
         match *self {}
     }
+
+    pub(crate) fn text(&self) -> Result<String> {
+        match *self {}
+    }
 }
 
 impl FaceRef<'_> {
