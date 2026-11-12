@@ -11,7 +11,7 @@
 //!
 //! Profiles with arcs, circles or ellipses are refused for now.
 
-use super::{Curve, Piece, Rails};
+use super::{Curve, Density, Match, Options, Piece, Profile, Rails};
 use crate::error::{Error, Result};
 use crate::faces;
 use crate::mesh::TriMesh;
@@ -271,4 +271,21 @@ pub fn hold(rails: &Rails, mesh: &mut TriMesh) -> Result<u32> {
         f.keys = fresh[..mesh_faces].to_vec();
     }
     table::hold(body, keys)
+}
+
+/// The loft through `profiles` made an exact solid and kept, beside its mesh loft `mesh`; see [`hold`].
+///
+/// Refuses, with the reason, profiles that cannot be matched piece to piece and a loft thickened into a shell.
+/// Whatever the mesh loft refuses is refused here in the same words.
+pub fn hold_through(profiles: &[Profile], opts: &Options, mesh: &mut TriMesh) -> Result<u32> {
+    if opts.thicken.is_some() {
+        return Err(Error::geometry(
+            "loft",
+            "a loft thickened into a shell is not made exact yet",
+        ));
+    }
+    match super::rails(profiles, opts, &Density::default())? {
+        Match::Rails(rails) => hold(&rails, mesh),
+        Match::Unmatched(why) => Err(Error::geometry("loft", why)),
+    }
 }
