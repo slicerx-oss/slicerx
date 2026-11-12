@@ -174,7 +174,8 @@ export const BUILD_CASES: BuildCase[] = [
     bodies: [1, 4],
     sizes: [
       { axis: 'xy', minMm: 75, maxMm: 100 },
-      // 35 mm closed, with the lid on its box; the hinge knuckles or a lid laid over the top may stand up to 10 mm more
+      // 35 mm closed, with the lid on its box; the hinge knuckles or a lid laid over the top may stand up to 10 mm more.
+      // A lid printed open beside the box is measured closed (score.ts closedHeight; owner, 2026-11-12, this case only)
       { axis: 'z', minMm: 33, maxMm: 45 },
     ],
     lid: { kind: 'hinged' },

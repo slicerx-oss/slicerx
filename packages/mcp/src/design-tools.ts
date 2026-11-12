@@ -14,7 +14,7 @@ import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
 import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
 import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
-import { jointProblem, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
+import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
 import { meshStats } from './mesh'
 
 type V3 = [number, number, number]
@@ -693,7 +693,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const floors = underText(under, p.units)
       // a hinge or pin plan that does not say how it prints is kept, with what it leaves the build to guess
       const unstated = jointProblem(p)
-      const say = unstated ? ` The plan has a hinge or pin but does not say ${unstated === LID_STATEMENT ? '' : 'one way '}how it prints: ${unstated}.` : ''
+      const say = unstated === LID_ON_HINGE ? ` The plan lays apart pieces it prints in place: ${unstated}.` : unstated ? ` The plan has a hinge or pin but does not say ${unstated === LID_STATEMENT ? '' : 'one way '}how it prints: ${unstated}.` : ''
       return {
         summary: `Kept plan ${p.planId} for ${p.part} (${shape})${tied ? `, tied to ${tied.name} (${tied.id})` : ''}.${floors}${say} Build it, then check it with design.check and planId ${p.planId}.`,
         output: {

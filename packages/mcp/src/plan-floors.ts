@@ -142,12 +142,27 @@ export const LID_STATEMENT = 'say whether the lid prints assembled on its hinge 
 export const LID_ONE_WAY = 'say one way the lid prints, assembled on its hinge or laid apart beside the box; the plan says both, in its assumptions'
 
 /**
+ * What a plan that names its pieces in printInPlace and lays one apart is told: a piece that prints in place prints on
+ * its hinge, and only a lid put on after printing is laid apart.
+ */
+export const LID_ON_HINGE =
+  'a lid that prints in place prints on its hinge: open flat on the shared hinge axis, its knuckles between the base\'s, or closed on the base; lay it apart (10 mm from the base) only when it is put on after printing, and then leave it out of printInPlace'
+
+/** Pieces laid apart from each other on the bed, beyond a gap: laid or printed apart, or 2 mm or more apart. */
+const APART_ONLY = /\blaid\s+apart\b|\bprint(?:s|ed|ing)?\s+apart\b/i
+function setApart(text: string): boolean {
+  if (APART_ONLY.test(text)) return true
+  for (const m of text.matchAll(MM_APART)) if (Number(m[1]) >= 2) return true
+  return false
+}
+
+/**
  * Printing apart, as a plan states it: laid out apart (beside the base or each other, laid apart or out, printed apart,
  * pieces 2 mm or more apart) or printed separately (not hedged), to be put together after. Printed flat or laid flat
  * says how a part lies on the bed, not that its pieces lie apart (a flexi fish printed flat on the bed prints in place),
  * and a gap's few tenths of a millimeter apart, or pieces printed in place as separate bodies, are no such statement.
- * A plan whose printInPlace names its pieces prints them assembled, so there a layout apart is the pieces laid open on
- * their hinges (a box with its lid opened flat beside it), and only printed separately says apart.
+ * A plan whose printInPlace names its pieces prints them assembled: a lid opened flat beside its box on the hinge is
+ * no layout apart there, while pieces laid or printed apart, or 2 mm or more apart, are (LID_ON_HINGE).
  */
 const APART_WORDS = /\bbeside\s+(?:the|each|it|its)\b|\blaid\s+(?:apart|out)\b|\bprint(?:s|ed|ing)?\s+apart\b/i
 const SEPARATE = /\bseparately\b/gi
@@ -178,8 +193,9 @@ const LID = /\blid(?:s|ded)?\b/i
  * piece with no hinge and no lid is a solid part of the build (a cable hook's rod, a stand's axle), with nothing to print
  * assembled or apart. LID_STATEMENT when it says neither in place
  * (printsInPlace, which reads printInPlace too) nor apart (printInPlace false, or its part or an assumption says the
- * pieces print separately or, unless printInPlace names them, are laid out apart), LID_ONE_WAY when it says both, else
- * null.
+ * pieces print separately or, unless printInPlace names them, are laid out apart), LID_ONE_WAY when it says both,
+ * LID_ON_HINGE when printInPlace names its pieces and the plan lays them apart (laid or printed apart, or 2 mm or more
+ * apart), else null.
  */
 export function jointProblem(plan: FloorPlan): string | null {
   const named = (re: RegExp) => re.test(plan.part) || plan.features.some((f) => re.test(f.name))
@@ -190,7 +206,11 @@ export function jointProblem(plan: FloorPlan): string | null {
   // contradicts it
   const listed = Array.isArray(plan.printInPlace)
   const apart = plan.printInPlace === false || [plan.part, ...plan.assumptions].some((t) => printedSeparately(t) || (!listed && laidApart(t)))
-  return assembled && apart ? LID_ONE_WAY : !assembled && !apart ? LID_STATEMENT : null
+  if (assembled && apart) return LID_ONE_WAY
+  if (!assembled && !apart) return LID_STATEMENT
+  // pieces that print in place print on their hinge: never laid apart from each other
+  if (listed && [plan.part, ...plan.assumptions].some(setApart)) return LID_ON_HINGE
+  return null
 }
 
 /** True when a hinge or pin plan says neither how it prints (jointProblem gives LID_STATEMENT). */
