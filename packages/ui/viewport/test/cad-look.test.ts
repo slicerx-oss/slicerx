@@ -5,7 +5,8 @@
 // part in its filament color.
 import { describe, expect, it } from 'vitest'
 import { BoxGeometry, Color, type MeshPhysicalMaterial } from 'three'
-import { CAD_EDGE_PX, cadLook, edgeLook, isCad, MaterialCache, setMaterialLook, sharedMaterials } from '../src/materials'
+import { CAD_EDGE_ON_DARK, CAD_EDGE_PX, cadEdgesFor, cadLook, edgeLook, isCad, MaterialCache, setMaterialLook, sharedMaterials } from '../src/materials'
+import { contrastRatio, displayHex, SCENE } from '../src/palette'
 import { BASELINE_LOOK } from '../src/look'
 import { buildObject, wideEdges } from '../src/model'
 
@@ -68,6 +69,36 @@ describe('the CAD look', () => {
       cache.dispose()
     }
   })
+
+  for (const [studio, bgTop] of [['dark', '#2f3241'], ['light', '#f4f5f7']] as const) {
+    it(`in filament colors, gives a near-black part light edges that show on it, and a light part the dark ones (${studio} studio)`, () => {
+      setMaterialLook(null, bgTop, null)
+      try {
+        const sh = sharedMaterials()
+        const edge = cadLook(bgTop).edge
+        // a black hull: the dark edge is lost on it, so the light edge draws, thin and wide
+        const black = cadEdgesFor('cadColor', '#101012')
+        expect(contrastRatio(displayHex('#101012'), edge)).toBeLessThan(3)
+        expect(black.light).toBe(true)
+        expect(black.thin).toBe(sh.edgeCadLight)
+        expect(black.wide).toBe(sh.edgeCadWideLight)
+        expect('#' + black.wide.color.getHexString()).toBe(CAD_EDGE_ON_DARK)
+        expect(contrastRatio(displayHex('#101012'), CAD_EDGE_ON_DARK)).toBeGreaterThanOrEqual(3)
+        // a cream lamp shade keeps today's dark edge
+        const cream = cadEdgesFor('cadColor', '#efe6cf')
+        expect(cream.light).toBe(false)
+        expect(cream.thin).toBe(sh.edgeCad)
+        expect(cream.wide).toBe(sh.edgeCadWide)
+        // the gray look keeps its own edge whatever the part's filament
+        expect(cadEdgesFor('cad', '#101012').light).toBe(false)
+        // the light edges follow the look's width and opacity
+        expect(sh.edgeCadWideLight.linewidth).toBe(sh.edgeCadWide.linewidth)
+        expect(sh.edgeCadLight.opacity).toBe(sh.edgeCad.opacity)
+      } finally {
+        setMaterialLook(null, SCENE.bgTop, null)
+      }
+    })
+  }
 
   it('draws dark feature edges in every style but wireframe, and Slice only in the edges style', () => {
     expect(edgeLook('cad', 'shaded')).toEqual({ edge: 'cad', visible: true })

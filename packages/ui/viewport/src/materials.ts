@@ -23,7 +23,7 @@ import {
   type WebGLProgramParametersWithUniforms,
 } from 'three'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
-import { HEAT_RAMP, SCENE, displayHex, type SceneColors } from './palette'
+import { HEAT_RAMP, SCENE, contrastRatio, displayHex, type SceneColors } from './palette'
 import type { ViewportLook } from './look'
 import type { DisplayStyle, FilamentFinish, RenderMode } from './types'
 
@@ -215,7 +215,9 @@ let lookParts: { materials: ViewportLook['materials']; geometry: ViewportLook['g
 /** The room environment texture, for materials a look gives their own share of it. */
 let lookEnv: Texture | null = null
 
-let sharedMats: { clay: MeshStandardMaterial; overhang: MeshStandardMaterial; edgeDark: LineBasicMaterial; edgeXray: LineBasicMaterial; cad: MeshPhysicalMaterial; edgeCad: LineBasicMaterial; edgeCadWide: LineMaterial } | null = null
+/** The CAD look's dark edge color for the studio in use (cadLook). */
+let cadEdgeHex = '#08090c'
+let sharedMats: { clay: MeshStandardMaterial; overhang: MeshStandardMaterial; edgeDark: LineBasicMaterial; edgeXray: LineBasicMaterial; cad: MeshPhysicalMaterial; edgeCad: LineBasicMaterial; edgeCadWide: LineMaterial; edgeCadLight: LineBasicMaterial; edgeCadWideLight: LineMaterial } | null = null
 
 /** Pulls line vertices a hair toward the camera so feature edges win the depth test against their own faces. */
 function edgeBias<M extends Material>(m: M): M {
@@ -261,7 +263,14 @@ export function sharedMaterials(): NonNullable<typeof sharedMats> {
     sh.vertexShader = sh.vertexShader.replace('gl_Position = clip;', 'clip.z -= 0.0006 * clip.w;\n\t\t\tgl_Position = clip;')
   }
   edgeCadWide.customProgramCacheKey = () => 'sx-edge-wide'
-  sharedMats = { clay, overhang, edgeDark, edgeXray, cad, edgeCad, edgeCadWide }
+  // the same edges in a light gray, for a part too dark for the dark edges to show on
+  const edgeCadLight = edgeCad.clone()
+  edgeCadLight.color.copy(lin(CAD_EDGE_ON_DARK))
+  const edgeCadWideLight = edgeCadWide.clone()
+  edgeCadWideLight.color.copy(lin(CAD_EDGE_ON_DARK))
+  edgeCadWideLight.onBeforeCompile = edgeCadWide.onBeforeCompile
+  edgeCadWideLight.customProgramCacheKey = edgeCadWide.customProgramCacheKey
+  sharedMats = { clay, overhang, edgeDark, edgeXray, cad, edgeCad, edgeCadWide, edgeCadLight, edgeCadWideLight }
   applyCadLook(SCENE.bgTop)
   return sharedMats
 }
@@ -285,10 +294,11 @@ function applyCadLook(bgTop: string): void {
   }
   s.cad.envMapIntensity = c ? c.environment : 0.6
   const g = L?.geometry
-  s.edgeCadWide.linewidth = g ? g.edgeWidthPx : CAD_EDGE_PX
-  s.edgeCadWide.opacity = g ? g.edgeOpacity : 0.95
-  s.edgeCad.opacity = g ? g.edgeOpacity : 0.9
+  s.edgeCadWide.linewidth = s.edgeCadWideLight.linewidth = g ? g.edgeWidthPx : CAD_EDGE_PX
+  s.edgeCadWide.opacity = s.edgeCadWideLight.opacity = g ? g.edgeOpacity : 0.95
+  s.edgeCad.opacity = s.edgeCadLight.opacity = g ? g.edgeOpacity : 0.9
   const look = cadLook(bgTop)
+  cadEdgeHex = look.edge
   s.cad.color.copy(lin(look.body))
   s.edgeCad.color.copy(lin(look.edge))
   s.edgeCadWide.color.copy(lin(look.edge))
@@ -384,7 +394,28 @@ export function setSharedSceneColors(scene: SceneColors): void {
 
 /** The drawing buffer size, for the wide edge material's pixel widths. */
 export function setEdgeResolution(width: number, height: number): void {
-  sharedMaterials().edgeCadWide.resolution.set(width, height)
+  const s = sharedMaterials()
+  s.edgeCadWide.resolution.set(width, height)
+  s.edgeCadWideLight.resolution.set(width, height)
+}
+
+/** The CAD edge drawn on a part too dark for the dark edge: a light gray that keeps the shape readable. */
+export const CAD_EDGE_ON_DARK = '#a9aeb7'
+/** The contrast the dark CAD edge needs against a part before another edge is drawn instead. */
+const EDGE_CONTRAST = 3
+
+/**
+ * The CAD edges for a part, thin and wide: the CAD look's own dark edge, unless the part's color is so dark the edge
+ * does not show on it (under 3:1), where the light edge shows better. Only the colored CAD look has such parts.
+ */
+export function cadEdgesFor(mode: RenderMode, color: string): { thin: LineBasicMaterial; wide: LineMaterial; light: boolean } {
+  const s = sharedMaterials()
+  if (mode === 'cadColor') {
+    const body = displayHex(color)
+    const dark = contrastRatio(body, cadEdgeHex)
+    if (dark < EDGE_CONTRAST && contrastRatio(body, CAD_EDGE_ON_DARK) > dark) return { thin: s.edgeCadLight, wide: s.edgeCadWideLight, light: true }
+  }
+  return { thin: s.edgeCad, wide: s.edgeCadWide, light: false }
 }
 
 /** Whether a render mode is a CAD look: the gray one, or the one in filament colors. Both draw the CAD edges and outline. */
