@@ -23,6 +23,16 @@ import { sendLedger } from '../../plate/send-ledger'
 import { useApp } from '../../state/store'
 import { plateFingerprint } from './print-run'
 
+/** A number for each printers host the card has seen, so a new host makes the last reading old. */
+const hosts = new WeakMap<object, number>()
+let seen = 0
+function printersRev(p: object | undefined): number {
+  if (!p) return 0
+  let n = hosts.get(p)
+  if (n === undefined) hosts.set(p, (n = ++seen))
+  return n
+}
+
 /**
  * The printer and file the request binds: the run's send, only when its printer, name and SHA-256 hash to the request's
  * own upload action. The run record alone is never trusted; undefined while the hash is worked out, null when it does
@@ -96,7 +106,9 @@ export function SendCard({ request, resolution, actionable, onApprove, onCancel,
   const live = pending && actionable && !inactive
   // the bed question starts unticked on every card, with nothing remembered from the last one
   const [bed, setBed] = useState(false)
-  const [check, setCheck] = useState<SendCheck | null>(null)
+  // the last preflight reading and what it was made for. It stays on the card while a new one runs, so the rows and lines
+  // keep their place; Print reads only a reading made for the card as it is now (`fresh`), never an older one
+  const [reading, setReading] = useState<{ for: string; check: SendCheck } | null>(null)
   const [answering, setAnswering] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -107,24 +119,24 @@ export function SendCard({ request, resolution, actionable, onApprove, onCancel,
   const fingerprintNow = useApp((s) => plateFingerprint(s, run?.slice?.plate ?? 1))
   const plate = useApp((s) => plateName(s.plates, run?.slice?.plate ?? 1))
 
+  // what a reading must be made for to count: the card as it is in this render, so the render that ticks the bed
+  // already reads the last one as old
+  const readingFor = `${live}:${bed}:${printersRev(host.printers)}:${request.id}:${file?.sha256 ?? ''}`
+  const check = reading?.check ?? null
+  const fresh = reading?.for === readingFor ? reading.check : null
+
   // the preflight against the printer as it is now: when the card shows, and again when the bed is ticked
   useEffect(() => {
     if (!live || !file || !host.printers) return undefined
-    // Print never stays on against an older reading while this one runs
-    setCheck(null)
     let gone = false
-    sendPreflight(host.printers, file.printerId, file).then(
-      (c) => {
-        if (!gone) setCheck(c)
-      },
-      (e: unknown) => {
-        if (!gone) setCheck({ facts: [], errors: [`The printer check did not finish: ${e instanceof Error ? e.message : String(e)}`], warnings: [], busy: null, developerMode: null, printerName: file.printerId, slots: [] })
-      },
-    )
+    const made = (c: SendCheck): void => {
+      if (!gone) setReading({ for: readingFor, check: c })
+    }
+    sendPreflight(host.printers, file.printerId, file).then(made, (e: unknown) => made({ facts: [], errors: [`The printer check did not finish: ${e instanceof Error ? e.message : String(e)}`], warnings: [], busy: null, developerMode: null, printerName: file.printerId, slots: [] }))
     return () => {
       gone = true
     }
-  }, [live, bed, host.printers, request.id, file?.sha256])
+  }, [readingFor])
 
   useEffect(() => {
     if (!live) return undefined
@@ -134,7 +146,7 @@ export function SendCard({ request, resolution, actionable, onApprove, onCancel,
 
   const stale = run?.slice ? run.slice.stale === true || run.slice.fingerprint !== fingerprintNow : false
   const name = check?.printerName ?? file?.printerId ?? request.printerId ?? 'the printer'
-  const passed = check !== null && check.errors.length === 0 && check.busy === null && check.developerMode === null
+  const passed = fresh !== null && fresh.errors.length === 0 && fresh.busy === null && fresh.developerMode === null
   const canPrint = live && file !== null && bed && passed && !stale && !expired && !answering
 
   // no internal reason or id reaches the person: the card is over, and asking again makes a new one
@@ -171,7 +183,7 @@ export function SendCard({ request, resolution, actionable, onApprove, onCancel,
       : (note ??
         (expired
           ? 'Expired, nothing was sent'
-          : check === null && send !== null
+          : fresh === null && send !== null
             ? `Checking ${name}`
             : !passed || stale
               ? `Print stays off. Expires in ${fmtCountdown(left)}`
