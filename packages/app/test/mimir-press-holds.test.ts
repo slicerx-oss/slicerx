@@ -34,7 +34,7 @@ globalThis.IntersectionObserver ??= class {
 if (!window.matchMedia) window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined })) as unknown as typeof window.matchMedia
 
 const host = { kind: 'web', capabilities: {}, build: { version: '1.0.0', commit: '0123456789abcdef', sourceUrl: 'https://example.test/src' }, slicer: {} } as unknown as Host
-const SHEET = { name: 'pilot.sheet', args: { title: 'Mount sizes', dims: [{ key: 'lip', label: 'Lip', value: 3, unit: 'mm', source: 'guess' }] } }
+const SHEET = { name: 'pilot.sheet', args: { title: 'Mount sizes', fits: true, dims: [{ key: 'lip', label: 'Lip', value: 3, unit: 'mm', source: 'guess' }] } }
 const ASK = { name: 'pilot.ask', args: { title: 'Which model?', question: 'Is it the round one?', choices: [{ id: 'same', label: 'Yes, that one' }, { id: 'other', label: 'No, another' }] } }
 
 function tabRuntime(after: ScriptStep = { text: 'Looking up its size. It is about 80 mm across, so the mount gets a lip of 3 mm all round.' }): Pilot {

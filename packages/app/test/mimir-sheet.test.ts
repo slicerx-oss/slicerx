@@ -268,10 +268,8 @@ describe('the scripted sizes sheet of a part already built', () => {
       expect(out.sheet!.dims.map((d) => [d.key, d.value])).toEqual([['length', 80], ['depth', 60], ['height', 30]])
       expect(out.sheet!.dims.every((d) => d.at)).toBe(true)
       expect(out.said).not.toContain('rebuild it to match')
-      const changed = await ask('Show me the main sizes', (sh) => ({ ...Object.fromEntries(sh.dims.map((d) => [d.key, d.value])), length: 100 }))
-      expect(changed.said).toContain('cannot rebuild it to new sizes here')
-      const same = await ask('Show me the main sizes', (sh) => Object.fromEntries(sh.dims.map((d) => [d.key, d.value])))
-      expect(same.said).toContain('Those are the sizes it has now.')
+      // the sheet goes ahead as shown with nobody asked (owner, 2026-11-12): it says so and promises no rebuild
+      expect(out.said).toContain('Those are the sizes it has now.')
     } finally {
       set({ plate: before })
     }

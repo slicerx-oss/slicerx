@@ -133,7 +133,7 @@ describe('mimir.dismiss over the app link', () => {
 // A size sheet waiting is set aside the way Return in the message box sets it aside: mimir reads the words in its place
 // and builds nothing from it. The read-back shows the sheet as waiting, then counts it as set aside.
 describe('mimir.dismiss on a waiting size sheet', () => {
-  const SHEET = { name: 'pilot.sheet', args: { title: 'Clip sizes', dims: [{ key: 'bore', label: 'Cable bore', value: 6.2, unit: 'mm', source: 'asked' }] } }
+  const SHEET = { name: 'pilot.sheet', args: { title: 'Clip sizes', fits: true, dims: [{ key: 'bore', label: 'Cable bore', value: 6.2, unit: 'mm', source: 'asked' }] } }
 
   function sheetChat(sessionId: string, sheet: { name: string; args: Record<string, unknown> } = SHEET) {
     const seen: { ok: boolean; summary?: string; result: unknown }[] = []
@@ -204,7 +204,7 @@ describe('mimir.dismiss on a waiting size sheet', () => {
   })
 
   it('gives each waiting size the unit the sheet shows it in: count for a count, deg for an angle given in mm', async () => {
-    const gear = { name: 'pilot.sheet', args: { title: 'Gear sizes', dims: [{ key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', source: 'asked' }] } }
+    const gear = { name: 'pilot.sheet', args: { title: 'Gear sizes', fits: true, dims: [{ key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', source: 'asked' }] } }
     const c = sheetChat('s_units', gear)
     await c.shown
     const one = (await runCall('mimir.session', { id: 's_units' })) as { waiting: { sizes: { key: string; unit: string }[] } | null }

@@ -39,7 +39,7 @@ globalThis.IntersectionObserver ??= class {
 if (!window.matchMedia) window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined })) as unknown as typeof window.matchMedia
 
 const host = { kind: 'web', capabilities: {}, build: { version: '1.0.0', commit: '0123456789abcdef', sourceUrl: 'https://example.test/src' }, slicer: {} } as unknown as Host
-const SHEET = { name: 'pilot.sheet', args: { title: 'Clip sizes', dims: [{ key: 'bore', label: 'Cable bore', value: 6.2, unit: 'mm', source: 'asked' }] } }
+const SHEET = { name: 'pilot.sheet', args: { title: 'Clip sizes', fits: true, dims: [{ key: 'bore', label: 'Cable bore', value: 6.2, unit: 'mm', source: 'asked' }] } }
 
 /** The tab's runtime: one sheet, then a reply that reads the sheet's answer; every answerSheet call recorded. */
 function tabRuntime() {
