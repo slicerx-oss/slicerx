@@ -113,14 +113,14 @@ fn no_such_body(field: &str) -> Error {
 }
 
 /// A brep op as this table answers it, or none for a request that is the old kernel table's alone and goes to it
-/// untouched. `tessellate`, `info` and `free` work on a held body and `count` adds the bodies held here.
+/// untouched. `tessellate`, `info`, `save` and `free` work on a held body and `count` adds the bodies held here.
 pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Option<Result<Value>> {
     if op == "count" {
         let here = count();
         return (here > 0).then(|| counted(req, here));
     }
     let named = |field: &str| req.get(field).and_then(high);
-    if let ("tessellate" | "info" | "free", Some(n)) = (op, named("body")) {
+    if let ("tessellate" | "info" | "save" | "free", Some(n)) = (op, named("body")) {
         if op == "free" {
             let freed = n.fract() == 0.0 && free_number(n);
             return Some(Ok(json!({ "freed": freed })));
@@ -128,10 +128,15 @@ pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Option<Result<Value>> 
         let Some(held) = held(n) else {
             return Some(Err(no_such_body("body")));
         };
-        return Some(if op == "info" {
-            info(&held)
-        } else {
-            tessellate(&held, req, raw)
+        return Some(match op {
+            "info" => info(&held),
+            // the text the old `save` writes, keys line and checksum included, so `load` reads it
+            "save" => held
+                .body
+                .saved(&held.keys)
+                .map(|smb| json!({ "smb": smb }))
+                .map_err(|e| kernel(&e)),
+            _ => tessellate(&held, req, raw),
         });
     }
     // no other op takes a body of this table yet. the hand-over pair, which lends one to the old ops, removes
