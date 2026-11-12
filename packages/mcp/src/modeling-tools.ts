@@ -201,23 +201,24 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const arraySpec = z
     .discriminatedUnion('kind', [
-      z.object({ kind: z.literal('linear'), count: z.number().int().min(2).max(500), step: vec3.describe('Offset between neighbors, mm'), count2: z.number().int().min(1).max(500).optional(), step2: vec3.optional().describe('Offset between rows, mm') }),
+      z.object({ kind: z.literal('linear'), count: z.number().int().min(2).max(500), step: vec3.describe('Offset between neighbors, mm'), count2: z.number().int().min(1).max(500).optional(), step2: vec3.optional().describe('Offset between rows, mm'), onSurface: z.literal(true).optional().describe('With steps: each copy slides onto the part\'s surface where it lands and turns to it, so a row of slits, windows or dents along a curved side keeps the first one\'s depth') }),
       z.object({ kind: z.literal('circular'), count: z.number().int().min(2).max(500), center: vec3, axis: vec3.optional().describe('Default +Z'), angleDeg: z.number().min(1).max(360).optional().describe('Total angle; default 360'), rotateCopies: z.boolean().optional().describe('Turn each copy with the circle; default true') }),
     ])
     .describe('{"kind":"linear","count":4,"step":[25,0,0]} for a row (count2 and step2 make a grid), or {"kind":"circular","count":6,"center":[0,0,0]} around an axis')
 
   const array = defineTool({
     name: 'geom.array',
-    version: '1.6.0',
+    version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy.',
+      'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy. On a curved side, set onSurface on the row so each copy follows the surface.',
     input: z.object({ model: modelOpt, design: designArg.optional(), feature: featureArg, part: partArg, spec: arraySpec, merge: z.boolean().default(true).describe('false: separate copies instead of one body'), steps: stepsArg }),
     async run(i) {
       designOrModel(i)
-      const spec = JSON.parse(JSON.stringify(i.spec)) as Extract<StepParams, { op: 'array.merged' }>['spec']
+      const spec = JSON.parse(JSON.stringify(i.spec)) as Extract<StepParams, { op: 'array.merged' }>['spec'] & { onSurface?: true }
       const copies = spec.kind === 'linear' ? spec.count * (spec.count2 ?? 1) : spec.count
+      if (spec.kind === 'linear' && spec.onSurface && !i.steps) throw new ToolInputError('spec.onSurface: a row follows a surface when it repeats steps (a cut, a hole, a shape on a face); give steps')
       if (i.steps) {
         if (!i.design) throw new ToolInputError('steps: repeating steps works on a design; give its id as design')
         if (!i.merge) throw new ToolInputError('merge: repeated steps stay on their part; leave merge out')
