@@ -83,6 +83,14 @@ export function AboutDialog() {
         <p className="sx-small sx-dim" data-testid="about-step-reader">
           STEP and IGES files are read with occt-import-js and Open CASCADE Technology, both under the LGPL 2.1. This app makes use of facilities provided by the Open CASCADE Technology software. Their source, build script and license texts are in packages/step-reader of the source above.
         </p>
+        {host.licenses ? (
+          <div className="sx-small" data-testid="about-licenses">
+            <p>The license texts and notices for this build and the third-party code in it come with the app.</p>
+            <Button variant="ghost" icon="folder" onClick={() => void host.licenses?.openFolder()}>
+              Show license files
+            </Button>
+          </div>
+        ) : null}
         <p className="sx-small sx-dim">Telemetry is off.</p>
         <Diagnostics />
         {edition.legal.trademarkNotice ? <p className="sx-small sx-dim">{edition.legal.trademarkNotice}</p> : null}

@@ -26,6 +26,7 @@ mod gpu;
 mod header;
 mod keychain;
 mod launch;
+mod licenses;
 mod link;
 #[cfg(feature = "pilot")]
 mod llm;
@@ -240,6 +241,7 @@ fn main() {
             updates::update_restart,
             themes::themes_list,
             themes::themes_open_folder,
+            licenses::licenses_open_folder,
             probe::probe_enabled,
             probe::probe_report,
             crash::crash_take,

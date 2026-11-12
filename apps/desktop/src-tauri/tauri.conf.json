@@ -125,7 +125,10 @@
       }
     ],
     "resources": {
-      "resources/mcp/": "mcp/"
+      "resources/mcp/": "mcp/",
+      "../../../LICENSE-APACHE": "licenses/LICENSE-APACHE.txt",
+      "../../../NOTICE": "licenses/NOTICE.txt",
+      "../../../THIRD-PARTY.md": "licenses/THIRD-PARTY.md"
     },
     "publisher": "Sean Leonard",
     "copyright": "Copyright (C) 2026 The SlicerX contributors"
