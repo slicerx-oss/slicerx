@@ -125,6 +125,13 @@ export interface MeshPart {
   paint?: PartPaint
   /** The shape the part was made as. A move that is not rigid leaves it out; a replay checks the triangles still fit it. */
   primitive?: PrimitiveSpec
+  /**
+   * Exact corner normals from the geometry engine, packed (normals.ts): six numbers per triangle, one pair per corner in
+   * index order. A triangle with all three corners set shades with them; the others, and every triangle when this is
+   * absent, crease as usual. Code that changes the triangles turns these with a rigid move or leaves them out, never
+   * keeps them stale. Never saved in a project.
+   */
+  normals?: Int16Array
 }
 
 export interface Bed {
