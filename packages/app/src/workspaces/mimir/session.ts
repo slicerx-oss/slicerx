@@ -42,7 +42,7 @@ import { appProject, pilotSlicer } from './project'
 import { NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter, scriptsFor } from './scripted'
 import { SCRIPTS } from './scripts'
 import { appTabs } from './tabs'
-import { standingPlan, withPlanState } from './plan-state'
+import { checkedDesign, standingPlan, withPlanState } from './plan-state'
 
 export const mimirLogs = createMemorySessionStore()
 
@@ -272,6 +272,8 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
     project: appProject(host),
     // the plan the open project holds, for a chat with none of its own: "keep going" after a reopen finishes it
     standingPlan,
+    // the design whose plan was checked after its build: a turn on it is a follow-up, looked at and measured
+    checkedDesign,
     hasDesign,
     // the card's plans, where a print-in-place plan whose sizes changed after Go waits for a new plan (design.check reads them)
     plans: mimirPlans,

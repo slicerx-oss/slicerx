@@ -152,6 +152,11 @@ export interface CreatePilotOptions {
    */
   standingPlan?: () => readonly LlmMessage[] | undefined
   /**
+   * The design on the plate whose plan was checked after its build (pass or fail), by id: a run on it is a follow-up
+   * even in a new chat or after a reopen, where no check is in the chat's history. Unset or undefined: none.
+   */
+  checkedDesign?: () => string | undefined
+  /**
    * Whether the open project holds a design to shape: a body with a history on the plate (the app: an object on the
    * plate with a history). Asked when a turn starts, so a new chat, a reloaded one and a mimir rebuilt for another model
    * all see a design that is there, and a deleted one is gone. A design still waiting for its first body counts only
@@ -369,6 +374,36 @@ export const SLOW_DOWN_WAIT_MS = 20_000
 export const NETWORK_RETRY_MS = 2_000
 /** What the run says when the connection dropped twice in a row: plain words, nothing of the transport's. */
 export const NETWORK_LINE = 'The connection to the model dropped twice in a row, so nothing was done this time. Send the message again.'
+/**
+ * A follow-up on a cloud turn: the run looks at the design it changes before anything else (design.look), measures how
+ * much of the whole-model view each step of changes moved (design.look compare), and a reply whose change stays under
+ * the floor a person sees is sent back once to strengthen it. The model reads the measure; the rule is not prompt text.
+ */
+export const visibleNote = (pct: number, floor: number): string =>
+  pct < floor
+    ? `Measured: the change so far moved ${pct}% of the whole-model view, under the ${floor}% a person sees at that view. Strengthen it once before you answer, sized from the model: a bevel or round a real share of the part it is on (a quarter of that part's thinnest side or more), windows tall and wide enough to read at the whole-model view, more curve as a change a person notices. A part too thin or small to show the change (a deck slab about 1 mm thick) first gets the size it needs (raise it to a real deck height), and the reply says so.`
+    : `Measured: the change so far moved ${pct}% of the whole-model view. Say that share in the reply.`
+/** After one strengthening: the change still reads small, so the reply says so instead of going round again. */
+export const stillLowNote = (pct: number, floor: number): string =>
+  `Measured: the change now moved ${pct}% of the whole-model view, still under the ${floor}%. If it is done, answer, and say the change is subtle at the whole-model view and what would make it show.`
+/** Said once when a run ends with its change still under the floor: one more pass, then the reply. */
+export const STRENGTHEN_NOTE = (pct: number, floor: number): string =>
+  `Before you answer: the change moved only ${pct}% of the whole-model view, under the ${floor}% a person sees. Make it visible now as the measured note said, once, then answer with the new share.`
+
+/**
+ * The design an earlier run built and checked against its plan (pass or fail), by id, or null: a run on it is a
+ * follow-up. A build cut off before its first check, or a design never checked, is not one.
+ */
+function lastDesign(messages: readonly LlmMessage[], upTo: number): string | null {
+  for (let k = upTo - 1; k >= 0; k--) {
+    const m = messages[k]!
+    if (m.role !== 'tool' || typeof m.content !== 'string' || !/"nozzleMm":[\d.]+,"pass":(true|false)/.test(m.content)) continue
+    const id = /"design":"([^"\\]+)"/.exec(m.content)?.[1]
+    if (id) return id
+  }
+  return null
+}
+
 /** A request that got no answer: the connection dropped or the host could not be reached (a transport error with no status). */
 function networkLost(e: unknown): boolean {
   const x = e as { name?: unknown; status?: unknown; message?: unknown }
@@ -773,6 +808,22 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       return (tool.permissionFor?.(JSON.parse(call.arguments.trim() || '{}')) ?? tool.permission) !== 'read'
     } catch {
       return tool.permission !== 'read'
+    }
+  }
+  const checkedDesignOr = (): string | null => {
+    try {
+      return opts.checkedDesign?.() ?? null
+    } catch {
+      return null
+    }
+  }
+  // The design a call names, or null.
+  const designOf = (call: LlmToolCall): string | null => {
+    try {
+      const d = (JSON.parse(call.arguments.trim() || '{}') as { design?: unknown }).design
+      return typeof d === 'string' ? d : null
+    } catch {
+      return null
     }
   }
   const startedUnder = (sessionId: string, design: string): void => {
@@ -1476,6 +1527,29 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (!left || unsettledQuestion(text) !== undefined) return null
       return { left, again: isStale(sessionId) && planned.get(sessionId)?.planId === left.planId }
     }
+    // a follow-up on a cloud turn: the design an earlier run built is looked at first, and each change measured
+    const look = !local ? findTool('design.look') : undefined
+    const follow = look ? (lastDesign(messages, runStart) ?? checkedDesignOr()) : null
+    let lookN = 0
+    const lookAt = async (design: string, compare: boolean, shown: boolean): Promise<{ pct: number; floor: number } | null> => {
+      const call: LlmToolCall = { id: `look_${sessionId}_${now()}_${lookN++}`, name: 'design.look', arguments: JSON.stringify(compare ? { design, compare: true } : { design }) }
+      const res = await execute(call, sessionId, context, shown ? watch : () => undefined, signal, citations, cards, stops)
+      // the measure goes in as words only: a second picture would push the first out of the history the model's
+      // earlier reasoning was made on, which the provider refuses
+      const images = compare ? undefined : res.images
+      if (images) dropOldImages(messages, MAX_IMAGES_IN_HISTORY - images.length)
+      messages.push({ role: 'assistant', content: '', toolCalls: [call] })
+      messages.push({ role: 'tool', callId: call.id, content: res.message, ...(images ? { images } : {}) })
+      const pct = /"visiblePct":([\d.]+)/.exec(res.message)?.[1]
+      const floor = /"floorPct":([\d.]+)/.exec(res.message)?.[1]
+      return pct && floor ? { pct: Number(pct), floor: Number(floor) } : null
+    }
+    let followLooked = false
+    let measured: { pct: number; floor: number } | null = null
+    let strengthenNudged = false
+    let belowSaid = false
+    // how many measured steps came out under the floor: one means the change was never strengthened
+    let lowNotes = 0
     // how long the run has waited on slow_down refusals in a row
     let slowed = 0
     // a request lost to the network is sent once more before the run says so (NETWORK_RETRY_MS, NETWORK_LINE)
@@ -1489,6 +1563,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (signal.aborted) {
         stopReason = 'canceled'
         break
+      }
+      // a follow-up is read against the model as it is before anything changes it
+      if (follow && !followLooked) {
+        followLooked = true
+        await lookAt(follow, false, true)
       }
       if (step === maxSteps && !wrap) {
         if (stopped) break
@@ -1704,6 +1783,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           messages.push({ role: 'user', content: WRAP_NOTE })
           continue
         }
+        // a follow-up whose change still moved under the floor a person sees goes back once to make it visible
+        if (measured && measured.pct < measured.floor && !strengthenNudged && lowNotes < 2 && !stopped && !wrap && spoke && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls) {
+          strengthenNudged = true
+          messages.push({ role: 'user', content: STRENGTHEN_NOTE(measured.pct, measured.floor) })
+          continue
+        }
         // A reply that would end with the plan approved in this run unfinished goes on once instead (planGoesOn).
         const goesOn = !planNudged && !stopped && !wrap && spoke && toolCalls.length === 0 && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls ? planGoesOn(text) : null
         if (goesOn) {
@@ -1755,6 +1840,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           why = 'tool'
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
+        // a follow-up already has its look at the model from the start of the turn: a second picture would push that one
+        // out of the history the model reasoned on, so the model is pointed back to it
+        if (follow && followLooked && call.name === 'design.look' && !/"compare"\s*:\s*true/.test(call.arguments)) {
+          watch({ type: 'tool_call', callId: call.id, tool: call.name, source: 'command', input: call.arguments })
+          watch({ type: 'tool_result', callId: call.id, ok: true, summary: 'Looked at the model at the start of this turn' })
+          messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: true, summary: 'You looked at the model at the start of this turn; that picture is above and the model has not changed since, unless you changed it. To see a change, make it and read the measured note.' }) })
+          continue
+        }
         const res = await execute(call, sessionId, context, watch, signal, citations, cards, stops, loader)
         if (call.name === 'design.new' && res.message.includes(`"code":"${SAME_PART}"`)) restartRefused = true
         stepOn(sessionId, call, res.message)
@@ -1776,6 +1869,18 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           const tool = findTool(call.name)
           const sets = tool ? turnSetsOf(tool) : 'every'
           if (sets !== 'every' && !sets.has(set)) set = [...sets][0]!
+        }
+      }
+      // each step that changed the followed design is measured against the look before the change, for the model to read
+      if (follow && !signal.aborted && toolCalls.some((c) => c.name !== 'design.look' && c.name !== 'design.save' && changesDesign(c) && designOf(c) === follow)) {
+        measured = await lookAt(follow, true, true)
+        if (measured) {
+          const low = measured.pct < measured.floor
+          messages.push({ role: 'user', content: low && belowSaid ? stillLowNote(measured.pct, measured.floor) : visibleNote(measured.pct, measured.floor) })
+          if (low) {
+            belowSaid = true
+            lowNotes++
+          }
         }
       }
       // pilot.tools picked a set: the next step sends it
