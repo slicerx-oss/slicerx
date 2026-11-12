@@ -85,7 +85,7 @@ pub use body::{Body, Curve, Edge, FLAT_KIND_MM, Face, Frame, Surface};
 #[cfg(feature = "typed")]
 pub use error::{Error, FailedFace, Stage};
 #[cfg(feature = "typed")]
-pub use stitch::{Path, Sheet};
+pub use stitch::{Path, Sheet, skin_ends};
 #[cfg(feature = "typed")]
 pub use tess::{Mesh, MeshEdge, Tessellation};
 

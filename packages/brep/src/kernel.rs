@@ -12,7 +12,7 @@
 //! lock as proof. Nothing in this file decides what a good body or a good mesh is. It reports what the kernel says.
 
 use crate::error::{Error, FailedFace, Result, Stage};
-use crate::stitch::{Path, Sheet};
+use crate::stitch::{Boundary, Path, Sheet};
 use crate::values::{Params, Placement, Polygons, Shape, Vec3};
 use cxx::memory::UniquePtrTarget;
 use cxx::{ExternType, UniquePtr, type_id};
@@ -45,12 +45,12 @@ pub(crate) struct Long(c_long);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ULong(c_ulong);
 
-/// The kernel's `SmExtent2d`, the part of a surface a face covers: four numbers that are handed back to the kernel
-/// as it gave them and never read here.
+/// The kernel's `SmExtent2d`, the part of a surface a face covers: the least u and v, then the most, handed back to
+/// the kernel as it gave them and read for a surface's boundaries.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct Extent {
-    _corners: [f64; 4],
+    corners: [f64; 4],
 }
 const _: () = assert!(size_of::<Extent>() == 32 && align_of::<Extent>() == align_of::<f64>());
 
@@ -419,6 +419,14 @@ mod ffi {
         // how the kernel reads a value Rust wrote, for the layout tests below
         #[allow(dead_code)]
         fn sx_coordinate(v: &SmVector3d, axis: i32) -> f64;
+        fn sx_surface_boundary(
+            surface: &SmSurface,
+            direction: i32,
+            at: f64,
+            knots: &mut Vec<f64>,
+            points: &mut Vec<f64>,
+            about: &mut Vec<f64>,
+        ) -> Result<SmLong>;
         #[allow(dead_code)]
         fn sx_control(p: &SmTessellationParams, which: i32) -> f64;
     }
@@ -797,6 +805,25 @@ fn flat_face(
     })
 }
 
+/// The kernel's surface skinned across `rails`: what it said, and the surface it made for the caller to own.
+fn skin(
+    kernel: &Held,
+    rails: &[Path],
+) -> Result<(std::result::Result<Long, cxx::Exception>, *mut ffi::SmSurface)> {
+    let curves = rails
+        .iter()
+        .map(|rail| spline(kernel, rail))
+        .collect::<Result<Vec<_>>>()?;
+    let mut across = ffi::new_spline_array();
+    for curve in &curves {
+        // SAFETY: the array only holds the pointer, and `curves` outlives it.
+        unsafe { across.pin_mut().Add(curve.as_mut_ptr()) };
+    }
+    let mut raw = ptr::null_mut();
+    let status = ffi::SmApiCreateSkin(&across, &mut raw);
+    Ok((status, raw))
+}
+
 /// The faces of `sheets` made in one body and joined along their shared sides into a solid, with each face's
 /// place in `sheets` in the order the solid lists its faces, and the widest gap the kernel closed between two
 /// faces to join them, in mm. Refused when the kernel does not call the result one closed solid, or when it has
@@ -822,17 +849,7 @@ pub(crate) fn stitched(sheets: &[Sheet]) -> Result<(Solid, Vec<usize>, f64)> {
                 face_on(&kernel, &mut body, "ruled face", status, raw)?
             }
             Sheet::Skinned(rails) => {
-                let curves = rails
-                    .iter()
-                    .map(|rail| spline(&kernel, rail))
-                    .collect::<Result<Vec<_>>>()?;
-                let mut across = ffi::new_spline_array();
-                for curve in &curves {
-                    // SAFETY: the array only holds the pointer, and `curves` outlives it.
-                    unsafe { across.pin_mut().Add(curve.as_mut_ptr()) };
-                }
-                let mut raw = ptr::null_mut();
-                let status = ffi::SmApiCreateSkin(&across, &mut raw);
+                let (status, raw) = skin(&kernel, rails)?;
                 face_on(&kernel, &mut body, "skinned face", status, raw)?
             }
             Sheet::Flat(sides) => flat_face(&kernel, &mut body, sides)?,
@@ -876,6 +893,37 @@ pub(crate) fn stitched(sheets: &[Sheet]) -> Result<(Solid, Vec<usize>, f64)> {
         });
     }
     Ok((Solid { brep: body }, order, f64::max(vertex_gap, edge_gap)))
+}
+
+/// The four boundaries of the surface a face skinned across `rails` is made on, as the kernel reads them off it: at
+/// its least and most u, then its least and most v.
+pub(crate) fn skin_boundaries(rails: &[Path]) -> Result<Vec<Boundary>> {
+    let kernel = held();
+    let (status, raw) = skin(&kernel, rails)?;
+    let surface = own(&kernel, "skinned face", status, raw)?;
+    let [u0, v0, u1, v1] = surface.GetNaturalUVDomain().corners;
+    let mut out = Vec::with_capacity(4);
+    for (direction, at) in [(0, u0), (0, u1), (1, v0), (1, v1)] {
+        let (mut knots, mut points, mut about) = (Vec::new(), Vec::new(), Vec::new());
+        check(
+            "skinned face end",
+            ffi::sx_surface_boundary(&surface, direction, at, &mut knots, &mut points, &mut about),
+        )?;
+        let [degree, rational, gap] = about[..] else {
+            return Err(Error::NotSolid {
+                op: "skinned face end",
+                why: "the kernel did not say what curve it read",
+            });
+        };
+        out.push(Boundary {
+            degree,
+            rational: rational > 0.5,
+            knots,
+            points: points.as_chunks::<3>().0.to_vec(),
+            gap,
+        });
+    }
+    Ok(out)
 }
 
 /// A face of a solid. It borrows the solid, so it cannot outlive it or be held while the solid changes.
