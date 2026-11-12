@@ -7,10 +7,11 @@ edition.workspace = true
 rust-version.workspace = true
 license = "Apache-2.0"
 publish.workspace = true
-description = "Exact solids for SlicerX's modeling tools on the SMLib kernel (NVIDIA usd-brep, Apache-2.0), behind one JSON call"
+description = "Exact solids for SlicerX's modeling tools on the SMLib kernel (NVIDIA usd-brep, Apache-2.0), behind one JSON call and, with the typed feature, as Rust types"
 links = "sx_brep"
 
-# The kernel is C++ behind a C call, so this crate allows `unsafe` (two calls, each with a SAFETY comment).
+# The kernel is C++, so this crate allows `unsafe`: the C call behind the JSON API in src/lib.rs, and with the typed
+# feature the bridge in src/kernel.rs, which holds all of that feature's. Every block has a SAFETY comment.
 [lints.rust]
 unsafe_code = "allow"
 
@@ -36,3 +37,12 @@ serde_json = "=1.0.151"
 [build-dependencies]
 cc = { version = "=1.5.1", features = ["parallel"] }
 cxx-build = { version = "=1.0.205", optional = true }
+
+# the tests of the typed API
+[[test]]
+name = "typed_bodies"
+required-features = ["typed"]
+
+[[test]]
+name = "typed_mesh"
+required-features = ["typed"]
