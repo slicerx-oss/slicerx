@@ -745,9 +745,10 @@ fn flat_face(
 }
 
 /// The faces of `sheets` made in one body and joined along their shared sides into a solid, with each face's
-/// place in `sheets` in the order the solid lists its faces. Refused when the kernel does not call the result one
-/// closed solid, or when it has other faces than the ones made.
-pub(crate) fn stitched(sheets: &[Sheet]) -> Result<(Solid, Vec<usize>)> {
+/// place in `sheets` in the order the solid lists its faces, and the widest gap the kernel closed between two
+/// faces to join them, in mm. Refused when the kernel does not call the result one closed solid, or when it has
+/// other faces than the ones made.
+pub(crate) fn stitched(sheets: &[Sheet]) -> Result<(Solid, Vec<usize>, f64)> {
     let kernel = held();
     let mut body = ffi::new_body();
     if body.is_null() {
@@ -821,7 +822,7 @@ pub(crate) fn stitched(sheets: &[Sheet]) -> Result<(Solid, Vec<usize>)> {
             why: "the kernel changed its faces while joining them",
         });
     }
-    Ok((Solid { brep: body }, order))
+    Ok((Solid { brep: body }, order, f64::max(vertex_gap, edge_gap)))
 }
 
 /// A face of a solid. It borrows the solid, so it cannot outlive it or be held while the solid changes.

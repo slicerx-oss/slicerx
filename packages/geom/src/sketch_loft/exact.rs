@@ -193,7 +193,7 @@ fn same_faces(rails: &Rails, parts: &[Part], mesh: &TriMesh) -> Vec<Option<usize
     // told to their stretch only when those rings are the rails' own
     let bits = |p: &V3| p.map(f64::to_bits);
     let rows_match = n > 0
-        && mesh.positions.len() % n == 0
+        && mesh.positions.len().is_multiple_of(n)
         && mesh.positions.len() >= 2 * n
         && mesh.positions[..n]
             .iter()
