@@ -799,7 +799,7 @@ fn the_old_ops_do_not_take_a_held_body_yet() {
 }
 
 #[test]
-fn chord_and_angle_are_checked_by_the_kernel_s_typed_call() {
+fn chord_and_angle_have_the_old_op_s_limits() {
     if !sx_brep::KERNEL {
         return;
     }
@@ -817,21 +817,35 @@ fn chord_and_angle_are_checked_by_the_kernel_s_typed_call() {
     let fine = triangles(json!({ "body": kept.0, "chordMm": 0.01, "angleDeg": 5 }));
     assert!(coarse < default && default < fine, "{coarse} {default} {fine}");
 
-    assert_eq!(
-        refused("brep.tessellate", &json!({ "body": kept.0, "chordMm": -1 })),
-        "brep: chord: must be 0 mm or more"
-    );
-    assert_eq!(
-        refused("brep.tessellate", &json!({ "body": kept.0, "angleDeg": 120 })),
-        "brep: curve angle: must be from 0 to 90 degrees"
-    );
-    assert_eq!(
-        refused(
-            "brep.tessellate",
-            &json!({ "body": kept.0, "chordMm": 0, "angleDeg": 0 })
+    // out of range, a held body and one of the old table are refused in the same words
+    let old = Old(run("brep.primitive", &json!({ "type": "sphere", "diameterMm": 20 }))["body"].clone());
+    for (limits, said) in [
+        (json!({ "chordMm": -1 }), "brep: chordMm: must be 0 or more"),
+        (
+            json!({ "angleDeg": 120 }),
+            "brep: angleDeg: must be more than 0 and at most 90",
         ),
-        "brep: chord: give a chord or a surface angle above 0"
-    );
+        (
+            json!({ "angleDeg": 0 }),
+            "brep: angleDeg: must be more than 0 and at most 90",
+        ),
+        (
+            json!({ "chordMm": 0, "angleDeg": 0 }),
+            "brep: angleDeg: must be more than 0 and at most 90",
+        ),
+        (
+            json!({ "angleDeg": -5 }),
+            "brep: angleDeg: must be more than 0 and at most 90",
+        ),
+    ] {
+        let ask = |body: &Value| {
+            let mut req = limits.clone();
+            req["body"] = body.clone();
+            refused("brep.tessellate", &req)
+        };
+        assert_eq!(ask(&json!(kept.0)), said, "{limits}");
+        assert_eq!(ask(&old.0), said, "{limits}");
+    }
     assert_eq!(
         refused("brep.tessellate", &json!({ "body": kept.0, "chordMm": "fine" })),
         "chordMm: must be a number"
