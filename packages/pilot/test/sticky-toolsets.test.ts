@@ -651,3 +651,84 @@ describe('a capped chat keeps its state per chat', () => {
     expect(next.length).toBeLessThanOrEqual(128)
   })
 })
+
+describe('a paint ask in a capped design chat', () => {
+  /**
+   * A design chat over the limit, its toolsets sized so the slicing and printer tools the chat used earlier fill the room
+   * the design tools leave: core, the design tools, slicing, printers, the project's six (its paint and filament tools,
+   * as the app has them) and a mesh edit.
+   */
+  function designChat(): PilotTool<never>[] {
+    // no toolset tag: the paint and filament tools go where toolsetOf puts them by name
+    const named = (name: string): PilotTool<never> =>
+      defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
+    const sets: [string, Toolset, number][] = [
+      ['core.t', 'core', 10],
+      ['geom.t', 'cad', 59],
+      ['settings.t', 'settings', 30],
+      ['printer.t', 'printers', 26],
+      ['mesh.t', 'mesh', 1],
+    ]
+    return [named('design.new'), ...sets.flatMap(([prefix, set, n]) => Array.from({ length: n }, (_, i) => tool(`${prefix}${i}`, set))), ...['project.info', 'paint.preview', 'paint.apply', 'paint.regions', 'project.add_filament', 'project.set_filament'].map(named)]
+  }
+
+  /** A model that paints when it has paint.apply and otherwise asks pilot.load_tools for the toolset that holds it. */
+  function painter(): LlmTransport & { sent: LlmHttpRequest[] } {
+    const sent: LlmHttpRequest[] = []
+    return {
+      sent,
+      available: async () => true,
+      async *stream(req) {
+        sent.push(req)
+        const names = toolsOf(req)
+        const body = JSON.parse(req.body) as { messages: { role: string; content: unknown }[] }
+        const last = JSON.stringify(body.messages.at(-1)?.content ?? '')
+        // the person's words in the newest message, after the context lines the runtime puts first
+        const asked = JSON.stringify(body.messages.filter((m) => m.role === 'user').at(-1)?.content ?? '').split('User request:').at(-1) ?? ''
+        let step: Step
+        if (last.includes('tool_result')) step = { text: 'Done.' }
+        else if (/thicker/i.test(asked)) step = { call: 'geom.t0' }
+        else if (/slice/i.test(asked)) step = { calls: [{ call: 'settings.t0' }, { call: 'printer.t0' }] }
+        else if (!/paint/i.test(asked)) step = { text: 'Here it is.' }
+        else if (names.includes('paint.apply')) step = { call: 'paint.apply', args: {} }
+        else step = { call: LOAD_TOOLS_TOOL, args: { toolset: 'project' } }
+        yield wire('mimir-cloud', step)
+      },
+    }
+  }
+
+  it('sends the paint tools in its first request and never calls pilot.load_tools', async () => {
+    const llm = painter()
+    const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
+    const { models: _tiers, ...base } = DEFAULT_CONFIG
+    const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-5-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: designChat() })
+    const say = async (message: string): Promise<{ sent: LlmHttpRequest[]; calls: string[] }> => {
+      const at = llm.sent.length
+      const calls: string[] = []
+      for await (const e of pilot.run('s1', message)) if (e.type === 'tool_call') calls.push(e.tool)
+      return { sent: llm.sent.slice(at), calls }
+    }
+    // the chat sliced and sent, then changed the design: the slicing and printer tools stay wanted, and fill the room
+    expect((await say('Slice the plate and send it to my printer')).calls).toEqual(['settings.t0', 'printer.t0'])
+    const edit = await say('Make the base thicker')
+    expect(edit.calls).toEqual(['geom.t0'])
+    expect(toolsOf(edit.sent[0]!)).not.toContain('paint.apply')
+    const paint = await say('Paint the letters red')
+    const names = toolsOf(paint.sent[0]!)
+    expect(names).toEqual(expect.arrayContaining(['paint.preview', 'paint.apply', 'paint.regions', 'project.set_filament']))
+    expect(names.length).toBeLessThanOrEqual(128)
+    expect(paint.calls).toEqual(['paint.apply'])
+    // one tool list for the whole turn
+    expect(new Set(paint.sent.map(toolsJson)).size).toBe(1)
+    // the next turn on the same topic sends that list again, byte for byte
+    const again = await say('Paint the base blue too')
+    expect(toolsJson(again.sent[0]!)).toBe(toolsJson(paint.sent.at(-1)!))
+    expect(again.calls).toEqual(['paint.apply'])
+  })
+
+  it('needs the project toolset, where the paint tools are, for paint and color words', () => {
+    expect(['paint.preview', 'paint.apply', 'paint.regions', 'project.set_filament'].map((name) => toolsetOf({ name }))).toEqual(['project', 'project', 'project', 'project'])
+    for (const ask of ['Paint the letters red', 'make the top a different color', 'colour the base blue', 'recolor the lid']) expect(turnNeeds(ask).has('project'), ask).toBe(true)
+    expect(turnNeeds('Make me a 30 mm cube').has('project')).toBe(false)
+  })
+})

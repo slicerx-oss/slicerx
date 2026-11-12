@@ -103,7 +103,9 @@ const NEEDS: readonly [Toolset, RegExp][] = [
   ['cad', /\b(design|model|part|sketch|extrude|fillet|chamfer|hole|bracket|hook|box|lid|gear|thread|build|make|draw|cad)\w*/i],
   ['settings', /\b(slice|slicing|setting|profile|layer|infill|support|wall|brim|raft|speed|temperature|temp|nozzle|orient|arrange|estimate|strength|strong|quality|filament)\w*/i],
   ['printers', /\b(print|printer|send|queue|job|spool|ams|camera|pause|resume|cancel|bed|plug|g-?code)\w*/i],
-  ['project', /\b(project|plate|open|file|export|save|stl|3mf|step)\w*/i],
+  // painting a part in filaments is the project's paint and filament tools (BY_NAME), so a paint ask has them from its
+  // first step instead of loading them mid-turn
+  ['project', /\b(project|plate|open|file|export|save|stl|3mf|step|paint|colou?r|recolou?r)\w*/i],
   ['kb', /\b(why|how|which|recommend|best|troubleshoot|problem|issue|string|warp|clog|look up|source|material)\w*/i],
   ['mesh', /\b(mesh|repair|hollow|emboss|cut|split|paint|color|colour)\w*/i],
   ['calibration', /\bcalibrat\w*/i],
