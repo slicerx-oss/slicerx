@@ -500,9 +500,26 @@ function withoutNulls(v: unknown): unknown {
   return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== null).map(([k, x]) => [k, withoutNulls(x)]))
 }
 
-function dropOldImages(messages: LlmMessage[], keep: number): void {
-  let seen = 0
+/** Whether an assistant message carries reasoning the provider signed against the conversation before it. */
+function signedReasoning(m: LlmMessage | undefined): boolean {
+  if (m?.role !== 'assistant' || !m.raw) return false
+  return m.raw.some((b) => typeof b === 'object' && b !== null && ['thinking', 'redacted_thinking'].includes(String((b as { type?: unknown }).type)))
+}
+
+/**
+ * Takes the oldest pictures out of the history so at most `keep` stay. A picture with signed reasoning after it stays
+ * whatever the count: that reasoning is bound to the history as it was sent, and the provider refuses a changed one.
+ */
+export function dropOldImages(messages: LlmMessage[], keep: number): void {
+  let bound = -1
   for (let i = messages.length - 1; i >= 0; i--) {
+    if (signedReasoning(messages[i])) {
+      bound = i
+      break
+    }
+  }
+  let seen = 0
+  for (let i = messages.length - 1; i > bound; i--) {
     const m = messages[i]
     if (m?.role !== 'tool' || !m.images?.length) continue
     if (seen + m.images.length <= keep) {
