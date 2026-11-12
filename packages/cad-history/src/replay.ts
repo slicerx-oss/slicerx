@@ -13,7 +13,7 @@ import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { addedSolids, EXACT_FELL_BACK, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, fromSolid, meshed, rigidFrame, solidTooBig, type Solids } from './exact'
+import { addedSolids, EXACT_FELL_BACK, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, fromSolid, meshed, paintOfFaces, rigidFrame, solidTooBig, type FacePaint, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -64,6 +64,8 @@ interface Flat {
   unmeshed?: number[]
   /** The shape Add shape made the part as, until a step changes it; exact replays build the part from it. */
   primitive?: PrimitiveSpec
+  /** The part's paint by face while it is an exact solid (exact.ts FacePaint); its triangles' paint is made from it. */
+  facePaint?: FacePaint
 }
 
 const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: { ...m.faces, ids: Array.from(m.faces.ids) } } : {}), ...(m.paint ? { paint: m.paint } : {}), ...(m.primitive ? { primitive: m.primitive } : {}) })
@@ -116,7 +118,7 @@ export function missSentence(report: { miss?: Miss; volumeChangeMm3?: number }, 
  * the step's note.
  */
 const next = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }, dropped?: () => void, ended?: () => void): Flat => {
-  const { faces: _old, paint, normals: _normals, smb, body, unmeshed: _keys, primitive: _made, ...rest } = part
+  const { faces: _old, paint, normals: _normals, smb, body, unmeshed: _keys, primitive: _made, facePaint: _byFace, ...rest } = part
   if (paint && dropped) dropped()
   if ((smb || body !== undefined) && ended) ended()
   return { ...rest, positions: m.positions, indices: m.indices, ...(m.faces ? { faces: m.faces } : {}) }
@@ -288,7 +290,29 @@ const missed = (e: unknown): boolean => e instanceof Missed || e instanceof Exac
 
 /** A mesh part: no exact solid, and no shape the kernel would make it as (exact.ts makes no sphere yet). */
 const meshPart = (x: Flat): boolean => !x.smb && x.body === undefined && (!x.primitive || x.primitive.type === 'sphere')
-const meshOnly = ({ smb: _smb, body: _body, unmeshed: _keys, ...rest }: Flat): Flat => rest
+const meshOnly = ({ smb: _smb, body: _body, unmeshed: _keys, facePaint: _byFace, ...rest }: Flat): Flat => rest
+
+/**
+ * After an exact step on `from` (the parts it worked on): their paint by face goes on the parts the step made, whose
+ * triangles are painted from it now or when they are tessellated. Says whether paint went: a part painted part way
+ * across a face had paint by triangle only, which no new triangle keeps.
+ */
+function carryPaint(before: readonly Flat[], after: Flat[], from: readonly number[]): { parts: Flat[]; dropped: boolean } {
+  const kept = new Set(after)
+  const old = new Set(before)
+  const fp: FacePaint = {}
+  for (const i of from) for (const [layer, list] of Object.entries(before[i]?.facePaint ?? {})) fp[layer as keyof FacePaint] = [...(fp[layer as keyof FacePaint] ?? []), ...(list ?? [])]
+  const dropped = before.some((x) => x.paint && !x.facePaint && !kept.has(x))
+  if (!Object.keys(fp).length) return { parts: after, dropped }
+  const parts = after.map((x) => {
+    if (old.has(x)) return x
+    const { paint: _paint, ...rest } = x
+    if (x.unmeshed) return { ...rest, facePaint: fp }
+    const paint = paintOfFaces(x, fp)
+    return { ...rest, facePaint: fp, ...(Object.keys(paint).length ? { paint } : {}) }
+  })
+  return { parts, dropped }
+}
 
 const meshedAll = (call: EngineCall, parts: Flat[]): Promise<Flat[]> => (parts.some((p) => p.unmeshed) ? Promise.all(parts.map((p) => meshed(call, p))) : Promise.resolve(parts))
 
@@ -443,10 +467,10 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       },
     )
     if (done) {
-      const kept = new Set(done)
-      if (parts.some((x) => x.paint && !kept.has(x))) found.notes[s.id] = PAINT_DROPPED
+      const carried = carryPaint(parts, done, [s.part, ...(p.op === 'boolean' ? p.with : [])])
+      if (carried.dropped) found.notes[s.id] = PAINT_DROPPED
       if (big) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${big}` : big
-      return done
+      return carried.parts
     }
   }
   // A new body lofted where the engine makes exact lofts itself is asked for as one. The op takes no transform, so
@@ -487,7 +511,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       if (same) lofted = r
     }
   }
-  if (strict && !onMesh) throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
+  // paint keeps a solid when it covers whole faces (below), so a design that must stay exact takes it
+  if (strict && !onMesh && p.op !== 'paint') throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
   const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]
   // the mesh path works on meshes: the kept bodies of the parts it reads are tessellated now, and every other part
   // keeps its solid untouched; a new body or an added part reads none
@@ -640,8 +665,18 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         }
         const { [p.layer]: _was, ...others } = part.paint ?? {}
         const paint: PaintTexts = Object.keys(layer).length ? { ...others, [p.layer]: layer } : others
-        const { paint: _old, ...rest } = part
-        out[i] = Object.keys(paint).length ? { ...rest, paint } : rest
+        const { paint: _old, facePaint: _byFace, ...rest } = part
+        const painted: Flat = Object.keys(paint).length ? { ...rest, paint } : rest
+        if (!part.smb && part.body === undefined) {
+          out[i] = painted
+          break
+        }
+        // an exact part keeps its paint by face, so the paint lasts through its next exact steps. Paint across part of a
+        // face has no such form: it stays on the triangles, and the part's next exact step clears it with its note
+        const byFace = facePaintOf(painted)
+        if (byFace) out[i] = Object.keys(byFace).length ? { ...painted, facePaint: byFace } : painted
+        else if (strict) throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
+        else out[i] = painted
         break
       }
       case 'edge.fillet':
@@ -752,11 +787,11 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
     if (landed.broken) throw new Missed(landed.broken)
     // every copy missed inside a copy of an outer pattern: the parts stay as they are, and the note says so
     if (done || left === copies) {
-      const kept = done ?? parts
-      if (parts.some((x) => x.paint && !kept.includes(x))) found.notes[s.id] = PAINT_DROPPED
+      const carried = done ? carryPaint(parts, done, [s.part]) : { parts, dropped: false }
+      if (carried.dropped) found.notes[s.id] = PAINT_DROPPED
       if (inCopy === undefined) keptCopies(found, s.id, moves.length + 1, landed.missed)
       if (landed.note) found.notes[s.id] = found.notes[s.id] ? `${landed.note} ${found.notes[s.id]}` : landed.note
-      return kept
+      return carried.parts
     }
   }
   let out = parts

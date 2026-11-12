@@ -7,7 +7,7 @@
 // leaves is the solid's tessellation, with the solid's faces and keys.
 import type { FaceFrame, FreeShape, MovedFace, Polygon, Shape, Vec2, Vec3 } from './types'
 import { placeBody } from './numbering'
-import { direction, invert, multiply, newSlot, point, type HistoryMesh, type Mat4, type PaintTexts, type PrimitiveSpec, type SolidSpec, type Step, type StepParams } from './model'
+import { direction, findTriangle, IDENTITY, invert, multiply, newSlot, point, type HistoryMesh, type Mat4, type PaintLayer, type PaintTexts, type PrimitiveSpec, type SolidSpec, type Step, type StepParams } from './model'
 
 export type Call = (op: string, request: unknown) => Promise<unknown>
 
@@ -33,7 +33,74 @@ export interface ExactPart {
   unmeshed?: number[]
   /** The shape Add shape made the part as (HistoryMesh.primitive). */
   primitive?: PrimitiveSpec
+  /** The part's paint by face, while it is an exact solid (FacePaint): its triangles' paint is made again from it. */
+  facePaint?: FacePaint
 }
+
+/**
+ * Paint on an exact part, kept by face: per layer, each face painted whole and its text. A face goes by its key; one
+ * whose key is 0 (a face a cut split or a join merged) goes by its place, a point on it and the way it faces, as picks
+ * do. Every tessellation makes the part's triangles again, so their paint is made again from this (paintOfFaces).
+ */
+export type FacePaint = Partial<Record<PaintLayer, { key: number; at?: Vec3; normal?: Vec3; text: string }[]>>
+
+/**
+ * The part's paint by face, or null when some paint covers part of a face only (brushed), which has no form by face.
+ * Null too for paint on a part with no faces.
+ */
+export function facePaintOf(m: Pick<ExactPart, 'positions' | 'indices' | 'faces' | 'paint'>): FacePaint | null {
+  const f = m.faces
+  if (!m.paint) return {}
+  if (!f) return null
+  const triangles = Math.floor(m.indices.length / 3)
+  const out: FacePaint = {}
+  for (const [layer, texts] of Object.entries(m.paint) as [PaintLayer, Record<number, string>][]) {
+    // each face's triangles and the one text they all have, or null when they differ or some are bare
+    const byFace = new Map<number, { text: string | null; first: number }>()
+    for (let t = 0; t < triangles; t++) {
+      const id = f.ids[t]!
+      const text = texts[t] ?? ''
+      const was = byFace.get(id)
+      if (!was) byFace.set(id, { text, first: t })
+      else if (was.text !== text) was.text = null
+    }
+    const list: NonNullable<FacePaint[PaintLayer]> = []
+    for (const [id, { text, first }] of byFace) {
+      if (text === null) return null
+      if (!text) continue
+      const key = f.keys?.[id] ?? 0
+      if (key) list.push({ key, text })
+      else {
+        const [a, b, c] = [0, 1, 2].map((j) => point(IDENTITY, m.positions, 3 * m.indices[3 * first + j]!))
+        const n = cross([b![0] - a![0], b![1] - a![1], b![2] - a![2]], [c![0] - a![0], c![1] - a![1], c![2] - a![2]])
+        const l = Math.hypot(...n) || 1
+        list.push({ key: 0, at: [(a![0] + b![0] + c![0]) / 3, (a![1] + b![1] + c![1]) / 3, (a![2] + b![2] + c![2]) / 3], normal: [n[0] / l, n[1] / l, n[2] / l], text })
+      }
+    }
+    if (list.length) out[layer] = list
+  }
+  return out
+}
+
+/** The triangles' paint from the part's paint by face: every triangle of a face painted whole gets its text. */
+export function paintOfFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, fp: FacePaint): PaintTexts {
+  const f = m.faces
+  const out: PaintTexts = {}
+  if (!f) return out
+  const triangles = Math.floor(m.indices.length / 3)
+  for (const [layer, list] of Object.entries(fp) as [PaintLayer, NonNullable<FacePaint[PaintLayer]>][]) {
+    const texts: Record<number, string> = {}
+    for (const e of list) {
+      // a face with a key wherever it is now; one without, the face under its point
+      const at = e.key ? -1 : findTriangle(m, IDENTITY, e.at!, e.normal!)
+      const face = at >= 0 ? f.ids[at] : undefined
+      for (let t = 0; t < triangles; t++) if (e.key ? f.keys?.[f.ids[t]!] === e.key : f.ids[t] === face) texts[t] = e.text
+    }
+    if (Object.keys(texts).length) out[layer] = texts
+  }
+  return out
+}
+
 
 /** How a replay holds its solids: as text through each call, or (`keep`) as kernel bodies, each one `made` told. */
 export interface Solids {
@@ -122,8 +189,11 @@ export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot
 export async function meshed<P extends ExactPart>(call: Call, p: P): Promise<P> {
   if (!p.unmeshed || p.body === undefined) return p
   // normals come from this tessellation or not at all
-  const { unmeshed: _keys, normals: _old, ...rest } = p
-  return { ...rest, ...tessellated((await call('brep.tessellate', { body: p.body })) as Tessellated) } as P
+  const { unmeshed: _keys, normals: _old, paint: _paint, ...rest } = p
+  const mesh = tessellated((await call('brep.tessellate', { body: p.body })) as Tessellated)
+  // paint kept by face goes on the new triangles
+  const paint = p.facePaint ? paintOfFaces(mesh, p.facePaint) : undefined
+  return { ...rest, ...mesh, ...(paint && Object.keys(paint).length ? { paint } : {}) } as P
 }
 
 /** The part fields a tessellation gives, from either form of the answer. */
