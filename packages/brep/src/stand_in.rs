@@ -73,6 +73,24 @@ impl Solid {
     pub(crate) fn text(&self) -> Result<String> {
         match *self {}
     }
+
+    pub(crate) fn keys(&self) -> Result<Vec<u64>> {
+        match *self {}
+    }
+
+    pub(crate) fn set_keys(&mut self, _keys: &[u64]) -> Result<()> {
+        match *self {}
+    }
+
+    pub(crate) fn lend(&self) -> Result<i64> {
+        match *self {}
+    }
+}
+
+pub(crate) fn take_back(_number: i64) {}
+
+pub(crate) fn take_over(_number: i64) -> Option<Solid> {
+    None
 }
 
 impl FaceRef<'_> {
