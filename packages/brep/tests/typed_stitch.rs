@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Solids joined from faces: straight and cubic curves held exactly, ruled, skinned and flat faces, which face of the
-// body each given face became, the joined edges read back against the curves the faces were given, and the
-// refusals when the faces leave the solid open or meet off their curves. Empty without the typed
+// body each given face became, the joined edges read back against the curves the faces were given, the curves a
+// skinned face ends on read from the kernel, and the refusals when the faces leave the solid open or meet off their
+// curves. Empty without the typed
 // feature, so a workspace test run that names every test target passes over it.
 #![cfg(feature = "typed")]
 use sx_brep::{Body, Error, Path, Sheet, Surface, Tessellation};
@@ -63,6 +64,7 @@ fn without_the_kernel_joining_faces_says_so() {
         refusal(Body::stitched(&sheets)),
         "this build has no B-rep kernel (packages/brep/scripts/fetch-smlib.sh, then build again)"
     );
+    assert_eq!(sx_brep::skin_ends(&bowed_wall()), Err(Error::NoKernel));
 }
 
 // refused before the kernel is asked, so the same with the kernel or without
@@ -361,4 +363,80 @@ fn faces_joined_off_the_curves_they_were_given_are_refused() {
             "stitch: the faces were joined along a side {off_mm:.3e} mm off the curves they were given; they must meet on them"
         )
     );
+}
+
+/// Seven straight rails 5 mm high standing on a curve: a wall bowed in plan, from x 0 to 12.
+fn bowed_wall() -> Vec<Path> {
+    (0_u8..7)
+        .map(|k| {
+            let x = 2.0 * f64::from(k);
+            let y = 0.1 * (x - 6.0) * (x - 6.0);
+            line([x, y, 0.0], [x, y, 5.0])
+        })
+        .collect()
+}
+
+/// The ends of a curve as its first and last control points.
+fn ends_of(path: &Path) -> (P, P) {
+    match path {
+        Path::Lines(points) => (points[0], points[points.len() - 1]),
+        Path::Cubics(spans) => (spans[0][0], spans[spans.len() - 1][3]),
+    }
+}
+
+#[test]
+fn the_curves_a_skinned_face_ends_on_are_refused_in_words_before_the_kernel_is_asked() {
+    assert_eq!(
+        sx_brep::skin_ends(&bowed_wall()[..1])
+            .expect_err("a refusal")
+            .to_string(),
+        "skinned face: a face runs across 2 or more curves"
+    );
+    let mut mixed = bowed_wall();
+    mixed[3] = cubic([6.0, 0.0, 0.0], [6.0, 0.0, 5.0]);
+    assert_eq!(
+        sx_brep::skin_ends(&mixed).expect_err("a refusal").to_string(),
+        "skinned face: its curves must be of one kind and have as many pieces each"
+    );
+}
+
+// A face skinned across curves runs its own smooth curve through their ends. Read from the kernel, that curve bounds
+// a flat face that meets the skin exactly: the solid closes with its edges on the curves given, to rounding.
+#[test]
+fn a_skinned_face_s_ends_are_read_from_the_kernel_and_close_a_solid() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let rails = bowed_wall();
+    let (bottom, top) = sx_brep::skin_ends(&rails).expect("its ends");
+    // the first and last rails stand at y 0.1 (x - 6)^2, which is 3.6 to rounding
+    let (first_ends, last_ends) = (ends_of(&rails[0]), ends_of(&rails[6]));
+    for (end, (start_want, finish_want), z) in [
+        (&bottom, (first_ends.0, last_ends.0), 0.0),
+        (&top, (first_ends.1, last_ends.1), 5.0),
+    ] {
+        // exactly from the first rail's end to the last one's, on the plane of the rails' ends
+        assert_eq!(ends_of(end), (start_want, finish_want), "{end:?}");
+        let points: Vec<P> = match end {
+            Path::Lines(points) => points.clone(),
+            Path::Cubics(spans) => spans.iter().flatten().copied().collect(),
+        };
+        assert!(points.iter().all(|p| (p[2] - z).abs() <= 1e-12), "{end:?}");
+    }
+    let (first, last) = (rails[0].clone(), rails[6].clone());
+    let end = |curve: Path, from: P, to: P| Sheet::Flat(vec![curve, line(from, to)]);
+    let sheets = vec![
+        Sheet::Skinned(rails),
+        Sheet::Ruled(last, first),
+        end(bottom, last_ends.0, first_ends.0),
+        end(top, last_ends.1, first_ends.1),
+    ];
+    let (body, order, off) = Body::stitched_off(&sheets).expect("a bowed block");
+    println!("EDGES bowed wall closed on its read ends: {off:e} mm");
+    assert_eq!(order.len(), 4);
+    assert!(off <= 1e-9 * 12.0, "{off:e}");
+    // the area under the bow, y from 0.1 (x - 6)^2 up to 3.6, is 28.8 mm2 for a straight-sided bow; the skin bows
+    // a little differently between the rails, so only the sign and size are held
+    let volume = body.volume().expect("volume");
+    assert!(volume > 100.0 && volume < 200.0, "{volume}");
 }

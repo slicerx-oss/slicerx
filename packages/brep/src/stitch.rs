@@ -379,6 +379,45 @@ fn straight(points: &[[f64; 3]], limit: f64) -> bool {
     }
 }
 
+impl Path {
+    /// The same curve run the other way.
+    fn reversed(&self) -> Self {
+        match self {
+            Self::Lines(points) => Self::Lines(points.iter().rev().copied().collect()),
+            Self::Cubics(spans) => Self::Cubics(
+                spans
+                    .iter()
+                    .rev()
+                    .map(|&[p0, p1, p2, p3]| [p3, p2, p1, p0])
+                    .collect(),
+            ),
+        }
+    }
+
+    /// The same curve with its first and last points set to `start` and `end`.
+    fn pinned(mut self, start: [f64; 3], end: [f64; 3]) -> Self {
+        match &mut self {
+            Self::Lines(points) => {
+                if let Some(first) = points.first_mut() {
+                    *first = start;
+                }
+                if let Some(last) = points.last_mut() {
+                    *last = end;
+                }
+            }
+            Self::Cubics(spans) => {
+                if let Some(first) = spans.first_mut() {
+                    first[0] = start;
+                }
+                if let Some(last) = spans.last_mut() {
+                    last[3] = end;
+                }
+            }
+        }
+        self
+    }
+}
+
 /// The curves a face given as `sheet` runs between: a ruled or skinned face's first and last curves and, where its
 /// curves' ends lie on one straight line, that line; a flat face's loop. A skinned face whose curves' ends do not
 /// lie on a line runs its own smooth curve through them, which it was not given, so its edge with a flat face there
@@ -484,6 +523,163 @@ fn off_their_curves(body: &Body, sheets: &[Sheet], order: &[usize]) -> Result<f6
         worst = worst.max(near);
     }
     Ok(worst)
+}
+
+/// A curve the kernel read off a surface: its degree, its whole knot list, its control points, and the gap it says
+/// the curve has from the surface, in mm.
+pub(crate) struct Boundary {
+    pub(crate) degree: f64,
+    pub(crate) rational: bool,
+    pub(crate) knots: Vec<f64>,
+    pub(crate) points: Vec<[f64; 3]>,
+    pub(crate) gap: f64,
+}
+
+/// One more knot at `at`, inside the curve, with the curve unchanged (Boehm's insertion).
+fn with_knot(degree: usize, knots: &mut Vec<f64>, points: &mut Vec<[f64; 3]>, at: f64) -> Option<()> {
+    let span = knots.iter().rposition(|&knot| knot <= at)?;
+    let first = span.checked_sub(degree)?;
+    let mut out = Vec::with_capacity(points.len() + 1);
+    for i in 0..=points.len() {
+        if i <= first {
+            out.push(*points.get(i)?);
+        } else if i > span {
+            out.push(*points.get(i - 1)?);
+        } else {
+            let (lo, hi) = (*knots.get(i)?, *knots.get(i + degree)?);
+            let share = (at - lo) / (hi - lo);
+            let (before, after) = (*points.get(i - 1)?, *points.get(i)?);
+            out.push([0, 1, 2].map(|axis| before[axis] + (after[axis] - before[axis]) * share));
+        }
+    }
+    knots.insert(span + 1, at);
+    *points = out;
+    Some(())
+}
+
+impl Boundary {
+    /// The same curve as straight pieces (degree 1) or cubic Bezier pieces (degree 2 and 3): each inner knot is
+    /// repeated up to the degree, which splits the curve into pieces without changing it, and a quadratic piece is
+    /// written as the cubic it is. Refused, in words, when it is rational, of a degree above 3, or not pinned to its
+    /// end points.
+    #[allow(
+        clippy::float_cmp,
+        reason = "the kernel's own knots and degree, compared as it gave them"
+    )]
+    fn path(&self) -> Result<Path> {
+        let what = "skinned face end";
+        let refused = |why: &'static str| Error::NotSolid { op: what, why };
+        if self.rational {
+            return Err(refused("the kernel read its end as a rational curve"));
+        }
+        let degree = match self.degree {
+            1.0 => 1,
+            2.0 => 2,
+            3.0 => 3,
+            _ => return Err(refused("the kernel read its end as a curve of a degree above 3")),
+        };
+        let (mut knots, mut points) = (self.knots.clone(), self.points.clone());
+        let pinned = knots.len() == points.len() + degree + 1
+            && points.len() > degree
+            && knots[..=degree].iter().all(|&knot| knot == knots[0])
+            && knots[knots.len() - degree - 1..]
+                .iter()
+                .all(|&knot| knot == knots[knots.len() - 1]);
+        if !pinned {
+            return Err(refused(
+                "the kernel read its end as a curve not pinned to its end points",
+            ));
+        }
+        let inner: Vec<f64> = {
+            let mut seen = knots[degree + 1..knots.len() - degree - 1].to_vec();
+            seen.dedup();
+            seen
+        };
+        for at in inner {
+            while knots.iter().filter(|&&knot| knot == at).count() < degree {
+                with_knot(degree, &mut knots, &mut points, at)
+                    .ok_or_else(|| refused("its knots could not be split"))?;
+            }
+        }
+        if degree == 1 {
+            return Ok(Path::Lines(points));
+        }
+        let spans = points
+            .windows(degree + 1)
+            .step_by(degree)
+            .map(|piece| match *piece {
+                [p0, p1, p2] => [
+                    p0,
+                    [0, 1, 2].map(|axis| p0[axis] + (p1[axis] - p0[axis]) * 2.0 / 3.0),
+                    [0, 1, 2].map(|axis| p2[axis] + (p1[axis] - p2[axis]) * 2.0 / 3.0),
+                    p2,
+                ],
+                [p0, p1, p2, p3] => [p0, p1, p2, p3],
+                _ => [[f64::NAN; 3]; 4],
+            })
+            // a piece the kernel left with no length, where a knot was already repeated, is no piece
+            .filter(|piece| piece[1..].iter().any(|point| point != &piece[0]))
+            .collect();
+        Ok(Path::Cubics(spans))
+    }
+}
+
+/// The two curves a face skinned across `rails` ends on, read from the kernel's own surface: the one through every
+/// rail's start, then the one through every rail's end. A flat face given one of them meets the skin on the very curve
+/// the kernel made, where a curve worked out here only passes through the same points.
+///
+/// The rails are checked in words before the kernel is asked, as for [`Body::stitched`]. Read back: each curve passes
+/// through its rails' ends, and the kernel says it read it with no gap from the surface, both within [`MEET`] of the
+/// largest coordinate given. Each runs from the first rail's end to the last one's, and starts and ends on exactly
+/// those points.
+pub fn skin_ends(rails: &[Path]) -> Result<(Path, Path)> {
+    let what = "skinned face";
+    alike(what, &rails.iter().collect::<Vec<_>>())?;
+    let limit = meet(&[Sheet::Skinned(rails.to_vec())]);
+    let starts: Vec<[f64; 3]> = rails.iter().filter_map(Path::ends).map(|e| e.0).collect();
+    let ends: Vec<[f64; 3]> = rails.iter().filter_map(Path::ends).map(|e| e.1).collect();
+    let through =
+        |path: &Path, points: &[[f64; 3]]| points.iter().map(|&p| path.off(p)).fold(0.0, f64::max) <= limit;
+    let (mut first, mut last) = (None, None);
+    for boundary in kernel::skin_boundaries(rails)? {
+        let path = boundary.path()?;
+        let exact = boundary.gap.is_finite() && boundary.gap <= limit;
+        if first.is_none() && through(&path, &starts) {
+            first = Some((path, exact));
+        } else if last.is_none() && through(&path, &ends) {
+            last = Some((path, exact));
+        }
+    }
+    // each from the first rail's end to the last one's, on those very points: the kernel's own end points are them
+    // to rounding, and a loop of curves must join on the same numbers
+    let along = |path: Path, from: [f64; 3], to: [f64; 3]| {
+        let path = match path.ends() {
+            Some((start, _))
+                if path.off(to) <= limit
+                    && dot(sub(start, to), sub(start, to)) < dot(sub(start, from), sub(start, from)) =>
+            {
+                path.reversed()
+            }
+            _ => path,
+        };
+        path.pinned(from, to)
+    };
+    let (Some(&a0), Some(&a1), Some(&b0), Some(&b1)) =
+        (starts.first(), starts.last(), ends.first(), ends.last())
+    else {
+        return Err(Error::input(what, "a face runs across 2 or more curves"));
+    };
+    match (first, last) {
+        (Some((first, true)), Some((last, true))) => Ok((along(first, a0, a1), along(last, b0, b1))),
+        (Some(_), Some(_)) => Err(Error::NotSolid {
+            op: "skinned face end",
+            why: "the kernel read it only approximately",
+        }),
+        _ => Err(Error::NotSolid {
+            op: "skinned face end",
+            why: "the kernel's surface does not end on its curves' ends",
+        }),
+    }
 }
 
 /// What the kernel must not be asked, in plain words.

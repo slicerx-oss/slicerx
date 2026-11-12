@@ -133,6 +133,38 @@ void sx_brep_take_back(long number);
 SmBrep* sx_brep_adopt(long number);
 }
 
+// --- a surface's boundary at one parameter: its whole knot list, its control points (x, y, z each), and in `about`
+// its degree, 1 when it is rational and the gap the kernel says the curve has from the surface. The curve is the
+// kernel's; it is freed here.
+inline SmLong sx_surface_boundary(const SmSurface& surface, int direction, double at, rust::Vec<double>& knots,
+                                  rust::Vec<double>& points, rust::Vec<double>& about)
+{
+    SmBSplineCurve* iso = nullptr;
+    double achieved = 0.0;
+    SmStatus status = surface.CreateIsoParametricCurve(*SmApiGetOrCreateContext(), direction == 0 ? SM_SP_U : SM_SP_V,
+                                                       at, SM_CAST_APPROXTOL3D(0.0), iso, nullptr, &achieved);
+    std::unique_ptr<SmBSplineCurve> owned(iso);
+    if (status != SM_SUCCESS) return status;
+    if (iso == nullptr) return SM_ERR;
+    SmTArray<double> all;
+    status = iso->GetKnotsAll(all);
+    if (status != SM_SUCCESS) return status;
+    for (ULONG i = 0; i < all.GetSize(); ++i) knots.push_back(all.GetAt(i));
+    for (ULONG i = 0; i < iso->GetNumberControlPoints(); ++i) {
+        SmPoint3d point;
+        double weight = 1.0;
+        status = iso->GetControlPoint(SM_CP_EUCLIDIAN_RATIONAL, i, point, weight);
+        if (status != SM_SUCCESS) return status;
+        points.push_back(point.x);
+        points.push_back(point.y);
+        points.push_back(point.z);
+    }
+    about.push_back(static_cast<double>(iso->GetDegree()));
+    about.push_back(iso->IsRational() ? 1.0 : 0.0);
+    about.push_back(achieved);
+    return SM_SUCCESS;
+}
+
 // --- checks
 // how the kernel reads a value Rust wrote, by the kernel's own field names (the layout tests in src/kernel.rs)
 inline double sx_coordinate(const SmVector3d& v, int axis) { return axis == 0 ? v.x : axis == 1 ? v.y : v.z; }
