@@ -73,6 +73,7 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string?]>> = {
   'nest.end': ['quick', 'Arrange'],
   'brep.count': ['quick', 'Solid info'],
   'brep.info': ['quick', 'Solid info'],
+  'brep.free': ['quick', 'Solid free'],
   'engine.core': ['quick'],
   'engine.full': ['quick'],
   // building and joining solids

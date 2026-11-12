@@ -109,6 +109,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("brep.tessellate", "brep"),
     ("brep.save", "brep"),
     ("brep.load", "brep"),
+    ("brep.free", "brep"),
 ];
 
 /// Whether this build has the feature.
