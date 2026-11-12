@@ -67,10 +67,11 @@ describe('the mimir tab', () => {
     expect(get().plate).toBe(plate)
   })
 
-  it('shows the design the way Model does: the CAD look and the picks', () => {
+  it('shows the design the way Model does: the CAD look, in the filament colors, and the picks', () => {
     set({ modelMode: 'mimir' })
     expect(showsDesign(get())).toBe(true)
-    expect(modelLook({ workspace: 'prepare', modelMode: 'mimir', look: 'clay' })).toBe('cad')
+    expect(modelLook({ workspace: 'prepare', modelMode: 'mimir', look: 'clay' })).toBe('cadColor')
+    expect(modelLook({ workspace: 'prepare', modelMode: 'mimir', look: 'xray' })).toBe('xray')
     expect(pickKeysOn({ workspace: 'prepare', modelMode: 'mimir', objectTool: null })).toBe(true)
     expect(showsDesign({ workspace: 'prepare', modelMode: 'slice' })).toBe(false)
     expect(showsDesign({ workspace: 'printers', modelMode: 'mimir' })).toBe(false)

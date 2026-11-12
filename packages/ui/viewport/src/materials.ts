@@ -251,7 +251,7 @@ export function sharedMaterials(): NonNullable<typeof sharedMats> {
   const edgeDark = edgeBias(new LineBasicMaterial({ color: lin(SCENE.edgeDark), transparent: true, opacity: 0.22, depthWrite: false }))
   const edgeXray = edgeBias(new LineBasicMaterial({ color: lin(SCENE.edgeXray), transparent: true, opacity: 0.5, depthWrite: false, ...ADDITIVE_KEEP_ALPHA, blendSrc: SrcAlphaFactor }))
   // Model's CAD look: a mid gray (the studio's key light lifts it to a light gray) with a soft sheen so faces part by
-  // their light, and edges dark enough to draw the shape
+  // their light, and edges dark enough to draw the shape. The colored CAD look copies its finish (cadMaterial).
   const look = cadLook(SCENE.bgTop)
   const cad = new MeshPhysicalMaterial({ color: lin(look.body), roughness: 0.5, metalness: 0, clearcoat: 0.2, clearcoatRoughness: 0.35, envMapIntensity: 0.6, polygonOffset: true, sheenRoughness: 0.6 })
   const edgeCad = edgeBias(new LineBasicMaterial({ color: lin(look.edge), transparent: true, opacity: 0.9, depthWrite: false }))
@@ -292,6 +292,34 @@ function applyCadLook(bgTop: string): void {
   s.cad.color.copy(lin(look.body))
   s.edgeCad.color.copy(lin(look.edge))
   s.edgeCadWide.color.copy(lin(look.edge))
+  for (const m of tinted) followCad(m, s.cad)
+}
+
+/** The CAD bodies in a filament color: each follows the shared CAD body's finish, so a look or a baked room reaches them. */
+const tinted = new Set<MeshPhysicalMaterial>()
+
+function followCad(m: MeshPhysicalMaterial, from: MeshPhysicalMaterial): void {
+  m.roughness = from.roughness
+  m.specularIntensity = from.specularIntensity
+  m.clearcoat = from.clearcoat
+  m.clearcoatRoughness = from.clearcoatRoughness
+  m.sheen = from.sheen
+  m.sheenRoughness = from.sheenRoughness
+  m.envMapIntensity = from.envMapIntensity
+  if (m.envMap !== from.envMap) {
+    m.envMap = from.envMap
+    m.needsUpdate = true
+  }
+}
+
+/** The CAD body in a part's filament color: the CAD finish and edges, the color the Slice tab shows. */
+function cadMaterial(color: string): MeshPhysicalMaterial {
+  const s = sharedMaterials()
+  const m = s.cad.clone()
+  m.color = lin(displayHex(color))
+  followCad(m, s.cad)
+  tinted.add(m)
+  return m
 }
 
 /**
@@ -318,17 +346,21 @@ export class MaterialCache {
     if (mode === 'clay') return s.clay
     if (mode === 'overhang') return s.overhang
     if (mode === 'cad') return s.cad
-    const key = `${mode}:${look.color}:${look.finish}`
+    // the colored CAD look keeps the CAD finish, so its key is the color alone
+    const key = mode === 'cadColor' ? `cadColor:${look.color}` : `${mode}:${look.color}:${look.finish}`
     let m = this.map.get(key)
     if (!m) {
-      m = mode === 'xray' ? xrayMaterial(look.color) : mode === 'filament' ? filamentMaterial(look.color) : studioMaterial(look.color, look.finish)
+      m = mode === 'cadColor' ? cadMaterial(look.color) : mode === 'xray' ? xrayMaterial(look.color) : mode === 'filament' ? filamentMaterial(look.color) : studioMaterial(look.color, look.finish)
       this.map.set(key, m)
     }
     return m
   }
 
   dispose(): void {
-    for (const m of this.map.values()) m.dispose()
+    for (const m of this.map.values()) {
+      tinted.delete(m as MeshPhysicalMaterial)
+      m.dispose()
+    }
     this.map.clear()
   }
 }
@@ -355,11 +387,16 @@ export function setEdgeResolution(width: number, height: number): void {
   sharedMaterials().edgeCadWide.resolution.set(width, height)
 }
 
+/** Whether a render mode is a CAD look: the gray one, or the one in filament colors. Both draw the CAD edges and outline. */
+export function isCad(mode: RenderMode): boolean {
+  return mode === 'cad' || mode === 'cadColor'
+}
+
 /** Which edge material a part's feature edges take in a render mode, and whether they show with this display style. */
 export function edgeLook(mode: RenderMode, display: DisplayStyle): { edge: 'xray' | 'cad' | 'dark'; visible: boolean } {
   if (mode === 'xray') return { edge: 'xray', visible: true }
-  // Model's CAD look always draws the feature edges; wireframe is its own drawing
-  if (mode === 'cad') return { edge: 'cad', visible: display !== 'wireframe' }
+  // the CAD looks always draw the feature edges; wireframe is its own drawing
+  if (isCad(mode)) return { edge: 'cad', visible: display !== 'wireframe' }
   return { edge: 'dark', visible: display === 'edges' }
 }
 

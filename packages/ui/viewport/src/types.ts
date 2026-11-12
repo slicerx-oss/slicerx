@@ -21,8 +21,11 @@ export type Backend = 'auto' | 'webgl2' | 'webgpu'
 export type Quality = 'high' | 'balanced' | 'low'
 export type ViewportMode = 'prepare' | 'preview'
 /** Prepare look. */
-/** `cad` is Model's look: one neutral gray with dark feature edges, so faces and edges read as geometry, not filament. */
-export type RenderMode = 'studio' | 'clay' | 'xray' | 'overhang' | 'filament' | 'cad'
+/**
+ * `cad` is Model's look: one neutral gray with dark feature edges, so faces and edges read as geometry, not filament.
+ * `cadColor` is the same look with each part in its filament color.
+ */
+export type RenderMode = 'studio' | 'clay' | 'xray' | 'overhang' | 'filament' | 'cad' | 'cadColor'
 /** Preview coloring. `tool` is the filament color of each segment's tool. */
 export type ColorMode = 'feature' | 'tool' | 'speed' | 'flow' | 'layerTime' | 'width' | 'height' | 'fan' | 'temperature'
 /** `fit` frames the scene or selection from the current direction; `bed` frames the whole bed from it. */
