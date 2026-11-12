@@ -38,14 +38,14 @@ describe('design.look', () => {
     const tools = tabToolset(host, createCardPlans(createPlanRegistry()))
     const tool = (n: string) => tools.find((t) => t.name === n)!
     const run = (n: string, a: unknown) => tool(n).run(tool(n).input.parse(a) as never, { sessionId: 's1' } as never)
-    const d = ((await run('design.new', { name: 'Toy boat' })).output as { design: string }).design
+    const d = ((await run('design.new', { name: 'Pod' })).output as { design: string }).design
     const section = (x: number, half: number) => ({ frame: { origin: [x, 0, 0], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] }, loops: [{ points: [[-half, 0], [half, 0], [half, 12], [-half, 12]] }] })
-    await run('geom.loft', { design: d, profiles: [section(0, 4), section(40, 12), section(80, 6)], name: 'Hull' })
+    await run('geom.loft', { design: d, profiles: [section(0, 4), section(40, 12), section(80, 6)], name: 'Body' })
     // nothing to compare with until the model was looked at
     expect((await run('design.look', { design: d, compare: true })).ok).toBe(false)
     await run('design.look', { design: d })
     const top = (x: number, y: number) => ({ origin: [x, y, 12], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] })
-    // a 1 mm knob on the deck: under the floor
+    // a 1 mm knob on the top: under the floor
     await run('geom.extrude', { design: d, part: 0, operation: 'join', frame: top(40, 0), shape: { type: 'rectangle', widthMm: 1, heightMm: 1 }, distance_mm: 0.5 })
     const small = await run('design.look', { design: d, compare: true })
     const s1 = small.output as { visiblePct: number; floorPct: number; belowFloor: boolean }
@@ -53,7 +53,7 @@ describe('design.look', () => {
     expect(s1.belowFloor).toBe(true)
     expect(small.summary).toMatch(/^Looked at the model again: [\d.]+% of the whole-model view changed since the look before the change, under the 2% a person sees at that view$/)
     expect(small.images).toHaveLength(1)
-    // a deckhouse 30 mm long and 10 mm tall: well over it, measured against the same first look
+    // a block 30 mm long and 10 mm tall: well over it, measured against the same first look
     await run('geom.extrude', { design: d, part: 0, operation: 'join', frame: top(40, 0), shape: { type: 'rectangle', widthMm: 30, heightMm: 12 }, distance_mm: 10 })
     const big = (await run('design.look', { design: d, compare: true })).output as { visiblePct: number; belowFloor: boolean }
     expect(big.belowFloor).toBe(false)

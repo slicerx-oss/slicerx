@@ -75,14 +75,14 @@ function setup(steps: ScriptStep[], shares: number[], pass = true) {
 
 const x = (name: string) => ({ calls: [{ name: 'geom.extrude', args: { name, design: 'd1' } }] })
 // a first build that ends checked against its plan: the next run on its design is a follow-up
-const built: ScriptStep[] = [x('Hull'), { calls: [{ name: 'design.check', args: { planId: 'p1' } }] }, { text: 'Built the hull.' }]
+const built: ScriptStep[] = [x('Body'), { calls: [{ name: 'design.check', args: { planId: 'p1' } }] }, { text: 'Built the body.' }]
 
 describe('a follow-up on a built design', () => {
   it('looks first, measures the change, and sends a change under the floor back once', async () => {
-    const { log, say, sent } = setup([...built, x('Bevel'), { text: 'Beveled the deck.' }, x('Bigger bevel'), { text: 'Made the bevel larger: 6% of the view.' }], [0.4, 6])
-    await say('make a boat')
+    const { log, say, sent } = setup([...built, x('Bevel'), { text: 'Beveled the top.' }, x('Bigger bevel'), { text: 'Made the bevel larger: 6% of the view.' }], [0.4, 6])
+    await say('make a toy car')
     // a first build: no look, no measure
-    expect(log).toEqual(['extrude Hull', 'check'])
+    expect(log).toEqual(['extrude Body', 'check'])
     log.length = 0
     await say('add bevels')
     expect(log).toEqual(['look d1', 'extrude Bevel', 'compare d1 0.4', 'extrude Bigger bevel', 'compare d1 6'])
@@ -93,56 +93,56 @@ describe('a follow-up on a built design', () => {
   })
 
   it('does not look at a design whose build was never checked, nor measure a build under way', async () => {
-    const { log, say } = setup([x('Hull'), { text: 'Built the hull.' }, x('Deck'), { text: 'Added the deck.' }], [0.1])
-    await say('make a boat')
+    const { log, say } = setup([x('Body'), { text: 'Built the body.' }, x('Roof'), { text: 'Added the roof.' }], [0.1])
+    await say('make a toy car')
     log.length = 0
     await say('keep going')
-    expect(log).toEqual(['extrude Deck'])
+    expect(log).toEqual(['extrude Roof'])
   })
 
   it('follows a design whose build check failed too', async () => {
     const failed = { calls: [{ name: 'design.check', args: { planId: 'p1' } }] }
-    const { log, say } = setup([x('Hull'), failed, { text: 'Built, one check failed.' }, x('Funnel'), { text: 'Added a funnel.' }], [9], false)
-    await say('make a boat')
+    const { log, say } = setup([x('Body'), failed, { text: 'Built, one check failed.' }, x('Spoiler'), { text: 'Added a spoiler.' }], [9], false)
+    await say('make a toy car')
     log.length = 0
-    await say('add a funnel')
-    expect(log).toEqual(['look d1', 'extrude Funnel', 'compare d1 9'])
+    await say('add a spoiler')
+    expect(log).toEqual(['look d1', 'extrude Spoiler', 'compare d1 9'])
   })
 
   it('keeps the first look the only picture: the measure goes in as words, and a second look points back to the first', async () => {
     const own = { calls: [{ name: 'design.look', args: { design: 'd1' } }] }
-    const { log, say, client } = setup([...built, own, x('Funnel'), { text: 'Added a funnel.' }], [9])
-    await say('make a boat')
+    const { log, say, client } = setup([...built, own, x('Spoiler'), { text: 'Added a spoiler.' }], [9])
+    await say('make a toy car')
     log.length = 0
-    await say('add a funnel')
+    await say('add a spoiler')
     // the model's own look did not run again
-    expect(log).toEqual(['look d1', 'extrude Funnel', 'compare d1 9'])
+    expect(log).toEqual(['look d1', 'extrude Spoiler', 'compare d1 9'])
     const last = (client.requests as { messages: { role: string; images?: unknown[] }[] }[]).at(-1)!
     expect(last.messages.flatMap((m) => m.images ?? [])).toHaveLength(1)
   })
 
   it('measures only a step that changed the design: a refused change is not measured, nor counted under the floor', async () => {
     const { log, say, sent } = setup([...built, x('Refused'), x('Vents'), { text: 'Added vents.' }, x('Bigger vents'), { text: 'Made the vents larger.' }], [1, 6])
-    await say('make a boat')
+    await say('make a toy car')
     log.length = 0
-    await say('add deck details')
+    await say('add roof details')
     // one measure for the vents, under the floor, so the change goes back once to be strengthened
     expect(log).toEqual(['look d1', 'extrude Refused', 'extrude Vents', 'compare d1 1', 'extrude Bigger vents', 'compare d1 6'])
     expect(sent().flat()).toContain(STRENGTHEN_NOTE(1, 2))
   })
 
   it('answers at once when the change shows', async () => {
-    const { log, say, sent } = setup([...built, x('Funnel'), { text: 'Added a funnel, 9% of the view.' }], [9])
-    await say('make a boat')
+    const { log, say, sent } = setup([...built, x('Spoiler'), { text: 'Added a spoiler, 9% of the view.' }], [9])
+    await say('make a toy car')
     log.length = 0
-    await say('add a funnel')
-    expect(log).toEqual(['look d1', 'extrude Funnel', 'compare d1 9'])
+    await say('add a spoiler')
+    expect(log).toEqual(['look d1', 'extrude Spoiler', 'compare d1 9'])
     expect(sent().flat().some((n) => n.startsWith('Before you answer'))).toBe(false)
   })
 
   it('strengthens only once: a second small measure lets the reply say the change is subtle', async () => {
     const { log, say, sent } = setup([...built, x('Bevel'), x('Bevel again'), { text: 'Beveled; it stays subtle.' }], [0.4, 0.9])
-    await say('make a boat')
+    await say('make a toy car')
     log.length = 0
     await say('add bevels')
     expect(log).toEqual(['look d1', 'extrude Bevel', 'compare d1 0.4', 'extrude Bevel again', 'compare d1 0.9'])
