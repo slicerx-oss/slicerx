@@ -30,6 +30,10 @@ describe('the line for a follow-up on a built design', () => {
     expect(FOLLOWUP_LINE).toContain('The reply to a follow-up ends with what changed, in a few words: never a question, and no offer to slice or print')
   })
 
+  it('ends a reply to a request of several things on which were done and which were not', () => {
+    expect(FOLLOWUP_LINE).toContain('When the request asks for several things, the reply ends by saying which were done and which were not.')
+  })
+
   it('is in the cloud prompt of a turn that follows a built design, with design.plan and design.edit_step, and in no other', () => {
     for (const scope of ['full', 'cad'] as const) {
       expect(systemPrompt(scope, () => true, '', { cloud: true, followUp: true }).split(FOLLOWUP_LINE)).toHaveLength(2)
