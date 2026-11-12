@@ -6,8 +6,12 @@
 // profiles in the part's own frame, and holds the body that comes back like any other exact part. When the engine
 // makes no body the part is today's mesh loft, and the step carries the engine's sentence. An engine that lists
 // nothing, or does not know the question, gets today's request unchanged.
+//
+// A replay may ask for exact lofts alone (`exactLofts`, what the native engine's replays ask by default): the loft is
+// asked for the same way, and nothing else about the replay changes. A loft the engine cannot make exact is today's
+// mesh loft with no note on the step; its sentence comes back in `exactLoftsQuiet` for the debug console.
 import { beforeEach, describe, expect, it } from 'vitest'
-import { IDENTITY, clearReplayCache, EXACT_LOFT_NOT_PLACED, EXACT_MESH_FROM_HERE, EXACT_OPS, replayHistory, stepSalt, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
+import { IDENTITY, clearReplayCache, EXACT_LOFT_NOT_PLACED, EXACT_MESH_FROM_HERE, EXACT_OPS, replayHistory, stepSalt, type History, type HistoryMesh, type Mat4, type ReplayRequest, type Step, type StepParams } from '@slicerx/cad-history'
 
 type Vec3 = [number, number, number]
 interface Frame {
@@ -317,5 +321,115 @@ describe('a design that must stay exact', () => {
     expect(r.status[0]!.state).toBe('broken')
     expect(r.status[0]!.message).toBe('Exact replay does not support sketch.loft for this part. The mesh path was not used.')
     expect(e.of('sketch.loft')).toHaveLength(0)
+  })
+})
+
+describe('exact lofts alone, as the native engine asks by default', () => {
+  const lofts = (...steps: Step[]): ReplayRequest => ({ history: history(...steps), exactLofts: true })
+  const repair = (): Step => ({ id: 'repair-1', part: 0, transform: [...IDENTITY], params: { op: 'repair' } })
+
+  it('asks once, sends the loft as exact and holds the body, and the part has its normals', async () => {
+    const e = engine()
+    const r = await replayHistory(e.call, lofts(loft()), kept)
+    expect(r.status).toEqual([{ state: 'done' }])
+    expect(r.exactFellBack).toBeUndefined()
+    expect(r.exactLoftsQuiet).toBeUndefined()
+    expect(e.ops()).toEqual([EXACT_OPS, 'sketch.loft', 'brep.tessellate'])
+    expect(e.of('sketch.loft')[0]!.req).toMatchObject({ exact: true, withKeys: true, operation: 'new' })
+    expect(r.parts[0]!.normals).toBeInstanceOf(Int16Array)
+    expect(r.parts[0]!.faces!.keys).toEqual([stepSalt('loft-1') + 1, stepSalt('loft-1') + 2])
+  })
+
+  it("makes today's mesh loft with no note when the engine makes no body, and gives its sentence quietly", async () => {
+    const e = engine({ made: false })
+    const r = await replayHistory(e.call, lofts(loft()), kept)
+    expect(r.status).toEqual([{ state: 'done' }])
+    expect(r.exactFellBack).toBeUndefined()
+    expect(r.exactLoftsQuiet).toEqual([{ step: 'loft-1', why: WHY }])
+    expect(e.ops()).toEqual([EXACT_OPS, 'sketch.loft'])
+    expect('normals' in r.parts[0]!).toBe(false)
+    expect(r.parts).toEqual(await meshLoft(loft()))
+  })
+
+  it('lofts a stretched step on the mesh with no note, and gives the reason quietly', async () => {
+    const e = engine()
+    const step = loft('loft-1', [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1])
+    const r = await replayHistory(e.call, lofts(step), kept)
+    expect(r.status).toEqual([{ state: 'done' }])
+    expect(r.exactLoftsQuiet).toEqual([{ step: 'loft-1', why: EXACT_LOFT_NOT_PLACED }])
+    expect('exact' in e.of('sketch.loft')[0]!.req).toBe(false)
+    expect(r.parts).toEqual(await meshLoft(step))
+  })
+
+  it('runs a later step on the lofted body on the mesh, with no note and no kernel step tried', async () => {
+    const e = engine()
+    const r = await replayHistory(e.call, lofts(loft(), repair()), kept)
+    expect(r.status).toEqual([{ state: 'done' }, { state: 'done' }])
+    expect(r.exactFellBack).toBeUndefined()
+    expect(r.exactLoftsQuiet).toBeUndefined()
+    expect('normals' in r.parts[0]!).toBe(false)
+    // the body is tessellated for the mesh step, and no other kernel operation is asked for
+    expect(e.ops()).toEqual([EXACT_OPS, 'sketch.loft', 'brep.tessellate', 'repair'])
+  })
+
+  it("does not ask for a loft joined to a part, nor of an engine that lists none, and counts nothing", async () => {
+    const joined = engine()
+    const base: HistoryMesh = { name: 'Base', slot: 1, positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }
+    const r = await replayHistory(joined.call, { history: { version: 1, base: [base], steps: [loft('loft-1', [...IDENTITY], { operation: 'join' })] }, exactLofts: true }, kept)
+    expect(joined.ops()).toEqual(['sketch.loft'])
+    expect(r.exactLoftsQuiet).toBeUndefined()
+    clearReplayCache()
+    const none = engine({ ops: [] })
+    const s = await replayHistory(none.call, lofts(loft()), kept)
+    expect(none.ops()).toEqual([EXACT_OPS, 'sketch.loft'])
+    expect('exact' in none.of('sketch.loft')[0]!.req).toBe(false)
+    expect(s.exactLoftsQuiet).toBeUndefined()
+    expect(s.parts).toEqual(await meshLoft(loft()))
+  })
+
+  it('is kept apart in the cache from a replay without it, both ways', async () => {
+    const e = engine()
+    const plain = await replayHistory(e.call, { history: history(loft()) }, kept)
+    expect(e.of(EXACT_OPS)).toHaveLength(0)
+    const asked = await replayHistory(e.call, lofts(loft()), kept)
+    expect(e.of(EXACT_OPS)).toHaveLength(1)
+    expect(asked.parts[0]!.normals).toBeInstanceOf(Int16Array)
+    const again = await replayHistory(e.call, { history: history(loft()) }, kept)
+    expect('normals' in again.parts[0]!).toBe(false)
+    expect(again.parts).toEqual(plain.parts)
+  })
+
+  it('a warm replay asks the engine nothing new and counts nothing again', async () => {
+    const e = engine({ made: false })
+    const cold = await replayHistory(e.call, lofts(loft()), kept)
+    const warm = await replayHistory(e.call, lofts(loft()), kept)
+    expect(cold.exactLoftsQuiet).toEqual([{ step: 'loft-1', why: WHY }])
+    expect(warm.exactLoftsQuiet).toBeUndefined()
+    expect(warm.status).toEqual(cold.status)
+    expect(warm.parts).toEqual(cold.parts)
+    expect(e.of('sketch.loft')).toHaveLength(1)
+  })
+
+  it('with exact solids asked for too, the step keeps its note as before', async () => {
+    const e = engine({ made: false })
+    const r = await replayHistory(e.call, { history: history(loft()), exact: true, exactLofts: true }, kept)
+    expect(r.status).toEqual([{ state: 'done', note: WHY }])
+    expect(r.exactFellBack).toEqual(['loft-1'])
+    expect(r.exactLoftsQuiet).toBeUndefined()
+  })
+
+  it('asks an engine that keeps no bodies for the solid as text', async () => {
+    const e = engine()
+    const r = await replayHistory(e.call, lofts(loft()))
+    expect(r.status).toEqual([{ state: 'done' }])
+    expect(e.of('sketch.loft')[0]!.req).toMatchObject({ exact: true, save: true })
+    expect(e.of('brep.tessellate')[0]!.req['body']).toEqual({ smb: 'loft-solid-0' })
+    expect(r.parts[0]!.normals).toBeDefined()
+  })
+
+  it('leaves a design that must stay exact as it was', async () => {
+    const e = engine({ made: false })
+    const r = await replayHistory(e.call, { history: { ...history(loft()), exact: true }, exactLofts: true }, kept)
+    expect(r.status).toEqual([{ state: 'broken', message: `Exact operation failed: ${WHY}` }])
   })
 })

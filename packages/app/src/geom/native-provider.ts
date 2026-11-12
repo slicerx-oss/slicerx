@@ -234,7 +234,8 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
     let step: ReplayStep | undefined
     replays++
     clearIdle()
-    const run = replayHistory((o, r) => engineCall(o, r, undefined, step, owner), request as ReplayRequest, {
+    // a new lofted body is asked exact here without the developer flag; the worker's replays never ask
+    const run = replayHistory((o, r) => engineCall(o, r, undefined, step, owner), { ...(request as ReplayRequest), exactLofts: true }, {
       keepsBodies: true,
       yieldStep: async (s) => {
         // between steps other calls get the engine, as in the worker (worker-loop.ts)

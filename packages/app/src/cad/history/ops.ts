@@ -16,7 +16,7 @@ import { currentValues } from '../value-table'
 import { bindFor } from '../values'
 import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, recordedOnSketch, replayHistory, unstopped, withFound, withPlaced, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type SketchItem, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
-import { exactSolids, noteFallBack } from './exact-flag'
+import { exactSolids, noteFallBack, noteQuietLofts } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
 import { opensDesign } from '../../workspaces/design/shelf-tools'
 import { historyPart } from '@slicerx/cad-history/mesh-part'
@@ -47,6 +47,7 @@ export async function runReplay(req: ReplayRequest, signal?: AbortSignal): Promi
     if (broken || r.exactFellBack?.length) throw new Error(`Exact replay stopped: ${unstopped(broken?.message ?? 'a step requires the mesh path')}. The design is unchanged.`)
   }
   if (r.exactFellBack?.length) noteFallBack(r.exactFellBack.length)
+  if (r.exactLoftsQuiet?.length) noteQuietLofts(r.exactLoftsQuiet)
   return r
 }
 
