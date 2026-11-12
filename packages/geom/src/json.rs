@@ -542,7 +542,9 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             Ok(json!({}))
         }
         #[cfg(feature = "brep")]
-        o if o.starts_with("brep.") && ALL_OPERATIONS.iter().any(|(n, _)| *n == o) => brep_op(&o[5..], req),
+        o if o.starts_with("brep.") && ALL_OPERATIONS.iter().any(|(n, _)| *n == o) => {
+            brep_op(&o[5..], req, enc)
+        }
         _ => crate::json_cad::call(op, req, enc, files).unwrap_or_else(|| Err(unknown(op))),
     }
 }
@@ -559,8 +561,9 @@ pub fn allow_brep_text(on: bool) {
 /// An exact solid op of sx-brep. A body lasts only as long as the process that made it. Bodies sent back as
 /// `{"smb": text}` are a cache the app keeps for itself, not an input: the kernel's reader trusts its text, so a
 /// request may carry one only with `SX_BREP_DEV=1` (developers, and tests that run one process per call).
+/// A body the engine holds itself (`exact.rs`) is answered there.
 #[cfg(feature = "brep")]
-fn brep_op(op: &str, req: &Value) -> Result<Value> {
+fn brep_op(op: &str, req: &Value, enc: MeshOut) -> Result<Value> {
     let carries_text = req
         .as_object()
         .is_some_and(|o| o.values().any(|v| v.get("smb").is_some()));
@@ -571,6 +574,9 @@ fn brep_op(op: &str, req: &Value) -> Result<Value> {
             "body",
             "takes a body number; a body as text needs SX_BREP_DEV=1",
         ));
+    }
+    if let Some(answer) = crate::exact::answer(op, req, matches!(enc, MeshOut::Raw)) {
+        return answer;
     }
     let reply = sx_brep::call(op, &req.to_string()).map_err(|e| Error::geometry("brep", e))?;
     serde_json::from_str(&reply).map_err(|e| Error::Json(e.to_string()))
@@ -923,7 +929,7 @@ thread_local! {
 }
 
 /// adds an output buffer to the current call and returns its number
-#[cfg(feature = "formats")]
+#[cfg(any(feature = "formats", feature = "brep"))]
 pub(crate) fn push_out_file(file: OutFile) -> usize {
     OUT_FILES.with(|f| {
         let mut f = f.borrow_mut();
