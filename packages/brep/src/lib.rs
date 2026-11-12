@@ -39,11 +39,42 @@
 //! later ops and saves where identity is unambiguous. Missing or split push references require repair;
 //! unions clear keys on coplanar operand faces that may merge. A face's `surface` is sx-geom's: a plane facing out of
 //! the solid, a cylinder, cone or sphere, or `other`.
+//!
+//! With the `typed` feature the kernel is also there as Rust values, beside the JSON call: a [`Body`] owns its solid
+//! and frees it when dropped, a [`Face`] or an [`Edge`] borrows its body, and [`Body::tessellate`] gives a [`Mesh`]
+//! with everything the kernel knows about its triangles. The calls go through a `cxx` bridge to the kernel's own
+//! API. All of that feature's `unsafe` code is in one file, `src/kernel.rs`; the rest of it is safe Rust. Without
+//! the kernel the types are still there and every way to make a body answers [`Error::NoKernel`].
 
 #[cfg(sx_brep_kernel)]
 use std::ffi::c_char;
 use std::ffi::{CStr, CString};
 use std::sync::Mutex;
+
+#[cfg(all(test, feature = "typed", sx_brep_kernel))]
+mod against_json;
+#[cfg(feature = "typed")]
+mod body;
+#[cfg(feature = "typed")]
+mod error;
+#[cfg(all(feature = "typed", sx_brep_kernel))]
+mod kernel;
+#[cfg(all(feature = "typed", not(sx_brep_kernel)))]
+#[path = "stand_in.rs"]
+mod kernel;
+#[cfg(all(test, feature = "typed"))]
+mod saved;
+#[cfg(feature = "typed")]
+mod tess;
+#[cfg(feature = "typed")]
+mod values;
+
+#[cfg(feature = "typed")]
+pub use body::{Body, Curve, Edge, Face, Frame, Surface};
+#[cfg(feature = "typed")]
+pub use error::{Error, FailedFace, Stage};
+#[cfg(feature = "typed")]
+pub use tess::{Mesh, MeshEdge, Tessellation};
 
 /// Whether this build has the kernel (its source was there when it was built).
 pub const KERNEL: bool = cfg!(sx_brep_kernel);
@@ -56,6 +87,13 @@ unsafe extern "C" {
 
 // the kernel's bodies and context are one shared table
 static LOCK: Mutex<()> = Mutex::new(());
+
+/// Takes the kernel for one caller, the same lock `call` takes: the typed calls and the JSON ones never run in the
+/// kernel at once.
+#[cfg(all(feature = "typed", sx_brep_kernel))]
+pub(crate) fn hold() -> std::sync::MutexGuard<'static, ()> {
+    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// Runs one operation. `Ok` holds the JSON reply; `Err` the message of a failed one.
 pub fn call(op: &str, request: &str) -> Result<String, String> {
@@ -127,4 +165,50 @@ pub fn routine_probe() -> Result<String, String> {
 fn raw_call(_op: &CStr, _request: &CStr) -> Result<String, String> {
     let _guard = LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     Err("this build has no B-rep kernel (packages/brep/scripts/fetch-smlib.sh, then build again)".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    // one thread holds the kernel; a second that calls in, by JSON and by a typed call, gets nowhere until the first
+    // lets go
+    #[test]
+    fn two_threads_cannot_be_in_the_kernel_at_once() {
+        static THROUGH: AtomicBool = AtomicBool::new(false);
+        let (held, is_held) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        let holder = std::thread::spawn(move || {
+            let _kernel = LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            held.send(()).expect("the test is waiting");
+            released.recv().expect("the test lets go");
+        });
+        is_held.recv().expect("the holder took the kernel");
+        let (done, is_done) = mpsc::channel();
+        let caller = std::thread::spawn(move || {
+            let counted = call("count", "{}");
+            #[cfg(feature = "typed")]
+            let made = Body::cuboid([0.0; 3], [1.0; 3]).map(|_| ());
+            THROUGH.store(true, Ordering::SeqCst);
+            #[cfg(feature = "typed")]
+            assert_eq!(made.is_ok(), KERNEL, "{made:?}");
+            assert_eq!(counted.is_ok(), KERNEL, "{counted:?}");
+            done.send(()).expect("the test is waiting");
+        });
+        assert_eq!(
+            is_done.recv_timeout(Duration::from_millis(500)),
+            Err(mpsc::RecvTimeoutError::Timeout),
+            "a call went into the kernel while another thread held it"
+        );
+        assert!(!THROUGH.load(Ordering::SeqCst));
+        release.send(()).expect("the holder is waiting");
+        is_done
+            .recv_timeout(Duration::from_secs(60))
+            .expect("the call goes through once the kernel is free");
+        holder.join().expect("holder");
+        caller.join().expect("caller");
+    }
 }
