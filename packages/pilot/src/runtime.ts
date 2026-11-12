@@ -902,12 +902,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   }
 
   /** The base prompt plus a playbook line for every catalog skill whose tools the model is offered. */
-  function systemPrompt(): string {
+  function systemPrompt(followUp = false): string {
     const has = (n: string): boolean => findTool(n) !== undefined
     const book = playbooks(availableSkills(kb.skills(), has))
     // the playbooks go in with the rules, so the edition's voice still comes last
     const tabs = local ? tabsLine(opts.tabs ?? []) : ''
-    return basePrompt(scope, has, [tabs, book].filter(Boolean).join('\n\n'), { cloud: !local })
+    return basePrompt(scope, has, [tabs, book].filter(Boolean).join('\n\n'), { cloud: !local, followUp })
   }
 
   // A local model gets only its surface's tools; a cloud model gets them all.
@@ -1923,6 +1923,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           messages.push(...standing(messages))
           history.set(sessionId, messages)
         }
+        // a turn on a design already built gets the follow-up line, and a first build does not: the system prompt is
+        // written again when that changes
+        const sys = systemPrompt(designedNow(sessionId))
+        if (messages[0]?.role === 'system' && messages[0].content !== sys) messages[0] = { role: 'system', content: sys }
         const today = new Date(now()).toISOString().slice(0, 10)
         // the person's files ride on the message; one that can't go is said plainly, before any model call
         const files = runOpts.attachments?.length ? modelFiles(runOpts.attachments, client.provider, conversationFileBytes(messages)) : null

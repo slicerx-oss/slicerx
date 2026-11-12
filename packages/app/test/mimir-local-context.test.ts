@@ -215,7 +215,9 @@ describe('the mimir tab on a local model', () => {
     expect(sent.messages[0]!.content).not.toContain(FAMILY_LINE)
     expect(cloud.messages[0]!.content).toContain(DETAIL_LINE)
     expect(sent.messages[0]!.content).not.toContain(DETAIL_LINE)
-    expect(cloud.messages[0]!.content).toContain(FOLLOWUP_LINE)
+    // the follow-up line is on a turn that follows a built design (one on the plate), never on a first build's prompt
+    if (design) expect(cloud.messages[0]!.content).toContain(FOLLOWUP_LINE)
+    else expect(cloud.messages[0]!.content).not.toContain(FOLLOWUP_LINE)
     expect(sent.messages[0]!.content).not.toContain(FOLLOWUP_LINE)
     // a thing made of colored parts is built assembled: the cloud prompt says so, the local one has no room for it
     expect(cloud.messages[0]!.content).toContain('- A thing made of parts in different colors')
@@ -223,7 +225,7 @@ describe('the mimir tab on a local model', () => {
     expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(/\n- A thing made of parts in different colors[^\n]*/, ''))
     // each prompt is pinned to its own text, so a wording change that moves the local prompt, and its budget, is made on purpose
     expect(sent.messages[0]!.content, 'the local prompt (packages/pilot/test/fixtures/mimir-prompt-local.txt)').toBe(LOCAL_PROMPT)
-    expect(cloud.messages[0]!.content, 'the cloud prompt (packages/pilot/test/fixtures/mimir-prompt-cloud.txt)').toBe(CLOUD_PROMPT)
+    expect(cloud.messages[0]!.content.replace(`\n${FOLLOWUP_LINE}`, ''), 'the cloud prompt (packages/pilot/test/fixtures/mimir-prompt-cloud.txt), less the follow-up line of a turn on a built design').toBe(CLOUD_PROMPT)
   })
 
   it('sends the design tools only on modeling turns and the app tools only on app turns', async () => {
