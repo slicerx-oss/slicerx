@@ -124,6 +124,7 @@ jobs:
       shards: ${{ steps.f.outputs.shards }}
       smoke: ${{ steps.f.outputs.smoke }}
       brep: ${{ steps.f.outputs.brep }}
+      desktop_geom: ${{ steps.f.outputs.desktop_geom }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -185,6 +186,11 @@ jobs:
           esac
           if [ "$brep" = false ]; then echo "::notice title=B-rep skipped::nothing the B-rep kernel build reads changed"; fi
           echo "brep=$brep" >> "$GITHUB_OUTPUT"
+          # The desktop shell with the native Model engine (desktop-geom, advisory): as the kernel build, and also when the
+          # shell or the page's geometry client changes.
+          desktop_geom=$brep
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && printf '%s\n' "$changed" | grep -qE '^(apps/desktop/src-tauri/|apps/desktop/src/host/geom-native\.ts$|packages/app/src/geom/)'; then desktop_geom=true; fi
+          echo "desktop_geom=$desktop_geom" >> "$GITHUB_OUTPUT"
       # A push to main whose commit already passed the merge queue: the queue merges by rebase, so the pushed commit is
       # the exact tree a merge_group run of this workflow tested and passed. That push skips brep and the Linux jobs the
       # queue ran on it (web, wasm, licenses, rust on ubuntu-latest) and runs what only a push runs: rust on macOS and
@@ -969,6 +975,73 @@ jobs:
         run: |
           msg="The B-rep build or tests failed on $RUNNER_OS. On a pull request this fails the required check brep (ubuntu-latest)."
           echo "::warning title=B-rep failed on $RUNNER_OS::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+
+  # The desktop shell with the native Model engine (the native-geom feature: sx-geom with the exact kernel, run in a
+  # process of the app's own binary, src-tauri/src/geom_host.rs), and the page's native provider against that process
+  # (packages/app/test/native-provider.test.ts). Advisory, and never in the merge queue: the app ships with the page's
+  # geometry worker, so a failure here only adds a warning.
+  desktop-geom:
+    needs: detect
+    if: needs.detect.outputs.desktop_geom == 'true' && needs.detect.outputs.queued != 'true' && github.event_name != 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      SX_BREP_REQUIRE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # the libraries as .deb files per runner image, as desktop-bridge has them
+      - id: apt-image
+        run: echo "image=${ImageOS:-none}-${ImageVersion:-none}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/sx-apt/desktop
+          key: apt-desktop-${{ steps.apt-image.outputs.image }}-${{ hashFiles('scripts/ci/apt-desktop-libs.sh') }}
+          restore-keys: apt-desktop-
+      - name: Linux system libraries
+        timeout-minutes: 10
+        run: bash scripts/ci/apt-desktop-libs.sh
+      - run: rustup toolchain install
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/slicerx/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-geom
+      - name: Locate the required kernel
+        run: |
+          kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
+          echo "SX_SMLIB_DIR=$kernel" >> "$GITHUB_ENV"
+      # The shell embeds the frontend when it compiles; a placeholder page is enough to compile and test it.
+      - name: Placeholder frontend
+        run: mkdir -p apps/desktop/dist && echo '<!doctype html><title>ci</title>' > apps/desktop/dist/index.html
+      - run: cargo clippy -p slicerx-desktop --features native-geom --all-targets -- -D warnings
+      - run: cargo test -p slicerx-desktop --features native-geom --bin slicerx geom_host
+      - run: cargo test -p sx-geom --features brep --test serve --test brep_free
+      - run: cargo build -p slicerx-desktop --features native-geom
+      - run: pnpm install --frozen-lockfile
+      # The app's own binary in its engine mode, as the shell starts it. SX_GEOM_REPLAY: the WebAssembly engine is not
+      # built here, so the comparisons with it skip.
+      - name: Native provider against the engine process
+        env:
+          SLICERX_GEOM_SERVE_BIN: ${{ github.workspace }}/target/debug/slicerx
+          SLICERX_GEOM_SERVE_ARGS: '["--sx-geom-engine"]'
+          SX_NATIVE_KERNEL: '1'
+          SX_GEOM_REPLAY: '1'
+        run: pnpm --filter @slicerx/app exec vitest run test/native-provider.test.ts
+      - if: failure()
+        run: |
+          msg="The desktop build with the native Model engine or its tests failed. This job is advisory and does not block merging."
+          echo "::warning title=Native Model engine failed (advisory)::$msg"
           echo "$msg" >> "$GITHUB_STEP_SUMMARY"
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
