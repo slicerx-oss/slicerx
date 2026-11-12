@@ -20,6 +20,7 @@ interface Row {
   name: string
   op: string
   state: string
+  note?: string
   value?: { label: string; value: number; unit: string }
 }
 
@@ -120,10 +121,12 @@ describe('repeating steps as one step', () => {
     const flipped = await h.call('slicerx_geom_mirror', { design: d, steps: [2], copy: false, plane: { axis: 'y', at: 0 } })
     expect(flipped.isError).toBe(true)
     expect(text(flipped)).toMatch(/keeps them and adds their mirror image/)
-    // A row that runs off the hull breaks on the copy that misses, and the design is unchanged.
+    // A row that runs off the hull keeps the copies that land and names the one that misses, in the reply and the step.
     const off = await h.call('slicerx_geom_array', { design: d, steps: [2], spec: { kind: 'linear', count: 4, step: [20, 0, 0] } })
-    expect(off.isError).toBe(true)
-    expect(text(off)).toMatch(/Copy 4/)
-    expect((await steps(d)).map((r) => r.op)).toEqual(['shape.extrude', 'shape.extrude'])
+    expect(off.isError, text(off)).toBeFalsy()
+    expect(text(off)).toMatch(/Copy 4 did not reach the part and was left out/)
+    const rows = await steps(d)
+    expect(rows.map((r) => r.op)).toEqual(['shape.extrude', 'shape.extrude', 'pattern'])
+    expect(rows[2]).toMatchObject({ state: 'done', note: 'Copy 4 did not reach the part and was left out.' })
   }, 60_000)
 })
