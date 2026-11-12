@@ -12,7 +12,7 @@ import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 import { repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { EXACT_FELL_BACK, exactStep, meshed, type Solids } from './exact'
+import { EXACT_FELL_BACK, ExactBroken, exactStep, meshed, solidTooBig, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -334,6 +334,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     return [...p.order.map((k) => parts[k]!), ...parts.slice(p.order.length)]
   }
   if (exact && (parts.some((x) => x.smb || x.body !== undefined || x.primitive) || p.op === 'shape.extrude')) {
+    let big: string | undefined
     const done = await exactStep(
       call,
       s,
@@ -350,10 +351,16 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         if (p.op === 'face.push' && key && key !== p.faceKey) found.keys[s.id] = { faceKey: key }
         if (!reached) gone.add(s.id)
       },
+      (chars) => {
+        // a solid too big to keep: never silent, and a design that must stay exact stops here
+        if (strict) throw new ExactBroken(solidTooBig(chars, true))
+        big = solidTooBig(chars, false)
+      },
     )
     if (done) {
       const kept = new Set(done)
       if (parts.some((x) => x.paint && !kept.has(x))) found.notes[s.id] = PAINT_DROPPED
+      if (big) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${big}` : big
       return done
     }
   }

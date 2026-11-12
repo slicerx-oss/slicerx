@@ -38,8 +38,28 @@ export interface Solids {
   made: (body: number) => void
 }
 
-/** The largest solid text kept with a part; a bigger one is dropped and the part goes on on the mesh. */
+/** The largest solid text kept with a part; a bigger one is dropped and the part goes on on the mesh, and the step says so. */
 export const MAX_SOLID_TEXT = 8 * 1024 * 1024
+
+/** `chars` and the limit in millions, to one place, or to as many more as it takes for the two to read apart. */
+function inMillions(chars: number): [string, string] {
+  const m = (n: number, places: number) => (n / 1e6).toFixed(places).replace(/\.?0+$/, '')
+  let places = 1
+  while (places < 6 && m(chars, places) === m(MAX_SOLID_TEXT, places)) places++
+  return [m(chars, places), m(MAX_SOLID_TEXT, places)]
+}
+
+/**
+ * What a step says when the part's exact solid grew past MAX_SOLID_TEXT: from this step on the part is built as a mesh,
+ * or, in a design that must stay exact (`strict`), the step cannot stay exact.
+ */
+export function solidTooBig(chars: number, strict: boolean): string {
+  const [now, limit] = inMillions(chars)
+  const size = `size ${now} million, limit ${limit} million`
+  return strict
+    ? `this step would make the part too detailed to stay an exact solid (${size}).`
+    : `This part is now too detailed to stay an exact solid, so from this step on it is built as a mesh. (Size ${now} million, limit ${limit} million.)`
+}
 
 /** The note on a step the kernel could not do, which then ran on the mesh. */
 export const EXACT_FELL_BACK = 'The exact solid could not do this step, so it ran on the mesh.'
@@ -55,7 +75,8 @@ interface Tessellated {
 }
 
 /** A part from a solid: its tessellation with faces and keys, and the solid's text unless it is too big to keep. */
-export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot'>, smb: string): Promise<ExactPart> {
+export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot'>, smb: string, tooBig?: (chars: number) => void): Promise<ExactPart> {
+  if (smb.length > MAX_SOLID_TEXT) tooBig?.(smb.length)
   const t = (await call('brep.tessellate', { body: { smb } })) as Tessellated
   return { name: like.name, slot: like.slot, ...tessellated(t), ...(smb.length <= MAX_SOLID_TEXT ? { smb } : {}) }
 }
@@ -322,7 +343,7 @@ export function fits(spec: PrimitiveSpec, positions: ArrayLike<number>, indices:
  * The parts after step `s` on exact solids, or null when the mesh path should run it. Kernel failures come back as
  * null too, with `fellBack` told; an answer that is the step's real result (a plane that misses) throws ExactBroken.
  */
-export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}): Promise<ExactPart[] | null> {
+export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}, tooBig?: (chars: number) => void): Promise<ExactPart[] | null> {
   const p = s.params
   let parts = given
   const frame = rigidFrame(s.transform)
@@ -338,7 +359,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
   }
   const part = async (like: Pick<ExactPart, 'name' | 'slot'>, r: unknown, k = 'body'): Promise<ExactPart> => {
     const v = reply(r, k)
-    if (typeof v === 'string') return fromSolid(call, like, v)
+    if (typeof v === 'string') return fromSolid(call, like, v, tooBig)
     const keys = (r as Record<string, unknown>)[`${k}Keys`]
     return { name: like.name, slot: like.slot, positions: [], indices: [], body: v, unmeshed: Array.isArray(keys) ? (keys as number[]) : [] }
   }
@@ -427,7 +448,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         }
         // as the mesh boolean does: an intersection keeps what every part shares
         const acc = await fold(p.kind, solid(target), others.map(solid))
-        out[s.part] = typeof acc === 'number' ? await part(target!, r) : await fromSolid(call, target!, (acc as { smb: string }).smb)
+        out[s.part] = typeof acc === 'number' ? await part(target!, r) : await fromSolid(call, target!, (acc as { smb: string }).smb, tooBig)
         return out.filter((_, i) => !p.with.includes(i))
       }
       case 'edge.fillet':
