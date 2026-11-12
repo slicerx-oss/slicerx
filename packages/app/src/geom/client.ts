@@ -10,6 +10,8 @@ import { workerAnswered, workerEnded, workerStarted } from './worker-memory'
 
 export interface GeomProvider {
   call<T = unknown>(op: string, request: unknown, signal?: AbortSignal): Promise<T>
+  /** It runs the worker's jobs (history.replay) and takes meshes as typed arrays, as the worker does (native-provider.ts). */
+  runsJobs?: boolean
 }
 
 let provider: GeomProvider | null = null
@@ -498,9 +500,12 @@ export function geom(): GeomProvider {
   }
 }
 
-/** Whether calls go to the app's own worker, which also runs jobs written in TypeScript (history.replay). */
+/**
+ * Whether calls go to the app's own worker, which also runs jobs written in TypeScript (history.replay), or to a
+ * provider that runs them as it does. Calls in a worker of their own (soloCall, the fit check) still go to one.
+ */
 export function usesWorker(): boolean {
-  return provider === null || provider === own
+  return provider === null || provider === own || provider.runsJobs === true
 }
 
 /** The engine's mesh shape: flat arrays, and the faces when the engine sent them. */
