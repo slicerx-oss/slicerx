@@ -13,12 +13,11 @@
 
 use super::{Curve, Density, Match, Options, Piece, Profile, Rails};
 use crate::error::{Error, Result};
+use crate::exact as table;
 use crate::faces;
 use crate::mesh::TriMesh;
 use crate::vec3::{self, V3};
 use sx_brep::{Body, Path, Sheet};
-
-pub mod table;
 
 /// What a face of an exact loft is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

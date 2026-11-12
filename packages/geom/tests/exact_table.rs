@@ -747,7 +747,7 @@ fn a_freed_body_is_gone_and_the_count_comes_back() {
 }
 
 #[test]
-fn the_old_ops_do_not_take_a_held_body_yet() {
+fn the_old_ops_but_save_refuse_a_held_body_and_save_leaves_it_held() {
     if !sx_brep::KERNEL {
         return;
     }
@@ -765,7 +765,15 @@ fn the_old_ops_do_not_take_a_held_body_yet() {
         refused("brep.cut", &json!({ "body": kept.0, "plane": plane })),
         not_yet("body")
     );
-    assert_eq!(refused("brep.save", &json!({ "body": kept.0 })), not_yet("body"));
+    // save answers the text the old load reads; the body it describes is the held one, which stays held
+    let saved = run("brep.save", &json!({ "body": kept.0 }));
+    assert!(saved["smb"].as_str().is_some_and(|smb| !smb.is_empty()));
+    sx_geom::json::allow_brep_text(true);
+    let loaded = Old(run("brep.load", &json!({ "body": saved }))["body"].clone());
+    sx_geom::json::allow_brep_text(false);
+    same_info("a saved box", kept.0, &loaded.0);
+    drop(loaded);
+    assert!(exact::with(kept.0, |_| ()).is_some());
     assert_eq!(
         refused("brep.extrude", &json!({ "target": kept.0, "operation": "join" })),
         not_yet("target")
@@ -782,6 +790,7 @@ fn the_old_ops_do_not_take_a_held_body_yet() {
         refused("brep.cut", &json!({ "body": freed, "plane": plane })),
         gone("body")
     );
+    assert_eq!(refused("brep.save", &json!({ "body": freed })), gone("body"));
     // the old table says the same of a number of its own that it does not have
     let old_freed = {
         let body = run("brep.box", &json!({ "min": [0, 0, 0], "max": [1, 1, 1] }))["body"].clone();
