@@ -323,6 +323,21 @@ describe('paint on an exact part, kept by face', () => {
     expect(r.parts[0]!.paint).toEqual({ color: { 0: '2' } })
   })
 
+  it('paints both faces a join gives one key for now, until a joined result keys each face once', async () => {
+    // two boxes made for the same join have the same keys; the union keeps one face of each with the same key
+    const e = engine()
+    const call = async (op: string, req: unknown) => (op === 'paint.select' ? { changed: { '1': '2' } } : e.call(op, req))
+    const boxes = add('boxes', boxPart('Left', [10, 10, 10], [0, 0, 0]), boxPart('Right', [10, 10, 10], [20, 0, 0]))
+    const r = await replayHistory(call, { history: history(boxes, step('join', 0, { op: 'boolean', kind: 'union', with: [1] }), paint('paint'), step('portholes', 0, { op: 'subtract', solids: portholes.slice(0, 1), label: 'Portholes' })), exact: true }, kept)
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+    exactPart(r.parts[0])
+    const keys = r.parts[0]!.faces!.keys!
+    expect(keys[1]).not.toBe(0)
+    expect(keys.filter((k) => k === keys[1])).toHaveLength(2)
+    // the paint was put on one of them; after the cut, both faces with that key are painted
+    expect(r.parts[0]!.paint).toEqual({ color: { 1: '2', 3: '2' } })
+  })
+
   it('takes paint in a design that must stay exact', async () => {
     const e = engine()
     const r = await replayHistory(e.call, { history: { ...history(hullLoft(), paint('paint'), step('portholes', 0, { op: 'subtract', solids: portholes.slice(0, 1), label: 'Portholes' })), exact: true } }, kept)
@@ -348,6 +363,14 @@ describe('paint on an exact part, kept by face', () => {
       expect(r.status).toEqual([{ state: 'done' }, { state: 'done' }, { state: 'done', note: PAINT_DROPPED }])
       expect(e.of('brep.subtract')).toHaveLength(1)
       exactPart(r.parts[0])
+      expect(r.parts[0]!.paint).toBeUndefined()
+    })
+
+    it('is cleared with the paint note by a mesh step too, never silently', async () => {
+      const e = engine()
+      const r = await replayHistory(split(e), { history: history(hullLoft(), paint('paint'), step('fix', 0, { op: 'repair' })), exact: true }, kept)
+      expect(r.status[2]).toMatchObject({ state: 'done' })
+      expect((r.status[2] as { note?: string }).note).toContain(PAINT_DROPPED)
       expect(r.parts[0]!.paint).toBeUndefined()
     })
 
