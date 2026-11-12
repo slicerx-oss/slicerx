@@ -4,6 +4,7 @@
 export * from './host'
 export * from './features'
 export * from './slice'
+export * from './normals'
 export * from './preview'
 export * from './settings'
 export * from './pilot'
