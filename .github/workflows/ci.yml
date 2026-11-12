@@ -475,7 +475,7 @@ jobs:
         # minutes there beside another group's (determinism 102 s, gap_fill_monotonic_line 92 s, arrange_layer_one 86 s,
         # session_cache 65 s, cancel_rerun 62 s, shard_bytes 61 s, ...): a whole hold took 13 to 19 minutes alone and 20
         # to 24 beside another group's. So it is core-a and core-b there too. Hosted it is core-a, core-b and desktop.
-        part: ${{ ((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && fromJSON('["firmware","requests","core-a","core-b","crates"]') || fromJSON('["firmware","requests","core-a","core-b","crates","desktop"]') }}
+        part: ${{ ((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && fromJSON('["firmware","requests","core-a","core-b","crates-a","crates-b","crates-c1","crates-c2"]') || fromJSON('["firmware","requests","core-a","core-b","crates-a","crates-b","crates-c1","crates-c2","desktop"]') }}
     # In the merge queue the core halves (and crates, unless RUST_CRATES_ON_PC is false) run on the self-hosted Linux
     # runners (sx-pc), whose build directory stays warm between runs, and they leave the hosted job limit to the e2e
     # shards. A pull request always runs them hosted. Setting the repository variable RUST_TESTS_ON_PC to false sends
@@ -487,7 +487,7 @@ jobs:
     # ($HOME/target/<runner name>) for whichever half it gets: both halves build the same sx-core library and
     # dependencies with the same flags, so a directory per half would double the disk (about 57 GB each) and warm
     # nothing more. A run by hand follows RUST_CRATES_ON_PC too, so it tries exactly what the merge queue runs.
-    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (startsWith(matrix.part, 'core-') || (matrix.part == 'crates' && vars.RUST_CRATES_ON_PC != 'false'))) && ((startsWith(matrix.part, 'core-') && vars.RUST_CRATES_ON_PC == 'false') && fromJSON('["self-hosted","sx-pc"]') || (startsWith(matrix.part, 'core-') && fromJSON('["self-hosted","sx-pc-core"]')) || fromJSON('["self-hosted","sx-pc-crates"]')) || 'ubuntu-latest' }}
+    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (startsWith(matrix.part, 'core-') || (startsWith(matrix.part, 'crates-') && vars.RUST_CRATES_ON_PC != 'false'))) && ((startsWith(matrix.part, 'core-') && vars.RUST_CRATES_ON_PC == 'false') && fromJSON('["self-hosted","sx-pc"]') || (startsWith(matrix.part, 'core-') && fromJSON('["self-hosted","sx-pc-core"]')) || fromJSON('["self-hosted","sx-pc-crates"]')) || 'ubuntu-latest' }}
     # Hosted, a half of core or the desktop shell part takes about 20 minutes, 40 covers a slow runner. On a self-hosted
     # runner a core half may wait up to 20 minutes for the lock (SX_HEAVY_WAIT) and then hold it up to 40 (the engine
     # limit below), so the core halves get 60.
@@ -578,23 +578,39 @@ jobs:
         run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
+      # The test files of every crate but sx-core and the desktop shell, and the tests that run the built binaries, are
+      # three parts that run side by side. As one part they took about 21 minutes hosted (6 to compile, 10 for 111 test
+      # binaries one after another, 3.5 for the exact kernel, then the MCP and app tests), the longest job of a run.
+      # crates-a is sx-cli's test files (request alone is about 144 s, the slicing runs most of the rest: about half the
+      # test time), crates-b every other crate's. crates-c1 and crates-c2 each build the binaries and the exact kernel and
+      # run half of the MCP test files (vitest --shard; the 254 files took about 460 s as one run), and crates-c2 then
+      # runs the app, pair and cloud tests on them.
+      - if: matrix.part == 'crates-a'
+        run: |
+          eval "$SX_GROUP_CHECK"
+          ${HEAVY:-} cargo test -p sx-cli --test '*'
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
-      - if: matrix.part == 'crates'
+      - if: matrix.part == 'crates-b'
         run: |
           eval "$SX_GROUP_CHECK"
           ${HEAVY:-} cargo build -p sx-cloud
-          ${HEAVY:-} cargo test --workspace --exclude slicerx-desktop --exclude sx-core --test '*'
-      # The tests above leave sx, sx-geom, sx-link, sx-relay and sx-cloud in target/debug for the app, MCP, pair and
+          ${HEAVY:-} cargo test --workspace --exclude slicerx-desktop --exclude sx-core --exclude sx-cli --test '*'
+      # The binaries the app, MCP, pair and cloud tests below run, in target/debug.
+      - if: startsWith(matrix.part, 'crates-c')
+        run: |
+          eval "$SX_GROUP_CHECK"
+          ${HEAVY:-} cargo build -p sx-cli -p sx-geom -p sx-link -p sx-relay -p sx-cloud --bins
+      # The build above leaves sx, sx-geom, sx-link, sx-relay and sx-cloud in target/debug for the app, MCP, pair and
       # cloud tests below. The native exact tests also need sx-geom with the exact kernel, built here from the SMLib
       # source the brep jobs fetch and cache. That build has a target of its own, so the workspace builds above keep
       # the kernel's stand-in and are not rebuilt. (A cargo build -p of the binaries here would relink sx-geom with
       # other features, about 12 s for nothing.)
-      - if: matrix.part == 'crates'
+      - if: startsWith(matrix.part, 'crates-c')
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/smlib
           key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
-      - if: matrix.part == 'crates'
+      - if: startsWith(matrix.part, 'crates-c')
         name: sx-geom with the exact kernel
         run: |
           eval "$SX_GROUP_CHECK"
@@ -607,14 +623,14 @@ jobs:
       # The MCP server's tests that run the real core and geometry engine, on the binaries built above. They skip
       # where there are none (the web job); here SLICERX_TEST_REQUIRE_SX makes a missing one fail them. The exact
       # sx-geom runs every MCP test: without SX_BREP_DEV it answers as the default build does.
-      - if: matrix.part == 'crates'
+      - if: startsWith(matrix.part, 'crates-c')
         uses: pnpm/action-setup@v4
-      - if: matrix.part == 'crates'
+      - if: startsWith(matrix.part, 'crates-c')
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - if: matrix.part == 'crates'
+      - if: startsWith(matrix.part, 'crates-c')
         run: |
           pnpm install --frozen-lockfile
           # the tool runtime that sx call runs (test/sx-call.test.ts, and the app's route parity test below)
@@ -622,13 +638,13 @@ jobs:
           eval "$SX_GROUP_CHECK"
           export SLICERX_TEST_SX_BIN="$GITHUB_WORKSPACE/target/debug/sx"
           export SLICERX_SX_GEOM_BIN="$GITHUB_WORKSPACE/target/brep/debug/sx-geom"
-          cd packages/mcp && ${HEAVY:-} bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
+          cd packages/mcp && ${HEAVY:-} bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh" --shard=${{ matrix.part == 'crates-c1' && 1 || 2 }}/2
         env:
           SLICERX_TEST_REQUIRE_SX: '1'
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
       # The app, pair and cloud tests that run those binaries, which skip in the web job. A new test file that needs
       # one goes on this list.
-      - if: matrix.part == 'crates'
+      - if: matrix.part == 'crates-c2'
         run: |
           eval "$SX_GROUP_CHECK"
           export SLICERX_TEST_SX_BIN="$GITHUB_WORKSPACE/target/debug/sx"
@@ -641,7 +657,7 @@ jobs:
         env:
           SLICERX_TEST_REQUIRE_SX: '1'
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
-      - if: always() && matrix.part == 'crates'
+      - if: always() && startsWith(matrix.part, 'crates-c')
         run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt

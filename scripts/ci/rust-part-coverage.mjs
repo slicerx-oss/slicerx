@@ -92,7 +92,7 @@ export function check({ root, metadata, weights, workflow }) {
     lines.push(`${split.name}, ${split.of} parts: sx-core ${coreFiles.length} files, ${perPart.join(' + ')}${split.extra ? ` + ${split.extra.join(', ')} in parts of their own` : ''}${split.coreOnly ? '' : ', everything else in part 1'}`)
   }
 
-  // 3. The other packages' test files run in the workspace command (part 1 of macOS and Windows, the crates part on Linux).
+  // 3. The other packages' test files run in the workspace command (part 1 of macOS and Windows, crates-a and crates-b on Linux).
   for (const pkg of others) {
     const dir = dirname(pkg.manifest_path)
     const files = diskTargets(dir)
@@ -111,7 +111,11 @@ export function check({ root, metadata, weights, workflow }) {
         if (!/--of 2 --core-only/.test(text)) problems.push(`ci.yml ${split.job}: the hosted core step must pass --of ${split.of} --core-only`)
         if (!/core-a/.test(text) || !/core-b/.test(text)) problems.push(`ci.yml ${split.job}: the matrix needs core-a and core-b`)
         for (const name of split.extra) if (!new RegExp(`matrix\\.part == '${name}'`).test(text)) problems.push(`ci.yml ${split.job}: no step for the ${name} part`)
-        if (!/--workspace --exclude slicerx-desktop --exclude sx-core --test '\*'/.test(text)) problems.push(`ci.yml ${split.job}: the crates part must run every other crate's tests with --test '*'`)
+        // the crates parts: sx-cli's test files in one, every other crate's in another, so together they run them all
+        if (!/cargo test -p sx-cli --test '\*'/.test(text)) problems.push(`ci.yml ${split.job}: a crates part must run sx-cli's tests with --test '*'`)
+        if (!/--workspace --exclude slicerx-desktop --exclude sx-core --exclude sx-cli --test '\*'/.test(text)) problems.push(`ci.yml ${split.job}: a crates part must run every other crate's tests with --test '*'`)
+        // the MCP tests on the binaries run in two halves by file: both halves in the matrix, and the step passing 1/2 or 2/2
+        if (!/"crates-c1","crates-c2"/.test(text) || !/--shard=\$\{\{ matrix\.part == 'crates-c1' && 1 \|\| 2 \}\}\/2/.test(text)) problems.push(`ci.yml ${split.job}: the MCP tests must run as crates-c1 and crates-c2, with --shard 1/2 and 2/2`)
         continue
       }
       const matrix = text.match(/^\s*part:\s*\[([^\]]*)\]/m)

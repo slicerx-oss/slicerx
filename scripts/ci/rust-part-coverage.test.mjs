@@ -84,6 +84,20 @@ test('a file on disk that cargo has no target for, and a target with no file, ar
   }
 })
 
+test('crates parts that leave sx-cli, the other crates or an MCP half out are reported', () => {
+  const { root, metadata } = makeRepo()
+  try {
+    const noCli = workflow.replace("cargo test -p sx-cli --test '*'", "cargo test -p sx-cli --lib")
+    assert.ok(check({ root, metadata, weights, workflow: noCli }).problems.some((p) => /a crates part must run sx-cli's tests/.test(p)))
+    const noRest = workflow.replace("--exclude sx-core --exclude sx-cli --test '*'", "--exclude sx-core --exclude sx-cli --lib")
+    assert.ok(check({ root, metadata, weights, workflow: noRest }).problems.some((p) => /a crates part must run every other crate's tests/.test(p)))
+    const oneShard = workflow.replace("--shard=${{ matrix.part == 'crates-c1' && 1 || 2 }}/2", '')
+    assert.ok(check({ root, metadata, weights, workflow: oneShard }).problems.some((p) => /the MCP tests must run as crates-c1 and crates-c2/.test(p)))
+  } finally {
+    cleanup(root)
+  }
+})
+
 test('a workflow with the wrong number of parts, the wrong --of or a second saver is reported', () => {
   const { root, metadata } = makeRepo()
   try {
