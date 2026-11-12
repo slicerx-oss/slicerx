@@ -419,7 +419,7 @@ mod ffi {
         // how the kernel reads a value Rust wrote, for the layout tests below
         #[allow(dead_code)]
         fn sx_coordinate(v: &SmVector3d, axis: i32) -> f64;
-        fn sx_surface_boundary(
+        fn sx_surface_curve(
             surface: &SmSurface,
             direction: i32,
             at: f64,
@@ -895,23 +895,29 @@ pub(crate) fn stitched(sheets: &[Sheet]) -> Result<(Solid, Vec<usize>, f64)> {
     Ok((Solid { brep: body }, order, f64::max(vertex_gap, edge_gap)))
 }
 
-/// The four boundaries of the surface a face skinned across `rails` is made on, as the kernel reads them off it: at
-/// its least and most u, then its least and most v.
-pub(crate) fn skin_boundaries(rails: &[Path]) -> Result<Vec<Boundary>> {
+/// Curves of the surface a face skinned across `rails` is made on, as the kernel reads them off it: for each of
+/// `at`, the curve along which its first parameter (0) or its second (1) holds at the given share of its domain.
+pub(crate) fn skin_curves(rails: &[Path], at: &[(i32, f64)]) -> Result<Vec<Boundary>> {
     let kernel = held();
     let (status, raw) = skin(&kernel, rails)?;
     let surface = own(&kernel, "skinned face", status, raw)?;
     let [u0, v0, u1, v1] = surface.GetNaturalUVDomain().corners;
-    let mut out = Vec::with_capacity(4);
-    for (direction, at) in [(0, u0), (0, u1), (1, v0), (1, v1)] {
+    let mut out = Vec::with_capacity(at.len());
+    for &(direction, share) in at {
+        let (from, to) = if direction == 0 { (u0, u1) } else { (v0, v1) };
+        let at = if share >= 1.0 {
+            to
+        } else {
+            from + (to - from) * share
+        };
         let (mut knots, mut points, mut about) = (Vec::new(), Vec::new(), Vec::new());
         check(
-            "skinned face end",
-            ffi::sx_surface_boundary(&surface, direction, at, &mut knots, &mut points, &mut about),
+            "skinned face curve",
+            ffi::sx_surface_curve(&surface, direction, at, &mut knots, &mut points, &mut about),
         )?;
         let [degree, rational, gap] = about[..] else {
             return Err(Error::NotSolid {
-                op: "skinned face end",
+                op: "skinned face curve",
                 why: "the kernel did not say what curve it read",
             });
         };

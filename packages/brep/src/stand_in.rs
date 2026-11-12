@@ -41,7 +41,7 @@ pub(crate) fn sphere(_center: Vec3, _radius: f64) -> Result<Solid> {
     Err(Error::NoKernel)
 }
 
-pub(crate) fn skin_boundaries(_rails: &[Path]) -> Result<Vec<Boundary>> {
+pub(crate) fn skin_curves(_rails: &[Path], _at: &[(i32, f64)]) -> Result<Vec<Boundary>> {
     Err(Error::NoKernel)
 }
 

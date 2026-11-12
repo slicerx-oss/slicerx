@@ -65,6 +65,7 @@ fn without_the_kernel_joining_faces_says_so() {
         "this build has no B-rep kernel (packages/brep/scripts/fetch-smlib.sh, then build again)"
     );
     assert_eq!(sx_brep::skin_ends(&bowed_wall()), Err(Error::NoKernel));
+    assert_eq!(sx_brep::skin_stations(&bowed_wall()), Err(Error::NoKernel));
 }
 
 // refused before the kernel is asked, so the same with the kernel or without
@@ -439,4 +440,67 @@ fn a_skinned_face_s_ends_are_read_from_the_kernel_and_close_a_solid() {
     // a little differently between the rails, so only the sign and size are held
     let volume = body.volume().expect("volume");
     assert!(volume > 100.0 && volume < 200.0, "{volume}");
+}
+
+/// Seven rails on the bowed wall's plan, each bent out by 1 mm at mid height: a skin with three stations, at z 0, 2.5
+/// and 5.
+fn bent_wall() -> Vec<Path> {
+    (0_u8..7)
+        .map(|k| {
+            let x = 2.0 * f64::from(k);
+            let y = 0.1 * (x - 6.0) * (x - 6.0);
+            Path::Lines(vec![[x, y, 0.0], [x, y - 1.0, 2.5], [x, y, 5.0]])
+        })
+        .collect()
+}
+
+#[test]
+#[allow(
+    clippy::float_cmp,
+    reason = "distances between straight lines along the axes, exact in floating point"
+)]
+fn how_far_apart_two_curves_are_is_the_farthest_either_runs_from_the_other() {
+    let a = line([0.0, 0.0, 0.0], [10.0, 0.0, 0.0]);
+    assert_eq!(sx_brep::apart(&a, &line([0.0, 0.5, 0.0], [10.0, 0.5, 0.0])), 0.5);
+    // a curve along half of the other is on it, and the other runs 5 mm past its end
+    let half = line([0.0, 0.0, 0.0], [5.0, 0.0, 0.0]);
+    assert_eq!(sx_brep::apart(&a, &half), 5.0);
+    assert_eq!(sx_brep::apart(&half, &a), 5.0);
+    assert_eq!(sx_brep::apart(&a, &a.clone()), 0.0);
+}
+
+// A face skinned across curves runs a curve of its own through the curves' points at each of their stations, where
+// each piece of every curve ends. Read from the kernel, each passes through its station's points and lies where they
+// do, so a drawing made at the stations can be measured against the face itself.
+#[test]
+fn the_curves_a_skinned_face_runs_along_at_each_station_are_read_from_the_kernel() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let rails = bent_wall();
+    let stations = sx_brep::skin_stations(&rails).expect("its stations");
+    assert_eq!(stations.len(), 3);
+    for (k, (station, z)) in stations.iter().zip([0.0, 2.5, 5.0]).enumerate() {
+        let points: Vec<P> = match station {
+            Path::Lines(points) => points.clone(),
+            Path::Cubics(spans) => spans.iter().flatten().copied().collect(),
+        };
+        assert!(
+            points.iter().all(|p| (p[2] - z).abs() <= 1e-12),
+            "{k}: {station:?}"
+        );
+        // from the first rail's point to the last one's
+        let (start, end) = ends_of(station);
+        let Path::Lines(first) = &rails[0] else {
+            unreachable!()
+        };
+        let Path::Lines(last) = &rails[6] else {
+            unreachable!()
+        };
+        assert_eq!((start, end), (first[k], last[k]), "{k}");
+    }
+    // its first and last stations are the curves it ends on
+    let (bottom, top) = sx_brep::skin_ends(&rails).expect("its ends");
+    assert!(sx_brep::apart(&stations[0], &bottom) <= 1e-9 * 12.0);
+    assert!(sx_brep::apart(&stations[2], &top) <= 1e-9 * 12.0);
 }
