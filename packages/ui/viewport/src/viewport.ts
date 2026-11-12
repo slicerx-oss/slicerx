@@ -3264,6 +3264,8 @@ class ViewportImpl implements Viewport {
   view(preset: ViewPreset, opts: { animate?: boolean; durationMs?: number } = {}): void {
     if (this.cameraHeld) return
     const bed = this.stage.bed
+    // the CAD looks show the design: its straight views frame the model, as Slice's frame the bed
+    this.rig.frameModel = isCad(this.renderMode)
     const pose = this.rig.presetPose(preset, this.framingBox(), Math.max(bed.widthMm, bed.depthMm))
     this.rig.preset = preset
     this.rig.go(pose, opts.animate ?? false, performance.now(), opts.durationMs)

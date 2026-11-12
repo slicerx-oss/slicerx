@@ -228,3 +228,83 @@ describe('fit: a long thin part fills the view, a compact one frames as before',
     expect(r.span.w).toBeGreaterThan(0.7)
   })
 })
+
+/** Where a box lands on screen from a pose, in pixels from the top left. */
+function onScreen(camera: PerspectiveCamera, pose: { pos: Vector3; target: Vector3 }, box: Box3, w: number, h: number) {
+  camera.position.copy(pose.pos)
+  camera.lookAt(pose.target)
+  camera.updateMatrixWorld(true)
+  const px = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+    const p = new Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera)
+    return { x: ((p.x + 1) / 2) * w, y: ((1 - p.y) / 2) * h }
+  })
+  return { x0: Math.min(...px.map((p) => p.x)), x1: Math.max(...px.map((p) => p.x)), y0: Math.min(...px.map((p) => p.y)), y1: Math.max(...px.map((p) => p.y)) }
+}
+
+describe('the straight views of a design frame the model, as the isometric view does', () => {
+  // a long low part off to one side of a large bed, and a small tall one near the middle of a small bed
+  const cases = [
+    ['a long part off center', new Box3(new Vector3(60, 0, -90), new Vector3(150, 12, -70)), 350],
+    ['a tall narrow part', new Box3(new Vector3(-12, 0, -8), new Vector3(12, 70, 8)), 180],
+  ] as const
+  for (const [name, box, bed] of cases) {
+    for (const kind of ['front', 'back', 'left', 'right', 'top', 'bottom'] as const) {
+      it(`${kind} on ${name}: aimed at the model and filling the view like iso`, () => {
+        const w = 1400
+        const h = 900
+        const { camera, rig } = setup(w, h, NO_INSETS)
+        rig.frameModel = true
+        const pose = rig.presetPose(kind, box, bed)
+        expect(pose.target.distanceTo(box.getCenter(new Vector3()))).toBeLessThan(1e-6)
+        const r = onScreen(camera, pose, box, w, h)
+        // the bigger share of the view, height or width, is the share the iso framing gives (60 percent of the
+        // height or 72 percent of the width), and the whole model is on screen
+        const share = Math.max((r.y1 - r.y0) / h / 0.6, (r.x1 - r.x0) / w / 0.72)
+        expect(share).toBeGreaterThan(0.97)
+        expect(share).toBeLessThan(1.03)
+        expect(r.x0).toBeGreaterThanOrEqual(0)
+        expect(r.x1).toBeLessThanOrEqual(w)
+        expect(r.y0).toBeGreaterThanOrEqual(0)
+        expect(r.y1).toBeLessThanOrEqual(h)
+      })
+    }
+  }
+
+  it('keeps each view looking along its own axis', () => {
+    const { rig } = setup(1400, 900, NO_INSETS)
+    rig.frameModel = true
+    const box = new Box3(new Vector3(30, 0, 10), new Vector3(70, 25, 50))
+    for (const [kind, axis] of [['front', [0, 0, 1]], ['right', [1, 0, 0]], ['top', [0, 1, 0]]] as const) {
+      const pose = rig.presetPose(kind, box, 256)
+      const dir = pose.pos.clone().sub(pose.target).normalize()
+      expect(dir.x).toBeCloseTo(axis[0], 2)
+      expect(dir.y).toBeCloseTo(axis[1], 2)
+      expect(dir.z).toBeCloseTo(axis[2], 2)
+    }
+  })
+
+  it('Slice keeps framing the bed in its straight views', () => {
+    const { rig } = setup(1400, 900, NO_INSETS)
+    const box = new Box3(new Vector3(60, 0, -90), new Vector3(150, 12, -70))
+    for (const kind of ['front', 'top'] as const) {
+      const bedPose = rig.presetPose(kind, box, 350)
+      // aimed at the bed's middle, not the part
+      expect(Math.abs(bedPose.target.x)).toBeLessThan(1e-6)
+      expect(Math.abs(bedPose.target.z)).toBeLessThan(1e-6)
+      rig.frameModel = true
+      const modelPose = rig.presetPose(kind, box, 350)
+      rig.frameModel = false
+      expect(modelPose.pos.distanceTo(modelPose.target)).toBeLessThan(bedPose.pos.distanceTo(bedPose.target))
+    }
+  })
+
+  it('a framed straight view follows a bed that moves, as a view of the model does; a bed view stays put', () => {
+    const { rig, camera } = setup(1400, 900, NO_INSETS)
+    rig.preset = 'front'
+    expect(rig.followBed(new Vector3(10, 0, 0))).toBe(false)
+    rig.frameModel = true
+    const x = camera.position.x
+    expect(rig.followBed(new Vector3(10, 0, 0))).toBe(true)
+    expect(camera.position.x).toBeCloseTo(x + 10, 6)
+  })
+})
