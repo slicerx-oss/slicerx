@@ -61,6 +61,7 @@ import { PLAN_SEED_NOTE } from './plan-left'
 import { chatRoute, HUGINN, INPUT_REFUSAL_FAILS, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Route, type Tier } from './models'
 import { bindingKey, unbindOldReasoning } from './reasoning-binding'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
+import { firstLineNames, keepsNote, keepsNotice, keptAmountNote, keptRows, lostFeatures, statesAmount, type KeptRow } from './turn-keeps'
 import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
 
 export interface PilotHost extends ToolHost {
@@ -403,6 +404,29 @@ export const stillLowNote = (pct: number, floor: number): string =>
 /** Said once when a run ends with its change still under the floor: one more pass, then the reply. */
 export const STRENGTHEN_NOTE = (pct: number, floor: number): string =>
   `Before you answer: the change moved only ${pct}% of the whole-model view, under the ${floor}% a person sees. Make it visible now as the measured note said, once: ${pct > 0 ? `about ${growBy(pct, floor)} times the sizes` : 'built where it shows, larger'}, or with contrast, never the same sizes again. Then answer with the new share.`
+
+/** The person's words for the run that starts at `runStart`: the last request before it, or '' when there is none. */
+function requestOf(messages: readonly LlmMessage[], runStart: number): string {
+  for (let k = runStart - 1; k >= 0; k--) {
+    const m = messages[k]!
+    if (m.role !== 'user' || typeof m.content !== 'string') continue
+    const at = m.content.indexOf('User request:')
+    if (at >= 0) return m.content.slice(at + 'User request:'.length).trim()
+  }
+  return ''
+}
+
+/** A call that only takes steps away (an undo, or turning a step off): nothing it does is a change to measure. */
+function onlyRemoves(call: LlmToolCall): boolean {
+  if (call.name === 'design.undo') return true
+  if (call.name !== 'design.edit_step') return false
+  try {
+    const a = JSON.parse(call.arguments) as Record<string, unknown>
+    return a['suppressed'] === true && Object.keys(a).every((k) => ['design', 'step', 'suppressed'].includes(k))
+  } catch {
+    return false
+  }
+}
 
 /**
  * The design an earlier run built and checked against its plan (pass or fail), by id, or null: a run on it is a
@@ -1570,6 +1594,20 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let followLooked = false
     let measured: { pct: number; floor: number } | null = null
     let strengthenNudged = false
+    // what the followed design's steps were when the run started, for the run to keep (turn-keeps.ts), and the notes
+    // sent back so far when it would end without them
+    let keptAtStart: KeptRow[] | null = null
+    let keepsNudges = 0
+    const stepsTool = follow ? findTool('design.steps') : undefined
+    const stepsNow = async (design: string): Promise<KeptRow[] | null> => {
+      if (!stepsTool) return null
+      const call: LlmToolCall = { id: `steps_${sessionId}_${now()}_${lookN++}`, name: 'design.steps', arguments: JSON.stringify({ design }) }
+      const res = await execute(call, sessionId, context, () => undefined, signal, citations, cards, stops)
+      return keptRows(res.message)
+    }
+    // the person's words for this run: an amount they gave stays that amount
+    const request = requestOf(messages, runStart)
+    const amountGiven = statesAmount(request)
     let belowSaid = false
     // how many measured steps came out under the floor: one means the change was never strengthened
     let lowNotes = 0
@@ -1591,6 +1629,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (follow && !followLooked) {
         followLooked = true
         await lookAt(follow, false, true)
+        keptAtStart = await stepsNow(follow)
       }
       if (step === maxSteps && !wrap) {
         if (stopped) break
@@ -1814,7 +1853,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           continue
         }
         // a follow-up whose change still moved under the floor a person sees goes back once to make it visible
-        if (measured && measured.pct < measured.floor && !strengthenNudged && lowNotes < 2 && !stopped && !wrap && spoke && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls) {
+        if (measured && measured.pct < measured.floor && !amountGiven && !strengthenNudged && lowNotes < 2 && !stopped && !wrap && spoke && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls) {
           strengthenNudged = true
           messages.push({ role: 'user', content: STRENGTHEN_NOTE(measured.pct, measured.floor) })
           continue
@@ -1827,6 +1866,20 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           emit({ type: 'error', message: again ? `${ASSISTANT_NAME} went on to plan ${left.part} again with the sizes confirmed on its sheet.` : planLeftNotice(left, ASSISTANT_NAME), retryable: false, code: PLAN_LEFT_CODE, waiting: true })
           messages.push({ role: 'user', content: again ? planAgainNote(left) : planLeftNote(left, { editStep: findTool('design.edit_step') !== undefined, check: findTool('design.check') !== undefined }) })
           continue
+        }
+        // A follow-up that would end with a feature it took away, or built twice, goes back to put it right while it
+        // can, twice at most; a reply whose first line names what is missing and why may end as it is (turn-keeps.ts).
+        if (follow && keptAtStart && !stopped && !signal.aborted) {
+          const end = await stepsNow(follow)
+          const lost = end ? lostFeatures(keptAtStart, end, request) : null
+          if (lost && !firstLineNames(text, lost)) {
+            if (keepsNudges < 2 && !wrap && step + 1 < maxSteps && calls < maxToolCalls) {
+              keepsNudges++
+              messages.push({ role: 'user', content: keepsNote(lost) })
+              continue
+            }
+            emit({ type: 'error', message: keepsNotice(lost), retryable: false })
+          }
         }
         stopReason = stopped ? 'denied' : step >= maxSteps ? 'max_steps' : 'end'
         break
@@ -1881,7 +1934,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           continue
         }
         const res = await execute(call, sessionId, context, watch, signal, citations, cards, stops, loader)
-        if (follow && call.name !== 'design.save' && res.message.startsWith('{"ok":true') && changesDesign(call) && designOf(call) === follow) changedFollow = true
+        if (follow && call.name !== 'design.save' && res.message.startsWith('{"ok":true') && changesDesign(call) && designOf(call) === follow && !onlyRemoves(call)) changedFollow = true
         if (call.name === 'design.new' && res.message.includes(`"code":"${SAME_PART}"`)) restartRefused = true
         stepOn(sessionId, call, res.message)
         if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || refusals >= INPUT_REFUSAL_FAILS || checkMissed)) {
@@ -1909,7 +1962,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         measured = await lookAt(follow, true, true)
         if (measured) {
           const low = measured.pct < measured.floor
-          messages.push({ role: 'user', content: low && belowSaid ? stillLowNote(measured.pct, measured.floor) : visibleNote(measured.pct, measured.floor) })
+          messages.push({ role: 'user', content: low && amountGiven ? keptAmountNote(measured.pct, measured.floor) : low && belowSaid ? stillLowNote(measured.pct, measured.floor) : visibleNote(measured.pct, measured.floor) })
           if (low) {
             belowSaid = true
             lowNotes++
