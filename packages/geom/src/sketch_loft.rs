@@ -16,6 +16,10 @@ use crate::thicken::{self, Thicken};
 use crate::vec3::{self, Frame, V2, V3};
 use serde::Deserialize;
 
+mod pieces;
+
+pub use pieces::{Curve, Density, Piece};
+
 /// The most profiles one loft takes.
 pub const MAX_PROFILES: usize = 64;
 /// The most points one profile's ring may have once its arcs are flattened.
@@ -276,6 +280,228 @@ fn lined_up(profiles: &[Profile], opts: &Options) -> Result<LinedUp> {
         open,
         size,
     })
+}
+
+/// One profile's ring as a loft's rails pass through it.
+#[derive(Debug, Clone)]
+pub struct Ring {
+    /// The plane the ring lies on.
+    pub frame: Frame,
+    /// The ring's points; point `i` is on rail `i`.
+    pub points: Vec<V3>,
+    /// The same points in the ring's plane.
+    pub flat: Vec<V2>,
+    /// Whether each point is one the profile has itself: a drawn point, the end of one of its pieces, or a
+    /// landmark. The others were put there to match another profile or to carry a rail.
+    pub corners: Vec<bool>,
+}
+
+/// A loft before it is a mesh: its profiles matched, and the curve each matched point follows through them.
+#[derive(Debug, Clone)]
+pub struct Rails {
+    /// Each profile's ring, in order along the loft. Every ring has as many points.
+    pub rings: Vec<Ring>,
+    /// For each ring point its rail: one cubic Bezier per span, from each ring to the next. Straight sides are
+    /// straight cubics. On a closed loft the last span runs back to the first ring.
+    pub rails: Vec<Vec<[V3; 4]>>,
+    /// The matched pieces around the rings, in order from rail 0. Each is one face of the loft's side.
+    pub pieces: Vec<Piece>,
+    /// Whether the rings are closed loops, with a stretch from the last rail back to the first; else open chains.
+    pub ring_closed: bool,
+    /// On a closed loft, how far around the first ring each rail comes back: rail `i` ends on point `i + wrap` of
+    /// the first ring and goes on as that rail, so the rails are periodic. None on an open loft.
+    pub wrap: Option<usize>,
+    /// Whether the rails are smooth curves through the rings, or straight from each to the next.
+    pub smooth: bool,
+}
+
+/// What [`rails`] makes of a loft's profiles.
+#[derive(Debug, Clone)]
+pub enum Match {
+    Rails(Rails),
+    /// The profiles are fine and cannot be matched piece to piece, and why. Their loft can still be made from the
+    /// mesh loft's own rows.
+    Unmatched(String),
+}
+
+/// The rings and rails of the loft through `profiles`, for making its sides as exact faces: the rings matched, and
+/// through each matched point the curve the mesh loft's side follows (see [`Options::smooth`]; straight when not
+/// smooth), as cubic Beziers.
+///
+/// Profiles made of straight lines alone are matched exactly as [`loft_with`] matches them, so every rail is a curve
+/// the mesh loft samples: each stretch between neighboring rails is its own piece, a line on every ring.
+///
+/// When any profile has an arc, a circle or an ellipse, the profiles are matched piece to piece instead (line to
+/// line and arc to arc; where the pieces differ each profile is split where the other's corners land on it, by how
+/// far along it they are, at the least twist or at the landmarks), and `density` sets how many rails each piece
+/// gets. Places along an ellipse go by the angle that maps it to a circle, not by its true length. These rails are
+/// not the mesh loft's: it matches flattened points by count, so its sides lean where profiles flatten to different
+/// counts. Profiles that cannot be matched this way come back as [`Match::Unmatched`].
+///
+/// Refuses what the mesh loft refuses, in the same words, except a body that runs into itself, which is not looked
+/// for here.
+pub fn rails(profiles: &[Profile], opts: &Options, density: &Density) -> Result<Match> {
+    let curved = profiles
+        .iter()
+        .any(|p| p.loops.iter().any(|l| !l.construction && !straight(l)));
+    if !curved {
+        return plain_rails(profiles, opts).map(Match::Rails);
+    }
+    checked(profiles, opts)?;
+    let m = match pieces::matched(profiles, opts.closed, density) {
+        Ok(m) => m,
+        Err(pieces::No::Bad(e)) => return Err(e),
+        Err(pieces::No::Unmatched(why)) => return Ok(Match::Unmatched(why)),
+    };
+    let sections: Vec<Section> = m
+        .frames
+        .iter()
+        .zip(m.flats)
+        .map(|(frame, flat)| {
+            let ring: Vec<V3> = flat.iter().map(|&p| frame.at(p, 0.0)).collect();
+            let center = centroid(&ring);
+            Section {
+                ring,
+                lens: vec![flat.len()],
+                flat,
+                frame: *frame,
+                center,
+            }
+        })
+        .collect();
+    let count = sections.len();
+    let size = sections
+        .iter()
+        .flat_map(|s| s.ring.iter())
+        .fold(0.0f64, |m, p| m.max(p[0].abs()).max(p[1].abs()).max(p[2].abs()))
+        .max(1.0);
+    let along = alongs(
+        &sections.iter().map(|s| s.center).collect::<Vec<V3>>(),
+        opts.closed,
+    );
+    let facing = |i: usize| toward(sections[i].frame.w, along[i]);
+    let pairs = if opts.closed { count } else { count - 1 };
+    for k in 0..pairs {
+        let j = (k + 1) % count;
+        apart(
+            &sections[k],
+            &sections[j],
+            facing(k),
+            facing(j),
+            (k, j),
+            size * 1e-9,
+        )?;
+    }
+    // matched rails come back onto themselves, so a ring joins with no turn
+    let wrap = opts.closed.then_some(0);
+    Ok(Match::Rails(Rails {
+        rails: rail_curves(&sections, wrap, opts.smooth),
+        rings: sections
+            .into_iter()
+            .zip(m.corners)
+            .map(|(s, corners)| Ring {
+                frame: s.frame,
+                points: s.ring,
+                flat: s.flat,
+                corners,
+            })
+            .collect(),
+        pieces: m.pieces,
+        ring_closed: true,
+        wrap,
+        smooth: opts.smooth,
+    }))
+}
+
+/// Whether a loop is drawn with straight lines alone.
+fn straight(l: &Loop) -> bool {
+    l.kind.as_deref().is_none_or(|k| k == "path" || k == "points")
+        && l.segments.iter().all(|s| s.kind == "line")
+}
+
+/// The rails of profiles made of straight lines, matched as the mesh loft matches them.
+fn plain_rails(profiles: &[Profile], opts: &Options) -> Result<Rails> {
+    let LinedUp {
+        sections, wrap, open, ..
+    } = lined_up(profiles, opts)?;
+    let count = sections.len();
+    let n = sections[0].ring.len();
+    let mut rings = Vec::with_capacity(count);
+    for (k, (s, p)) in sections.iter().zip(profiles).enumerate() {
+        rings.push(Ring {
+            frame: s.frame,
+            points: s.ring.clone(),
+            flat: s.flat.clone(),
+            corners: own_points(k, p, &s.flat)?,
+        });
+    }
+    let stretches = if open { n - 1 } else { n };
+    Ok(Rails {
+        rings,
+        rails: rail_curves(&sections, wrap, opts.smooth),
+        pieces: (0..stretches)
+            .map(|first| Piece {
+                first,
+                stretches: 1,
+                curves: vec![Curve::Line; count],
+            })
+            .collect(),
+        ring_closed: !open,
+        wrap,
+        smooth: opts.smooth,
+    })
+}
+
+/// Which points of profile `k`'s matched ring `flat` the profile has itself: its landmarks (and an open chain's
+/// ends) when it marks any, since the points between landmarks are spread anew; else its drawn points, which
+/// matching keeps as they are.
+fn own_points(k: usize, p: &Profile, flat: &[V2]) -> Result<Vec<bool>> {
+    let drawn = ring_of(k, p)?;
+    if p.landmarks.is_empty() {
+        let bits = |q: &V2| [q[0].to_bits(), q[1].to_bits()];
+        let own: std::collections::BTreeSet<[u64; 2]> = drawn.iter().map(bits).collect();
+        return Ok(flat.iter().map(|q| own.contains(&bits(q))).collect());
+    }
+    let line = Measured::new(&drawn, !p.open);
+    let mut marks: Vec<V2> = p
+        .landmarks
+        .iter()
+        .filter_map(|&l| along_of(&drawn, !p.open, l))
+        .map(|s| line.point(s))
+        .collect();
+    if p.open {
+        marks.extend([drawn[0], drawn[drawn.len() - 1]]);
+    }
+    let on = |q: &V2| marks.iter().any(|m| (q[0] - m[0]).m_hypot(q[1] - m[1]) < 1e-9);
+    Ok(flat.iter().map(on).collect())
+}
+
+/// Each ring point's rail through `sections`: per span the curve the smooth loft's rows are cut from, or a straight
+/// cubic when not `smooth`.
+fn rail_curves(sections: &[Section], wrap: Option<usize>, smooth: bool) -> Vec<Vec<[V3; 4]>> {
+    let count = sections.len();
+    let n = sections[0].ring.len();
+    let spans = if wrap.is_some() { count } else { count - 1 };
+    let mut rails = vec![Vec::with_capacity(spans); n];
+    for s in 0..spans {
+        let curves = if smooth {
+            span_curves(sections, wrap, s)
+        } else {
+            let next = &sections[(s + 1) % count].ring;
+            let shift = if s + 1 < count { 0 } else { wrap.unwrap_or(0) };
+            (0..n)
+                .map(|i| {
+                    let (a, b) = (sections[s].ring[i], next[(i + shift) % n]);
+                    let third = vec3::scale(vec3::sub(b, a), 1.0 / 3.0);
+                    [a, vec3::add(a, third), vec3::sub(b, third), b]
+                })
+                .collect()
+        };
+        for (rail, c) in rails.iter_mut().zip(curves) {
+            rail.push(c);
+        }
+    }
+    rails
 }
 
 /// The way the loft goes at each profile, from the profiles' middles; a `closed` loft runs around.

@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! the mesh loft's output held bit for bit
+//! the mesh loft's output held bit for bit, and the rails and matched pieces a loft hands out
 
 #![cfg(feature = "cad")]
 #![allow(clippy::many_single_char_names, reason = "points and sizes of test geometry")]
+#![allow(clippy::cast_precision_loss, reason = "small counts")]
 
 use serde_json::{Value, json};
 use std::f64::consts::{FRAC_PI_2, TAU};
 use sx_geom::fm::Fm;
 use sx_geom::mesh::TriMesh;
-use sx_geom::sketch_loft::{self, Options, Profile};
+use sx_geom::sketch_loft::{self, Curve, Density, Match, Options, Profile, Rails};
+use sx_geom::vec3::{self, V3};
 
 fn level(z: f64) -> Value {
     json!({ "origin": [0, 0, z], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] })
@@ -331,4 +333,596 @@ fn mesh_lofts_keep_every_bit() {
         eprintln!("    (\"{name}\", 0x{h:016x}),");
     }
     assert_eq!(got, HELD);
+}
+
+fn match_of(profiles: &Value, opts: &Value, density: &Density) -> Match {
+    let profiles: Vec<Profile> = serde_json::from_value(profiles.clone()).unwrap();
+    let opts: Options = serde_json::from_value(opts.clone()).unwrap();
+    sketch_loft::rails(&profiles, &opts, density).unwrap()
+}
+
+fn rails_of(profiles: &Value, opts: &Value) -> Rails {
+    match match_of(profiles, opts, &Density::default()) {
+        Match::Rails(r) => r,
+        Match::Unmatched(why) => panic!("unmatched: {why}"),
+    }
+}
+
+fn refused(profiles: &Value, opts: &Value) -> String {
+    let profiles: Vec<Profile> = serde_json::from_value(profiles.clone()).unwrap();
+    let opts: Options = serde_json::from_value(opts.clone()).unwrap();
+    let mesh = sketch_loft::loft_with(&profiles, &opts).unwrap_err().to_string();
+    let rails = sketch_loft::rails(&profiles, &opts, &Density::default())
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        rails, mesh,
+        "the rails and the mesh loft refuse in the same words"
+    );
+    rails
+}
+
+/// the point at `t` along a cubic, summed as the mesh loft sums it
+fn bezier_at(b: &[V3; 4], t: f64) -> V3 {
+    let u = 1.0 - t;
+    let w = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+    (0..4).fold([0.0; 3], |s, k| vec3::add(s, vec3::scale(b[k], w[k])))
+}
+
+/// the rows the mesh loft cuts a span's curves into: enough to keep every chord within 0.005 mm
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a small count"
+)]
+fn span_rows(curves: &[[V3; 4]]) -> usize {
+    let most = curves
+        .iter()
+        .map(|b| {
+            let dd = |i: usize, j: usize, k: usize| {
+                vec3::len(vec3::add(vec3::sub(b[i], vec3::scale(b[j], 2.0)), b[k]))
+            };
+            let most = 6.0 * dd(0, 1, 2).max(dd(1, 2, 3));
+            (most / (8.0 * sketch_loft::SMOOTH_TOL_MM)).sqrt().ceil().max(1.0)
+        })
+        .fold(1.0f64, f64::max);
+    most as usize
+}
+
+/// the rails sampled into rows: `per_span` rows a span, or as many as the mesh loft takes
+fn rows_of(r: &Rails, per_span: Option<usize>) -> Vec<Vec<V3>> {
+    let spans = r.rails[0].len();
+    let mut rows = Vec::new();
+    for s in 0..spans {
+        let curves: Vec<[V3; 4]> = r.rails.iter().map(|rail| rail[s]).collect();
+        let m = if r.smooth {
+            per_span.unwrap_or_else(|| span_rows(&curves))
+        } else {
+            1
+        };
+        rows.push(r.rings[s].points.clone());
+        for j in 1..m {
+            let t = j as f64 / m as f64;
+            rows.push(curves.iter().map(|b| bezier_at(b, t)).collect());
+        }
+    }
+    if r.wrap.is_none() {
+        rows.push(r.rings[spans].points.clone());
+    }
+    rows
+}
+
+/// the volume inside closed rows with flat ends: two triangles a quad, and a fan over each end
+fn volume(rows: &[Vec<V3>]) -> f64 {
+    let n = rows[0].len();
+    let six = |a: V3, b: V3, c: V3| vec3::dot(a, vec3::cross(b, c));
+    let mut v = 0.0;
+    for k in 0..rows.len() - 1 {
+        for i in 0..n {
+            let (a0, a1) = (rows[k][i], rows[k][(i + 1) % n]);
+            let (b0, b1) = (rows[k + 1][i], rows[k + 1][(i + 1) % n]);
+            v += six(a0, a1, b1) + six(a0, b1, b0);
+        }
+    }
+    let (first, last) = (&rows[0], &rows[rows.len() - 1]);
+    for i in 1..n - 1 {
+        v += six(first[0], first[i + 1], first[i]) + six(last[0], last[i], last[i + 1]);
+    }
+    (v / 6.0).abs()
+}
+
+fn bits(rows: &[Vec<V3>]) -> Vec<[u64; 3]> {
+    rows.iter().flatten().map(|p| p.map(f64::to_bits)).collect()
+}
+
+#[test]
+fn rails_are_the_curves_the_mesh_loft_samples() {
+    let smooth = json!({ "smooth": true });
+    let around = json!({ "smooth": true, "closed": true });
+    for (name, profiles, opts) in [
+        ("hull", hull(), smooth.clone()),
+        ("hull ruled", hull(), json!({})),
+        ("bilge hull landmarked", bilge_hull(true), smooth.clone()),
+        ("bilge hull by count", bilge_hull(false), smooth.clone()),
+        (
+            "square to hexagon",
+            json!([at(0.0, &square([0.0, 0.0], 20.0)), at(15.0, &polygon(6, 9.0))]),
+            smooth,
+        ),
+        ("ring", ring(), around),
+        ("ring ruled", ring(), json!({ "closed": true })),
+    ] {
+        let r = rails_of(&profiles, &opts);
+        let mesh = mesh_of(&profiles, &opts);
+        let mesh: Vec<[u64; 3]> = mesh.positions.iter().map(|p| p.map(f64::to_bits)).collect();
+        assert_eq!(bits(&rows_of(&r, None)), mesh, "{name}");
+        // lines alone: every stretch is its own piece
+        assert_eq!(r.pieces.len(), r.rings[0].points.len(), "{name}");
+        assert!(
+            r.pieces
+                .iter()
+                .all(|p| p.stretches == 1 && p.curves.iter().all(|c| !c.curved()))
+        );
+    }
+}
+
+#[test]
+fn the_hull_s_rails_hold_their_measured_volumes() {
+    let r = rails_of(&hull(), &json!({ "smooth": true }));
+    assert_eq!((r.rings.len(), r.rails.len()), (7, 6));
+    // six spans a rail: 19 control points once joined
+    assert!(r.rails.iter().all(|rail| rail.len() == 6));
+    assert!(r.ring_closed && r.wrap.is_none());
+    // every point is a drawn corner
+    assert!(r.rings.iter().all(|g| g.corners.iter().all(|&c| c)));
+    let rows = rows_of(&r, None);
+    assert_eq!(rows.len(), 126);
+    let v = volume(&rows);
+    assert!((v - 71_821.757_548).abs() < 2e-6, "{v}");
+    // the surface itself, at 4000 rows a span
+    let v = volume(&rows_of(&r, Some(4000)));
+    assert!((v - 71_826.331_984).abs() < 2e-5, "{v}");
+    let ruled = rails_of(&hull(), &json!({}));
+    let v = volume(&rows_of(&ruled, None));
+    assert!((v - 69_702.135_833).abs() < 2e-6, "{v}");
+    // a straight rail is a straight cubic
+    let b = ruled.rails[1][2];
+    let mid = bezier_at(&b, 0.5);
+    let half = vec3::scale(vec3::add(b[0], b[3]), 0.5);
+    assert!(vec3::len(vec3::sub(mid, half)) < 1e-12);
+}
+
+fn near(a: [f64; 2], b: [f64; 2]) -> bool {
+    (a[0] - b[0]).m_hypot(a[1] - b[1]) < 1e-9
+}
+
+fn on_circle(r: f64, deg: f64) -> [f64; 2] {
+    let (s, c) = deg.to_radians().m_sin_cos();
+    [r * c, r * s]
+}
+
+#[test]
+fn a_circle_is_split_where_a_hexagon_s_corners_land() {
+    let profiles = json!([at(0.0, &polygon(6, 12.0)), at(20.0, &circle([0.0, 0.0], 24.0))]);
+    let r = rails_of(&profiles, &json!({ "smooth": true }));
+    assert_eq!(r.pieces.len(), 6);
+    let (hex, round) = (&r.rings[0], &r.rings[1]);
+    assert_eq!((hex.points.len(), round.points.len()), (72, 72));
+    for (j, p) in r.pieces.iter().enumerate() {
+        assert_eq!((p.first, p.stretches), (12 * j, 12));
+        // a side of the hexagon pairs with a sixth of the circle
+        assert_eq!(p.curves[0], Curve::Line);
+        let Curve::Arc {
+            center,
+            radius,
+            from,
+            sweep,
+        } = p.curves[1]
+        else {
+            panic!("{:?}", p.curves[1]);
+        };
+        assert!(near(center, [0.0, 0.0]) && (radius - 12.0).abs() < 1e-12);
+        let turn = 60.0 * j as f64;
+        assert!((from.to_degrees() - turn).abs() < 1e-9, "{from}");
+        assert!((sweep.to_degrees() - 60.0).abs() < 1e-9, "{sweep}");
+        let (a, b) = (on_circle(12.0, turn), on_circle(12.0, turn + 60.0));
+        for g in 0..12 {
+            let i = 12 * j + g;
+            let f = g as f64 / 12.0;
+            assert!(
+                near(hex.flat[i], [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]),
+                "{i}"
+            );
+            assert!(near(round.flat[i], on_circle(12.0, turn + 5.0 * g as f64)), "{i}");
+            // the hexagon's corners are its own; the circle has none, only places it was split
+            assert_eq!(hex.corners[i], g == 0);
+            assert!(!round.corners[i]);
+        }
+    }
+    // the same pairs with the circle first
+    let back = json!([at(0.0, &circle([0.0, 0.0], 24.0)), at(20.0, &polygon(6, 12.0))]);
+    let b = rails_of(&back, &json!({ "smooth": true }));
+    assert_eq!(b.pieces.len(), 6);
+    for i in 0..72 {
+        assert!(
+            near(b.rings[0].flat[i], round.flat[i]) && near(b.rings[1].flat[i], hex.flat[i]),
+            "{i}"
+        );
+    }
+    // the caller sets how many rails a piece gets
+    let fine = Density {
+        arc_step_deg: 2.5,
+        least: 1,
+    };
+    let Match::Rails(f) = match_of(&profiles, &json!({}), &fine) else {
+        panic!("unmatched");
+    };
+    assert!(f.pieces.iter().all(|p| p.stretches == 24));
+    let coarse = Density {
+        arc_step_deg: 90.0,
+        least: 1,
+    };
+    let Match::Rails(c) = match_of(&profiles, &json!({}), &coarse) else {
+        panic!("unmatched");
+    };
+    assert_eq!(c.rings[0].points.len(), 6);
+}
+
+#[test]
+fn a_profile_on_a_plane_facing_back_matches_the_same() {
+    // the hexagon's plane faces down the loft, so it is drawn clockwise as the loft sees it
+    let down = json!({
+        "frame": { "origin": [0, 0, 0], "normal": [0, 0, -1], "u": [1, 0, 0], "v": [0, -1, 0] },
+        "loops": [polygon(6, 12.0)],
+    });
+    let r = rails_of(&json!([down, at(20.0, &circle([0.0, 0.0], 24.0))]), &json!({}));
+    assert_eq!(r.pieces.len(), 6);
+    let (hex, round) = (&r.rings[0].points, &r.rings[1].points);
+    let mut turned = 0.0;
+    for i in 0..72 {
+        // a corner's rail leaves the hexagon and meets the circle at the same angle about the loft
+        let (h, c) = (hex[i], round[i]);
+        let across = h[0] * c[1] - h[1] * c[0];
+        assert!(
+            i % 12 != 0 || (across.abs() < 1e-9 && h[0] * c[0] + h[1] * c[1] > 0.0),
+            "{i}"
+        );
+        let next = round[(i + 1) % 72];
+        turned += c[0] * next[1] - c[1] * next[0];
+    }
+    // and both rings go around counterclockwise about it
+    assert!(turned > 0.0);
+    assert!(
+        r.rings[0]
+            .corners
+            .iter()
+            .enumerate()
+            .all(|(i, &c)| c == (i % 12 == 0))
+    );
+}
+
+#[test]
+fn an_ellipse_and_a_circle_match_by_angle_all_the_way_around() {
+    let profiles = json!([at(0.0, &ellipse(30.0, 16.0)), at(20.0, &circle([0.0, 0.0], 24.0))]);
+    let r = rails_of(&profiles, &json!({ "smooth": true }));
+    // no corner on either: one piece, a rail every 10 degrees
+    assert_eq!(r.pieces.len(), 1);
+    let p = &r.pieces[0];
+    assert_eq!((p.first, p.stretches), (0, 36));
+    let Curve::Ellipse {
+        half_width,
+        half_height,
+        from,
+        sweep,
+        ..
+    } = p.curves[0]
+    else {
+        panic!("{:?}", p.curves[0]);
+    };
+    assert_eq!((half_width, half_height), (15.0, 8.0));
+    assert!(from.abs() < 1e-9 && (sweep.to_degrees() - 360.0).abs() < 1e-9);
+    let Curve::Arc {
+        radius, from, sweep, ..
+    } = p.curves[1]
+    else {
+        panic!("{:?}", p.curves[1]);
+    };
+    assert!((radius - 12.0).abs() < 1e-12 && from.abs() < 1e-9 && (sweep.to_degrees() - 360.0).abs() < 1e-9);
+    for i in 0..36 {
+        let (s, c) = (10.0 * i as f64).to_radians().m_sin_cos();
+        // the ellipse goes by the angle that maps it to a circle
+        assert!(near(r.rings[0].flat[i], [15.0 * c, 8.0 * s]), "{i}");
+        assert!(near(r.rings[1].flat[i], [12.0 * c, 12.0 * s]), "{i}");
+        assert!(!r.rings[0].corners[i] && !r.rings[1].corners[i]);
+    }
+}
+
+#[test]
+fn rounded_rectangles_pair_line_to_line_and_arc_to_arc() {
+    let profiles = json!([
+        at(0.0, &rounded(40.0, 24.0, 6.0)),
+        at(20.0, &rounded(30.0, 20.0, 4.0)),
+        at(40.0, &rounded(36.0, 28.0, 8.0)),
+    ]);
+    let r = rails_of(&profiles, &json!({ "smooth": true }));
+    assert_eq!(r.pieces.len(), 8);
+    for (j, p) in r.pieces.iter().enumerate() {
+        assert_eq!((p.first, p.stretches), (12 * j, 12));
+        assert!(
+            p.curves.iter().all(|c| c.curved() == (j % 2 == 1)),
+            "{:?}",
+            p.curves
+        );
+        for (k, c) in p.curves.iter().enumerate() {
+            if let Curve::Arc { radius, sweep, .. } = *c {
+                assert!((radius - [6.0, 4.0, 8.0][k]).abs() < 1e-9);
+                assert!((sweep.to_degrees() - 90.0).abs() < 1e-9);
+            }
+        }
+    }
+    for g in &r.rings {
+        assert_eq!(g.points.len(), 96);
+        assert!(g.corners.iter().enumerate().all(|(i, &c)| c == (i % 12 == 0)));
+    }
+    // each ring starts where its first line does
+    assert!(near(r.rings[0].flat[0], [-14.0, -12.0]) && near(r.rings[2].flat[0], [-10.0, -14.0]));
+}
+
+#[test]
+fn unlike_profiles_are_each_split_at_the_other_s_corners() {
+    let profiles = json!([
+        at(0.0, &square([0.0, 0.0], 20.0)),
+        at(15.0, &polygon(6, 9.0)),
+        at(30.0, &circle([0.0, 0.0], 14.0)),
+    ]);
+    let r = rails_of(&profiles, &json!({ "smooth": true }));
+    // four corners and six, none shared
+    assert_eq!(r.pieces.len(), 10);
+    let own = |k: usize| r.rings[k].corners.iter().filter(|&&c| c).count();
+    assert_eq!((own(0), own(1), own(2)), (4, 6, 0));
+    assert!(r.rings.iter().all(|g| g.points.len() == r.rings[0].points.len()));
+    for p in &r.pieces {
+        assert!(!p.curves[0].curved() && !p.curves[1].curved() && p.curves[2].curved());
+    }
+    // the square is turned to the hexagon by its mirror lines, so the pieces mirror too
+    let width = |p: &sketch_loft::Piece| match p.curves[2] {
+        Curve::Arc { sweep, .. } => sweep.to_degrees(),
+        _ => 0.0,
+    };
+    let mut widths: Vec<f64> = r.pieces.iter().map(width).collect();
+    widths.sort_by(f64::total_cmp);
+    assert!((widths.iter().sum::<f64>() - 360.0).abs() < 1e-9);
+    assert!((widths[0] - widths[3]).abs() < 1e-6, "{widths:?}");
+}
+
+#[test]
+fn a_closed_loft_s_rails_are_periodic() {
+    let opts = json!({ "smooth": true, "closed": true });
+    let circles: Vec<Value> = (0..6u32)
+        .map(|k| {
+            let (s, c) = (TAU * f64::from(k) / 6.0).m_sin_cos();
+            json!({
+                "frame": { "origin": [40.0 * c, 40.0 * s, 0], "normal": [-s, c, 0], "u": [c, s, 0], "v": [0, 0, 1] },
+                "loops": [circle([0.0, 0.0], 10.0 + f64::from(k % 2))],
+            })
+        })
+        .collect();
+    for (name, profiles) in [("squares", ring()), ("circles", Value::Array(circles))] {
+        let r = rails_of(&profiles, &opts);
+        let n = r.rails.len();
+        let shift = r.wrap.expect("a closed loft says how its rails come around");
+        for (i, rail) in r.rails.iter().enumerate() {
+            assert_eq!(rail.len(), 6, "{name}");
+            let (last, first) = (rail[5], r.rails[(i + shift) % n][0]);
+            // it ends on the point the next time around starts from, and leaves it the way it arrived
+            assert_eq!(
+                last[3].map(f64::to_bits),
+                first[0].map(f64::to_bits),
+                "{name} rail {i}"
+            );
+            let into = vec3::normalize(vec3::sub(last[3], last[2])).unwrap();
+            let out = vec3::normalize(vec3::sub(first[1], first[0])).unwrap();
+            assert!(vec3::len(vec3::sub(into, out)) < 1e-12, "{name} rail {i}");
+            for s in 1..6 {
+                assert_eq!(rail[s - 1][3].map(f64::to_bits), rail[s][0].map(f64::to_bits));
+            }
+        }
+    }
+}
+
+#[test]
+fn a_landmark_overrides_the_least_twist() {
+    let mark = |mut p: Value, l: [f64; 2]| {
+        p["landmarks"] = json!([l]);
+        p
+    };
+    let profiles = json!([
+        mark(at(0.0, &polygon(6, 12.0)), [12.0, 0.0]),
+        mark(at(20.0, &circle([0.0, 0.0], 24.0)), on_circle(12.0, 30.0)),
+    ]);
+    let r = rails_of(&profiles, &json!({ "smooth": true }));
+    assert_eq!(r.pieces.len(), 6);
+    // the hexagon's first corner goes to the mark on the circle, 30 degrees on from the least twist
+    assert!(near(r.rings[0].flat[0], [12.0, 0.0]));
+    assert!(near(r.rings[1].flat[0], on_circle(12.0, 30.0)));
+    assert!(near(r.rings[1].flat[12], on_circle(12.0, 90.0)));
+    // a landmark is a point the circle has itself
+    let own: Vec<usize> = (0..72).filter(|&i| r.rings[1].corners[i]).collect();
+    assert_eq!(own, [0]);
+    // on lines alone the landmarks are the rings' own points, the same rails on every ring
+    let h = rails_of(&bilge_hull(true), &json!({ "smooth": true }));
+    let own = |k: usize| -> Vec<usize> {
+        (0..h.rings[k].corners.len())
+            .filter(|&i| h.rings[k].corners[i])
+            .collect()
+    };
+    assert_eq!(own(0).len(), 6);
+    assert!((1..5).all(|k| own(k) == own(0)));
+}
+
+#[test]
+fn profiles_that_cannot_be_matched_say_why() {
+    let unmatched = |profiles: &Value, opts: &Value| match match_of(profiles, opts, &Density::default()) {
+        Match::Unmatched(why) => why,
+        Match::Rails(_) => panic!("matched"),
+    };
+    let spline = json!({ "type": "spline", "points": [[10, 0], [0, 8], [-10, 0], [0, -8]] });
+    assert_eq!(
+        unmatched(
+            &json!([at(0.0, &circle([0.0, 0.0], 20.0)), at(20.0, &spline)]),
+            &json!({})
+        ),
+        "profile 2 has a spline, which has no pieces to match"
+    );
+    let bow = |z: f64| {
+        json!({
+            "frame": level(z),
+            "loops": [{ "start": [-10, 0], "segments": [{ "type": "arc", "to": [10, 0], "through": [0, 4] }] }],
+            "open": true,
+        })
+    };
+    assert_eq!(
+        unmatched(
+            &json!([bow(0.0), bow(10.0)]),
+            &json!({ "thicken": { "thicknessMm": 1 } })
+        ),
+        "profile 1 is an open chain, and open chains with arcs have no piece matching yet"
+    );
+    // what is wrong with the profiles themselves is refused as the mesh loft refuses it
+    let disc = |z: f64| at(z, &circle([0.0, 0.0], 20.0));
+    assert_eq!(
+        refused(&json!([disc(0.0)]), &json!({})),
+        "profiles: a loft needs 2 or more profiles"
+    );
+    assert_eq!(
+        refused(&json!([disc(0.0), disc(10.0)]), &json!({ "closed": true })),
+        "profiles: a closed loft needs 3 or more profiles"
+    );
+    assert_eq!(
+        refused(&json!([disc(0.0), disc(0.0)]), &json!({})),
+        "loft: profiles 1 and 2 touch or cross; space them apart along the loft"
+    );
+    assert_eq!(
+        refused(&json!([at(0.0, &square([0.0, 0.0], 20.0))]), &json!({})),
+        "profiles: a loft needs 2 or more profiles"
+    );
+    let marked = |z: f64, l: [f64; 2]| {
+        let mut p = disc(z);
+        p["landmarks"] = json!([l]);
+        p
+    };
+    assert_eq!(
+        refused(
+            &json!([marked(0.0, [10.0, 0.0]), marked(10.0, [3.0, 3.0])]),
+            &json!({})
+        ),
+        "profiles: profile 2: landmark 1 at (3.000, 3.000) is not on the profile"
+    );
+    let mut bare = disc(10.0);
+    bare["landmarks"] = json!([]);
+    assert_eq!(
+        refused(&json!([marked(0.0, [10.0, 0.0]), bare]), &json!({})),
+        "profiles: profile 2 marks 0 landmarks and profile 1 marks 1; every profile marks the same landmarks"
+    );
+    let none = Density {
+        arc_step_deg: 0.0,
+        least: 12,
+    };
+    let two: Vec<Profile> = serde_json::from_value(json!([disc(0.0), disc(10.0)])).unwrap();
+    assert_eq!(
+        sketch_loft::rails(&two, &Options::default(), &none)
+            .unwrap_err()
+            .to_string(),
+        "density: needs an arc step above 0 degrees and 1 or more stretches a piece"
+    );
+}
+
+/// two matched rings seen from above: each ring, the rails between paired points, and a dot where a piece starts
+fn picture(r: &Rails) -> String {
+    use std::fmt::Write as _;
+    let (a, b) = (&r.rings[0].flat, &r.rings[1].flat);
+    let reach = a
+        .iter()
+        .chain(b)
+        .fold(0.0f64, |m, p| m.max(p[0].abs()).max(p[1].abs()))
+        + 2.0;
+    let path = |ring: &[[f64; 2]]| -> String {
+        let mut d = String::new();
+        for (i, p) in ring.iter().enumerate() {
+            let _ = write!(d, "{}{:.4} {:.4} ", if i == 0 { "M" } else { "L" }, p[0], -p[1]);
+        }
+        d + "Z"
+    };
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{:.1} {:.1} {:.1} {:.1}\" width=\"800\" height=\"800\">",
+        -reach,
+        -reach,
+        2.0 * reach,
+        2.0 * reach
+    );
+    let _ = writeln!(
+        s,
+        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"100%\" height=\"100%\" fill=\"white\"/>",
+        -reach, -reach
+    );
+    for i in 0..a.len() {
+        let _ = writeln!(
+            s,
+            "<line x1=\"{:.4}\" y1=\"{:.4}\" x2=\"{:.4}\" y2=\"{:.4}\" stroke=\"#888\" stroke-width=\"0.06\"/>",
+            a[i][0], -a[i][1], b[i][0], -b[i][1]
+        );
+    }
+    for (ring, color) in [(a, "#1f5fbf"), (b, "#bf3f1f")] {
+        let _ = writeln!(
+            s,
+            "<path d=\"{}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"0.15\"/>",
+            path(ring)
+        );
+        for p in &r.pieces {
+            let q = ring[p.first];
+            let _ = writeln!(
+                s,
+                "<circle cx=\"{:.4}\" cy=\"{:.4}\" r=\"0.35\" fill=\"{color}\"/>",
+                q[0], -q[1]
+            );
+        }
+    }
+    s + "</svg>\n"
+}
+
+/// Prints the matched pairs as pictures; run with `--ignored --nocapture` and cut the output at the marked lines.
+#[test]
+#[ignore = "prints pictures to look at"]
+fn pictures_of_matched_pairs() {
+    let pairs = [
+        (
+            "circle-to-hexagon",
+            json!([at(0.0, &polygon(6, 12.0)), at(20.0, &circle([0.0, 0.0], 24.0))]),
+        ),
+        (
+            "ellipse-to-circle",
+            json!([at(0.0, &ellipse(30.0, 16.0)), at(20.0, &circle([0.0, 0.0], 24.0))]),
+        ),
+        (
+            "rounded-rectangles",
+            json!([
+                at(0.0, &rounded(40.0, 24.0, 6.0)),
+                at(20.0, &rounded(30.0, 20.0, 4.0))
+            ]),
+        ),
+        (
+            "square-to-rounded-rectangle",
+            json!([
+                at(0.0, &square([0.0, 0.0], 24.0)),
+                at(20.0, &rounded(30.0, 20.0, 4.0))
+            ]),
+        ),
+    ];
+    for (name, profiles) in pairs {
+        println!("-----8<----- {name}.svg");
+        print!("{}", picture(&rails_of(&profiles, &json!({}))));
+        println!("-----8<----- end");
+    }
 }
