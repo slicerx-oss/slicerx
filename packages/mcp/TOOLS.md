@@ -119,7 +119,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_gcode_inspect` | 1.0.0 |  |  | read | Explain what a G-code file will do: layers, temperatures, typical and peak print speed, volumetric flow (checked against the filament limit), retraction count and length, fan, and time by feature from ;TYPE: or FEATURE comments. |
 | `slicerx_geom_array` | 1.9.0 |  |  | slice | Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. |
 | `slicerx_geom_boolean` | 1.3.1 |  |  | slice | Union, subtract or intersect closed bodies. |
-| `slicerx_geom_build` | 1.6.0 |  |  | slice | Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. |
+| `slicerx_geom_build` | 1.7.0 |  |  | slice | Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. |
 | `slicerx_geom_calibration_model` | 1.0.0 |  |  | slice | Generate a calibration print: temperature tower, flow pads, pressure advance, retraction, max volumetric speed, tolerance plate, shrinkage L, or the feature piece (a small print with a bridge, an overhang, a thin wall, a hole and text). |
 | `slicerx_geom_chamfer` | 1.6.0 |  |  | slice | Bevel straight edges on a flat face, along rounds too (a rounded rectangle's outline, a cone's base rim), set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). |
 | `slicerx_geom_cut` | 1.4.0 |  |  | slice | Cut a model or a design part with a plane into a lower and an upper piece with flat caps. |

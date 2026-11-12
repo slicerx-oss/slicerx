@@ -13,7 +13,7 @@ import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { EXACT_FELL_BACK, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, fromSolid, meshed, rigidFrame, solidTooBig, type Solids } from './exact'
+import { addedSolids, EXACT_FELL_BACK, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, fromSolid, meshed, rigidFrame, solidTooBig, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -405,9 +405,14 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     if (!parts[s.part]) throw new Broken('The part this step works on is gone.')
     return parts.map((x, i) => (i === s.part ? { ...x, name: p.name } : x))
   }
-  // A part added to a design with exact solids lives beside the exact parts as it is: a mesh part, or a shape the
-  // kernel makes when a step first works on it. The parts there stay as they are, exact or not.
-  if (exact && p.op === 'parts.add') return [...parts, ...p.parts.map(flat)]
+  // A part added to a design with exact solids lives beside the exact parts. In a design that must stay exact, each
+  // added shape the kernel makes (a box, a cylinder, a cone) is its own solid; any other added part is a mesh part, and
+  // elsewhere a shape becomes a solid when a step first works on it. The parts there stay as they are, exact or not.
+  if (exact && p.op === 'parts.add') {
+    const added: Flat[] = []
+    for (const x of p.parts) added.push((strict ? (await addedSolids(call, [x], solids))?.[0] : undefined) ?? flat(x))
+    return [...parts, ...added]
+  }
   // A step that works only on mesh parts, and makes no new body, runs on the mesh: there is no exact part to keep.
   const reads = s.part === -1 ? parts : [parts[s.part], ...(p.op === 'boolean' ? p.with.map((i) => parts[i]) : [])]
   const newBody = makesBody(p)
@@ -430,6 +435,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         if (p.op === 'face.push' && key && key !== p.faceKey) found.keys[s.id] = { faceKey: key }
         if (!reached) gone.add(s.id)
       },
+      undefined,
       (chars) => {
         // a solid too big to keep: never silent, and a design that must stay exact stops here
         if (strict) throw new ExactBroken(solidTooBig(chars, true))
@@ -691,6 +697,11 @@ function doneStatus(found: Found, id: string): StepStatus {
   return { state: 'done', ...(note ? { note } : {}), ...(copies ? { copies } : {}), ...(left ? { skipped: left } : {}) }
 }
 
+/** Which copies of a pattern of steps landed (StepStatus.copies), as data from the reckoning its note words. */
+function keptCopies(found: Found, id: string, total: number, missed: number[]): void {
+  found.copies[id] = { total, kept: total - missed.length, missed }
+}
+
 /**
  * A pattern step: the steps it repeats (from `earlier`, the steps before it) run again for each copy, at their
  * transform moved by the copy's move, so each lands where the copy is, with no value of theirs rewritten. Copies get
@@ -716,6 +727,38 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
   const notes: string[] = []
   const toWorld = s.transform
   const fromWorld = invert(s.transform)
+  // one cut or join repeated on an exact solid is made in one kernel call with every copy's tool, not one per copy;
+  // a row that follows a surface turns its copies, and runs copy by copy
+  const only = live.length === 1 ? live[0]! : undefined
+  const target = parts[s.part]
+  const follows = p.spec.kind === 'linear' && !!p.spec.onSurface
+  if (exact && only && !follows && only.params.op !== 'pattern' && target && (target.smb || target.body !== undefined || target.primitive)) {
+    const moves = stepCopyMoves(p.spec).map((move) => multiply(fromWorld, multiply(move, toWorld)))
+    const salted: EngineCall = (op, r) => call(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
+    const copies = moves.map((_, k) => k + 2)
+    let done: Flat[] | null
+    // which copies left nothing of their own, as the kernel says; null when it does not say, and then today's check
+    // stands: a call that touches nothing missed with every copy, one that touches kept them all
+    let left = null as number[] | null
+    try {
+      done = await exactStep(salted, { ...only, id: s.id, params: copyParams(only.params) }, parts, () => {}, solids, () => {}, moves, undefined, (m) => { left = m && m.map((j) => j + 2) })
+    } catch (e) {
+      if ((e as { name?: string }).name === 'AbortError') throw e
+      if (!missed(e)) throw new Broken(e instanceof Error ? e.message : String(e))
+      left = copies
+      done = null
+    }
+    const landed = copiesLanded(copies, left, inCopy)
+    if (landed.broken) throw new Missed(landed.broken)
+    // every copy missed inside a copy of an outer pattern: the parts stay as they are, and the note says so
+    if (done || left === copies) {
+      const kept = done ?? parts
+      if (parts.some((x) => x.paint && !kept.includes(x))) found.notes[s.id] = PAINT_DROPPED
+      if (inCopy === undefined) keptCopies(found, s.id, moves.length + 1, landed.missed)
+      if (landed.note) found.notes[s.id] = found.notes[s.id] ? `${landed.note} ${found.notes[s.id]}` : landed.note
+      return kept
+    }
+  }
   let out = parts
   const moves = stepCopyMoves(p.spec)
   // each copy's move along the surface, or null for one that found no side there
@@ -785,7 +828,7 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
   const landed = copiesLanded(moves.map((_, k) => k + 2), left, inCopy)
   if (landed.broken) throw new Missed(landed.broken)
   // which copies landed, as data, from the same reckoning the note words; an inner pattern's are its outer copy's
-  if (inCopy === undefined) found.copies[s.id] = { total: moves.length + 1, kept: moves.length + 1 - landed.missed.length, missed: landed.missed }
+  if (inCopy === undefined) keptCopies(found, s.id, moves.length + 1, landed.missed)
   if (landed.note) notes.unshift(landed.note)
   if (notes.length) found.notes[s.id] = notes.join(' ')
   return out

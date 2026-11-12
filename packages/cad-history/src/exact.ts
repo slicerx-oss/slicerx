@@ -7,7 +7,7 @@
 // leaves is the solid's tessellation, with the solid's faces and keys.
 import type { FaceFrame, FreeShape, MovedFace, Polygon, Shape, Vec2, Vec3 } from './types'
 import { placeBody } from './numbering'
-import { direction, invert, newSlot, point, type HistoryMesh, type Mat4, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
+import { direction, invert, multiply, newSlot, point, type HistoryMesh, type Mat4, type PaintTexts, type PrimitiveSpec, type SolidSpec, type Step, type StepParams } from './model'
 
 export type Call = (op: string, request: unknown) => Promise<unknown>
 
@@ -385,14 +385,78 @@ export function fits(spec: PrimitiveSpec, positions: ArrayLike<number>, indices:
   return true
 }
 
+/** A kernel loop moved by (dx, dy) in its frame. */
+function shiftLoop(l: Loop, dx: number, dy: number): Loop {
+  const at = (q: Vec2): Vec2 => [q[0] + dx, q[1] + dy]
+  if ('points' in l) return { points: l.points.map(at) }
+  if ('start' in l) return { start: at(l.start), segments: l.segments.map((g) => ({ ...g, to: at(g.to), ...(g.center ? { center: at(g.center) } : {}) })) }
+  return { ...l, center: at(l.center) }
+}
+
+/**
+ * The copies (from 0) whose every tool the kernel names in its reply's `missed` (indices of the outlines or cutters,
+ * in request order, each copy `per` of them in a row), or null when the reply has no `missed` list.
+ */
+function missedCopies(r: unknown, per: number, count: number): number[] | null {
+  const m = (r as { missed?: unknown }).missed
+  if (!Array.isArray(m) || !m.every((k) => Number.isInteger(k))) return null
+  const gone = new Set(m as number[])
+  return Array.from({ length: count }, (_, j) => j).filter((j) => Array.from({ length: per }, (_, t) => j * per + t).every((k) => gone.has(k)))
+}
+
+/** How close a pattern's copy move must come to a plain shift (no turn) to be laid in one exact call, unitless. */
+const SHIFT_ONLY = 1e-9
+
+/** The shift of a move with no turn in it, or null when it turns or mirrors. */
+function shiftOf(m: Mat4): Vec3 | null {
+  const id = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+  const r = [m[0]!, m[1]!, m[2]!, m[4]!, m[5]!, m[6]!, m[8]!, m[9]!, m[10]!]
+  return r.every((v, i) => Math.abs(v - id[i]!) < SHIFT_ONLY) ? [m[12]!, m[13]!, m[14]!] : null
+}
+
+/** A cutter solid given in world at a step's transform `t`, moved by `m` in the part's own coordinates, or null for a box a turn would tip. */
+function movedSolid(x: SolidSpec, t: Mat4, m: Mat4): SolidSpec | null {
+  const w = multiply(t, multiply(m, invert(t)))
+  if (x.type === 'cylinder') return { ...x, origin: point(w, x.origin), axis: direction(w, x.axis) }
+  const d = shiftOf(w)
+  if (!d) return null
+  return { type: 'box', min: [x.min[0] + d[0], x.min[1] + d[1], x.min[2] + d[2]], max: [x.max[0] + d[0], x.max[1] + d[1], x.max[2] + d[2]] }
+}
+
+/**
+ * The parts an add makes, as the kernel's solids of the shapes they were made as, or null when a part has none the
+ * kernel starts from (a mesh, a sphere, or a shape the part no longer fits). Each added part is its own solid.
+ */
+export async function addedSolids(call: Call, added: readonly HistoryMesh[], solids: Solids = { keep: false, made: () => {} }): Promise<ExactPart[] | null> {
+  if (!added.length || !added.every((x) => x.primitive && x.primitive.type !== 'sphere' && fits(x.primitive, x.positions, x.indices))) return null
+  const out: ExactPart[] = []
+  for (const x of added) {
+    const r = (await call('brep.primitive', { ...x.primitive!, ...(solids.keep ? { withKeys: true } : { save: true }) })) as Record<string, unknown>
+    if (solids.keep) {
+      if (typeof r['body'] !== 'number') throw new Error('brep: no body in the reply')
+      solids.made(r['body'])
+      out.push({ name: x.name, slot: x.slot, positions: [], indices: [], body: r['body'], unmeshed: Array.isArray(r['bodyKeys']) ? (r['bodyKeys'] as number[]) : [] })
+    } else {
+      if (typeof r['bodySmb'] !== 'string') throw new Error('brep: no bodySmb in the reply')
+      out.push(await fromSolid(call, x, r['bodySmb']))
+    }
+  }
+  return out
+}
+
 /** The steps exactStep has a version of on exact solids. */
 const EXACT_STEPS: ReadonlySet<StepParams['op']> = new Set(['face.push', 'hole.apply', 'shape.extrude', 'subtract', 'boolean', 'edge.fillet', 'edge.chamfer', 'plane.cut'])
 
 /**
  * The parts after step `s` on exact solids, or null when the mesh path should run it. Kernel failures come back as
  * null too, with `fellBack` told; an answer that is the step's real result (a plane that misses) throws ExactBroken.
+ * With `copies` (a pattern's moves, in the part's own coordinates) the step's cut or join is made once more at each
+ * move instead of where it is, all in one kernel call: the extrude's outlines shifted in its plane, or the subtract's
+ * cutters moved; null when a move would take the outline off its plane or tip a box, for the pattern to run copy by copy.
+ * `missed` is told which copies (from 0, in `copies` order) left no face of their own in the result, from the kernel's
+ * `missed` list of outlines or cutters, or null when the kernel's reply does not say (an engine from before it did).
  */
-export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}, tooBig?: (chars: number) => void): Promise<ExactPart[] | null> {
+export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}, copies?: readonly Mat4[], tooBig?: (chars: number) => void, missed?: (copies: number[] | null) => void): Promise<ExactPart[] | null> {
   const p = s.params
   let parts = given
   const frame = rigidFrame(s.transform)
@@ -414,6 +478,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
   }
   // a step with no exact version runs on the mesh, before any part is made a solid for it
   if (!EXACT_STEPS.has(p.op)) return null
+  if (copies && !(copies.length && (p.op === 'subtract' || (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') !== 'new')))) return null
   try {
     // the parts the step works on that Add shape made, and still fit the shape, start as the kernel's solid of it;
     // not a sphere yet, whose triangles at the mesh's resolution take the kernel over 20 ms
@@ -459,13 +524,26 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         const f = localFrame(s, sourceFrame)
         // the kernel's frame has v = normal x u; the step's may be the other way round
         const flipV = dot(cross(f.normal, f.u), direction(invert(s.transform), sourceFrame.v)) < 0
-        const polygons = await loops(call, p.shape, p.placement ?? {}, flipV)
+        const own = await loops(call, p.shape, p.placement ?? {}, flipV)
         const z = range(p.spec)
-        if (!polygons || !z) return null
+        if (!own || !z) return null
+        let polygons = own
+        if (copies) {
+          // each copy's outline is the step's own, shifted in the plane by the copy's move
+          const v = cross(f.normal, f.u)
+          const shifts: [number, number][] = []
+          for (const m of copies) {
+            const d = shiftOf(m)
+            if (!d || Math.abs(dot(d, f.normal)) > 1e-6 * (1 + Math.hypot(...d))) return null
+            shifts.push([dot(d, f.u), dot(d, v)])
+          }
+          polygons = shifts.flatMap(([dx, dy]) => own.map((q) => ({ outer: shiftLoop(q.outer, dx, dy), holes: q.holes.map((h) => shiftLoop(h, dx, dy)) })))
+        }
         const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...(p.spec.taperDeg ? { taperDeg: p.spec.taperDeg } : {}), ...(into === null ? {} : { target: into, operation: op }), ...kept })
         if (into !== null) {
           // a join or cut that misses changes nothing; the kernel makes no body then
           if (!(r as { touches?: boolean }).touches) throw new ExactMissed('The shape no longer reaches the part.')
+          if (copies) missed?.(missedCopies(r, own.length, copies.length))
           out[s.part] = await part(target!, r)
           return out
         }
@@ -476,7 +554,14 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
       case 'subtract': {
         const b = solid(target)
         if (b === null || !target) return null
-        const r = await call('brep.subtract', { body: b, solids: p.solids, frame, ...kept })
+        let cutters: SolidSpec[] = p.solids
+        if (copies) {
+          const moved = copies.flatMap((m) => p.solids.map((x) => movedSolid(x, s.transform, m)))
+          if (moved.some((x) => x === null)) return null
+          cutters = moved as SolidSpec[]
+        }
+        const r = await call('brep.subtract', { body: b, solids: cutters, frame, ...kept })
+        if (copies) missed?.(missedCopies(r, p.solids.length, copies.length))
         out[s.part] = await part(target, r)
         return out
       }
