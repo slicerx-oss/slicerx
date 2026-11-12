@@ -272,7 +272,7 @@ describe('the state an agent reads', () => {
     expect(s['printer']).toMatchObject({ id: 'hand-a1', vendor: 'Bambu Lab', model: 'A1' })
     expect(Array.isArray(s['filament'])).toBe(true)
     // Nothing asked of the geometry engine yet in this session.
-    expect(s['geometry']).toEqual({ answered: {}, failed: {}, lastError: null, loadError: null, workers: { live: 0, memoryBytes: 0, workers: [] } })
+    expect(s['geometry']).toEqual({ answered: {}, failed: {}, lastError: null, loadError: null, workers: { live: 0, memoryBytes: 0, workers: [] }, exactLofts: { count: 0, steps: {} } })
     // No slice yet in this session.
     expect(s['lastSlice']).toBeNull()
   })
