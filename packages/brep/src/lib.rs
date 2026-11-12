@@ -62,6 +62,8 @@ mod kernel;
 #[cfg(all(feature = "typed", not(sx_brep_kernel)))]
 #[path = "stand_in.rs"]
 mod kernel;
+#[cfg(feature = "typed")]
+mod save;
 #[cfg(all(test, feature = "typed"))]
 mod saved;
 #[cfg(feature = "typed")]
