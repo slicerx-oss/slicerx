@@ -26,6 +26,10 @@ on:
         description: Run the macOS and Windows Rust parts as a push to main does, to validate their split before merging
         type: boolean
         default: false
+      gpu_toolcheck:
+        description: Only print where cargo, rustc, node, pnpm, curl and tar resolve on a Windows GPU runner (builds nothing)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -1263,6 +1267,33 @@ jobs:
           name: e2e-failures-smoke
           path: apps/web/test-results/
           retention-days: 14
+
+  # A trial before the kernel's Windows leg moves onto the GPU runners: on a manual run with gpu_toolcheck set, print
+  # what an sx-gpu runner's job sees. It builds nothing and holds no lock. The six runners are six accounts, so Rust is
+  # one shared read-only install (C:\builds\runner-gpu-shared: the toolchain in rustup, its launchers in cargo\bin);
+  # each job points RUSTUP_HOME and PATH at it and keeps its own writable CARGO_HOME in the runner's _work folder.
+  gpu-toolcheck:
+    name: gpu runner toolcheck
+    if: github.event_name == 'workflow_dispatch' && inputs.gpu_toolcheck
+    runs-on: [self-hosted, sx-gpu]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
+    steps:
+      - name: Where the tools resolve
+        run: |
+          export RUSTUP_HOME='C:\builds\runner-gpu-shared\rustup'
+          export CARGO_HOME="$(cygpath -w "$(dirname "$(cygpath "$RUNNER_TEMP")")")\cargo-home"
+          export PATH="/c/builds/runner-gpu-shared/cargo/bin:$PATH"
+          echo "runner $RUNNER_NAME, user $(whoami), CARGO_HOME $CARGO_HOME"
+          for t in cargo rustc rustup node pnpm curl tar sha256sum; do
+            printf '%-10s ' "$t"; command -v "$t" || echo missing
+          done
+          rustc --version && cargo --version && rustup component list --installed || echo "shared Rust not usable from this account"
+          node --version 2>/dev/null || true
 
   # The @gpu specs for the merge queue and main on the project's GPU runners (label sx-gpu, Windows): the installed
   # Chrome draws WebGL on the GPU, so they run fast and steady. Six workers: each page also starts the app's own slicer
