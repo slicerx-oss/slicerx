@@ -22,6 +22,7 @@ use std::ffi::CStr;
 use std::ffi::{CString, c_long, c_ulong};
 use std::marker::PhantomData;
 use std::mem::offset_of;
+use std::pin::Pin;
 use std::ptr::{self, NonNull};
 use std::sync::MutexGuard;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -106,6 +107,12 @@ const PLAIN_CURVE: CurveForm = CurveForm(6);
 /// How far from one plane the kernel lets a flat face's loop be, mm. `stitch.rs` has already held the loop to far
 /// less.
 const FLAT_TOL_MM: f64 = 0.01;
+/// The attributes a face's key is kept under, its low half and its high half, and the bits in a half
+/// (`cpp/sx_keys.h`, which `cpp/sx_kernel.h` checks these against).
+const KEY_LOW: c_ulong = 20101;
+const KEY_HIGH: c_ulong = 20102;
+const KEY_HALF_BITS: u32 = 26;
+const KEY_HALF: u64 = (1 << KEY_HALF_BITS) - 1;
 
 #[cxx::bridge]
 mod ffi {
@@ -154,6 +161,8 @@ mod ffi {
         type SmCountArray;
         type SmSplineArray;
         type SmCurveArray;
+        type SmAttribute;
+        type SmAttributeArray;
 
         // making bodies. Each can allocate, so each is declared with Result: a C++ exception under it comes back
         // as an error where a plain declaration would end the process.
@@ -337,6 +346,26 @@ mod ffi {
         unsafe fn Add(self: Pin<&mut SmSplineArray>, curve: *mut SmBSplineCurve) -> ULONG;
         unsafe fn Add(self: Pin<&mut SmCurveArray>, curve: *mut SmCurve) -> ULONG;
 
+        // a face's attributes, where its key is kept. Each call can allocate, so each is declared with Result.
+        fn GetAttributes(self: &SmFace, out: Pin<&mut SmAttributeArray>) -> Result<()>;
+        unsafe fn AddAttribute(self: Pin<&mut SmFace>, attribute: *mut SmAttribute) -> Result<()>;
+        unsafe fn RemoveAttribute(
+            self: Pin<&mut SmFace>,
+            attribute: *mut SmAttribute,
+            keep: i32,
+        ) -> Result<()>;
+        fn GetAttributeID(self: &SmAttribute) -> ULONG;
+        fn GetNumLongElements(self: &SmAttribute) -> ULONG;
+        fn GetLongElementsAddress(self: &SmAttribute) -> *const SmLong;
+        fn GetSize(self: &SmAttributeArray) -> ULONG;
+        fn GetAt(self: &SmAttributeArray, index: ULONG) -> &*mut SmAttribute;
+
+        // the hand-over (the end of cpp/sx_brep.cpp, which explains the three). Temporary: they go with
+        // src/handover.rs.
+        unsafe fn sx_brep_lend(body: *mut SmBrep) -> Result<SmLong>;
+        fn sx_brep_take_back(number: SmLong);
+        fn sx_brep_adopt(number: SmLong) -> *mut SmBrep;
+
         // what a binding cannot say (cpp/sx_kernel.h): constructors, casts, public data members
         #[cxx_name = "sx_new"]
         fn new_face_array() -> UniquePtr<SmFaceArray>;
@@ -360,6 +389,9 @@ mod ffi {
         fn new_spline_array() -> UniquePtr<SmSplineArray>;
         #[cxx_name = "sx_new"]
         fn new_curve_array() -> UniquePtr<SmCurveArray>;
+        #[cxx_name = "sx_new"]
+        fn new_attribute_array() -> UniquePtr<SmAttributeArray>;
+        fn sx_long_attribute(id: ULONG, value: SmLong, out: &mut *mut SmAttribute) -> Result<SmLong>;
         #[cxx_name = "sx_new"]
         fn new_body() -> UniquePtr<SmBrep>;
         #[cxx_name = "sx_make"]
@@ -416,15 +448,26 @@ fn wide(v: c_long) -> i64 {
     i64::from(v)
 }
 
+/// An exception caught at the bridge, as an error.
+fn caught<T>(op: &'static str, result: std::result::Result<T, cxx::Exception>) -> Result<T> {
+    result.map_err(|e| Error::Threw {
+        op,
+        what: e.what().to_owned(),
+    })
+}
+
 /// A call's status, with an exception caught at the bridge turned into an error.
 fn status_of(op: &'static str, status: std::result::Result<Long, cxx::Exception>) -> Result<c_long> {
-    match status {
-        Ok(Long(status)) => Ok(status),
-        Err(e) => Err(Error::Threw {
-            op,
-            what: e.what().to_owned(),
-        }),
-    }
+    caught(op, status).map(|Long(status)| status)
+}
+
+/// A number as a kernel `long`, or none where it does not fit one.
+#[allow(
+    clippy::unnecessary_fallible_conversions,
+    reason = "long is 32 bits wide on Windows and 64 elsewhere"
+)]
+fn narrow(v: i64) -> Option<c_long> {
+    c_long::try_from(v).ok()
 }
 
 /// Success, or a refusal with the kernel's code.
@@ -464,6 +507,7 @@ pointer_arrays!(
     ffi::SmPolyFaceArray: ffi::SmPolyFace,
     ffi::SmPolyLoopArray: ffi::SmPolyLoop,
     ffi::SmPolyEdgeArray: ffi::SmPolyEdge,
+    ffi::SmAttributeArray: ffi::SmAttribute,
 );
 
 /// The array's pointers, in order. A null entry is left out; the kernel does not hand those out.
@@ -961,6 +1005,127 @@ impl Solid {
             ffi::SmApiGetEdges(self.brep.as_mut_ptr(), array.pin_mut())
         })?;
         Ok(items(&array))
+    }
+}
+
+/// The attributes of `face` that hold a half of its key, each with the id that says which half.
+fn key_halves(
+    _kernel: &Held,
+    face: NonNull<ffi::SmFace>,
+) -> Result<Vec<(c_ulong, NonNull<ffi::SmAttribute>)>> {
+    let mut all = ffi::new_attribute_array();
+    // SAFETY: the face belongs to a solid the caller borrows, so it is live.
+    caught("keys", unsafe { face.as_ref() }.GetAttributes(all.pin_mut()))?;
+    Ok(items(&all)
+        .into_iter()
+        .filter_map(|attribute| {
+            // SAFETY: the kernel just listed it among the face's attributes, so it is live.
+            let id = unsafe { attribute.as_ref() }.GetAttributeID().0;
+            (id == KEY_LOW || id == KEY_HIGH).then_some((id, attribute))
+        })
+        .collect())
+}
+
+/// The half of a key an attribute holds: its one long, or 0 for an attribute that holds anything else. Asked of
+/// the attribute's own base class, so nothing is assumed about what kind it is.
+fn key_half(attribute: NonNull<ffi::SmAttribute>) -> u64 {
+    // SAFETY: the attribute is one `key_halves` just listed, so it is live.
+    let attribute = unsafe { attribute.as_ref() };
+    if attribute.GetNumLongElements().0 != 1 {
+        return 0;
+    }
+    // SAFETY: the attribute says it holds one long, at this address; null is handled.
+    let value = unsafe { attribute.GetLongElementsAddress().as_ref() }.map_or(0, |long| long.0);
+    u64::try_from(value).unwrap_or(0) & KEY_HALF
+}
+
+impl Solid {
+    /// The key on each face, in face order; 0 for a face without one.
+    pub(crate) fn keys(&self) -> Result<Vec<u64>> {
+        let kernel = held();
+        self.face_pointers(&kernel)?
+            .into_iter()
+            .map(|face| {
+                let (mut low, mut high) = (0_u64, 0_u64);
+                for (id, attribute) in key_halves(&kernel, face)? {
+                    if id == KEY_LOW {
+                        low = key_half(attribute);
+                    } else {
+                        high = key_half(attribute);
+                    }
+                }
+                Ok((high << KEY_HALF_BITS) | low)
+            })
+            .collect()
+    }
+
+    /// Writes one key on each face, in face order; 0 leaves the face without one. `body.rs` has checked that there
+    /// is a key for each face and that each fits in 52 bits. An error part way leaves the faces before it written.
+    pub(crate) fn set_keys(&mut self, keys: &[u64]) -> Result<()> {
+        let kernel = held();
+        for (face, &key) in self.face_pointers(&kernel)?.into_iter().zip(keys) {
+            for (_, attribute) in key_halves(&kernel, face)? {
+                // SAFETY: the face is live and, with the solid borrowed for writing, nothing else reads it; the
+                // attribute is the face's own, which the kernel takes off and deletes.
+                caught("keys", unsafe {
+                    Pin::new_unchecked(&mut *face.as_ptr()).RemoveAttribute(attribute.as_ptr(), 0)
+                })?;
+            }
+            if key == 0 {
+                continue;
+            }
+            for (id, half) in [(KEY_LOW, key & KEY_HALF), (KEY_HIGH, key >> KEY_HALF_BITS)] {
+                let mut made = ptr::null_mut();
+                // a half is 26 bits, which a long holds everywhere
+                let value = Long(c_long::try_from(half & KEY_HALF).unwrap_or(0));
+                check("keys", ffi::sx_long_attribute(ULong(id), value, &mut made))?;
+                if made.is_null() {
+                    return Err(Error::NotSolid {
+                        op: "keys",
+                        why: "the kernel made no attribute",
+                    });
+                }
+                // SAFETY: the face as above; the attribute is the one just made, which the face takes over.
+                caught("keys", unsafe {
+                    Pin::new_unchecked(&mut *face.as_ptr()).AddAttribute(made)
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Puts the body in the older operations' table and gives its number there (`src/handover.rs`). Temporary.
+    /// `take_back` with the number must follow before the body is dropped.
+    pub(crate) fn lend(&self) -> Result<i64> {
+        let _kernel = held();
+        // SAFETY: the body is live for as long as `self` is. The table keeps only the pointer, the operations
+        // that read it work on copies, and neither its `free` nor `adopt` gives up a lent number.
+        let number = status_of("lend", unsafe { ffi::sx_brep_lend(self.brep.as_mut_ptr()) })?;
+        Ok(wide(number))
+    }
+}
+
+/// Takes a lent number out of the older operations' table again. Nothing is deleted. Temporary.
+pub(crate) fn take_back(number: i64) {
+    let _kernel = held();
+    if let Some(number) = narrow(number) {
+        ffi::sx_brep_take_back(Long(number));
+    }
+}
+
+/// The body an older operation made, out of its table and owned here, or none for a number the table does not have
+/// and for one that is only lent. Temporary.
+pub(crate) fn take_over(number: i64) -> Option<Solid> {
+    let _kernel = held();
+    let raw = ffi::sx_brep_adopt(Long(narrow(number)?));
+    // SAFETY: the table gave the pointer up, so nothing else holds the body; the kernel allocated it with the
+    // operator new that its own delete, which UniquePtr calls, matches. Null stays null.
+    let brep = unsafe { UniquePtr::from_raw(raw) };
+    // a solid is made only around a body: dropping an empty one would ask for the lock held here
+    if brep.is_null() {
+        None
+    } else {
+        Some(Solid { brep })
     }
 }
 

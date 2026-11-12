@@ -45,6 +45,11 @@
 //! with everything the kernel knows about its triangles. The calls go through a `cxx` bridge to the kernel's own
 //! API. All of that feature's `unsafe` code is in one file, `src/kernel.rs`; the rest of it is safe Rust. Without
 //! the kernel the types are still there and every way to make a body answers [`Error::NoKernel`].
+//!
+//! A typed body has its face keys too ([`Body::keys`], [`Body::set_keys`]), kept where the operations above keep
+//! them. Until those operations are made over typed bodies, [`handover`] is how one of them works on a typed body:
+//! the body is lent to the table for a call, and the body the call made is taken out of the table as a typed body.
+//! `free` refuses a body that is only lent.
 
 #[cfg(sx_brep_kernel)]
 use std::ffi::c_char;
@@ -57,6 +62,8 @@ mod against_json;
 mod body;
 #[cfg(feature = "typed")]
 mod error;
+#[cfg(feature = "typed")]
+pub mod handover;
 #[cfg(all(feature = "typed", sx_brep_kernel))]
 mod kernel;
 #[cfg(all(feature = "typed", not(sx_brep_kernel)))]

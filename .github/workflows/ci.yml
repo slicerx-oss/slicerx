@@ -1039,7 +1039,7 @@ jobs:
         run: >-
           cargo test -p sx-brep -p sx-geom --release --features sx-brep/routine-probe,sx-brep/typed,sx-geom/brep
           --lib --test face_identity --test input_limits --test kernel --test kernel_detection --test routines --test solids
-          --test typed_bodies --test typed_mesh --test typed_stitch --test typed_save
+          --test typed_bodies --test typed_mesh --test typed_stitch --test typed_save --test typed_handover
           --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft
       - if: failure()
         run: |

@@ -40,6 +40,9 @@ pub struct Body {
     thread: PhantomData<*const ()>,
 }
 
+/// A face's key is below this: 52 bits, which a JSON number holds exactly.
+const KEY_LIMIT: u64 = 1 << 52;
+
 /// How closely the read-back and [`Body::volume`] ask the kernel to integrate, relative to the volume.
 const VOLUME_ACCURACY: f64 = 1e-6;
 
@@ -172,6 +175,25 @@ impl Body {
     /// The edges, in the kernel's order.
     pub fn edges(&self) -> Result<Vec<Edge<'_>>> {
         Ok(self.solid.edges()?.into_iter().map(Edge).collect())
+    }
+
+    /// The key on each face, in the order of [`Body::faces`]; 0 for a face without one. A key says which step of
+    /// a history made the face. It is kept on the kernel's face, so the operations that make a body from this one
+    /// carry it to the faces that come from that face.
+    pub fn keys(&self) -> Result<Vec<u64>> {
+        self.solid.keys()
+    }
+
+    /// Writes a key on each face, in the order of [`Body::faces`]; 0 leaves a face without one. Refused, with
+    /// nothing changed, unless there is one key for each face and each is below 2^52.
+    pub fn set_keys(&mut self, keys: &[u64]) -> Result<()> {
+        if keys.len() != self.solid.faces()?.len() {
+            return Err(Error::input("keys", "must be one for each face of the body"));
+        }
+        if keys.iter().any(|&key| key >= KEY_LIMIT) {
+            return Err(Error::input("keys", "must be below 2^52"));
+        }
+        self.solid.set_keys(keys)
     }
 
     pub(crate) fn solid(&self) -> &Solid {

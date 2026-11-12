@@ -11,6 +11,7 @@
 #include <SmApiPrimitives.h>
 #include <SmApiQueries.h>
 #include <SmApiSurfaces.h>
+#include <SmAttribute.h>
 #include <SmAxis2Placement.h>
 #include <SmBSplineCurve.h>
 #include <SmBrep.h>
@@ -37,6 +38,7 @@
 #include <type_traits>
 
 #include "rust/cxx.h"
+#include "sx_keys.h"
 
 // --- names
 // the binding needs one plain identifier per type: the kernel's status and type codes are macros for long, and its
@@ -53,6 +55,7 @@ using SmNumberArray = SmTArray<double>;
 using SmCountArray = SmTArray<ULONG>;
 using SmSplineArray = SmTArray<SmBSplineCurve*>;
 using SmCurveArray = SmTArray<SmCurve*>;
+using SmAttributeArray = SmTArray<SmAttribute*>;
 
 // --- facts
 // The two kernel types Rust holds by value, field for field (Vec3 and Params in src/kernel.rs, which checks the
@@ -94,6 +97,9 @@ static_assert(SmLine_TYPE == 14010 && SmCircle_TYPE == 14021 && SmEllipse_TYPE =
 static_assert(SmBSplineCurve_TYPE == 14033, "curve types");
 static_assert(SM_TS_BOUNDARY_PREPARATION == 0 && SM_TS_FACE_TESSELLATION == 1 && SM_TS_POLYGON_OUTPUT == 2, "stages");
 static_assert(SM_ANG_TOL_DEG == 0.5, "the kernel's angle tolerance");
+// where a face's key is kept (cpp/sx_keys.h), constants in src/kernel.rs
+static_assert(kSxKeyLow == 20101 && kSxKeyHigh == 20102 && kSxKeyHalfBits == 26, "face keys");
+static_assert(std::is_base_of<SmAttribute, SmLongAttribute>::value, "a key half is a long attribute");
 
 // --- what a binding cannot say
 // a kernel array, made in the kernel's context (plain new is private to kernel objects)
@@ -107,6 +113,20 @@ inline const SmVector3d& sx_normal(const SmPolyVertAuxData& a) { return a.m_vNor
 inline ULONG sx_failed_face(const SmTessellationFailure& f) { return f.lFaceIndex; }
 inline int sx_failed_stage(const SmTessellationFailure& f) { return static_cast<int>(f.eStage); }
 inline SmLong sx_failed_status(const SmTessellationFailure& f) { return f.eStatus; }
+// a long attribute, made in the kernel's context as its objects are; the object it is added to owns it
+inline SmLong sx_long_attribute(ULONG id, SmLong value, SmAttribute*& out)
+{
+    out = new (*SmApiGetOrCreateContext()) SmLongAttribute(id, value, SM_AB_COPY);
+    return SM_SUCCESS;
+}
+
+// --- the hand-over
+// the three exports at the end of cpp/sx_brep.cpp, which that file explains. Temporary, as they are
+extern "C" {
+long sx_brep_lend(SmBrep* body);
+void sx_brep_take_back(long number);
+SmBrep* sx_brep_adopt(long number);
+}
 
 // --- checks
 // how the kernel reads a value Rust wrote, by the kernel's own field names (the layout tests in src/kernel.rs)
