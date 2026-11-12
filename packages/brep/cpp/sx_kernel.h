@@ -5,18 +5,23 @@
 // constructor call, a cast between kernel classes, a public data member). No modeling code lives here.
 #pragma once
 #include <SmApiBrep.h>
+#include <SmApiCurves.h>
 #include <SmApiGeneral.h>
 #include <SmApiImportExport.h>
 #include <SmApiPrimitives.h>
 #include <SmApiQueries.h>
+#include <SmApiSurfaces.h>
 #include <SmAxis2Placement.h>
+#include <SmBSplineCurve.h>
 #include <SmBrep.h>
 #include <SmCone.h>
 #include <SmCurve.h>
 #include <SmCurveTypes.h>
 #include <SmCylinder.h>
 #include <SmEdge.h>
+#include <SmExtent2d.h>
 #include <SmFace.h>
+#include <SmLine.h>
 #include <SmMath.h>
 #include <SmPlane.h>
 #include <SmPoly.h>
@@ -43,6 +48,11 @@ using SmPolyFaceArray = SmTArray<SmPolyFace*>;
 using SmPolyLoopArray = SmTArray<SmPolyLoop*>;
 using SmPolyEdgeArray = SmTArray<SmPolyEdge*>;
 using SmFailureArray = SmTArray<SmTessellationFailure>;
+using SmPointArray = SmTArray<SmVector3d>;
+using SmNumberArray = SmTArray<double>;
+using SmCountArray = SmTArray<ULONG>;
+using SmSplineArray = SmTArray<SmBSplineCurve*>;
+using SmCurveArray = SmTArray<SmCurve*>;
 
 // --- facts
 // The two kernel types Rust holds by value, field for field (Vec3 and Params in src/kernel.rs, which checks the
@@ -61,10 +71,19 @@ static_assert(offsetof(SmTessellationParams, dCurveAngleTolDeg) == 8, "SmTessell
 static_assert(offsetof(SmTessellationParams, dSurfaceAngleTolDeg) == 16, "SmTessellationParams");
 static_assert(offsetof(SmTessellationParams, dMaxEdgeLength) == 24, "SmTessellationParams");
 static_assert(offsetof(SmTessellationParams, dMaxAspectRatio) == 32, "SmTessellationParams");
+// a surface's extent is four doubles that Rust hands back as it got them and never reads (Extent in src/kernel.rs).
+// Its copy constructor only copies the four and its destructor only overwrites them, so moving its bytes, and never
+// running the destructor on Rust's copy, is sound.
+template <> struct rust::IsRelocatable<SmExtent2d> : std::true_type {};
+static_assert(std::is_standard_layout<SmExtent2d>::value && !std::is_polymorphic<SmExtent2d>::value, "SmExtent2d");
+static_assert(sizeof(SmExtent2d) == 32 && alignof(SmExtent2d) == alignof(double), "SmExtent2d");
+// the curve classes Rust casts between, each to its own base
+static_assert(std::is_base_of<SmBSplineCurve, SmLine>::value && std::is_base_of<SmCurve, SmBSplineCurve>::value, "curve classes");
 // integers Rust passes by value
 static_assert(std::is_same<ULONG, unsigned long>::value && std::is_same<SmStatus, long>::value, "long sized");
 static_assert(std::is_same<SmBoolean, int>::value && sizeof(int) == 4, "SmBoolean");
 static_assert(std::is_same<TCHAR, char>::value, "file names are plain char");
+static_assert(sizeof(SmBSplineCurveForm) == sizeof(int) && SM_CF_UNSPECIFIED == 6, "curve form");
 // codes that are macros here and constants in src/kernel.rs
 static_assert(SM_SUCCESS == 1000, "status");
 static_assert(SmBSplineSurface_TYPE == 15002 && SmPlane_TYPE == 15011 && SmCone_TYPE == 15012, "surface types");

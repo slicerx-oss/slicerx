@@ -65,6 +65,8 @@ mod kernel;
 #[cfg(all(test, feature = "typed"))]
 mod saved;
 #[cfg(feature = "typed")]
+mod stitch;
+#[cfg(feature = "typed")]
 mod tess;
 #[cfg(feature = "typed")]
 mod values;
@@ -73,6 +75,8 @@ mod values;
 pub use body::{Body, Curve, Edge, Face, Frame, Surface};
 #[cfg(feature = "typed")]
 pub use error::{Error, FailedFace, Stage};
+#[cfg(feature = "typed")]
+pub use stitch::{Path, Sheet};
 #[cfg(feature = "typed")]
 pub use tess::{Mesh, MeshEdge, Tessellation};
 
