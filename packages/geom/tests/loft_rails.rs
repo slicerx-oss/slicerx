@@ -1013,6 +1013,79 @@ fn a_landmark_keeps_its_rail_from_a_corner_within_reach() {
     assert!(rr.corners[j] && !sq.corners[j] && j != i);
 }
 
+fn unmatched(profiles: &Value, opts: &Value) -> String {
+    match match_of(profiles, opts, &Density::default()) {
+        Match::Unmatched(why) => why,
+        Match::Rails(_) => panic!("matched"),
+    }
+}
+
+/// a profile on the plane through the z axis `around` degrees about it, 40 mm out, turned `turn` degrees in that
+/// plane
+fn spoke(around: f64, turn: f64, lp: &Value) -> Value {
+    let (s, c) = around.to_radians().m_sin_cos();
+    let (ts, tc) = turn.to_radians().m_sin_cos();
+    json!({
+        "frame": {
+            "origin": [40.0 * c, 40.0 * s, 0],
+            "normal": [-s, c, 0],
+            "u": [tc * c, tc * s, ts],
+            "v": [-ts * c, -ts * s, tc],
+        },
+        "loops": [lp],
+    })
+}
+
+#[test]
+fn a_ring_whose_rails_do_not_come_back_is_unmatched() {
+    // three rounded squares around a ring, each turned 30 degrees on from the one before. From each to the next
+    // the least twist keeps corner on corner, and from the last back to the first it is 30 degrees on again, which
+    // is the first one's next corner: a rail comes back a quarter of the way around from where it set out.
+    let lp = rounded(12.0, 12.0, 2.0);
+    let ring = json!([
+        spoke(0.0, 0.0, &lp),
+        spoke(120.0, 30.0, &lp),
+        spoke(240.0, 60.0, &lp),
+    ]);
+    assert_eq!(
+        unmatched(&ring, &json!({ "closed": true })),
+        "the pieces do not come back onto themselves around the ring, so its rails would not close"
+    );
+    // the same three with no turn close
+    let still = json!([
+        spoke(0.0, 0.0, &lp),
+        spoke(120.0, 0.0, &lp),
+        spoke(240.0, 0.0, &lp),
+    ]);
+    let r = rails_of(&still, &json!({ "closed": true }));
+    assert_eq!((r.pieces.len(), r.wrap), (8, Some(0)));
+}
+
+#[test]
+fn a_piece_too_thin_to_match_is_unmatched() {
+    // two landmarks a quarter of the way apart on the first circle and half a millionth of a millimeter apart on
+    // the second: each landmark is a rail, so the piece between them has no width on the second profile
+    let mark = |mut p: Value, l: [[f64; 2]; 2]| {
+        p["landmarks"] = json!(l);
+        p
+    };
+    let thin = (5e-7_f64 / 12.0).to_degrees();
+    let profiles = json!([
+        mark(
+            at(0.0, &circle([0.0, 0.0], 24.0)),
+            [on_circle(12.0, 0.0), on_circle(12.0, 90.0)]
+        ),
+        mark(
+            at(20.0, &circle([0.0, 0.0], 24.0)),
+            [on_circle(12.0, 0.0), on_circle(12.0, thin)]
+        ),
+    ]);
+    assert_eq!(
+        unmatched(&profiles, &json!({})),
+        "profile 2 would be cut into a piece too thin to match"
+    );
+}
+
 /// two matched rings seen from above: each ring, the rails between paired points, and a dot where a piece starts
 fn picture(r: &Rails) -> String {
     use std::fmt::Write as _;
