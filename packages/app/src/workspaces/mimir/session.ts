@@ -32,6 +32,8 @@ import { slicePlate } from '../../state/actions'
 import { plateSliceConfig } from '../../state/slice-plate'
 import { hostSlices } from '../../state/model-mode'
 import { get, useApp, type AppState, type PilotPref } from '../../state/store'
+import { resolveConfig } from '../../adapters/config'
+import { areaSize } from '../../plate/bed-origin'
 import { setMimirLink, type MimirLink } from './connection'
 import { bundledKb } from './kb'
 import { cardPlans } from './plan-tool'
@@ -110,6 +112,19 @@ export function tabState(): { link: MimirLink; provider: string | null; model: s
   return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, where: m.where ?? null, tools: current.pilot.tools().map((t) => t.name), turns: current.pilot.turnSets?.() ?? null, capped }
 }
 
+/**
+ * The printer's usable build volume from its profile (the printable area on both axes and the printable height), for
+ * a display model's plan to fill; undefined with no printer profile, and the plan then takes 256 mm.
+ */
+export function usableBed(s: AppState): { x: number; y: number; z: number } | undefined {
+  if (!s.easy) return undefined
+  const cfg = resolveConfig(s.easy, s.overrides ?? {})
+  const area = areaSize(cfg['printable_area'])
+  const z = Number(String(cfg['printable_height'] ?? '').split(',')[0])
+  if (!area || !(area.widthMm > 0) || !(area.depthMm > 0)) return undefined
+  return { x: area.widthMm, y: area.depthMm, z: z > 0 ? z : 256 }
+}
+
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
 export function toolsFor(loader: Loader): PilotTool<never>[] {
   // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
@@ -119,7 +134,7 @@ export function toolsFor(loader: Loader): PilotTool<never>[] {
   if (tools.length === 0) {
     tabHost?.dispose()
     tabHost = appDesignHost(loader)
-    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments })
+    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments, bed: () => usableBed(get()) })
   }
   return tools
 }

@@ -117,6 +117,8 @@ describe('the plan card', () => {
       colors: { Body: 'walnut' },
       real: [],
       tiers: { Body: ['Body'] },
+      // the person said its size (a 30 cm tray), so it keeps it rather than filling the bed
+      personSize: true,
     }
     const { result } = await shown(organizer)
     const detail = screen.getByTestId('mimir-plan-detail')

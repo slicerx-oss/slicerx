@@ -5,6 +5,7 @@
 // every file call says so.
 import type { DesignHost } from '@slicerx/cad-history'
 import { lookTool } from './look'
+import type { Bed } from './plan-detail'
 import type { PilotTool } from '@slicerx/pilot'
 import { cadTools, type CadFiles } from './cad'
 import { createPlanRegistry } from './design-check'
@@ -21,7 +22,7 @@ export { layerProfileEditInput, layerProfileReadInput } from './layer-profile-in
 export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, FIX_ROUNDS, MAX_PLANS, nozzleOr, partPlanSchema, PLAN_SIZE_MAX, PlanOwnedError, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanOrigin, type PlanRegistry } from './design-check'
 export type { DesignToolOptions } from './design-tools'
 export { FILAMENT_TOOLS, filamentTools, SLOT_TOOLS, withNewFilaments, type FilamentList, type FilamentPatch, type TabFilament } from './tab-filaments'
-export { DETAIL_LABEL, DETAIL_LEVELS, DETAIL_LINE, type DetailLevel } from './plan-detail'
+export { DEFAULT_BED, DETAIL_LABEL, DETAIL_LEVELS, DETAIL_LINE, DISPLAY_FILL, displaySize, type Bed, type DetailLevel } from './plan-detail'
 export { createCardPlans, mimirTabTools, PartPlanSchema, PLAN_CHANGE, PLAN_GO, PLAN_KEEP, planChoiceId, PlanInputSchema, samePlan, type CardPlans, type PlanAnswer, type PlanInput } from './tab-tools'
 // the print-in-place gap rule design.check and geom.fit_check use: limits by direction, the way a gap runs, and whether it clears
 export { clearsFitLimit, FIT_TOLERANCE_MM, fitDirection, fitLimitFor, fitLimits, fitVerdict, type FitDirection, type FitProfile } from './fit-facts'
@@ -73,10 +74,10 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
  * `filaments` (the open project's) adds project.add_filament and project.set_filament, and part makers given a slot past
  * the last filament add it, and so does applying color paint in one. The paint tools are the server's, on `host`.
  */
-export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string; filaments?: FilamentList } = {}): PilotTool<never>[] {
+export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string; filaments?: FilamentList; bed?: () => Bed | undefined } = {}): PilotTool<never>[] {
   // design.plan names the gaps design.check holds a print-in-place part to: the same nozzle, layer height and material
   const fitProfile = () => ({ ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })
-  const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile, designs: () => host.list() })
+  const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile, designs: () => host.list(), ...(opts.bed ? { bed: opts.bed } : {}) })
   // paint.preview, paint.apply and paint.regions paint a design's parts as a step of its history, as on the server
   // design.look draws the design for a cloud model to look at on a vague follow-up (look.ts); a local model is not offered it
   const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true }))), ...paintTools(host), lookTool(host, opts.filaments)]

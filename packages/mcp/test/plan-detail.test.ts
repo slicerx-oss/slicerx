@@ -9,7 +9,7 @@ import type { PilotMachine } from '@slicerx/contracts'
 import { type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { type BodyFacts, createPlanRegistry, designCheck, partPlanSchema, type PartPlan } from '../src/design-check'
-import { DETAIL_HELP, detailProblem, featuresFloor, loftSections, sectionsProblem } from '../src/plan-detail'
+import { DEFAULT_BED, DETAIL_HELP, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem } from '../src/plan-detail'
 import { PLAN_GO, type PlanInput } from '../src/tab-tools'
 import { createCardPlans, designToolset, tabToolset } from '../src/toolset'
 import type { DesignHost } from '@slicerx/cad-history'
@@ -18,6 +18,8 @@ const machine: PilotMachine = { printer: 'bambu_a1_mini', material: 'pla', nozzl
 
 /** A toy pod at display detail: a lofted shell split at its color line, a canopy, vents and studs arrayed. */
 const pod: PlanInput = {
+  // these plans test the other rules; the bed fill has its own tests below
+  personSize: true,
   part: 'Toy pod',
   units: 'mm',
   detail: 'display',
@@ -34,7 +36,7 @@ const pod: PlanInput = {
     { name: 'Upper shell', kind: 'loft', sizes: { length: 150, width: 55, height: 10, sections: 7 }, kinds: { sections: 'count' } },
     { name: 'Floor', kind: 'extrude', sizes: { length: 140, width: 50, height: 1 } },
     { name: 'Canopy', kind: 'extrude', sizes: { length: 50, width: 35, height: 15 } },
-    { name: 'Canopy cap', kind: 'extrude', sizes: { length: 54, width: 39, height: 2 } },
+    { name: 'Canopy cap', kind: 'extrude', sizes: { length: 54, width: 39, height: 3 } },
     { name: 'Vents', kind: 'array cut', sizes: { diameter: 3, pitch: 8, count: 5 }, kinds: { count: 'count' } },
     { name: 'Studs', kind: 'array and mirror', sizes: { diameter: 1, height: 5, count: 12 }, kinds: { count: 'count' } },
     { name: 'Antenna', kind: 'loft', sizes: { height: 40, diameter: 3 } },
@@ -46,6 +48,8 @@ const pod: PlanInput = {
 
 /** A model car at display detail: a lofted body, wheels arrayed and mirrored, lights and trim. */
 const car: PlanInput = {
+  // these plans test the other rules; the bed fill has its own tests below
+  personSize: true,
   part: 'Model car',
   units: 'mm',
   detail: 'display',
@@ -71,6 +75,8 @@ const car: PlanInput = {
 
 /** A house at display detail: flat-sided, so its walls and roof are extruded, and its windows and steps arrayed. */
 const house: PlanInput = {
+  // these plans test the other rules; the bed fill has its own tests below
+  personSize: true,
   part: 'House',
   units: 'mm',
   detail: 'display',
@@ -220,9 +226,9 @@ function tab() {
 }
 
 describe('design.plan with a detail level', () => {
-  it('is 1.7.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
+  it('is 1.8.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.7.0')
+    expect(t.tool.version).toBe('1.8.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
@@ -312,5 +318,67 @@ describe('designCheck on a display plan', () => {
     expect(designCheck(plan, body(shapedShell, 25.5), 0.4).items[0]!.pass).toBe(false)
     // a basic plan keeps the tight 0.2 mm or 1 percent
     expect(designCheck({ ...plan, detail: 'basic' }, body(shapedShell, 24.66), 0.4).items[0]!.pass).toBe(false)
+  })
+})
+
+describe('a display model the person gave no size for fills the bed', () => {
+  // neutral samples: a figure, a building and a vase, each planned at some size the model picked itself
+  const figure: PlanInput = { ...car, personSize: undefined, part: 'Figure', overall: { x: 40, y: 30, z: 120 } }
+  const building: PlanInput = { ...house, personSize: undefined, overall: { x: 100, y: 80, z: 85 } }
+  const vase: PlanInput = { ...car, personSize: undefined, part: 'Vase', overall: { x: 60, y: 60, z: 150 } }
+  const bed180 = { x: 180, y: 180, z: 180 }
+  const bed256 = { x: 256, y: 256, z: 256 }
+
+  it('sizes a building by its length to 85% of a 256 mm bed, and a tall figure and vase by their height', () => {
+    const b = displaySize(building.overall!, bed256)!
+    expect(b.by).toBe('its length')
+    expect(Math.round(b.x * 10) / 10).toBe(217.6)
+    const f = displaySize(figure.overall!, bed256)!
+    expect(f.by).toBe('its height')
+    expect(Math.round(f.z * 10) / 10).toBe(217.6)
+    expect(Math.round(displaySize({ x: 60, y: 60, z: 120 }, bed180)!.z * 10) / 10).toBe(153)
+    // a vase already 150 mm tall on a 180 mm bed is within the fill
+    expect(displaySize(vase.overall!, bed180)).toBeNull()
+    // within 6 percent of the fill it stands
+    expect(displaySize({ x: 210, y: 168, z: 178.5 }, bed256)).toBeNull()
+  })
+
+  it('refuses a plan sized by a scale the model picked, naming the size to plan and the printer', () => {
+    const why = detailProblem(building, { bed: bed180, printer: 'Bambu Lab A1 mini' })!
+    expect(why).toContain("overall: the person gave no size, so a display model is planned to fill about 85% of Bambu Lab A1 mini's usable 180 x 180 x 180 mm, set by its length: plan it 153 x 122.4 x 130.1 mm, not 100 x 80 x 85")
+    expect(why).toContain('When the person gave a size, keep theirs and set personSize')
+  })
+
+  it('reads 256 mm when no printer is chosen, and says so', () => {
+    expect(detailProblem(vase, { bed: DEFAULT_BED })).toContain('a 256 x 256 x 256 mm build volume, as no printer is chosen, set by its height: plan it 87 x 87 x 217.6 mm')
+  })
+
+  it('passes a plan at the fill, and keeps a size the person gave', () => {
+    const sized = { ...building, overall: { x: 217.6, y: 174.1, z: 184.9 } }
+    expect(detailProblem(sized, { bed: bed256 }) ?? '').not.toContain('overall:')
+    expect(detailProblem({ ...building, personSize: true }, { bed: bed256 }) ?? '').not.toContain('overall:')
+  })
+
+  it('takes the bed from the printer in the tab, and DEFAULT_BED with none', async () => {
+    const card = createCardPlans(createPlanRegistry())
+    const tools = tabToolset({ list: () => [], get: () => undefined } as unknown as DesignHost, card, { nozzleMm: () => machine.nozzle, newPlanId: () => 'plan_1', bed: () => bed180 })
+    const tool = tools.find((t) => t.name === 'design.plan')!
+    const ctx = { context: { project: 'creative', machine: { ...machine, printer: 'Bambu Lab A1 mini' }, objects: [] }, ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as unknown as ToolContext
+    await expect(tool.run(tool.input.parse(building) as never, ctx)).rejects.toThrow("Bambu Lab A1 mini's usable 180 x 180 x 180 mm")
+    expect(DEFAULT_BED).toEqual({ x: 256, y: 256, z: 256 })
+  })
+})
+
+describe('a stepped body plans each level tall enough to read', () => {
+  it('refuses stories planned as 2 mm slabs, and takes 3 mm levels', () => {
+    const stories = (h: number): PlanInput => ({
+      ...house,
+      flat: ['Walls', 'Roof', 'Tower'],
+      tiers: { Walls: ['Walls'], Roof: ['Roof'], Tower: ['Tower', 'Upper story'] },
+      colors: { ...house.colors, Tower: 'white', 'Upper story': 'white' },
+      features: [...house.features, { name: 'Tower', kind: 'extrude', sizes: { length: 60, width: 30, height: h } }, { name: 'Upper story', kind: 'extrude', sizes: { length: 40, width: 24, height: h } }],
+    })
+    expect(detailProblem(stories(2))).toContain('tiers: Tower, a level of Tower, is 2 mm tall, which reads as a thin slab at the whole-model view; give each level at least 3 mm')
+    expect(detailProblem(stories(3)) ?? '').not.toContain('thin slab')
   })
 })
