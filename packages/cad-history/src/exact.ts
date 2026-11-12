@@ -18,9 +18,11 @@ export type Pushed = (moved: MovedFace, faceKey: number, reached: boolean) => vo
 export interface ExactPart {
   name: string
   slot: number
-  positions: number[]
-  indices: number[]
+  positions: ArrayLike<number>
+  indices: ArrayLike<number>
   faces?: NonNullable<HistoryMesh['faces']>
+  /** The solid's own corner normals for these triangles (HistoryMesh.normals), from its tessellation. */
+  normals?: Int16Array
   paint?: PaintTexts
   smb?: string
   /** The solid as a body number in the kernel, when the replay's engine keeps bodies between calls (the worker). */
@@ -67,11 +69,18 @@ export const EXACT_FELL_BACK = 'The exact solid could not do this step, so it ra
 /** Thrown for an answer that is the step's real outcome, not a kernel failure (no fallback). */
 export class ExactBroken extends Error {}
 
-interface Tessellated {
-  positions: number[]
-  indices: number[]
-  faceIds: number[]
-  faces: { surface: unknown; key: number }[]
+/**
+ * The engine's answer to brep.tessellate, in either form it comes in. The numbers are lists or typed arrays. `faces`
+ * is one entry per face, or the face table with its keys beside it; `faceIds` names each triangle's face. `normals`
+ * are packed corner normals, six per triangle, when the engine reads them off the solid. Anything else in the answer
+ * is left alone.
+ */
+export interface Tessellated {
+  positions: ArrayLike<number>
+  indices: ArrayLike<number>
+  faceIds?: ArrayLike<number>
+  faces?: { surface: unknown; key?: number }[] | { table: unknown[]; keys?: number[] }
+  normals?: ArrayLike<number>
 }
 
 /** A part from a solid: its tessellation with faces and keys, and the solid's text unless it is too big to keep. */
@@ -84,25 +93,34 @@ export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot
 /** The part with its body tessellated, when it has not been yet. */
 export async function meshed<P extends ExactPart>(call: Call, p: P): Promise<P> {
   if (!p.unmeshed || p.body === undefined) return p
-  const { unmeshed: _keys, ...rest } = p
+  // normals come from this tessellation or not at all
+  const { unmeshed: _keys, normals: _old, ...rest } = p
   return { ...rest, ...tessellated((await call('brep.tessellate', { body: p.body })) as Tessellated) } as P
 }
 
-function tessellated(t: Tessellated): Pick<ExactPart, 'positions' | 'indices' | 'faces'> {
-  const table = t.faces.map((f) => f.surface)
-  const keys = t.faces.map((f) => f.key)
-  // a triangle the kernel could not place on a face gets a face of its own kind, with no key
-  let none = -1
-  const ids = t.faceIds.map((id) => {
-    if (id >= 0) return id
-    if (none < 0) {
-      none = table.length
-      table.push({ kind: 'other' })
-      keys.push(0)
-    }
-    return none
-  })
-  return { positions: t.positions, indices: t.indices, faces: { ids, table, ...(keys.some((k) => k) ? { keys } : {}) } }
+/** The part fields a tessellation gives, from either form of the answer. */
+export function tessellated(t: Tessellated): Pick<ExactPart, 'positions' | 'indices' | 'faces' | 'normals'> {
+  const triangles = Math.floor(t.indices.length / 3)
+  // packed normals count only when every triangle corner has its pair
+  const normals = t.normals && t.normals.length === triangles * 6 ? (t.normals instanceof Int16Array ? t.normals : Int16Array.from(t.normals)) : undefined
+  const mesh = { positions: t.positions, indices: t.indices, ...(normals ? { normals } : {}) }
+  const given = t.faces
+  const from = t.faceIds
+  if (!given || !from || from.length !== triangles) return mesh
+  const table = Array.isArray(given) ? given.map((f) => f.surface) : [...given.table]
+  const keys = Array.isArray(given) ? given.map((f) => f.key ?? 0) : table.map((_, i) => given.keys?.[i] ?? 0)
+  const known = table.length
+  const placed = (id: number) => Number.isInteger(id) && id >= 0 && id < known
+  let ids = from
+  for (let i = 0; i < from.length; i++) {
+    if (placed(from[i]!)) continue
+    // a triangle the kernel could not place on a face gets a face of its own kind, with no key
+    table.push({ kind: 'other' })
+    keys.push(0)
+    ids = Array.from(from, (id) => (placed(id) ? id : known))
+    break
+  }
+  return { ...mesh, faces: { ids, table, ...(keys.some((k) => k) ? { keys } : {}) } }
 }
 
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
