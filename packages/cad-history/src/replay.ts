@@ -633,7 +633,9 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
   const toWorld = s.transform
   const fromWorld = invert(s.transform)
   let out = parts
-  let moves = stepCopyMoves(p.spec)
+  const moves = stepCopyMoves(p.spec)
+  // each copy's move along the surface, or null for one that found no side there
+  let placed: (Mat4 | null)[] | null = null
   // a row along a curved side: each copy slides onto the part's surface where it lands and turns to it
   if (p.spec.kind === 'linear' && p.spec.onSurface) {
     const anchor = live.map((x) => anchorOf(x.params)).find((a) => a !== null)
@@ -643,12 +645,18 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
     const world = bakeMesh({ name: part.name, slot: part.slot, positions: part.positions, indices: part.indices }, s.transform)
     const follow = surfaceMoves(moves, anchor, Array.from(world.positions), Array.from(part.indices))
     if (!Array.isArray(follow)) throw new Broken(`Copy ${follow.copy}: ${follow.why}`)
-    moves = follow
+    placed = follow.map((m) => (Array.isArray(m) ? m : null))
   }
   const left: number[] = []
   for (const [k, move] of moves.entries()) {
+    // a copy of a row along a surface that found no side where it lands is left out as one that missed
+    const on = placed ? placed[k] : move
+    if (!on) {
+      left.push(k + 2)
+      continue
+    }
     // the copy's move in the part's own frame, undone at each step's transform: the step then lands moved by it
-    const back = invert(multiply(fromWorld, multiply(move, toWorld)))
+    const back = invert(multiply(fromWorld, multiply(on, toWorld)))
     // a copy that misses the part is left out whole: the parts go back to how they were before its first step
     const before = out
     let miss = false

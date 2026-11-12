@@ -3,7 +3,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A pattern of steps on a curved part, where some copies miss it: the copies that land are kept, the ones that miss
 // are left out whole and named in the step's note, and the step breaks only when none land. On the mesh and on exact
-// solids alike, with a stand-in engine that misses where the test says.
+// solids alike, and on a row that follows a curved side past the end of the body, with stand-in engines.
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearReplayCache, copiesLanded, EXACT_FELL_BACK, IDENTITY, NO_COPY_LANDS, replayHistory, type History, type Step, type StepParams } from '@slicerx/cad-history'
 
@@ -113,6 +113,55 @@ describe('a pattern of steps on the mesh', () => {
     const r = await replayHistory(e.call, { history: history(hole, row(3), both) })
     expect(r.status[1]).toEqual({ state: 'done' })
     expect(r.status[2]).toEqual({ state: 'done', note: 'In copy 2, copy 3 did not reach the part and was left out.' })
+  })
+})
+
+/** A closed body turned about x through rings at each x in `xs` with radius r(x), as positions and indices. */
+function lathe(xs: readonly number[], r: (x: number) => number, n = 48): { positions: number[]; indices: number[] } {
+  const positions: number[] = []
+  for (const x of xs) for (let k = 0; k < n; k++) positions.push(x, r(x) * Math.cos((2 * Math.PI * k) / n), r(x) * Math.sin((2 * Math.PI * k) / n))
+  const indices: number[] = []
+  for (let j = 0; j + 1 < xs.length; j++)
+    for (let k = 0; k < n; k++) {
+      const [a, b, c, d] = [j * n + k, (j + 1) * n + k, (j + 1) * n + ((k + 1) % n), j * n + ((k + 1) % n)]
+      indices.push(a, b, c, a, c, d)
+    }
+  const last = (xs.length - 1) * n
+  for (let k = 1; k + 1 < n; k++) indices.push(0, k + 1, k, last, last + k, last + k + 1)
+  return { positions, indices }
+}
+
+describe('a row that follows a curved side', () => {
+  // a pod 50 mm long whose radius curves from 10 at x 0 to 5 at x 50, and a slit cut into its top at x 10
+  const pod = lathe(Array.from({ length: 41 }, (_, k) => k * 1.25), (x) => 10 - (x * x) / 500)
+  const top = 10 - 100 / 500
+  const slit = step('slit-1', { op: 'subtract', solids: [{ type: 'box', min: [9, -1, top - 1], max: [11, 1, top] }], label: 'Slit' } as StepParams)
+  const along = (count: number) => step('row-1', { op: 'pattern', steps: ['slit-1'], spec: { kind: 'linear', count, step: [15, 0, 0], onSurface: true } })
+  /** An engine whose cuts take a little and leave the part's shape as it was, so the row follows the pod itself. */
+  function podEngine() {
+    const cuts: number[][] = []
+    const call = async (op: string, request: unknown) => {
+      const item = (request as R)['mesh'] as { mesh: { positions: number[]; indices: number[] }; transform: number[] }
+      if (op === 'subtract') cuts.push(item.transform)
+      return { mesh: { positions: Array.from(item.mesh.positions), indices: Array.from(item.mesh.indices) }, removedVolumeMm3: 2 }
+    }
+    return { call, cuts }
+  }
+
+  it('keeps the copies that land on the side and names the ones past the end of the body', async () => {
+    const e = podEngine()
+    // copies at x 25 and 40 are on the pod; at x 55 and 70 they are past its end
+    const r = await replayHistory(e.call, { history: { version: 1, base: [{ name: 'Pod', slot: 1, ...pod }], steps: [slit, along(5)] } })
+    expect(r.status[1]).toEqual({ state: 'done', note: 'Copies 4 and 5 did not reach the part and were left out.' })
+    // the slit itself and the two copies that landed, and no cut for the ones past the end
+    expect(e.cuts).toHaveLength(3)
+  })
+
+  it('breaks when every copy runs past the end', async () => {
+    const e = podEngine()
+    const r = await replayHistory(e.call, { history: { version: 1, base: [{ name: 'Pod', slot: 1, ...pod }], steps: [slit, step('row-1', { op: 'pattern', steps: ['slit-1'], spec: { kind: 'linear', count: 3, step: [45, 0, 0], onSurface: true } })] } })
+    expect(r.status[1]).toEqual({ state: 'broken', message: NO_COPY_LANDS })
+    expect(e.cuts).toHaveLength(1)
   })
 })
 
