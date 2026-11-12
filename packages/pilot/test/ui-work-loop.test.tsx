@@ -25,7 +25,9 @@ const WORDS: Record<string, { doing: string; done: string } | null> = {
 const words: StepWords = (row) => {
   const w = WORDS[row.tool]
   if (w === null) return null
-  return w ?? { doing: 'Working', done: 'Step done' }
+  const base = w ?? { doing: 'Working', done: 'Step done' }
+  // as the tab's own words do: a failed step says so
+  return row.state === 'bad' ? { ...base, done: row.title ?? 'Step failed' } : base
 }
 const approvals = { onApprove: async () => undefined, onCancel: async () => undefined }
 const parts = { onEdit: () => undefined, onSelect: () => undefined, onRun: () => undefined, has: () => true, can: () => true }
@@ -203,5 +205,28 @@ describe('the loop in the chat', () => {
     render(<TranscriptView transcript={live(build)} showThinking={false} approvals={approvals} parts={parts} />)
     expect(screen.queryByTestId('mimir-loop')).toBeNull()
     expect(document.querySelectorAll('.trow').length).toBeGreaterThan(0)
+  })
+})
+
+describe("a failed step's mark", () => {
+  // a step whose result came back not ok (a lookup that found nothing, a step the engine refused): the row is bad
+  const failed = live([START, call('a', 'kb.sources'), result('a', 100, false), call('b', 'geom.extrude', { feature: 'Fin' }), result('b', 100, false)])
+  const rows = failed.turns[0]!.blocks.flatMap((b) => (b.kind === 'tools' ? b.rows : []))
+
+  it('reads a result that is not ok as failed', () => {
+    expect(rows.map((r) => r.state)).toEqual(['bad', 'bad'])
+  })
+
+  // the folded rows' alert is covered in ui-tool-fold.test.tsx
+
+  it('in the loop, a failed step gets the alert tick while it works, and the loop is marked failed', () => {
+    render(<TranscriptView transcript={failed} showThinking={false} approvals={approvals} words={words} parts={parts} />)
+    expect(Array.from(document.querySelectorAll('.wl-strip i')).map((i) => i.className)).toEqual(['bad', 'bad'])
+    expect(screen.getByTestId('mimir-loop').hasAttribute('data-failed')).toBe(true)
+  })
+
+  it('a loop with no failed step is not marked failed', () => {
+    render(<TranscriptView transcript={live(build)} showThinking={false} approvals={approvals} words={words} parts={parts} />)
+    expect(screen.getByTestId('mimir-loop').hasAttribute('data-failed')).toBe(false)
   })
 })
