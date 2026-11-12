@@ -145,8 +145,9 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$e2e" = false ] && printf '%s\n' "$changed" | grep -qE "$browser"; then smoke=true; fi
           echo "smoke=$smoke" >> "$GITHUB_OUTPUT"
           # The B-rep kernel compiles from source on every run (the Rust cache keeps no workspace crate's build output,
-          # so about 40 minutes on Windows). Its Linux run is required through the gate "brep (ubuntu-latest)", which
-          # passes when this filter skips it; macOS and Windows are advisory. A pull request builds it only when it
+          # so about 40 minutes on Windows). The gate "brep (ubuntu-latest)" requires it: Linux on every run, and macOS
+          # and Windows on a pull request too (the queue skips those). The gate passes when this filter skips it. A pull
+          # request builds it only when it
           # changes what the kernel build and its tests read; so does the merge queue, against the group's base
           # (every pull request in the group). A run by hand and a push always do: a push the queue already tested
           # skips the job instead (its if), and any other push builds it.
@@ -169,8 +170,8 @@ jobs:
       # Windows, devkit, and the jobs no queue run has. A skipped check counts as green for releases
       # (scripts/ci/require-green.sh). Any other push (an earlier commit of a group, or one made outside the queue), or
       # a lookup that fails, runs everything.
-      # The queue merges as soon as the required checks pass, while jobs it does not wait for (brep on macOS and
-      # Windows) may still be running, so the merge_group run is often not finished yet when this push starts. Asking
+      # The queue merges as soon as the required checks pass, while jobs it does not wait for may still be running,
+      # so the merge_group run is often not finished yet when this push starts. Asking
       # for a finished, successful run missed most queued commits and ran the whole Linux set again; this asks whether
       # the jobs this push would skip passed in that run (latest attempt), finished or not.
       - id: q
@@ -789,8 +790,8 @@ jobs:
   # its SHA-256, our routines swapped in, then built and tested, the swapped routines against the originals' values
   # (tests/routines.rs). Every other Rust job builds the crate without it.
   # Linux is required: the gate "brep (ubuntu-latest)" below gathers this job, and the merge queue waits for it. The
-  # macOS and Windows runs (the job "brep") are advisory, so the Windows build, up to an hour, stays out of the queue.
-  # Keep the steps of the two jobs in step.
+  # macOS and Windows runs (the job "brep") are required on a pull request through the same gate, and skipped in the
+  # merge queue, so the Windows build, up to an hour, stays out of the queue. Keep the steps of the two jobs in step.
   brep-linux:
     needs: detect
     if: needs.detect.outputs.brep == 'true' && needs.detect.outputs.queued != 'true'
@@ -826,14 +827,15 @@ jobs:
       - run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
       - run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input
 
-  # The required result for the B-rep build on Linux, under the name branch protection and scripts/ci/required-checks.txt
-  # list. Passes when the path filter in detect skipped the build (nothing it reads changed) or a push the queue already
-  # tested skipped it; fails when detect did not pass, or when the build was wanted and did not pass (a failure, a time
-  # out, which GitHub reports as cancelled, or a skip). Skipped in a duplicate run (the concurrency comment at the top),
-  # which counts as passed. scripts/ci/brep-gate.test.mjs runs this script.
+  # The required result for the B-rep build, under the name branch protection and scripts/ci/required-checks.txt list
+  # (the name says Linux, but on a pull request it also covers macOS and Windows). Passes when the path filter in detect
+  # skipped the build (nothing it reads changed) or a push the queue already tested skipped it; fails when detect did
+  # not pass, or when the build was wanted and did not pass on Linux, or, on a pull request, on macOS or Windows (a
+  # failure, a time out, which GitHub reports as cancelled, or a skip). Skipped in a duplicate run (the concurrency
+  # comment at the top), which counts as passed. scripts/ci/brep-gate.test.mjs runs this script.
   brep-gate:
     name: brep (ubuntu-latest)
-    needs: [detect, brep-linux]
+    needs: [detect, brep-linux, brep]
     if: ${{ !cancelled() && !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -842,17 +844,21 @@ jobs:
           DETECT: ${{ needs.detect.result }}
           WANTED: ${{ needs.detect.outputs.brep == 'true' && needs.detect.outputs.queued != 'true' }}
           LINUX: ${{ needs.brep-linux.result }}
+          PR: ${{ github.event_name == 'pull_request' }}
+          OTHERS: ${{ needs.brep.result }}
         run: |
-          echo "detect: $DETECT, brep wanted: $WANTED, Linux build: $LINUX"
+          echo "detect: $DETECT, brep wanted: $WANTED, Linux build: $LINUX, pull request: $PR, macOS and Windows: $OTHERS"
           [ "$DETECT" = success ] || exit 1
           [ "$WANTED" = true ] || exit 0
-          [ "$LINUX" = success ]
+          [ "$LINUX" = success ] || exit 1
+          [ "$PR" = true ] || exit 0
+          [ "$OTHERS" = success ]
 
-  # The same build on macOS and Windows, advisory: no required check or release waits on it. A failure adds a warning
-  # to the run and the job summary saying so.
+  # The same build on macOS and Windows. On a pull request the gate "brep (ubuntu-latest)" requires it; the merge queue
+  # skips it (the pull request's run already passed it), and on a push it reports without blocking.
   brep:
     needs: detect
-    if: needs.detect.outputs.brep == 'true' && needs.detect.outputs.queued != 'true'
+    if: needs.detect.outputs.brep == 'true' && needs.detect.outputs.queued != 'true' && github.event_name != 'merge_group'
     strategy:
       fail-fast: false
       matrix:
@@ -906,8 +912,8 @@ jobs:
           --test brep_parity --test brep_input
       - if: failure()
         run: |
-          msg="The B-rep build or tests failed on $RUNNER_OS. This run is advisory and does not block merging; the required B-rep check is brep (ubuntu-latest)."
-          echo "::warning title=B-rep failed on $RUNNER_OS (advisory)::$msg"
+          msg="The B-rep build or tests failed on $RUNNER_OS. On a pull request this fails the required check brep (ubuntu-latest)."
+          echo "::warning title=B-rep failed on $RUNNER_OS::$msg"
           echo "$msg" >> "$GITHUB_STEP_SUMMARY"
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,

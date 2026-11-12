@@ -5,10 +5,10 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-// The B-rep build on Linux is a required check through the gate job "brep (ubuntu-latest)" in ci.yml; macOS and
-// Windows stay advisory. These tests read the workflow as text (the repo has no YAML parser at this level) and run the
-// gate's own script, so a change to the job graph or the script that would let a red build through, or block a pull
-// request the path filter skips, fails here first.
+// The B-rep build is a required check through the gate job "brep (ubuntu-latest)" in ci.yml: Linux on every run, and
+// macOS and Windows on a pull request (the merge queue skips them). These tests read the workflow as text (the repo has
+// no YAML parser at this level) and run the gate's own script, so a change to the job graph or the script that would
+// let a red build through, or block a pull request the path filter skips, fails here first.
 const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')
 const required = readFileSync(new URL('./required-checks.txt', import.meta.url), 'utf8').split(/\r?\n/).filter((s) => s && !s.startsWith('#'))
 const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : 'bash'
@@ -44,16 +44,18 @@ function gate(env) {
   return r.status
 }
 
-test('the Linux B-rep build has a gate under the required name, needing only detect and the Linux job', () => {
+test('the B-rep build has a gate under the required name, needing detect and the build jobs', () => {
   const g = job('brep-gate')
   assert.equal(field(g, 'name'), 'brep (ubuntu-latest)')
-  assert.deepEqual(needs(g).sort(), ['brep-linux', 'detect'])
+  assert.deepEqual(needs(g).sort(), ['brep', 'brep-linux', 'detect'])
   // it runs whatever the build's result (failed or skipped), so a skip or a failure always reports under this name
   assert.match(field(g, 'if'), /^\$\{\{ !cancelled\(\) && /)
   assert.ok(required.includes('brep (ubuntu-latest)'), 'required-checks.txt lists the gate')
   const { env } = gateScript()
-  assert.deepEqual(env.sort(), ['DETECT', 'LINUX', 'WANTED'])
+  assert.deepEqual(env.sort(), ['DETECT', 'LINUX', 'OTHERS', 'PR', 'WANTED'])
   assert.match(g, /LINUX: \$\{\{ needs\.brep-linux\.result \}\}/)
+  assert.match(g, /OTHERS: \$\{\{ needs\.brep\.result \}\}/)
+  assert.match(g, /PR: \$\{\{ github\.event_name == 'pull_request' \}\}/)
 })
 
 test('the gate wants the build exactly when the Linux job runs', () => {
@@ -63,15 +65,21 @@ test('the gate wants the build exactly when the Linux job runs', () => {
   assert.match(job('brep-gate'), new RegExp(`WANTED: \\$\\{\\{ ${cond.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\}\\}`))
 })
 
-test('macOS and Windows stay advisory and out of the gate', () => {
-  const adv = job('brep')
-  assert.match(adv, /os: \[macos-latest, windows-latest\]/)
-  assert.ok(!needs(job('brep-gate')).includes('brep'))
-  for (const name of ['brep (macos-latest)', 'brep (windows-latest)', 'brep']) assert.ok(!required.includes(name), `${name} is not required`)
-  // a failure says it is advisory
-  assert.match(adv, /if: failure\(\)\n\s+run: \|[\s\S]*::warning title=B-rep failed on \$RUNNER_OS \(advisory\)::/)
-  // no other job waits on the advisory one
-  for (const m of workflow.matchAll(/^ {4}needs: (.*)$/gm)) assert.doesNotMatch(m[1], /(^|[\s[,])brep([\s\],]|$)/, `a job needs the advisory brep: ${m[1]}`)
+test('macOS and Windows gate a pull request through the one required name and stay out of the merge queue', () => {
+  const other = job('brep')
+  assert.match(other, /os: \[macos-latest, windows-latest\]/)
+  // the queue skips them, so a cold Windows build never holds a queue entry
+  assert.equal(field(other, 'if'), `${field(job('brep-linux'), 'if')} && github.event_name != 'merge_group'`)
+  // they report under the gate's name only; the matrix names are not required checks of their own
+  for (const name of ['brep (macos-latest)', 'brep (windows-latest)', 'brep']) assert.ok(!required.includes(name), `${name} is not listed`)
+  assert.match(other, /if: failure\(\)\n\s+run: \|[\s\S]*::warning title=B-rep failed on \$RUNNER_OS::/)
+  // only the gate waits on them
+  const ids = [...workflow.matchAll(/^ {2}([a-z0-9-]+):$/gm)].map((m) => m[1])
+  for (const id of ids) {
+    if (id === 'brep-gate') continue
+    const n = field(job(id), 'needs')
+    if (n) assert.ok(!needs(job(id)).includes('brep'), `${id} needs brep`)
+  }
 })
 
 test('the Linux job runs the same build and tests as the other systems', () => {
@@ -99,4 +107,17 @@ test('the gate script passes on a skip and fails a wanted build that did not pas
   for (const LINUX of ['failure', 'cancelled', 'skipped', '']) assert.notEqual(gate({ DETECT: 'success', WANTED: 'true', LINUX }), 0, LINUX)
   // detect did not pass: its outputs are empty, so the build was skipped for no reason, and that must not pass
   for (const DETECT of ['failure', 'cancelled', 'skipped']) assert.notEqual(gate({ DETECT, WANTED: 'false', LINUX: 'skipped' }), 0, DETECT)
+})
+
+test('on a pull request the gate also needs macOS and Windows; elsewhere it does not', () => {
+  const base = { DETECT: 'success', WANTED: 'true', LINUX: 'success' }
+  // a pull request that touches the kernel: both other systems must pass
+  assert.equal(gate({ ...base, PR: 'true', OTHERS: 'success' }), 0)
+  for (const OTHERS of ['failure', 'cancelled', 'skipped', '']) assert.notEqual(gate({ ...base, PR: 'true', OTHERS }), 0, OTHERS)
+  // the merge queue and a push: macOS and Windows are skipped there, or report without blocking
+  for (const OTHERS of ['skipped', 'failure', '']) assert.equal(gate({ ...base, PR: 'false', OTHERS }), 0, OTHERS)
+  // a pull request the path filter skipped behaves as before
+  assert.equal(gate({ DETECT: 'success', WANTED: 'false', LINUX: 'skipped', PR: 'true', OTHERS: 'skipped' }), 0)
+  // Linux still fails the gate on its own, on a pull request or not
+  for (const PR of ['true', 'false']) assert.notEqual(gate({ ...base, LINUX: 'failure', PR, OTHERS: 'success' }), 0, PR)
 })
