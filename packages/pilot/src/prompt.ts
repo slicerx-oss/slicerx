@@ -50,7 +50,7 @@ export const RESHAPE_LINE = `- A part whose section changes along a bent path (a
 // cloud prompt only, as above: a thing made of colored parts. Without it the model read a request to color it as a
 // kit of slabs laid apart in one design, which design.check then failed on its assembled overall size, and went on to
 // split and lay out parts nobody asked to have apart. The tools it names are only those the model is offered.
-export const ASSEMBLED_LINE = `- A thing made of parts in different colors (a ship, a rocket, a two color tag) is one design, built assembled as it looks finished: one part per color, each on the filament of its color, touching where they meet, never a kit of pieces laid apart. Plan and check it as that one assembled model. Painting it means putting each part on the filament of its color. Do not split it into objects or lay its parts out on the plate unless the person asks for that.`
+export const ASSEMBLED_LINE = `- A thing made of parts in different colors (a two color tag, a toy house, a car) is one design, built assembled as it looks finished: one part per color, each on the filament of its color, touching where they meet, never a kit of pieces laid apart. Plan and check it as that one assembled model. Painting it means putting each part on the filament of its color. Do not split it into objects or lay its parts out on the plate unless the person asks for that.`
 export const assembledLine = (has: HasTool): string => {
   const slot = has('geom.build') ? ' (slot on geom.build)' : ''
   const set = has('project.set_filament') ? ' Set those filaments\' colors with project.set_filament.' : ''
