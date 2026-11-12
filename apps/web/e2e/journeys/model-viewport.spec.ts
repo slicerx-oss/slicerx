@@ -225,7 +225,7 @@ test.describe('Brim ears', () => {
 // The CAD look
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** Model draws its parts in the CAD look, a neutral gray with dark feature edges; Slice keeps the filament look. */
+/** Model draws its parts in the CAD look, each in its filament color with dark feature edges; Slice keeps its own look in the same colors. */
 test.describe('Model CAD look', () => {
   type Part = { edges: { visible: boolean }; wide?: { visible: boolean }; mesh: { material: { color: { getHexString(): string } } } }
   type LookVp = { renderMode: string; objects: Map<string, { parts: Part[] }>; pipeline: { gradeMat: { uniforms: { silOn: { value: number } } } } }
@@ -237,21 +237,21 @@ test.describe('Model CAD look', () => {
       return { mode: vp.renderMode, silhouette: vp.pipeline.gradeMat.uniforms.silOn.value === 1, edges: parts.every((p) => p.edges.visible || p.wide?.visible === true), wide: parts.every((p) => p.wide?.visible === true), colors: [...new Set(parts.map((p) => p.mesh.material.color.getHexString()))] }
     })
 
-  test('Model draws one gray with its edges, and Slice its filament colors', async ({ page }) => {
+  test('Model draws each part in its filament color with its edges, the colors Slice shows', async ({ page }) => {
     test.slow()
     await sliceTab(page).click()
     await openModel(page, join(starters(), 'x-mark.sx3mf'))
     await designTab(page).click()
-    await expect.poll(async () => (await look(page)).mode).toBe('cad')
+    await expect.poll(async () => (await look(page)).mode).toBe('cadColor')
     const model = await look(page)
     expect(model.edges).toBe(true)
     // drawn wide (1.5 px), not as 1 px GL lines, and outlined where the model meets what is behind it
     expect(model.wide).toBe(true)
     await expect.poll(async () => (await look(page)).silhouette).toBe(true)
-    expect(model.colors).toHaveLength(1)
     await sliceTab(page).click()
-    await expect.poll(async () => (await look(page)).mode).not.toBe('cad')
-    expect((await look(page)).colors).not.toEqual(model.colors)
+    await expect.poll(async () => (await look(page)).mode).not.toBe('cadColor')
+    // the same filament colors as Slice, on the CAD finish
+    expect((await look(page)).colors).toEqual(model.colors)
     expect((await look(page)).wide).toBe(false)
     await expect.poll(async () => (await look(page)).silhouette).toBe(false)
   })
@@ -296,8 +296,8 @@ test.describe('Model CAD look', () => {
           await sliceTab(page).click()
           await openModel(page, join(starters(), file))
           await designTab(page).click()
-          await expect.poll(async () => (await look(page)).mode).toBe('cad')
-          // Nothing selected, framed close, so the gray and its edges are what shows.
+          await expect.poll(async () => (await look(page)).mode).toBe('cadColor')
+          // Nothing selected, framed close, so the colored parts and their edges are what shows.
           await page.evaluate(() => {
             const w = window as unknown as { __sx: { setState(p: unknown): void }; __vp: { view(v: string, o?: unknown): void } }
             w.__sx.setState({ selection: null, selectedIds: [] })
