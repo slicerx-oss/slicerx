@@ -76,20 +76,6 @@ export const planDetailFields = {
     .describe('Display and fine: each flat-sided main body\'s levels from the bottom up, each a planned feature, such as {"Tower": ["Lower story", "Upper story"]}: a body the real thing builds in steps or stories lists each level, a single block only itself'),
 }
 
-/**
- * The level's first fields with no descriptions, for a local model's shorter tool list: they take exactly what the full
- * ones take. colors, scale, real and tiers are left out of what a local model is shown (tab-tools.ts), to keep a build
- * turn's room; none of them has a required field or a fixed value, the tool still takes them, and a display plan without
- * them is refused with what to send.
- */
-export const bareDetailFields = {
-  detail: z.enum(DETAIL_LEVELS).optional(),
-  curved: z.array(z.string()).optional(),
-  flat: z.array(z.string()).optional(),
-  proportions: z.string().optional(),
-  repeats: z.array(z.string()).optional(),
-}
-
 /** A plan as the detail rules read it. */
 interface DetailPlan {
   features: readonly { name: string; kind?: string | undefined; sizes: Record<string, number> }[]
