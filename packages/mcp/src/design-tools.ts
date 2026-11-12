@@ -8,7 +8,7 @@ import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { assumptionsInput, createPlanRegistry, designCheck, FIX_ROUNDS, fixRoundOpen, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, partPlanSchema, plannedFloor, plannedHoleMm, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
+import { assumptionsInput, colorBands, createPlanRegistry, designCheck, FIX_ROUNDS, fixRoundOpen, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, partPlanSchema, plannedFloor, plannedHoleMm, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -291,6 +291,8 @@ export interface DesignToolOptions {
    * to it. Elsewhere (an MCP client over the app link) a design given for a card plan is checked but never tied.
    */
   cardSide?: boolean | undefined
+  /** The project's filament colors as #rrggbb, slot 1 first, so design.check can read a painted color band's color. */
+  filamentColors?: (() => readonly string[]) | undefined
 }
 
 /** Two names for one part: the same words, whatever the case or the spaces around them. */
@@ -627,7 +629,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const limits = entry.plan.printInPlace || together ? runFitLimits(ctx?.context, { ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() }) : undefined
       // a part that holds something (its plan sets a floor) has its floor read; the plan's own holes may open through it
       const floor = plannedFloor(entry.plan) ? { plannedHoleMm: plannedHoleMm(entry.plan) } : undefined
-      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined, { hook: hasHookLip(entry.plan), nozzleMm, ...(floor ? { floor } : {}), ...(entry.plan.holes?.some((h) => h.recess) ? { recesses: true } : {}) })
+      // a plan with a color band has the part's paint read, to meet the band by paint as well as by a step
+      const bands = colorBands(entry.plan)
+      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined, { hook: hasHookLip(entry.plan), nozzleMm, ...(floor ? { floor } : {}), ...(entry.plan.holes?.some((h) => h.recess) ? { recesses: true } : {}), ...(bands.length ? { bands: { colors: bands.flatMap((b) => (b.color ? [b.color] : [])), filaments: opts.filamentColors?.() } } : {}) })
       const result = designCheck(entry.plan, body, nozzleMm, limits, together)
       const failed = result.items.filter((x) => !x.pass)
       const which = `${d.name} (${d.id}, ${how})`

@@ -132,6 +132,14 @@ export interface BodyFacts {
    * width the diameter) or a slit (width across, length along), with its depth. Absent when not read.
    */
   recesses?: { round: boolean; widthMm: number; lengthMm: number; depthMm: number }[] | undefined
+  /**
+   * Read only for a plan with a color band (colorBands): each part's painted regions, by filament slot, with the plain
+   * color word of that filament (null when the filament colors are not known) and the height each spans, with the
+   * part's own height range, mm. Absent when not read.
+   */
+  painted?: PaintedRegion[] | undefined
+  /** The plan's band colors as plain color words, by the color the plan gives (null for a word that names no color). */
+  bandColors?: Record<string, string | null> | undefined
   /** The steps in its history that shape it (paint and suppressed steps left out). */
   features: number
   /** Those steps' names, in order, when known: with no step tagged, a planned feature is matched to the steps named for it. */
@@ -305,10 +313,14 @@ const steps = (n: number): string => `${n} step${n === 1 ? '' : 's'}`
  * feature its name shares the most words with (on a tie, the feature with fewer words left over), and a step whose name
  * matches no feature stands for none. Fewer steps than features, or a feature left with none, fails by name.
  */
-function featureItem(features: string[], body: BodyFacts): CheckItem {
+function featureItem(features: string[], body: BodyFacts, bands: Bands = { painted: new Map(), why: new Map() }): CheckItem {
   const n = features.length
   const m = body.features
-  if (m < n) return { name: 'feature count', want: String(n), got: `${steps(m)} for ${n} planned features`, pass: false }
+  // a color band painted where and as the plan says needs no step that shapes it
+  const shaped = n - features.filter((f) => bands.painted.has(f)).length
+  const paintedNote = features.filter((f) => bands.painted.has(f)).map((f) => `; ${f} ${bands.painted.get(f)}`).join('')
+  const unpaintedNote = features.filter((f) => bands.why.has(f)).map((f) => `; ${f}: ${bands.why.get(f)}`).join('')
+  if (m < shaped) return { name: 'feature count', want: String(n), got: `${steps(m)} for ${n} planned features${paintedNote ? `, ${n - shaped} of them painted bands` : ''}${unpaintedNote}`, pass: false }
   // nothing known about the steps but their count
   if (!body.steps) return { name: 'feature count', want: String(n), got: String(m), pass: true }
   const per = features.map(() => 0)
@@ -351,10 +363,13 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
       else loose.push(step)
     }
   }
-  const missing = features.filter((_, k) => per[k] === 0)
+  const missing = features.filter((f, k) => per[k] === 0 && !bands.painted.has(f))
   const groups = per.map((c, k) => (c > 1 ? `${features[k]} ${c}` : '')).filter(Boolean)
   const want = tagged ? `${n} features, each built by a step tagged with its name` : `${n} features, each built by one or more steps`
-  if (!missing.length) return { name: 'feature count', want, got: `${m} steps for ${n} features${groups.length ? ` (${groups.join(', ')})` : ''}`, pass: true }
+  const painted = features.filter((f, k) => per[k] === 0 && bands.painted.has(f)).map((f) => `; ${f} ${bands.painted.get(f)}`).join('')
+  if (!missing.length) return { name: 'feature count', want, got: `${m} steps for ${n} features${groups.length ? ` (${groups.join(', ')})` : ''}${painted}`, pass: true }
+  // a band the plan names that is neither built nor painted as planned says what paint was read
+  const unpainted = missing.filter((f) => bands.why.has(f)).map((f) => `; ${f}: ${bands.why.get(f)}`).join('')
   const quoted = loose.map((s) => `"${s}"`).join(', ')
   // an untagged step whose name shares a word with a missing feature is likely that feature: say to tag it
   // an untagged step named like a missing feature is likely that feature: one hint per step, naming the feature it
@@ -375,7 +390,119 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
   const got = tagged
     ? `${m} steps, none tagged for ${missing.join(', ')}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}${hints.length ? `; ${hints.join('; ')}` : ''}`
     : `${m} steps, none for ${missing.join(', ')}${loose.length ? `; ${quoted} match${loose.length === 1 ? 'es' : ''} no planned feature` : ''}; pass feature on each step to tie it to the plan`
-  return { name: 'feature count', want, got, pass: false }
+  return { name: 'feature count', want, got: `${got}${unpainted}`, pass: false }
+}
+
+/** A painted region of one filament on one part, as body facts read it, mm. */
+export interface PaintedRegion {
+  part: number
+  slot: number
+  /** The filament's plain color word (black, white, red...), or null when the filament colors are not known. */
+  color: string | null
+  fromMm: number
+  toMm: number
+  /** The part's own lowest and highest point. */
+  partFromMm: number
+  partToMm: number
+}
+
+/** The plan's color bands that were painted as planned (with what was read), and why each other one was not. */
+interface Bands {
+  painted: Map<string, string>
+  why: Map<string, string>
+}
+
+/** A painted band's ends may be this far off the planned ones, mm, or BAND_SHARE of its planned height if more. */
+const BAND_MM = 1
+const BAND_SHARE = 0.2
+
+const BAND_WORDS = new Set(['band', 'stripe'])
+const LOW_WORDS = new Set(['from', 'bottom', 'base', 'low', 'lower', 'start', 'min', 'above'])
+const HIGH_WORDS = new Set(['to', 'top', 'high', 'upper', 'end', 'max', 'below'])
+const BAND_THICK_WORDS = new Set(['height', 'thickness', 'tall'])
+
+/**
+ * The plan's color bands: a feature named or of a kind that is a band or a stripe (or of a paint kind), with the
+ * color the plan gives it and the heights it runs between, in mm, as its sizes say: its low and high edge (from and
+ * to, bottom and top), one edge and its height, or below or above a height (to the part's bottom or top).
+ */
+export function colorBands(plan: PartPlan): { name: string; color: string | undefined; lo: number | 'bottom' | undefined; hi: number | 'top' | undefined }[] {
+  const scale = plan.units === 'in' ? MM_PER_IN : 1
+  const colors = new Map(Object.entries(plan.colors ?? {}).map(([k, v]) => [nameKey(k), v]))
+  return plan.features.flatMap((f) => {
+    const named = [...nameWords(f.name), ...nameWords(f.kind ?? '')]
+    if (!named.some((w) => BAND_WORDS.has(w)) && !nameWords(f.kind ?? '').has('paint')) return []
+    let lo: number | 'bottom' | undefined
+    let hi: number | 'top' | undefined
+    let thick: number | undefined
+    for (const [key, v] of Object.entries(f.sizes)) {
+      const w = key.toLowerCase().split(/[^a-z]+/).filter(Boolean)
+      const mmV = v * scale
+      if (w.includes('below')) [lo, hi] = [lo ?? 'bottom', mmV]
+      else if (w.includes('above')) [lo, hi] = [mmV, hi ?? 'top']
+      else if (w.some((x) => LOW_WORDS.has(x))) lo = mmV
+      else if (w.some((x) => HIGH_WORDS.has(x))) hi = mmV
+      else if (w.some((x) => BAND_THICK_WORDS.has(x))) thick = mmV
+    }
+    if (thick !== undefined && typeof lo === 'number' && hi === undefined) hi = lo + thick
+    if (thick !== undefined && typeof hi === 'number' && lo === undefined) lo = hi - thick
+    return [{ name: f.name, color: colors.get(nameKey(f.name)), lo, hi }]
+  })
+}
+
+/**
+ * Each color band of the plan against the paint read on the part: met when a painted region (or regions of one
+ * filament on one part whose heights overlap) is the band's color and runs between its planned heights, each end
+ * within BAND_MM or BAND_SHARE of its height. A band with no color or no heights in the plan, or paint of another color
+ * or at another height, is not met, and the feature count holds it to a step as any other feature.
+ */
+function paintedBands(plan: PartPlan, body: BodyFacts): Bands {
+  const out: Bands = { painted: new Map(), why: new Map() }
+  if (!body.painted) return out
+  for (const band of colorBands(plan)) {
+    const want = band.color === undefined ? undefined : body.bandColors?.[band.color]
+    if (band.color === undefined) {
+      out.why.set(band.name, 'the plan gives it no color')
+      continue
+    }
+    if (band.lo === undefined || band.hi === undefined) {
+      out.why.set(band.name, 'the plan gives it no height range')
+      continue
+    }
+    // regions of one filament on one part, and runs of them whose heights overlap
+    const runs: PaintedRegion[] = []
+    const groups = new Map<string, PaintedRegion[]>()
+    for (const r of body.painted) groups.set(`${r.part}:${r.slot}`, [...(groups.get(`${r.part}:${r.slot}`) ?? []), r])
+    for (const g of groups.values()) {
+      const sorted = [...g].sort((a, b) => a.fromMm - b.fromMm)
+      runs.push(...sorted)
+      let cur: PaintedRegion | undefined
+      for (const r of sorted) {
+        if (cur && r.fromMm <= cur.toMm) cur = { ...cur, toMm: Math.max(cur.toMm, r.toMm) }
+        else {
+          if (cur) runs.push(cur)
+          cur = { ...r }
+        }
+      }
+      if (cur) runs.push(cur)
+    }
+    const fits = (r: PaintedRegion): boolean => {
+      const lo = band.lo === 'bottom' ? r.partFromMm : (band.lo as number)
+      const hi = band.hi === 'top' ? r.partToMm : (band.hi as number)
+      const tol = Math.max(BAND_MM, BAND_SHARE * Math.abs(hi - lo))
+      return Math.abs(r.fromMm - lo) <= tol && Math.abs(r.toMm - hi) <= tol
+    }
+    const words = (r: PaintedRegion): string => `painted ${r.color ?? `filament ${r.slot} (color not known)`} from ${r2(r.fromMm)} to ${r2(r.toMm)} mm`
+    const hit = want ? runs.find((r) => r.color === want && fits(r)) : undefined
+    if (hit) {
+      out.painted.set(band.name, words(hit))
+      continue
+    }
+    const planned = `${band.color} from ${band.lo === 'bottom' ? 'the bottom' : `${r2(band.lo as number)} mm`} to ${band.hi === 'top' ? 'the top' : `${r2(band.hi as number)} mm`}`
+    const seen = [...groups.values()].flat().map(words)
+    out.why.set(band.name, `planned ${planned}${want === null ? ` ("${band.color}" names no color the check knows)` : ''}; ${seen.length ? seen.slice(0, 4).join(', ') : 'no paint'}`)
+  }
+  return out
 }
 
 /** The words of a plan's feature names, kinds and size names: "Soft lip", "lip_height" and "curved hook" give soft, lip, height, curved and hook. */
@@ -558,7 +685,7 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   // a plan that lists its holes has no others; one without the list says nothing about holes
   if (plan.holes) for (const h of extra) items.push({ name: `extra hole, ${mm(h.diameterMm)}`, want: 'no hole (not in the plan)', got: `${mm(h.diameterMm)} diameter`, pass: false })
 
-  items.push(featureItem(plan.features.map((f) => f.name), body))
+  items.push(featureItem(plan.features.map((f) => f.name), body, paintedBands(plan, body)))
   items.push({ name: 'watertight', want: 'closed', got: body.watertight ? 'closed' : openWords(body.openWhy), pass: body.watertight })
   items.push(wallItem(body, nozzle))
   const curved = curvedItem(plan, body)

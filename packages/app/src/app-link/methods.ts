@@ -578,10 +578,11 @@ let linkHost: { dispose(): void } | null = null
 /** Gives the design tools the plate's design host. */
 export async function useDesignHost(loader: Loader): Promise<void> {
   linkLoader = loader
-  const [{ designToolset, nozzleOr }, { appDesignHost }, { mimirPlans }, { fitProfileFor }] = await Promise.all([import('@slicerx/mcp/toolset'), import('../cad/design-host'), import('../workspaces/mimir/plans'), import('../plate/fit-profile')])
+  const [{ designToolset, nozzleOr }, { appDesignHost }, { mimirPlans }, { fitProfileFor }, { resolveSlots }] = await Promise.all([import('@slicerx/mcp/toolset'), import('../cad/design-host'), import('../workspaces/mimir/plans'), import('../plate/fit-profile'), import('../filament/slots')])
   // design.check reads the same plans as the mimir tab, and holds walls and print-in-place gaps to the printer's nozzle,
   // layer height and filament now; a client never ties a plan the person made on the tab's card (no cardSide here)
-  const opts = { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()) }
+  // and reads a painted color band's color from the filaments on the rail
+  const opts = { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filamentColors: () => resolveSlots(get()).map((s) => s.color) }
   // the host before this one can never land the designs it keeps waiting: they stop waiting
   linkHost?.dispose()
   const host = appDesignHost(loader)
