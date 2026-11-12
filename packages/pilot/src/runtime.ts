@@ -1165,8 +1165,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           reject(new Error('Run canceled.'))
         }
         // a sheet whose sizes must fit something, or one for pieces that print assembled and move, waits for the person;
-        // any other shows and goes ahead with its sizes at once. A new part's sheet says whether its sizes must fit.
-        const auto = draft.fits !== true && !printInPlace.has(sessionId)
+        // so does a sheet of a part already built, which builds nothing new and is there for the person to read and edit
+        // over its drawing. Any other shows and goes ahead with its sizes at once. A new part's sheet says whether its
+        // sizes must fit.
+        const auto = !sheet.design && draft.fits !== true && !printInPlace.has(sessionId)
         if (!sheet.design) {
           if (draft.fits === true) fitSizes.add(sessionId)
           else fitSizes.delete(sessionId)

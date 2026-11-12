@@ -791,8 +791,12 @@ const sizesOf: ScriptStep[] = [
     return { text: `Here are the main sizes of the ${e.name}, drawn as it is built.`, calls: [{ name: 'pilot.sheet', args: { title: `${e.name} main sizes`, views: ['front', 'top', 'side', 'iso'], dims: rows, design: e.id } }] }
   },
   (messages) => {
-    // the sheet of a part already built goes ahead as shown with nobody asked: its sizes change after, from Edit sizes
-    if (lastResult(messages)?.['confirmed'] === true) return { text: 'Those are the sizes it has now.' }
+    // the sheet of a part already built waits for the person, over its drawing
+    const r = lastResult(messages)
+    const changed = Array.isArray(r?.['changed']) ? (r['changed'] as unknown[]).length : 0
+    if (r?.['confirmed'] === true && changed === 0) return { text: 'Those are the sizes it has now.' }
+    // a changed size needs the part's steps edited, which this preview cannot do from a sheet
+    if (r?.['confirmed'] === true) return { text: 'I cannot rebuild it to new sizes here without a model, so it is unchanged. Edit its steps in Model to change those sizes, or connect a model and ask me again.' }
     return { text: 'Okay, I left it as it is.' }
   },
 ]

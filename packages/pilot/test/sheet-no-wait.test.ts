@@ -101,6 +101,19 @@ describe('a sheet that fits nothing the person has', () => {
     expect(confirms()).toBe(true)
   })
 
+  it('waits for the person on a sheet of a part already built, with no fits, so its drawing stays up to read and edit', async () => {
+    const { ran, say } = setup([{ calls: [{ name: 'geom.build', args: {} }] }, { calls: [{ name: 'pilot.sheet', args: { title: 'Box', design: 'd1', dims: [ROW] } }] }, { text: 'Here are its sizes.' }])
+    const events: PilotEvent[] = await say('show me the sheet of the box', true)
+    const shown = events.find((e) => e.type === 'sheet')
+    expect(shown).toMatchObject({ sheet: { design: 'd1' } })
+    const answered = events.find((e) => e.type === 'sheet_answered')
+    expect(answered).not.toHaveProperty('auto')
+    expect(answered).toMatchObject({ answer: { confirmed: true } })
+    expect(answered).not.toHaveProperty('answer.auto')
+    expect(results(events)).toContain('Confirmed as shown')
+    expect(ran).toEqual([])
+  })
+
   it('still holds a new part with no sheet at all', async () => {
     const { ran, say } = setup([{ calls: [{ name: 'geom.build', args: {} }] }, { text: 'Done.' }])
     const events = await say('make a planter')
