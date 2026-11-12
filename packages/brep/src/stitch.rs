@@ -7,7 +7,7 @@
 //! here fits or guesses a surface. What is given is checked in plain words before the kernel is asked, and the
 //! joined result goes through [`Body::checked`] like every other body.
 
-use crate::body::Body;
+use crate::body::{Body, Frame, Surface};
 use crate::error::{Error, Result};
 use crate::kernel;
 
@@ -208,6 +208,41 @@ fn size(sheets: &[Sheet]) -> f64 {
         .fold(1.0_f64, |most, c| most.max(c.abs()))
 }
 
+/// How far the farthest point given for a flat face's loop is from the plane the kernel put the face on, in mm.
+fn off_its_plane(plane: &Frame, sides: &[Path]) -> f64 {
+    sides
+        .iter()
+        .flat_map(Path::points)
+        .map(|p| dot(sub(p, plane.origin), plane.z).abs())
+        .fold(0.0, f64::max)
+}
+
+/// The kernel fits a flat face's plane to its loop itself, and takes a loop far less flat than the ones let
+/// through here. Read back of the joined body: each flat face given is a plane, and every point of its loop is on
+/// that plane as closely as two faces must meet.
+fn flat_where_given(body: &Body, sheets: &[Sheet], order: &[usize]) -> Result<()> {
+    let limit = MEET * size(sheets);
+    for (face, &sheet) in body.faces()?.iter().zip(order) {
+        let Some(Sheet::Flat(sides)) = sheets.get(sheet) else {
+            continue;
+        };
+        let Surface::Plane { frame } = face.surface() else {
+            return Err(Error::NotSolid {
+                op: "flat face",
+                why: "the kernel did not make it a plane",
+            });
+        };
+        let off = off_its_plane(&frame, sides);
+        if off.is_nan() || off > limit {
+            return Err(Error::NotSolid {
+                op: "flat face",
+                why: "the kernel put it off the plane of its loop",
+            });
+        }
+    }
+    Ok(())
+}
+
 /// What the kernel must not be asked, in plain words.
 fn checked(sheets: &[Sheet]) -> Result<()> {
     if sheets.len() < 2 {
@@ -232,7 +267,8 @@ impl Body {
     ///
     /// Two faces share a side when the curves along it are the same curve: a ruled or skinned face ends on its
     /// first and last curves and on the straight or smooth line through its curves' ends. Faces that leave a gap,
-    /// or that the kernel joins into anything but one closed solid, are refused and nothing is kept.
+    /// or that the kernel joins into anything but one closed solid, are refused and nothing is kept. So is a flat
+    /// face the kernel put anywhere but on the plane of its loop.
     pub fn stitched(sheets: &[Sheet]) -> Result<(Self, Vec<usize>)> {
         let mut order = Vec::new();
         let body = Self::checked(
@@ -247,6 +283,7 @@ impl Body {
                 Ok(solid)
             },
         )?;
+        flat_where_given(&body, sheets, &order)?;
         Ok((body, order))
     }
 }
@@ -323,6 +360,23 @@ mod tests {
             "skinned face: a face runs across 2 or more curves"
         );
         assert_eq!(checked(&[cap.clone(), Sheet::Skinned(vec![a, b])]), Ok(()));
+    }
+
+    #[test]
+    fn a_loop_is_measured_from_the_plane_its_face_is_on() {
+        let plane = |origin: [f64; 3], z: [f64; 3]| Frame {
+            origin,
+            x: [1.0, 0.0, 0.0],
+            y: [0.0, 1.0, 0.0],
+            z,
+        };
+        let on = off_its_plane(&plane([7.0, -3.0, 1.0], [0.0, 0.0, 1.0]), &square(1.0));
+        assert!(on.abs() < 1e-15, "{on:e}");
+        // the plane a quarter of a mm above the loop, and one that leans away from it
+        let above = off_its_plane(&plane([0.0, 0.0, 1.25], [0.0, 0.0, -1.0]), &square(1.0));
+        assert!((above - 0.25).abs() < 1e-15, "{above:e}");
+        let leaning = off_its_plane(&plane([0.0, 0.0, 1.0], [0.6, 0.0, 0.8]), &square(1.0));
+        assert!((leaning - 0.6).abs() < 1e-15, "{leaning:e}");
     }
 
     #[test]
