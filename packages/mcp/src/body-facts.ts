@@ -9,7 +9,8 @@
 // something (holder-floor.ts), and for a plan with recess rows, its blind openings on any face (recesses.ts).
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
-import type { BodyFacts, FitLimits, FloorFacts } from './design-check'
+import { colorWord, colorWordHex } from '@slicerx/pilot'
+import type { BodyFacts, FitLimits, FloorFacts, PaintedRegion } from './design-check'
 import { fitFacts } from './fit-facts'
 import { floorOpenings } from './holder-floor'
 import { hookOn, surfacePoints } from './hook-lip'
@@ -33,7 +34,7 @@ const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3
  * `hook`, how far the hook on its upright stem rises at its tip, and with `floor`, where each part's cavity opens
  * through its bottom (holes up to `floor.plannedHoleMm` across left out, as the plan's own).
  */
-export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; nozzleMm?: number; floor?: { plannedHoleMm: number }; recesses?: boolean } = {}): Promise<BodyFacts> {
+export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits, opts: { hook?: boolean; nozzleMm?: number; floor?: { plannedHoleMm: number }; recesses?: boolean; bands?: { colors: readonly string[]; filaments?: readonly string[] | undefined } } = {}): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
   // closed as geom.info and the slicer read it: corners at the same point of the part's own positions are one vertex,
   // whatever their indices
@@ -90,7 +91,47 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     ...(opts.hook ? hookFacts(world) : {}),
     ...(opts.recesses ? { recesses: world.flatMap((w) => recessesOf(w)).map((r) => ({ round: r.round, widthMm: r.widthMm, lengthMm: r.lengthMm, depthMm: r.depthMm })) } : {}),
     ...(opts.floor ? { floor: floorFacts(world, d.parts.map((p) => p.name), opts.floor.plannedHoleMm) } : {}),
+    ...(opts.bands ? await paintFacts(host, d, world, opts.bands) : {}),
   }
+}
+
+/**
+ * Each part's color paint as the engine reads it back (paint.regions, as slicerx_paint_regions does), region by region,
+ * with the plain color word of its filament, and the plan's band colors as plain color words, for a plan with a color
+ * band (colorBands). A part the engine cannot read gives no regions.
+ */
+async function paintFacts(host: DesignHost, d: HostDesign, world: readonly Mesh[], bands: { colors: readonly string[]; filaments?: readonly string[] | undefined }): Promise<Pick<BodyFacts, 'painted' | 'bandColors'>> {
+  const painted: PaintedRegion[] = []
+  for (const [part, p] of d.parts.entries()) {
+    const texts = p.paint?.color
+    if (!texts || !Object.keys(texts).length) continue
+    const [lo, hi] = zRange(world[part]!)
+    let read: { states?: { state: number; regions?: { boundsMm: { min: V3; max: V3 } }[] }[] }
+    try {
+      read = (await host.call('paint.regions', { mesh: { positions: Array.from(p.positions), indices: Array.from(p.indices) }, transform: d.transform, paint: texts })) as typeof read
+    } catch {
+      continue
+    }
+    for (const st of read.states ?? []) {
+      if (!(st.state > 0)) continue
+      const hex = bands.filaments?.[st.state - 1]
+      for (const r of st.regions ?? []) painted.push({ part, slot: st.state, color: hex ? colorWord(hex) : null, fromMm: r3(r.boundsMm.min[2]), toMm: r3(r.boundsMm.max[2]), partFromMm: r3(lo), partToMm: r3(hi) })
+    }
+  }
+  return { painted, bandColors: Object.fromEntries(bands.colors.map((c) => [c, colorWord(colorWordHex(c) ?? undefined)])) }
+}
+
+const r3 = (v: number): number => Math.round(v * 1000) / 1000
+
+/** A mesh's lowest and highest z. */
+function zRange(m: Mesh): [number, number] {
+  let lo = Infinity
+  let hi = -Infinity
+  for (let i = 2; i < m.positions.length; i += 3) {
+    lo = Math.min(lo, m.positions[i]!)
+    hi = Math.max(hi, m.positions[i]!)
+  }
+  return [lo, hi]
 }
 
 /** Each part's floor, named by its part when it has a name (the build eval scorer reads it the same way). */

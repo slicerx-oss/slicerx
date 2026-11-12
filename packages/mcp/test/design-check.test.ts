@@ -68,6 +68,68 @@ describe('designCheck', () => {
     expect(failed(designCheck(dented, { ...built, holes: Array.from({ length: 12 }, () => ({ diameterMm: 1 })), recesses: [] }, 0.4))).toContain('dents')
   })
 
+  // a color band planned as a feature, met by paint (owner approved 2026-11-12): a vase with a white band under its rim
+  const banded: PartPlan = {
+    planId: 'vase-1',
+    part: 'Vase',
+    units: 'mm',
+    features: [
+      { name: 'Body', kind: 'loft', sizes: { height: 30, width: 40 } },
+      { name: 'Neck', kind: 'extrude', sizes: { height: 6, diameter: 20 } },
+      { name: 'Rim band', kind: 'paint', sizes: { from: 26, to: 30 } },
+    ],
+    colors: { Body: 'black', Neck: 'black', 'Rim band': 'white' },
+    assumptions: [],
+    questions: [],
+  }
+  const vase = (painted: BodyFacts['painted']): BodyFacts => ({
+    size: { x: 40, y: 40, z: 36 },
+    holes: [],
+    features: 2,
+    steps: ['Loft', 'Extrude'],
+    tags: ['Body', 'Neck'],
+    watertight: true,
+    minWallMm: 2,
+    painted,
+    bandColors: { white: 'white' },
+  })
+  const band = (color: string | null, fromMm: number, toMm: number) => ({ part: 0, slot: 2, color, fromMm, toMm, partFromMm: 0, partToMm: 36 })
+  const count = (r: ReturnType<typeof designCheck>) => r.items.find((i) => i.name === 'feature count')!
+
+  it('a planned color band painted at its height and color counts as built', () => {
+    const r = designCheck(banded, vase([band('white', 25.8, 30.1)]), 0.4)
+    expect(failed(r)).toEqual([])
+    expect(count(r).got).toBe('2 steps for 3 features; Rim band painted white from 25.8 to 30.1 mm')
+  })
+
+  it('a planned color band neither built nor painted fails', () => {
+    for (const painted of [[], undefined]) {
+      const r = designCheck(banded, vase(painted), 0.4)
+      expect(failed(r)).toEqual(['feature count'])
+    }
+    expect(count(designCheck(banded, vase([]), 0.4)).got).toContain('Rim band: planned white from 26 mm to 30 mm; no paint')
+  })
+
+  it('a color band painted in another color fails', () => {
+    const r = designCheck(banded, vase([band('red', 26, 30)]), 0.4)
+    expect(failed(r)).toEqual(['feature count'])
+    expect(count(r).got).toContain('Rim band: planned white from 26 mm to 30 mm; painted red from 26 to 30 mm')
+    // a filament whose color is not known never stands for the band
+    expect(failed(designCheck(banded, vase([band(null, 26, 30)]), 0.4))).toEqual(['feature count'])
+  })
+
+  it('a color band painted at another height fails', () => {
+    // the whole lower half, and a band of the right color 6 mm too low
+    for (const [lo, hi] of [[0, 18], [20, 24], [26, 34]] as const) {
+      const r = designCheck(banded, vase([band('white', lo, hi)]), 0.4)
+      expect(failed(r), `${lo} to ${hi}`).toEqual(['feature count'])
+    }
+    // below a height runs to the part's bottom; above one, to its top
+    const below: PartPlan = { ...banded, features: [...banded.features.slice(0, 2), { name: 'Base band', kind: 'paint', sizes: { below: 5 } }], colors: { Body: 'black', 'Base band': 'white' } }
+    expect(failed(designCheck(below, vase([band('white', 0, 5.2)]), 0.4))).toEqual([])
+    expect(failed(designCheck(below, vase([band('white', 3, 5.2)]), 0.4))).toEqual(['feature count'])
+  })
+
   it('a 6 mm hole built at 5 mm fails that item only', () => {
     const r = designCheck(bracket, { ...built, holes: [{ diameterMm: 4 }, { diameterMm: 5 }] }, 0.4)
     expect(r.pass).toBe(false)
