@@ -16,6 +16,8 @@ use crate::thicken::{self, Thicken};
 use crate::vec3::{self, Frame, V2, V3};
 use serde::Deserialize;
 
+#[cfg(feature = "brep")]
+pub mod exact;
 mod pieces;
 
 pub use pieces::{Curve, Density, Piece};
