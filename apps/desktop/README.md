@@ -9,11 +9,14 @@ The Rust side exposes:
 - `load_mesh` (raw bytes, file name in the `x-sx-name` header), `slice` (the same request JSON the WASM worker takes; runs sx-core on every core off the main thread), `get_preview` and `get_gcode` (raw bytes, not JSON), `release`
 - `open_files`, `read_file`, `save_file`: Rust shows the native dialog and keeps the paths, so the web view never names a file path
 - `update_mode`, `update_check`, `update_download`, `update_restart`: in-app updates; the page asks before the restart (`release/updates.md`)
+- `geom_call`, `geom_end` and `geom_engine` (with the `native-geom` feature): the Model engine in a process of its own, for the page's native geometry provider (below)
 - `probe_enabled` and `probe_report`: with `SX_PROBE=1` the app slices the example plate through `slice`, prints one `sx-probe {json}` line with launch and slice times, and exits
 
 Planned: `slice_cancel`, printers through sx-connect, the LLM transport through sx-llm, approvals through sx-permit, and secrets in the OS keychain. Until then the desktop app uses the same TypeScript printer, approval and store code as the browser build.
 
 Cargo features `store`, `pilot`, `connect` and `cloud` (all on by default) gate the optional crates; `cargo build -p slicerx-desktop --no-default-features` builds the base app.
+
+The `native-geom` feature (off by default) links sx-geom with the exact kernel. The page can then run the Model engine natively instead of in its geometry worker: the shell starts its own binary again with `--sx-geom-engine` (`src-tauri/src/geom_host.rs`), and that process serves engine calls over its stdin and stdout as frames (`packages/geom/src/serve.rs`). The page keeps its worker unless `SLICERX_NATIVE_GEOM=1` is set in the app's environment or the developer setting `localStorage['sx.nativeGeom'] = '1'` is on (`src/host/geom-native.ts`); `SLICERX_NATIVE_GEOM=0` keeps the worker either way. A build with the feature compiles the kernel from source, so it needs what the kernel build needs: `SX_SMLIB_DIR` from `packages/brep/scripts/fetch-smlib.sh`, and `SX_BREP_REQUIRE=1` so a build without the kernel source fails instead of building the stand-in. A release with the feature also needs a check that the built app reports a real kernel.
 
 ```
 pnpm --filter @slicerx/desktop tauri dev     # cargo must be on PATH

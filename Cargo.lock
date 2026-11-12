@@ -5306,6 +5306,7 @@ dependencies = [
  "sx-alloc",
  "sx-connect",
  "sx-core",
+ "sx-geom",
  "sx-link",
  "sx-llm",
  "sx-permit",

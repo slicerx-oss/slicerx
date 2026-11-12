@@ -145,6 +145,10 @@ if (__SX_FEATURE_PILOT__) {
   registerPresetImport(() => createTauriPresetImport())
 }
 
+// The Model engine runs in the page's geometry worker unless this build runs it natively and that is asked for
+// (host/geom-native.ts). Before the host, which may start the engine for a file handed over at launch.
+await (await import('./host/geom-native')).startNativeGeom()
+
 const el = document.getElementById('root')
 if (!el) throw new Error('index.html is missing #root')
 const config = editionFromBuild()
