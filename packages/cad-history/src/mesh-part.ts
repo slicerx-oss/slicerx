@@ -27,11 +27,13 @@ function surface(value: unknown): FaceSurface {
   return { kind: 'other' }
 }
 
-/** Keep face provenance when converting unchanged replay triangles for display. */
+/** Keep face provenance and exact normals when converting unchanged replay triangles for display. */
 export function historyPart(m: HistoryMesh): MeshPart {
   const part: MeshPart = { name: m.name, slot: m.slot,
     positions: m.positions instanceof Float32Array ? m.positions : new Float32Array(m.positions),
     indices: m.indices instanceof Uint32Array ? m.indices : new Uint32Array(m.indices) }
+  // exact normals only when there is one set per triangle corner; any other length would shade the wrong triangles
+  if (m.normals instanceof Int16Array && m.normals.length === m.indices.length * 2) part.normals = m.normals
   const faces = m.faces
   if (!faces || faces.ids.length !== m.indices.length / 3) return part
   const ids = Array.from(faces.ids)

@@ -42,6 +42,12 @@ export interface HistoryMesh {
   faces?: { ids: ArrayLike<number>; table: unknown[]; keys?: number[] }
   /** The shape Add shape made the part as; exact replays build it from this when the triangles still fit it. */
   primitive?: PrimitiveSpec
+  /**
+   * Exact corner normals from the solid the triangles were read from, packed as MeshPart.normals: six numbers per
+   * triangle. Only a part that still is its solid's tessellation has them; a step that changes the triangles drops
+   * them, and a project never stores them.
+   */
+  normals?: Int16Array
 }
 
 export type StepParams =
