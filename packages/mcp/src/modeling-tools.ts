@@ -7,6 +7,7 @@ import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, MAX_STEPS_RE
 import type { DesignHost } from '@slicerx/cad-history'
 import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, stepIndex, type Design, type PiecePlans } from './design-tools'
 import { ToolInputError } from './errors'
+import { boxOf, placeNote, sharesPlace, solidBox, undercut } from './feature-place'
 import type { FitProfile } from './fit-facts'
 import { seatNew, seatPattern } from './seat'
 import { modelArg, vec3, type GeomCall } from './args'
@@ -399,6 +400,10 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         // a part that builds a print-in-place piece of the design's plan takes the plan's name for it
         const piece = pieceNameFor(deps.plans, d, i.feature, i.name)
         const part: HistoryMesh = { name: piece ?? i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices, ...(shape ? { primitive: shape } : {}) }
+        // a new part never stands where another part already stands on the same face
+        const box = boxOf(part.positions)
+        const inWay = box ? sharesPlace(d.parts, box) : []
+        if (inWay.length) throw new ToolInputError(placeNote('part', inWay, box))
         const n = d.parts.length
         await ds.add(d, -1, { op: 'parts.add', parts: [part], label: `Add ${part.name}` }, undefined, withFeature(i.feature))
         // a new part a hair from another (under the gap a printer keeps open) is seated on it, as this step
@@ -414,7 +419,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const subtract = defineTool({
     name: 'geom.subtract',
-    version: '1.2.1',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description: `Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. Writes an STL and returns the removed volume. ${solidsHelp}`,
@@ -426,6 +431,9 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         const solids = i.solids.map(historySolid)
         const one = solids.length === 1 ? solids[0] : undefined
         const label = i.label ?? (one?.type === 'cylinder' ? `Hole ${Math.round(one.diameterMm * 100) / 100} mm` : `Subtract ${solids.length} solid${solids.length === 1 ? '' : 's'}`)
+        // a cut never runs under a part standing on the face it cuts
+        const inWay = undercut(d.parts, i.part ?? -1, solids)
+        if (inWay.length) throw new ToolInputError(placeNote('cut', inWay, solids.length === 1 ? solidBox(solids[0]!) : null))
         await ds.add(d, i.part ?? -1, { op: 'subtract', solids, label }, undefined, withFeature(i.feature))
         return added(d, 'Subtracted')
       }
