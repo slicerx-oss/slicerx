@@ -20,7 +20,7 @@ import { zip } from '../src/export/zip'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { setPlansSource } from '../src/project/plans-source'
 import { get, set, type PlateEntry, type PlateMeta } from '../src/state/store'
-import { forgetPlanState, projectPlans, restorePlans, standingPlan } from '../src/workspaces/mimir/plan-state'
+import { checkedDesign, forgetPlanState, projectPlans, restorePlans, standingPlan, withPlanState } from '../src/workspaces/mimir/plan-state'
 import { cardPlans } from '../src/workspaces/mimir/plan-tool'
 import { mimirPlans } from '../src/workspaces/mimir/plans'
 
@@ -171,5 +171,24 @@ describe('the plan a reopened project gives a new chat', () => {
     expect(planLeft(messages, messages.length)).toMatchObject({ planId: 'p1', noBody: true })
     set({ plate: [entry('obj_other', [step('s7')])] })
     expect(standingPlan()).toBeUndefined()
+  })
+})
+
+describe('the design a reopened project gives a follow-up', () => {
+  it('stays the follow-up design after a follow-up changes it, as it is in the chat that built it', async () => {
+    set({ plate: [entry('obj_new', [step('s1', 'Plate'), step('s2', 'Screw holes')])] })
+    restorePlans({ last: 'p1', plans: [{ plan: plan('p1'), design: '1', steps: ['s1', 's2'], passed: true }] }, (f) => (f === '1' ? 'obj_new' : undefined))
+    expect(checkedDesign()).toBe('obj_new')
+    // the first follow-up adds a step; the pass no longer holds, but the design was checked
+    const [chamfer] = withPlanState([{ name: 'geom.chamfer', run: async () => ({ summary: 'Beveled', output: { design: 'obj_new' } }) } as never])
+    set({ plate: [entry('obj_new', [step('s1', 'Plate'), step('s2', 'Screw holes'), step('s3', 'Bevel')])] })
+    await chamfer!.run({ design: 'obj_new' } as never, {} as never)
+    expect(checkedDesign()).toBe('obj_new')
+  })
+
+  it('is none for a plan never checked', () => {
+    set({ plate: [entry('obj_new', [step('s1', 'Plate')])] })
+    restorePlans({ last: 'p1', plans: [{ plan: plan('p1'), design: '1', steps: ['s1'] }] }, (f) => (f === '1' ? 'obj_new' : undefined))
+    expect(checkedDesign()).toBeUndefined()
   })
 })
