@@ -13,9 +13,9 @@ import { NO_GEOMETRY_NOTE, NO_MESH_NOTE, fmtSize, geomRun, objectGeometry, parse
 import { HoleFeature, NO_SUBTRACT_NOTE, basisFor, cutHoles, fitCitations, placeHoles } from '../threads_and_fits/index'
 import { holeFor, type HoleSpec } from '../threads_and_fits/sizes'
 
-/** A copy of the parts scaled about the model origin. */
+/** A copy of the parts scaled about the model origin. Exact corner normals are dropped, as on any scale. */
 export function scaleParts(parts: MeshPart[], s: number): MeshPart[] {
-  return parts.map((p) => ({ ...p, positions: Float32Array.from(p.positions, (v) => v * s) }))
+  return parts.map(({ normals: _stale, ...p }) => ({ ...p, positions: Float32Array.from(p.positions, (v) => v * s) }))
 }
 
 export type ScaleCase = 'no_holes' | 'open_up' | 'grows'
