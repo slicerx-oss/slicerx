@@ -206,6 +206,16 @@ export function slotOverridesFor(plate: PlateMeta | undefined, obj: { slotOverri
   return Object.keys(out).length ? out : undefined
 }
 
+/**
+ * The color a new object made here (a shape, a test print) starts with for a slot: what the slot reads from the
+ * project's files and the defaults, so filament 1 starts off-white when nothing is set, never the edition's accent. A
+ * color the person or the printer set shows over it on its own and stays theirs to change, so it is not copied in.
+ */
+export function startColor(slot: number, s: SlotInputs = get()): string {
+  const n = Math.max(1, slot)
+  return resolveSlots({ ...s, slotSetup: {}, printerSlots: [] }, Math.max(n, slotCount({ ...s, slotSetup: {}, printerSlots: [] })))[n - 1]?.color ?? defaultColors()[(n - 1) % 8]!
+}
+
 /** An object designed in the app, its history starting from nothing: it has no file colors of its own. */
 export function madeDesign(o: Pick<PlateEntry, 'history'>): boolean {
   return o.history !== undefined && Array.isArray(o.history.base) && o.history.base.length === 0

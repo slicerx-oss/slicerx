@@ -170,7 +170,8 @@ function bakedVolume(v: { part: Parameters<typeof bake>[0]; local: Parameters<ty
   return positions
 }
 
-function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
+/** What the view draws for the plate: each object and part with the color it shows (exported for tests). */
+export function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
   const slots = resolveSlots(s)
   const tower = shown ? towerMesh(shown.at, shown.heightMm) : null
   return {

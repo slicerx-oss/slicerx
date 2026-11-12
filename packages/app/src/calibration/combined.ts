@@ -11,7 +11,7 @@ import { addPlate } from '../plate/plates'
 import { get, markStale, set, type CalibrationPart, type PlateEntry } from '../state/store'
 import { calibCtx, calibEntryId, num1, type CalibResponse } from './actions'
 import { calibTest, checkValues, type CalibId } from './tests'
-import { brandAccent } from '../edition'
+import { startColor } from '../filament/slots'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -114,7 +114,7 @@ export async function addCombinedPlate(host: Loader, tests: readonly CalibId[], 
     const handle = await host.loadParts(f.o.name, [part])
     const entryId = calibEntryId()
     const at = placed[f.key]!
-    entries.push({ id: entryId, name: f.o.name, handle, parts: [part], colors: [brandAccent()], transform: compose({ position: [at[0] - f.min[0], at[1] - f.min[1], 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })
+    entries.push({ id: entryId, name: f.o.name, handle, parts: [part], colors: [startColor(slot)], transform: compose({ position: [at[0] - f.min[0], at[1] - f.min[1], 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })
     if (Object.keys(f.o.settings).length) objectSettings[entryId] = f.o.settings
     ofTest.set(f.id, [...(ofTest.get(f.id) ?? []), entryId])
   }
