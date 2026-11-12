@@ -5,7 +5,7 @@
 // what they send it, and how a step falls back to the mesh when the kernel fails. The kernel itself is tested in
 // packages/brep (cargo) and brep-module.test.ts.
 import { beforeEach, expect, it } from 'vitest'
-import { EXACT_FELL_BACK, IDENTITY, PAINT_DROPPED, clearReplayCache, replayHistory, stepSalt, type History, type Step, type StepParams } from '@slicerx/cad-history'
+import { EXACT_FELL_BACK, IDENTITY, clearReplayCache, replayHistory, stepSalt, type History, type Step, type StepParams } from '@slicerx/cad-history'
 import { primitive } from '../src/plate/mesh-ops'
 
 const tri = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }
@@ -104,15 +104,16 @@ it('a plane that misses the solid breaks the step, as on the mesh', async () => 
   expect(r.status[1]).toEqual({ state: 'broken', message: 'The plane no longer crosses the part.' })
 })
 
-it('a painted part loses its paint to a kernel step, with the same note', async () => {
+it('a painted part keeps its paint through a kernel step, by the face it was on', async () => {
   const e = engine()
   const paintCall = async (op: string, req: unknown) => (op === 'paint.select' ? { changed: { 0: 'ff0000' } } : e.call(op, req))
   const paint = step('paint-1', { op: 'paint', layer: 'color', state: 1, target: { kind: 'part' } } as StepParams)
   const r = await replayHistory(paintCall, { history: history(box, paint, hole), exact: true })
   // paint keeps the solid, so the hole still goes to the kernel
   expect(e.ops()).toEqual(['brep.extrude', 'brep.tessellate', 'brep.subtract', 'brep.tessellate'])
-  expect(r.status[2]).toEqual({ state: 'done', note: PAINT_DROPPED })
-  expect(r.parts[0]!.paint).toBeUndefined()
+  // the whole face was painted, so its key carries the paint onto the hole's triangles of that face
+  expect(r.status[2]).toEqual({ state: 'done' })
+  expect(r.parts[0]!.paint).toEqual({ color: { 0: 'ff0000' } })
 })
 
 it('never reads a solid that came with the history, and never returns one', async () => {

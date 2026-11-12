@@ -10,7 +10,7 @@
 // - A face whose key a merge cleared (0) goes by its place; a step saved with that key asks for the face again.
 // - An added part that leans keeps the shape it was made as, turned with it, so it still starts as the kernel's solid.
 import { beforeEach, describe, expect, it } from 'vitest'
-import { IDENTITY, clearReplayCache, EXACT_OPS, fits, replayHistory, EXACT_MESH_FROM_HERE, stepSalt, tiltedParams, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
+import { IDENTITY, clearReplayCache, EXACT_OPS, fits, PAINT_DROPPED, replayHistory, EXACT_MESH_FROM_HERE, stepSalt, tiltedParams, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
 import type { PrimitiveSpec } from '@slicerx/contracts'
 
 type Vec3 = [number, number, number]
@@ -282,5 +282,79 @@ describe('an added part that leans', () => {
     expect(fits(leaning.primitive!, leaning.positions, leaning.indices)).toBe(true)
     // the shape before the lean no longer fits the turned points
     expect(fits(box.primitive!, leaning.positions, leaning.indices)).toBe(false)
+  })
+})
+
+describe('paint on an exact part, kept by face', () => {
+  const paint = (id: string, part = 0): Step => step(id, part, { op: 'paint', layer: 'color', state: 2, target: { kind: 'part' } })
+  const hull = [1, 2, 3].map((k) => stepSalt('hull') + k)
+  /** The engine with its tessellations from the `from`th on giving the faces in the other order, so a face is found by its key, not its place in the list. */
+  const reordered = (e: ReturnType<typeof engine>, from = 2) => {
+    let n = 0
+    return async (op: string, req: unknown) => {
+      const r = (await e.call(op, req)) as Record<string, unknown>
+      if (op !== 'brep.tessellate' || ++n < from || !r['faces'] || !('keys' in (r['faces'] as object))) return r
+      const keys = [...(r['faces'] as { keys: number[] }).keys].reverse()
+      return { ...r, faces: { table: keys.map(() => ({ kind: 'plane' })), keys } }
+    }
+  }
+
+  it('keeps a painted face painted through a later cut, found by its key, and the part stays exact', async () => {
+    const e = engine()
+    // the paint lands on the first triangle: the face with the hull's first key
+    const r = await replayHistory(reordered(e), { history: history(hullLoft(), paint('paint'), step('portholes', 0, { op: 'subtract', solids: portholes.slice(0, 2), label: 'Portholes' })), exact: true }, kept)
+    expect(r.status).toEqual([{ state: 'done' }, { state: 'done' }, { state: 'done' }])
+    exactPart(r.parts[0])
+    // after the cut the faces come in the other order: the paint is on the triangle whose face has that key now
+    const keys = r.parts[0]!.faces!.keys!
+    const at = Array.from(r.parts[0]!.faces!.ids).findIndex((id) => keys[id] === hull[0])
+    expect(at).toBe(keys.length - 1)
+    expect(r.parts[0]!.paint).toEqual({ color: { [at]: '2' } })
+  })
+
+  it('keeps paint on a face a join merged (key 0) by its place', async () => {
+    const e = engine()
+    const house = boxPart('Deck house', [30, 10, 6], [40, 0, 20])
+    const r = await replayHistory(e.call, { history: history(hullLoft(), add('house', house), step('join', 0, { op: 'boolean', kind: 'union', with: [1] }), paint('paint'), step('portholes', 0, { op: 'subtract', solids: portholes.slice(0, 1), label: 'Portholes' })), exact: true }, kept)
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done'])
+    exactPart(r.parts[0])
+    // two faces have no key after the join; the paint stays on the one it was put on, by where it is
+    expect(r.parts[0]!.faces!.keys!.filter((k) => k === 0)).toHaveLength(2)
+    expect(r.parts[0]!.paint).toEqual({ color: { 0: '2' } })
+  })
+
+  it('takes paint in a design that must stay exact', async () => {
+    const e = engine()
+    const r = await replayHistory(e.call, { history: { ...history(hullLoft(), paint('paint'), step('portholes', 0, { op: 'subtract', solids: portholes.slice(0, 1), label: 'Portholes' })), exact: true } }, kept)
+    expect(r.status).toEqual([{ state: 'done' }, { state: 'done' }, { state: 'done' }])
+    exactPart(r.parts[0])
+    expect(r.parts[0]!.paint).toEqual({ color: { 0: '2' } })
+  })
+
+  describe('across part of a face', () => {
+    /** The engine with each held body's first face made of two triangles, so painting one paints part of it. */
+    const split = (e: ReturnType<typeof engine>) => async (op: string, req: unknown) => {
+      const r = (await e.call(op, req)) as Record<string, unknown>
+      if (op !== 'brep.tessellate' || !(r['positions'] instanceof Float32Array)) return r
+      const p = r['positions'] as Float32Array
+      const ids = r['faceIds'] as Uint32Array
+      const positions = new Float32Array([...p, 0, 5, 0, 5, 0, 0, 5, 5, 0])
+      return { ...r, positions, indices: Uint32Array.from({ length: positions.length / 3 }, (_, i) => i), faceIds: Uint32Array.from([...ids, 0]), normals: new Int16Array((positions.length / 9) * 6) }
+    }
+
+    it('stays on its triangles with the solid kept, and the next kernel step clears it with the paint note', async () => {
+      const e = engine()
+      const r = await replayHistory(split(e), { history: history(hullLoft(), paint('paint'), step('portholes', 0, { op: 'subtract', solids: portholes.slice(0, 1), label: 'Portholes' })), exact: true }, kept)
+      expect(r.status).toEqual([{ state: 'done' }, { state: 'done' }, { state: 'done', note: PAINT_DROPPED }])
+      expect(e.of('brep.subtract')).toHaveLength(1)
+      exactPart(r.parts[0])
+      expect(r.parts[0]!.paint).toBeUndefined()
+    })
+
+    it('stops a design that must stay exact, as before', async () => {
+      const e = engine()
+      const r = await replayHistory(split(e), { history: { ...history(hullLoft(), paint('paint')), exact: true } }, kept)
+      expect(r.status[1]).toEqual({ state: 'broken', message: 'Exact replay does not support paint for this part. The mesh path was not used.' })
+    })
   })
 })
