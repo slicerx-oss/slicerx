@@ -47,11 +47,11 @@ describe('designCheck', () => {
     expect(r.items.every((i) => i.pass)).toBe(true)
   })
 
-  it('a recess the body reads as no hole passes with a warning, while a through hole it lacks still fails', () => {
-    // a toy boat's portholes, 1 mm dents in its curved side: no flat face, so no hole loop to read
+  it('a recess or a through hole the body reads as none fails', () => {
+    // a toy boat's portholes, 1 mm dents in its curved side
     const boat: PartPlan = { ...bracket, holes: [{ name: 'portholes', diameter: 1, count: 12, recess: true }] }
     const r = designCheck(boat, { ...built, holes: [] }, 0.4)
-    expect(r.items.find((i) => i.name === 'portholes')).toMatchObject({ pass: true, want: '12 x 1 mm diameter recess', got: 'not measured: a recess is checked by its feature step', warning: 'not measured as a hole; look over the recesses on the part' })
+    expect(failed(r)).toEqual(['portholes'])
     const through = designCheck({ ...boat, holes: [{ name: 'portholes', diameter: 1, count: 12 }] }, { ...built, holes: [] }, 0.4)
     expect(failed(through)).toEqual(['portholes'])
     // a recess the body does read is held to its size as a hole is
