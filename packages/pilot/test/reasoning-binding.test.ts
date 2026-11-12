@@ -12,12 +12,15 @@ import type { LlmMessage } from '../src/provider/types'
 import { encodeToolName } from '../src/provider/openai'
 import { unbindOldReasoning } from '../src/reasoning-binding'
 import { createPilot } from '../src/runtime'
-import { defineTool, type PilotTool } from '../src/tool'
+import { defineTool, type PilotTool, type Toolset } from '../src/tool'
+import { LOAD_TOOLS_TOOL } from '../src/toolsets'
+
 
 const BASE = 'https://abcdefghijklmnop.supabase.co/functions/v1/mimir'
 
-/** One scripted answer: signed reasoning, then words or tool calls. */
-type Reply = { think: string; text: string } | { think: string; calls: string[] }
+/** One scripted answer: signed reasoning, then words or tool calls (a name, or a name and its arguments). */
+type Call = string | { name: string; args: unknown }
+type Reply = { think: string; text: string } | { think: string; calls: Call[] }
 
 const sse = (events: unknown[]): string => events.map((d) => `event: ${(d as { type: string }).type}\ndata: ${JSON.stringify(d)}\n\n`).join('')
 
@@ -35,9 +38,9 @@ function body(r: Reply): string {
           { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: r.text } },
           { type: 'content_block_stop', index: 1 },
         ]
-      : r.calls.flatMap((name, i) => [
-          { type: 'content_block_start', index: i + 1, content_block: { type: 'tool_use', id: `call_${r.think}_${i}`, name: encodeToolName(name), input: {} } },
-          { type: 'content_block_delta', index: i + 1, delta: { type: 'input_json_delta', partial_json: '{}' } },
+      : r.calls.flatMap((c, i) => [
+          { type: 'content_block_start', index: i + 1, content_block: { type: 'tool_use', id: `call_${r.think}_${i}`, name: encodeToolName(typeof c === 'string' ? c : c.name), input: {} } },
+          { type: 'content_block_delta', index: i + 1, delta: { type: 'input_json_delta', partial_json: typeof c === 'string' ? '{}' : JSON.stringify(c.args) } },
           { type: 'content_block_stop', index: i + 1 },
         ])
   const stop = 'text' in r ? 'end_turn' : 'tool_use'
@@ -61,7 +64,7 @@ function proxy(replies: Reply[]): { t: LlmTransport; sent: LlmHttpRequest[] } {
   }
 }
 
-type Sent = { messages: { role: string; content: unknown }[]; tools?: { name: string; description: string }[] }
+type Sent = { model?: string; system?: unknown; messages: { role: string; content: unknown }[]; tools?: { name: string; description: string }[] }
 const parsed = (r: LlmHttpRequest | undefined): Sent => JSON.parse(String(r?.body)) as Sent
 
 /** The reasoning a request carries, by its words, in order. */
@@ -80,8 +83,36 @@ const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown
 const NO_APPROVALS = { register: async () => undefined, grant: async () => undefined, deny: async () => undefined } as unknown as ApprovalHost
 const CLOUD = { ...DEFAULT_CONFIG, provider: 'mimir-cloud', model: 'claude-haiku-5-5', baseUrl: BASE, billing: 'key' as const, webSearch: false }
 
-const tool = (name: string): PilotTool<never> =>
-  defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: `${name} for the test`, input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
+const tool = (name: string, toolset?: Toolset): PilotTool<never> =>
+  defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: `${name} for the test`, ...(toolset ? { toolset } : {}), input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
+
+/** 150 tools, over the cloud chat's limit of 128: core 10, cad 60, settings 30, printers 20, fleets 15, theme 15. */
+function overLimit(): PilotTool<never>[] {
+  const sets: [string, Toolset, number][] = [
+    ['core.t', 'core', 10],
+    ['geom.t', 'cad', 60],
+    ['settings.t', 'settings', 30],
+    ['printer.t', 'printers', 20],
+    ['fleet.t', 'fleets', 15],
+    ['theme.t', 'theme', 15],
+  ]
+  return sets.flatMap(([prefix, set, n]) => Array.from({ length: n }, (_, i) => tool(`${prefix}${i}`, set)))
+}
+
+/** What a request binds the reasoning it gets back to, as the provider sees it: the model, system prompt and tools. */
+const prefixOf = (r: LlmHttpRequest | undefined): string => {
+  const b = parsed(r)
+  return JSON.stringify([b.model, b.system, b.tools])
+}
+
+/**
+ * Each request carries only reasoning signed against the same model, system prompt and tools: request n returned reply
+ * n's reasoning, so a block's words name the request it was signed for.
+ */
+function unboundReasoning(sent: LlmHttpRequest[], said: Reply[]): string[] {
+  const signedFor = new Map(said.map((r, n) => [r.think, sent[n]]))
+  return sent.flatMap((r, n) => reasoning(r).filter((w) => prefixOf(signedFor.get(w)) !== prefixOf(r)).map((w) => `request ${n} carries ${w}`))
+}
 
 function chat(t: LlmTransport, tools: PilotTool<never>[], hasDesign: () => boolean = () => false) {
   const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: t }, config: CLOUD, policy: DEFAULT_POLICY, builtins: false, tools, hasDesign })
@@ -148,28 +179,72 @@ describe('signed reasoning across runs', () => {
   })
 })
 
+describe('signed reasoning when pilot.load_tools changes the tools in the middle of a turn', () => {
+  it('the step after the load sends no reasoning signed against the old tool list, and the tool loop goes on with its new reasoning', async () => {
+    const said: Reply[] = [
+      { think: 'a1', text: 'Here is the bracket.' },
+      { think: 'b1', calls: [{ name: LOAD_TOOLS_TOOL, args: { toolset: 'theme' } }] },
+      { think: 'b2', calls: ['theme.t0'] },
+      { think: 'b3', text: 'Done, it is switched.' },
+    ]
+    const { t, sent } = proxy(said)
+    const say = chat(t, overLimit())
+    await say('Make me a bracket')
+    await say('And then?')
+    expect(sent).toHaveLength(4)
+    // the load changed the tool list between the turn's first and second step
+    const names = (r: LlmHttpRequest | undefined) => (parsed(r).tools ?? []).map((x) => x.name)
+    expect(names(sent[1]).some((n) => n.startsWith('theme__'))).toBe(false)
+    expect(names(sent[2]).some((n) => n.startsWith('theme__'))).toBe(true)
+    expect(names(sent[2]).length).toBeLessThanOrEqual(128)
+    expect(unboundReasoning(sent, said)).toEqual([])
+    // the step after the load carries no reasoning at all: everything before it was signed against the old list
+    expect(reasoning(sent[2])).toEqual([])
+    // the tool loop still has the load's call and result, and the earlier turn's words
+    const loadCall = parsed(sent[2]).messages.some((m) => Array.isArray(m.content) && (m.content as { type: string; name?: string }[]).some((b) => b.type === 'tool_use' && b.name === 'pilot__load_tools'))
+    expect(loadCall).toBe(true)
+    expect(replies(sent[2])).toContain('Here is the bracket.')
+    // on the same tool list again, the run's new reasoning goes back through its loop
+    expect(reasoning(sent[3])).toEqual(['b2'])
+    expect(JSON.stringify(parsed(sent[3]).messages)).toContain('theme.t0 ran')
+  })
+})
+
 describe('unbindOldReasoning', () => {
   const said = (think: string, bound: string): LlmMessage => ({ role: 'assistant', content: think, raw: [{ type: 'thinking', thinking: think, signature: 's' }, { type: 'text', text: think }], bound })
   const left = (ms: LlmMessage[]) => ms.flatMap((m) => (m.role === 'assistant' ? (m.raw ?? []).filter((b) => (b as { type: string }).type === 'thinking').map((b) => (b as { thinking: string }).thinking) : []))
 
-  it('removes from the oldest end up to the newest message bound to something else, and leaves the run in progress', () => {
-    const ms: LlmMessage[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'one' }, said('a', 'k1'), { role: 'user', content: 'two' }, said('b', 'k2'), said('c', 'k1'), { role: 'user', content: 'three' }, said('d', 'k2')]
-    expect(unbindOldReasoning(ms, 7, 'k1')).toBe(2)
-    // b is bound to k2, so a and b leave; c is bound to k1 and stays; d is this run's own
+  // keys are the system prompt and tools, a colon, then the model and tier (bindingKey)
+  const k1 = 'p1:m1'
+  const k2 = 'p1:m2'
+
+  it('removes from the oldest end up to the newest message bound to something else, and leaves the run in progress on another model', () => {
+    const ms: LlmMessage[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'one' }, said('a', k1), { role: 'user', content: 'two' }, said('b', k2), said('c', k1), { role: 'user', content: 'three' }, said('d', k2)]
+    expect(unbindOldReasoning(ms, 7, k1)).toBe(2)
+    // b is bound to another model, so a and b leave; c is bound to k1 and stays; d is this run's own, signed against the
+    // same system prompt and tools
     expect(left(ms)).toEqual(['c', 'd'])
     expect(ms[4]).toEqual({ role: 'assistant', content: 'b', raw: [{ type: 'text', text: 'b' }] })
   })
 
+  it('removes the run in progress too once its system prompt or tools change, and keeps the tool calls', () => {
+    const call = { type: 'tool_use', id: 't1', name: 'pilot__load_tools', input: { toolset: 'project' } }
+    const ms: LlmMessage[] = [{ role: 'user', content: 'one' }, said('a', k1), { role: 'user', content: 'two' }, { role: 'assistant', content: '', raw: [{ type: 'thinking', thinking: 'b', signature: 's' }, call], bound: k1 }, { role: 'tool', callId: 't1', content: 'loaded' }]
+    expect(unbindOldReasoning(ms, 3, 'p2:m1')).toBe(2)
+    expect(left(ms)).toEqual([])
+    expect(ms[3]).toEqual({ role: 'assistant', content: '', raw: [call] })
+  })
+
   it('changes nothing when every earlier message is bound to the same request', () => {
-    const ms: LlmMessage[] = [{ role: 'user', content: 'one' }, said('a', 'k1'), { role: 'user', content: 'two' }]
+    const ms: LlmMessage[] = [{ role: 'user', content: 'one' }, said('a', k1), { role: 'user', content: 'two' }]
     const before = JSON.stringify(ms)
-    expect(unbindOldReasoning(ms, 3, 'k1')).toBe(0)
+    expect(unbindOldReasoning(ms, 3, k1)).toBe(0)
     expect(JSON.stringify(ms)).toBe(before)
   })
 
   it('treats reasoning with no record of its request as bound to something else', () => {
     const ms: LlmMessage[] = [{ role: 'user', content: 'one' }, { role: 'assistant', content: '', raw: [{ type: 'redacted_thinking', data: 'x' }] }, { role: 'user', content: 'two' }]
-    expect(unbindOldReasoning(ms, 3, 'k1')).toBe(1)
+    expect(unbindOldReasoning(ms, 3, k1)).toBe(1)
     expect(ms[1]).toEqual({ role: 'assistant', content: '' })
   })
 })
