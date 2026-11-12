@@ -81,7 +81,7 @@ mod tess;
 mod values;
 
 #[cfg(feature = "typed")]
-pub use body::{Body, Curve, Edge, Face, Frame, Surface};
+pub use body::{Body, Curve, Edge, FLAT_KIND_MM, Face, Frame, Surface};
 #[cfg(feature = "typed")]
 pub use error::{Error, FailedFace, Stage};
 #[cfg(feature = "typed")]

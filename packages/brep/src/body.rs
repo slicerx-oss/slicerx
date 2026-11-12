@@ -43,6 +43,12 @@ pub struct Body {
 /// A face's key is below this: 52 bits, which a JSON number holds exactly.
 const KEY_LIMIT: u64 = 1 << 52;
 
+/// How far from a plane a face may be, in mm, and still be a plane where faces are sorted into kinds
+/// ([`Face::flat_within`]): a tapered extrude's flat sides are ruled surfaces, flat to 1e-5 mm. A sorting only. What
+/// the kernel made is checked against what it was given far more closely (`stitch.rs`), and that limit is another.
+/// The older operations sort by the same number (`cpp/sx_keys.h`).
+pub const FLAT_KIND_MM: f64 = 1e-4;
+
 /// How closely the read-back and [`Body::volume`] ask the kernel to integrate, relative to the volume.
 const VOLUME_ACCURACY: f64 = 1e-6;
 
@@ -327,6 +333,12 @@ pub struct Face<'b>(FaceRef<'b>);
 impl Face<'_> {
     pub fn surface(&self) -> Surface {
         self.0.shape().into()
+    }
+
+    /// Whether the face lies within `mm` of one plane, by the kernel's own test, whatever kind its surface is. Never
+    /// for a distance that is not more than 0.
+    pub fn flat_within(&self, mm: f64) -> bool {
+        self.0.flat_within(mm)
     }
 }
 

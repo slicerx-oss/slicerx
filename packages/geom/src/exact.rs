@@ -17,7 +17,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use sx_brep::{Body, Curve, Frame, Mesh, Surface, Tessellation};
+use sx_brep::{Body, Curve, Face, Frame, Mesh, Surface, Tessellation};
 
 /// A body in the table, with the key of each of its faces in face order (none at all for a body without keys). The
 /// keys are the ones on the kernel's faces, read once when the body is held; nothing changes a held body.
@@ -218,6 +218,13 @@ fn take_over(reply: &mut Value) -> Result<()> {
     Ok(())
 }
 
+/// Whether a face on a spline surface is a plane where faces are sorted into kinds (`info`'s counts, `tessellate`'s
+/// `type` and the five-kind table): one the kernel calls flat within [`sx_brep::FLAT_KIND_MM`], as the older
+/// operations sort it. A tapered extrude's and a straight loft's flat sides are such faces. `surfaces` is not sorted.
+fn sorted_flat(face: Face) -> bool {
+    matches!(face.surface(), Surface::Spline) && face.flat_within(sx_brep::FLAT_KIND_MM)
+}
+
 /// a surface's kind as the kernel has it, and the name the old `tessellate` and `info` give that kind
 fn names(s: &Surface) -> (&'static str, &'static str) {
     match s {
@@ -242,7 +249,12 @@ fn info(held: &Held) -> Result<Value> {
     let faces = body.faces().map_err(|e| kernel(&e))?;
     let mut types: BTreeMap<&str, u64> = BTreeMap::new();
     for face in &faces {
-        *types.entry(names(&face.surface()).1).or_default() += 1;
+        let name = if sorted_flat(*face) {
+            "plane"
+        } else {
+            names(&face.surface()).1
+        };
+        *types.entry(name).or_default() += 1;
     }
     // a body is in the table only after it read back as a solid
     Ok(json!({
@@ -316,20 +328,44 @@ fn five(s: &Surface, side: V3) -> Kind {
     }
 }
 
-/// the five-kind table of a mesh's faces, in face order
-fn table(mesh: &Mesh) -> Vec<Kind> {
-    let mut sides = vec![[0.0; 3]; mesh.surfaces.len()];
+/// The plane of a face sorted as flat, from its triangles as the older operations take it: it faces the way the
+/// triangles' area vectors sum (`side`), through their middle weighted by area (`middle` over `area`).
+fn flat_plane(side: V3, middle: V3, area: f64) -> Kind {
+    match vec3::normalize(side) {
+        Some(normal) if area > 0.0 => Kind::Plane {
+            normal,
+            offset: vec3::dot(normal, vec3::scale(middle, 1.0 / area)),
+        },
+        _ => Kind::Other,
+    }
+}
+
+/// the five-kind table of a mesh's faces, in face order; `flat` says which faces are sorted as planes whatever
+/// their surface ([`sorted_flat`])
+fn table(mesh: &Mesh, flat: &[bool]) -> Vec<Kind> {
+    let mut sides = vec![([0.0; 3], [0.0; 3], 0.0); mesh.surfaces.len()];
     let at = |i: u32| mesh.positions.get(i as usize).copied().unwrap_or_default();
     for (t, &face) in mesh.triangles.iter().zip(&mesh.faces) {
-        if let Some(side) = sides.get_mut(face as usize) {
+        if let Some((side, middle, area)) = sides.get_mut(face as usize) {
             let [a, b, c] = t.map(at);
-            *side = vec3::add(*side, vec3::cross(vec3::sub(b, a), vec3::sub(c, a)));
+            let twice = vec3::cross(vec3::sub(b, a), vec3::sub(c, a));
+            let weight = vec3::len(twice);
+            *side = vec3::add(*side, twice);
+            *middle = vec3::add(*middle, vec3::scale(vec3::add(vec3::add(a, b), c), weight / 3.0));
+            *area += weight;
         }
     }
     mesh.surfaces
         .iter()
         .zip(sides)
-        .map(|(s, side)| five(s, side))
+        .enumerate()
+        .map(|(face, (s, (side, middle, area)))| {
+            if flat.get(face) == Some(&true) {
+                flat_plane(side, middle, area)
+            } else {
+                five(s, side)
+            }
+        })
         .collect()
 }
 
@@ -440,19 +476,27 @@ fn tessellate(held: &Held, req: &Value, raw: bool) -> Result<Value> {
         ..Tessellation::default()
     };
     let mesh = held.body.tessellate(&how).map_err(|e| kernel(&e))?;
+    let flat: Vec<bool> = held
+        .body
+        .faces()
+        .map_err(|e| kernel(&e))?
+        .iter()
+        .map(|&face| sorted_flat(face))
+        .collect();
     let triangles = mesh.triangles.len();
     let faces = mesh.surfaces.len();
     if mesh.faces.len() != triangles
         || mesh.normals.len() != triangles
         || mesh.faces.iter().any(|&f| f as usize >= faces)
         || (!held.keys.is_empty() && held.keys.len() != faces)
+        || flat.len() != faces
     {
         return Err(Error::geometry(
             "brep",
             "tessellate: the mesh does not match the body's faces",
         ));
     }
-    let kinds: Vec<Value> = table(&mesh).iter().map(kind_json).collect();
+    let kinds: Vec<Value> = table(&mesh, &flat).iter().map(kind_json).collect();
     let surfaces: Vec<Value> = mesh.surfaces.iter().map(surface_json).collect();
     let packed = normals::pack_triangles(&mesh.normals);
     let edges = |points: &dyn Fn(&[u32]) -> Value| -> Vec<Value> {
@@ -477,7 +521,7 @@ fn tessellate(held: &Held, req: &Value, raw: bool) -> Result<Value> {
             .map(|(i, (s, kind))| {
                 json!({
                     "id": i,
-                    "type": names(s).1,
+                    "type": if flat.get(i) == Some(&true) { "plane" } else { names(s).1 },
                     "surface": kind,
                     "key": held.keys.get(i).copied().unwrap_or(0),
                 })

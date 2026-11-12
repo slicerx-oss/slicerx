@@ -100,6 +100,8 @@ static_assert(SM_ANG_TOL_DEG == 0.5, "the kernel's angle tolerance");
 // where a face's key is kept (cpp/sx_keys.h), constants in src/kernel.rs
 static_assert(kSxKeyLow == 20101 && kSxKeyHigh == 20102 && kSxKeyHalfBits == 26, "face keys");
 static_assert(std::is_base_of<SmAttribute, SmLongAttribute>::value, "a key half is a long attribute");
+// how flat a face sorted with the planes is (cpp/sx_keys.h), constant in src/body.rs
+static_assert(kSxFlatKindMm == 1e-4, "flat faces");
 
 // --- what a binding cannot say
 // a kernel array, made in the kernel's context (plain new is private to kernel objects)
@@ -113,6 +115,8 @@ inline const SmVector3d& sx_normal(const SmPolyVertAuxData& a) { return a.m_vNor
 inline ULONG sx_failed_face(const SmTessellationFailure& f) { return f.lFaceIndex; }
 inline int sx_failed_stage(const SmTessellationFailure& f) { return static_cast<int>(f.eStage); }
 inline SmLong sx_failed_status(const SmTessellationFailure& f) { return f.eStatus; }
+// a surface's own test for lying within a distance of one plane; it changes nothing
+inline bool sx_flat(const SmSurface& s, double within) { return const_cast<SmSurface&>(s).IsPlanar(within) != 0; }
 // a long attribute, made in the kernel's context as its objects are; the object it is added to owns it
 inline SmLong sx_long_attribute(ULONG id, SmLong value, SmAttribute*& out)
 {

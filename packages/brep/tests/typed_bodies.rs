@@ -221,6 +221,32 @@ fn a_sphere_reads_back_with_its_center_and_radius() {
     close3(frame.origin, [3.0, -2.0, 7.0]);
 }
 
+// where faces are sorted into kinds, a face is a plane when the kernel calls it flat within FLAT_KIND_MM
+#[test]
+fn the_kernel_says_which_faces_are_flat() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let cube = Body::cuboid([0.0; 3], [1.0; 3]).unwrap();
+    let ball = Body::sphere([0.0; 3], 5.0).unwrap();
+    let flat = |body: &Body, within: f64| -> Vec<bool> {
+        body.faces()
+            .unwrap()
+            .iter()
+            .map(|face| face.flat_within(within))
+            .collect()
+    };
+    assert_eq!(flat(&cube, sx_brep::FLAT_KIND_MM), [true; 6]);
+    assert!(flat(&ball, sx_brep::FLAT_KIND_MM).iter().all(|&is| !is));
+    // a ball of 5 mm is within 5 mm of a plane through its middle, and not within 4
+    assert!(flat(&ball, 5.5).iter().all(|&is| is));
+    assert!(flat(&ball, 4.0).iter().all(|&is| !is));
+    // no distance, no plane
+    for none in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert_eq!(flat(&cube, none), [false; 6], "{none}");
+    }
+}
+
 // resident memory of this process in bytes
 #[cfg(target_os = "linux")]
 fn resident() -> usize {

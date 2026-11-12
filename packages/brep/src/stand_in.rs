@@ -94,6 +94,10 @@ pub(crate) fn take_over(_number: i64) -> Option<Solid> {
 }
 
 impl FaceRef<'_> {
+    pub(crate) fn flat_within(&self, _mm: f64) -> bool {
+        match *self.solid {}
+    }
+
     pub(crate) fn shape(&self) -> Shape {
         match *self.solid {}
     }
