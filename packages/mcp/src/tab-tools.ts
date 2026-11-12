@@ -12,7 +12,7 @@ import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSch
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
 import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
-import { bareDetailFields, DETAIL_HELP, detailProblem, FEATURES_FLOOR, LONG_EXTRA, LONG_RATIO, SECTIONS_FLOOR } from './plan-detail'
+import { DETAIL_HELP, DETAIL_LEVELS, detailProblem, FEATURES_FLOOR, LONG_EXTRA, LONG_RATIO, SECTIONS_FLOOR } from './plan-detail'
 import { floorText, jointProblem, planFloors, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
 
 export { PLAN_SIZE_MAX, type PartPlan }
@@ -27,11 +27,13 @@ export const PartPlanSchema = partPlanSchema.extend({ features: partPlanSchema.s
 export const PlanInputSchema = PartPlanSchema.omit({ planId: true }).extend({ assumptions: assumptionsInput })
 
 /**
- * What a local model sends: the same plan, with the detail level's fields bare of their descriptions, since a local
- * model's window holds the tab's tools within a few hundred tokens (packages/app test/mimir-local-context.test.ts).
+ * What a local model sends: the plan without the detail level's other fields, colors, scale and tiers, since a local
+ * model's window holds the tab's tools within a few hundred tokens (packages/app test/mimir-local-context.test.ts) and
+ * its prompt has no detail line. The level itself stays, bare, so the local form takes every value the full one does.
+ * The tool still takes every field, and a plan without a detail level is checked as before.
  */
-export const LocalPlanInputSchema = PlanInputSchema.omit({ colors: true, scale: true, real: true, tiers: true }).extend({
-  ...bareDetailFields,
+export const LocalPlanInputSchema = PlanInputSchema.omit({ curved: true, flat: true, proportions: true, repeats: true, colors: true, scale: true, real: true, tiers: true }).extend({
+  detail: z.enum(DETAIL_LEVELS).optional(),
   // a hole row's recess flag stays off a local model's list too; the tool takes it either way
   holes: z.array(PlanInputSchema.shape.holes.unwrap().element.omit({ recess: true }).extend({ count: PlanInputSchema.shape.holes.unwrap().element.shape.count.describe('Holes the row stands for; default 1') })).max(60).optional(),
   // the pieces' examples stay on the full text; the field takes the same values
