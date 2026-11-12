@@ -118,13 +118,9 @@ const kept = (o: PromptOptions, pieces: readonly Piece[]): string[] =>
   })
 
 // the sizes line: a cloud model also reads when to ask in words, and that the reply gives a size built at once
-const SIZES_PIECES: Piece[] = [
-  local(SIZES_FIRST),
-  '; ask in words only when no sensible default exists',
-  local(SIZES_MIDDLE),
-  '; the reply gives the size and the person changes it after',
-  local(SIZES_LAST),
-]
+export const SIZES_ASK = '; ask in words only when no sensible default exists'
+export const SIZES_REPLY = '; the reply gives the size and the person changes it after'
+const SIZES_PIECES: Piece[] = [local(SIZES_FIRST), SIZES_ASK, local(SIZES_MIDDLE), SIZES_REPLY, local(SIZES_LAST)]
 
 // the plan line's lid rule: a local model keeps the one rule it had (a lid top down beside the base), and a cloud model
 // also gets the lid that prints in place on its hinge, which design.plan refuses laid apart for either (plan-floors.ts)
