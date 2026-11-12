@@ -76,11 +76,11 @@ describe('a row of cuts along a curved side', () => {
     expect((pod - row.volumeMm3) / 5).toBeGreaterThan(one * 1.3)
   }, 60_000)
 
-  it('refuses a row that runs off the end of the body, naming the copy, and leaves the design as it was', async () => {
+  it('refuses a row whose every copy runs off the end of the body, and leaves the design as it was', async () => {
     const { h, d } = await slitPod()
-    const r = await h.call('slicerx_geom_array', { design: d, steps: ['slit'], spec: { kind: 'linear', count: 8, step: [15, 0, 0], onSurface: true } })
+    const r = await h.call('slicerx_geom_array', { design: d, steps: ['slit'], spec: { kind: 'linear', count: 3, step: [100, 0, 0], onSurface: true } })
     expect(r.isError).toBe(true)
-    expect(text(r)).toMatch(/Copy \d: The row runs off the part there/)
+    expect(text(r)).toMatch(/None of the copies reach the part, so the pattern adds nothing/)
     const after = data<{ output: { steps: unknown[] } }>(await h.call('slicerx_design_steps', { design: d })).output
     expect(after.steps).toHaveLength(2)
   }, 60_000)

@@ -153,14 +153,21 @@ function turnOnto(from: Vec3, to: Vec3, at: Vec3, by: Vec3): Mat4 {
   return [r[0]![0]!, r[1]![0]!, r[2]![0]!, 0, r[0]![1]!, r[1]![1]!, r[2]![1]!, 0, r[0]![2]!, r[1]![2]!, r[2]![2]!, 0, t[0], t[1], t[2], 1]
 }
 
+/** A copy of a row that found no side to follow where it lands (copy 1 is the steps themselves), and why. */
+export interface OffSurface {
+  copy: number
+  why: string
+}
+
 /**
  * The world moves of a row that follows the part's surface, one for each plain row move (a shift). The first copy's
  * side is read beside it, clear of the faces its own cut made: its normal from the nearest face outside the cut, and its
  * point between the side just past each end of the cut along the row. Each copy then goes from that point to the
  * surface met along that normal through its shifted place, turned from that normal to the surface's there. A copy whose
- * place meets no surface, or a surface turned past the side, is named with why.
+ * place meets no surface, or a surface turned past the side, is that copy's entry, named with why, for the pattern to
+ * leave out; with no side beside the first copy there is no row at all, and that is the whole answer.
  */
-export function surfaceMoves(shifts: readonly Mat4[], anchor: Anchor, positions: readonly number[], indices: readonly number[]): Mat4[] | { copy: number; why: string } {
+export function surfaceMoves(shifts: readonly Mat4[], anchor: Anchor, positions: readonly number[], indices: readonly number[]): (Mat4 | OffSurface)[] | OffSurface {
   const inBox = (t: Tri): boolean => {
     if (!anchor.box) return false
     const m = scale(add(add(t.a, t.b), t.c), 1 / 3)
@@ -180,15 +187,13 @@ export function surfaceMoves(shifts: readonly Mat4[], anchor: Anchor, positions:
   }).filter((h): h is SurfaceHit => h !== null)
   const first: SurfaceHit = beside.length ? { point: scale(beside.reduce((a, h) => add(a, h.point), [0, 0, 0] as Vec3), 1 / beside.length), normal: unit(beside.reduce((a, h) => add(a, h.normal), [0, 0, 0] as Vec3)) } : near
   const n0 = first.normal
-  const out: Mat4[] = []
-  for (const [k, m] of shifts.entries()) {
+  return shifts.map((m, k): Mat4 | OffSurface => {
     const shifted = add(first.point, [m[12]!, m[13]!, m[14]!])
     const hit = alongTris(tris, shifted, n0)
     if (!hit) return { copy: k + 2, why: 'The row runs off the part there: no surface along the first copy\'s normal. Shorten the row or space it closer.' }
     // the surface's normal on the same side as the first one's
     const n = dot(hit.normal, n0) < 0 ? scale(hit.normal, -1) : hit.normal
     if (dot(n, n0) < 0.2) return { copy: k + 2, why: 'The row turns past the side there, onto another face. Shorten the row or space it closer.' }
-    out.push(turnOnto(n0, n, first.point, sub(hit.point, first.point)))
-  }
-  return out
+    return turnOnto(n0, n, first.point, sub(hit.point, first.point))
+  })
 }

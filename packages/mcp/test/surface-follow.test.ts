@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A row that follows a curved side: on a tapering body each copy slides onto the surface where it lands and turns to
-// the surface's normal there, so every copy keeps the first one's depth into the side. A row past the end of the body
-// is refused with the copy named. Neutral sample: a pod turned about x whose radius curves from 10 at x 0 to 5 at x 50.
+// the surface's normal there, so every copy keeps the first one's depth into the side. A copy past the end of the body
+// is named, for the pattern to leave out. Neutral sample: a pod turned about x whose radius curves from 10 at x 0 to 5 at x 50.
 import { describe, expect, it } from 'vitest'
 import { anchorOf, surfaceAlong, surfaceMoves, surfaceNear } from '@slicerx/cad-history/surface-follow'
 import type { Mat4, Vec3 } from '@slicerx/cad-history/types'
@@ -50,8 +50,12 @@ describe('a row that follows a curved side', () => {
     const anchor = placed.at
     expect(anchor[0]).toBe(10)
     expect(placed.box).toEqual({ min: [9, -1, top - 1], max: [11, 1, top] })
-    const moves = surfaceMoves([shift(10), shift(20), shift(30)], placed, positions, indices)
-    if (!Array.isArray(moves)) throw new Error(moves.why)
+    const follow = surfaceMoves([shift(10), shift(20), shift(30)], placed, positions, indices)
+    if (!Array.isArray(follow)) throw new Error(follow.why)
+    const moves = follow.map((m) => {
+      if (!Array.isArray(m)) throw new Error(m.why)
+      return m
+    })
     const first = surfaceNear(positions, indices, anchor)!
     const depth = Math.hypot(first.point[1], first.point[2]) - anchor[2]
     for (const [k, m] of moves.entries()) {
@@ -75,10 +79,12 @@ describe('a row that follows a curved side', () => {
     expect(anchor[2] - radiusAt(40)).toBeGreaterThan(1)
   })
 
-  it('refuses a copy past the end of the body, naming it', () => {
+  it('names a copy past the end of the body, for the pattern to leave out, and places the rest', () => {
     const anchor: Vec3 = [10, 0, radiusAt(10) - 0.5]
     const out = surfaceMoves([shift(20), shift(60)], { at: anchor }, positions, indices)
-    expect(out).toMatchObject({ copy: 3, why: expect.stringMatching(/^The row runs off the part there/) })
+    if (!Array.isArray(out)) throw new Error(out.why)
+    expect(Array.isArray(out[0])).toBe(true)
+    expect(out[1]).toMatchObject({ copy: 3, why: expect.stringMatching(/^The row runs off the part there/) })
   })
 
   it('works only from a step with a place: a cut or a shape on a face', () => {
