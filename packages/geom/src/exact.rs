@@ -373,9 +373,19 @@ fn le_bytes<const N: usize, T: Copy>(values: &[T], bytes: impl Fn(T) -> [u8; N])
 /// and keys alone. Without it the answer is the old `tessellate`'s JSON, positions as f64, with `normals`,
 /// `surfaces` and `edges` added.
 fn tessellate(held: &Held, req: &Value, raw: bool) -> Result<Value> {
+    // the old tessellate's own limits, in its words, so a caller hears the same whichever table holds the body.
+    // the typed call takes an angle of 0 when a chord is given; this operation never has
+    let refuse = |field: &str, why: &str| Err(Error::geometry("brep", format!("{field}: {why}")));
+    let chord = limit(req, "chordMm", 0.01)?;
+    if chord.is_nan() || chord < 0.0 {
+        return refuse("chordMm", "must be 0 or more");
+    }
     let angle = limit(req, "angleDeg", 15.0)?;
+    if angle.is_nan() || angle <= 0.0 || angle > 90.0 {
+        return refuse("angleDeg", "must be more than 0 and at most 90");
+    }
     let how = Tessellation {
-        chord_mm: limit(req, "chordMm", 0.01)?,
+        chord_mm: chord,
         curve_angle_deg: angle,
         surface_angle_deg: angle,
         ..Tessellation::default()
