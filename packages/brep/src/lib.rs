@@ -11,9 +11,9 @@
 //! | `box` | `min`, `max` | `body` |
 //! | `cylinder` | `origin`, `axis`, `diameterMm`, `heightMm` | `body` |
 //! | `primitive` | `type` (`box` with `sizeMm`; `cylinder` with `diameterMm`, `heightMm`; `cone` also `topDiameterMm`; `sphere` with `diameterMm`), `frame` (`origin`, `u`, `normal`; it stands on the origin) | `body` |
-//! | `extrude` | `frame` (`origin`, `u`, `normal`), `polygons` (`outer`, `holes`: loops of `points` or `center` and `diameterMm`), `fromMm`, `toMm`; with `target` and `operation` (`join` or `cut`) it joins or cuts the target | `body`; with a target also `touches`, and no body when it misses |
+//! | `extrude` | `frame` (`origin`, `u`, `normal`), `polygons` (`outer`, `holes`: loops of `points` or `center` and `diameterMm`), `fromMm`, `toMm`; with `target` and `operation` (`join` or `cut`) it joins or cuts the target | `body`; with a target also `touches`, and no body when it misses, and `missed` (the polygons that left no face of their own in the result, by their place in `polygons`; empty when all did) |
 //! | `boolean` | `op` (`union`, `difference`, `intersection`), `a`, `b` | `body` |
-//! | `subtract` | `body`, `solids` (box or cylinder), `frame` (the body's, with the solids in world) | `body` |
+//! | `subtract` | `body`, `solids` (box or cylinder), `frame` (the body's, with the solids in world) | `body`, `missed` (the solids that left no face of their own in the result, by their place in `solids`; empty when all did) |
 //! | `cut` | `body`, `plane` (`point`, `normal`) | `below`, `above` (a body, or null when empty) |
 //! | `fillet` | `body`, `edges` (`a`, `b`, optional `center` for a round rim and `keys` of its two faces), `radiusMm` | `body` |
 //! | `chamfer` | as `fillet`, with `distanceMm` (both faces set back by it; the faces must be flat and square) | `body` |

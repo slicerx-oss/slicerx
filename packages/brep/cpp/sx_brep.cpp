@@ -655,7 +655,45 @@ bool unmark_faces(SmBrep* b)
     return fresh;
 }
 
-SmBrep* extrude(const Value& r)
+// which tool of a subtract, or which outline of an extrude, a tool's face came from: its place in the request plus
+// 1, which a boolean carries to the faces the tool leaves in the result
+const ULONG kToolMark = 20104;
+
+SmBrep* mark_tool(SmBrep* t, size_t place)
+{
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(t, fs);
+    SmContext& cx = *SmApiGetOrCreateContext();
+    for (ULONG i = 0; i < fs.GetSize(); ++i) fs[i]->AddAttribute(new (cx) SmLongAttribute(kToolMark, long(place + 1), SM_AB_COPY));
+    return t;
+}
+
+// the tools, of n, that left no face of their own in the result, by their place in the request. A tool that only
+// touches the body along a line or at a point leaves none, and neither does one whose faces later tools removed.
+// The marks come off.
+Value missed_tools(SmBrep* b, size_t n)
+{
+    std::vector<bool> landed(n, false);
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    for (ULONG i = 0; i < fs.GetSize(); ++i) {
+        SmTArray<SmAttribute*> as;
+        fs[i]->GetAttributes(as);
+        for (ULONG k = 0; k < as.GetSize(); ++k) {
+            if (as[k]->GetAttributeID() != kToolMark) continue;
+            long place = static_cast<SmLongAttribute*>(as[k])->GetValue();
+            if (place >= 1 && size_t(place) <= n) landed[size_t(place) - 1] = true;
+            fs[i]->RemoveAttribute(as[k]);
+        }
+    }
+    Value missed = Value::array();
+    for (size_t i = 0; i < n; ++i)
+        if (!landed[i]) missed.push(Value((unsigned long)i));
+    return missed;
+}
+
+// `marked`: each polygon's faces say which polygon they came from (mark_tool)
+SmBrep* extrude(const Value& r, bool marked = false)
 {
     Frame f = frame_of(r["frame"]);
     double z0 = num(r, "fromMm"), z1 = num(r, "toMm");
@@ -673,9 +711,11 @@ SmBrep* extrude(const Value& r)
         return combine(taper_half(l, z0, deg), taper_half(l, z1, deg), "union");
     };
     SmBrep* out = nullptr;
-    for (const auto& p : polys.a) {
+    for (size_t i = 0; i < polys.a.size(); ++i) {
+        const Value& p = polys.a[i];
         SmBrep* s = piece(p["outer"], taper);
         for (const auto& h : p["holes"].a) s = combine(s, piece(h, -taper), "difference");
+        if (marked) mark_tool(s, i);
         out = out ? combine(out, s, "union") : s;
     }
     place(out, f);
@@ -1598,8 +1638,9 @@ Value run(const std::string& op, const Value& r)
             if (o != "join" && o != "cut") throw Error("operation", "must be join or cut with a target");
             SmBrep* a = body(r, "target");
             bool touches = false;
-            SmBrep* m = join_or_cut(a, fresh_keys(extrude(r)), o == "join", touches, "extrude");
+            SmBrep* m = join_or_cut(a, fresh_keys(extrude(r, true)), o == "join", touches, "extrude");
             out.set("touches", Value(touches));
+            out.set("missed", missed_tools(m, r["polygons"].a.size()));
             if (touches) out.set("body", Value(keep(m)));
             else {
                 delete m;
@@ -1681,18 +1722,19 @@ Value run(const std::string& op, const Value& r)
             back.o = SmVector3d(-dot(f.u, f.o), -dot(f.v, f.o), -dot(f.n, f.o));
         }
         SmBrep* a = copy_of(body(r, "body"));
-        for (const auto& s : ss.a) {
+        for (size_t i = 0; i < ss.a.size(); ++i) {
             SmBrep* t = nullptr;
             try {
-                t = solid_of(s);
+                t = solid_of(ss.a[i]);
                 if (framed) place(t, back);
             } catch (...) {
                 delete t;
                 delete a;
                 throw;
             }
-            a = combine(a, fresh_keys(t), "difference");
+            a = combine(a, mark_tool(fresh_keys(t), i), "difference");
         }
+        out.set("missed", missed_tools(a, ss.a.size()));
         out.set("body", Value(keep(a)));
     } else if (op == "cut") {
         SmBrep* b = body(r, "body");

@@ -519,6 +519,108 @@ fn a_cut_of_a_held_body_is_the_cut_of_its_saved_text() {
     assert_eq!(older(), 0);
 }
 
+// a row of holes where some are off the part: the ones that land are cut, and the answer names the rest by their
+// place in the request
+#[test]
+fn a_cut_names_the_tools_and_outlines_that_left_nothing() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let _one = alone();
+    let start = exact::count();
+    let plate = run("brep.box", &json!({ "min": [0, 0, 0], "max": [50, 10, 5] }));
+    let plate = &plate["body"];
+    // a round wall is a cylinder or, as the kernel makes a drilled one, a cone with no slope
+    let walls = |body: &Value| {
+        let kinds = run("brep.info", &json!({ "body": body }))["faceTypes"].clone();
+        kinds["cylinder"].as_u64().unwrap_or(0) + kinds["cone"].as_u64().unwrap_or(0)
+    };
+    let drill = |x: f64| json!({ "type": "cylinder", "origin": [x, 5, -1], "axis": [0, 0, 1], "diameterMm": 2, "heightMm": 7 });
+    let row = |at: &[f64]| at.iter().map(|&x| drill(x)).collect::<Vec<_>>();
+    // five drills, the last two past the end of the plate; with a key salt and without one
+    for salt in [json!(7), Value::Null] {
+        let mut request = json!({ "body": plate, "solids": row(&[5.0, 15.0, 25.0, 100.0, 110.0]) });
+        if !salt.is_null() {
+            request["keySalt"] = salt.clone();
+        }
+        let cut = run("brep.subtract", &request);
+        assert_eq!(cut["missed"], json!([3, 4]), "salt {salt}");
+        assert_eq!(walls(&cut["body"]), 3, "salt {salt}");
+        free(&cut);
+    }
+    let all = run(
+        "brep.subtract",
+        &json!({ "body": plate, "solids": row(&[5.0, 15.0, 25.0]) }),
+    );
+    assert_eq!(all["missed"], json!([]));
+    assert_eq!(walls(&all["body"]), 3);
+    // a result is cut again: nothing of the first cut's holes counts for the second cut's drills
+    let again = run(
+        "brep.subtract",
+        &json!({ "body": all["body"], "solids": row(&[100.0, 35.0]) }),
+    );
+    assert_eq!(again["missed"], json!([0]));
+    assert_eq!(walls(&again["body"]), 4);
+    free(&again);
+    free(&all);
+    // none lands: the plate comes back as it is, as before, and every drill is named
+    let none = run(
+        "brep.subtract",
+        &json!({ "body": plate, "solids": row(&[100.0, 110.0]) }),
+    );
+    assert_eq!(none["missed"], json!([0, 1]));
+    assert_eq!(walls(&none["body"]), 0);
+    close(volume(&none["body"]), 2500.0);
+    free(&none);
+
+    // the same from one sketch of circles on the plate's top, cut down through it
+    let frame = json!({ "origin": [0, 0, 5], "u": [1, 0, 0], "normal": [0, 0, 1] });
+    let circles = |at: &[f64]| -> Vec<Value> {
+        at.iter()
+            .map(|&x| json!({ "outer": { "center": [x, 5], "diameterMm": 2 }, "holes": [] }))
+            .collect()
+    };
+    let sketch = |operation: &str, at: &[f64], from: f64, to: f64| {
+        run(
+            "brep.extrude",
+            &json!({ "target": plate, "operation": operation, "frame": frame, "polygons": circles(at), "fromMm": from, "toMm": to }),
+        )
+    };
+    let cut = sketch("cut", &[5.0, 100.0, 15.0], -6.0, 1.0);
+    assert_eq!(cut["touches"], json!(true));
+    assert_eq!(cut["missed"], json!([1]));
+    assert_eq!(walls(&cut["body"]), 2);
+    free(&cut);
+    let all = sketch("cut", &[5.0, 15.0], -6.0, 1.0);
+    assert_eq!(all["missed"], json!([]));
+    free(&all);
+    // none lands: no body and no touch, as before, and every outline is named
+    let none = sketch("cut", &[100.0, 110.0], -6.0, 1.0);
+    assert_eq!(none["touches"], json!(false));
+    assert_eq!(none["body"], Value::Null);
+    assert_eq!(none["missed"], json!([0, 1]));
+    // a join: two pegs on the top, each leaves its own faces
+    let pegs = sketch("join", &[5.0, 15.0], 0.0, 3.0);
+    assert_eq!(pegs["touches"], json!(true));
+    assert_eq!(pegs["missed"], json!([]));
+    assert_eq!(walls(&pegs["body"]), 2);
+    free(&pegs);
+    // an extrude that makes a body of its own has no tools to name
+    let alone_made = run(
+        "brep.extrude",
+        &json!({ "frame": frame, "polygons": circles(&[5.0]), "fromMm": 0, "toMm": 3 }),
+    );
+    assert!(alone_made.get("missed").is_none(), "{alone_made}");
+    free(&alone_made);
+
+    assert_eq!(
+        run("brep.free", &json!({ "body": plate })),
+        json!({ "freed": true })
+    );
+    assert_eq!(exact::count(), start);
+    assert_eq!(older(), 0);
+}
+
 /// The stations of a ship's hull across x: six points each, keel to deck, in y and z.
 const HULL: [(f64, [[f64; 2]; 6]); 8] = [
     (
