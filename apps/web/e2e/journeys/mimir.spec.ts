@@ -13,7 +13,7 @@
 //    (packages/pilot/test/ui-attach.test.tsx:71). The 1568 px downscale stays: it needs a real canvas.
 //  - mimir-part-card: the next steps offered only when the toolset can do them, a step under an older reply acting on that
 //    reply's part, and a deleted part saying so (packages/pilot/test/ui-part.test.tsx). The tab builds with the design tools,
-//    so its card is the one a built design gets after its step rows (the scripted box below).
+//    so its card is the one a built design gets after its working loop (the scripted box below).
 //  - mimir-sheet: Cancel building nothing (packages/pilot/test/ui-sheet.test.tsx:81 and :97, packages/app/test/mimir-sheet.test.ts:162)
 //    and the thermostat backplate's drawing and status (packages/app/test/mimir-sheet.test.ts:146, packages/pilot/test/ui-sheet.test.tsx:27).
 //  - mimir-web-walk: the save switch caption (packages/app/test/mimir-web-walk.test.ts:55).
@@ -404,7 +404,7 @@ test.describe('the mimir tab', () => {
     await expect.poll(plate, { timeout: 30_000 }).toEqual([{ name: 'Box with lid', parts: ['Box', 'Lid'], steps: 4 }])
     // no step failed on the way
     await expect(page.getByTestId('mimir-transcript')).toContainText('Done: the box and its lid')
-    await expect(page.getByTestId('mimir-transcript').locator('.trow .st .bad')).toHaveCount(0)
+    await expect(page.getByTestId('mimir-loop').and(page.locator('[data-failed]'))).toHaveCount(0)
     // the view shows the parts after the extrudes: off the top view
     await expect.poll(() => topDown(page)).toBeGreaterThan(0.2)
     if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/mimir-box-dark.png` })
@@ -418,12 +418,12 @@ test.describe('the mimir tab', () => {
     await askTab(page, 'Can you make a box with a lid?')
     await page.getByTestId('mimir-sheet-confirm').click()
     await expect(page.getByTestId('mimir-transcript')).toContainText('Done: the box and its lid', { timeout: 30_000 })
-    // one card for the design the turn built, after its step rows, which stay
+    // one card for the design the turn built, after its working loop's one line
     const card = page.getByTestId('mimir-part').last()
     await expect(page.getByTestId('mimir-part')).toHaveCount(1)
     // the reply has finished, so its next steps show under the card
     await expect(page.getByTestId('mimir-transcript')).toContainText('Both parts are in Model with their steps.')
-    await expect(page.getByTestId('mimir-transcript').locator('.trow')).not.toHaveCount(0)
+    await expect(page.getByTestId('mimir-loop-line').last()).toHaveText(/^Built in \d+ steps?, /)
     await expect(card).toContainText('Box with lid')
     const id = await card.getAttribute('data-part')
     expect((await state(page))['plate'].map((e: { id: string }) => e.id)).toEqual([id])

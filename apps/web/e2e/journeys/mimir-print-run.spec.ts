@@ -263,7 +263,7 @@ test.describe('a print run in the mimir chat', () => {
     await askTab(page, 'Print this on my Bay 6 in green PLA')
     // the sizes first, guesses for the person to confirm
     await clipConfirmed(page)
-    // the part: the 30 x 12 x 8 mm clip, as a card after its step rows
+    // the part: the 30 x 12 x 8 mm clip, as a card after its working loop
     const part = page.getByTestId('mimir-part').last()
     await expect(part).toBeVisible({ timeout: 60_000 })
     await expect(part).toContainText('30 x 12 x 8 mm')
