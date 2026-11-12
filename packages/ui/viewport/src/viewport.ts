@@ -296,6 +296,9 @@ export function dimHex(hex: string): string {
 /** The longest a canvas resize waits on a pane slide beside the view, ms. A slide takes 160 to 200 ms. */
 const RESIZE_HOLD_MS = 1000
 
+/** The views straight along an axis: in the CAD looks they frame the whole design (Viewport.view). */
+const STRAIGHT_VIEWS: ReadonlySet<ViewPreset> = new Set<ViewPreset>(['top', 'bottom', 'front', 'back', 'left', 'right'])
+
 class ViewportImpl implements Viewport {
   readonly canvas: HTMLCanvasElement
   private readonly renderer: WebGLRenderer
@@ -3248,7 +3251,8 @@ class ViewportImpl implements Viewport {
 
   // ---------- camera ----------
 
-  private framingBox(): Box3 {
+  /** What the camera frames: the toolpaths in preview, else the selection, else every object. `whole` leaves the selection out. */
+  private framingBox(whole = false): Box3 {
     const box = new Box3()
     this.stage.scene.updateMatrixWorld(true)
     const sel = this.selection.map((id) => this.objects.get(id)).filter((o): o is ObjectEntry => !!o)
@@ -3261,7 +3265,7 @@ class ViewportImpl implements Viewport {
       }
     }
     if (box.isEmpty()) {
-      const list = sel.length ? sel : [...this.objects.values()]
+      const list = sel.length && !whole ? sel : [...this.objects.values()]
       for (const o of list) box.expandByObject(o.group)
     }
     if (box.isEmpty()) box.setFromCenterAndSize(new Vector3(0, 20, 0), new Vector3(120, 40, 120))
@@ -3273,7 +3277,10 @@ class ViewportImpl implements Viewport {
     const bed = this.stage.bed
     // the CAD looks show the design: its straight views frame the model, as Slice's frame the bed
     this.rig.frameModel = isCad(this.renderMode)
-    const pose = this.rig.presetPose(preset, this.framingBox(), Math.max(bed.widthMm, bed.depthMm))
+    // a straight view of the design frames the whole design, whatever is picked, so the view it gives does not depend
+    // on the last part added or clicked (Fit and Isometric frame the pick)
+    const whole = this.rig.frameModel && STRAIGHT_VIEWS.has(preset)
+    const pose = this.rig.presetPose(preset, this.framingBox(whole), Math.max(bed.widthMm, bed.depthMm))
     this.rig.preset = preset
     this.rig.go(pose, opts.animate ?? false, performance.now(), opts.durationMs)
     this.invalidate()
