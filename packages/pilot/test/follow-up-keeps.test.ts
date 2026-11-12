@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A follow-up keeps what it did not change: a run that would end with a built feature undone, turned off or built a
-// second time beside the old one goes back to put it right before its reply, unless the person asked to remove it or
-// the reply's first line names what is missing. An amount the person gave, or a small one they asked for, is never
+// A follow-up keeps what it did not change: a run that would end with a built feature undone or turned off goes back
+// to build it again before its reply, unless the person asked to remove it or the reply's first line names what is
+// missing; a second step of one feature is no note. An amount the person gave, or a small one they asked for, is never
 // made larger by the measured-change note, and steps that only take something away are not measured as a change.
 import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
@@ -72,7 +72,7 @@ const undo = (k: number) => ({ calls: Array.from({ length: k }, () => ({ name: '
 const FEATURES = ['Body', 'Lower tier', 'Upper tier', 'Stacks', 'Front pole']
 // a first build of five features, checked against its plan: the next run on its design is a follow-up
 const first: ScriptStep[] = [...FEATURES.map(x), { calls: [{ name: 'design.check', args: { planId: 'p1' } }] }, { text: 'Built it.' }]
-const keepsNoteOf = (notes: string[]) => notes.find((n) => n.startsWith('Before you answer: this turn took away') || n.includes('beside step'))
+const keepsNoteOf = (notes: string[]) => notes.find((n) => n.startsWith('Before you answer: this turn took away'))
 
 describe('a follow-up keeps what it did not change', () => {
   it('sends a rollback to the base body back to build what it took away, and lets it end once rebuilt', async () => {
@@ -109,15 +109,16 @@ describe('a follow-up keeps what it did not change', () => {
     expect(keepsNoteOf(t.notes())).toBeUndefined()
   })
 
-  it('counts a feature turned off as taken away, and one built again beside the old one as doubled', async () => {
+  it('counts a feature turned off as taken away, and leaves a second step of one feature alone', async () => {
     const off = { calls: [{ name: 'design.edit_step', args: { design: 'd1', step: 4, suppressed: true } }] }
-    const t = setup([...first, off, x('Front pole'), { text: 'Raked the pole.' }, { calls: [{ name: 'design.edit_step', args: { design: 'd1', step: 4, suppressed: false } }] }, { calls: [{ name: 'design.edit_step', args: { design: 'd1', step: 5, suppressed: true } }] }, { text: 'Raked the pole and kept the stacks.' }])
+    const t = setup([...first, off, x('Front pole'), { text: 'Raked the pole.' }, { calls: [{ name: 'design.edit_step', args: { design: 'd1', step: 4, suppressed: false } }] }, { text: 'Raked the pole and kept the stacks.' }])
     await t.say('make a model')
     await t.say('rake the front pole back')
     const note = keepsNoteOf(t.notes())
     expect(note).toContain('took away Stacks')
-    expect(note).toContain('step 5 still makes Front pole beside step 6, which made it again')
-    expect(t.built.map((b) => `${b.feature} ${b.state}`)).toEqual(['Body done', 'Lower tier done', 'Upper tier done', 'Stacks done', 'Front pole suppressed', 'Front pole done'])
+    // another step making Front pole beside step 5 is no note: a second piece of one feature is a normal change
+    expect(note).not.toContain('Front pole')
+    expect(t.built.map((b) => `${b.feature} ${b.state}`)).toEqual(['Body done', 'Lower tier done', 'Upper tier done', 'Stacks done', 'Front pole done', 'Front pole done'])
   })
 })
 
@@ -154,7 +155,7 @@ describe('what counts as taken away', () => {
   it('names a feature no step makes any more, and not one another step still makes', () => {
     const start = [row('a', 'Body'), row('b', 'Rail'), row('c', 'Rail')]
     expect(lostFeatures(start, [row('a', 'Body'), row('c', 'Rail')], 'thin the rail')).toBeNull()
-    expect(lostFeatures(start, [row('a', 'Body')], 'thin the rail')).toEqual({ removed: ['Rail'], doubled: [] })
+    expect(lostFeatures(start, [row('a', 'Body')], 'thin the rail')).toEqual({ removed: ['Rail'] })
     expect(lostFeatures(start, [row('a', 'Body'), row('b', 'Rail', 'broken')], 'thin the rail')?.removed).toEqual(['Rail'])
   })
   it('reads a removal ask by its words', () => {
