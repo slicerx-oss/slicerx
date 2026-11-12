@@ -100,7 +100,10 @@ export function unrotateBox(box: Vec3, rotate: Rot): Vec3 {
   return [col(0), col(1), col(2)]
 }
 
-/** A copy of the parts with every vertex rotated. */
+/**
+ * A copy of the parts with every vertex rotated. Exact corner normals (MeshPart.normals) are left behind: they would
+ * have to be turned with the vertices, and a normal that no longer fits its triangle is worse than none.
+ */
 export function transformParts(parts: MeshPart[], rotate: Rot): MeshPart[] {
   if (rotate.every((d) => d === 0)) return parts
   const m = rot3(rotate)
@@ -112,7 +115,8 @@ export function transformParts(parts: MeshPart[], rotate: Rot): MeshPart[] {
       out[v + 1] = r[1]
       out[v + 2] = r[2]
     }
-    return { ...p, positions: out }
+    const { normals: _stale, ...rest } = p
+    return { ...rest, positions: out }
   })
 }
 
