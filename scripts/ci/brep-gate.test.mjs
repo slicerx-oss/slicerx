@@ -87,8 +87,8 @@ test('the Linux job runs the same build and tests as the other systems', () => {
   for (const cmd of [
     'node --test packages/brep/tests/solids-wasm.mjs',
     'sh packages/brep/tests/wasm-cache.sh',
-    'cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings',
-    'cargo test -p sx-brep --release --features routine-probe',
+    'cargo clippy -p sx-brep --release --all-targets --features routine-probe,typed -- -D warnings',
+    'cargo test -p sx-brep --release --features routine-probe,typed',
     'cargo clippy -p sx-geom --release --features brep --tests -- -D warnings',
     'cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input',
   ]) {
