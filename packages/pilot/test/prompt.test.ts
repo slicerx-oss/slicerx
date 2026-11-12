@@ -308,7 +308,7 @@ describe('the line for a model of a real thing', () => {
   it('is one line in the cloud prompt only, with design.plan, and says display is the default and how curved bodies are built', () => {
     expect(DETAIL_LINE).not.toContain('\n')
     expect(DETAIL_LINE).toContain('planned at display detail unless the person asks for something simple or detailed')
-    expect(DETAIL_LINE).toContain('a ship hull, car body or fuselage is a series of sections, so loft it')
+    expect(DETAIL_LINE).toContain('a car body, fuselage or bottle is a series of sections, so loft it')
     expect(DETAIL_LINE).toContain('"Window rows (array)"')
     for (const scope of ['full', 'cad'] as const) {
       expect(systemPrompt(scope, () => true, '', { cloud: true }).split(DETAIL_LINE)).toHaveLength(2)

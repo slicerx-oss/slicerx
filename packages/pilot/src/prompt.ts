@@ -71,7 +71,7 @@ export interface PromptOptions {
 
 // cloud prompt only, as above: a model of a real thing is planned at the plan card's display detail by default, its
 // curved bodies lofted through sections and its repeated details patterned, each step named for what it is.
-export const DETAIL_LINE = `- A model of a real thing (a ship, a car, a plane, a house) named without sizes is planned at display detail unless the person asks for something simple or detailed: a ship hull, car body or fuselage is a series of sections, so loft it, and repeated details are built once and patterned, with steps named for what they are ("Hull (loft)", "Window rows (array)").`
+export const DETAIL_LINE = `- A model of a real thing (a car, a plane, a house, a lamp) named without sizes is planned at display detail unless the person asks for something simple or detailed: a car body, fuselage or bottle is a series of sections, so loft it, and repeated details are built once and patterned, with steps named for what they are ("Body (loft)", "Window rows (array)").`
 
 /**
  * Prompt text a local model gets as well as a cloud one. Text not wrapped in local() reaches cloud turns only, so a new
