@@ -26,7 +26,10 @@ const generatorLine = (has: HasTool): string => `- A request to make, model or d
 // with design.check and design.plan a planned part is checked after it is built, fixed in one round and never called
 // done on a miss; without design.plan the part is read back instead.
 const BUILD_FIRST = `- A request to make, model or design a part goes straight to the design tools, not to the knowledge base. Build every part with them, one feature at a time, so each step lands in the design's timeline where the person can edit or undo it. Start a part with design.new. Make solids from closed sketch loops with geom.extrude or geom.revolve (a loop inside another is a hole) or geom.loft between profiles on several planes (smooth for hulls, thicken for shells), or geom.sweep along a path, then shape them with further features: extrude or push_pull to cut or join, geom.hole for a new round hole, geom.hole_edit to resize one, geom.fillet, geom.chamfer, geom.shell, geom.boolean, geom.mirror and geom.array, which also repeat a built detail's steps (windows, holes). design.sketch finishes a sketch on its own for a feature to use later.`
-const SIZES_LINE = `- Sizes come from the request, an attached picture or drawing, a lookup, or the person. A size that depends on the person's own things (how thick their shelf is, how big their knob is) goes on the sheet as a guess for them to confirm, and a screw they did not name is a common one from parts.lookup (M4 for a hook or bracket). When asked for the sizes first, the sheet is that question. Show the sizes with pilot.sheet before building, marking each as given, looked up or guessed. Set fits when a size must fit something the person has or the part holds: that sheet waits for the answer. Any other sheet shows and you build with its sizes at once. When the request names a family rather than one model (a Raspberry Pi, a NEMA motor, a phone), ask which one with pilot.ask or say which one you assumed. Show a web.lookup size with lookup.show. Never present a guessed size as a fact. Asked to ask for sizes, show the sheet with suggested values at once, never a question first. Set sizes true on a pilot.ask that asks for the part's own sizes, never on one about the person's own things.`
+// the sizes line in three parts, around the two cloud-only parts in SIZES_PIECES
+const SIZES_FIRST = `- Sizes come from the request, an attached picture or drawing, a lookup, or the person. A size that depends on the person's own things (how thick their shelf is, how big their knob is) goes on the sheet as a guess for them to confirm, and a screw they did not name is a common one from parts.lookup (M4 for a hook or bracket)`
+const SIZES_MIDDLE = `. When asked for the sizes first, the sheet is that question. Show the sizes with pilot.sheet before building, marking each as given, looked up or guessed. Set fits when a size must fit something the person has or the part holds: that sheet waits for the answer. Any other sheet shows and you build with its sizes at once`
+const SIZES_LAST = `. When the request names a family rather than one model (a Raspberry Pi, a NEMA motor, a phone), ask which one with pilot.ask or say which one you assumed. Show a web.lookup size with lookup.show. Never present a guessed size as a fact. Asked to ask for sizes, show the sheet with suggested values at once, never a question first. Set sizes true on a pilot.ask that asks for the part's own sizes, never on one about the person's own things.`
 const PLAN_LINE = `- Every new part shows its sizes on the dimension sheet first. Plans are for parts with two or more features. A part of one feature (a plain box, a spacer, a single plate) skips the plan: once its sheet is confirmed, build it. For a larger part the order is: first the sheet, with the sizes that depend on the person's own things asked for and confirmed on it as above; then, before the first geometry step, call design.plan with the part, its units, each feature in build order with the sizes that drive it (the person's sizes as confirmed on the dimension sheet, never asked for twice), your assumptions and any open questions. A plan for sizes that fit something, or for pieces that print assembled and move, waits while the person edits or approves it on the card; any other plan is approved as shown at once. Build from the plan it returns, with their edits, in several small steps each named for what it is ("Base", "Mounting holes") rather than one large call. A sheet confirmed earlier in the chat still holds when the plan is answered in a later message; never show it again for the same part. Each thing the message asks for that is its own part (a planter and a saucer) gets its own design. Once one is built and checked, go on to the next at once: plan it, or build it when it needs no plan. Never ask whether to do a part the message already asked for. What belongs to one part (a case with its lid, clips, standoffs and cutouts) is one design: one sheet with every size, one plan with every feature, all built after one Go without stopping between features. Never restart the part you started under a new name; fix it with the design tools. A lid planned with its case stays in that design, and a lid or moving piece prints open and flat: `
 const STEPS_LINE = `- Build in several small steps, each named for what it is ("Base", "Mounting holes"), rather than one large call.`
 const BIND_LINE = `- Once the part is built, never before, tie the sheet's sizes to the steps they set with pilot.sheet_bind, a row for each size that sets one step; skip it when none does.`
@@ -114,6 +117,15 @@ const kept = (o: PromptOptions, pieces: readonly Piece[]): string[] =>
     return parts.length ? [parts.join('')] : []
   })
 
+// the sizes line: a cloud model also reads when to ask in words, and that the reply gives a size built at once
+const SIZES_PIECES: Piece[] = [
+  local(SIZES_FIRST),
+  '; ask in words only when no sensible default exists',
+  local(SIZES_MIDDLE),
+  '; the reply gives the size and the person changes it after',
+  local(SIZES_LAST),
+]
+
 // the plan line's lid rule: a local model keeps the one rule it had (a lid top down beside the base), and a cloud model
 // also gets the lid that prints in place on its hinge, which design.plan refuses laid apart for either (plan-floors.ts)
 export const LID_IN_PLACE = 'a lid that prints in place on its hinge lies open flat on the shared hinge axis, its knuckles between the base\'s, never apart; '
@@ -137,7 +149,7 @@ const buildLines = (has: HasTool, o: PromptOptions): Piece[] => {
   const followUp = has('design.plan') && has('design.edit_step') && o.followUp === true
   return [
     local(BUILD_FIRST),
-    local(SIZES_LINE),
+    SIZES_PIECES,
     has('pilot.ask') && has('parts.lookup') && FAMILY_LINE,
     has('design.plan') && DETAIL_LINE,
     ...(has('design.plan') ? [[local(PLAN_LINE), ...PLAN_LID, checks && MOVING_PARTS_ORDER], local(FEATURE_LINE)] : [local(STEPS_LINE)]),

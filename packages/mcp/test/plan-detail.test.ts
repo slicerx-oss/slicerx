@@ -226,9 +226,9 @@ function tab() {
 }
 
 describe('design.plan with a detail level', () => {
-  it('is 1.8.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
+  it('is 1.9.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.8.0')
+    expect(t.tool.version).toBe('1.9.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })

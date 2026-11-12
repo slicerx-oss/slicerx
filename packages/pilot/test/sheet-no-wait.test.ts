@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A sheet waits for the person only when a size must fit something they have or the part holds (fits), or for pieces
 // that print assembled and move. Any other sheet shows its sizes and the build goes on with them at once, marked as
-// nobody asked. A question card can be answered at once the same way, and a plan waits only after a sheet with fits.
+// nobody asked. In a follow-up on a part already built no sheet waits, and a build into that part is no new part. A
+// question card can be answered at once the same way, and a plan waits only after a sheet with fits.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
@@ -120,6 +121,27 @@ describe('a sheet that fits nothing the person has', () => {
     expect(ran).toEqual([])
     expect(JSON.stringify(events)).not.toContain('Built')
     expect(SHEET_FIRST_NOTE).toContain('Nothing was built')
+  })
+})
+
+describe('a follow-up on a part already built', () => {
+  const built: ScriptStep[] = [{ calls: [sheet()] }, { calls: [{ name: 'geom.build', args: {} }] }, { calls: [{ name: 'design.check', args: { planId: 'p1' } }] }, { text: 'Built.' }]
+
+  it('adds a body to that part with no sheet, and a sheet it shows does not wait, even one with fits', async () => {
+    const { ran, say } = setup([...built, { calls: [{ name: 'geom.build', args: { design: 'd1' } }] }, { calls: [sheet(true)] }, { text: 'Added a rim.' }])
+    await say('make a planter')
+    ran.length = 0
+    const events = await say('add a rim')
+    expect(ran).toEqual(['look', 'build d1', 'compare'])
+    expect(events.filter((e) => e.type === 'sheet_answered')).toEqual([expect.objectContaining({ auto: true })])
+  })
+
+  it('still holds a new part started in another design', async () => {
+    const { ran, say } = setup([...built, { calls: [{ name: 'geom.build', args: { design: 'd2' } }] }, { text: 'Done.' }])
+    await say('make a planter')
+    ran.length = 0
+    await say('and a saucer')
+    expect(ran).toEqual(['look'])
   })
 })
 

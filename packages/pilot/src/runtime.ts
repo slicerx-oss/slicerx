@@ -381,7 +381,7 @@ export const NETWORK_LINE = 'The connection to the model dropped twice in a row,
  */
 export const visibleNote = (pct: number, floor: number): string =>
   pct < floor
-    ? `Measured: the change so far moved ${pct}% of the whole-model view, under the ${floor}% a person sees at that view. Strengthen it once before you answer, scaled from the model and this measure: rebuilt at the same sizes it measures the same. ${growLine(pct, floor)} A cut into a face of the same color (a recess, slits, windows) shows only its edges, so give it contrast as well: a rim or floor built in a contrasting color, or a darker color on what you added. Size what you add as a share of the part it sits on: a slit or window about a third of that side's height, a vent or hatch a real share of its deck, a recess with a rim; repeated details in rows along every side with room, spaced from the model. A part too thin or small to show the change (a deck slab about 1 mm thick) first gets the size it needs, and the reply says so.`
+    ? `Measured: the change so far moved ${pct}% of the whole-model view, under the ${floor}% a person sees at that view. Strengthen it once before you answer, scaled from the model and this measure: rebuilt at the same sizes it measures the same. ${growLine(pct, floor)} A cut into a face of the same color (a recess, slits, windows) shows only its edges, so give it contrast as well: a rim or floor built in a contrasting color, or a darker color on what you added. Size what you add as a share of the part it sits on: a slit or window about a third of that side's height, a vent or hatch a real share of the face it sits on, a recess with a rim; repeated details in rows along every side with room, spaced from the model. A part too thin or small to show the change (a slab about 1 mm thick) first gets the size it needs, and the reply says so.`
     : `Measured: the change so far moved ${pct}% of the whole-model view. Say that share in the reply.`
 /**
  * How much bigger a change under the floor must get to show: the measure is a share of the view's area, so each size
@@ -722,6 +722,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Sessions whose sizes must fit something: the last new part's sheet had fits. Their plan waits for the person's Go;
   // any other plan at its default size goes straight through.
   const fitSizes = new Set<string>()
+  // The built design each session's run follows up on (a follow-up turn), while that run goes: a build into it is no new
+  // part, and no sheet in it waits on the person
+  const followed = new Map<string, string>()
   // Sessions whose approved plan (design.plan) has pieces that print assembled and move, until that part's building
   // starts: their sheets get the fit rule's gaps. The value is whether the plan's part has started its design yet, so a
   // second design.new (another part) ends it, as does the first body built, an approved plan without such pieces, or
@@ -1158,7 +1161,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     let starting = false
     const design = (input as { design?: unknown } | null)?.design
-    if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
+    // a build into the built design a follow-up works on adds to that part: it is no new part, so it needs no sheet
+    const newPart = startsPart(tool.name, input) && !(typeof design === 'string' && followed.get(sessionId) === design)
+    if (newPart && findTool('pilot.sheet')) {
       // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in, and
       // never for a part in another design; with no design recorded for it, any design may be its own
       const under = sheetDesigns.get(sessionId)
@@ -1171,13 +1176,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const changes = startsPart(tool.name, input) || (tool.name.startsWith('geom.') && tool.permission !== 'read')
     if (changes) claimOnChange(sessionId, design)
     if (changes && waitsForPlan(sessionId, design)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
-    if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
+    if (newPart && findTool('pilot.sheet')) {
       usedSheet.add(sessionId)
       if (typeof design === 'string' && design) startedUnder(sessionId, design)
       else starting = true
     }
     // the planned part is being built: a sheet from here on is another part's
-    if (startsPart(tool.name, input)) endPrintInPlace(sessionId)
+    if (newPart) endPrintInPlace(sessionId)
     const project = opts.project?.()
     const ctx: ToolContext = {
       host: opts.host,
@@ -1242,10 +1247,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           reject(new Error('Run canceled.'))
         }
         // a sheet whose sizes must fit something, or one for pieces that print assembled and move, waits for the person;
-        // so does a sheet of a part already built, which builds nothing new and is there for the person to read and edit
-        // over its drawing. Any other shows and goes ahead with its sizes at once. A new part's sheet says whether its
-        // sizes must fit.
-        const auto = !sheet.design && draft.fits !== true && !printInPlace.has(sessionId)
+        // any other, and every sheet in a follow-up on a built design, shows and goes ahead with its sizes at once. A sheet
+        // of a part already built (design) waits, follow-up or not: it builds nothing new and is there for the person to
+        // read and edit over its drawing. A new part's sheet says whether its sizes must fit.
+        const auto = !sheet.design && (followed.has(sessionId) || (draft.fits !== true && !printInPlace.has(sessionId)))
         if (!sheet.design) {
           if (draft.fits === true) fitSizes.add(sessionId)
           else fitSizes.delete(sessionId)
@@ -1542,6 +1547,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // a follow-up on a cloud turn: the design an earlier run built is looked at first, and each change measured
     const look = !local ? findTool('design.look') : undefined
     const follow = look ? (lastDesign(messages, runStart) ?? checkedDesignOr()) : null
+    if (follow) followed.set(sessionId, follow)
+    else followed.delete(sessionId)
     let lookN = 0
     const lookAt = async (design: string, compare: boolean, shown: boolean): Promise<{ pct: number; floor: number } | null> => {
       const call: LlmToolCall = { id: `look_${sessionId}_${now()}_${lookN++}`, name: 'design.look', arguments: JSON.stringify(compare ? { design, compare: true } : { design }) }
