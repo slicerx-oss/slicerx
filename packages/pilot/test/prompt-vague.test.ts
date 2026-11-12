@@ -18,7 +18,7 @@ describe('the line for a vague follow-up', () => {
 
   it('applies it where it shows and is needed, plain blocks first, and says what it took it to mean', () => {
     expect(VAGUE_LINE).toContain('apply it where it shows and is needed, plain blocks first')
-    expect(VAGUE_LINE).toContain('say in a few words what you took it to mean ("Beveled the deck houses and the cabin roof edges")')
+    expect(VAGUE_LINE).toContain('say in a few words what you took it to mean ("Beveled the lid and the handle edges")')
   })
 
   it('resolves a loose part word from position, color and the plan, and names the parts it took', () => {
