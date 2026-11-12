@@ -177,6 +177,22 @@ describe('the sheet record', () => {
     expect(row('lean').textContent).toContain('kept')
   })
 
+  it('reads confirmed when it went ahead with nobody asked, keeps its guesses called guesses, and edits after the build', () => {
+    const opened: string[] = []
+    const auto = { confirmed: true, values: { phone_width: 71.5, lean: 70, stand_width: 70 }, changed: [], auto: true as const }
+    const { rerender } = render(<SheetRecord sheet={SHEET} answer={auto} actionable onOpen={(id) => opened.push(id)} onConfirm={async () => undefined} />)
+    const rec = screen.getByTestId('mimir-sheet-record')
+    expect(rec.hasAttribute('data-auto')).toBe(true)
+    expect(screen.getByTestId('mimir-sheet-status').textContent).toBe('Confirmed as shown')
+    expect(screen.queryByTestId('mimir-sheet-confirm')).toBeNull()
+    expect(row('lean').textContent).toContain('guess')
+    expect(row('lean').textContent).not.toContain('kept')
+    // once built, its rows drive the steps from Edit sizes, as a confirmed sheet's do
+    rerender(<SheetRecord sheet={SHEET} answer={auto} bound actionable onOpen={(id) => opened.push(id)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit sizes' }))
+    expect(opened).toEqual(['sheet_1'])
+  })
+
   it('brings the panel back with Edit sizes once its rows drive the steps', () => {
     const opened: string[] = []
     const done = { confirmed: true, values: { phone_width: 71.5, lean: 70, stand_width: 70 }, changed: [] }

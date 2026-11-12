@@ -277,6 +277,10 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mimir-chat .plan-rec-foot { align-items: center; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
 .mimir-chat .plan-rec .plan-rec-foot .lookup-rec-s { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mimir-chat .plan-rec[data-picked^="go:"] .plan-rec-foot .lookup-rec-s { color: var(--green); }
+/* a plan approved at its default size with nobody asked: in place of its buttons, one quiet line on changing it after */
+.mimir-chat .plan-rec-auto { flex: 1 1 auto; min-width: 0; font-size: var(--fs-sm); color: var(--t-mute); line-height: 1.4; text-align: right; }
+:root[data-phone] .mimir-chat .plan-rec[data-auto] .plan-rec-foot { flex-wrap: wrap; }
+:root[data-phone] .mimir-chat .plan-rec-auto { text-align: left; flex-basis: 100%; }
 :root[data-phone] .mimir-chat .plan-rec .sheet-rec-rows { padding-left: 0; }
 :root[data-phone] .mimir-chat .plan-rec .plan-rec-row { min-height: 44px; }
 :root[data-phone] .mimir-chat .plan-rec .sheet-rec-field { width: 120px; height: 40px; }

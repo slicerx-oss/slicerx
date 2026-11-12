@@ -67,7 +67,8 @@ export function SheetRecord({
         .join(', ')}${assumed.length > 2 ? ` and ${assumed.length - 2} more` : ''}`
     : !answer ? 'Waiting for you to confirm' : !answer.confirmed ? (answer.said ? (answer.changed.length ? `Set aside for your message with ${answer.changed.length} size${answer.changed.length === 1 ? '' : 's'} changed, nothing built` : 'Set aside for your message, nothing built') : 'Canceled, nothing built') : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
   return (
-    <div className="lookup-rec sheet-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record">
+    // a sheet that went ahead with nobody asked (auto) reads confirmed like any other; once built, Open edits its rows
+    <div className="lookup-rec sheet-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record" data-auto={answer?.auto ? '' : undefined}>
       <div className="sheet-rec-head">
         <span className="lookup-rec-t">
           <Icon name="tolerance" />
@@ -93,8 +94,9 @@ export function SheetRecord({
           const used = valueOf(d.key, d.value)
           const yours = answer ? answer.changed.includes(d.key) : used !== d.value
           const guess = assumed.includes(d)
-          // a guess the person kept, or confirmed with the sheet, is no longer a guess
-          const tag = yours ? 'yours' : d.source === 'guess' && !guess && (!answer || answer.confirmed) ? 'kept' : TAG[d.source]
+          // a guess the person kept, or confirmed with the sheet, is no longer a guess; one the build went ahead with,
+          // nobody asked (auto), still is
+          const tag = yours ? 'yours' : d.source === 'guess' && !guess && (!answer || (answer.confirmed && !answer.auto)) ? 'kept' : TAG[d.source]
           const id = `sheet-rec-${sheet.id}-${d.key}`
           const unit = dimUnit(d)
           return (
