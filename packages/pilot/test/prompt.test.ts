@@ -174,7 +174,7 @@ describe('the scope rule for parts', () => {
     expect(systemPrompt()).toContain('geom.loft between profiles on several planes')
     expect(systemPrompt()).toContain('geom.sweep along a path')
     // curved hulls and shells of open curves are built, not turned down
-    expect(systemPrompt()).toContain('(smooth for hulls, thicken for shells)')
+    expect(systemPrompt()).toContain('(smooth for bottles, thicken for shells)')
     expect(out).not.toMatch(/organic|curving freely/i)
   })
 
