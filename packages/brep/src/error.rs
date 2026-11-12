@@ -42,6 +42,9 @@ pub enum Error {
     /// Faces given to be joined do not meet along a side they share. The kernel closed a gap this wide, in mm, to
     /// join them, so the solid it made is not the one asked for.
     Apart { gap_mm: f64 },
+    /// The kernel joined faces along a side this far, in mm, from the curves they were given, so the solid it made
+    /// is not the one asked for. The gap it reports does not show this.
+    Moved { off_mm: f64 },
     /// The kernel could not tessellate these faces. It made no mesh.
     Faces { status: i64, faces: Vec<FailedFace> },
     /// The kernel's tessellation is not something a mesh can hold.
@@ -70,6 +73,10 @@ impl fmt::Display for Error {
             Self::Apart { gap_mm } => write!(
                 f,
                 "stitch: the faces are {gap_mm:.3e} mm apart along a side they share; they must meet"
+            ),
+            Self::Moved { off_mm } => write!(
+                f,
+                "stitch: the faces were joined along a side {off_mm:.3e} mm off the curves they were given; they must meet on them"
             ),
             Self::Faces { status, faces } => {
                 write!(f, "tessellate: the kernel could not tessellate")?;
