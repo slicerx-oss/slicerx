@@ -110,6 +110,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("brep.save", "brep"),
     ("brep.load", "brep"),
     ("brep.free", "brep"),
+    ("exact.ops", "brep"),
 ];
 
 /// Whether this build has the feature.
@@ -540,6 +541,16 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
         "nest.end" => {
             crate::nest::end(field(req, "session")?);
             Ok(json!({}))
+        }
+        // the operations that make an exact body when asked (`exact`): none in a build without the kernel
+        #[cfg(feature = "brep")]
+        "exact.ops" => {
+            let ops: &[&str] = if sx_brep::KERNEL && cfg!(feature = "cad") {
+                &["sketch.loft"]
+            } else {
+                &[]
+            };
+            Ok(json!({ "ops": ops }))
         }
         #[cfg(feature = "brep")]
         o if o.starts_with("brep.") && ALL_OPERATIONS.iter().any(|(n, _)| *n == o) => {

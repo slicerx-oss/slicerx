@@ -95,6 +95,7 @@ const ENGINE: Record<string, GeomOpClass> = {
   'brep.save': 'model',
   'brep.load': 'model',
   'brep.free': 'quick',
+  'exact.ops': 'quick',
 }
 
 /** The operation names in the engine's ALL_OPERATIONS table. */

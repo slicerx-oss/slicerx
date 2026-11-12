@@ -7,11 +7,12 @@
 use serde_json::{Value, json};
 use std::f64::consts::TAU;
 use sx_brep::{Surface, Tessellation};
+use sx_geom::exact as table;
 use sx_geom::face::{self, Operation};
 use sx_geom::faces;
 use sx_geom::fm::Fm;
 use sx_geom::mesh::TriMesh;
-use sx_geom::sketch_loft::exact::{self, Part, table};
+use sx_geom::sketch_loft::exact::{self, Part};
 use sx_geom::sketch_loft::{self, Density, Match, Options, Profile, Rails};
 use sx_geom::vec3::{self, V3};
 
@@ -481,4 +482,160 @@ fn the_body_is_where_the_profiles_frames_put_it() {
             });
         assert!((min[i] - mesh_low).abs() < 1e-9 && (max[i] - mesh_high).abs() < 1e-9);
     }
+}
+
+// ---- the op: sketch.loft asked to be exact
+
+fn op(name: &str, request: &Value) -> String {
+    sx_geom::json::call(name, &request.to_string()).unwrap_or_else(|e| panic!("{name}: {e}"))
+}
+
+fn block() -> Value {
+    json!([
+        level(0.0, &rectangle(20.0, 10.0)),
+        level(15.0, &rectangle(20.0, 10.0))
+    ])
+}
+
+/// A reply's text with one of its fields taken out, comma and all.
+fn without(reply: &str, field: &str) -> String {
+    let (with_next, with_last) = (format!("{field},"), format!(",{field}"));
+    assert!(reply.contains(field), "no {field} in the reply");
+    if reply.contains(&with_next) {
+        reply.replacen(&with_next, "", 1)
+    } else {
+        reply.replacen(&with_last, "", 1)
+    }
+}
+
+/// The text of one field of a reply as the reply prints it.
+fn printed(reply: &Value, key: &str) -> String {
+    format!("\"{key}\":{}", reply[key])
+}
+
+#[test]
+fn the_engine_says_which_ops_make_exact_bodies() {
+    let ops: Value = serde_json::from_str(&op("exact.ops", &json!({}))).unwrap();
+    if sx_brep::KERNEL {
+        assert_eq!(ops, json!({ "ops": ["sketch.loft"] }));
+    } else {
+        assert_eq!(ops, json!({ "ops": [] }));
+    }
+}
+
+#[test]
+fn an_exact_loft_s_reply_is_the_loft_s_own_plus_the_body() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let start = table::count();
+    for (profiles, smooth) in [(hull(), true), (block(), false)] {
+        for keyed in [true, false] {
+            let mut request = json!({ "profiles": profiles, "smooth": smooth, "withFaces": true });
+            if keyed {
+                request["keySalt"] = json!(77);
+            }
+            let plain = op("sketch.loft", &request);
+            request["exact"] = json!(true);
+            let asked = op("sketch.loft", &request);
+            let reply: Value = serde_json::from_str(&asked).unwrap();
+            let handle = reply["body"].as_u64().expect("a body");
+            assert!(table::is_handle(handle));
+            let keys = reply["bodyKeys"].as_array().expect("its keys");
+            // every byte of the loft's own reply, with the two fields added
+            let rest = without(
+                &without(&asked, &printed(&reply, "body")),
+                &printed(&reply, "bodyKeys"),
+            );
+            assert_eq!(rest, plain, "smooth {smooth} keyed {keyed}");
+            assert_eq!(keys.is_empty(), !keyed);
+            // the body tessellates through the engine, and is saved as text the old load reads with its keys
+            let held = json!({ "body": handle });
+            let mesh: Value = serde_json::from_str(&op("brep.tessellate", &held)).unwrap();
+            assert!(mesh["positions"].as_array().is_some_and(|p| !p.is_empty()));
+            let saved: Value = serde_json::from_str(&op("brep.save", &held)).unwrap();
+            sx_geom::json::allow_brep_text(true);
+            let loaded: Value = serde_json::from_str(&op("brep.load", &json!({ "body": saved }))).unwrap();
+            let old: Value =
+                serde_json::from_str(&op("brep.tessellate", &json!({ "body": loaded["body"] }))).unwrap();
+            let read: Vec<Value> = old["faces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f["key"].clone())
+                .collect();
+            if keyed {
+                assert_eq!(&read, keys);
+            } else {
+                assert!(read.iter().all(|k| *k == json!(0)));
+            }
+            op("brep.free", &json!({ "body": loaded["body"] }));
+            // asked as text: the same body, no number, nothing left in the table
+            let held_now = table::count();
+            request["save"] = json!(true);
+            let texted = op("sketch.loft", &request);
+            let reply: Value = serde_json::from_str(&texted).unwrap();
+            assert!(reply.get("body").is_none() && reply.get("bodyKeys").is_none());
+            assert_eq!(table::count(), held_now);
+            assert_eq!(without(&texted, &printed(&reply, "bodySmb")), plain);
+            let loaded: Value =
+                serde_json::from_str(&op("brep.load", &json!({ "body": { "smb": reply["bodySmb"] } })))
+                    .unwrap();
+            let old: Value =
+                serde_json::from_str(&op("brep.tessellate", &json!({ "body": loaded["body"] }))).unwrap();
+            let again: Vec<Value> = old["faces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f["key"].clone())
+                .collect();
+            assert_eq!(again, read);
+            op("brep.free", &json!({ "body": loaded["body"] }));
+            sx_geom::json::allow_brep_text(false);
+            assert_eq!(op("brep.free", &held), "{\"freed\":true}");
+        }
+    }
+    assert_eq!(table::count(), start);
+}
+
+#[test]
+fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let start = table::count();
+    let circle = |d: f64| json!({ "type": "circle", "center": [0, 0], "diameterMm": d });
+    let spline = json!({ "type": "spline", "points": [[10, 0], [0, 8], [-10, 0], [0, -8]] });
+    let target = json!({ "positions": [0, 0, 0, 30, 0, 0, 0, 30, 0, 0, 0, 30], "indices": [0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2] });
+    let cases = [
+        (
+            json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &circle(24.0))] }),
+            "An exact loft is made only through profiles of straight lines for now; these have an arc, a circle or an ellipse.",
+        ),
+        (
+            json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &spline)] }),
+            "Profile 2 has a spline, which has no pieces to match.",
+        ),
+        (
+            json!({ "profiles": block(), "operation": "join", "target": { "mesh": target } }),
+            "An exact loft is made only as a new body for now.",
+        ),
+    ];
+    for (mut request, why) in cases {
+        let plain = sx_geom::json::call("sketch.loft", &request.to_string());
+        request["exact"] = json!(true);
+        let asked = sx_geom::json::call("sketch.loft", &request.to_string());
+        match (plain, asked) {
+            (Ok(plain), Ok(asked)) => {
+                let reply: Value = serde_json::from_str(&asked).unwrap();
+                assert_eq!(reply["exact"], json!({ "made": false, "why": why }));
+                assert!(reply.get("body").is_none() && reply.get("bodySmb").is_none());
+                assert_eq!(without(&asked, &printed(&reply, "exact")), plain);
+            }
+            // what the mesh path refuses is refused the same with the ask
+            (Err(plain), Err(asked)) => assert_eq!(asked.to_string(), plain.to_string()),
+            (plain, asked) => panic!("{why}: {plain:?} without the ask and {asked:?} with it"),
+        }
+    }
+    assert_eq!(table::count(), start);
 }
