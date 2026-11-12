@@ -4,6 +4,9 @@
 // are from the rails' own surface, and the body kept in the engine's table. Empty without the brep feature, so a
 // workspace test run that names every test target passes over it.
 #![cfg(feature = "brep")]
+mod common;
+
+use common::volume_near;
 use serde_json::{Value, json};
 use std::f64::consts::TAU;
 use sx_brep::{Surface, Tessellation};
@@ -124,7 +127,8 @@ fn the_hull_is_eight_exact_faces_on_its_rails() {
     );
     // the volume inside the rails' own surface, measured at 4000 rows a span, is 71826.331984 mm3
     let volume = lofted.body.volume().expect("volume");
-    assert!((volume - 71_826.331_984).abs() < 1e-3, "{volume}");
+    // the kernel gives 71826.33189737417 on Linux and 71826.32873692371 with Apple clang on arm64
+    assert!(volume_near(volume, 71_826.331_984), "{volume}");
     let mesh = lofted.body.tessellate(&Tessellation::default()).expect("a mesh");
     let n = rails.rails.len();
     let mut farthest = 0.0f64;
@@ -350,7 +354,7 @@ fn a_closed_loft_is_one_face_a_stretch_and_no_ends() {
         let volume = lofted.body.volume().expect("volume");
         // the volume inside the smooth ring's rails, measured at 4000 rows a span
         if let Some(measured) = measured {
-            assert!((volume - measured).abs() < 0.05, "{volume}");
+            assert!(volume_near(volume, measured), "{volume}");
         }
         assert!(volume > 20_000.0, "{volume}");
     }
