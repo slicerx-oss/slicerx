@@ -21,6 +21,10 @@ pub const MAX_PIECES: usize = 4096;
 /// (of 1 mm when all are smaller). Faces that share a side are given the very same curve along it, so a real gap
 /// there is rounding. The kernel closes far wider ones without a word, and then the solid is not the one asked for.
 const MEET: f64 = 1e-9;
+/// How far an exact face may come out from the curves it was drawn from, in mm. It is a distance to the drawing, not
+/// a gap the kernel closes: a face skinned across rails through a drawn curve passes through the rails' points on it
+/// exactly and between them only as closely as its interpolation runs, and this is how closely that must be.
+pub const DRAWN_MM: f64 = 0.01;
 /// How many stretches each piece of a curve a face was given is cut into, to be measured against the joined body's
 /// edges at both ends of every stretch.
 const STRETCHES: u32 = 32;
@@ -567,16 +571,16 @@ impl Boundary {
         reason = "the kernel's own knots and degree, compared as it gave them"
     )]
     fn path(&self) -> Result<Path> {
-        let what = "skinned face end";
+        let what = "skinned face curve";
         let refused = |why: &'static str| Error::NotSolid { op: what, why };
         if self.rational {
-            return Err(refused("the kernel read its end as a rational curve"));
+            return Err(refused("the kernel read it as a rational curve"));
         }
         let degree = match self.degree {
             1.0 => 1,
             2.0 => 2,
             3.0 => 3,
-            _ => return Err(refused("the kernel read its end as a curve of a degree above 3")),
+            _ => return Err(refused("the kernel read it as a curve of a degree above 3")),
         };
         let (mut knots, mut points) = (self.knots.clone(), self.points.clone());
         let pinned = knots.len() == points.len() + degree + 1
@@ -587,7 +591,7 @@ impl Boundary {
                 .all(|&knot| knot == knots[knots.len() - 1]);
         if !pinned {
             return Err(refused(
-                "the kernel read its end as a curve not pinned to its end points",
+                "the kernel read it as a curve not pinned to its end points",
             ));
         }
         let inner: Vec<f64> = {
@@ -626,60 +630,97 @@ impl Boundary {
 
 /// The two curves a face skinned across `rails` ends on, read from the kernel's own surface: the one through every
 /// rail's start, then the one through every rail's end. A flat face given one of them meets the skin on the very curve
-/// the kernel made, where a curve worked out here only passes through the same points.
+/// the kernel made, where a curve worked out here only passes through the same points. They are the first and last
+/// of [`skin_stations`], and read back as those are.
+pub fn skin_ends(rails: &[Path]) -> Result<(Path, Path)> {
+    let mut stations = skin_stations(rails)?;
+    match (stations.pop(), stations.into_iter().next()) {
+        (Some(last), Some(first)) => Ok((first, last)),
+        _ => Err(Error::input(
+            "skinned face",
+            "a face runs across 2 or more curves",
+        )),
+    }
+}
+
+/// The curves a face skinned across `rails` runs along at each of the rails' stations, in order from their starts to
+/// their ends, read from the kernel's own surface. A station is where every rail's pieces meet: its start, the end
+/// of each piece and its end. A drawing made at the stations can be measured against these, as the face itself.
 ///
 /// The rails are checked in words before the kernel is asked, as for [`Body::stitched`]. Read back: each curve passes
-/// through its rails' ends, and the kernel says it read it with no gap from the surface, both within [`MEET`] of the
-/// largest coordinate given. Each runs from the first rail's end to the last one's, and starts and ends on exactly
-/// those points.
-pub fn skin_ends(rails: &[Path]) -> Result<(Path, Path)> {
+/// through every rail's point at its station, and the kernel says it read it with no gap from the surface, both within
+/// [`MEET`] of the largest coordinate given. Each runs from the first rail's point to the last one's, and starts and
+/// ends on exactly those points.
+pub fn skin_stations(rails: &[Path]) -> Result<Vec<Path>> {
     let what = "skinned face";
     alike(what, &rails.iter().collect::<Vec<_>>())?;
     let limit = meet(&[Sheet::Skinned(rails.to_vec())]);
-    let starts: Vec<[f64; 3]> = rails.iter().filter_map(Path::ends).map(|e| e.0).collect();
-    let ends: Vec<[f64; 3]> = rails.iter().filter_map(Path::ends).map(|e| e.1).collect();
-    let through =
-        |path: &Path, points: &[[f64; 3]]| points.iter().map(|&p| path.off(p)).fold(0.0, f64::max) <= limit;
-    let (mut first, mut last) = (None, None);
-    for boundary in kernel::skin_boundaries(rails)? {
-        let path = boundary.path()?;
-        let exact = boundary.gap.is_finite() && boundary.gap <= limit;
-        if first.is_none() && through(&path, &starts) {
-            first = Some((path, exact));
-        } else if last.is_none() && through(&path, &ends) {
-            last = Some((path, exact));
+    let pieces = rails.first().map_or(0, Path::pieces);
+    // each rail's point at station `k`
+    let station = |rail: &Path, k: usize| match rail {
+        Path::Lines(points) => points[k],
+        Path::Cubics(spans) if k < spans.len() => spans[k][0],
+        Path::Cubics(spans) => spans[spans.len() - 1][3],
+    };
+    #[allow(clippy::cast_precision_loss, reason = "a piece count")]
+    let at: Vec<(i32, f64)> = [0, 1]
+        .into_iter()
+        .flat_map(|direction| (0..=pieces).map(move |k| (direction, k as f64 / pieces as f64)))
+        .collect();
+    let read = kernel::skin_curves(rails, &at)?;
+    let refused = |why: &'static str| Error::NotSolid {
+        op: "skinned face curve",
+        why,
+    };
+    // the stations run one way across the surface: the way whose curves pass through every station's points
+    for curves in read.chunks(pieces + 1) {
+        let mut out = Vec::with_capacity(pieces + 1);
+        let mut exact = true;
+        for (k, curve) in curves.iter().enumerate() {
+            let Ok(path) = curve.path() else { break };
+            let points: Vec<[f64; 3]> = rails.iter().map(|rail| station(rail, k)).collect();
+            if points.iter().any(|&point| path.off(point) > limit) {
+                break;
+            }
+            exact &= curve.gap.is_finite() && curve.gap <= limit;
+            let (Some(&from), Some(&to)) = (points.first(), points.last()) else {
+                break;
+            };
+            out.push(oriented(path, from, to, limit));
+        }
+        if out.len() == pieces + 1 {
+            return if exact {
+                Ok(out)
+            } else {
+                Err(refused("the kernel read it only approximately"))
+            };
         }
     }
-    // each from the first rail's end to the last one's, on those very points: the kernel's own end points are them
-    // to rounding, and a loop of curves must join on the same numbers
-    let along = |path: Path, from: [f64; 3], to: [f64; 3]| {
-        let path = match path.ends() {
-            Some((start, _))
-                if path.off(to) <= limit
-                    && dot(sub(start, to), sub(start, to)) < dot(sub(start, from), sub(start, from)) =>
-            {
-                path.reversed()
-            }
-            _ => path,
-        };
-        path.pinned(from, to)
+    Err(refused(
+        "the kernel's surface does not run through its curves at their stations",
+    ))
+}
+
+/// `path` run from `from` to `to`, and starting and ending on exactly those points: the kernel's own end points are
+/// them to rounding, and a loop of curves must join on the same numbers.
+fn oriented(path: Path, from: [f64; 3], to: [f64; 3], limit: f64) -> Path {
+    let path = match path.ends() {
+        Some((start, _))
+            if path.off(to) <= limit
+                && dot(sub(start, to), sub(start, to)) < dot(sub(start, from), sub(start, from)) =>
+        {
+            path.reversed()
+        }
+        _ => path,
     };
-    let (Some(&a0), Some(&a1), Some(&b0), Some(&b1)) =
-        (starts.first(), starts.last(), ends.first(), ends.last())
-    else {
-        return Err(Error::input(what, "a face runs across 2 or more curves"));
-    };
-    match (first, last) {
-        (Some((first, true)), Some((last, true))) => Ok((along(first, a0, a1), along(last, b0, b1))),
-        (Some(_), Some(_)) => Err(Error::NotSolid {
-            op: "skinned face end",
-            why: "the kernel read it only approximately",
-        }),
-        _ => Err(Error::NotSolid {
-            op: "skinned face end",
-            why: "the kernel's surface does not end on its curves' ends",
-        }),
-    }
+    path.pinned(from, to)
+}
+
+/// How far apart two curves are, in mm: the farthest any of either's points along it is from the other, at each
+/// piece's ends and [`STRETCHES`] even steps along it.
+pub fn apart(a: &Path, b: &Path) -> f64 {
+    let one_way = |from: &Path, to: &Path| from.along().into_iter().map(|p| to.off(p)).fold(0.0, f64::max);
+    one_way(a, b).max(one_way(b, a))
 }
 
 /// What the kernel must not be asked, in plain words.

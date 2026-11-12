@@ -133,10 +133,10 @@ void sx_brep_take_back(long number);
 SmBrep* sx_brep_adopt(long number);
 }
 
-// --- a surface's boundary at one parameter: its whole knot list, its control points (x, y, z each), and in `about`
+// --- a surface's curve where one parameter holds a value: its whole knot list, its control points (x, y, z each), and in `about`
 // its degree, 1 when it is rational and the gap the kernel says the curve has from the surface. The curve is the
 // kernel's; it is freed here.
-inline SmLong sx_surface_boundary(const SmSurface& surface, int direction, double at, rust::Vec<double>& knots,
+inline SmLong sx_surface_curve(const SmSurface& surface, int direction, double at, rust::Vec<double>& knots,
                                   rust::Vec<double>& points, rust::Vec<double>& about)
 {
     SmBSplineCurve* iso = nullptr;
