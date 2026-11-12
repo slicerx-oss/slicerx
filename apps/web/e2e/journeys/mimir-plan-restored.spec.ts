@@ -55,12 +55,16 @@ journey.describe('mimir finishes a plan from a project opened again', () => {
     await setPilot(page, 'scripted')
     await emptyMimirTab(page)
     await askTab(page, 'Make a mounting plate, just the plate for now')
-    const confirm = page.getByTestId('mimir-sheet-confirm')
-    await expect(confirm).toBeEnabled({ timeout: 30_000 })
-    await confirm.click()
-    const go = page.getByTestId('mimir-plan-go')
-    await expect(go).toBeEnabled({ timeout: 30_000 })
-    await go.click()
+    // a mounting plate at its default size goes ahead with nobody asked: its sheet reads confirmed and its plan card
+    // approved, with no Go, and one line on how to change it after
+    const sheet = page.getByTestId('mimir-sheet-record').first()
+    await expect(sheet).toHaveAttribute('data-auto', '', { timeout: 30_000 })
+    await expect(sheet.getByTestId('mimir-sheet-status')).toHaveText('Confirmed as shown')
+    await expect(sheet.getByTestId('mimir-sheet-confirm')).toHaveCount(0)
+    const card = page.getByTestId('mimir-plan-card')
+    await expect(card).toHaveAttribute('data-auto', 'true', { timeout: 30_000 })
+    await expect(card.getByTestId('mimir-plan-go')).toHaveCount(0)
+    await expect(card.getByTestId('mimir-plan-auto')).toHaveText('Built at its default size; ask to resize or change it.')
     const transcript = page.getByTestId('mimir-transcript')
     await expect(transcript).toContainText('The plate is built. Which screws will hold it, M4 or M3?', { timeout: 30_000 })
     // the question is the person's to answer: mimir stopped with the plan half built

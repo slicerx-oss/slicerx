@@ -137,13 +137,17 @@ async function scriptedTab(page: Page): Promise<void> {
   await emptyMimirTab(page)
 }
 
-/** Confirms the print-run script's Clip sizes sheet as it is: 30 x 12 x 8 mm, all guesses. */
-async function confirmClip(page: Page): Promise<void> {
+/**
+ * The print-run script's Clip sizes sheet as it is: 30 x 12 x 8 mm, all guesses. At its default size it goes ahead
+ * with nobody asked, so it reads confirmed with no Confirm.
+ */
+async function clipConfirmed(page: Page): Promise<void> {
   const sheet = page.getByTestId('mimir-sheet-record').last()
   await expect(sheet).toBeVisible({ timeout: 30_000 })
   await expect(sheet).toContainText('Clip sizes')
-  await sheet.getByTestId('mimir-sheet-confirm').click()
   await expect(sheet).toContainText('Confirmed as shown')
+  await expect(sheet).toHaveAttribute('data-auto', '')
+  await expect(sheet.getByTestId('mimir-sheet-confirm')).toHaveCount(0)
 }
 
 /** Waits until the send card has checked the printer as it is now. */
@@ -258,7 +262,7 @@ test.describe('a print run in the mimir chat', () => {
     await scriptedTab(page)
     await askTab(page, 'Print this on my Bay 6 in green PLA')
     // the sizes first, guesses for the person to confirm
-    await confirmClip(page)
+    await clipConfirmed(page)
     // the part: the 30 x 12 x 8 mm clip, as a card after its step rows
     const part = page.getByTestId('mimir-part').last()
     await expect(part).toBeVisible({ timeout: 60_000 })
@@ -297,7 +301,7 @@ test.describe('a print run in the mimir chat', () => {
     await scriptedTab(page)
     // a printer by name and a spool it has: straight on to the send card
     await askTab(page, 'Print this on my Bay 6 in green PLA')
-    await confirmClip(page)
+    await clipConfirmed(page)
     await expect(sendCard(page)).toBeVisible({ timeout: 120_000 })
     await expect(page.getByTestId('mimir-target')).toHaveCount(0)
     await sendCard(page).getByTestId('mimir-send-cancel').click()
@@ -305,7 +309,7 @@ test.describe('a print run in the mimir chat', () => {
     // no printer it knows, and a spool two printers hold (green PLA is in Bay 2 and Bay 6): the person picks
     await page.getByTestId('mimir-chat').getByRole('button', { name: 'New conversation' }).click()
     await askTab(page, 'Print it on my printer in green PLA')
-    await confirmClip(page)
+    await clipConfirmed(page)
     const picker = page.getByTestId('mimir-target')
     await expect(picker).toBeVisible({ timeout: 60_000 })
     await expect(picker.locator('.target-rec-printer')).not.toHaveCount(1)
@@ -335,7 +339,7 @@ test.describe('a print run in the mimir chat', () => {
     // the part is made for the H2C's bed, then the words move the print to the P1S, whose bed keeps a corner clear
     await setState(page, { printerId: 'bay-6' })
     await askTab(page, 'Print this on my Bay 2 in green PLA')
-    await confirmClip(page)
+    await clipConfirmed(page)
     const slice = page.getByTestId('mimir-slice').last()
     await expect(slice).toBeVisible({ timeout: 120_000 })
     await expect(slice).not.toHaveAttribute('data-stale')
