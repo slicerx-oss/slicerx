@@ -77,6 +77,27 @@ describe('a new part a hair from another', () => {
     expect(r.output.steps).toBe(3)
   })
 
+  it('0.1 mm above the face inside a ring standing there is seated on the face, not refused as standing in the ring', async () => {
+    const t = await start()
+    await t.box('Base', [0, 0, 0], [40, 40, 10])
+    await t.ok('slicerx_geom_build', { design: t.design, name: 'Ring', feature: 'Ring', solids: [{ type: 'box', min: [5, 5, 10], max: [25, 25, 30] }], subtract: [{ type: 'box', min: [8, 8, 9], max: [22, 22, 31] }] })
+    const r = await t.box('Insert', [10, 10, 10.1], [20, 20, 20])
+    expect(r.summary).toContain('Insert was 0.1 mm from Base, so it is seated on Base (moved 0.15 mm)')
+    expect(near(r.output.parts.find((p) => p.name === 'Insert')!.minMm[2], 10.1 - 0.1 - SEAT_OVERLAP_MM)).toBe(true)
+  })
+
+  it('0.1 mm above the face in the notch of an L standing there is seated on the face, and one in the L itself is refused', async () => {
+    const t = await start()
+    await t.box('Base', [0, 0, 0], [40, 40, 10])
+    // an L: the box [5, 5] to [25, 25] less its corner [12, 12] to [25, 25]
+    await t.ok('slicerx_geom_build', { design: t.design, name: 'Ell', feature: 'Ell', solids: [{ type: 'box', min: [5, 5, 10], max: [25, 25, 30] }], subtract: [{ type: 'box', min: [12, 12, 9], max: [26, 26, 31] }] })
+    const r = await t.box('Insert', [14, 14, 10.1], [22, 22, 20])
+    expect(r.summary).toContain('Insert was 0.1 mm from Base, so it is seated on Base (moved 0.15 mm)')
+    const inL = await t.h.call('slicerx_geom_build', { design: t.design, name: 'Block', feature: 'Block', solids: [{ type: 'box', min: [5, 5, 10.1], max: [11, 24, 20] }] })
+    expect(inL.isError).toBe(true)
+    expect(text(inL)).toMatch(/Nothing was built: solids\[0\] .* stands in Ell/)
+  })
+
   it('0.5 mm above the block stays where it is, and design.check finds nothing loose', async () => {
     const t = await start()
     await t.box('Block', [0, 0, 0], [20, 20, 10])

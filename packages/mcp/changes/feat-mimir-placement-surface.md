@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_geom_build` 1.5.0 (from 1.4.0) with a design holds each solid of a new part on its own against the parts standing on the same face, and reads a standing part's footprint from its triangles rather than its box. Pieces that each stand clear are no longer refused for the box around them all (two end posts either side of a lamp, a part made of strips around an open area). A solid that does stand in another part is refused by its index, with what clears it: the z to start it at on that part's top, or the least move in x or y beside it. A part with a solid other than a box or cylinder is read whole, as before.
