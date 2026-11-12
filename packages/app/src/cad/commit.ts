@@ -5,6 +5,7 @@
 // as it is now: a deleted object takes nothing, and every field the job did not make keeps its current value.
 import { withPlaced, type History } from '@slicerx/cad-history'
 import { get, set, type PlateEntry } from '../state/store'
+import { designColors, madeDesign, resolveSlots } from '../filament/slots'
 
 /** What a modeling job makes: the geometry and, when it changes them, the history, kept dimensions, colors and placement. */
 export type Made = Pick<PlateEntry, 'handle' | 'parts'> & Partial<Pick<PlateEntry, 'history' | 'dimensions' | 'colors' | 'transform' | 'paint'>>
@@ -48,4 +49,15 @@ export function goneError(objectId: string, gone = 'That object is gone.'): Erro
 /** Colors for a new set of parts: each part keeps its slot's color, and new parts take the last one. */
 export function colorsFor(count: number, colors: readonly string[], fallback: string): string[] {
   return Array.from({ length: count }, (_, i) => colors[i] ?? colors[colors.length - 1] ?? fallback)
+}
+
+/**
+ * Colors for an object's new parts: a design made here takes each part's filament color (it has no file colors of its
+ * own); anything else keeps its colors by part, new parts taking the last one.
+ */
+export function partColors(entry: Pick<PlateEntry, 'colors' | 'slotOverrides' | 'handle'>, parts: PlateEntry['parts'], history: History | undefined, fallback: string): string[] {
+  if (!history || !madeDesign({ history })) return colorsFor(parts.length, entry.colors, fallback)
+  const s = get()
+  const padded = colorsFor(parts.length, entry.colors, fallback)
+  return designColors({ ...entry, parts, colors: padded }, s.plates.find((p) => p.id === s.activePlate), resolveSlots(s))
 }

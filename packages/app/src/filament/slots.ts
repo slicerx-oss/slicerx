@@ -6,7 +6,8 @@
 import { COLOR_SLOT_MAX, type FilamentSlot, type PlateObject } from '@slicerx/contracts'
 import type { FlushSettings } from './flush-defaults'
 import { allPlates } from '../plate/plates'
-import { get, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
+import { appStore, get, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
+import { quietly } from '../plate/history'
 import { brandAccent } from '../edition'
 import { defaultSlotColors, isHex, normalizeColor } from '@slicerx/settings/slot-colors'
 
@@ -99,6 +100,8 @@ type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePl
 export function modelSlotColors(s: Pick<SlotInputs, 'plates' | 'plate' | 'activePlate' | 'fileSlotColors'>): (string | undefined)[] {
   const out: (string | undefined)[] = [...(s.fileSlotColors ?? [])]
   for (const p of allPlates(s)) for (const o of p.objects) {
+    // a design made here has no file colors: its colors follow its slots, so they never name a slot's color
+    if (madeDesign(o)) continue
     const parts = o.parts.length ? o.parts : o.handle.parts
     parts.forEach((part, i) => (out[part.slot - 1] ??= o.colors[i]))
   }
@@ -202,3 +205,62 @@ export function slotOverridesFor(plate: PlateMeta | undefined, obj: { slotOverri
   }
   return Object.keys(out).length ? out : undefined
 }
+
+/** An object designed in the app, its history starting from nothing: it has no file colors of its own. */
+export function madeDesign(o: Pick<PlateEntry, 'history'>): boolean {
+  return o.history !== undefined && Array.isArray(o.history.base) && o.history.base.length === 0
+}
+
+/** A made design's part colors: each part's filament color as the filament list shows it, after the plate's swaps. */
+export function designColors(o: Pick<PlateEntry, 'parts' | 'handle' | 'colors' | 'slotOverrides'>, plate: Pick<PlateMeta, 'settings'> | undefined, slots: readonly ResolvedSlot[]): string[] {
+  const parts = o.parts.length ? o.parts : o.handle.parts
+  const meta = plate?.settings ? plate : undefined
+  return parts.map((part, i) => slots[mapSlot(meta, effectiveSlot(o, part)) - 1]?.color ?? o.colors[i] ?? o.colors[o.colors.length - 1] ?? brandAccent())
+}
+
+const same = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((c, i) => c === b[i])
+
+/**
+ * The plate with every made design's colors following its slots, or null when they already do. A filament's color set,
+ * a filament added, a part moved to another filament or a swap on the plate all reach the design's own colors, so
+ * what is saved and what every view draws is the filament's color, not the color the design was first built with.
+ */
+export function followedDesignColors(s: AppState): Pick<AppState, 'plate' | 'plates'> | null {
+  if (!s.plate.some(madeDesign) && !s.plates.some((p) => p.id !== s.activePlate && p.objects.some(madeDesign))) return null
+  const slots = resolveSlots(s)
+  let changed = false
+  const follow = (objects: PlateEntry[], meta: PlateMeta | undefined): PlateEntry[] => {
+    let mine = false
+    const out = objects.map((o) => {
+      if (!madeDesign(o)) return o
+      const colors = designColors(o, meta, slots)
+      if (same(colors, o.colors)) return o
+      mine = true
+      return { ...o, colors }
+    })
+    if (!mine) return objects
+    changed = true
+    return out
+  }
+  const plate = follow(s.plate, s.plates.find((p) => p.id === s.activePlate))
+  const plates = s.plates.map((p) => {
+    if (p.id === s.activePlate) return p
+    const objects = follow(p.objects, p)
+    return objects === p.objects ? p : { ...p, objects }
+  })
+  return changed ? { plate, plates } : null
+}
+
+// Made designs keep following their slots. It writes no undo step of its own: undo brings back the slots, and the
+// colors follow them again.
+appStore.subscribe((s, prev) => {
+  if (s.plate === prev.plate && s.plates === prev.plates && s.slotSetup === prev.slotSetup && s.printerSlots === prev.printerSlots && s.slotMatch === prev.slotMatch && s.fileSlotColors === prev.fileSlotColors && s.activePlate === prev.activePlate && s.layerMarks === prev.layerMarks) return
+  let next: ReturnType<typeof followedDesignColors> = null
+  try {
+    next = followedDesignColors(s)
+  } catch (e) {
+    // a state this cannot read (an object still loading, half written) leaves the colors as they are until the next change
+    console.warn('Design colors did not follow the filaments:', e)
+  }
+  if (next) quietly(() => set(next))
+})

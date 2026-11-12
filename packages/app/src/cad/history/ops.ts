@@ -10,7 +10,7 @@ import { evaluateDimensions, type Dimension, type FaceFrame, type MovedFace } fr
 import { geom, usesWorker } from '../../geom/client'
 import { quietly, type UndoStep } from '../../plate/history'
 import { fullPlate, get, markStale, set, type AppState, type CadTool, type PlateEntry } from '../../state/store'
-import { colorsFor, commitMade } from '../commit'
+import { commitMade, partColors } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
@@ -126,7 +126,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     // the paint the history's paint steps leave; paint brushed on outside the history goes, as with any step
     const paint = paintOf(r.parts)
     const { instanceOf: _was, paint: _paint, ...rest } = current
-    const entry: PlateEntry = { ...rest, handle, parts, colors: colorsFor(parts.length, current.colors, brandAccent()), history }
+    const entry: PlateEntry = { ...rest, handle, parts, colors: partColors(current, parts, history, brandAccent()), history }
     const dimensions = (await followDimensions(entry, pushMoves(current.history, history, r.moved, current.transform))).dimensions ?? entry.dimensions
     if (ac.signal.aborted) throw abortError()
     // A step open for editing closes: the rollback goes away outside undo, the result is the edit.
@@ -147,7 +147,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
       // the landing moves are the object's as it is now (a landing elsewhere may have moved it while this ran), plus
       // this commit's own
       const placed = moved ? moved.placed : latest.history?.placed
-      return { handle, parts, history: withPlaced(history, placed), colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(paint ? { paint } : {}), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
+      return { handle, parts, history: withPlaced(history, placed), colors: partColors(latest, parts, history, brandAccent()), ...(paint ? { paint } : {}), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
     }, { exactReplay: next.exact === true })
     if (!(step ? step.write(write) : write())) throw abortError()
     committed?.()
