@@ -3,7 +3,7 @@
 // Mesh edits the app does itself: split into connected pieces, merge objects into one, and the
 // basic primitives. Pure, on the contracts' MeshPart buffers (mm, Z up). Booleans (negative
 // volumes) need sx-geom and are not here.
-import type { MeshPart, PrimitiveSpec } from '@slicerx/contracts'
+import { packNormal, unpackNormal, type MeshPart, type PrimitiveSpec } from '@slicerx/contracts'
 import { apply, identity, multiply, type Mat4, type Vec3 } from './transform'
 
 /** Groups triangles that share a vertex position (welded to 1 um) into connected pieces. */
@@ -51,11 +51,15 @@ export function components(part: MeshPart): MeshPart[] {
   if (groups.size <= 1) return [part]
   const out: MeshPart[] = []
   let n = 0
+  // a piece keeps its triangles' exact normals, six numbers per triangle in the same order
+  const normals = part.normals?.length === idx.length * 2 ? part.normals : undefined
   for (const tris of groups.values()) {
     const remap = new Map<number, number>()
     const p: number[] = []
     const ix: number[] = []
-    for (const t of tris) {
+    const nm = normals ? new Int16Array(tris.length * 6) : undefined
+    for (const [j, t] of tris.entries()) {
+      nm?.set(normals!.subarray(2 * t, 2 * t + 6), 6 * j)
       for (let k = 0; k < 3; k++) {
         const v = idx[t + k]!
         let nv = remap.get(v)
@@ -67,7 +71,7 @@ export function components(part: MeshPart): MeshPart[] {
         ix.push(nv)
       }
     }
-    out.push({ name: `${part.name} ${++n}`, slot: part.slot, positions: new Float32Array(p), indices: new Uint32Array(ix) })
+    out.push({ name: `${part.name} ${++n}`, slot: part.slot, positions: new Float32Array(p), indices: new Uint32Array(ix), ...(nm ? { normals: nm } : {}) })
   }
   // Biggest piece first, so the main body keeps the first name.
   return out.sort((a, b) => b.indices.length - a.indices.length)
@@ -152,7 +156,38 @@ export function invert(m: Mat4): Mat4 {
   return out
 }
 
-/** Bakes a transform into a part's positions. */
+/**
+ * A part's exact corner normals under the transform `m`: the same buffer for a plain move, turned for a rigid one
+ * (rotation, mirror; a mirror also swaps the second and third corner, as bake swaps them), and none for anything
+ * that stretches. Never stale.
+ */
+export function movedNormals(normals: Int16Array, m: Mat4): Int16Array | undefined {
+  const r = [m[0] ?? 0, m[1] ?? 0, m[2] ?? 0, m[4] ?? 0, m[5] ?? 0, m[6] ?? 0, m[8] ?? 0, m[9] ?? 0, m[10] ?? 0]
+  const id = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+  if (r.every((v, i) => v === id[i])) return normals
+  const col = (c: number): Vec3 => [r[3 * c]!, r[3 * c + 1]!, r[3 * c + 2]!]
+  const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+  const tol = 1e-6
+  for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) if (Math.abs(dot(col(a), col(b)) - (a === b ? 1 : 0)) > tol) return undefined
+  const det = r[0]! * (r[4]! * r[8]! - r[7]! * r[5]!) - r[3]! * (r[1]! * r[8]! - r[7]! * r[2]!) + r[6]! * (r[1]! * r[5]! - r[4]! * r[2]!)
+  const out = new Int16Array(normals.length)
+  const n = [0, 0, 0]
+  for (let t = 0; t + 5 < normals.length; t += 6) {
+    for (let k = 0; k < 3; k++) {
+      // a mirrored triangle's corners 1 and 2 trade places, as its indices do
+      const to = t + 2 * (det < 0 && k > 0 ? 3 - k : k)
+      if (!unpackNormal(normals, t + 2 * k, n, 0)) {
+        out[to] = normals[t + 2 * k]!
+        out[to + 1] = normals[t + 2 * k + 1]!
+        continue
+      }
+      packNormal(r[0]! * n[0]! + r[3]! * n[1]! + r[6]! * n[2]!, r[1]! * n[0]! + r[4]! * n[1]! + r[7]! * n[2]!, r[2]! * n[0]! + r[5]! * n[1]! + r[8]! * n[2]!, out, to)
+    }
+  }
+  return out
+}
+
+/** Bakes a transform into a part's positions; exact corner normals turn with a rigid transform and are dropped otherwise. */
 export function bake(part: MeshPart, m: Mat4): MeshPart {
   const p = new Float32Array(part.positions.length)
   for (let i = 0; i + 2 < p.length; i += 3) {
@@ -168,9 +203,10 @@ export function bake(part: MeshPart, m: Mat4): MeshPart {
     indices = new Uint32Array(part.indices)
     for (let t = 0; t + 2 < indices.length; t += 3) [indices[t + 1], indices[t + 2]] = [indices[t + 2]!, indices[t + 1]!]
   }
-  const { primitive: spec, ...rest } = part
+  const { primitive: spec, normals: given, ...rest } = part
   const moved = spec ? movedPrimitive(spec, m) : null
-  return { ...rest, positions: p, indices, ...(moved ? { primitive: moved } : {}) }
+  const normals = given && given.length === part.indices.length * 2 ? movedNormals(given, m) : undefined
+  return { ...rest, positions: p, indices, ...(moved ? { primitive: moved } : {}), ...(normals ? { normals } : {}) }
 }
 
 /** Merge: the parts of every object in the first object's frame, so the first keeps its transform. */

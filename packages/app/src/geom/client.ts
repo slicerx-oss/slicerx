@@ -509,11 +509,14 @@ export interface GeomMesh {
   indices: number[]
   /** `keys` name the faces for history steps (docs/cad-history.md, "Face keys"). */
   faces?: { ids: number[]; table: FaceSurface[]; keys?: number[] }
+  /** Packed exact corner normals, six per triangle (MeshPart.normals). */
+  normals?: number[]
 }
 
-export function toGeom(part: Pick<MeshPart, 'positions' | 'indices' | 'faces'>): GeomMesh {
+export function toGeom(part: Pick<MeshPart, 'positions' | 'indices' | 'faces' | 'normals'>): GeomMesh {
   const mesh: GeomMesh = { positions: Array.from(part.positions), indices: Array.from(part.indices) }
   if (part.faces) mesh.faces = { ids: Array.from(part.faces.ids), table: part.faces.table, ...(part.faces.keys?.length ? { keys: part.faces.keys } : {}) }
+  if (part.normals && part.normals.length === part.indices.length * 2) mesh.normals = Array.from(part.normals)
   return mesh
 }
 
@@ -522,6 +525,7 @@ export interface TypedGeomMesh {
   positions: Float32Array
   indices: Uint32Array
   faces?: GeomMesh['faces']
+  normals?: Int16Array | number[]
 }
 
 export function fromGeom(mesh: GeomMesh | TypedGeomMesh, name: string, slot: number): MeshPart {
@@ -533,6 +537,8 @@ export function fromGeom(mesh: GeomMesh | TypedGeomMesh, name: string, slot: num
     indices: mesh.indices instanceof Uint32Array ? mesh.indices : new Uint32Array(mesh.indices),
   }
   if (mesh.faces) part.faces = { ids: new Uint32Array(mesh.faces.ids), table: mesh.faces.table, ...(mesh.faces.keys?.length ? { keys: mesh.faces.keys } : {}) }
+  // six per triangle, or they belong to other triangles and are left out
+  if (mesh.normals && mesh.normals.length === part.indices.length * 2) part.normals = mesh.normals instanceof Int16Array ? mesh.normals : Int16Array.from(mesh.normals)
   return part
 }
 
