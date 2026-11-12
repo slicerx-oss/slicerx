@@ -191,7 +191,7 @@ function box(x: number, y: number, z: number) {
 
 /**
  * A closed prism along x, `length` long, of the convex section `yz` (y, z points in order), each side facing out.
- * A model's hull cut flat at its waterline is such a section: wider at the cut than below it.
+ * A model's flared body cut flat at a band line is such a section: wider at the cut than below it.
  */
 function prism(yz: [number, number][], length: number) {
   const cy = yz.reduce((s, p) => s + p[0], 0) / yz.length
@@ -225,8 +225,8 @@ function flaredSection(): [number, number][] {
 }
 
 describe('the thinnest wall at a sharp edge or point', () => {
-  it('a hull cut flat at its waterline, flaring out to the cut, reads its body, and its knife rim only as a tip', () => {
-    // the top's rays near each rim meet the flared side a hair under it, as in a ship split at its waterline that read
+  it('a body cut flat at a band line, flaring out to the cut, reads its body, and its knife rim only as a tip', () => {
+    // the top's rays near each rim meet the flared side a hair under it, as in a lofted body split at a band line that read
     // 0.04 mm: thin only at the rim, where the side and the cut meet at 45 degrees
     const r = minWall([prism(flaredSection(), 40)])
     expect(r.mm!).toBeGreaterThanOrEqual(0.8)
@@ -258,7 +258,7 @@ describe('the thinnest wall at a sharp edge or point', () => {
     expect(w.tip!.at[2]).toBeGreaterThan(H - 0.8)
   })
 
-  it('a real thin wall away from any sharp edge still reads thin: a plate, a strip, and a 0.4 mm skin on a flared hull', () => {
+  it('a real thin wall away from any sharp edge still reads thin: a plate, a strip, and a 0.4 mm skin on a flared body', () => {
     expect(minWall([box(20, 20, 0.4)]).mm).toBeCloseTo(0.4, 3)
     expect(minWall([box(20, 2, 0.4)]).mm).toBeCloseTo(0.4, 3)
     // the flared section, 0.4 mm tall: thin everywhere, not only at its rim
