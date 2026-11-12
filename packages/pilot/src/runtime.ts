@@ -59,6 +59,7 @@ import { planToDiff } from './tools/settings'
 // the opening turn of a plan the open project holds (planSeed), which is no message of the person's
 import { PLAN_SEED_NOTE } from './plan-left'
 import { chatRoute, HUGINN, INPUT_REFUSAL_FAILS, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Route, type Tier } from './models'
+import { bindingKey, unbindOldReasoning } from './reasoning-binding'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
 import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
 
@@ -1665,6 +1666,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         if (model !== shown) switched(model)
         shown = model
       }
+      // reasoning an earlier run signed against another system prompt, tool set or model leaves before this request;
+      // a local model's request is not touched (sent is a copy cut to fit, and local models sign nothing)
+      const bound = local ? undefined : bindingKey(model, tier, messages, toolDefs)
+      if (bound) unbindOldReasoning(messages, runStart, bound)
       const req = {
         model,
         messages: [...sent],
@@ -1797,7 +1802,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const clipped = cut && toolCalls.length > 0 ? toolCalls[toolCalls.length - 1] : undefined
       const assistant: LlmMessage = { role: 'assistant', content: text }
       if (toolCalls.length && !wrap) assistant.toolCalls = toolCalls
-      if (raw?.length && !wrap) assistant.raw = raw
+      if (raw?.length && !wrap) {
+        assistant.raw = raw
+        if (bound) assistant.bound = bound
+      }
       messages.push(assistant)
       if (toolCalls.length === 0 || stopped || wrap) {
         if (!spoke && !wrap && !stopped) {
