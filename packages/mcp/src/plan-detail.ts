@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // How much detail a plan carries: basic, display or fine. A model of a real thing named with no sizes ("design me a
-// sailboat") is planned at display by default, and the person's words pick basic ("simple", "nothing fancy") or fine
+// lighthouse") is planned at display by default, and the person's words pick basic ("simple", "nothing fancy") or fine
 // ("detailed", "accurate"). The rules hold to the object, never to one kind of thing: each main body says whether the
 // real thing is curved or flat-sided, a curved body is built through smooth sections (a loft, a revolve or a sweep),
 // the proportions come from a lookup or a stated source, and a real object's repeated detail (windows,
