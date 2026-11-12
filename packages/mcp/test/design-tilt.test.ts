@@ -175,6 +175,32 @@ describe('design.edit_step tilt', () => {
     expect(r1(out.output.minMm[0] + out.output.sizeMm[0])).toBeCloseTo(r1(reach), 0)
   })
 
+  it('leans each upright of one added part about its own foot, past a lower block beside their base', async () => {
+    const t = await start()
+    // a wide lower block, a narrower base raised 3 mm on it, and four uprights 20 mm apart built as one part on the base
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...block(90, 16, 4, 45, 0, 0, 'new') })
+    await t.ok('slicerx_geom_extrude', { design: t.design, part: 0, ...block(70, 10, 3, 45, 0, 4) })
+    const at = [15, 35, 55, 75]
+    await t.ok('slicerx_geom_build', { design: t.design, name: 'Uprights', solids: at.map((x) => ({ type: 'cylinder', origin: [x, 0, 7], axis: [0, 0, 1], diameterMm: 5, heightMm: 12 })) })
+    await t.ok('slicerx_geom_build', { design: t.design, name: 'Tops', solids: at.map((x) => ({ type: 'cylinder', origin: [x, 0, 19], axis: [0, 0, 1], diameterMm: 7, heightMm: 2 })) })
+    const out = await t.ok('slicerx_design_edit_step', { design: t.design, step: 3, tilt: { toward: '-x', degrees: 8 } })
+    expect(out.summary).toContain('step 4 built on it leans with it')
+    expect(out.output.steps[2]).toMatchObject({ state: 'done', leans: { degrees: 8, toward: '-x' } })
+    expect(out.output.steps[3]).toMatchObject({ state: 'done', leans: { degrees: 8, toward: '-x' } })
+    // each upright turned about its own foot: its foot edge dips 2.5 sin 8 below the base's top, not into the block
+    expect(out.output.minMm[2]).toBeCloseTo(0, 1)
+    const middles = async (part: number, z: number) => {
+      const cut = await t.h.call('slicerx_geom_measure', { design: t.design, section: { part, plane: { origin: [45, 0, z], normal: [0, 0, 1] } } })
+      const loops = data<{ output: { section: { loops: { outer: number[][] }[] } } }>(cut).output.section.loops
+      return loops.map((l) => (Math.min(...l.outer.map((p) => p[0]!)) + Math.max(...l.outer.map((p) => p[0]!))) / 2).sort((a, b) => a - b)
+    }
+    // 6 mm up each upright, and 13 mm up through each top, every one sits the same way off its own foot
+    const sin8 = Math.sin(8 * DEG)
+    const cos8 = Math.cos(8 * DEG)
+    expect((await middles(1, 7 + 6 * cos8)).map(r1)).toEqual(at.map((x) => r1(x - 6 * sin8)))
+    expect((await middles(2, 7 + 13 * cos8)).map(r1)).toEqual(at.map((x) => r1(x - 13 * sin8)))
+  })
+
   it('leans a cap built on a post with the post, and stands both up again', async () => {
     const t = await start()
     await t.ok('slicerx_geom_extrude', { design: t.design, ...block(40, 40, 5, 20, 20, 0, 'new') })
@@ -240,5 +266,29 @@ describe('a saved lean', () => {
     expect(back?.steps[1]?.tilt).toBeUndefined()
     // a lean another step's carried, with the point it turns about
     expect(back?.steps[2]?.tilt).toEqual(carried)
+  })
+
+  it('reads back the feet a carried added part turns about, and a lean saved without them reads as before', () => {
+    const tilt = { degrees: 8, up: [0, 0, 1], toward: [-1, 0, 0] }
+    const carried = { ...tilt, about: [35, 0, 7] }
+    const withFeet = { ...carried, feet: [[15, 0, 7], [35, 0, 7], [55, 0, 7]] }
+    const step = { id: 's1', part: -1, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'shape.extrude', shape: { type: 'circle', diameterMm: 4 }, spec: { distanceMm: 2, operation: 'new' } } }
+    const steps = [
+      { ...step, tilt: withFeet },
+      // a project saved before feet were kept
+      { ...step, id: 's2', tilt: carried },
+      // damaged feet are left out, and the point it turns about stays
+      { ...step, id: 's3', tilt: { ...carried, feet: [[15, 0, 7], [35, 'x', 7]] } },
+      // feet without a point it turns about are not a carried lean
+      { ...step, id: 's4', tilt: { ...tilt, feet: [[15, 0, 7]] } },
+    ]
+    const files = historyFiles([{ id: 'a', history: { version: 1, base: [], steps } as unknown as History }], new Map([['a', 3]]))
+    const map = new Map(files.map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
+    const back = parseHistories(map, new Set(['3'])).get('3')
+    expect(back?.steps[0]?.tilt).toEqual(withFeet)
+    expect(back?.steps[1]?.tilt).toEqual(carried)
+    expect(back?.steps[1]?.tilt).not.toHaveProperty('feet')
+    expect(back?.steps[2]?.tilt).toEqual(carried)
+    expect(back?.steps[3]?.tilt).toEqual(tilt)
   })
 })
