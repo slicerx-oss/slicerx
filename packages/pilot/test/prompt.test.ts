@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { ASSEMBLED_LINE, assembledLine, DISMISSED_LINE, FAMILY_LINE, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { ASSEMBLED_LINE, assembledLine, DISMISSED_LINE, FAMILY_LINE, local, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 import { turnSet, turnSetTools } from '../src/turnsets'
@@ -371,5 +371,24 @@ describe('a thing made of colored parts', () => {
     expect(systemPrompt('full')).not.toContain('parts in different colors')
     expect(cloud((n) => n !== 'design.plan')).not.toContain('parts in different colors')
     expect(systemPrompt('cad', undefined, '', { cloud: true })).toContain('parts in different colors')
+  })
+})
+
+describe('the lines a local model gets', () => {
+  it('are only the lines marked local: the cloud prompt less its cloud-only lines and the plan line pointer', () => {
+    for (const scope of ['full', 'cad'] as const) {
+      const cloud = systemPrompt(scope, () => true, '', { cloud: true }).split('\n')
+      const local = systemPrompt(scope, () => true).split('\n')
+      const cloudOnly = new Set([FAMILY_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, assembledLine(() => true)])
+      // every local line is a cloud line, in the same order, the plan line less its pointer to the moving parts line
+      expect(cloud.filter((l) => !cloudOnly.has(l)).map((l) => l.replace(MOVING_PARTS_ORDER, ''))).toEqual(local)
+      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength(4)
+    }
+  })
+
+  it('leaves a line out of the local prompt unless it is marked local, and the marked text is sent as it is', () => {
+    expect(local('- A line.')).toEqual({ local: '- A line.' })
+    // nothing unmarked: the cloud-only lines are plain strings in prompt.ts, and none of them reaches a local turn
+    for (const line of [FAMILY_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, MOVING_PARTS_ORDER.trim()]) expect(systemPrompt('full', () => true), line.slice(0, 40)).not.toContain(line)
   })
 })
