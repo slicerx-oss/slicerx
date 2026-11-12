@@ -9,7 +9,7 @@ import { createWebHost } from '@slicerx/web/host'
 import { createTauriFiles } from './files'
 import { createTauriLlm } from './llm'
 import { createTauriSlicer, startSlicerPage } from './slicer'
-import { createTauriThemes } from './themes'
+import { createTauriLicenses, createTauriThemes } from './themes'
 
 /** `startEngine`: see createTauriFiles. */
 export async function createDesktopHost(startEngine?: (fileName: string) => void): Promise<Host> {
@@ -27,5 +27,6 @@ export async function createDesktopHost(startEngine?: (fileName: string) => void
   // Keys and the ChatGPT connection live in the system keychain behind Rust, so the app uses
   // this host's transport instead of the browser key store.
   host.capabilities.secureStorage = true
+  host.licenses = createTauriLicenses()
   return host
 }

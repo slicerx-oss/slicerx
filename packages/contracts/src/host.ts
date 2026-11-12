@@ -127,6 +127,11 @@ export interface Host {
   secrets: SecretsHost
   /** Desktop only: the themes folder. The browser keeps imported themes in local storage. */
   themes?: ThemesHost
+  /**
+   * Desktop only: shows the license files the installed app carries (its `licenses` resource folder) in the system file
+   * manager. The browser build has none; its About links to the source, which holds them.
+   */
+  licenses?: { openFolder(): Promise<void> }
   /** Feature `connect`. */
   printers?: PrinterHost
   /** Feature `pilot`. */
