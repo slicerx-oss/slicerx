@@ -71,6 +71,8 @@ pub mod remesh;
 pub mod render;
 pub mod repair;
 pub mod resume;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod serve;
 #[cfg(feature = "shell")]
 pub mod shell;
 pub mod simplify;
