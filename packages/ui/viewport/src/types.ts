@@ -130,7 +130,8 @@ export interface ViewportOptions {
   /**
    * Makes a worker for building big models (a part of 20,000 triangles or more) off the page's main thread: such a
    * part shows at once with smooth normals and no edges, and gets its creased normals and feature edges when the worker
-   * has them (platerefined). The worker module is two lines (see mesh-worker.ts):
+   * has them (platerefined). A part with exact normals on every triangle (`ViewportPart.normals`) shows its final
+   * shading at once and waits only for its edges. The worker module is two lines (see mesh-worker.ts):
    * `import { serveMeshBuilds } from '@slicerx/viewport/mesh-worker'; serveMeshBuilds(self)`. Without it every part is
    * built on the main thread, as before.
    */
@@ -147,6 +148,11 @@ export interface ViewportPart {
   finish?: FilamentFinish
   /** The filament slot it prints with, 1-based; `setHighlightSlot` dims the parts on other slots. */
   slot?: number
+  /**
+   * Exact corner normals from the geometry engine, packed as in @slicerx/contracts (MeshPart.normals): six numbers per
+   * triangle. Triangles with all three corners set shade with them; the rest crease as usual.
+   */
+  normals?: Int16Array
 }
 
 export interface ViewportObject {
