@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The typed tessellation of the four primitives: closed on the kernel's own shared vertices, each triangle on its
-// face, corner normals that match the exact surface, an edge table, and controls that each change the result.
-#![cfg(sx_brep_kernel)]
+// face, corner normals that match the exact surface, an edge table, and controls that each change the result. Empty
+// without the typed feature or without the kernel.
+#![cfg(all(feature = "typed", sx_brep_kernel))]
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use sx_brep::{Body, Curve, Mesh, Surface, Tessellation};

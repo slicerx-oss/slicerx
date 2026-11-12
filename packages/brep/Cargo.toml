@@ -37,12 +37,3 @@ serde_json = "=1.0.151"
 [build-dependencies]
 cc = { version = "=1.5.1", features = ["parallel"] }
 cxx-build = { version = "=1.0.205", optional = true }
-
-# the tests of the typed API
-[[test]]
-name = "typed_bodies"
-required-features = ["typed"]
-
-[[test]]
-name = "typed_mesh"
-required-features = ["typed"]
