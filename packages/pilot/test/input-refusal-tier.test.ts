@@ -49,9 +49,10 @@ const GOOD = { name: 'pilot.sheet', args: { title: 'Toy boat', dims: DIMS, part:
 
 async function run(steps: ScriptStep[], tools: PilotTool<never>[] = []): Promise<{ models: string[]; switches: string[]; events: PilotEvent[] }> {
   const client = createScriptedClient(steps, { chunk: false })
-  const pilot = createPilot({ host, config: AUTO, policy: DEFAULT_POLICY, client, builtins: false, tools: [DESIGN_NEW, sheetTool(), ...tools] })
+  // a change to the chat's design, which starts on huginn (a new part starts on muninn)
+  const pilot = createPilot({ host, config: AUTO, policy: DEFAULT_POLICY, client, builtins: false, tools: [DESIGN_NEW, sheetTool(), ...tools], hasDesign: () => true })
   const events: PilotEvent[] = []
-  for await (const e of pilot.run('s', 'design a small toy boat and paint it')) {
+  for await (const e of pilot.run('s', 'make the toy boat wider and paint it')) {
     events.push(e)
     if (e.type === 'sheet') void pilot.answerSheet!((e as { sheet: PilotSheet }).sheet.id, {})
   }

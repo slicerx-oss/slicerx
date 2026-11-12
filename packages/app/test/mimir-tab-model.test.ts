@@ -94,7 +94,7 @@ describe('the mimir tab on a model', () => {
     expect(mimirLink.getState().link).toBe('scripted')
   })
 
-  it('runs a key on Auto: Haiku for a short request or a picture, Sonnet for a many-step part, over the design tools and prompt', async () => {
+  it('runs a key on Auto: Sonnet for a new part from words or a picture and for a many-step part, Haiku for a settings change, over the design tools and prompt', async () => {
     const llm = transport(['anthropic'])
     set({ pilot: { mode: 'on', provider: 'anthropic' } })
     const host = hostWith(llm)
@@ -113,7 +113,7 @@ describe('the mimir tab on a model', () => {
     const ev = await ask(host, 'A 30 mm cube with a fillet')
     expect(ev.at(-1)).toMatchObject({ type: 'done', stopReason: 'end' })
     const first = body(llm.sent[0]!)
-    expect(first.model).toBe('claude-haiku-5-5')
+    expect(first.model).toBe('claude-sonnet-5-5')
     expect(JSON.stringify(first.system)).toContain('one feature at a time')
     const sentTools = (first.tools ?? []).map((t) => t.name)
     expect(sentTools.some((n) => n.startsWith('geom'))).toBe(true)
@@ -121,8 +121,13 @@ describe('the mimir tab on a model', () => {
 
     llm.sent.length = 0
     const pic = await ask(host, 'Build this', [{ name: 'sketch.png', type: 'image/png' }])
+    expect(body(llm.sent[0]!).model).toBe('claude-sonnet-5-5')
+    expect(pic.filter((e) => e.type === 'model_switch').map((e) => (e as { reason: string }).reason)).toEqual(['request'])
+
+    llm.sent.length = 0
+    const settings = await ask(host, 'Set infill to 20%')
     expect(body(llm.sent[0]!).model).toBe('claude-haiku-5-5')
-    expect(pic.filter((e) => e.type === 'model_switch')).toEqual([])
+    expect(settings.filter((e) => e.type === 'model_switch')).toEqual([])
 
     llm.sent.length = 0
     await ask(host, 'A spur gear, 20 teeth, module 1')
