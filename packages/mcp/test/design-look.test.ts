@@ -13,14 +13,14 @@ import { useGeomEngine } from './geom-engine'
 const g = useGeomEngine('design-look')
 
 describe('design.look', () => {
-  it('draws a toy boat with its edges, from above and from the side, and names nothing changed', async () => {
+  it('draws a pod with its edges, from above and from the side, and names nothing changed', async () => {
     const host = headlessDesignHost((op, request) => g.engine(op, request))
     const tools = tabToolset(host, createCardPlans(createPlanRegistry()), { filaments: { list: () => [{ slot: 1, type: 'PLA', color: '#f2f2f2' }, { slot: 2, type: 'PLA', color: '#b22222' }], add: () => {}, set: () => {} } })
     const tool = (n: string) => tools.find((t) => t.name === n)!
     const run = (n: string, a: unknown) => tool(n).run(tool(n).input.parse(a) as never, {} as never)
-    const d = ((await run('design.new', { name: 'Toy boat' })).output as { design: string }).design
+    const d = ((await run('design.new', { name: 'Pod' })).output as { design: string }).design
     const section = (x: number, half: number) => ({ frame: { origin: [x, 0, 0], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] }, loops: [{ points: [[-half, 0], [half, 0], [half, 12], [-half, 12]] }] })
-    await run('geom.loft', { design: d, profiles: [section(0, 4), section(40, 12), section(80, 6)], name: 'Hull', slot: 2 })
+    await run('geom.loft', { design: d, profiles: [section(0, 4), section(40, 12), section(80, 6)], name: 'Body', slot: 2 })
     const one = await run('design.look', { design: d })
     expect(one.summary).toBe('Looked at the model')
     expect(one.images).toHaveLength(1)

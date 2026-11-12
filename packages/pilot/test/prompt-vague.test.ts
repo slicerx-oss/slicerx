@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A vague follow-up is read against the model the person is looking at: "add bevels" on a toy boat goes to its plain
-// box deck houses, not its lofted hull; "make it nicer" on a house finishes its box walls and roof edges; "smooth it" on
+// A vague follow-up is read against the model the person is looking at: "add bevels" on a toy car goes to its plain
+// box seats, not its lofted body; "make it nicer" on a house finishes its box walls and roof edges; "smooth it" on
 // a toy car rounds its blocks. A loose part word is resolved and named, the nearest readable change is made instead of
 // a refusal, a question comes only for two far-apart readings, and a follow-up aims at what a person expects to see.
 import { describe, expect, it } from 'vitest'

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The design read-back says how each part was made and how it looks: a toy boat's box deck houses read as plain blocks
-// on the hull, its lofted hull does not, a house roof whose edges were rounded is no longer a plain block, and a
+// The design read-back says how each part was made and how it looks: a pod's box blocks read as plain blocks
+// on its body, its lofted body does not, a house roof whose edges were rounded is no longer a plain block, and a
 // design of many parts lists the first FORMS_MAX and counts the rest, so a local model's turn keeps its room.
 import { describe, expect, it } from 'vitest'
 import { connect, data, text } from './helpers'
@@ -21,17 +21,17 @@ async function start() {
 }
 
 describe('the form line of each part', () => {
-  it('reads a toy boat: the lofted hull is shaped, the box deck houses are plain blocks on it', async () => {
+  it('reads a pod: the lofted body is shaped, the box blocks on it are plain blocks', async () => {
     const { ok } = await start()
-    const d = (await ok('slicerx_design_new', { name: 'Toy boat' })).output.design
+    const d = (await ok('slicerx_design_new', { name: 'Pod' })).output.design
     const section = (x: number, half: number) => ({ frame: { origin: [x, 0, 0], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] }, loops: [{ points: [[-half, 0], [half, 0], [half, 12], [-half, 12]] }] })
-    await ok('slicerx_geom_loft', { design: d, profiles: [section(0, 4), section(40, 12), section(80, 6)], name: 'Hull' })
-    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 20, heightMm: 12 }, frame: { origin: [0, 0, 12], normal: [0, 0, 1] }, placement: { center: [40, 0] }, distance_mm: 6, operation: 'new', name: 'Deck house' })
-    const out = await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 8, heightMm: 6 }, frame: { origin: [0, 0, 12], normal: [0, 0, 1] }, placement: { center: [12, 0] }, distance_mm: 4, operation: 'new', name: 'Wheelhouse' })
+    await ok('slicerx_geom_loft', { design: d, profiles: [section(0, 4), section(40, 12), section(80, 6)], name: 'Body' })
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 20, heightMm: 12 }, frame: { origin: [0, 0, 12], normal: [0, 0, 1] }, placement: { center: [40, 0] }, distance_mm: 6, operation: 'new', name: 'Top box' })
+    const out = await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 8, heightMm: 6 }, frame: { origin: [0, 0, 12], normal: [0, 0, 1] }, placement: { center: [12, 0] }, distance_mm: 4, operation: 'new', name: 'Small box' })
     expect(out.output.forms).toEqual([
-      'Hull: loft of 3 sections, sharp edges; middle',
-      'Deck house: box, plain block; on Hull, middle',
-      'Wheelhouse: box, plain block; on Hull, low x end',
+      'Body: loft of 3 sections, sharp edges; middle',
+      'Top box: box, plain block; on Body, middle',
+      'Small box: box, plain block; on Body, low x end',
     ])
   })
 
