@@ -4,7 +4,8 @@
 // nicer", a part word that names nothing in the plan). It draws the design at 512 px with its crease and open edges as
 // dark lines, from above at an angle and, when asked, from the side along its long side, in the project's filament
 // colors and its paint. The picture goes back to the model of the turn only; the tab shows the call as one plain line.
-import { bakeMesh, type DesignHost } from '@slicerx/cad-history'
+import { inflateSync } from 'node:zlib'
+import { bakeMesh, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { designArg } from './design-tools'
@@ -12,6 +13,93 @@ import type { FilamentList } from './tab-filaments'
 
 /** The picture's long side, px. */
 export const LOOK_PX = 512
+/**
+ * The least share of the whole-model view, in percent of the pixels the model covers before or after, that a follow-up
+ * change has to move for a person to see it at that view. Below it, the change is strengthened once before the reply.
+ */
+export const VISIBLE_FLOOR_PCT = 2
+/** How far two pixels' colors may differ (summed over red, green and blue) and still read as the same. */
+const SAME_COLOR = 60
+
+/** An RGB(A) 8-bit PNG decoded to its pixels, as the engine's render writes it; null for any other kind. */
+export function decodePng(b64: string): { w: number; h: number; px: Uint8Array; ch: number } | null {
+  const buf = Buffer.from(b64, 'base64')
+  if (buf.readUInt32BE(0) !== 0x89504e47) return null
+  let at = 8
+  let w = 0
+  let h = 0
+  let ch = 0
+  const idat: Buffer[] = []
+  while (at < buf.length) {
+    const len = buf.readUInt32BE(at)
+    const type = buf.toString('latin1', at + 4, at + 8)
+    const data = buf.subarray(at + 8, at + 8 + len)
+    if (type === 'IHDR') {
+      w = data.readUInt32BE(0)
+      h = data.readUInt32BE(4)
+      if (data[8] !== 8 || data[12] !== 0) return null
+      ch = data[9] === 6 ? 4 : data[9] === 2 ? 3 : 0
+      if (!ch) return null
+    } else if (type === 'IDAT') idat.push(data)
+    else if (type === 'IEND') break
+    at += 12 + len
+  }
+  const raw = inflateSync(Buffer.concat(idat))
+  const stride = w * ch
+  const px = new Uint8Array(h * stride)
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)]!
+    const row = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1))
+    for (let x = 0; x < stride; x++) {
+      const a = x >= ch ? px[y * stride + x - ch]! : 0
+      const b = y > 0 ? px[(y - 1) * stride + x]! : 0
+      const c = x >= ch && y > 0 ? px[(y - 1) * stride + x - ch]! : 0
+      const r = row[x]!
+      let v: number
+      if (f === 0) v = r
+      else if (f === 1) v = r + a
+      else if (f === 2) v = r + b
+      else if (f === 3) v = r + ((a + b) >> 1)
+      else {
+        const p0 = a + b - c
+        const pa = Math.abs(p0 - a)
+        const pb = Math.abs(p0 - b)
+        const pc = Math.abs(p0 - c)
+        v = r + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)
+      }
+      px[y * stride + x] = v & 255
+    }
+  }
+  return { w, h, px, ch }
+}
+
+/**
+ * The share of the model's pixels (covered before or after, in percent) whose color changed between two pictures of
+ * one framing; the background is the top left pixel's color.
+ */
+export function changedShare(before: string, after: string): number | null {
+  const a = decodePng(before)
+  const b = decodePng(after)
+  if (!a || !b || a.w !== b.w || a.h !== b.h) return null
+  const bg = (img: typeof a, i: number) => Math.abs(img.px[i]! - img.px[0]!) + Math.abs(img.px[i + 1]! - img.px[1]!) + Math.abs(img.px[i + 2]! - img.px[2]!) > SAME_COLOR
+  let covered = 0
+  let changed = 0
+  for (let p = 0; p < a.w * a.h; p++) {
+    const i = p * a.ch
+    const j = p * b.ch
+    if (!bg(a, i) && !bg(b, j)) continue
+    covered++
+    if (Math.abs(a.px[i]! - b.px[j]!) + Math.abs(a.px[i + 1]! - b.px[j + 1]!) + Math.abs(a.px[i + 2]! - b.px[j + 2]!) > SAME_COLOR) changed++
+  }
+  return covered ? (changed / covered) * 100 : 0
+}
+
+/** A design's parts as drawn: baked meshes with their slots and paint. */
+interface Drawn {
+  meshes: HistoryMesh[]
+  slots: number[]
+  paints: (Record<string, unknown> | undefined)[]
+}
 const EDGE_DEG = 35
 
 /**
@@ -93,9 +181,11 @@ export function edgeLines(positions: ArrayLike<number>, indices: ArrayLike<numbe
 
 /** The tab's design.look, over its designs and, where the host has them, the project's filament colors. */
 export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<never> {
+  // the last look at each design, by conversation: what compare measures a change against
+  const looked = new Map<string, Drawn>()
   return defineTool({
     name: 'design.look',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     title: 'Look at the model',
@@ -104,37 +194,65 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
     input: z.object({
       design: designArg,
       side: z.boolean().default(false).describe('Also a picture from the long side, when the first does not tell a plain block from a shaped one'),
+      compare: z.boolean().optional().describe('After a change: how much of the whole-model view changed since the last look, measured, with the picture as it is now'),
     }),
-    async run(i) {
+    async run(i, ctx) {
       const d = host.get(i.design)
       if (!d.parts.length) return { ok: false, summary: `${d.name} has no parts to look at yet` }
       const colors = (filaments?.list() ?? []).map((f) => f.color).filter((c) => /^#[0-9a-fA-F]{6}$/.test(c))
-      const meshes = d.parts.map((p) => bakeMesh(p, d.transform))
-      let lo = [Infinity, Infinity, Infinity]
-      let hi = [-Infinity, -Infinity, -Infinity]
-      for (const m of meshes)
-        for (let n = 0; n + 2 < m.positions.length; n += 3) {
-          lo = lo.map((v, a) => Math.min(v, m.positions[n + a]!))
-          hi = hi.map((v, a) => Math.max(v, m.positions[n + a]!))
-        }
-      const width = Math.max(0.08, Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!) * 0.0025)
-      // the side picture looks along y; a design longer in y is turned a quarter first
-      const turn = hi[1]! - lo[1]! > hi[0]! - lo[0]!
-      const draw = async (view: 'iso' | 'front', turned: boolean) => {
+      const now: Drawn = { meshes: d.parts.map((p) => bakeMesh(p, d.transform)), slots: d.parts.map((p) => p.slot), paints: d.parts.map((p) => p.paint?.['color'] as Record<string, unknown> | undefined) }
+      const key = `${ctx?.sessionId ?? ''}\u0000${d.id}`
+      const bounds = (all: Drawn[]) => {
+        let lo = [Infinity, Infinity, Infinity]
+        let hi = [-Infinity, -Infinity, -Infinity]
+        for (const g of all)
+          for (const m of g.meshes)
+            for (let n = 0; n + 2 < m.positions.length; n += 3) {
+              lo = lo.map((v, a) => Math.min(v, m.positions[n + a]!))
+              hi = hi.map((v, a) => Math.max(v, m.positions[n + a]!))
+            }
+        return { lo, hi }
+      }
+      const draw = async (g: Drawn, view: 'iso' | 'front', turned: boolean, frame?: { lo: number[]; hi: number[] }) => {
+        const { lo, hi } = frame ?? bounds([g])
+        const width = Math.max(0.08, Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!) * 0.0025)
         const T = turned ? [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-        const objects: Record<string, unknown>[] = d.parts.map((p, k) => {
-          const paint = p.paint?.['color']
-          return { mesh: { positions: Array.from(meshes[k]!.positions), indices: Array.from(meshes[k]!.indices) }, transform: T, slot: p.slot, ...(paint && Object.keys(paint).length ? { paint } : {}) }
+        const objects: Record<string, unknown>[] = g.meshes.map((m, k) => {
+          const paint = g.paints[k]
+          return { mesh: { positions: Array.from(m.positions), indices: Array.from(m.indices) }, transform: T, slot: g.slots[k], ...(paint && Object.keys(paint).length ? { paint } : {}) }
         })
-        for (const m of meshes) {
+        for (const m of g.meshes) {
           const e = edgeLines(m.positions, m.indices, width)
           if (e) objects.push({ mesh: e, transform: T, slot: 1, color: '#1a1a1a' })
         }
+        // a shared frame: a speck at two far corners of both designs' box, so before and after are drawn alike
+        if (frame) for (const c of [lo, hi]) objects.push({ mesh: { positions: [c[0]!, c[1]!, c[2]!, c[0]! + 0.01, c[1]!, c[2]!, c[0]!, c[1]! + 0.01, c[2]!], indices: [0, 1, 2] }, transform: T, slot: 1 })
         const r = (await host.call('render', { objects, view, size: LOOK_PX, image: true, ...(colors.length ? { colors: colors.slice(0, 32) } : {}) })) as { pngBase64?: string }
         return r.pngBase64
       }
-      const shots = [await draw('iso', false), ...(i.side ? [await draw('front', turn)] : [])].filter((x): x is string => typeof x === 'string')
+      if (i.compare) {
+        const was = looked.get(key)
+        if (!was) return { ok: false, summary: `No earlier look at ${d.name} in this conversation to compare with; look at it first, before the change` }
+        const frame = bounds([was, now])
+        const [a, b] = [await draw(was, 'iso', false, frame), await draw(now, 'iso', false, frame)]
+        const share = a && b ? changedShare(a, b) : null
+        if (share === null || !b) return { ok: false, summary: 'The change could not be measured' }
+        const pct = Math.round(share * 10) / 10
+        const below = share < VISIBLE_FLOOR_PCT
+        return {
+          summary: `Looked at the model again: ${pct}% of the whole-model view changed since the look before the change${below ? `, under the ${VISIBLE_FLOOR_PCT}% a person sees at that view` : ''}`,
+          output: { design: d.id, visiblePct: pct, floorPct: VISIBLE_FLOOR_PCT, belowFloor: below, px: LOOK_PX },
+          images: [{ mime: 'image/png' as const, data: b }],
+        }
+      }
+      // the side picture looks along y; a design longer in y is turned a quarter first
+      const { lo, hi } = bounds([now])
+      const turn = hi[1]! - lo[1]! > hi[0]! - lo[0]!
+      const shots = [await draw(now, 'iso', false), ...(i.side ? [await draw(now, 'front', turn)] : [])].filter((x): x is string => typeof x === 'string')
       if (!shots.length) return { ok: false, summary: 'The picture could not be drawn' }
+      // this look is what a later compare measures a change against
+      looked.set(key, now)
+      if (looked.size > 50) looked.delete(looked.keys().next().value!)
       return { summary: 'Looked at the model', output: { design: d.id, views: i.side ? ['iso', 'side'] : ['iso'], px: LOOK_PX }, images: shots.map((data) => ({ mime: 'image/png' as const, data })) }
     },
   }) as PilotTool<never>

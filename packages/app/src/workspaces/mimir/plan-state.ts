@@ -170,6 +170,17 @@ export function standingPlan(): LlmMessage[] | undefined {
   return planSeed({ ...seed, design: { id: d.id, name: d.name, steps, parts: d.parts.map((p) => p.name) } })
 }
 
+/**
+ * The design of the plan approved last, when it is on the plate and its plan was checked after the build (passed, failed
+ * or closed): a turn on it is a follow-up, in any chat. Undefined otherwise.
+ */
+export function checkedDesign(): string | undefined {
+  if (!last) return undefined
+  const e = cardEntry(last)
+  if (!e?.design || !get().plate.some((p) => p.id === e.design && p.history)) return undefined
+  return e.closed || e.failedChecks || e.passed || e.passedOnce || runs.get(last)?.passed ? e.design : undefined
+}
+
 /** Forgets the plan state (tests, with the registry's clear). */
 export function forgetPlanState(): void {
   seen.clear()
