@@ -75,8 +75,8 @@ export type StepParams =
   | { op: 'parts.add'; parts: HistoryMesh[]; label: string; arrayOf?: string }
   /** The parts put in a new order, no geometry changed: part i after the step is part `order[i]` before it. */
   | { op: 'parts.order'; order: number[] }
-  | { op: 'edge.fillet'; edges: EdgeRef[]; radiusMm: number; toleranceMm?: number }
-  | { op: 'edge.chamfer'; edges: EdgeRef[]; distanceMm: number; distance2Mm?: number }
+  | { op: 'edge.fillet'; edges: EdgeRef[]; radiusMm: number; toleranceMm?: number; allOrNothing?: boolean; skipped?: number[] }
+  | { op: 'edge.chamfer'; edges: EdgeRef[]; distanceMm: number; distance2Mm?: number; allOrNothing?: boolean; skipped?: number[] }
   | { op: 'hole.apply'; hole: Hole; spec: HoleSpec; label: string }
   | { op: 'thread.apply'; thread: ThreadPlace; spec: ThreadSpec; label: string }
   | { op: 'shell'; open: OpenFace[]; wallMm: number }
@@ -211,6 +211,13 @@ export interface History {
 
 export type StepState = 'done' | 'broken' | 'skipped' | 'suppressed'
 
+/** An edge a fillet or chamfer step left as it was, by its place in the step's edges, and why. */
+export interface SkippedEdge {
+  index: number
+  code: string
+  message: string
+}
+
 export interface StepStatus {
   state: StepState
   message?: string
@@ -218,6 +225,8 @@ export interface StepStatus {
   note?: string
   /** A pattern that repeats steps: which of its copies landed (copiesLanded), as its note words them. */
   copies?: PatternCopies
+  /** The edges a step that may leave some out left as they were on this replay; empty when it did them all. */
+  skipped?: SkippedEdge[]
 }
 
 /**
@@ -238,7 +247,7 @@ export interface ReplayResult {
   moved: Record<string, MovedFace>
   /** The face keys steps found their faces by on this replay, by step id, for steps to keep (a step saved
    * without them, from a version 1 file, gets them this way). */
-  found?: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
+  found?: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[]; skipped?: SkippedEdge[] }>
   /** The step that made each face of the result, by face key (provenance.ts); base faces are left out. */
   madeBy?: Record<number, string>
   /** Steps the exact kernel failed on in this replay, which ran on the mesh instead (exact.ts). */

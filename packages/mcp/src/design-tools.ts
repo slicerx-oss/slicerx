@@ -318,6 +318,7 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
     ...(st?.note ? { note: st.note } : {}),
     ...loftStations(s),
     ...leanRow(s),
+    ...(st?.skipped?.length ? { skipped: st.skipped } : {}),
   }
 }
 

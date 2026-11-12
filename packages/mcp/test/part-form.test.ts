@@ -41,7 +41,7 @@ describe('the form line of each part', () => {
     await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 60, heightMm: 40 }, distance_mm: 30, name: 'Walls' })
     const plain = await ok('slicerx_design_steps', { design: d })
     expect(plain.output.forms).toEqual(['Walls: box, plain block'])
-    const pick = await ok('slicerx_geom_edge_pick', { design: d, face: { at: [0, -19.9, 30], normal: [0, 0, 1] } })
+    const pick = await ok('slicerx_geom_edge_pick', { design: d, face: { at: [0, -19.9, 30], normal: [0, 0, 1] }, list_edges: true })
     const loop = (pick.output as unknown as { loop: { edge: unknown }[] }).loop.map((l) => l.edge)
     const round = await ok('slicerx_geom_fillet', { design: d, edges: loop, radius_mm: 2 })
     expect(round.output.forms).toEqual(['Walls: box, rounded or beveled edges'])
