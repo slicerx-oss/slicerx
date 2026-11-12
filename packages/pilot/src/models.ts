@@ -5,7 +5,7 @@
 // model; muninn thinks deeply (diagnosis, tune-from-failure, planning) on the large one.
 import type { PilotConfig, PilotRoute } from '@slicerx/contracts'
 import { turnKind, turnNeeds } from './toolsets'
-import { turnSet } from './turnsets'
+import { asksAnotherPart, turnSet } from './turnsets'
 
 export const HUGINN = 'huginn'
 export const MUNINN = 'muninn'
@@ -208,12 +208,14 @@ export interface RouteChat {
  * Whether a request in the mimir tab asks for a new part or model, read with the classifiers that pick each turn's
  * tools rather than a list of its own: it is a design turn (turnKind of turnNeeds, as the runtime reads the turn in the
  * tab: a request to slice, print or send, a printer question or a settings change is not one, and a request that names
- * none of these is), and the turn starts on a new part's set (turnSet). With a design in the chat, a request that only
- * changes or shapes it keeps to that design.
+ * none of these is), and the turn starts on a new part's set (turnSet). With a design in the chat, a request is a new
+ * part only when it asks for one of its own, a new one or another (asksAnotherPart): a change to the design ("make it
+ * rounder", "make the body rounder") keeps to that design, whatever set its words open.
  */
 export function asksNewPart(prompt: string, files: readonly DesignRequestFiles[] = [], chat: Pick<RouteChat, 'design'> = {}): boolean {
   if (turnKind(turnNeeds(prompt, { sliceToPrint: true }), { designs: true }) !== 'design') return false
   const design = chat.design === true
+  if (design && !asksAnotherPart(prompt)) return false
   return turnSet(prompt, files, design ? 'edit' : undefined, { design }) === 'build'
 }
 

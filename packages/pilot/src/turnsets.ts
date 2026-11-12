@@ -223,6 +223,15 @@ const NEW_PART = new RegExp(`${LEAD}${MAKING}${HOW_MANY}(?!${SHAPING})`, 'i')
 /** A request that opens on wanting a part ("I want a hollow vase", "I need two clips"), which asks for a part as making one does. */
 const WANT_PART = new RegExp(`${LEAD}${WANTING}${HOW_MANY}(?!${SHAPING})`, 'i')
 
+/**
+ * Whether a request opens on asking for a part of its own, a new one or another ("now make me a second one", "make a
+ * lid for it", "I need two clips"), and not on changing or shaping the one there ("make it rounder", "round off the
+ * body", "make a pattern of holes on it").
+ */
+export function asksAnotherPart(message: string): boolean {
+  return NEW_PART.test(message) || WANT_PART.test(message)
+}
+
 /** A request that opens on making a shaping of a part ("make a pattern of holes", "make a cut in the lid"). */
 const SHAPING_OPEN = new RegExp(`${LEAD}${MAKING}${HOW_MANY}${SHAPING}`, 'i')
 
