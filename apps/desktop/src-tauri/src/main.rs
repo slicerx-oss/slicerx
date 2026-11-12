@@ -20,6 +20,8 @@ mod display;
 mod files;
 #[cfg(feature = "connect")]
 mod firewall;
+#[cfg(feature = "native-geom")]
+mod geom_host;
 mod gpu;
 mod header;
 mod keychain;
@@ -53,6 +55,11 @@ mod watch;
 use sx_alloc as _;
 
 fn main() {
+    // The Model engine's own process (geom_host.rs): before anything else, so it opens no window and touches no app data.
+    #[cfg(feature = "native-geom")]
+    if geom_host::is_engine_launch() {
+        geom_host::engine_main();
+    }
     probe::mark_start();
     // First, so a panic anywhere after this leaves a report for the next launch.
     crash::install_hook();
@@ -123,6 +130,7 @@ fn main() {
     let builder = builder.manage(agent_bridge::Relay::default());
     let app = builder
         .manage(slicing::Slicer::default())
+        .manage(geom_engine())
         .manage(files::OpenFiles::default())
         .manage(link::Bridge::default())
         .manage(opened::Pending::default())
@@ -188,6 +196,12 @@ fn main() {
             slicing::get_gcode_line_starts,
             slicing::get_gcode_bytes,
             slicing::release,
+            #[cfg(feature = "native-geom")]
+            geom_host::geom_call,
+            #[cfg(feature = "native-geom")]
+            geom_host::geom_end,
+            #[cfg(feature = "native-geom")]
+            geom_host::geom_engine,
             files::open_files,
             files::read_file,
             files::read_beside,
@@ -306,6 +320,8 @@ fn main() {
         tauri::RunEvent::Exit => {
             #[cfg(feature = "connect")]
             watch::stop(handle);
+            #[cfg(feature = "native-geom")]
+            tauri::Manager::state::<std::sync::Arc<geom_host::Engine>>(handle).end();
             #[cfg(feature = "agent-bridge")]
             agent_bridge::stop(handle);
             let _ = handle;
@@ -315,6 +331,14 @@ fn main() {
         }
     });
 }
+
+#[cfg(feature = "native-geom")]
+fn geom_engine() -> std::sync::Arc<geom_host::Engine> {
+    std::sync::Arc::new(geom_host::Engine::app())
+}
+
+#[cfg(not(feature = "native-geom"))]
+fn geom_engine() {}
 
 #[cfg(feature = "connect")]
 fn watch_state() -> watch::Watch {
