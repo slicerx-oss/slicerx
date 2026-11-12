@@ -199,7 +199,7 @@ function stepPatternOk(v: unknown): boolean {
     case 'mirror':
       return planeOk(v['plane']) && stepPatternProblem(v as StepPattern) === null
     case 'linear':
-      return isNum(v['count']) && vec3(v['step']) && (v['count2'] === undefined || isNum(v['count2'])) && opt('step2') && stepPatternProblem(v as StepPattern) === null
+      return isNum(v['count']) && vec3(v['step']) && (v['count2'] === undefined || isNum(v['count2'])) && opt('step2') && (v['onSurface'] === undefined || v['onSurface'] === true) && stepPatternProblem(v as StepPattern) === null
     case 'circular':
       return isNum(v['count']) && vec3(v['center']) && opt('axis') && (v['angleDeg'] === undefined || isNum(v['angleDeg'])) && (v['rotateCopies'] === undefined || v['rotateCopies'] === true) && stepPatternProblem(v as StepPattern) === null
     default:

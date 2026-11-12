@@ -95,7 +95,11 @@ export function patternFromFields(f: PatternFields, num: (text: string) => numbe
 }
 
 /** How a pattern step repeats earlier steps: in a row or grid, around an axis, or as their mirror image (world, mm). */
-export type StepPattern = ArraySpec | { kind: 'mirror'; plane: { point: Vec3; normal: Vec3 } }
+/**
+ * A step pattern: a row, grid or circle (onSurface on a row: each copy slides onto the part's surface where it lands and
+ * turns to it, for a row along a curved side), or a mirror.
+ */
+export type StepPattern = (ArraySpec & { onSurface?: true }) | { kind: 'mirror'; plane: { point: Vec3; normal: Vec3 } }
 
 /** At most this many copies in a step pattern: each copy runs every step it repeats again on the whole part. */
 export const MAX_STEP_COPIES = 100
@@ -117,6 +121,7 @@ export function stepPatternProblem(p: StepPattern): string | null {
     return len3(p.plane.normal) > 0 ? null : 'Give the mirror plane a direction.'
   }
   if (!Number.isInteger(p.count) || p.count < 2) return 'A pattern has at least 2 copies.'
+  if (p.onSurface && p.kind !== 'linear') return 'Only a row or a grid follows a surface; a circle of copies already turns with its axis.'
   if (p.kind === 'linear' && p.count2 !== undefined && (!Number.isInteger(p.count2) || p.count2 < 1)) return 'A grid has at least 1 row.'
   const n = stepCopyCount(p)
   if (n > MAX_STEP_COPIES) return `A pattern of steps has at most ${MAX_STEP_COPIES} copies; this one has ${n}.`

@@ -11,6 +11,7 @@ import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasF
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 import { repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
+import { anchorOf, surfaceMoves } from './surface-follow'
 import { EXACT_FELL_BACK, exactStep, meshed, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
@@ -563,7 +564,19 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
   const toWorld = s.transform
   const fromWorld = invert(s.transform)
   let out = parts
-  for (const [k, move] of stepCopyMoves(p.spec).entries()) {
+  let moves = stepCopyMoves(p.spec)
+  // a row along a curved side: each copy slides onto the part's surface where it lands and turns to it
+  if (p.spec.kind === 'linear' && p.spec.onSurface) {
+    const anchor = live.map((x) => anchorOf(x.params)).find((a) => a !== null)
+    if (!anchor) throw new Broken('A row follows a surface from a cut or a shape on a face; the steps it repeats have no place on the part to start from.')
+    const part = parts[s.part]
+    if (!part) throw new Broken('The part this pattern works on is gone.')
+    const world = bakeMesh({ name: part.name, slot: part.slot, positions: part.positions, indices: part.indices }, s.transform)
+    const follow = surfaceMoves(moves, anchor, Array.from(world.positions), part.indices)
+    if (!Array.isArray(follow)) throw new Broken(`Copy ${follow.copy}: ${follow.why}`)
+    moves = follow
+  }
+  for (const [k, move] of moves.entries()) {
     // the copy's move in the part's own frame, undone at each step's transform: the step then lands moved by it
     const back = invert(multiply(fromWorld, multiply(move, toWorld)))
     for (const [j, x] of live.entries()) {
