@@ -80,7 +80,9 @@ export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?:
   const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile, designs: () => host.list(), ...(opts.bed ? { bed: opts.bed } : {}) })
   // paint.preview, paint.apply and paint.regions paint a design's parts as a step of its history, as on the server
   // design.look draws the design for a cloud model to look at on a vague follow-up (look.ts); a local model is not offered it
-  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true }))), ...paintTools(host), lookTool(host, opts.filaments)]
+  // design.check reads the open project's filament colors, to hold a colored plan's paint to them
+  const filaments = opts.filaments
+  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true, ...(filaments ? { filamentColors: () => filaments.list().map((f) => f.color) } : {}) }))), ...paintTools(host), lookTool(host, opts.filaments)]
   // the open project's filaments, where the host has them: the part makers add the ones their slot is past, and two
   // tools add and set them
   return opts.filaments ? [...withNewFilaments(tools, opts.filaments), ...filamentTools(opts.filaments)] : tools
