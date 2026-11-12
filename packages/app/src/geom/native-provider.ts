@@ -21,7 +21,8 @@ import { replayStepOf, type ReplayStep } from './worker-loop'
 export interface NativeEngine {
   /**
    * Sends one call's frame and answers with the answer's frame and the number of the process that ran it (each new
-   * process gets the next number). Rejects with EngineEnded when the process ended before it answered.
+   * process gets the next number). Rejects with EngineEnded when the process ended before it answered. The answer's
+   * frame is the provider's from then on: what it hands to the page may be views of it, so it is never written again.
    */
   call(frame: Uint8Array): Promise<{ generation: number; frame: Uint8Array }>
   /** Ends the engine process now, if one runs; the next call starts another. */
@@ -131,6 +132,34 @@ function plainArrays(v: unknown): unknown {
 /** A copy of `b` that owns its own aligned buffer, for a typed array of it. */
 const own = (b: Uint8Array): ArrayBuffer => b.slice().buffer
 
+/**
+ * `b` as values of `size` bytes: a view of the frame itself when they start lined up in it, else a copy that is; none
+ * when `b` is not a whole number of them.
+ */
+function values<T>(b: Uint8Array, size: 2 | 4, make: (buffer: ArrayBufferLike, offset?: number, length?: number) => T): T | undefined {
+  if (b.byteLength % size) return undefined
+  return b.byteOffset % size ? make(own(b)) : make(b.buffer, b.byteOffset, b.byteLength / size)
+}
+
+/**
+ * A held solid's triangles come with more buffers beside the mesh (packages/geom/src/exact.rs, tessellate): packed
+ * corner normals (`normalsOut`, six i16 per triangle) and each triangle's face (`faceIdsOut`, one u32 per triangle),
+ * handed on as `normals` and `faceIds`, the names cad-history's reader takes (exact.ts, tessellated). One of any other
+ * length belongs to other triangles and is left out.
+ */
+function solidBuffers(o: Record<string, unknown>, triangles: number, at: (n: unknown) => Uint8Array): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (typeof o['normalsOut'] === 'number') {
+    const normals = values(at(o['normalsOut']), 2, (b, offset, length) => new Int16Array(b, offset, length))
+    if (normals?.length === triangles * 6) out['normals'] = normals
+  }
+  if (typeof o['faceIdsOut'] === 'number') {
+    const faceIds = values(at(o['faceIdsOut']), 4, (b, offset, length) => new Uint32Array(b, offset, length))
+    if (faceIds?.length === triangles) out['faceIds'] = faceIds
+  }
+  return out
+}
+
 /** The answer with each output buffer it names read as typed arrays, as the worker reads them (engine-call.ts, rawOut). */
 function readBuffers(v: unknown, buffers: readonly Uint8Array[]): unknown {
   if (Array.isArray(v)) return v.length && typeof v[0] === 'object' ? v.map((e) => readBuffers(e, buffers)) : v
@@ -152,7 +181,11 @@ function readBuffers(v: unknown, buffers: readonly Uint8Array[]): unknown {
     const nv = head.getUint32(0, true)
     const nt = head.getUint32(4, true)
     const { rawOut: _n, ...rest } = o
-    return { ...rest, positions: new Float32Array(own(b.subarray(8, 8 + 12 * nv))), indices: new Uint32Array(own(b.subarray(8 + 12 * nv, 8 + 12 * nv + 12 * nt))) }
+    const solid = solidBuffers(rest, nt, at)
+    // the buffer numbers they came under name nothing on the page
+    if (typeof rest['normalsOut'] === 'number') delete rest['normalsOut']
+    if (typeof rest['faceIdsOut'] === 'number') delete rest['faceIdsOut']
+    return { ...rest, positions: new Float32Array(own(b.subarray(8, 8 + 12 * nv))), indices: new Uint32Array(own(b.subarray(8 + 12 * nv, 8 + 12 * nv + 12 * nt))), ...solid }
   }
   const out: Record<string, unknown> = {}
   for (const [k, e] of Object.entries(o)) out[k] = readBuffers(e, buffers)
@@ -249,6 +282,9 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
           }
           fields[k] = n - from * PER_PROCESS
         }
+        // a solid's triangles come back as buffers: normals and face ids too for a body the engine holds itself; a
+        // body of the kernel's own table, or one sent as text, answers as before
+        if (job.op === 'brep.tessellate' && !('meshOutput' in fields)) fields['meshOutput'] = 'raw'
       }
       request = r
     } else {
@@ -266,7 +302,9 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
       throw new Error(job.op.startsWith('brep.') ? answer['error'].replace(/^brep: /, '') : answer['error'])
     }
     const result = buffers.length ? readBuffers(answer['result'], buffers) : answer['result']
-    if (job.op.startsWith('brep.') && result !== null && typeof result === 'object') {
+    // a body comes from a kernel op, or from another op asked to keep the body it makes (`withKeys`, an exact loft)
+    const keeps = job.request !== null && typeof job.request === 'object' && (job.request as Record<string, unknown>)['withKeys'] === true
+    if ((job.op.startsWith('brep.') || keeps) && result !== null && typeof result === 'object') {
       const fields = result as Record<string, unknown>
       for (const k of BODY_OUT) if (typeof fields[k] === 'number') fields[k] = from * PER_PROCESS + (fields[k] as number)
     }

@@ -234,6 +234,175 @@ describe('native provider', () => {
   })
 })
 
+// --- a solid's triangles: the mesh and the three buffers beside it (packages/geom/src/exact.rs, tessellate)
+
+const FIRST = 2 ** 31
+
+/** A frame as `answerFrame` makes it, its text padded so the buffers start `shift` bytes past a multiple of four. */
+function shiftedFrame(answer: unknown, buffers: Uint8Array[], shift: number): Uint8Array {
+  const text = JSON.stringify(answer)
+  for (let pad = 0; pad < 4; pad++) {
+    const f = encodeFrame(text + ' '.repeat(pad), buffers)
+    if (decodeFrame(f).buffers.every((b) => b.byteOffset % 4 === shift)) return f
+  }
+  throw new Error('no padding lines the buffers up')
+}
+
+const le = (a: Int16Array | Uint32Array | Float32Array) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
+
+/** Two triangles of a held body: the raw mesh, packed normals, a face per triangle and an edge's points, as exact.rs writes them. */
+function solidBuffers(o: { normals?: number; faceIds?: number } = {}) {
+  const positions = new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 20, 10, 0, 20, 0, 10, 20])
+  const indices = new Uint32Array([0, 1, 2, 3, 4, 5])
+  const raw = new Uint8Array(8 + positions.byteLength + indices.byteLength)
+  new DataView(raw.buffer).setUint32(0, 6, true)
+  new DataView(raw.buffer).setUint32(4, 2, true)
+  raw.set(le(positions), 8)
+  raw.set(le(indices), 8 + positions.byteLength)
+  const normals = Int16Array.from({ length: o.normals ?? 12 }, (_, i) => (i % 2 ? -32767 : i * 1000))
+  const faceIds = Uint32Array.from({ length: o.faceIds ?? 2 }, (_, i) => i)
+  const edgePoints = new Uint32Array([0, 1])
+  return { positions, indices, normals, faceIds, buffers: [raw, le(normals), le(faceIds), le(edgePoints)] }
+}
+
+/** The answer's text for those buffers, numbered in that order. */
+const solidAnswer = (keys = [7, 8]) => ({
+  meshForm: 2,
+  rawOut: 0,
+  normalsOut: 1,
+  faceIdsOut: 2,
+  edgePointsOut: 3,
+  faces: { table: [{ kind: 'plane', normal: [0, 0, -1], offset: 0 }, { kind: 'other' }], keys },
+  surfaces: [{ kind: 'plane' }, { kind: 'spline' }],
+  edges: [{ faces: [0, 1], curve: 'line', tangent: false, points: 2 }],
+})
+
+type Solid = { positions: Float32Array; indices: Uint32Array; normals?: Int16Array; faceIds?: Uint32Array } & Record<string, unknown>
+
+describe("native provider: a solid's triangles", () => {
+  it('asks the engine for them as buffers, and only them', async () => {
+    const { engine, seen } = standIn((op) => (op === 'brep.box' ? { body: FIRST } : {}))
+    const p = nativeProvider(engine)
+    const { body } = await p.call<{ body: number }>('brep.box', {})
+    await p.call('brep.tessellate', { body, chordMm: 0.05 })
+    await p.call('brep.tessellate', { body: { smb: 'text' } })
+    await p.call('brep.tessellate', { body, meshOutput: 'flat' })
+    await p.call('brep.info', { body })
+    expect(seen.map((s) => s.request)).toEqual([{}, { body: FIRST, chordMm: 0.05, meshOutput: 'raw' }, { body: { smb: 'text' }, meshOutput: 'raw' }, { body: FIRST, meshOutput: 'flat' }, { body: FIRST }])
+  })
+
+  it('hands the normals over as an Int16Array and the face ids as a Uint32Array, beside the mesh', async () => {
+    const s = solidBuffers()
+    const { engine } = standIn(() => ({ frame: answerFrame({ id: 1, result: solidAnswer() }, s.buffers) }))
+    const r = await nativeProvider(engine).call<Solid>('brep.tessellate', { body: { smb: 'solid' } })
+    expect(r.positions).toBeInstanceOf(Float32Array)
+    expect([...r.positions]).toEqual([...s.positions])
+    expect([...r.indices]).toEqual([...s.indices])
+    expect(r.normals).toBeInstanceOf(Int16Array)
+    expect([...r.normals!]).toEqual([...s.normals])
+    expect(r.faceIds).toBeInstanceOf(Uint32Array)
+    expect([...r.faceIds!]).toEqual([0, 1])
+    // the buffer numbers they came under are gone; the rest of the answer is as the engine wrote it
+    const { positions: _p, indices: _i, normals: _n, faceIds: _f, ...rest } = r
+    const { rawOut: _r, normalsOut: _no, faceIdsOut: _fo, ...given } = solidAnswer()
+    expect(rest).toEqual(given)
+  })
+
+  it('reads them in place, without a copy, when the frame has them lined up', async () => {
+    const s = solidBuffers()
+    let frame: Uint8Array | undefined
+    const { engine } = standIn(() => ({ frame: (frame = shiftedFrame({ id: 1, result: solidAnswer() }, s.buffers, 0)) }))
+    const r = await nativeProvider(engine).call<Solid>('brep.tessellate', { body: { smb: 'solid' } })
+    expect(r.normals!.buffer).toBe(frame!.buffer)
+    expect(r.faceIds!.buffer).toBe(frame!.buffer)
+    expect([...r.normals!]).toEqual([...s.normals])
+    expect([...r.faceIds!]).toEqual([0, 1])
+  })
+
+  it('reads them right when the frame has them out of line', async () => {
+    for (const shift of [1, 2, 3]) {
+      const s = solidBuffers()
+      const { engine } = standIn(() => ({ frame: shiftedFrame({ id: 1, result: solidAnswer() }, s.buffers, shift) }))
+      const r = await nativeProvider(engine).call<Solid>('brep.tessellate', { body: { smb: 'solid' } })
+      expect([...r.normals!], `shift ${shift}`).toEqual([...s.normals])
+      expect([...r.faceIds!], `shift ${shift}`).toEqual([0, 1])
+    }
+  })
+
+  it('drops normals or face ids that are not one set for each triangle', async () => {
+    const cases: { o: { normals?: number; faceIds?: number }; normals: boolean; faceIds: boolean }[] = [
+      { o: { normals: 10 }, normals: false, faceIds: true },
+      { o: { normals: 18 }, normals: false, faceIds: true },
+      { o: { faceIds: 1 }, normals: true, faceIds: false },
+      { o: { faceIds: 3 }, normals: true, faceIds: false },
+      { o: { normals: 0, faceIds: 0 }, normals: false, faceIds: false },
+    ]
+    for (const c of cases) {
+      const s = solidBuffers(c.o)
+      const { engine } = standIn(() => ({ frame: answerFrame({ id: 1, result: solidAnswer() }, s.buffers) }))
+      const r = await nativeProvider(engine).call<Solid>('brep.tessellate', { body: { smb: 'solid' } })
+      const what = JSON.stringify(c.o)
+      expect('normals' in r, what).toBe(c.normals)
+      expect('faceIds' in r, what).toBe(c.faceIds)
+      expect('normalsOut' in r || 'faceIdsOut' in r, what).toBe(false)
+      expect(r.indices.length, what).toBe(6)
+    }
+    // a buffer that is not a whole number of values
+    const s = solidBuffers()
+    const bad = [s.buffers[0]!, s.buffers[1]!.subarray(1), s.buffers[2]!.subarray(0, 7), s.buffers[3]!]
+    const { engine } = standIn(() => ({ frame: answerFrame({ id: 1, result: solidAnswer() }, bad) }))
+    const r = await nativeProvider(engine).call<Solid>('brep.tessellate', { body: { smb: 'solid' } })
+    expect('normals' in r || 'faceIds' in r).toBe(false)
+  })
+
+  it('refuses an answer that names a buffer it did not send', async () => {
+    const s = solidBuffers()
+    const { engine } = standIn(() => ({ frame: answerFrame({ id: 1, result: { ...solidAnswer(), faceIdsOut: 9 } }, s.buffers) }))
+    await expect(nativeProvider(engine).call('brep.tessellate', { body: { smb: 'solid' } })).rejects.toThrow('The geometry engine named a buffer it did not send: 9')
+  })
+
+  it('leaves a mesh answer without them as it was, field for field and in order', async () => {
+    const s = solidBuffers()
+    const answer = { mesh: { rawOut: 0, faces: { ids: [0, 0], table: [{ kind: 'other' }] } }, report: { ok: true } }
+    const { engine } = standIn(() => ({ frame: answerFrame({ id: 1, result: answer }, [s.buffers[0]!]) }))
+    const r = await nativeProvider(engine).call<{ mesh: Record<string, unknown>; report: unknown }>('repair', { mesh: { positions: s.positions, indices: s.indices } })
+    expect(Object.keys(r)).toEqual(['mesh', 'report'])
+    expect(Object.keys(r.mesh)).toEqual(['faces', 'positions', 'indices'])
+    expect(r.mesh['faces']).toEqual(answer.mesh.faces)
+    expect([...(r.mesh['positions'] as Float32Array)]).toEqual([...s.positions])
+    expect([...(r.mesh['indices'] as Uint32Array)]).toEqual([...s.indices])
+  })
+
+  it('gives an exact loft its true normals and faces through a whole replay', async () => {
+    const s = solidBuffers()
+    const sent: { op: string; request: Record<string, unknown> }[] = []
+    const { engine } = standIn((op, request) => {
+      sent.push({ op, request })
+      if (op === 'exact.ops') return { ops: ['sketch.loft'] }
+      if (op === 'sketch.loft') return { mesh: { positions: [], indices: [] }, report: { watertight: true }, body: FIRST, bodyKeys: [7, 8] }
+      if (op === 'brep.tessellate') return { frame: answerFrame({ id: 1, result: solidAnswer() }, s.buffers) }
+      if (op === 'brep.free') return { freed: true }
+      throw new Error(`unexpected ${op}`)
+    })
+    const p = nativeProvider(engine)
+    const profiles = [{ loops: [] }, { frame: { origin: [0, 0, 20], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [] }]
+    const step = { id: 'loft-1', part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'sketch.loft', profiles, operation: 'new', name: 'Hull' } }
+    const r = await p.call<{ parts: { name: string; positions: ArrayLike<number>; indices: ArrayLike<number>; normals?: Int16Array; faces?: { ids: ArrayLike<number>; table: unknown[]; keys?: number[] } }[]; status: unknown[] }>('history.replay', { history: { version: HISTORY_VERSION, base: [], steps: [step] }, exact: true })
+    expect(r.status).toEqual([{ state: 'done' }])
+    expect(sent.map((x) => x.op)).toEqual(['exact.ops', 'sketch.loft', 'brep.tessellate'])
+    // the body goes back to the engine as the number it gave, and its triangles are asked for as buffers
+    expect(sent[2]!.request).toMatchObject({ body: FIRST, meshOutput: 'raw' })
+    const [part] = r.parts
+    expect(part!.name).toBe('Hull')
+    expect(part!.positions).toBeInstanceOf(Float32Array)
+    expect(part!.normals).toBeInstanceOf(Int16Array)
+    expect([...part!.normals!]).toEqual([...s.normals])
+    expect(Array.from(part!.faces!.ids)).toEqual([0, 1])
+    expect(part!.faces!.table).toEqual(solidAnswer().faces.table)
+    expect(part!.faces!.keys).toEqual([7, 8])
+  })
+})
+
 // --- the real engine in a process of its own
 
 const serveBin = process.env['SLICERX_GEOM_SERVE_BIN']
