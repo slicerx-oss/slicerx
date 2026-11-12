@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The mesh math behind a model's look, on plain typed arrays and with no three.js, so it runs the same on the page and in
 // a worker (mesh-worker.ts): welding, creased normals, feature edges and the quick smooth normals.
+import { exactTriangle, unpackNormal } from '@slicerx/contracts'
 
 /**
  * Spreads three quantized coordinates over a table index. The coordinates are whole numbers, so `| 0` keeps their low
@@ -80,18 +81,49 @@ export interface CreasedArrays {
 }
 
 /**
+ * Which triangles have exact corner normals in a packed buffer (MeshPart.normals): a flag per triangle and their count.
+ * A buffer that is not six numbers per triangle belongs to other triangles and counts as none.
+ */
+export function exactTriangles(normals: Int16Array | undefined, triangles: number): { exact: Uint8Array | null; count: number } {
+  if (!normals || triangles === 0 || normals.length !== triangles * 6) return { exact: null, count: 0 }
+  let exact: Uint8Array | null = null
+  let count = 0
+  for (let t = 0; t < triangles; t++) {
+    if (!exactTriangle(normals, t)) continue
+    exact ??= new Uint8Array(triangles)
+    exact[t] = 1
+    count++
+  }
+  return { exact, count }
+}
+
+/** Whether every triangle has exact corner normals in the packed buffer, so no triangle needs the crease rule. */
+export function allExact(normals: Int16Array | undefined, triangles: number): boolean {
+  if (!normals || triangles === 0 || normals.length !== triangles * 6) return false
+  for (let t = 0; t < triangles; t++) if (!exactTriangle(normals, t)) return false
+  return true
+}
+
+/**
  * Indexed geometry whose normals average only faces within `creaseDeg` of each other. A corner shares its vertex with
  * the other corners of the same source vertex that got the same normal, so a smooth mesh keeps about one vertex per
  * source vertex and a hard edge splits where it should. Triangle t of the result is triangle t of the input.
+ *
+ * `normals` are the engine's packed corner normals (six numbers per triangle). A triangle with an exact normal at all
+ * three corners takes those normals as they are; the other triangles crease as above. With no triangle exact the result
+ * is the same as without them.
  */
-export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: number): CreasedArrays {
+export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: number, normals?: Int16Array): CreasedArrays {
   const nt = Math.floor(I.length / 3)
   const nv = Math.floor(P.length / 3)
-  const fn = new Float32Array(nt * 3)
-  const fu = new Float32Array(nt * 3)
+  const { exact, count: nExact } = exactTriangles(normals, nt)
+  // every triangle exact: no face normals or weld needed, only the vertex sharing below
+  const creasing = nExact < nt
+  const fn = new Float32Array(creasing ? nt * 3 : 0)
+  const fu = new Float32Array(creasing ? nt * 3 : 0)
   const at = (k: number): number => I[k] ?? 0
   const p = (k: number): number => P[k] ?? 0
-  for (let t = 0; t < nt; t++) {
+  for (let t = 0; creasing && t < nt; t++) {
     const a = at(3 * t) * 3
     const b = at(3 * t + 1) * 3
     const c = at(3 * t + 2) * 3
@@ -103,17 +135,17 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
     fn[3 * t] = x / l; fn[3 * t + 1] = y / l; fn[3 * t + 2] = z / l
   }
   // Welded at 1 micrometer so normals see shared vertices even in unindexed files.
-  const { map: wmap, count: nw } = weldVertices(P, 1000)
+  const { map: wmap, count: nw } = creasing ? weldVertices(P, 1000) : { map: new Int32Array(0), count: 0 }
   const w = (k: number): number => wmap[at(k)] ?? 0
   const cnt = new Int32Array(nw + 1)
-  for (let i = 0; i < nt * 3; i++) {
+  for (let i = 0; creasing && i < nt * 3; i++) {
     const c = w(i) + 1
     cnt[c] = (cnt[c] ?? 0) + 1
   }
   for (let i = 0; i < nw; i++) cnt[i + 1] = (cnt[i + 1] ?? 0) + (cnt[i] ?? 0)
   const fill = cnt.slice(0, nw)
-  const lst = new Int32Array(nt * 3)
-  for (let i = 0; i < nt * 3; i++) {
+  const lst = new Int32Array(creasing ? nt * 3 : 0)
+  for (let i = 0; creasing && i < nt * 3; i++) {
     const c = w(i)
     const slot = fill[c] ?? 0
     lst[slot] = (i / 3) | 0
@@ -128,22 +160,30 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
   let next = new Int32Array(Math.max(16, nv + 16))
   const index = new Uint32Array(nt * 3)
   const cosA = Math.cos((creaseDeg * Math.PI) / 180)
+  const given = [0, 0, 0]
   for (let t = 0; t < nt; t++) {
     const tx = f(3 * t), ty = f(3 * t + 1), tz = f(3 * t + 2)
+    const supplied = exact !== null && exact[t] === 1
     for (let j = 0; j < 3; j++) {
       const vi = at(3 * t + j)
-      const wi = w(3 * t + j)
-      let x = 0, y = 0, z = 0
-      const end = cnt[wi + 1] ?? 0
-      for (let k = cnt[wi] ?? 0; k < end; k++) {
-        const g = lst[k] ?? 0
-        if (f(3 * g) * tx + f(3 * g + 1) * ty + f(3 * g + 2) * tz >= cosA) {
-          x += u(3 * g); y += u(3 * g + 1); z += u(3 * g + 2)
-        }
-      }
-      const l = Math.hypot(x, y, z) || 1
       // Stored as float32, so compare as float32.
-      const nx = Math.fround(x / l), ny = Math.fround(y / l), nz = Math.fround(z / l)
+      let nx: number, ny: number, nz: number
+      if (supplied) {
+        unpackNormal(normals!, 6 * t + 2 * j, given, 0)
+        nx = Math.fround(given[0]!); ny = Math.fround(given[1]!); nz = Math.fround(given[2]!)
+      } else {
+        const wi = w(3 * t + j)
+        let x = 0, y = 0, z = 0
+        const end = cnt[wi + 1] ?? 0
+        for (let k = cnt[wi] ?? 0; k < end; k++) {
+          const g = lst[k] ?? 0
+          if (f(3 * g) * tx + f(3 * g + 1) * ty + f(3 * g + 2) * tz >= cosA) {
+            x += u(3 * g); y += u(3 * g + 1); z += u(3 * g + 2)
+          }
+        }
+        const l = Math.hypot(x, y, z) || 1
+        nx = Math.fround(x / l); ny = Math.fround(y / l); nz = Math.fround(z / l)
+      }
       let o = head[vi] ?? -1
       while (o >= 0 && !(nrm.a[3 * o] === nx && nrm.a[3 * o + 1] === ny && nrm.a[3 * o + 2] === nz)) o = next[o] ?? -1
       if (o < 0) {

@@ -161,9 +161,12 @@ class Ring {
 /** How long an object that left the plate stays built, for a plate switch that brings it back. */
 const PARK_MS = 10_000
 
+/** The arrays a part was built from: positions, indices and the packed exact corner normals (undefined for none). */
+type BuiltArrays = [Float32Array, Uint32Array | Uint16Array, Int16Array | undefined]
+
 /** Whether the parts are the very arrays an object was built from (identity, not contents: comparing contents of a big model would cost what a rebuild saves). */
-function sameArrays(from: readonly [Float32Array, Uint32Array | Uint16Array][] | undefined, parts: readonly { positions: Float32Array; indices: Uint32Array | Uint16Array }[]): boolean {
-  return !!from && from.length === parts.length && parts.every((p, i) => from[i]![0] === p.positions && from[i]![1] === p.indices)
+function sameArrays(from: readonly BuiltArrays[] | undefined, parts: readonly { positions: Float32Array; indices: Uint32Array | Uint16Array; normals?: Int16Array }[]): boolean {
+  return !!from && from.length === parts.length && parts.every((p, i) => from[i]![0] === p.positions && from[i]![1] === p.indices && from[i]![2] === p.normals)
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -405,7 +408,7 @@ class ViewportImpl implements Viewport {
   private readonly compileClock = new CompileClock()
   private constructedAt = 0
   /** The part arrays each object was built from, by object id: the same arrays again keep the built object. */
-  private readonly builtFrom = new Map<string, [Float32Array, Uint32Array | Uint16Array][]>()
+  private readonly builtFrom = new Map<string, BuiltArrays[]>()
   /** Part geometry shared by the copies of one object (built from the same arrays), freed with the last copy. */
   private readonly sharedParts: SharedParts = new Map()
   /** Objects built (not kept) by setPlate since the viewport started. */
@@ -413,7 +416,7 @@ class ViewportImpl implements Viewport {
   /** The last setPlate, until the frame that draws it. */
   private plateSet: { at: number; buildMs: number; built: number; kept: number } | null = null
   /** Objects off the plate, still built, by id, until PARK_MS passes without them coming back. */
-  private readonly parked = new Map<string, { entry: ObjectEntry; from: [Float32Array, Uint32Array | Uint16Array][]; timer: ReturnType<typeof setTimeout> }>()
+  private readonly parked = new Map<string, { entry: ObjectEntry; from: BuiltArrays[]; timer: ReturnType<typeof setTimeout> }>()
   private arrangeAnim: ((now: number) => boolean) | null = null
   /** The app's hook for moves that may leave the bed (setEdgeDrag). */
   private edgeHook: EdgeDragHook | null = null
@@ -1488,7 +1491,7 @@ class ViewportImpl implements Viewport {
         continue
       }
       const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : this.renderMode === 'cad' ? sh.edgeCad : sh.edgeDark, this.asyncBuild(obj), this.sharedParts)
-      this.builtFrom.set(obj.id, obj.parts.map((p) => [p.positions, p.indices]))
+      this.builtFrom.set(obj.id, obj.parts.map((p): BuiltArrays => [p.positions, p.indices, p.normals]))
       this.objects.set(obj.id, entry)
       this.stage.objectsRoot.add(entry.group)
       built++
@@ -1535,7 +1538,7 @@ class ViewportImpl implements Viewport {
     const pool = this.meshPool
     if (!pool) return undefined
     // a copy of a part that already has its final geometry shares it and waits for nothing
-    const big = obj.parts.filter((p) => p.indices.length / 3 >= ASYNC_BUILD_TRIANGLES && !sharedFinal(this.sharedParts, p.positions, p.indices)).length
+    const big = obj.parts.filter((p) => p.indices.length / 3 >= ASYNC_BUILD_TRIANGLES && !sharedFinal(this.sharedParts, p.positions, p.indices, p.normals)).length
     if (big === 0) return undefined
     if (this.refining === 0) this.refineStart = performance.now()
     this.refining += big
@@ -1625,7 +1628,7 @@ class ViewportImpl implements Viewport {
     }
   }
 
-  private park(id: string, entry: ObjectEntry, from: [Float32Array, Uint32Array | Uint16Array][]): void {
+  private park(id: string, entry: ObjectEntry, from: BuiltArrays[]): void {
     const was = this.parked.get(id)
     if (was) {
       clearTimeout(was.timer)

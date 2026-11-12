@@ -14,7 +14,7 @@ import {
   type Material,
 } from 'three'
 import type { FilamentFinish, ViewportObject, ViewportPart } from './types'
-import { creasedArrays, featureEdges, smoothNormals, type CreasedArrays } from './mesh-math'
+import { allExact, creasedArrays, featureEdges, smoothNormals, type CreasedArrays } from './mesh-math'
 import type { MeshBuildPool } from './mesh-pool'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
@@ -49,13 +49,16 @@ export interface ObjectEntry {
 }
 
 /**
- * One part's geometry for every part built from the very same position and index arrays: copies of an object (Duplicate,
- * paste, fill bed) keep their source's arrays, so they draw one creased mesh and one set of edges and differ only by
- * their group's transform. A copy whose arrays differ (scaled into new positions, split by paint) gets its own.
+ * One part's geometry for every part built from the very same position, index and corner normal arrays: copies of an
+ * object (Duplicate, paste, fill bed) keep their source's arrays, so they draw one creased mesh and one set of edges and
+ * differ only by their group's transform. A copy whose arrays differ (scaled into new positions, split by paint, new
+ * normals from the engine) gets its own.
  */
 export interface SharedPart {
   positions: Float32Array
   indices: Uint32Array | Uint16Array
+  /** The packed exact corner normals it was made with, null for none. */
+  normals: Int16Array | null
   mesh: BufferGeometry
   edges: BufferGeometry
   /** The CAD look's wide edges, made the first time a copy shows them. */
@@ -69,16 +72,19 @@ export interface SharedPart {
   store: SharedParts
 }
 
-/** Shared part geometry by position array, then index array (identity: comparing contents would cost what sharing saves). */
-export type SharedParts = Map<Float32Array, Map<Uint32Array | Uint16Array, SharedPart>>
+/**
+ * Shared part geometry by position array, then index array, then corner normal array (null for none). Identity:
+ * comparing contents would cost what sharing saves.
+ */
+export type SharedParts = Map<Float32Array, Map<Uint32Array | Uint16Array, Map<Int16Array | null, SharedPart>>>
 
-function findShared(store: SharedParts, P: Float32Array, I: Uint32Array | Uint16Array): SharedPart | undefined {
-  return store.get(P)?.get(I)
+function findShared(store: SharedParts, P: Float32Array, I: Uint32Array | Uint16Array, N: Int16Array | undefined): SharedPart | undefined {
+  return store.get(P)?.get(I)?.get(N ?? null)
 }
 
 /** Whether these arrays already have their final geometry in the store, so a part built from them waits for nothing. */
-export function sharedFinal(store: SharedParts, P: Float32Array, I: Uint32Array | Uint16Array): boolean {
-  const s = findShared(store, P, I)
+export function sharedFinal(store: SharedParts, P: Float32Array, I: Uint32Array | Uint16Array, N?: Int16Array): boolean {
+  const s = findShared(store, P, I, N)
   return !!s && s.waiting === null
 }
 
@@ -100,16 +106,18 @@ function release(part: PartEntry): void {
   s.edges.dispose()
   s.wide?.dispose()
   const byIndex = s.store.get(s.positions)
-  byIndex?.delete(s.indices)
+  const byNormals = byIndex?.get(s.indices)
+  byNormals?.delete(s.normals)
+  if (byNormals?.size === 0) byIndex!.delete(s.indices)
   if (byIndex?.size === 0) s.store.delete(s.positions)
 }
 
 /**
- * Indexed geometry whose normals average only faces within CREASE_DEG of each other (creasedArrays in mesh-math.ts).
- * Triangle t of the result is triangle t of the input.
+ * Indexed geometry whose normals average only faces within CREASE_DEG of each other (creasedArrays in mesh-math.ts),
+ * except triangles with exact corner normals in `N`, which keep those. Triangle t of the result is triangle t of the input.
  */
-export function creasedGeometry(P: Float32Array, I: ArrayLike<number>): BufferGeometry {
-  return creasedMesh(creasedArrays(P, I, CREASE_DEG))
+export function creasedGeometry(P: Float32Array, I: ArrayLike<number>, N?: Int16Array): BufferGeometry {
+  return creasedMesh(creasedArrays(P, I, CREASE_DEG, N))
 }
 
 /** A mesh geometry from creased arrays, with its bounds. */
@@ -149,7 +157,9 @@ function standInGeometry(P: Float32Array, I: Uint32Array | Uint16Array): BufferG
 
 /**
  * Building big parts off the main thread: a part of at least `minTriangles` triangles shows its stand-in geometry and
- * no edges at first; its creased geometry and feature edges come from the pool and replace them in place. `done` is
+ * no edges at first; its creased geometry and feature edges come from the pool and replace them in place. A part with
+ * exact corner normals on every triangle needs no stand-in: its final geometry is those normals, made at once, and only
+ * its edges come later. `done` is
  * called once per such part, when it has its final geometry (made here instead if the pool failed), or was disposed. A
  * copy of a part that already has its final geometry takes it at once and gets no call (sharedFinal tells which).
  */
@@ -192,14 +202,18 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
   group.matrix.copy(new Matrix4().fromArray(obj.transform))
   const entry: ObjectEntry = { id: obj.id, name: obj.name, group, parts: [] }
   entry.parts = obj.parts.map((p, i) => {
-    let s = findShared(store, p.positions, p.indices)
+    let s = findShared(store, p.positions, p.indices, p.normals)
     const fresh = !s
+    let meshFinal = false
     if (!s) {
       const big = async !== undefined && p.indices.length / 3 >= async.minTriangles
+      // every triangle has its exact normals: the final geometry costs no crease work, so no stand-in to swap later
+      meshFinal = big && allExact(p.normals, p.indices.length / 3)
       s = {
         positions: p.positions,
         indices: p.indices,
-        mesh: big ? standInGeometry(p.positions, p.indices) : creasedGeometry(p.positions, p.indices),
+        normals: p.normals ?? null,
+        mesh: big && !meshFinal ? standInGeometry(p.positions, p.indices) : creasedGeometry(p.positions, p.indices, p.normals),
         edges: big ? edgeLines(new Float32Array(0)) : edgeGeometry(p),
         wide: null,
         users: new Set(),
@@ -209,7 +223,9 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
       }
       let byIndex = store.get(p.positions)
       if (!byIndex) store.set(p.positions, (byIndex = new Map()))
-      byIndex.set(p.indices, s)
+      let byNormals = byIndex.get(p.indices)
+      if (!byNormals) byIndex.set(p.indices, (byNormals = new Map()))
+      byNormals.set(s.normals, s)
     }
     const mesh = new Mesh(s.mesh, material(p))
     mesh.castShadow = true
@@ -227,7 +243,7 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
     s.users.add(part)
     // Still on its stand-in: this part takes the final geometry with the others, and says so when it comes.
     if (s.waiting && async) s.waiting.set(part, () => async.done(entry, part))
-    if (fresh && s.waiting) void refineShared(s, p, async!)
+    if (fresh && s.waiting) void refineShared(s, p, async!, meshFinal)
     return part
   })
   return entry
@@ -249,16 +265,19 @@ function afterNextFrame(): Promise<void> {
   })
 }
 
-/** Gives the parts drawing a stand-in the creased geometry and feature edges from the pool (or made here). */
-async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuild): Promise<void> {
+/**
+ * Gives the parts drawing a stand-in the creased geometry and feature edges from the pool (or made here). With
+ * `meshFinal` the parts already draw their final geometry (exact normals on every triangle) and only the edges come.
+ */
+async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuild, meshFinal: boolean): Promise<void> {
   let mesh: BufferGeometry | null = null
   let edges: Float32Array | null = null
   await afterNextFrame()
   // every copy gone before its turn came: nothing to make (release told each one)
   if (s.gone) return
   try {
-    const [c, e] = await Promise.all([async.pool.crease(p.positions, p.indices, CREASE_DEG), async.pool.edges(p.positions, p.indices, EDGE_DEG)])
-    mesh = creasedMesh(c)
+    const [c, e] = await Promise.all([meshFinal ? null : async.pool.crease(p.positions, p.indices, CREASE_DEG, p.normals), async.pool.edges(p.positions, p.indices, EDGE_DEG)])
+    mesh = c ? creasedMesh(c) : null
     edges = e
   } catch {
     // No worker, or it failed: made here, as without a pool.
@@ -267,10 +286,12 @@ async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuil
     mesh?.dispose()
     return
   }
-  mesh ??= creasedGeometry(p.positions, p.indices)
+  if (!meshFinal) {
+    mesh ??= creasedGeometry(p.positions, p.indices, p.normals)
+    s.mesh.dispose()
+    s.mesh = mesh
+  }
   edges ??= featureEdges(p.positions, p.indices, EDGE_DEG)
-  s.mesh.dispose()
-  s.mesh = mesh
   s.edges.dispose()
   s.edges = edgeLines(edges)
   // the CAD look's wide edges, made from the stand-in's (no) edges while it showed

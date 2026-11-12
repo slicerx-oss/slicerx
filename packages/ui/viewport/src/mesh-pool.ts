@@ -41,9 +41,12 @@ export class MeshBuildPool {
     private readonly size = meshPoolSize(),
   ) {}
 
-  /** The creased geometry of a part (creasedArrays). The part's arrays are copied to the worker, not moved. */
-  crease(positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number): Promise<CreasedArrays> {
-    return this.run('crease', positions, indices, deg).then((r) => {
+  /**
+   * The creased geometry of a part (creasedArrays), with its packed exact corner normals when it has them. The part's
+   * arrays are copied to the worker, not moved.
+   */
+  crease(positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number, normals?: Int16Array): Promise<CreasedArrays> {
+    return this.run('crease', positions, indices, deg, normals).then((r) => {
       if (!r.crease) throw new Error('the mesh worker sent no geometry')
       return r.crease
     })
@@ -67,7 +70,7 @@ export class MeshBuildPool {
     for (const s of this.slots.splice(0)) this.fail(s, 'the viewport was disposed')
   }
 
-  private run(kind: MeshBuildRequest['kind'], positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number): Promise<MeshBuildReply & { ok: true }> {
+  private run(kind: MeshBuildRequest['kind'], positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number, normals?: Int16Array): Promise<MeshBuildReply & { ok: true }> {
     if (this.disposed) return Promise.reject(new Error('the viewport was disposed'))
     let slot: Slot
     try {
@@ -80,7 +83,7 @@ export class MeshBuildPool {
       this.waits.set(id, { slot, resolve, reject })
       slot.jobs.add(id)
       try {
-        slot.worker.postMessage({ id, kind, positions, indices, deg })
+        slot.worker.postMessage(normals ? { id, kind, positions, indices, deg, normals } : { id, kind, positions, indices, deg })
       } catch (e) {
         this.waits.delete(id)
         slot.jobs.delete(id)
