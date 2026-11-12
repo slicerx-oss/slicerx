@@ -67,9 +67,9 @@ const revealMemory: RevealMemory = { modelSeen: false }
 const toldNotices = new Set<string>()
 const prefersReducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** The render mode for the state: Model's CAD look, mimir's CAD look in the filament colors, or the look picked for Slice. */
+/** The render mode for the state: the design views' CAD look in the filament colors, or the look picked for Slice. */
 export function modelLook(s: Pick<AppState, 'workspace' | 'modelMode' | 'look'>): RenderMode {
-  if (showsDesign(s)) return s.look === 'xray' ? 'xray' : s.modelMode === 'mimir' ? 'cadColor' : 'cad'
+  if (showsDesign(s)) return s.look === 'xray' ? 'xray' : 'cadColor'
   return s.look
 }
 
@@ -621,8 +621,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (first || s.colorMode !== prev.colorMode) vp.setColorMode(s.colorMode)
         // norn: the paths from before a change, shown faintly on request.
         if (first || s.norn.ghost !== prev.norn.ghost || s.norn.before !== prev.norn.before) vp.setPreviewGhost?.(s.norn.ghost && s.norn.before ? s.norn.before.preview : null)
-        // Model draws geometry, not filament: the CAD gray with its edges (X-ray still works there); mimir draws the same
-        // look in the filament colors, so a color it sets shows at once; Slice keeps the look
+        // mimir and Model draw the CAD look with its edges, each part in its filament color, so a color set shows at once
+        // (X-ray still works there); Slice keeps the look
         if (first || s.look !== prev.look || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode) vp.setRenderMode(modelLook(s))
         if (!first && s.cameraSeq !== prev.cameraSeq) vp.view(s.camera, { animate: true })
         // Model frames the part so it is the biggest thing on screen: the whole model when Model opens or an object
