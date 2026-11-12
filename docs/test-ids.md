@@ -130,7 +130,11 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-drawing-built` | The last cell of `mimir-drawing-status`: As built when the drawing shows a design already built, Not built yet when it draws the sheet's own solids |
 | `mimir-lookup-card` | A card over the view with what mimir looked up: two rows and the source; Escape closes it |
 | `mimir-lookup-close` | The close button on a lookup card |
-| `mimir-part` | A part card in the conversation: in place of the call that made a part, or after the step rows for the design a reply built (one card per reply, the rows kept); `data-part` is the part's object id on the plate. The body (`Select the <name>`) selects the part and the tab stays; Edit (`Edit the <name>`, none on a phone) opens it in Model at its newest step |
+| `mimir-loop` | A reply's working steps (thoughts and tool steps) in one block; `data-state` is `live` while it works and `done` after, and `data-failed` is set when a step failed. A card that waits for the person, an error or mimir's own text closes it, and the next step opens another |
+| `mimir-loop-live` | The loop while it works: the raven's mark, "mimir is thinking", the step under way and a strip of one tick per step |
+| `mimir-loop-label` | In the live loop, the step under way in plain words, or Thinking |
+| `mimir-loop-line` | The done loop's one line ("Built in 14 steps, 2 min 35 s", "Done in ...", "Stopped after ..."); it opens to the steps by part, with a time per part and per step |
+| `mimir-part` | A part card in the conversation: in place of the call that made a part, or after the working loop of the design a reply built (one card per reply); `data-part` is the part's object id on the plate. The body (`Select the <name>`) selects the part and the tab stays; Edit (`Edit the <name>`, none on a phone) opens it in Model at its newest step |
 | `mimir-follow` | A next step chip under a finished reply's part card; `data-request` is the request it sends, absent on Change size, which asks for the size first |
 | `mimir-see-usage` | See usage, on a refusal for a used-up free allowance (`data-code` day_used, edition_day_used or slow_down on the line); opens Settings at Account > Usage |
 

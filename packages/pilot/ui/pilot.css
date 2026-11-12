@@ -447,3 +447,46 @@
 .sx-pilot .sheet-rec-row[data-guess] .sheet-rec-field{border-style:dashed;border-color:color-mix(in srgb,var(--orange) 70%,var(--line));background:color-mix(in srgb,var(--orange) 8%,var(--ink-1))}
 .sx-pilot .sheet-rec-row[data-guess] .sx-scrub-input{color:var(--orange)}
 .sx-pilot .sheet-rec-said{margin:0}
+/* mimir's working steps in one loop (work-loop.tsx): flat, part of the chat. Live, a mark, "mimir is thinking" and the
+   step under way in small mono, then a strip of one tick per step; done, one line that opens to the steps by part. */
+.sx-pilot .wl{container-type:inline-size;border:1px solid var(--surface-line);border-radius:var(--r-md);background:var(--surface-card);max-width:68ch}
+.sx-pilot .wl-live{display:flex;flex-direction:column;gap:8px;padding:12px;transition:opacity .22s ease,transform .22s ease}
+.sx-pilot .wl-live.leaving{opacity:0;transform:translateY(-4px)}
+.sx-pilot .wl-line{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;column-gap:8px;min-height:24px}
+/* the raven's ring is 34 px across over a 24 px slot: room beside it so it never touches the words */
+.sx-pilot .wl-line .raven-wait{width:24px;height:24px;margin-right:4px}
+.sx-pilot .wl-dot{display:block;width:8px;height:8px;border-radius:50%;background:var(--cyan);animation:sxp-pulse 1.2s ease-in-out infinite}
+.sx-pilot .wl-who{font:400 13px/1.5 var(--f-body);color:var(--t-mute);white-space:nowrap}
+.sx-pilot .wl-who b{font-weight:600;color:var(--t-fg)}
+.sx-pilot .wl-act{justify-self:end;max-width:100%;font:500 12px/1.5 var(--f-mono);color:var(--t-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:wl-tick .2s ease}
+@keyframes wl-tick{from{opacity:0;transform:translateY(3px)}}
+.sx-pilot .wl-strip{display:flex;gap:2px;height:4px}
+.sx-pilot .wl-strip i{flex:0 1 12px;min-width:1px;border-radius:1px;background:var(--line-soft)}
+.sx-pilot .wl-strip i.on{background:color-mix(in srgb,var(--cyan) 45%,transparent)}
+.sx-pilot .wl-strip i.done{background:var(--cyan)}
+.sx-pilot .wl-strip i.bad{background:var(--orange)}
+.sx-pilot .wl-sum{width:100%;display:flex;align-items:center;gap:8px;min-height:36px;border:0;background:none;padding:8px 12px;text-align:left;cursor:pointer;color:var(--t-mute);font:400 13px/1.5 var(--f-body);border-radius:var(--r-md)}
+.sx-pilot .wl-sum:hover{color:var(--t-sub)}
+.sx-pilot .wl-sum .chev{width:14px;height:14px;flex:none;transform:rotate(-90deg);transition:transform .15s ease}
+.sx-pilot .wl-sum[aria-expanded=true] .chev{transform:none}
+.sx-pilot .wl-sum.enter{animation:wl-enter .22s ease}
+@keyframes wl-enter{from{opacity:0;transform:translateY(4px)}}
+.sx-pilot .wl-num,.sx-pilot .wl-t{font-variant-numeric:tabular-nums}
+.sx-pilot .wl-details{border-top:1px solid var(--line-soft);padding:8px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.sx-pilot .wl-gh{display:flex;justify-content:space-between;gap:12px;font:500 13px/1.5 var(--f-body);color:var(--t-fg)}
+.sx-pilot .wl-sub{list-style:none;margin:4px 0 0;padding:0 0 0 16px;display:flex;flex-direction:column;gap:4px}
+.sx-pilot .wl-sub li{display:flex;justify-content:space-between;gap:12px;font:400 13px/1.5 var(--f-body);color:var(--t-sub)}
+.sx-pilot .wl-sub li.wl-note,.sx-pilot .wl-sub li.wl-think{display:block;color:var(--t-mute)}
+.sx-pilot .wl-sw{min-width:0;overflow-wrap:anywhere;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px}
+.sx-pilot .wl-sw .sx-ic{width:13px;height:13px;color:var(--orange);align-self:center}
+.sx-pilot .wl-why{flex-basis:100%;color:var(--t-mute);font-size:12px}
+.sx-pilot .wl-t{flex:none;color:var(--t-mute);font-family:var(--f-body)}
+.sx-pilot .wl .frame{margin:0 12px 12px}
+/* a narrow chat (the phone): the step under way gets its own line under "mimir is thinking" */
+@container (max-width:480px){
+  .sx-pilot .wl-line{grid-template-columns:auto minmax(0,1fr)}
+  .sx-pilot .wl-act{grid-column:1 / -1;justify-self:start}
+  .sx-pilot .wl-sum{min-height:44px}
+}
+:root[data-motion="reduced"] .sx-pilot .wl-dot,:root[data-motion="reduced"] .sx-pilot .wl-act,:root[data-motion="reduced"] .sx-pilot .wl-sum.enter{animation:none}
+:root[data-motion="reduced"] .sx-pilot .wl-live,:root[data-motion="reduced"] .sx-pilot .wl-sum .chev{transition:none}

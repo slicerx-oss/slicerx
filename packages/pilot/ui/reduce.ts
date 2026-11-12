@@ -41,6 +41,8 @@ export interface ToolRowModel {
   title?: string
   /** The engine's own words for a step it refused, shown only in the row's details. */
   detail?: string
+  /** Local clock when the call started, ms; absent in a transcript saved before it was kept. */
+  at?: number
 }
 
 export interface ApprovalResolution {
@@ -51,7 +53,8 @@ export interface ApprovalResolution {
 }
 
 export type Block =
-  | { kind: 'think'; id: string; text: string; ms: number | null }
+  /** `at`: local clock when the thought started, ms; absent in a transcript saved before it was kept. */
+  | { kind: 'think'; id: string; text: string; ms: number | null; at?: number }
   | { kind: 'say'; id: string; text: string; streaming: boolean }
   | { kind: 'plan'; id: string; steps: string[] }
   | { kind: 'tools'; id: string; rows: ToolRowModel[] }
@@ -381,7 +384,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
     case 'thinking': {
       const b = lastBlock(s)
       if (b && b.kind === 'think' && b.ms === null) return replaceLastBlock(s, { ...b, text: b.text + event.delta })
-      return append(settleStreams(s), (id) => ({ kind: 'think', id, text: event.delta, ms: null }), true)
+      return append(settleStreams(s), (id) => ({ kind: 'think', id, text: event.delta, ms: null, at: now }), true)
     }
     case 'thinking_done': {
       const t = lastTurn(s)
@@ -412,6 +415,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
         progress: [],
         ms: undefined,
         untrusted: false,
+        at: now,
       }
       s = { ...s, meter: { ...s.meter, toolCalls: s.meter.toolCalls + 1, steps: s.meter.steps + 1 } }
       // a plugin tool is named `<plugin>.<tool>`
