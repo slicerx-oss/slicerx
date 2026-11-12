@@ -22,10 +22,11 @@ describe('the prompt builds what was asked in one plan', () => {
       expect(text).toContain('Each thing the message asks for that is its own part (a planter and a saucer) gets its own design. Once one is built and checked, go on to the next at once: plan it, or build it when it needs no plan. Never ask whether to do a part the message already asked for.')
     })
 
-    it(`${scope}: a lid prints open and flat beside the base`, () => {
+    it(`${scope}: a lid prints open and flat, on its hinge when it prints in place, beside the base when put on after`, () => {
       const text = systemPrompt(scope)
       expect(text).toContain('A lid planned with its case stays in that design, and a lid or moving piece prints open and flat')
-      expect(text).toMatch(/a lid or moving piece prints open and flat: a lid top down on the bed beside the base, 10 mm apart, never on top\./)
+      // option a (owner, 2026-11-12): a print in place lid prints open on its hinge; 10 mm apart only for a lid put on after
+      expect(text).toContain("a lid that prints in place on its hinge lies open flat on the shared hinge axis, its knuckles between the base's, never apart; a lid put on after printing lies top down on the bed beside the base, 10 mm apart, never on top.")
     })
   }
 

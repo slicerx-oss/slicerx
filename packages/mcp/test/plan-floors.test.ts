@@ -8,7 +8,7 @@ import type { DesignHost } from '@slicerx/cad-history'
 import type { AskAnswer, ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { createPlanRegistry, type PartPlan } from '../src/design-check'
-import { jointProblem, LID_ONE_WAY, LID_STATEMENT, planFloors, printsInPlace, raiseToFloors, unstatedJoint, underFloors } from '../src/plan-floors'
+import { jointProblem, LID_ON_HINGE, LID_ONE_WAY, LID_STATEMENT, planFloors, printsInPlace, raiseToFloors, unstatedJoint, underFloors } from '../src/plan-floors'
 import { createCardPlans, PLAN_GO, planChoiceId, type PlanAnswer, type PlanInput } from '../src/tab-tools'
 import { designToolset } from '../src/toolset'
 
@@ -269,8 +269,10 @@ describe('a hinge or pin plan states how it prints', () => {
     // pieces named in printInPlace print assembled; printInPlace false says they print apart
     expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'] })).toBeNull()
     expect(jointProblem({ ...unsaid, printInPlace: false })).toBeNull()
-    // named pieces laid out apart print open on their hinges; printed separately to put together still says both
-    expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'], assumptions: ['The lid prints laid apart beside the box.'] })).toBeNull()
+    // named pieces print on their hinge: opened flat beside the box on it is fine, laid apart is refused (option a, owner
+    // 2026-11-12); printed separately to put together still says both
+    expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'], assumptions: ['The lid prints opened flat beside the box on its hinge.'] })).toBeNull()
+    expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'], assumptions: ['The lid prints laid apart beside the box.'] })).toBe(LID_ON_HINGE)
     expect(jointProblem({ ...unsaid, printInPlace: ['Box', 'Lid'], assumptions: ['The pin is printed separately and pushed in.'] })).toBe(LID_ONE_WAY)
     // a recorded flexi fish: print in place in its name, a pin per joint, and printed flat on the bed
     const fish: PlanInput = { ...unsaid, part: 'Flexi fish, print in place', features: [{ name: 'Joint pin sockets', sizes: { joint_pin_diameter: 3 } }], assumptions: ['Printed flat on the bed, side profile up, no supports needed.'] }
@@ -278,15 +280,23 @@ describe('a hinge or pin plan states how it prints', () => {
     expect(jointProblem({ ...unsaid, assumptions: ['The box is laid flat on the bed.'] })).toBe(LID_STATEMENT)
   })
 
-  it('takes the recorded hinged box and infinity cube, laid open on their hinges, and still refuses one that says both', async () => {
-    // both name their pieces in printInPlace and lay them out 10 mm apart to print open (their 11-09 captures' plans)
+  it('refuses the recorded hinged box, its lid in place and laid 10 mm apart, takes the infinity cube, and refuses one that says both', async () => {
+    // both name their pieces in printInPlace (their 11-09 captures' plans). The box lays its lid 10 mm apart: a lid that
+    // prints in place prints on its hinge, so it is refused with what to plan instead, and taken with the lid open on
+    // the hinge axis (option a, owner 2026-11-12). The cube's pieces lie flat joined by their hinges, with a gap between
+    // the cubes, which lays nothing apart
     const recorded = JSON.parse(readFileSync(new URL('./fixtures/open-layout-plans.json', import.meta.url), 'utf8')) as Record<string, PlanInput>
-    for (const id of ['hinge-box', 'infinity-cube']) {
-      const input = recorded[id]!
-      expect(Array.isArray(input.printInPlace), id).toBe(true)
-      expect(jointProblem(input), id).toBeNull()
-      expect((await plan(input)).answer.accepted, id).toBe(true)
-    }
+    const box = recorded['hinge-box']!
+    expect(Array.isArray(box.printInPlace)).toBe(true)
+    expect(jointProblem(box)).toBe(LID_ON_HINGE)
+    await expect(plan(box)).rejects.toThrow(`assumptions: ${LID_ON_HINGE}`)
+    const onHinge = { ...box, assumptions: box.assumptions.map((a) => (/apart/i.test(a) ? 'Lid prints open flat on the shared hinge axis, its knuckles between the base\'s.' : a)) }
+    expect(jointProblem(onHinge)).toBeNull()
+    expect((await plan(onHinge)).answer.accepted).toBe(true)
+    const cube = recorded['infinity-cube']!
+    expect(Array.isArray(cube.printInPlace)).toBe(true)
+    expect(jointProblem(cube)).toBeNull()
+    expect((await plan(cube)).answer.accepted).toBe(true)
     const card = createCardPlans(createPlanRegistry())
     const tool = card.planTool({ newId: () => 'plan-1' })
     const ctx = { ask: async () => ({ id: planChoiceId(PLAN_GO, 'plan-1') }) } as unknown as ToolContext

@@ -424,6 +424,24 @@ function boxAndLid(parts: MeshPart[]): { bodies: Body[]; box: Body; lid: Body } 
   return { bodies, box, lid }
 }
 
+const r2z = (v: number): number => Math.round(v * 100) / 100
+
+/**
+ * The height of a box with its lid closed, when the lid is printed open beside it: the lid's lowest point under the
+ * box's top, so it does not sit on the box. The box's height and the lid's added, as the lid closes onto the top. Null
+ * when there is no box and lid, or the lid sits on the box already (its height is then read as it stands).
+ */
+export function closedHeight(parts: MeshPart[]): number | null {
+  const found = boxAndLid(parts)
+  if ('why' in found) return null
+  const { box, lid } = found
+  if (lid.min[2]! >= box.max[2]! - LID_ON_TOP_MM) return null
+  return box.max[2]! - box.min[2]! + (lid.max[2]! - lid.min[2]!)
+}
+
+/** A lid whose lowest point is within this of the box's top, or above it, sits on the box. */
+const LID_ON_TOP_MM = 1
+
 /**
  * Whether the box's lid is joined to it and can open (cases.ts LidSpec): the largest body is the box and the next
  * largest whose largest side is near the box's is its lid; the lid must be a piece of its own, come within LID_REACH_MM of the box (a lid laid apart has no
@@ -880,13 +898,16 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   out.bedFit = { pass: fit.fits, detail: `${fit.sizeMm.join(' by ')} mm` }
   // each size is read on the largest assembly along it: the part must reach it, and no body or assembly may pass it
   const groups = assemblySizes(run.parts)
-  const side = (axis: SizeCheck['axis']): number => Math.max(0, ...groups.map((g) => sideOf(g, axis)))
+  // a hinged lid printed open beside its box is held to the box's height closed, the lid on top (owner, 2026-11-12,
+  // the hinged-box case only): the box's height and the lid's added
+  const closed = c.lid ? closedHeight(run.parts) : null
+  const side = (axis: SizeCheck['axis']): number => (axis === 'z' && closed !== null ? closed : Math.max(0, ...groups.map((g) => sideOf(g, axis))))
   const off = c.sizes.filter((s) => {
     const v = side(s.axis)
     return v < s.minMm || v > s.maxMm
   })
   const shown = groups.length > 1 ? groups.map((g) => g.join(' by ')).join(', ') : sizeOf(run.parts).join(' by ')
-  out.sizes = { pass: off.length === 0, detail: `${shown} mm${off.length ? `; off: ${off.map((s) => `${s.axis} ${side(s.axis)} (want ${s.minMm} to ${s.maxMm})`).join(', ')}` : ''}` }
+  out.sizes = { pass: off.length === 0, detail: `${shown} mm${closed !== null ? `, ${r2z(closed)} mm high closed` : ''}${off.length ? `; off: ${off.map((s) => `${s.axis} ${side(s.axis)} (want ${s.minMm} to ${s.maxMm})`).join(', ')}` : ''}` }
   if (c.hook) out.hook = hookCheck(c.hook, run.parts)
   const stated = lidStated(run.events)
   if (c.lid) out.lid = lidCheck(c.machine, run.parts, stated)
