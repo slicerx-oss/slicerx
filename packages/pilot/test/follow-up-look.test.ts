@@ -8,7 +8,7 @@ import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/con
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '../src/index'
-import { STRENGTHEN_NOTE } from '../src/runtime'
+import { growBy, STRENGTHEN_NOTE, visibleNote } from '../src/runtime'
 
 function setup(steps: ScriptStep[], shares: number[], pass = true) {
   const log: string[] = []
@@ -149,5 +149,25 @@ describe('a follow-up on a built design', () => {
     const notes = sent().flat()
     expect(notes.some((n) => n.includes('still under the 2%') && n.includes('say the change is subtle'))).toBe(true)
     expect(notes.some((n) => n.startsWith('Before you answer'))).toBe(false)
+  })
+})
+
+describe('how much a change under the floor must grow', () => {
+  it('scales each size by the square root of the shortfall, with a margin, from 1.5 to 4 times', () => {
+    expect(growBy(0.8, 2)).toBe(2)
+    expect(growBy(1.9, 2)).toBe(1.5)
+    expect(growBy(0.1, 2)).toBe(4)
+    expect(growBy(0, 2)).toBe(4)
+  })
+
+  it('tells the model the factor and to add contrast, never the same sizes again', () => {
+    const note = visibleNote(0.8, 2)
+    expect(note).toContain('about 2 times')
+    expect(note).toContain('contrasting color')
+    expect(note).toContain('rebuilt at the same sizes it measures the same')
+    expect(STRENGTHEN_NOTE(0.8, 2)).toContain('about 2 times the sizes')
+    expect(STRENGTHEN_NOTE(0, 2)).not.toContain('times the sizes')
+    // a change that shows says its share, with no push to grow
+    expect(visibleNote(6, 2)).toBe('Measured: the change so far moved 6% of the whole-model view. Say that share in the reply.')
   })
 })
