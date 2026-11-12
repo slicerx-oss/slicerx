@@ -7,7 +7,7 @@ import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, MAX_STEPS_RE
 import type { DesignHost } from '@slicerx/cad-history'
 import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, stepIndex, type Design, type PiecePlans } from './design-tools'
 import { ToolInputError } from './errors'
-import { boxOf, placeNote, sharesPlace, solidBox, undercut } from './feature-place'
+import { boxIn, boxOf, placeNote, solidBox, solidsInPlace, solidsNote, undercut } from './feature-place'
 import type { FitProfile } from './fit-facts'
 import { seatNew, seatPattern } from './seat'
 import { modelArg, vec3, type GeomCall } from './args'
@@ -378,7 +378,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const build = defineTool({
     name: 'geom.build',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,
@@ -400,10 +400,17 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         // a part that builds a print-in-place piece of the design's plan takes the plan's name for it
         const piece = pieceNameFor(deps.plans, d, i.feature, i.name)
         const part: HistoryMesh = { name: piece ?? i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices, ...(shape ? { primitive: shape } : {}) }
-        // a new part never stands where another part already stands on the same face
-        const box = boxOf(part.positions)
-        const inWay = box ? sharesPlace(d.parts, box) : []
-        if (inWay.length) throw new ToolInputError(placeNote('part', inWay, box))
+        // a new part never stands where another part already stands on the same face, solid by solid
+        // each box or cylinder by its own box; a part with another kind of solid is read whole, by its mesh's box
+        const own = i.solids.map((s) => {
+          try {
+            return boxIn(solidBox(historySolid(s as Record<string, unknown>)), inv)
+          } catch {
+            return null
+          }
+        })
+        const inWay = solidsInPlace(d.parts, own.every((b) => b) ? own : [boxOf(part.positions)])
+        if (inWay.length) throw new ToolInputError(solidsNote(inWay))
         const n = d.parts.length
         await ds.add(d, -1, { op: 'parts.add', parts: [part], label: `Add ${part.name}` }, undefined, withFeature(i.feature))
         // a new part a hair from another (under the gap a printer keeps open) is seated on it, as this step
