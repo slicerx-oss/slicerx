@@ -71,6 +71,12 @@ const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions:
 /** What a step that changed a painted part's triangles notes. */
 export const PAINT_DROPPED = 'This step changed the part, so its paint was cleared.'
 
+/** A step's note with `more` after what it says already. */
+function noteMore(found: Pick<Found, 'notes'>, id: string, more: string): void {
+  const was = found.notes[id]
+  found.notes[id] = was ? `${was} ${more}` : more
+}
+
 /** What a join or cut notes when the engine reports the part it left as not closed. */
 export const NOT_CLOSED = 'The part is not closed after this step: look where the shapes meet before it is printed.'
 
@@ -106,11 +112,13 @@ export function missSentence(report: { miss?: Miss; volumeChangeMm3?: number }, 
 
 /**
  * The part with a step's result mesh, its faces with it. Its paint and its exact normals go: the triangles they named
- * are not there any more. `dropped` is told when there was paint, for the step's note.
+ * are not there any more. `dropped` is told when there was paint, and `ended` when the part was an exact solid, for
+ * the step's note.
  */
-const next = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }, dropped?: () => void): Flat => {
-  const { faces: _old, paint, normals: _normals, smb: _smb, body: _body, unmeshed: _keys, primitive: _made, ...rest } = part
+const next = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }, dropped?: () => void, ended?: () => void): Flat => {
+  const { faces: _old, paint, normals: _normals, smb, body, unmeshed: _keys, primitive: _made, ...rest } = part
   if (paint && dropped) dropped()
+  if ((smb || body !== undefined) && ended) ended()
   return { ...rest, positions: m.positions, indices: m.indices, ...(m.faces ? { faces: m.faces } : {}) }
 }
 
@@ -474,25 +482,29 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     }
   }
   if (strict && !onMesh) throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
-  // a part that was an exact solid until this step is a mesh from here on: the step says so, once, as a step the kernel
-  // could not do does (EXACT_FELL_BACK)
-  if (exact && !found.notes[s.id] && (s.part === -1 ? parts : [parts[s.part]]).some((x) => !!x && (!!x.smb || x.body !== undefined))) found.notes[s.id] = EXACT_MESH_FROM_HERE
-  // the mesh path works on meshes: kept bodies not tessellated yet are now
-  parts = await meshedAll(engine, parts)
   const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]
+  // the mesh path works on meshes: the kept bodies of the parts it reads are tessellated now, and every other part
+  // keeps its solid untouched; a new body or an added part reads none
+  const meshes = p.op === 'parts.add' || newBody ? [] : reads
+  parts = meshes.some((x) => x?.unmeshed) ? await Promise.all(parts.map((x) => (meshes.includes(x) ? meshed(engine, x) : x))) : parts
   const out = parts.slice()
   const item = (f: Flat) => ({ mesh: meshOf(f), transform: s.transform })
   const dropped = () => {
     found.notes[s.id] = PAINT_DROPPED
+  }
+  // a part that was an exact solid until this step is a mesh from here on: the step says so, once, unless its note
+  // already says it ran on the mesh (EXACT_FELL_BACK)
+  const ended = () => {
+    if (exact && !found.fellBack.includes(s.id) && !found.notes[s.id]?.includes(EXACT_MESH_FROM_HERE)) noteMore(found, s.id, EXACT_MESH_FROM_HERE)
   }
   // A result in world space, back in the part's frame. Only the name and slot carry over: paint goes, as in next().
   const local = (m: { positions: ArrayLike<number>; indices: ArrayLike<number> }, like: Pick<Flat, 'name' | 'slot' | 'paint'>): Flat => {
     if (like.paint) dropped()
     return flat(bakeMesh({ name: like.name, slot: like.slot, ...m }, invert(s.transform)))
   }
-  const keep = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }) => next(part, m, dropped)
+  const keep = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }) => next(part, m, dropped, ended)
   if (p.op === 'parts.add') return [...out, ...p.parts.map(flat)]
-  if (p.op === 'boolean' || p.op === 'plane.cut' || p.op === 'split' || p.op === 'mirror') return partsStep(call, s, p, out, dropped)
+  if (p.op === 'boolean' || p.op === 'plane.cut' || p.op === 'split' || p.op === 'mirror') return partsStep(call, s, p, out, dropped, ended)
   // newBody holds only for these ops; naming them again narrows p
   if (newBody && (p.op === 'shape.extrude' || p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep')) {
     const name = p.name ? p.name : 'Body'
@@ -537,7 +549,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         }
         out[i] = keep(part, r.mesh)
         // the step lands, and says so, when the engine reads the part it left as open
-        if (r.report.watertight === false) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${NOT_CLOSED}` : NOT_CLOSED
+        if (r.report.watertight === false) noteMore(found, s.id, NOT_CLOSED)
         break
       }
       case 'subtract': {
@@ -546,7 +558,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         if (!(r.removedVolumeMm3 > 0)) throw new Missed('The shape no longer reaches the part.')
         out[i] = keep(part, r.mesh)
         // a cut the same size as a wall it meets can leave the part open: it lands, and says so, as a join does
-        if (r.watertight === false) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${NOT_CLOSED}` : NOT_CLOSED
+        if (r.watertight === false) noteMore(found, s.id, NOT_CLOSED)
         break
       }
       case 'hollow':
@@ -795,7 +807,7 @@ function localPlane(s: Step, plane: { point: Vec3; normal: Vec3 }): { point: Vec
 const hasTriangles = (m: { indices?: ArrayLike<number> } | undefined): m is { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces } => (m?.indices?.length ?? 0) >= 3
 
 /** Steps that change which parts there are: combining parts, cutting one in two, splitting it to fit, mirroring it. */
-async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[], dropped: () => void): Promise<Flat[]> {
+async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[], dropped: () => void, ended: () => void): Promise<Flat[]> {
   const part = parts[s.part]
   if (!part) throw new Broken('The part this step works on is gone.')
   const item = (f: Flat) => ({ mesh: meshOf(f), transform: s.transform })
@@ -807,7 +819,7 @@ async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[
       const rest = others as Flat[]
       const r = (await call('boolean', p.kind === 'union' ? { op: 'union', a: [item(part), ...rest.map(item)], b: [] } : { op: p.kind, a: [item(part)], b: rest.map(item) })) as { mesh: Flat }
       if (!hasTriangles(r.mesh)) throw new Broken('Nothing is left of the part after this step.')
-      out[s.part] = next(part, r.mesh, dropped)
+      out[s.part] = next(part, r.mesh, dropped, ended)
       return out.filter((_, i) => !p.with.includes(i))
     }
     case 'plane.cut': {
@@ -815,16 +827,16 @@ async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[
       const below = hasTriangles(r.below) ? r.below : undefined
       const above = hasTriangles(r.above) ? r.above : undefined
       if (!below || !above) throw new Broken('The plane no longer crosses the part.')
-      if (p.keep === 'below') out[s.part] = next(part, below, dropped)
-      else if (p.keep === 'above') out[s.part] = next(part, above, dropped)
-      else out.splice(s.part, 1, next(part, below, dropped), { ...next(part, above, dropped), name: p.name ?? `${part.name} top` })
+      if (p.keep === 'below') out[s.part] = next(part, below, dropped, ended)
+      else if (p.keep === 'above') out[s.part] = next(part, above, dropped, ended)
+      else out.splice(s.part, 1, next(part, below, dropped, ended), { ...next(part, above, dropped, ended), name: p.name ?? `${part.name} top` })
       return out
     }
     case 'split': {
       const r = (await call('split', { mesh: meshOf(part), options: { buildVolumeMm: p.buildVolumeMm, ...(p.marginMm !== undefined ? { marginMm: p.marginMm } : {}) } })) as { parts?: { mesh: Flat }[] }
       const pieces = (r.parts ?? []).map((x) => x.mesh).filter(hasTriangles)
       if (!pieces.length) throw new Broken('The part could not be split to fit.')
-      out.splice(s.part, 1, ...pieces.map((m, k) => ({ ...next(part, m, dropped), ...(pieces.length > 1 ? { name: `${part.name} ${k + 1}` } : {}) })))
+      out.splice(s.part, 1, ...pieces.map((m, k) => ({ ...next(part, m, dropped, ended), ...(pieces.length > 1 ? { name: `${part.name} ${k + 1}` } : {}) })))
       return out
     }
     case 'mirror': {
@@ -836,7 +848,7 @@ async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[
       const flipped = { positions: Array.from(image.positions), indices: Array.from(image.indices) }
       const r = (await call('boolean', { op: 'union', a: p.copy ? [{ mesh: meshOf(part) }, { mesh: flipped }] : [{ mesh: flipped }], b: [] })) as { mesh: Flat }
       if (!hasTriangles(r.mesh)) throw new Broken('The mirror made nothing.')
-      out[s.part] = next(part, r.mesh, dropped)
+      out[s.part] = next(part, r.mesh, dropped, ended)
       return out
     }
   }

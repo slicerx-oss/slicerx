@@ -248,7 +248,7 @@ describe('asking the engine for an exact loft', () => {
     expect(r.parts).toEqual(await meshLoft(step))
   })
 
-  it('a mesh step on the lofted body ends its solid and its normals', async () => {
+  it('a mesh step on the lofted body ends its solid and its normals, and says so', async () => {
     const e = engine()
     const r = await replayHistory(e.call, { history: history(loft(), { id: 'repair-1', part: 0, transform: [...IDENTITY], params: { op: 'repair' } }), exact: true }, kept)
     // the mesh step says the part is no longer an exact solid from there on
