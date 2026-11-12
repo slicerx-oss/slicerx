@@ -626,7 +626,7 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
     const part = parts[s.part]
     if (!part) throw new Broken('The part this pattern works on is gone.')
     const world = bakeMesh({ name: part.name, slot: part.slot, positions: part.positions, indices: part.indices }, s.transform)
-    const follow = surfaceMoves(moves, anchor, Array.from(world.positions), part.indices)
+    const follow = surfaceMoves(moves, anchor, Array.from(world.positions), Array.from(part.indices))
     if (!Array.isArray(follow)) throw new Broken(`Copy ${follow.copy}: ${follow.why}`)
     moves = follow
   }
