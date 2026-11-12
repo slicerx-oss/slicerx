@@ -66,6 +66,17 @@ describe('a new part a hair from another', () => {
     expect(r.output.steps).toBe(2)
   })
 
+  it('0.1 mm above the face another part stands on is seated, not refused as standing in its place', async () => {
+    const t = await start()
+    await t.box('Base', [0, 0, 0], [40, 20, 10])
+    await t.box('Post', [2, 2, 10], [10, 10, 20])
+    const r = await t.box('Knob', [20, 5, 10.1], [30, 15, 14])
+    expect(r.summary).toContain('Knob was 0.1 mm from Base, so it is seated on Base (moved 0.15 mm)')
+    const knob = r.output.parts.find((p) => p.name === 'Knob')!
+    expect(near(knob.minMm[2], 10.1 - 0.1 - SEAT_OVERLAP_MM)).toBe(true)
+    expect(r.output.steps).toBe(3)
+  })
+
   it('0.5 mm above the block stays where it is, and design.check finds nothing loose', async () => {
     const t = await start()
     await t.box('Block', [0, 0, 0], [20, 20, 10])
