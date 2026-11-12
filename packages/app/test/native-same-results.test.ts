@@ -659,7 +659,7 @@ const engines: Engines = {
 const report: DesignRun[] = []
 afterAll(() => {
   const out = process.env['SX_SAME_RESULTS_OUT']
-  if (!out || !report.length) return
+  if (!out) return
   mkdirSync(dirname(out), { recursive: true })
   writeFileSync(out, `${JSON.stringify({ native: serveBin, wasm: wasmPath, tolerance: TOLERANCE_MM, designs: report }, null, 1)}\n`)
 })
