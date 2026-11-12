@@ -19,11 +19,12 @@ use cxx::{ExternType, UniquePtr, type_id};
 use std::collections::HashMap;
 #[cfg(test)]
 use std::ffi::CStr;
-use std::ffi::{c_long, c_ulong};
+use std::ffi::{CString, c_long, c_ulong};
 use std::marker::PhantomData;
 use std::mem::offset_of;
 use std::ptr::{self, NonNull};
 use std::sync::MutexGuard;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // the same sizes and offsets cpp/sx_kernel.h asserts of the kernel's types
 const _: () = assert!(size_of::<Vec3>() == 24 && align_of::<Vec3>() == align_of::<f64>());
@@ -227,6 +228,12 @@ mod ffi {
             joined_edges: &mut ULONG,
             widest_vertex_gap: &mut f64,
             widest_edge_gap: &mut f64,
+        ) -> Result<SmLong>;
+
+        unsafe fn SmApiWriteBrepToFile(
+            body: *const SmBrep,
+            name: *const c_char,
+            ascii: i32,
         ) -> Result<SmLong>;
 
         // reading a body
@@ -909,6 +916,33 @@ impl Solid {
                 solid: PhantomData,
             })
             .collect())
+    }
+
+    /// The body in the kernel's own text format. The kernel writes that to a file, so it goes through one in the
+    /// temp folder, which is removed again.
+    pub(crate) fn text(&self) -> Result<String> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let failed = |what: &str| Error::input("saved body", format!("could not {what} a scratch file"));
+        // unique in this process by the counter, and between processes sharing the temp folder by the process id
+        let path = std::env::temp_dir().join(format!(
+            "sx_brep_save_{}_{}.smb",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let name = path
+            .to_str()
+            .and_then(|p| CString::new(p).ok())
+            .ok_or_else(|| failed("name"))?;
+        let status = {
+            let _kernel = held();
+            // SAFETY: the body is live and the kernel only reads it; `name` is a NUL-terminated string that
+            // outlives the call.
+            unsafe { ffi::SmApiWriteBrepToFile(self.brep.as_ptr(), name.as_ptr(), 1) }
+        };
+        let text = std::fs::read_to_string(&path);
+        let _ = std::fs::remove_file(&path);
+        check("save", status)?;
+        text.map_err(|_| failed("read"))
     }
 
     fn face_pointers(&self, _kernel: &Held) -> Result<Vec<NonNull<ffi::SmFace>>> {
