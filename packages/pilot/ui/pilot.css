@@ -455,15 +455,15 @@
 .sx-pilot .wl-line{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;column-gap:8px;min-height:24px}
 /* the raven's ring is 34 px across over a 24 px slot: room beside it so it never touches the words */
 .sx-pilot .wl-line .raven-wait{width:24px;height:24px;margin-right:4px}
-.sx-pilot .wl-dot{display:block;width:8px;height:8px;border-radius:50%;background:var(--cyan);animation:sxp-pulse 1.2s ease-in-out infinite}
+.sx-pilot .wl-dot{display:block;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:sxp-pulse 1.2s ease-in-out infinite}
 .sx-pilot .wl-who{font:400 13px/1.5 var(--f-body);color:var(--t-mute);white-space:nowrap}
 .sx-pilot .wl-who b{font-weight:600;color:var(--t-fg)}
 .sx-pilot .wl-act{justify-self:end;max-width:100%;font:500 12px/1.5 var(--f-mono);color:var(--t-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:wl-tick .2s ease}
 @keyframes wl-tick{from{opacity:0;transform:translateY(3px)}}
 .sx-pilot .wl-strip{display:flex;gap:2px;height:4px}
 .sx-pilot .wl-strip i{flex:0 1 12px;min-width:1px;border-radius:1px;background:var(--line-soft)}
-.sx-pilot .wl-strip i.on{background:color-mix(in srgb,var(--cyan) 45%,transparent)}
-.sx-pilot .wl-strip i.done{background:var(--cyan)}
+.sx-pilot .wl-strip i.on{background:color-mix(in srgb,var(--accent) 50%,transparent)}
+.sx-pilot .wl-strip i.done{background:var(--accent)}
 .sx-pilot .wl-strip i.bad{background:var(--orange)}
 .sx-pilot .wl-sum{width:100%;display:flex;align-items:center;gap:8px;min-height:36px;border:0;background:none;padding:8px 12px;text-align:left;cursor:pointer;color:var(--t-mute);font:400 13px/1.5 var(--f-body);border-radius:var(--r-md)}
 .sx-pilot .wl-sum:hover{color:var(--t-sub)}
