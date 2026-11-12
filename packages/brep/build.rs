@@ -36,6 +36,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SX_SMLIB_CACHE");
     println!("cargo:rerun-if-env-changed=SX_BREP_REQUIRE");
     println!("cargo:rerun-if-changed=cpp");
+    println!("cargo:rerun-if-changed=src/kernel.rs");
     println!("cargo:rerun-if-changed=scripts/swap-routines.sh");
     println!("cargo::rustc-check-cfg=cfg(sx_brep_kernel)");
     let dir = kernel_dir().filter(|d| d.join("source/SMLib/inc").is_dir());
@@ -61,8 +62,7 @@ fn main() {
     };
     // two libraries, since the kernel and its C API each have a StdAfx.h that must come first on the include path;
     // the C API and our wrapper first, so the linker finds the kernel after them
-    let build = |inc: [&Path; 2]| {
-        let mut b = cc::Build::new();
+    let build = |mut b: cc::Build, inc: [&Path; 2]| {
         b.cpp(true)
             .std("c++17")
             .warnings(false)
@@ -82,7 +82,13 @@ fn main() {
         b
     };
     let (sm_inc, api_inc) = (sm.join("inc"), api.join("inc"));
-    let mut api_build = build([&api_inc, &sm_inc]);
+    // with the typed feature the wrapper's library also holds the bridge of src/kernel.rs: cxx writes its C++ half,
+    // which builds against the same headers with the same flags
+    #[cfg(feature = "typed")]
+    let wrapper = cxx_build::bridge("src/kernel.rs");
+    #[cfg(not(feature = "typed"))]
+    let wrapper = cc::Build::new();
+    let mut api_build = build(wrapper, [&api_inc, &sm_inc]);
     api_build
         .define("SM_API_EXPORTS", None)
         .files(sources(&api))
@@ -94,7 +100,7 @@ fn main() {
     api_build.compile("sx_brep");
     // our versions of the routines swap-routines.sh takes out build with the kernel; integrator.cpp replaces the
     // kernel's SmIntegrator.cpp, which an unswapped kernel (as for recording the golden file) still has
-    let mut smlib = build([&sm_inc, &api_inc]);
+    let mut smlib = build(cc::Build::new(), [&sm_inc, &api_inc]);
     // no debug info for the kernel: in a debug build its objects pass 4 GB, past MSVC's archive limit (LNK1248)
     smlib.debug(false).files(sources(&sm)).file("cpp/routines.cpp");
     if !sm.join("src/SmIntegrator.cpp").exists() {
