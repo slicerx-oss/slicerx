@@ -38,6 +38,25 @@ export interface ExactPart {
 export interface Solids {
   keep: boolean
   made: (body: number) => void
+  /** Whether the engine makes an exact body for this operation itself (exactOps); asked once a replay. */
+  has?: (op: string) => Promise<boolean>
+}
+
+/** The engine operation that lists the operations it has an exact path for. */
+export const EXACT_OPS = 'exact.ops'
+
+/**
+ * The operations the engine makes exact bodies for, as it answers EXACT_OPS (`{ ops: [...] }`). An engine without
+ * the kernel lists none, and one that does not know the question has none either.
+ */
+export async function exactOps(call: Call): Promise<Set<string>> {
+  try {
+    const r = (await call(EXACT_OPS, {})) as { ops?: unknown } | null
+    return new Set(Array.isArray(r?.ops) ? r.ops.filter((o): o is string => typeof o === 'string') : [])
+  } catch (e) {
+    if ((e as { name?: string }).name === 'AbortError') throw e
+    return new Set()
+  }
 }
 
 /** The largest solid text kept with a part; a bigger one is dropped and the part goes on on the mesh. */

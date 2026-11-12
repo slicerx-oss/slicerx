@@ -5,14 +5,14 @@
 // provider. Steps run in order; the first one that fails is marked broken with the engine's sentence,
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
-import type { EdgeRef, MovedFace, Vec3 } from './types'
+import type { EdgeRef, FaceFrame, MovedFace, Vec3 } from './types'
 import { withTilt } from './tilt'
-import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
+import { IDENTITY, bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type LoftProfile, type Mat4, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 import { repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { EXACT_FELL_BACK, exactStep, meshed, type Solids } from './exact'
+import { EXACT_FELL_BACK, exactOps, exactStep, fromSolid, meshed, rigidFrame, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -268,6 +268,18 @@ const listed = (v: ArrayLike<number>): number[] => (Array.isArray(v) ? (v as num
 /** A part's mesh as a mesh step takes it. */
 const meshOf = (p: Flat) => ({ positions: listed(p.positions), indices: listed(p.indices), ...(p.faces ? { faces: Array.isArray(p.faces.ids) ? p.faces : { ...p.faces, ids: listed(p.faces.ids) } } : {}) })
 
+/** The bed's frame, which a loft profile with no frame of its own lies on. */
+const BED: FaceFrame = { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+
+/** A loft profile given in world at a step's transform, on the same plane in the part's own frame (`inv` the transform inverted). */
+function localProfile(q: LoftProfile, inv: Mat4): LoftProfile {
+  const f = q.frame ?? BED
+  return { ...q, frame: { origin: point(inv, f.origin), normal: direction(inv, f.normal), u: direction(inv, f.u), v: direction(inv, f.v) } }
+}
+
+/** What a new-body loft notes when its step is stretched or mirrored, so the engine was not asked for an exact solid. */
+export const EXACT_LOFT_NOT_PLACED = 'This loft is stretched or mirrored where it sits, so it was made as a mesh, not an exact solid.'
+
 /**
  * The edges of a fillet or chamfer step that are still there: an edge whose ends both sat on a face a
  * push took all the way through (a pocket floor pushed out the bottom) went with that face.
@@ -365,6 +377,40 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       return done
     }
   }
+  // A new body lofted where the engine makes exact lofts itself is asked for as one. The op takes no transform, so
+  // the profiles go in the part's own frame and the body comes back there, as every later exact step expects it.
+  let lofted: { mesh: { positions: number[]; indices: number[] } } | undefined
+  if (exact && solids && p.op === 'sketch.loft' && (p.operation ?? 'new') === 'new' && (await solids.has?.('sketch.loft'))) {
+    // a loft the engine made no body for runs on the mesh, with the engine's own sentence on the step
+    const fell = (why: string) => {
+      if (strict) throw new Broken(`Exact operation failed: ${why}`)
+      found.notes[s.id] = why
+      found.fellBack.push(s.id)
+    }
+    if (!rigidFrame(s.transform)) fell(EXACT_LOFT_NOT_PLACED)
+    else {
+      const same = s.transform.every((v, i) => v === IDENTITY[i])
+      const inv = invert(s.transform)
+      // asked for and answered as the other exact steps' bodies are (exact.ts): a number with its faces' keys
+      // (`withKeys`) from an engine that keeps bodies, the solid's text (`save`) from one that does not
+      const r = (await call('sketch.loft', { ...loftOpts(same ? p : { ...p, profiles: p.profiles.map((q) => localProfile(q, inv)) }), operation: 'new', exact: true, ...(solids.keep ? { withKeys: true } : { save: true }) })) as { mesh: { positions: number[]; indices: number[] }; body?: unknown; bodyKeys?: unknown; bodySmb?: unknown; exact?: { made?: boolean; why?: unknown } }
+      const like = { name: p.name ? p.name : 'Body', slot: newSlot(p) ?? parts[s.part]?.slot ?? 1 }
+      let body: Flat | undefined
+      if (solids.keep && typeof r.body === 'number') {
+        solids.made(r.body)
+        body = { ...like, positions: [], indices: [], body: r.body, unmeshed: Array.isArray(r.bodyKeys) ? (r.bodyKeys as number[]) : [] }
+      } else if (!solids.keep && typeof r.bodySmb === 'string') body = await fromSolid(call, like, r.bodySmb)
+      if (body) {
+        const out = parts.slice()
+        if (s.part < out.length) out[s.part] = body
+        else out.push(body)
+        return out
+      }
+      fell(typeof r.exact?.why === 'string' && r.exact.why ? r.exact.why : EXACT_FELL_BACK)
+      // the answer's mesh is today's loft when the profiles went as they are
+      if (same) lofted = r
+    }
+  }
   if (strict) throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
   // the mesh path works on meshes: kept bodies not tessellated yet are now
   parts = await meshedAll(engine, parts)
@@ -386,7 +432,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   if (newBody) {
     const name = (p.op === 'shape.extrude' || p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && p.name ? p.name : 'Body'
     const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: 'new' } : p.op === 'sketch.sweep' ? { ...sweepOpts(p), operation: 'new' } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: 'new' }
-    const r = (await call(p.op, req)) as { mesh: { positions: number[]; indices: number[] } }
+    const r = lofted ?? ((await call(p.op, req)) as { mesh: { positions: number[]; indices: number[] } })
     const body = local(r.mesh, { name, slot: newSlot(p) ?? out[s.part]?.slot ?? 1 })
     if (s.part < out.length) out[s.part] = body
     else out.push(body)
@@ -708,7 +754,9 @@ function font(name: string, fonts: Record<string, string>): string {
 export async function replayHistory(call: EngineCall, req: ReplayRequest, o: ReplayOptions = {}): Promise<ReplayResult & { before?: HistoryMesh[] }> {
   if (req.history.exact) req = { ...req, exact: true }
   const made = new Set<number>()
-  const solids: Solids = { keep: !!(req.exact && o.keepsBodies), made: (b) => made.add(b) }
+  // which operations the engine makes exact bodies for is asked once, by the first step that needs to know
+  let has: Promise<Set<string>> | undefined
+  const solids: Solids = { keep: !!(req.exact && o.keepsBodies), made: (b) => made.add(b), has: async (op) => (await (has ??= exactOps(call))).has(op) }
   try {
     return await replaySteps(call, req, o, solids)
   } finally {
