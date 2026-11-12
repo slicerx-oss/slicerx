@@ -5,11 +5,13 @@
 //!
 //! The caller says where every face is; the kernel only makes each face from its curves and joins them. Nothing
 //! here fits or guesses a surface. What is given is checked in plain words before the kernel is asked, and the
-//! joined result goes through [`Body::checked`] like every other body.
+//! joined result goes through [`Body::checked`] like every other body. Then every edge of the result is read back
+//! against the curves its faces were given, since the kernel can join faces along a side that is on neither.
 
 use crate::body::{Body, Frame, Surface};
 use crate::error::{Error, Result};
 use crate::kernel;
+use crate::tess::Tessellation;
 
 /// The most faces one call joins.
 pub const MAX_SHEETS: usize = 4096;
@@ -19,6 +21,11 @@ pub const MAX_PIECES: usize = 4096;
 /// (of 1 mm when all are smaller). Faces that share a side are given the very same curve along it, so a real gap
 /// there is rounding. The kernel closes far wider ones without a word, and then the solid is not the one asked for.
 const MEET: f64 = 1e-9;
+/// How many stretches each piece of a curve a face was given is cut into, to be measured against the joined body's
+/// edges at both ends of every stretch.
+const STRETCHES: u32 = 32;
+/// How closely the joined body is tessellated, in mm, for the points the kernel puts on each of its edges.
+const EDGE_CHORD_MM: f64 = 1e-3;
 
 /// A curve in space, by its control points. The kernel holds it exactly as given.
 #[derive(Debug, Clone, PartialEq)]
@@ -188,11 +195,17 @@ fn flat(sides: &[Path]) -> Result<()> {
     let normal = area.map(|c| c / length);
     if points
         .iter()
-        .any(|&p| dot(sub(p, origin), normal).abs() > 1e-9 * size.max(1.0))
+        .any(|&p| dot(sub(p, origin), normal).abs() > MEET * size.max(1.0))
     {
         return Err(Error::input(what, "its loop does not lie in one plane"));
     }
     Ok(())
+}
+
+/// How closely the joined body must hold to what was given, in mm, for every read-back here: the gap the kernel
+/// reports, each flat face's plane and every edge. [`MEET`] of the largest coordinate given.
+fn meet(sheets: &[Sheet]) -> f64 {
+    MEET * size(sheets)
 }
 
 /// The largest coordinate of any point given, at least 1.
@@ -221,7 +234,7 @@ fn off_its_plane(plane: &Frame, sides: &[Path]) -> f64 {
 /// through here. Read back of the joined body: each flat face given is a plane, and every point of its loop is on
 /// that plane as closely as two faces must meet.
 fn flat_where_given(body: &Body, sheets: &[Sheet], order: &[usize]) -> Result<()> {
-    let limit = MEET * size(sheets);
+    let limit = meet(sheets);
     for (face, &sheet) in body.faces()?.iter().zip(order) {
         let Some(Sheet::Flat(sides)) = sheets.get(sheet) else {
             continue;
@@ -241,6 +254,236 @@ fn flat_where_given(body: &Body, sheets: &[Sheet], order: &[usize]) -> Result<()
         }
     }
     Ok(())
+}
+
+/// How far `point` is from the straight piece from `start` to `end`.
+fn off_line(point: [f64; 3], start: [f64; 3], end: [f64; 3]) -> f64 {
+    let way = sub(end, start);
+    let length = dot(way, way);
+    let share = if length > 0.0 {
+        (dot(sub(point, start), way) / length).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let off = sub(point, [0, 1, 2].map(|i| start[i] + way[i] * share));
+    dot(off, off).sqrt()
+}
+
+/// The cubic Bezier `controls` at `at`, and its first and second derivatives there.
+fn cubic_at(controls: &[[f64; 3]; 4], at: f64) -> [[f64; 3]; 3] {
+    let rest = 1.0 - at;
+    let weights = [
+        [
+            rest * rest * rest,
+            3.0 * rest * rest * at,
+            3.0 * rest * at * at,
+            at * at * at,
+        ],
+        [
+            -3.0 * rest * rest,
+            3.0 * rest * rest - 6.0 * rest * at,
+            6.0 * rest * at - 3.0 * at * at,
+            3.0 * at * at,
+        ],
+        [
+            6.0 * rest,
+            6.0 * at - 12.0 * rest,
+            6.0 * rest - 12.0 * at,
+            6.0 * at,
+        ],
+    ];
+    weights.map(|weight| {
+        let mut sum = [0.0; 3];
+        for (control, w) in controls.iter().zip(weight) {
+            for (coordinate, c) in sum.iter_mut().zip(control) {
+                *coordinate += c * w;
+            }
+        }
+        sum
+    })
+}
+
+/// How far `point` is from the cubic Bezier `controls`, at the place along it where that is least: the nearest of
+/// its points at [`STRETCHES`] even steps, closed in on by Newton's steps on where the curve runs square to the way
+/// to `point`.
+fn off_cubic(point: [f64; 3], controls: &[[f64; 3]; 4]) -> f64 {
+    let gap = |at: f64| {
+        let off = sub(cubic_at(controls, at)[0], point);
+        dot(off, off).sqrt()
+    };
+    let (mut best, mut at) = (0..=STRETCHES)
+        .map(|k| f64::from(k) / f64::from(STRETCHES))
+        .map(|at| (gap(at), at))
+        .fold(
+            (f64::INFINITY, 0.0),
+            |least, here| if here.0 < least.0 { here } else { least },
+        );
+    for _ in 0..16 {
+        let [on, first, second] = cubic_at(controls, at);
+        let off = sub(on, point);
+        let slope = dot(first, first) + dot(off, second);
+        if slope.abs() <= f64::MIN_POSITIVE {
+            break;
+        }
+        at = (at - dot(off, first) / slope).clamp(0.0, 1.0);
+        best = best.min(gap(at));
+    }
+    best
+}
+
+impl Path {
+    /// How far `point` is from the curve.
+    fn off(&self, point: [f64; 3]) -> f64 {
+        match self {
+            Self::Lines(points) => points
+                .windows(2)
+                .map(|pair| off_line(point, pair[0], pair[1]))
+                .fold(f64::INFINITY, f64::min),
+            Self::Cubics(spans) => spans
+                .iter()
+                .map(|controls| off_cubic(point, controls))
+                .fold(f64::INFINITY, f64::min),
+        }
+    }
+
+    /// Points along the curve: each piece's start and [`STRETCHES`] even steps along it, and the curve's end.
+    fn along(&self) -> Vec<[f64; 3]> {
+        let steps = (0..STRETCHES).map(|k| f64::from(k) / f64::from(STRETCHES));
+        let mut out: Vec<[f64; 3]> = match self {
+            Self::Lines(points) => points
+                .windows(2)
+                .flat_map(|pair| {
+                    let (start, end) = (pair[0], pair[1]);
+                    steps
+                        .clone()
+                        .map(move |share| [0, 1, 2].map(|i| start[i] + (end[i] - start[i]) * share))
+                })
+                .collect(),
+            Self::Cubics(spans) => spans
+                .iter()
+                .flat_map(|controls| steps.clone().map(move |share| cubic_at(controls, share)[0]))
+                .collect(),
+        };
+        out.extend(self.ends().map(|(_, end)| end));
+        out
+    }
+}
+
+/// Whether `points` lie on the straight line from the first to the last, as closely as two faces must meet.
+fn straight(points: &[[f64; 3]], limit: f64) -> bool {
+    match (points.first(), points.last()) {
+        (Some(&start), Some(&end)) if dot(sub(end, start), sub(end, start)) > 0.0 => {
+            points.iter().all(|&point| off_line(point, start, end) <= limit)
+        }
+        _ => false,
+    }
+}
+
+/// The curves a face given as `sheet` runs between: a ruled or skinned face's first and last curves and, where its
+/// curves' ends lie on one straight line, that line; a flat face's loop. A skinned face whose curves' ends do not
+/// lie on a line runs its own smooth curve through them, which it was not given, so its edge with a flat face there
+/// is held to the flat face's curves alone.
+fn sides_of(sheet: &Sheet, limit: f64) -> Vec<Path> {
+    let across = |rails: &[&Path]| {
+        let mut out: Vec<Path> = rails
+            .first()
+            .into_iter()
+            .chain(rails.last())
+            .map(|&p| p.clone())
+            .collect();
+        let starts: Vec<[f64; 3]> = rails.iter().filter_map(|r| r.ends()).map(|e| e.0).collect();
+        let ends: Vec<[f64; 3]> = rails.iter().filter_map(|r| r.ends()).map(|e| e.1).collect();
+        for points in [starts, ends] {
+            if straight(&points, limit) {
+                out.push(Path::Lines(vec![points[0], points[points.len() - 1]]));
+            }
+        }
+        out
+    };
+    match sheet {
+        Sheet::Ruled(a, b) => across(&[a, b]),
+        Sheet::Skinned(rails) => across(&rails.iter().collect::<Vec<_>>()),
+        Sheet::Flat(sides) => sides.clone(),
+    }
+}
+
+/// Read back of the joined body: how far its edges are from the curves its faces were given, in mm, both ways.
+///
+/// Each edge is measured at every point the kernel puts on it when it tessellates the body at a chord of
+/// [`EDGE_CHORD_MM`], against the curves of each of the two faces it joins, and every piece of every curve given is
+/// measured at both ends of [`STRETCHES`] even stretches against the nearest edge, by the kernel's own closest
+/// point. Every one of those distances is exact. Between them, an edge that is the curve it was given differs from
+/// it by rounding, and one that is a different curve through the same ends shows at the samples once it bows more
+/// than a few hundredths of its stretch's length squared over its radius; so the line is held at the samples, not
+/// proven between them.
+fn off_their_curves(body: &Body, sheets: &[Sheet], order: &[usize]) -> Result<f64> {
+    let limit = meet(sheets);
+    let sides: Vec<Vec<Path>> = sheets.iter().map(|sheet| sides_of(sheet, limit)).collect();
+    let mesh = body.tessellate(&Tessellation {
+        chord_mm: EDGE_CHORD_MM,
+        ..Tessellation::default()
+    })?;
+    let unknown = Error::NotSolid {
+        op: "stitch",
+        why: "the kernel gave an edge a face that was not given",
+    };
+    let mut worst = 0.0f64;
+    let mut boxes = Vec::with_capacity(mesh.edges.len());
+    let sheet_of = |face: u32| {
+        order
+            .get(face as usize)
+            .copied()
+            .filter(|&sheet| sheet < sheets.len())
+            .ok_or_else(|| unknown.clone())
+    };
+    for edge in &mesh.edges {
+        let points: Vec<[f64; 3]> = edge
+            .points
+            .iter()
+            .filter_map(|&v| mesh.positions.get(v as usize).copied())
+            .collect();
+        let [one, other] = [sheet_of(edge.faces[0])?, sheet_of(edge.faces[1])?];
+        for (sheet, beside) in [(one, other), (other, one)] {
+            // a skinned face's own curve through its curves' ends, against a flat face: the flat face's loop holds it
+            let open = matches!(sheets[sheet], Sheet::Skinned(_)) && sides[sheet].len() < 4;
+            if open && sheet != beside && matches!(sheets[beside], Sheet::Flat(_)) {
+                continue;
+            }
+            let curves = &sides[sheet];
+            for &point in &points {
+                worst = worst.max(
+                    curves
+                        .iter()
+                        .map(|curve| curve.off(point))
+                        .fold(f64::INFINITY, f64::min),
+                );
+            }
+        }
+        // the box around the edge's points: the edge is within a chord of the straight pieces between them
+        let low: [f64; 3] =
+            std::array::from_fn(|i| points.iter().map(|p| p[i]).fold(f64::INFINITY, f64::min));
+        let high: [f64; 3] =
+            std::array::from_fn(|i| points.iter().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max));
+        boxes.push((low, high));
+    }
+    let edges = body.solid().edges()?;
+    if edges.len() != boxes.len() {
+        return Err(Error::NotSolid {
+            op: "stitch",
+            why: "the kernel's tessellation has other edges than the body",
+        });
+    }
+    let reach = EDGE_CHORD_MM + limit;
+    for point in sides.iter().flatten().flat_map(Path::along) {
+        let mut near = f64::INFINITY;
+        for (edge, (low, high)) in edges.iter().zip(&boxes) {
+            if (0..3).all(|i| point[i] >= low[i] - reach && point[i] <= high[i] + reach) {
+                near = near.min(edge.distance_to(point.into())?);
+            }
+        }
+        worst = worst.max(near);
+    }
+    Ok(worst)
 }
 
 /// What the kernel must not be asked, in plain words.
@@ -266,17 +509,24 @@ impl Body {
     /// body's face order, which of `sheets` it is.
     ///
     /// Two faces share a side when the curves along it are the same curve: a ruled or skinned face ends on its
-    /// first and last curves and on the straight or smooth line through its curves' ends. Faces that leave a gap,
-    /// or that the kernel joins into anything but one closed solid, are refused and nothing is kept. So is a flat
-    /// face the kernel put anywhere but on the plane of its loop.
+    /// first and last curves and on the straight line through its curves' ends. Faces that leave a gap, or that the
+    /// kernel joins into anything but one closed solid, are refused and nothing is kept. So is a flat face the
+    /// kernel put anywhere but on the plane of its loop, and a body with an edge off the curves its faces were
+    /// given.
     pub fn stitched(sheets: &[Sheet]) -> Result<(Self, Vec<usize>)> {
+        Self::stitched_off(sheets).map(|(body, order, _)| (body, order))
+    }
+
+    /// [`Body::stitched`], with how far the body's edges are from the curves its faces were given, in mm: at most a
+    /// billionth of the largest coordinate given, or the faces are refused.
+    pub fn stitched_off(sheets: &[Sheet]) -> Result<(Self, Vec<usize>, f64)> {
         let mut order = Vec::new();
         let body = Self::checked(
             "stitch",
             || checked(sheets),
             || {
                 let (solid, made, gap) = kernel::stitched(sheets)?;
-                if gap.is_nan() || gap > MEET * size(sheets) {
+                if gap.is_nan() || gap > meet(sheets) {
                     return Err(Error::Apart { gap_mm: gap });
                 }
                 order = made;
@@ -284,7 +534,11 @@ impl Body {
             },
         )?;
         flat_where_given(&body, sheets, &order)?;
-        Ok((body, order))
+        let off = off_their_curves(&body, sheets, &order)?;
+        if off.is_nan() || off > meet(sheets) {
+            return Err(Error::Moved { off_mm: off });
+        }
+        Ok((body, order, off))
     }
 }
 
