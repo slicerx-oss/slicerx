@@ -979,15 +979,16 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'slice',
     description:
-      'Loft a solid through 2 to 64 profiles in order, each on its own plane, as a new body, joined to a target or cut from it; neighboring profiles must not touch or cross each other\'s plane. thicken makes it hollow with open ends (a tapered stem, a vase wall).',
+      'Loft a solid through 2 to 64 profiles in order, each on its own plane, as a new body, joined to or cut from a target; neighbors must not touch or cross each other\'s plane. thicken makes it hollow with open ends (a tapered stem, a vase).',
     input: z.object({
       profiles: z.array(loftProfile).min(2).max(64).optional().describe('In loft order; no frame is the bed'),
       smooth: z.boolean().optional().describe('Curved sides'),
       closed: z.boolean().optional().describe('Last joins first'),
       thicken: thicken.optional(),
-      sketches: z.array(z.string().min(1).max(80)).min(2).max(64).optional().describe('With a design: finished sketch ids in loft order, instead of profiles'),
+      exact: z.boolean().optional().describe('Without a design: also return the exact solid. A design decides its own'),
+      sketches: z.array(z.string().min(1).max(80)).min(2).max(64).optional().describe('With a design: finished sketch ids in loft order, not profiles'),
       operation,
-      target: modelArg.optional().describe('The model to join to or cut from'),
+      target: modelArg.optional().describe('Model to join to or cut from'),
       design: designArg.optional(),
       feature: featureArg,
       part: partArg,
@@ -1008,12 +1009,15 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const params: StepParams = loftParams({ profiles, ...loftOpts, operation: i.operation, name: piece ?? i.name, slot: i.slot })
         const n = d.parts.length
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
+        // exact is not read here: the step is added, and the design's own replay decides whether its body is exact
         return seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name))
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
       const profiles = i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, plane(f.frame)))
-      const out = await call('sketch.loft', { profiles, ...loftOpts, operation: i.operation, ...(await target(i.target, i.operation)) })
-      return { summary: `${verb} through ${profiles.length} profiles`, output: out }
+      // each call is a run of the engine of its own, so the exact body comes back as text (bodySmb), not as a number
+      const out = await call('sketch.loft', { profiles, ...loftOpts, ...(i.exact ? { exact: true, save: true } : {}), operation: i.operation, ...(await target(i.target, i.operation)) })
+      const made = !i.exact ? '' : typeof out['bodySmb'] === 'string' ? ', with its exact solid' : ', without an exact solid'
+      return { summary: `${verb} through ${profiles.length} profiles${made}`, output: out }
     },
   })
 

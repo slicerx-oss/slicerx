@@ -219,6 +219,39 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
     expect(JSON.stringify(bad.content)).toMatch(/profiles 1 and 2 touch or cross/)
   })
 
+  it('lofts the same STL when asked for the exact solid too, and says whether it was made', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    const square = { points: [[-10, -10], [10, -10], [10, 10], [-10, 10]] }
+    const profiles = [{ loops: [square] }, { frame: { origin: [0, 0, 30], normal: [0, 0, 1] }, loops: [square] }]
+    type Out = MeshOut & { bodySmb?: string; exact?: { made: boolean; why: string }; body?: number }
+    const plain = await h.call('slicerx_geom_loft', { profiles })
+    const asked = await h.call('slicerx_geom_loft', { profiles, exact: true })
+    expect(asked.isError, JSON.stringify(asked.content)).toBeFalsy()
+    const [was, out] = [data<{ output: Out }>(plain).output, data<{ summary: string; output: Out }>(asked)]
+    expect(was.bodySmb).toBeUndefined()
+    expect(was.exact).toBeUndefined()
+    expect(out.output.volumeMm3).toBe(was.volumeMm3)
+    // the body is text, never a number: each call is a run of the engine of its own
+    expect(out.output.body).toBeUndefined()
+    if (out.output.bodySmb !== undefined) {
+      expect(out.output.bodySmb).toMatch(/\/\/sx-brep fnv1a64 [0-9a-f]{16}\n$/)
+      expect(out.output.exact).toBeUndefined()
+      expect(out.summary).toBe('Lofted through 2 profiles, with its exact solid')
+    } else {
+      // a build without the exact kernel makes the loft all the same and says why there is no solid
+      expect(out.output.exact).toEqual({ made: false, why: 'This build has no exact kernel.' })
+      expect(out.summary).toBe('Lofted through 2 profiles, without an exact solid')
+    }
+    // through a circle the solid is not made yet, in a build with the kernel or without
+    const circle = { type: 'circle', center: [0, 0], diameterMm: 10 }
+    const round = await h.call('slicerx_geom_loft', { exact: true, profiles: [{ loops: [square] }, { frame: { origin: [0, 0, 30], normal: [0, 0, 1] }, loops: [circle] }] })
+    expect(round.isError, JSON.stringify(round.content)).toBeFalsy()
+    const none = data<{ output: Out }>(round).output
+    expect(none.exact?.made).toBe(false)
+    expect(none.exact?.why).toMatch(/\.$/)
+    expect(none.watertight).toBe(true)
+  })
+
   it('sweeps a circle round a quarter arc into an STL, and refuses a bend too tight for it', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     // a 10 mm circle square to the bed's x axis at x = 20, carried a quarter turn round the origin
