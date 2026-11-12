@@ -238,7 +238,7 @@ describe('design.plan with a detail level', () => {
     const d = tab().tool.description
     expect(d).toContain('display for a model of a real thing named without sizes (the default)')
     expect(d).toContain('a flat-sided one (a house, a bookshelf) can be extruded')
-    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'a loft between two ellipses, offset for the rake, then arrayed', 'Repeated small parts are one part, then array and mirror', 'Each color band of the real thing (a waterline, a stripe, a trim line) is its own part', 'a keel rising toward the ends', 'split at its line into one feature per color'])
+    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'a loft between two ellipses, offset for the rake, then arrayed', 'Repeated small parts are one part, then array and mirror', 'Each color band of the real thing (a stripe, a trim line, a two tone split) is its own part', 'a bottom lifting at the ends', 'split at its line into one feature per color'])
       expect(d).toContain(step)
     await expect(tab().run({ ...car, proportions: undefined })).rejects.toThrow(DETAIL_HELP)
   })
@@ -271,7 +271,7 @@ describe('sectionsProblem: a curved body changes along its length both ways acro
     expect(l!.feature).toBe('Shell')
     expect(l!.sections).toHaveLength(9)
     expect(sectionsProblem('Shell', l!)).toBe(
-      "Shell: all 9 sections span z 0 to 14 mm; only its size in y changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a deck rising toward the bow, a keel rising at the ends, a roof sloping down to a hood), then check again",
+      "Shell: all 9 sections span z 0 to 14 mm; only its size in y changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a top line rising toward the ends, a bottom lifting at the ends, a roof sloping down to a hood), then check again",
     )
   })
 

@@ -52,14 +52,14 @@ export const planDetailFields = {
     .enum(DETAIL_LEVELS)
     .optional()
     .describe("How much detail: display for a real object named without sizes (the default), basic when the person asks for simple, basic or nothing fancy, fine when they ask for detailed or accurate. A plain functional part (a bracket, a box) is basic"),
-  curved: z.array(text(60)).max(8).optional().describe('Display and fine: the features that build a main body whose real thing is curved (a hull, a fuselage, a car body, a bottle)'),
+  curved: z.array(text(60)).max(8).optional().describe('Display and fine: the features that build a main body whose real thing is curved (a fuselage, a car body, a bottle, a vase)'),
   flat: z.array(text(60)).max(8).optional().describe('Display and fine: the features that build a main body whose real thing is flat-sided (a house, a bookshelf, a box)'),
   proportions: text(200).optional().describe('Display and fine: where the proportions come from, a lookup or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"'),
-  repeats: z.array(text(60)).max(8).optional().describe('Display and fine: the real object\'s repeated details (windows, slats, vents), each built by a pattern; an empty list when it has none'),
+  repeats: z.array(text(60)).max(8).optional().describe('Display and fine: the real object\'s repeated details (windows, wheels, slats, vents), each built by a pattern; an empty list when it has none'),
   colors: z
     .record(text(60), text(40))
     .optional()
-    .describe('Display and fine: each feature\'s color as the real thing is painted, by feature name, such as {"Lower hull": "red"}. A body the real thing paints in two or more colors (a waterline, a stripe, a trim line) is split at its line into one feature per color'),
+    .describe('Display and fine: each feature\'s color as the real thing is painted, by feature name, such as {"Lower body": "red"}. A body the real thing paints in two or more colors (a stripe, a trim line, a two tone split) is split at its line into one feature per color'),
   scale: z
     .union([z.number().positive(), z.string().trim().regex(/^(1\s*:\s*)?\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
     .optional()
@@ -73,7 +73,7 @@ export const planDetailFields = {
   tiers: z
     .record(text(60), z.array(text(60)).min(1).max(12))
     .optional()
-    .describe('Display and fine: each flat-sided main body\'s levels from the bottom up, each a planned feature, such as {"Deckhouse": ["Lower deck", "Upper deck"]}: a body the real thing builds in steps or stories lists each level, a single block only itself'),
+    .describe('Display and fine: each flat-sided main body\'s levels from the bottom up, each a planned feature, such as {"Tower": ["Lower story", "Upper story"]}: a body the real thing builds in steps or stories lists each level, a single block only itself'),
 }
 
 /**
@@ -158,7 +158,7 @@ export function detailProblem(plan: DetailPlan): string | null {
   if (plan.features.length < least.count)
     problems.push(`features: a ${name} plan of this object has at least ${least.count} features (${least.why}); this one has ${plan.features.length}. Add the real thing's parts you left out: each color band as its own feature, the parts that stand on the main body, and its smaller details, each repeated one built once and patterned`)
   const colors = Object.entries(plan.colors ?? {})
-  if (!colors.length) problems.push(`colors: give each feature's color as the real thing is painted, such as {"Lower hull": "red"}; a body painted in two colors is split at its line into two features`)
+  if (!colors.length) problems.push(`colors: give each feature's color as the real thing is painted, such as {"Lower body": "red"}; a body painted in two colors is split at its line into two features`)
   else {
     const colored = new Set<string>()
     for (const [name, color] of colors) {
@@ -175,7 +175,7 @@ export function detailProblem(plan: DetailPlan): string | null {
   }
   problems.push(...scaleProblems(plan, feature), ...massProblems(plan, feature), ...tierProblems(plan, feature))
   if (!plan.proportions?.trim()) problems.push(`proportions: say where the proportions come from, a lookup (web.lookup) or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"`)
-  if (plan.repeats === undefined) problems.push('repeats: list the real object\'s repeated details (windows, slats, vents), or give an empty list when it has none')
+  if (plan.repeats === undefined) problems.push('repeats: list the real object\'s repeated details (windows, wheels, slats, vents), or give an empty list when it has none')
   else if (plan.repeats.length && !plan.features.some((f) => PATTERN.test(f.kind ?? '') || PATTERN.test(f.name)))
     problems.push(`repeats: ${plan.repeats.join(', ')} repeat on the real object, so plan at least one detail pass that builds one and patterns it (kind array or pattern)`)
   return problems.length ? `A ${name} plan was not shown. ${problems.join('. ')}. ${DETAIL_HELP}` : null
@@ -258,7 +258,7 @@ function tierProblems(plan: DetailPlan, feature: FeatureOf): string[] {
   const stated = new Set(tiers.map(([body]) => body.trim().toLowerCase()))
   for (const b of plan.flat ?? [])
     if (feature(b) && !stated.has(b.trim().toLowerCase()))
-      out.push(`tiers: give the levels of ${b} from the bottom up; a body the real thing builds in steps or stories (a deckhouse, a stepped roof, a tower) lists each level as its own feature, a single block lists only itself`)
+      out.push(`tiers: give the levels of ${b} from the bottom up; a body the real thing builds in steps or stories (a stepped roof, a tower, a tiered cake) lists each level as its own feature, a single block lists only itself`)
   for (const [body, levels] of tiers) {
     if (!feature(body)) out.push(`tiers: ${body} is not a planned feature`)
     for (const l of levels) if (!feature(l)) out.push(`tiers: ${l}, a level of ${body}, is not a planned feature; plan each level as its own feature`)
@@ -291,7 +291,7 @@ export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, lev
  * lines in the plan tool's description and in each refusal, never a recipe for one object.
  */
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a deck or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (the sheer of a deck, a keel rising toward the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Each color band of the real thing (a waterline, a stripe, a trim line) is its own part, split at its line, so paint follows the shape. Sizes of the parts on it (decks, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. A tapered or raked round part (a funnel, a chimney, a leg) is a loft between two ellipses, offset for the rake, then arrayed. Repeated small parts are one part, then array and mirror'
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a top line rising toward the ends, a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Each color band of the real thing (a stripe, a trim line, a two tone split) is its own part, split at its line, so paint follows the shape. Sizes of the parts on it (chimneys, wheels, doors) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. A tapered or raked round part (a chimney, a leg, a spout) is a loft between two ellipses, offset for the rake, then arrayed. Repeated small parts are one part, then array and mirror'
 
 /** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
 export interface LoftSections {
@@ -373,5 +373,5 @@ export function sectionsProblem(name: string, l: LoftSections): string | null {
   if (fixed < 0) return null
   const r = (v: number): number => Math.round(v * 100) / 100
   const other = fixed === p ? q : p
-  return `${name}: all ${l.sections.length} sections span ${'xyz'[fixed]} ${r(l.sections[0]!.lo[fixed]!)} to ${r(l.sections[0]!.hi[fixed]!)} mm; only its size in ${'xyz'[other]} changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a deck rising toward the bow, a keel rising at the ends, a roof sloping down to a hood), then check again`
+  return `${name}: all ${l.sections.length} sections span ${'xyz'[fixed]} ${r(l.sections[0]!.lo[fixed]!)} to ${r(l.sections[0]!.hi[fixed]!)} mm; only its size in ${'xyz'[other]} changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a top line rising toward the ends, a bottom lifting at the ends, a roof sloping down to a hood), then check again`
 }
