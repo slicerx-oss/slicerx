@@ -39,6 +39,7 @@
 
 #include "rust/cxx.h"
 #include "sx_keys.h"
+#include "sx_surface.h"
 
 // --- names
 // the binding needs one plain identifier per type: the kernel's status and type codes are macros for long, and its

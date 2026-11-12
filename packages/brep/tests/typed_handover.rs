@@ -524,3 +524,36 @@ fn lending_and_taking_over_many_times_leaves_the_older_table_empty() {
     }
     assert_eq!(state(&body), before);
 }
+
+#[test]
+fn a_slot_taken_over_reads_its_round_ends_as_cylinders() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let _one = alone();
+    // the kernel keeps each round end, an arc run along its axis, as an extrusion
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    let made = call(
+        "extrude",
+        &json!({ "frame": frame, "polygons": [{ "outer": { "start": [-10, -5], "segments": [
+            { "to": [10, -5] }, { "to": [10, 5], "center": [10, 0], "sweepDeg": 180 },
+            { "to": [-10, 5] }, { "to": [-10, -5], "center": [-10, 0], "sweepDeg": 180 }
+        ] } }], "fromMm": 0, "toMm": 4 }),
+    );
+    let slot = handover::adopt(made["body"].as_i64().expect("a number")).expect("taken over");
+    let mut ends = Vec::new();
+    for surface in slot.faces().expect("faces").iter().map(sx_brep::Face::surface) {
+        match surface {
+            Surface::Plane { .. } => {}
+            Surface::Cylinder { frame, radius } => ends.push((frame, radius)),
+            other => panic!("not a face of a slot: {other:?}"),
+        }
+    }
+    assert_eq!(ends.len(), 2, "{ends:?}");
+    for (frame, radius) in ends {
+        close(radius, 5.0);
+        close(frame.z[2].abs(), 1.0);
+        close(frame.origin[0].abs(), 10.0);
+        close(frame.origin[1], 0.0);
+    }
+}

@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! exact bodies the engine holds by number, and their triangles out of the engine
 //!
-//! a body one of the engine's own exact ops makes stays in this table until it is freed. the table is per
+//! every exact body is in this table until it is freed: the ones the engine's own exact ops make, and the ones the
+//! older solid operations make, which are taken out of their table as soon as they are made. the table is per
 //! thread, as a body cannot leave the thread that made it.
 
 use crate::error::{Error, Result};
@@ -18,21 +19,15 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use sx_brep::{Body, Curve, Frame, Mesh, Surface, Tessellation};
 
-/// A body in the table, with the key of each of its faces in face order (none at all for a body without keys).
+/// A body in the table, with the key of each of its faces in face order (none at all for a body without keys). The
+/// keys are the ones on the kernel's faces, read once when the body is held; nothing changes a held body.
 pub struct Held {
     pub body: Body,
     pub keys: Vec<u64>,
 }
 
-/// The first number the table gives out.
-// temporary: the old kernel table still numbers its own bodies from 1 and both travel in the same request
-// fields, so this table starts far above it. the hand-over pair, which puts every body in this table, is the
-// change that removes the split and lets numbers start at 1.
-pub const FIRST: u32 = 1 << 31;
-
 // the next number, for every thread's table: one is never given out twice in a process
-#[allow(clippy::cast_lossless, reason = "u64::from is not const")]
-static NEXT: AtomicU64 = AtomicU64::new(FIRST as u64);
+static NEXT: AtomicU64 = AtomicU64::new(1);
 
 thread_local! {
     static TABLE: RefCell<BTreeMap<u32, Rc<Held>>> = const { RefCell::new(BTreeMap::new()) };
@@ -42,25 +37,28 @@ fn kernel(e: &sx_brep::Error) -> Error {
     Error::geometry("brep", e.to_string())
 }
 
-/// Whether a body number is one this table gives out, held or not. The old kernel table never has one this high.
-#[must_use]
-pub fn is_handle(n: u64) -> bool {
-    (u64::from(FIRST)..=u64::from(u32::MAX)).contains(&n)
-}
-
-/// Keeps a body and returns its number. Refused, and the body dropped, when `keys` is neither empty nor one per
-/// face.
-pub fn hold(body: Body, keys: Vec<u64>) -> Result<u32> {
-    if !keys.is_empty() && keys.len() != body.faces().map_err(|e| kernel(&e))?.len() {
-        return Err(Error::invalid(
-            "keys",
-            "must be one for each face of the body, or none",
-        ));
-    }
+/// Puts a body in the table under the next number.
+fn keep(body: Body, keys: Vec<u64>) -> Result<u32> {
     let n = u32::try_from(NEXT.fetch_add(1, Ordering::Relaxed))
         .map_err(|_| Error::geometry("brep", "no body numbers are left in this process"))?;
     TABLE.with(|t| t.borrow_mut().insert(n, Rc::new(Held { body, keys })));
     Ok(n)
+}
+
+/// Keeps a body and returns its number. `keys` are written on the kernel's faces, where the older operations read
+/// them and carry them to what they make. Refused, and the body dropped, when `keys` is neither empty nor one per
+/// face.
+pub fn hold(mut body: Body, keys: Vec<u64>) -> Result<u32> {
+    if !keys.is_empty() {
+        if keys.len() != body.faces().map_err(|e| kernel(&e))?.len() {
+            return Err(Error::invalid(
+                "keys",
+                "must be one for each face of the body, or none",
+            ));
+        }
+        body.set_keys(&keys).map_err(|e| kernel(&e))?;
+    }
+    keep(body, keys)
 }
 
 fn get(handle: u32) -> Option<Rc<Held>> {
@@ -88,90 +86,136 @@ pub fn count() -> usize {
 
 /// the request fields that name a body
 const BODY_FIELDS: [&str; 4] = ["body", "target", "a", "b"];
+/// the reply fields that name a body an operation made
+const MADE_FIELDS: [&str; 3] = ["body", "below", "above"];
 
-/// a number in the table's range, which the old kernel table must never be asked for
-fn high(v: &Value) -> Option<f64> {
-    v.as_f64()
-        .filter(|n| (f64::from(FIRST)..=f64::from(u32::MAX)).contains(n))
+/// the number a field names a body by, when it names one by number
+fn number(req: &Value, field: &str) -> Option<f64> {
+    req.get(field).and_then(Value::as_f64)
 }
 
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "a whole number in the table's range, which is inside u32"
+    reason = "a whole number from 0 to the largest u32"
 )]
+fn handle_of(n: f64) -> Option<u32> {
+    (n.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&n)).then_some(n as u32)
+}
+
 fn held(n: f64) -> Option<Rc<Held>> {
-    (n.fract() == 0.0).then(|| get(n as u32)).flatten()
+    handle_of(n).and_then(get)
 }
 
 fn no_such_body(field: &str) -> Error {
-    // the old kernel table's words for a number it does not have
     Error::geometry(
         "brep",
         format!("{field}: no such body (freed, or from an earlier session)"),
     )
 }
 
-/// A brep op as this table answers it, or none for a request that is the old kernel table's alone and goes to it
-/// untouched. `tessellate`, `info`, `save` and `free` work on a held body and `count` adds the bodies held here.
-pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Option<Result<Value>> {
-    if op == "count" {
-        let here = count();
-        return (here > 0).then(|| counted(req, here));
-    }
-    let named = |field: &str| req.get(field).and_then(high);
-    if let ("tessellate" | "info" | "save" | "free", Some(n)) = (op, named("body")) {
-        if op == "free" {
-            let freed = n.fract() == 0.0 && free_number(n);
-            return Some(Ok(json!({ "freed": freed })));
+/// One of the older operations, called as it is.
+fn older(op: &str, req: &Value) -> Result<Value> {
+    let reply = sx_brep::call(op, &req.to_string()).map_err(|e| Error::geometry("brep", e))?;
+    serde_json::from_str(&reply).map_err(|e| Error::Json(e.to_string()))
+}
+
+/// A brep op, answered. Every body is in this table: `tessellate`, `info`, `save`, `free` and `count` are answered
+/// from it, and the older operations that take or make a body ([`sx_brep::handover::ROUTED`]) are lent the bodies
+/// a request names and have what they make taken into the table. A body sent as text is the older code's for that
+/// one call.
+pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Result<Value> {
+    match (op, number(req, "body")) {
+        ("count", _) => Ok(json!({ "bodies": count() })),
+        ("free", n) => Ok(json!({ "freed": n.and_then(handle_of).is_some_and(free) })),
+        ("tessellate" | "info" | "save", Some(n)) => {
+            let held = held(n).ok_or_else(|| no_such_body("body"))?;
+            match op {
+                "info" => info(&held),
+                // the text the older `save` writes, keys line and checksum included, so `load` reads it
+                "save" => held
+                    .body
+                    .saved(&held.keys)
+                    .map(|smb| json!({ "smb": smb }))
+                    .map_err(|e| kernel(&e)),
+                _ => tessellate(&held, req, raw),
+            }
         }
-        let Some(held) = held(n) else {
-            return Some(Err(no_such_body("body")));
-        };
-        return Some(match op {
-            "info" => info(&held),
-            // the text the old `save` writes, keys line and checksum included, so `load` reads it
-            "save" => held
-                .body
-                .saved(&held.keys)
-                .map(|smb| json!({ "smb": smb }))
-                .map_err(|e| kernel(&e)),
-            _ => tessellate(&held, req, raw),
-        });
+        _ if sx_brep::handover::ROUTED.contains(&op) => handed(op, req),
+        _ => older(op, req),
     }
-    // no other op takes a body of this table yet. the hand-over pair, which lends one to the old ops, removes
-    // the first case
-    BODY_FIELDS.iter().find_map(|field| {
-        let n = named(field)?;
-        Some(Err(if held(n).is_some() {
-            Error::geometry(
-                "brep",
-                format!("{field}: this operation cannot work on this body yet"),
-            )
-        } else {
-            no_such_body(field)
-        }))
-    })
 }
 
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "a whole number in the table's range, which is inside u32"
-)]
-fn free_number(n: f64) -> bool {
-    free(n as u32)
+/// An older operation on the bodies this table holds: each body the request names by number is lent to it for the
+/// call, and each body it makes is taken into the table, so the answer names bodies of this table only.
+fn handed(op: &str, req: &Value) -> Result<Value> {
+    let mut named = Vec::new();
+    for field in BODY_FIELDS {
+        if let Some(n) = number(req, field) {
+            named.push((field, held(n).ok_or_else(|| no_such_body(field))?));
+        }
+    }
+    let mut asked = req.clone();
+    let mut lent = Vec::new();
+    for (field, held) in &named {
+        let lend = sx_brep::handover::lend(&held.body).map_err(|e| kernel(&e))?;
+        // the field is there: its number was read from it
+        if let Some(place) = asked.get_mut(*field) {
+            *place = json!(lend.number());
+        }
+        lent.push(lend);
+    }
+    let reply = older(op, &asked);
+    // the numbers leave the older table before anything is made of the answer
+    drop(lent);
+    let mut reply = reply?;
+    take_over(&mut reply)?;
+    Ok(reply)
 }
 
-/// the old table's count with this table's added
-fn counted(req: &Value, here: usize) -> Result<Value> {
-    let reply = sx_brep::call("count", &req.to_string()).map_err(|e| Error::geometry("brep", e))?;
-    let mut v: Value = serde_json::from_str(&reply).map_err(|e| Error::Json(e.to_string()))?;
-    let old = v.get("bodies").and_then(Value::as_u64).unwrap_or(0);
-    if let Some(o) = v.as_object_mut() {
-        o.insert("bodies".to_owned(), json!(old + here as u64));
+/// Takes every body an older operation's reply names into this table and writes this table's numbers in their
+/// place. A body that does not read back as a solid is refused: then nothing of the reply is kept, here or in the
+/// older table.
+fn take_over(reply: &mut Value) -> Result<()> {
+    let made: Vec<(&str, i64)> = MADE_FIELDS
+        .iter()
+        .filter_map(|field| Some((*field, reply.get(*field)?.as_i64()?)))
+        .collect();
+    let mut kept = Vec::new();
+    let mut refused = None;
+    for &(field, older_number) in &made {
+        if refused.is_some() {
+            // freed where it is: nothing was made of it
+            let _ = older("free", &json!({ "body": older_number }));
+            continue;
+        }
+        let taken = sx_brep::handover::adopt(older_number)
+            .and_then(|body| Ok((body.keys()?, body)))
+            .map_err(|e| kernel(&e))
+            .and_then(|(keys, body)| {
+                // a body without keys has none in the table either
+                let keys = if keys.iter().all(|&key| key == 0) {
+                    Vec::new()
+                } else {
+                    keys
+                };
+                keep(body, keys)
+            });
+        match taken {
+            Ok(handle) => kept.push((field, handle)),
+            Err(e) => refused = Some(e),
+        }
     }
-    Ok(v)
+    if let Some(e) = refused {
+        for (_, handle) in kept {
+            free(handle);
+        }
+        return Err(e);
+    }
+    for (field, handle) in kept {
+        reply[field] = json!(handle);
+    }
+    Ok(())
 }
 
 /// a surface's kind as the kernel has it, and the name the old `tessellate` and `info` give that kind
@@ -482,53 +526,48 @@ mod tests {
     };
 
     #[test]
-    fn only_numbers_the_old_table_never_gives_out_are_this_table_s() {
-        assert!(!is_handle(0) && !is_handle(1) && !is_handle((1 << 31) - 1));
-        assert!(is_handle(1 << 31) && is_handle((1 << 32) - 1));
-        assert!(!is_handle(1 << 32));
-        // the page adds its process number times 2^32 above a handle and takes it off again: both stay whole numbers
-        // a double holds
-        assert!((u64::from(u32::MAX) + (1 << 32) * ((1 << 21) - 1)) < (1 << 53));
-        assert_eq!(high(&json!(2_147_483_647)), None);
-        assert_eq!(high(&json!(2_147_483_648_u32)), Some(2_147_483_648.0));
-        assert_eq!(high(&json!(2_147_483_648.5)), Some(2_147_483_648.5));
-        assert_eq!(high(&json!(4_294_967_295_u32)), Some(4_294_967_295.0));
-        assert_eq!(high(&json!(4_294_967_296_u64)), None);
-        assert_eq!(high(&json!({ "smb": "text" })), None);
-        assert_eq!(high(&json!("2147483648")), None);
-        // nothing is held in a test that made no body
-        assert!(held(2_147_483_648.0).is_none() && held(2_147_483_648.5).is_none());
-        assert_eq!(count(), 0);
-        assert!(!free(FIRST));
-        assert_eq!(with(FIRST, |_| ()), None);
-    }
-
-    #[test]
-    fn a_request_for_the_old_table_alone_is_left_to_it() {
-        for (op, req) in [
-            ("count", json!({})),
-            ("tessellate", json!({ "body": 7 })),
-            ("free", json!({ "body": 7 })),
-            ("info", json!({ "body": { "smb": "text" } })),
-            ("boolean", json!({ "op": "union", "a": 1, "b": 2 })),
-            ("cut", json!({ "body": 4_294_967_296_u64 })),
-        ] {
-            assert!(answer(op, &req, false).is_none(), "{op}");
+    fn a_number_names_a_body_only_when_it_is_whole_and_held() {
+        assert_eq!(handle_of(0.0), Some(0));
+        assert_eq!(handle_of(1.0), Some(1));
+        assert_eq!(handle_of(4_294_967_295.0), Some(u32::MAX));
+        for not_one in [-1.0, 1.5, 4_294_967_296.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(handle_of(not_one), None, "{not_one}");
         }
+        assert_eq!(number(&json!({ "body": 7 }), "body"), Some(7.0));
+        assert_eq!(number(&json!({ "body": { "smb": "text" } }), "body"), None);
+        assert_eq!(number(&json!({ "body": "7" }), "body"), None);
+        assert_eq!(number(&json!({}), "body"), None);
+        // nothing is held in a test that made no body
+        assert!(held(1.0).is_none() && held(2_147_483_648.0).is_none());
+        assert_eq!(count(), 0);
+        assert!(!free(1));
+        assert_eq!(with(1, |_| ()), None);
     }
 
     #[test]
-    fn a_number_in_this_table_s_range_never_reaches_the_old_table() {
-        let free = answer("free", &json!({ "body": FIRST }), false);
-        assert_eq!(free.unwrap().unwrap(), json!({ "freed": false }));
+    fn a_number_nothing_is_held_under_is_refused_before_any_older_operation_is_asked() {
+        assert_eq!(
+            answer("count", &json!({}), false).unwrap(),
+            json!({ "bodies": 0 })
+        );
+        for body in [json!(7), json!(1.5), json!({ "smb": "text" }), json!(null)] {
+            let free = answer("free", &json!({ "body": body }), false);
+            assert_eq!(free.unwrap(), json!({ "freed": false }), "{body}");
+        }
         for (op, req, field) in [
-            ("tessellate", json!({ "body": FIRST }), "body"),
+            ("tessellate", json!({ "body": 7 }), "body"),
             ("info", json!({ "body": 2_147_483_648.5 }), "body"),
-            ("boolean", json!({ "op": "union", "a": 1, "b": FIRST }), "b"),
+            ("save", json!({ "body": 4_294_967_296_u64 }), "body"),
+            ("boolean", json!({ "op": "union", "a": 1, "b": 2 }), "a"),
+            (
+                "boolean",
+                json!({ "op": "union", "a": { "smb": "text" }, "b": 2 }),
+                "b",
+            ),
             ("extrude", json!({ "target": u32::MAX }), "target"),
-            ("free", json!({ "body": 3, "a": FIRST }), "a"),
+            ("cut", json!({ "body": 4_294_967_296_u64 }), "body"),
         ] {
-            let refused = answer(op, &req, false).unwrap().unwrap_err().to_string();
+            let refused = answer(op, &req, false).unwrap_err().to_string();
             assert_eq!(
                 refused,
                 format!("brep: {field}: no such body (freed, or from an earlier session)"),
