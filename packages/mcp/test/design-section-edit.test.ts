@@ -4,6 +4,7 @@
 // finer, moves it, adds or takes out a station, raises a line toward the ends or leans an end out, on a pod, a car
 // body and a bottle alike. What stood on the body is re-seated on its new top at the steps that made it, and the answer
 // says plainly when a part now hangs past the edge or when an end now needs supports, keeping the edit as asked.
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -62,14 +63,35 @@ const carSection = (w: number, h: number): [number, number][] => [[-w / 2 + 1, 0
 const along = (y: number) => ({ origin: [0, y, 0], normal: [0, 1, 0], u: [-1, 0, 0], v: [0, 0, 1] })
 const CAR = [[0, 34, 10], [20, 40, 14], [50, 40, 22], [80, 40, 20], [100, 36, 16]].map(([y, w, h]) => ({ frame: along(y!), loops: [{ points: carSection(w!, h!) }] }))
 
-// a bottle standing on the bed: round sections up z, the neck at the top
-const ring = (r: number): [number, number][] => Array.from({ length: 16 }, (_, k) => [r * Math.cos((k * Math.PI) / 8), r * Math.sin((k * Math.PI) / 8)] as [number, number])
+// a bottle standing on the bed: round sections up z, the neck at the top. The sixteen directions around a section are
+// written out, not computed: Math.cos and Math.sin may differ in the last bit from one platform's build to another's,
+// which changes the engine request a recording is keyed by. These are the values the recording was made with.
+const AROUND: readonly (readonly [number, number])[] = [
+  [1, 0], [0.9238795325112867, 0.3826834323650898], [0.7071067811865476, 0.7071067811865475], [0.38268343236508984, 0.9238795325112867],
+  [6.123233995736766e-17, 1], [-0.3826834323650897, 0.9238795325112867], [-0.7071067811865475, 0.7071067811865476], [-0.9238795325112867, 0.3826834323650899],
+  [-1, 1.2246467991473532e-16], [-0.9238795325112868, -0.3826834323650896], [-0.7071067811865477, -0.7071067811865475], [-0.38268343236509034, -0.9238795325112865],
+  [-1.8369701987210297e-16, -1], [0.38268343236509, -0.9238795325112866], [0.7071067811865474, -0.7071067811865477], [0.9238795325112865, -0.3826834323650904],
+]
+const ring = (r: number): [number, number][] => AROUND.map(([c, s]) => [r * c, r * s] as [number, number])
 const level = (z: number) => ({ origin: [0, 0, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] })
 const BOTTLE = [[0, 15], [40, 16], [55, 12], [65, 6], [80, 6]].map(([z, r]) => ({ frame: level(z!), loops: [{ points: ring(r!) }] }))
+// the hash of BOTTLE as JSON: the sections its recorded loft request (digest 46d22a996456e0ca) was made from
+const BOTTLE_SECTIONS = 'a32d63c7ba69058c'
 
 const loftStep = (profiles: unknown[]): Step => ({ id: 's1', part: 0, params: { op: 'sketch.loft', profiles, name: 'Body' }, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }) as unknown as Step
 
 describe('the section edit, read from the sections', () => {
+  it('builds the bottle from the same numbers on every platform', () => {
+    // the sections the bottle's recorded loft request was made from, to the last bit
+    expect(createHash('sha256').update(JSON.stringify(BOTTLE)).digest('hex').slice(0, 16)).toBe(BOTTLE_SECTIONS)
+    // and they are the directions around a circle, to within a bit or two
+    AROUND.forEach(([c, s], k) => {
+      expect(Math.abs(c - Math.cos((k * Math.PI) / 8))).toBeLessThan(1e-15)
+      expect(Math.abs(s - Math.sin((k * Math.PI) / 8))).toBeLessThan(1e-15)
+    })
+  })
+
+
   it('names the stations front to back on all three bodies', () => {
     const pod = bodyOf(loftStep(POD))
     const car = bodyOf(loftStep(CAR))
