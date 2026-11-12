@@ -47,9 +47,11 @@ describe('design.put_plan over the app link', () => {
   })
 
   it("refuses a card plan's id, never pushes card plans out, and a waiting card returns the person's plan unchanged", async () => {
+    // the card waits for the person (confirmsPlan), as after a sheet whose sizes must fit
     const card = { part: 'Box', units: 'mm' as const, features: [{ name: 'Body', kind: 'extrude', sizes: { width: 80, depth: 60, height: 40 } }], assumptions: [], questions: [] }
-    const older = ((await planTool().run(card as never, { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never)).output as { planId: string }).planId
+    const older = ((await planTool().run(card as never, { confirmsPlan: () => true, ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never)).output as { planId: string }).planId
     const out = await planTool().run(card as never, {
+      confirmsPlan: () => true,
       ask: async (q: { choices: { id: string }[] }) => {
         const id = planOfChoices(q.choices)!
         // a client tries to overwrite the plan on the card while the person looks at it

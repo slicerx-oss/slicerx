@@ -29,15 +29,26 @@ const BOX: PlanInput = {
   questions: ['Does the lid need a finger notch?'],
 }
 
-/** Runs design.plan for real and shows its question the way the chat does, through the choice card hook. */
-async function shown(input: PlanInput = BOX, opts: { tools?: ReturnType<typeof mimirTools>; failFirst?: boolean } = {}) {
-  const p = scriptedMimir([{ id: 'plan', match: /plan/, steps: [{ calls: [{ name: 'design.plan', args: input }] }, { text: 'Done.' }] }], opts.tools ?? mimirTools())
+/**
+ * A sizes sheet whose sizes must fit something (fits), confirmed as shown before the plan: after it the plan waits for
+ * the person's Go, as these cards are about a plan that waits.
+ */
+const FITS_SHEET = { name: 'pilot.sheet', args: { title: 'Box sizes', views: ['iso'], fits: true, dims: [{ key: 'width', label: 'Width', value: 80, unit: 'mm', source: 'guess' }] } }
+
+/**
+ * Runs design.plan for real and shows its question the way the chat does, through the choice card hook. With `auto`
+ * the plan has no fits sheet before it, so it is approved as shown at once with nobody asked.
+ */
+async function shown(input: PlanInput = BOX, opts: { tools?: ReturnType<typeof mimirTools>; failFirst?: boolean; auto?: boolean } = {}) {
+  const steps = [...(opts.auto ? [] : [{ calls: [FITS_SHEET] }]), { calls: [{ name: 'design.plan', args: input }] }, { text: 'Done.' }]
+  const p = scriptedMimir([{ id: 'plan', match: /plan/, steps }], opts.tools ?? mimirTools())
   const events: PilotEvent[] = []
   let asked!: (e: Extract<PilotEvent, { type: 'ask' }>) => void
   const ask = new Promise<Extract<PilotEvent, { type: 'ask' }>>((r) => (asked = r))
   const done = (async () => {
     for await (const e of p.run('s', 'plan a box')) {
       events.push(e)
+      if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, {})
       if (e.type === 'ask') asked(e)
     }
   })()
@@ -55,7 +66,9 @@ async function shown(input: PlanInput = BOX, opts: { tools?: ReturnType<typeof m
   render(createElement(Fragment, null, card))
   const result = async () => {
     await done
-    return events.find((x): x is Extract<PilotEvent, { type: 'tool_result' }> => x.type === 'tool_result')!
+    // the plan's result, after the fits sheet's
+    const call = events.find((x): x is Extract<PilotEvent, { type: 'tool_call' }> => x.type === 'tool_call' && x.tool === 'design.plan')!
+    return events.find((x): x is Extract<PilotEvent, { type: 'tool_result' }> => x.type === 'tool_result' && x.callId === call.callId)!
   }
   return { e, onChoose, result }
 }
@@ -198,7 +211,7 @@ describe('the plan card', () => {
   })
 
   it('a plan id with colons in it still gets its card', async () => {
-    const { result } = await shown(BOX, { tools: [planTool({ newId: () => 'plan:a:b' })] })
+    const { result } = await shown(BOX, { tools: [...mimirTools().filter((t) => t.name !== 'design.plan'), planTool({ newId: () => 'plan:a:b' })] })
     expect(screen.getByTestId('mimir-plan-card').dataset.planId).toBe('plan:a:b')
     fireEvent.click(screen.getByTestId('mimir-plan-go'))
     expect((await result()).output).toEqual({ planId: 'plan:a:b', accepted: true })
@@ -211,6 +224,25 @@ describe('the plan card', () => {
     const r = await result()
     expect((r.output as { accepted: boolean }).accepted).toBe(false)
     expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Not approved, nothing built')
+  })
+
+  it('a plan at its default size goes ahead with nobody asked: approved, no Go, and one line on changing it after', async () => {
+    // no fits sheet before it: design.plan approves it as shown at once
+    const p = scriptedMimir([{ id: 'plan', match: /plan/, steps: [{ calls: [{ name: 'design.plan', args: BOX }] }, { text: 'Done.' }] }], mimirTools())
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', 'plan a box')) events.push(e)
+    const ask = events.find((e): e is Extract<PilotEvent, { type: 'ask' }> => e.type === 'ask')!
+    const answered = events.find((e): e is Extract<PilotEvent, { type: 'ask_answered' }> => e.type === 'ask_answered')!
+    expect(answered).toMatchObject({ askId: ask.askId, auto: true })
+    render(createElement(Fragment, null, planChoiceCard({ askId: ask.askId, title: ask.title, question: ask.question, choices: ask.choices, picked: answered.choiceId, actionable: true, onChoose: vi.fn(async () => undefined), auto: true })))
+    const card = screen.getByTestId('mimir-plan-card')
+    expect(card.dataset.auto).toBe('true')
+    expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Approved as shown')
+    expect(screen.queryByTestId('mimir-plan-go')).toBeNull()
+    expect(screen.queryByTestId('mimir-plan-change')).toBeNull()
+    expect(screen.getByTestId('mimir-plan-auto').textContent).toBe('Built at its default size; ask to resize or change it.')
+    // its sizes read as text, not fields
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
   })
 
   it('a plan turned down by a written reply reads Canceled', () => {

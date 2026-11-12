@@ -63,10 +63,13 @@ describe('the scripted mounting plate', () => {
     expect(args.holes).toEqual([{ name: 'Screw holes', diameter: 4.5, count: 4 }])
   })
 
-  it('builds nothing and goes on to nothing when the plan is not approved', async () => {
+  it('a late Not yet on a plan that went ahead changes nothing; the plate is built', async () => {
+    // at its default size the plan is approved as shown with nobody asked (owner, 2026-11-12): a Not yet sent after
+    // it is no answer the run takes
     const events = await run('Make a mounting plate', 'change')
-    expect(notices(events)).toHaveLength(0)
-    expect(text(events)).toContain('Okay, nothing is built.')
-    expect(get().plate).toEqual([])
+    expect(events.find((e) => e.type === 'ask_answered')).toMatchObject({ auto: true })
+    expect(text(events)).not.toContain('Okay, nothing is built.')
+    expect(text(events)).toContain('Done: the mounting plate, 80 x 50 x 4 mm with four 4.5 mm screw holes. It matches the plan.')
+    expect(get().plate.map((e) => ({ name: e.name, steps: e.history?.steps.length ?? 0 }))).toEqual([{ name: 'Mounting plate', steps: 2 }])
   })
 })
