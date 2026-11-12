@@ -39,6 +39,9 @@ pub enum Error {
     Threw { op: &'static str, what: String },
     /// The kernel reported success, but what it made is not a solid.
     NotSolid { op: &'static str, why: &'static str },
+    /// Faces given to be joined do not meet along a side they share. The kernel closed a gap this wide, in mm, to
+    /// join them, so the solid it made is not the one asked for.
+    Apart { gap_mm: f64 },
     /// The kernel could not tessellate these faces. It made no mesh.
     Faces { status: i64, faces: Vec<FailedFace> },
     /// The kernel's tessellation is not something a mesh can hold.
@@ -64,6 +67,10 @@ impl fmt::Display for Error {
             Self::Kernel { op, status } => write!(f, "{op}: the kernel refused (status {status})"),
             Self::Threw { op, what } => write!(f, "{op}: the kernel stopped with an error ({what})"),
             Self::NotSolid { op, why } => write!(f, "{op}: the result is not a solid: {why}"),
+            Self::Apart { gap_mm } => write!(
+                f,
+                "stitch: the faces are {gap_mm:.3e} mm apart along a side they share; they must meet"
+            ),
             Self::Faces { status, faces } => {
                 write!(f, "tessellate: the kernel could not tessellate")?;
                 if faces.is_empty() {

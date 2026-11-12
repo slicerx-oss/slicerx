@@ -41,7 +41,7 @@ pub(crate) fn sphere(_center: Vec3, _radius: f64) -> Result<Solid> {
     Err(Error::NoKernel)
 }
 
-pub(crate) fn stitched(_sheets: &[Sheet]) -> Result<(Solid, Vec<usize>)> {
+pub(crate) fn stitched(_sheets: &[Sheet]) -> Result<(Solid, Vec<usize>, f64)> {
     Err(Error::NoKernel)
 }
 

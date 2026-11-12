@@ -105,7 +105,15 @@ fn a_block_is_joined_from_four_ruled_sides_and_two_flat_ends() {
     let on: [(usize, f64); 6] = [(1, -5.0), (0, 5.0), (1, 5.0), (0, -5.0), (2, 0.0), (2, 5.0)];
     let mesh = body.tessellate(&Tessellation::default()).expect("a mesh");
     assert_eq!(mesh.surfaces.len(), 6);
-    assert!(mesh.surfaces.iter().all(|s| matches!(s, Surface::Plane { .. })));
+    // a ruled face is a spline surface in the kernel, also where it lies in a plane
+    for (surface, &sheet) in mesh.surfaces.iter().zip(&order) {
+        assert_eq!(
+            matches!(surface, Surface::Plane { .. }),
+            sheet >= 4,
+            "{surface:?}"
+        );
+        assert!(sheet >= 4 || *surface == Surface::Spline, "{surface:?}");
+    }
     for (triangle, &face) in mesh.triangles.iter().zip(&mesh.faces) {
         let (axis, at) = on[order[face as usize]];
         for &corner in triangle {
@@ -191,4 +199,70 @@ fn faces_that_leave_a_gap_make_no_body() {
     let why = refusal(Body::stitched(&missing));
     println!("GAP missing side: {why}");
     assert_eq!(why, "stitch: the result is not a solid: its faces do not close");
+}
+
+/// A block 10 mm square and 5 mm high grown `scale` times, with the top end of one rail moved `off` mm along
+/// `way`: the two sides on that rail end that far from the corner of the top face they share.
+fn block_with_a_rail_end_off(scale: f64, off: f64, way: P, rail: fn(P, P) -> Path) -> Vec<Sheet> {
+    let top = square(10.0 * scale, 5.0 * scale);
+    let mut ends = top;
+    ends[2] = [0, 1, 2].map(|i| top[2][i] + off * way[i]);
+    let mut sheets = tower(square(10.0 * scale, 0.0), ends, rail);
+    sheets[5] = Sheet::Flat(ring(&top));
+    sheets
+}
+
+/// Every way the block is tried: straight and cubic rails, the rail end moved in the top's plane and off it.
+fn each_way() -> impl Iterator<Item = (fn(P, P) -> Path, P)> {
+    let rails: [fn(P, P) -> Path; 2] = [line, cubic];
+    rails
+        .into_iter()
+        .flat_map(|rail| [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]].map(|way| (rail, way)))
+}
+
+// The kernel pulls faces together to join them and calls the result a solid. What it says it closed is held to a
+// billionth of the largest coordinate given: 5e-9 mm on the block that reaches 5 mm, 2e-7 mm on the one that
+// reaches 200 mm.
+#[test]
+fn faces_within_a_billionth_of_the_size_are_joined() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    for (rail, way) in each_way() {
+        for (scale, off) in [(1.0, 0.0), (1.0, 4e-10), (1.0, 4e-9), (40.0, 1.6e-7)] {
+            let sheets = block_with_a_rail_end_off(scale, off, way, rail);
+            let (body, order) = Body::stitched(&sheets)
+                .unwrap_or_else(|why| panic!("{off:e} mm along {way:?} at {scale}: {why}"));
+            assert_eq!(order.len(), 6);
+            close(body.volume().expect("volume"), 500.0 * scale.powi(3));
+        }
+    }
+}
+
+#[test]
+fn faces_the_kernel_pulled_together_are_refused_with_the_gap_in_mm() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // just past the limit on each block, and a gap a hundredth of a mm wide that the kernel still closes
+    let cases = [
+        (1.0, 6e-9, "6.000e-9"),
+        (1.0, 1e-2, "1.000e-2"),
+        (40.0, 2.4e-7, "2.400e-7"),
+    ];
+    for (rail, way) in each_way() {
+        for (scale, off, said) in cases {
+            let sheets = block_with_a_rail_end_off(scale, off, way, rail);
+            let why = Body::stitched(&sheets).expect_err("a refusal");
+            let Error::Apart { gap_mm } = &why else {
+                panic!("{off:e} mm along {way:?} at {scale}: {why}");
+            };
+            // the gap the kernel reports is the distance the rail end was moved
+            assert!((gap_mm - off).abs() <= 1e-4 * off, "{gap_mm:e} != {off:e}");
+            assert_eq!(
+                why.to_string(),
+                format!("stitch: the faces are {said} mm apart along a side they share; they must meet")
+            );
+        }
+    }
 }
