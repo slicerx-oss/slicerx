@@ -51,9 +51,21 @@ if [ "${#left[@]}" = 0 ]; then
   exit 0
 fi
 stamp "${#left[@]} of $# packages to install: ${left[*]}"
+suite=${SX_APT_SUITE:-$(. /etc/os-release && echo "$VERSION_CODENAME")}
 
 if [ -n "$cache" ]; then
   mkdir -p "$cache/partial"
+  # The files are only for the Ubuntu release recorded in $cache/release. A cache of another release (or one that
+  # records none) would mix its packages into this image's: a 24.04 cache restored onto a 26.04 image left -dev
+  # packages pinned to runtime versions apt could not reach, and every try failed. Such a cache is emptied and the
+  # mirror fills it again for this release.
+  had=$(cat "$cache/release" 2>/dev/null || true)
+  if [ "$had" != "$suite" ]; then
+    stale=$(find "$cache" -maxdepth 1 -name '*.deb' | wc -l)
+    [ "$stale" = 0 ] || stamp "the cache holds $stale files for ${had:-a release it does not record}, not $suite: emptied, the mirror fills it"
+    $sudo find "$cache" -maxdepth 2 -name '*.deb' -delete
+  fi
+  echo "$suite" >"$cache/release"
   # the cached files of packages this runner does not have yet, or has at an older version; the newest of each when a
   # cache kept from an older image has two
   declare -A newest=() version=()
@@ -88,7 +100,6 @@ keep() { [ -z "$cache" ] || $sudo chown -R "$(id -u):$(id -g)" "$cache"; }
 # system's lists: a hosted image also lists other repositories (packages.microsoft.com and more), and one of them
 # failing would fail the whole update (--error-on=any) although none of the packages comes from it
 etc=${SX_APT_ETC:-/etc/apt}
-suite=${SX_APT_SUITE:-$(. /etc/os-release && echo "$VERSION_CODENAME")}
 keyring=${SX_APT_KEYRING:-/usr/share/keyrings/ubuntu-archive-keyring.gpg}
 work=$(mktemp -d)
 trap '$sudo rm -rf "$work"' EXIT
