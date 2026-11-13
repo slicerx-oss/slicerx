@@ -560,6 +560,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       case 'paint': {
         // The target found again on the part as it is now; a seed's face first by its key, as push steps find theirs.
         let target = p.target
+        // a paint step with no target (none can be made, but a history may hold one) is broken as a lost face is
+        if (!target?.kind) throw new Broken('Missing face; pick the face again to repair this step.')
         if (target.kind === 'seed' && target.faceKey) {
           const byKey = findByKey(part, s.transform, target.faceKey, target.point)
           if (!byKey) throw new Broken('Missing face; pick the face again to repair this step.')

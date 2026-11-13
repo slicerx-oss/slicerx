@@ -98,6 +98,14 @@ it('refuses locked objects, active tools and invalid targets without editing', a
   expect(get().plate[0]!.paint).toBeUndefined()
 })
 
+it('refuses a paint preview with no target, so no paint without one is stored', async () => {
+  const refused = call('preview', { object: 'body', layer: 'color', state: 1 })
+  await expect(refused).rejects.toMatchObject({ code: 'invalid_input' })
+  await expect(refused).rejects.toThrow(/target/)
+  expect(engine).not.toHaveBeenCalled()
+  expect(get().plate[0]!.paint).toBeUndefined()
+})
+
 it('rejects changes during asynchronous geometry selection', async () => {
   engine.mockImplementationOnce(async () => { set({ plate: [...get().plate] }); return { changed: { 0: '4' }, selectedAreaMm2: 10 } })
   await expect(preview()).rejects.toMatchObject({ code: 'busy' })
