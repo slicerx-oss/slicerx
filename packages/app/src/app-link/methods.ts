@@ -609,9 +609,9 @@ async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): P
   const parsed = tool.input.safeParse(args)
   if (!parsed.success) throw new LinkError('invalid_input', parsed.error.issues.map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; '))
   try {
-    // The reply is the tool's own: a summary and sizes, never meshes.
+    // The reply is the tool's own: a summary and sizes, never meshes, and ok false when the tool refused.
     const out = await tool.run(parsed.data, {} as never)
-    return { summary: out.summary, output: out.output ?? null }
+    return { ...(out.ok === false ? { ok: false } : {}), summary: out.summary, output: out.output ?? null }
   } catch (e) {
     const code = (e as { code?: unknown }).code
     if (typeof code === 'string' && BODY_CODES.has(code)) {
