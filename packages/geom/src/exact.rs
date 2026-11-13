@@ -198,12 +198,44 @@ fn older(op: &str, req: &Value) -> Result<Value> {
     serde_json::from_str(&reply).map_err(|e| Error::Json(e.to_string()))
 }
 
+/// A body a request carries as text, in the table for the one answer and freed when this goes.
+struct Carried(u32);
+
+impl Drop for Carried {
+    fn drop(&mut self) {
+        free(self.0);
+    }
+}
+
+/// The body `tessellate`, `info` or `save` is sent as text, taken into the table as the older `load` gives it: read
+/// back like every body, so what is answered for it is what a held body answers.
+fn carried(req: &Value) -> Result<Option<Carried>> {
+    let Some(sent) = req.get("body").filter(|body| body.get("smb").is_some()) else {
+        return Ok(None);
+    };
+    let loaded = handed("load", &json!({ "body": sent }))?;
+    number(&loaded, "body")
+        .and_then(handle_of)
+        .map(|handle| Some(Carried(handle)))
+        .ok_or_else(|| Error::geometry("brep", "body: the text holds no body"))
+}
+
 /// A brep op, answered. Every body is in this table: `tessellate`, `info`, `save`, `free` and `count` are answered
 /// from it, and the older operations that take or make a body ([`sx_brep::handover::ROUTED`]) are lent the bodies
-/// a request names and have what they make taken into the table. A body sent as text is the older code's for that
-/// one call.
+/// a request names and have what they make taken into the table. A body sent as text to `tessellate`, `info` or
+/// `save` is loaded into the table for that one answer; sent to an older operation it is that operation's for the
+/// call.
 pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Result<Value> {
-    match (op, number(req, "body")) {
+    let sent = if matches!(op, "tessellate" | "info" | "save") {
+        carried(req)?
+    } else {
+        None
+    };
+    let named = sent
+        .as_ref()
+        .map(|text| f64::from(text.0))
+        .or_else(|| number(req, "body"));
+    match (op, named) {
         ("count", _) => Ok(json!({ "bodies": count() })),
         ("free", n) => Ok(json!({ "freed": n.and_then(handle_of).is_some_and(free) })),
         ("tessellate" | "info" | "save", Some(n)) => {
