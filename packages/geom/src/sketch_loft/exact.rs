@@ -18,7 +18,7 @@ use crate::exact as table;
 use crate::faces;
 use crate::mesh::TriMesh;
 use crate::vec3::V3;
-use sx_brep::{Body, DRAWN_MM, Path, Sheet, apart, skin_stations};
+use sx_brep::{Body, DRAWN_MM, Path, Sheet, Tessellation, apart, skin_stations};
 
 /// What a face of an exact loft is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -381,8 +381,27 @@ pub fn hold(rails: &Rails, mesh: &mut TriMesh) -> Result<u32> {
     held(rails, &sheets, &parts, mesh)
 }
 
+/// Refused when the body's triangles cannot be brought within the default chord of its surface inside the limits
+/// tessellation keeps: a body is shown by its triangles, and none that miss its surface are handed out. The loft
+/// is then made as a mesh, with this as the reason.
+fn shown(body: &Body) -> Result<()> {
+    let how = Tessellation::default();
+    match body.tessellate(&how) {
+        Ok(_) => Ok(()),
+        Err(sx_brep::Error::Coarse { .. }) => Err(Error::geometry(
+            "loft",
+            format!(
+                "the exact solid could not be shown within {} mm of its surface, so this loft was made as a mesh",
+                how.chord_mm
+            ),
+        )),
+        Err(other) => Err(kernel(&other)),
+    }
+}
+
 fn held(rails: &Rails, sheets: &[Sheet], parts: &[Part], mesh: &mut TriMesh) -> Result<u32> {
     let (body, order) = Body::stitched(sheets).map_err(|e| kernel(&e))?;
+    shown(&body)?;
     let same = same_faces(rails, parts, mesh);
     let mesh_faces = mesh.faces.as_ref().map_or(0, |f| f.table.len());
     let fresh = faces::fresh_keys(mesh_faces + parts.len());
