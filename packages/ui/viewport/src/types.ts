@@ -153,7 +153,8 @@ export interface ViewportPart {
   slot?: number
   /**
    * Exact corner normals from the geometry engine, packed as in @slicerx/contracts (MeshPart.normals): six numbers per
-   * triangle. Triangles with all three corners set shade with them; the rest crease as usual.
+   * triangle. Triangles with all three corners set shade with them, smoothed only across a fold between faces under the
+   * crease angle (creasedArrays); the rest crease as usual.
    */
   normals?: Int16Array
 }
