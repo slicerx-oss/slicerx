@@ -183,6 +183,13 @@ export function tagBodies(fields: Record<string, unknown>, from: number): void {
   for (const k of BODY_OUT) if (typeof fields[k] === 'number') fields[k] = from * PER_PROCESS + (fields[k] as number)
 }
 
+/**
+ * Whether the answer to `op` can hand out a kernel body: a kernel op's, or another op's asked to keep the body it
+ * makes (`withKeys`, as an exact loft is). Its bodies are then named by the process that made it (tagBodies).
+ */
+export const handsOutBodies = (op: string, request: unknown): boolean =>
+  op.startsWith('brep.') || (request !== null && typeof request === 'object' && (request as Record<string, unknown>)['withKeys'] === true)
+
 /** Whether a kernel request names a body by number. */
 export const namesBody = (request: unknown): boolean => BODY_IN.some((k) => typeof (request as Record<string, unknown> | null)?.[k] === 'number')
 

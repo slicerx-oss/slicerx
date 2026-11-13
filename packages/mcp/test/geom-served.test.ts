@@ -92,6 +92,22 @@ describe.skipIf(process.platform === 'win32')('the served design engine', () => 
     expect(new Set(read().filter((c) => c.op).map((c) => c.pid)).size).toBe(1)
   })
 
+  it('names a lofted body by the process that made it, as it names a kernel body, so later calls reach it', async () => {
+    const { bin, read } = setUp()
+    vi.stubEnv('SX_BREP_DEV', '1')
+    const h = await connect({ sxGeomBin: bin })
+    const created = await h.call('slicerx_design_new', { name: 'Lofted', exact: true })
+    const design = data<{ output: { design: string } }>(created).output.design
+    const section = (x: number, half: number) => ({ frame: { origin: [x, 0, 0], normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] }, loops: [{ points: [[-half, 0], [half, 0], [half, 12], [-half, 12]] }] })
+    const lofted = await h.call('slicerx_geom_loft', { design, profiles: [section(0, 4), section(40, 12)], name: 'Body' })
+    expect(lofted.isError, text(lofted)).toBeFalsy()
+    const calls = read().filter((c) => c.op)
+    // the loft went to the engine as an exact one, and its body was then read there by number, in the same process
+    expect(calls.map((c) => c.op)).toEqual(expect.arrayContaining(['sketch.loft', 'brep.tessellate']))
+    expect(calls.find((c) => c.op === 'brep.tessellate')?.body).toBe(1)
+    expect(new Set(calls.map((c) => c.pid)).size).toBe(1)
+  }, 30_000)
+
   it('takes two tool calls at once on one served engine, and frees no body another replay still uses', async () => {
     const { bin, read } = setUp()
     vi.stubEnv('SX_BREP_DEV', '1')
