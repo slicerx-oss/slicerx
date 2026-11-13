@@ -8,7 +8,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
 import { STUCK_SLICE_MS } from '../src/state/actions'
 import { plateLayerZ } from '../src/state/slice-plate'
-import { AGENT_QUIET_MS, AUTO_SLICE_DELAY_MS, agentCall, startAutoSlice } from '../src/state/auto-slice'
+import { AGENT_QUIET_MS, AUTO_SLICE_DELAY_MS, agentCall, agentWaits, startAutoSlice } from '../src/state/auto-slice'
 import { set } from '../src/state/store'
 
 const handle = { id: 'a', hash: 'a', name: 'a', triangles: 1, bboxMm: [10, 10, 10], openEdges: 0, parts: [{ name: 'a', slot: 1, triangles: 1 }] }
@@ -189,6 +189,33 @@ describe('auto slice and an agent run of edits', () => {
     await layers
     await vi.waitFor(() => expect(e.requests).toHaveLength(2), { timeout: 45_000 })
     e.finish()
+    expect(e.most()).toBe(1)
+    stop()
+  })
+
+  it('slices while a tool waits on the person, and starts no second slice beside it once they answer', async () => {
+    const e = engine()
+    const stop = startAutoSlice(e.h)
+    let answer: (v: string) => void = () => undefined
+    const asked = new Promise<string>((r) => (answer = r))
+    // a tool edits, then asks the person and waits for the answer
+    const tool = agentCall(async () => {
+      set({ plate: [entry(50)] })
+      return agentWaits(() => asked)
+    })
+    // while they decide, the plate as the tool left it slices
+    await vi.advanceTimersByTimeAsync(AUTO_SLICE_DELAY_MS + 10)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(1), { timeout: 45_000 })
+    // they answer while it still runs, and the tool's run ends
+    answer('yes')
+    expect(await tool).toBe('yes')
+    await vi.advanceTimersByTimeAsync(AGENT_QUIET_MS * 2)
+    await within(3000, () => e.requests.length > 1)
+    expect(e.requests).toHaveLength(1)
+    e.finish()
+    await vi.advanceTimersByTimeAsync(AGENT_QUIET_MS)
+    await within(3000, () => e.requests.length > 1)
+    expect(e.requests).toHaveLength(1)
     expect(e.most()).toBe(1)
     stop()
   })

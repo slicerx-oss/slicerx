@@ -45,7 +45,7 @@ import { NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter, scriptsFor } f
 import { SCRIPTS } from './scripts'
 import { appTabs } from './tabs'
 import { checkedDesign, standingPlan, withPlanState } from './plan-state'
-import { agentCall } from '../../state/auto-slice'
+import { agentCall, agentWaits } from '../../state/auto-slice'
 
 export const mimirLogs = createMemorySessionStore()
 
@@ -141,10 +141,23 @@ export function toolsFor(loader: Loader, opts: { exactByDefault?: boolean } = {}
     // a run of the tab's tool calls holds auto slice until it goes quiet, then it slices once (auto-slice.ts agentCall)
     tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments, bed: () => usableBed(get()), ...opts }).map((t) => {
       const run = t.run.bind(t)
-      return { ...t, run: (input: never, ctx: Parameters<typeof run>[1]) => agentCall(() => run(input, ctx)) }
+      // a question to the person lets the hold go while it waits (agentWaits), so they see a fresh slice meanwhile
+      return { ...t, run: (input: never, ctx: Parameters<typeof run>[1]) => agentCall(() => run(input, waitsLetGo(ctx))) }
     })
   }
   return tools
+}
+
+/** A tool's context whose questions to the person (ask, sheet) let auto slice's agent hold go while they wait. */
+function waitsLetGo<C extends { ask?: (...a: never[]) => Promise<unknown>; sheet?: (...a: never[]) => Promise<unknown> }>(ctx: C): C {
+  const ask = ctx.ask
+  const sheet = ctx.sheet
+  // the runtime's context is a plain object, so a copy carries every other field as it is
+  return {
+    ...ctx,
+    ...(ask ? { ask: (...a: Parameters<typeof ask>) => agentWaits(() => ask.apply(ctx, a)) } : {}),
+    ...(sheet ? { sheet: (...a: Parameters<typeof sheet>) => agentWaits(() => sheet.apply(ctx, a)) } : {}),
+  }
 }
 
 /**
