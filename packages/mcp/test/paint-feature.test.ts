@@ -29,8 +29,8 @@ const plan: PartPlan = {
   questions: [],
 }
 
-/** A 40 x 20 x 5 hull tagged Hull with its top painted in filament 2, the paint applied with `feature`. */
-async function hull(feature?: string) {
+/** A 40 x 20 x 5 hull tagged Hull with its top painted in filament 2, `feature` given to the paint's apply or its preview. */
+async function hull(feature?: string, on: 'apply' | 'preview' = 'apply') {
   const plans = createPlanRegistry()
   const h = await connect({ geomEngine: engine, plans })
   const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
@@ -40,8 +40,9 @@ async function hull(feature?: string) {
   }
   const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Hull' })).design
   await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, placement: { center: [20, 10] }, distance_mm: 5, feature: 'Hull' })
-  const pv = await ok<{ preview: string }>('slicerx_paint_preview', { design, state: 2, target: { kind: 'direction', direction: 'top' } })
-  const applied = await ok<{ step: { id: string; name: string } }>('slicerx_paint_apply', { preview: pv.preview, ...(feature !== undefined ? { feature } : {}) })
+  const tag = feature !== undefined ? { feature } : {}
+  const pv = await ok<{ preview: string }>('slicerx_paint_preview', { design, state: 2, target: { kind: 'direction', direction: 'top' }, ...(on === 'preview' ? tag : {}) })
+  const applied = await ok<{ step: { id: string; name: string } }>('slicerx_paint_apply', { preview: pv.preview, ...(on === 'apply' ? tag : {}) })
   plans.put(plan, design, 'card')
   return { h, ok, design, applied }
 }
@@ -59,6 +60,19 @@ describe('a paint step tagged with its plan feature', () => {
     const count = r.items.find((i) => i.name === 'feature count')!
     expect(count.pass, count.got).toBe(true)
     expect(count.got).toContain('Hull paint painted by "Paint the top filament 2"')
+    expect(r.body.paintTags).toEqual([{ feature: 'Hull paint', step: 'Paint the top filament 2' }])
+    expect(r.body.paintUntagged).toEqual([])
+  })
+
+  it('tags the step with the feature its preview was given, when the apply gives none', async () => {
+    const { ok, design } = await hull('Hull paint', 'preview')
+    const steps = await ok<{ steps: { name: string; feature?: string }[] }>('slicerx_design_steps', { design })
+    expect(steps.steps.map((s) => [s.name, s.feature])).toEqual([
+      ['Rectangle extrude 5 mm', 'Hull'],
+      ['Paint the top filament 2', 'Hull paint'],
+    ])
+    const r = await ok<Check>('slicerx_design_check', { planId: 'hull-1' })
+    expect(r.items.find((i) => i.name === 'feature count')!.pass).toBe(true)
     expect(r.body.paintTags).toEqual([{ feature: 'Hull paint', step: 'Paint the top filament 2' }])
     expect(r.body.paintUntagged).toEqual([])
   })
@@ -82,9 +96,12 @@ describe('a paint step tagged with its plan feature', () => {
     expect(b.items.find((i) => i.name === 'feature count')!.pass).toBe(false)
   })
 
-  it('is paint.apply 1.2.0, which takes feature', () => {
+  it('is paint.apply 1.3.0, which takes feature, and paint.preview 1.4.0, which takes it for the apply', () => {
     const t = paintTools(NO_ENGINE_HOST).find((x) => x.name === 'paint.apply')!
-    expect(t.version).toBe('1.2.0')
+    expect(t.version).toBe('1.3.0')
+    const pv = paintTools(NO_ENGINE_HOST).find((x) => x.name === 'paint.preview')!
+    expect(pv.version).toBe('1.4.0')
+    expect(pv.input.parse({ design: 'd1', layer: 'color', state: 2, target: { kind: 'part' }, feature: 'Hull paint' })).toMatchObject({ feature: 'Hull paint' })
     expect(t.input.parse({ preview: 'p1', feature: 'Hull paint' })).toEqual({ preview: 'p1', feature: 'Hull paint' })
   })
 })

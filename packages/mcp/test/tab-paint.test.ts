@@ -33,8 +33,8 @@ describe('the tab paint tools', () => {
     const tab = tabToolset(NO_ENGINE_HOST as DesignHost, createCardPlans(createPlanRegistry()), { filaments: project() }).filter((t) => PAINT.includes(t.name))
     expect(tab.map((t) => t.name)).toEqual(PAINT)
     expect(tab.map((t) => [t.name, t.version, t.permission, shape(t)])).toEqual(server.map((t) => [t.name, t.version, t.permission, shape(t)]))
-    // the same targets in words: the part, faces by direction, a height band, a seed and one state for another
-    expect(shape(tab[0]!)).toEqual(['design', 'layer', 'state', 'target', 'part', 'max_depth', 'view', 'size', 'image', 'whole'])
+    // the same targets in words: the part, faces by direction, a height band, a seed and one state for another; and the feature the apply tags
+    expect(shape(tab[0]!)).toEqual(['design', 'layer', 'state', 'target', 'part', 'max_depth', 'view', 'size', 'image', 'feature', 'whole'])
   })
 
   it('applying color paint in a filament past the last adds it and says so', async () => {
