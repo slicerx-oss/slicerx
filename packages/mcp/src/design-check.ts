@@ -116,7 +116,7 @@ export function tidyPlan<P extends PartPlan>(plan: P): P {
   return { ...plan, features: plan.features.map(({ kinds, ...f }) => (kinds && Object.keys(kinds).length ? { ...f, kinds } : f)) }
 }
 
-export const checkItemSchema = z.object({ name: z.string(), want: z.string(), got: z.string(), pass: z.boolean(), warning: z.string().optional() })
+export const checkItemSchema = z.object({ name: z.string(), want: z.string(), got: z.string(), pass: z.boolean(), warning: z.string().optional(), where: z.string().optional(), fix: z.string().optional() })
 export const checkResultSchema = z.object({ pass: z.boolean(), items: z.array(checkItemSchema) })
 export type CheckItem = z.infer<typeof checkItemSchema>
 export type CheckResult = z.infer<typeof checkResultSchema>
@@ -168,6 +168,8 @@ export interface BodyFacts {
    * minWallMm. minWallMm leaves such readings out: the taper of an edge is not a wall.
    */
   minWallTip?: { mm: number; at: [number, number, number] } | undefined
+  /** Where the thinnest wall (minWallMm) is: a point in the middle of the wall, mm, and its part when it is named (partNamed). */
+  minWallAt?: { part?: string; at: [number, number, number] } | undefined
   /** The pieces and the gaps between them, read only for a print-in-place plan. */
   fit?: FitFacts | undefined
   /** Why the gaps were not measured, when the fit check failed. */
@@ -276,6 +278,12 @@ export function nozzleOr(v: unknown): number {
 type SizeOk = (got: number, want: number) => boolean
 const tightOk: SizeOk = (got, want) => Math.abs(got - want) <= Math.max(SIZE_MM, SIZE_SHARE * want)
 const displayOk: SizeOk = (got, want) => Math.abs(got - want) <= Math.max(DISPLAY_SIZE_MM, DISPLAY_SIZE_SHARE * want)
+
+/**
+ * A part's name as the check's places give it: none for a design of one part, where it says nothing, or for a part
+ * that still has the name every new body gets ("Body", "Body 2"), which says nothing either.
+ */
+export const partNamed = (name: string | undefined, parts: number): string | undefined => (parts > 1 && name?.trim() && !/^Body(?: \d+)?$/.test(name.trim()) ? name.trim() : undefined)
 
 /** Whether a size matches axis by axis, x and y swapped passing (turned on the bed), with a note on a swap. */
 function sizeMatch(got: number[], want: number[], sizeOk: SizeOk = tightOk): { pass: boolean; note: string } {
@@ -775,6 +783,11 @@ function curvedItem(plan: PartPlan, body: BodyFacts): CheckItem | null {
   }
 }
 
+/** Where a failed minimum wall is, in the words the check gives it: the part (when it is named, partNamed) and a point in the wall. */
+export const WALL_WHERE = (part: string | undefined, at: readonly number[]): string => `The thinnest wall is ${part ? `in ${part}, ` : ''}near (${at.map(r2).join(', ')}) mm.`
+/** How to fix a failed minimum wall, for the wall thickness the nozzle needs. */
+export const WALL_FIX = (wall: string): string => `Make it at least ${wall} thick there. A lip, rim, post or arm needs that thickness too, and a cut must stop at least ${wall} short of the far side.`
+
 /**
  * The minimum wall: the thinnest wall away from sharp edges and points against twice the nozzle. Thinner readings
  * within two nozzle widths of a sharp outward edge or a point are the edge's taper, which the slicer drops or prints as
@@ -793,7 +806,9 @@ function wallItem(body: BodyFacts, nozzle: number): CheckItem {
     return { name: 'minimum wall', want, got: unmeasured, pass: false }
   }
   const pass = body.minWallMm >= wall - 1e-6
-  return { name: 'minimum wall', want, got: mm(body.minWallMm), pass, ...(pass && tipWarning ? { warning: tipWarning } : {}) }
+  // a failed wall says where it is and how to fix it, beside the reading (got stays the reading alone)
+  const place = !pass && body.minWallAt ? { where: WALL_WHERE(body.minWallAt.part, body.minWallAt.at), fix: WALL_FIX(mm(wall)) } : !pass ? { fix: WALL_FIX(mm(wall)) } : {}
+  return { name: 'minimum wall', want, got: mm(body.minWallMm), pass, ...(pass && tipWarning ? { warning: tipWarning } : {}), ...place }
 }
 
 /**
