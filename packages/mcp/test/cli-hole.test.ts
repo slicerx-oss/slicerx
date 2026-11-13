@@ -56,6 +56,8 @@ describe.skipIf(!built(bin, GEOM_BUILD))('slicerx-mcp call geom_hole and geom_ho
       ['geom_hole', { design: 'd1', center: [15, 10, 5], axis: [0, 0, 1], diameter_mm: 3.4, counterbore: { diameter_mm: 6.5, depth_mm: 3 }, label: 'M3 clearance' }],
       ['design_steps', { design: 'd1' }],
       ['geom_measure', { design: 'd1', a: { at: [16.7, 10, 1], normal: [-1, 0, 0] } }],
+      // the hole and its head repeated 10 mm to the left twice: the second copy falls off the plate
+      ['geom_array', { design: 'd1', steps: [2, 3], spec: { kind: 'linear', count: 3, step: [-10, 0, 0] } }],
     ] as const
     const args = ['--import', 'tsx', 'src/cli.ts', '--engine', 'stub', '--no-app', '--printers', 'off', '--sx-geom-bin', bin, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles'), 'call', ...calls.flatMap(([t, a]) => [t, JSON.stringify(a)])]
     const { stdout } = await run(process.execPath, args, { cwd: resolve(__dirname, '..'), env: { ...process.env, HOME: dir } })
@@ -72,5 +74,9 @@ describe.skipIf(!built(bin, GEOM_BUILD))('slicerx-mcp call geom_hole and geom_ho
     expect(steps.slice(1)).toMatchObject([{ name: 'M3 clearance', op: 'shape.extrude', state: 'done' }, { name: 'Counterbore 6.5 mm', op: 'shape.extrude', state: 'done' }])
     const shaft = lines[4]!.output.output['measurement'] as { diameterMm?: number }
     expect(shaft.diameterMm).toBeCloseTo(3.4, 1)
+    // which copies landed, as data beside the note: copy 3 at x -5 is off the plate
+    const row = lines[5]!.output
+    expect(row.summary).toMatch(/Copy 3 did not reach the part and was left out/)
+    expect(row.output['copies']).toEqual({ total: 3, kept: 2, missed: [3] })
   }, 60_000)
 })

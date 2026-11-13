@@ -64,7 +64,7 @@ describe('a pattern of steps on the mesh', () => {
   it('keeps the copies that land and names the ones that miss', async () => {
     const e = meshEngine((x) => [2, 4].includes(copyAt(x)))
     const r = await replayHistory(e.call, { history: history(hole, row(5)) })
-    expect(r.status[1]).toEqual({ state: 'done', note: 'Copies 2 and 4 did not reach the part and were left out.' })
+    expect(r.status[1]).toEqual({ state: 'done', note: 'Copies 2 and 4 did not reach the part and were left out.', copies: { total: 5, kept: 3, missed: [2, 4] } })
     // every copy was tried, and each kept one cut the part the copy before it left
     expect(e.seen.filter((s) => s.op === 'subtract').map((s) => copyAt(s.x))).toEqual([1, 2, 3, 4, 5])
   })
@@ -74,7 +74,7 @@ describe('a pattern of steps on the mesh', () => {
     // copy 3's hole lands and its boss misses
     const e = meshEngine((x, op) => op === 'shape.extrude' && copyAt(x) === 3)
     const r = await replayHistory(e.call, { history: history(hole, boss, row(4, ['hole-1', 'boss-1'])) })
-    expect(r.status[2]).toEqual({ state: 'done', note: 'Copy 3 did not reach the part and was left out.' })
+    expect(r.status[2]).toEqual({ state: 'done', note: 'Copy 3 did not reach the part and was left out.', copies: { total: 4, kept: 3, missed: [3] } })
     const calls = e.seen.filter((s) => s.op === 'subtract' || s.op === 'shape.extrude')
     const copy3Hole = calls.find((s) => s.op === 'subtract' && copyAt(s.x) === 3)!
     const copy4Hole = calls.find((s) => s.op === 'subtract' && copyAt(s.x) === 4)!
@@ -91,7 +91,7 @@ describe('a pattern of steps on the mesh', () => {
   it('runs as before when every copy lands', async () => {
     const e = meshEngine(() => false)
     const r = await replayHistory(e.call, { history: history(hole, row(4)) })
-    expect(r.status[1]).toEqual({ state: 'done' })
+    expect(r.status[1]).toEqual({ state: 'done', copies: { total: 4, kept: 4, missed: [] } })
   })
 
   it('still breaks on a copy that fails for another reason, naming it', async () => {
@@ -111,8 +111,9 @@ describe('a pattern of steps on the mesh', () => {
     // the mirrored row is sent turned, at 40, 34 and 28 mm: its copy 3 misses there, while the row itself lands
     const e = meshEngine((x, _op, mirrored) => mirrored && x === 28)
     const r = await replayHistory(e.call, { history: history(hole, row(3), both) })
-    expect(r.status[1]).toEqual({ state: 'done' })
-    expect(r.status[2]).toEqual({ state: 'done', note: 'In copy 2, copy 3 did not reach the part and was left out.' })
+    expect(r.status[1]).toEqual({ state: 'done', copies: { total: 3, kept: 3, missed: [] } })
+    // the mirror's own two copies both landed; the miss inside its copy 2 is in the note only
+    expect(r.status[2]).toEqual({ state: 'done', note: 'In copy 2, copy 3 did not reach the part and was left out.', copies: { total: 2, kept: 2, missed: [] } })
   })
 })
 
@@ -152,7 +153,7 @@ describe('a row that follows a curved side', () => {
     const e = podEngine()
     // copies at x 25 and 40 are on the pod; at x 55 and 70 they are past its end
     const r = await replayHistory(e.call, { history: { version: 1, base: [{ name: 'Pod', slot: 1, ...pod }], steps: [slit, along(5)] } })
-    expect(r.status[1]).toEqual({ state: 'done', note: 'Copies 4 and 5 did not reach the part and were left out.' })
+    expect(r.status[1]).toEqual({ state: 'done', note: 'Copies 4 and 5 did not reach the part and were left out.', copies: { total: 5, kept: 3, missed: [4, 5] } })
     // the slit itself and the two copies that landed, and no cut for the ones past the end
     expect(e.cuts).toHaveLength(3)
   })
@@ -196,7 +197,7 @@ describe('a pattern of steps on exact solids', () => {
   it('keeps the landing copies exact and names the ones that miss', async () => {
     const e = exactEngine((x) => [3, 4].includes(slotCopy(x)))
     const r = await replayHistory(e.call, { history: exact(box, slot, slots(5)) })
-    expect(r.status[2]).toEqual({ state: 'done', note: 'Copies 3 and 4 did not reach the part and were left out.' })
+    expect(r.status[2]).toEqual({ state: 'done', note: 'Copies 3 and 4 did not reach the part and were left out.', copies: { total: 5, kept: 3, missed: [3, 4] } })
     expect(r.exactFellBack).toBeUndefined()
     expect(e.sent.some((s) => s.op === 'subtract' || s.op === 'shape.extrude')).toBe(false)
     expect(r.status.every((s) => s.note !== EXACT_FELL_BACK)).toBe(true)
@@ -211,6 +212,6 @@ describe('a pattern of steps on exact solids', () => {
   it('runs as before when every copy lands', async () => {
     const e = exactEngine(() => false)
     const r = await replayHistory(e.call, { history: exact(box, slot, slots(3)) })
-    expect(r.status[2]).toEqual({ state: 'done' })
+    expect(r.status[2]).toEqual({ state: 'done', copies: { total: 3, kept: 3, missed: [] } })
   })
 })

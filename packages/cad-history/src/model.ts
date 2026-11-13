@@ -216,6 +216,19 @@ export interface StepStatus {
   message?: string
   /** A nonfatal note from a completed step. */
   note?: string
+  /** A pattern that repeats steps: which of its copies landed (copiesLanded), as its note words them. */
+  copies?: PatternCopies
+}
+
+/**
+ * The copies of a pattern of steps, numbered from 1 as the step's note numbers them (copy 1 is the steps themselves):
+ * how many there are, how many were kept, and the numbers left out because they missed the part or, in a row along a
+ * curved side, found no side where they land.
+ */
+export interface PatternCopies {
+  total: number
+  kept: number
+  missed: number[]
 }
 
 export interface ReplayResult {

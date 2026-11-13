@@ -59,11 +59,15 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
     const s = d.history.steps[d.history.steps.length - 1]
     return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
   }
-  /** As added, with a pattern step's note: the copies it left out, which missed the part, named. */
+  /**
+   * As added, with a pattern step's note (the copies it left out, which missed the part, named) and the same as data:
+   * `copies`, how many there are, how many were kept and the numbers left out, from 1 as the note numbers them.
+   */
   const addedPattern = (d: Design, verb: string) => {
     const r = added(d, verb)
-    const note = d.status[d.status.length - 1]?.note
-    return note ? { ...r, summary: `${r.summary}. ${note.replace(/\.$/, '')}` } : r
+    const st = d.status[d.status.length - 1]
+    const withCopies = st?.copies ? { ...r, output: { ...r.output, copies: st.copies } } : r
+    return st?.note ? { ...withCopies, summary: `${r.summary}. ${st.note.replace(/\.$/, '')}` } : withCopies
   }
   /** The text laid out on the step's frame against the picked face's outline, both in that frame. */
   const textFitOn = async (ds: DesignHost, d: Design, f: { part: number; triangle: number }, frame: FaceFrame, at: V3, text: string, sizeMm: number) => {
@@ -186,7 +190,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const mirror = defineTool({
     name: 'geom.mirror',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -219,7 +223,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   const ARRAY_TEXT = 'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy.'
   const array = defineTool({
     name: 'geom.array',
-    version: '1.8.0',
+    version: '1.9.0',
     source: 'command',
     permission: 'slice',
     description:
