@@ -18,9 +18,14 @@
 // (src/toolset.ts tabToolset): the design toolset on the eval's own design host, so a part is built feature by feature
 // as CAD history, with the tab's questions, sheets and plan cards. A reply that builds nothing is scored as asked (a
 // question to the person), declined (says it can't model or build it), stopped (its plan was approved or its question
-// answered, and it ended without building) or none. When it asks, in its reply or on a question card, the eval answers
-// once with run.ts DEFAULT_ANSWER and lets it go on; --no-default-answer turns that off. A replay answers only for a
-// recording captured with the answer, and marks a recorded question without one stale. A recording from before the
+// answered, and it ended without building) or none. When it asks, in its reply or on a question card, before or after
+// building, the eval answers once with run.ts DEFAULT_ANSWER and lets it go on; a second ask ends the run.
+// --no-default-answer turns that off. Each run counts its asks, and the summary and the log keep the runs that passed
+// unaided apart from those that passed after the one answer: pass_rate counts every pass, as it always has, and
+// pass_rate_unaided beside it counts only the runs that passed with no answer. A replay answers only
+// for a recording captured with the answer (a question after a build, only one stamped midBuildAnswer, so an older
+// recording ends at that question as its live run did), and marks a recorded question before any build without one
+// stale. A recording from before the
 // tab's tools (it called text_to_part or no tool) replays as stale too, until a live run captures it again, and so does
 // one whose reply starts the same part again with a second design.new, which mimir now refuses, unless it was captured
 // since that refusal (a live capture stamps samePart, so a refusal the model saw replays as recorded). A replay that gets
@@ -39,7 +44,7 @@ import { createNodeTransport, EVALS_DIR, evalGeom } from '@slicerx/pilot/evals/n
 import { budgetedClient, createBudget, DEFAULT_CAP_USD, DEFAULT_USD_PER_SEARCH, runLive, STOP_MARGIN_USD, type Price } from './live'
 import { CREATIVE_PROMPTS, type CreativePrompt } from './prompts'
 import { loadRecording, saveRecording } from './recordings'
-import { CREATIVE_TAB, DEFAULT_ANSWER, replayScored, runPrompt, scoreParts, type CreativeScore, type NoBuild, type PromptRun } from './run'
+import { CREATIVE_TAB, DEFAULT_ANSWER, passCounts, replayScored, runPrompt, scoreParts, type CreativeScore, type NoBuild, type PromptRun } from './run'
 
 const PROVIDERS = ['openai', 'anthropic', 'openai-compatible']
 
@@ -119,7 +124,7 @@ if (mode === 'live') {
 }
 
 const fmt = (name: string, c: { pass: boolean; detail: string } | undefined): string => (c ? `${name} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')
-const scores: { id: string; score: CreativeScore; calls: number; noBuild?: NoBuild; answered: boolean }[] = []
+const scores: { id: string; score: CreativeScore; calls: number; noBuild?: NoBuild; answered: boolean; asks: number }[] = []
 const waiting: string[] = []
 const skipped: string[] = []
 const stale: string[] = []
@@ -127,7 +132,7 @@ const broken: string[] = []
 const report = (p: CreativePrompt, run: PromptRun): void => {
   // a run the budget stopped ends partway, which is not what the model would do: it is never saved
   if (mode === 'live' && flag('record') && run.steps.length && !run.error && !budget.stopped) {
-    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}), tabTools: true, samePart: true, ...(run.planGoesOn ? { planGoesOn: true } : {}) })
+    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true, midBuildAnswer: true } : {}), tabTools: true, samePart: true, ...(run.planGoesOn ? { planGoesOn: true } : {}) })
   }
   // a replay that got the plan_left note its recording never answered stands for no reply of the model's: stale, not scored
   if (mode === 'replay' && !replayScored(run)) {
@@ -136,7 +141,7 @@ const report = (p: CreativePrompt, run: PromptRun): void => {
     return
   }
   const sc = scoreParts(p, run.parsed, run.parts, run.gaps)
-  scores.push({ id: p.id, score: sc, calls: run.calls.length, answered: run.answered, ...(run.noBuild ? { noBuild: run.noBuild } : {}) })
+  scores.push({ id: p.id, score: sc, calls: run.calls.length, answered: run.answered, asks: run.asks, ...(run.noBuild ? { noBuild: run.noBuild } : {}) })
   const checks = run.noBuild ? `no build: ${run.noBuild}${run.answered ? ' after the default answer' : ''}` : [fmt('parses', sc.parses), fmt('watertight', sc.watertight), fmt('bodies', sc.bodies), fmt('wall', sc.minWall), fmt('bed', sc.bedFit), fmt('clearance', sc.clearance)].filter(Boolean).join('  ')
   console.log(`${(sc.pass ? 'PASS' : run.noBuild ? run.noBuild.toUpperCase() : 'FAIL').padEnd(8)} ${p.id.padEnd(28)} ${checks}${run.answered && !run.noBuild ? '  (built after the default answer)' : ''}`)
   if (run.stale) {
@@ -163,20 +168,23 @@ if (client) {
       console.log(`SKIP ${p.id.padEnd(28)} recorded (${rec.model}), but there is no geometry engine to build it`)
       continue
     }
-    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true, planGoesOn: rec.planGoesOn === true }))
+    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true, planGoesOn: rec.planGoesOn === true, midBuildAnswer: rec.midBuildAnswer === true }))
   }
 }
 
-const passed = scores.filter((s) => s.score.pass).length
+// a run that passed after the eval answered it is never counted with one that passed on its own: two counts, two rates
+const passes = passCounts(scores.map((s) => ({ id: s.id, pass: s.score.pass, answered: s.answered })))
+const asked = scores.filter((s) => s.asks > 0)
 const noBuild = (r: NoBuild): string[] => scores.filter((s) => s.noBuild === r).map((s) => s.id)
 const nothing = scores.filter((s) => s.noBuild).length
 const answeredIds = scores.filter((s) => s.answered).map((s) => s.id)
 const noBuildLine = nothing ? `${nothing} built nothing (${noBuild('asked').length} asked, ${noBuild('declined').length} declined, ${noBuild('stopped').length} stopped, ${noBuild('none').length} none)` : ''
 console.log(
-  `\n${mode}: ${scores.length} scored, ${passed} passed${skipped.length ? `, ${skipped.length} skipped with no geometry engine` : ''}${mode === 'live' ? `, spent $${budget.spentUsd.toFixed(2)} of $${capUsd.toFixed(2)}${budget.cutOff ? ` ($${budget.estimatedUsd.toFixed(2)} of it the most ${budget.cutOff} cut-off repl${budget.cutOff === 1 ? 'y' : 'ies'} could cost)` : ''}` : ''}${budget.stopped ? ' (stopped at the cost cap)' : ''}`,
+  `\n${mode}: ${scores.length} scored, ${passes.unaided.length} passed unaided, ${passes.afterOneAnswer.length} passed after one answer${skipped.length ? `, ${skipped.length} skipped with no geometry engine` : ''}${mode === 'live' ? `, spent $${budget.spentUsd.toFixed(2)} of $${capUsd.toFixed(2)}${budget.cutOff ? ` ($${budget.estimatedUsd.toFixed(2)} of it the most ${budget.cutOff} cut-off repl${budget.cutOff === 1 ? 'y' : 'ies'} could cost)` : ''}` : ''}${budget.stopped ? ' (stopped at the cost cap)' : ''}`,
 )
 if (noBuildLine) console.log(noBuildLine)
 console.log(`default answer ${defaultAnswer ? `on, given in ${answeredIds.length} run${answeredIds.length === 1 ? '' : 's'}${answeredIds.length ? `: ${answeredIds.join(', ')}` : ''}` : 'off'}`)
+if (asked.length) console.log(`asked the person: ${asked.map((s) => `${s.id} ${s.asks}`).join(', ')}`)
 if (stale.length) console.log(`${stale.length} stale recording${stale.length === 1 ? '' : 's'}, to capture again live: ${stale.join(', ')}`)
 if (mode === 'replay' && broken.length) console.log(`${broken.length} recording${broken.length === 1 ? '' : 's'} no longer replay${broken.length === 1 ? 's' : ''} as captured: ${broken.join(', ')}`)
 if (waiting.length) console.log(`${waiting.length} prompt${waiting.length === 1 ? ' has' : 's have'} no recording yet: ${waiting.join(', ')}`)
@@ -192,15 +200,21 @@ if (flag('log') && scores.length) {
     scenarios: ids?.join(',') ?? 'creative',
     runs: 1,
     change: arg('change', ''),
+    // value and pass_rate count every pass, as they always have, so the series holds; pass_rate_unaided beside them counts
+    // only the runs that passed with no answer, and the two lists say which runs are which
     metric: 'pass_rate',
-    value: Math.round((passed / scores.length) * 1000) / 10,
-    pass_rate: Math.round((passed / scores.length) * 1000) / 1000,
+    value: Math.round(((passes.unaided.length + passes.afterOneAnswer.length) / scores.length) * 1000) / 10,
+    pass_rate: Math.round(((passes.unaided.length + passes.afterOneAnswer.length) / scores.length) * 1000) / 1000,
+    pass_rate_unaided: Math.round((passes.unaided.length / scores.length) * 1000) / 1000,
+    passed_unaided: passes.unaided,
+    passed_after_one_answer: passes.afterOneAnswer,
     tool_calls_per_task: Math.round((scores.reduce((a, s) => a + s.calls, 0) / scores.length) * 10) / 10,
     unapproved_side_effects: 0,
     ...(mode === 'live' ? { usd: Math.round(budget.spentUsd * 100) / 100 } : {}),
     per_scenario: Object.fromEntries(scores.map((s) => [s.id, [s.score.pass ? 100 : 0]])),
     default_answer: defaultAnswer,
     answered: answeredIds,
+    asks: Object.fromEntries(scores.flatMap((s) => (s.asks ? [[s.id, s.asks]] : []))),
     no_build: Object.fromEntries(scores.flatMap((s) => (s.noBuild ? [[s.id, s.noBuild]] : []))),
     ...(stale.length ? { stale } : {}),
   }
@@ -208,7 +222,7 @@ if (flag('log') && scores.length) {
   const logMd = join(EVALS_DIR, 'LOG.md')
   // The same table the scenario runs log to (evals/LOG.md); Mean holds the pass rate here, as a percent.
   if (existsSync(logMd) && readFileSync(logMd, 'utf8').trim()) {
-    const notes = [line.change || 'creative prompts', `default answer ${defaultAnswer ? `on (${answeredIds.length} answered)` : 'off'}`, noBuildLine ? `${noBuildLine}: ${(['asked', 'declined', 'stopped', 'none'] as const).flatMap((r) => noBuild(r).map((id) => `${id} ${r}`)).join(', ')}` : '', stale.length ? `stale: ${stale.join(', ')}` : '']
+    const notes = [line.change || 'creative prompts', `default answer ${defaultAnswer ? `on (${answeredIds.length} answered)` : 'off'}`, `passed unaided ${passes.unaided.length}, passed after one answer ${passes.afterOneAnswer.length}`, noBuildLine ? `${noBuildLine}: ${(['asked', 'declined', 'stopped', 'none'] as const).flatMap((r) => noBuild(r).map((id) => `${id} ${r}`)).join(', ')}` : '', stale.length ? `stale: ${stale.join(', ')}` : '']
     appendFileSync(logMd, `| ${ts.slice(0, 16).replace('T', ' ')} | ${mode} | ${modelName} | ${line.scenarios} | 1 | ${line.value} | ${Math.round(line.pass_rate * 100)}% | ${line.tool_calls_per_task} | 0 | ${notes.filter(Boolean).join('; ')} |\n`)
   }
 }

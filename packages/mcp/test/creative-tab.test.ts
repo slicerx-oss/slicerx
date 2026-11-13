@@ -8,7 +8,7 @@ import { neutralEdition } from '@slicerx/edition-config'
 import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { loadRecording, parseRecording } from '../evals/creative/recordings'
-import { CREATIVE_TAB, classifyNoBuild, creativeEnv, DEFAULT_ANSWER, runPrompt } from '../evals/creative/run'
+import { CREATIVE_TAB, classifyNoBuild, creativeEnv, DEFAULT_ANSWER, passCounts, runPrompt } from '../evals/creative/run'
 import { createPilot, createScriptedClient, editionToolGroups, isRuntimeNote, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain } from '@slicerx/pilot'
 import { CAD_TOOLS } from '@slicerx/pilot/evals'
 import type { PilotTool } from '@slicerx/pilot'
@@ -223,6 +223,55 @@ describe('the default answer to a clarifying question', () => {
     expect(JSON.stringify(client.requests[3]?.messages.at(-1))).toContain(DEFAULT_ANSWER)
     expect(run.calls).toEqual(['pilot.sheet', 'design.plan', 'design.new', 'geom.extrude'])
     expect(run.noBuild).toBeUndefined()
+  })
+
+  it('answers a question asked after a build once, and the model goes on building', async () => {
+    const more = { calls: [{ name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 10, heightMm: 10 }, distance_mm: 5, operation: 'join' } }] }
+    const client = createScriptedClient([build, { text: 'The base is built. Should I add the cable slots too?' }, more, { text: 'Added the slots.' }], { chunk: false })
+    const run = await runPrompt(P, { geom: undefined, client })
+    expect(run.answered).toBe(true)
+    expect(run.asks).toBe(1)
+    expect(JSON.stringify(client.requests[2]?.messages.at(-1))).toContain(DEFAULT_ANSWER)
+    expect(run.calls.filter((c) => c === 'geom.extrude')).toHaveLength(2)
+    // it passed only after the answer, so it is never counted with a run that passed on its own
+    expect(passCounts([{ id: 'organizer', pass: true, answered: run.answered }, { id: 'hook', pass: true, answered: false }])).toEqual({ unaided: ['hook'], afterOneAnswer: ['organizer'] })
+  })
+
+  it('answers only one question a run asks: a second one after a build ends the run, counted', async () => {
+    const client = createScriptedClient([build, { text: 'Built the base. Add the slots?' }, { text: 'And a lid too?' }, build], { chunk: false })
+    const run = await runPrompt(P, { geom: undefined, client })
+    expect(run.answered).toBe(true)
+    expect(run.asks).toBe(2)
+    expect(client.requests).toHaveLength(3)
+  })
+
+  it('a question after the default answer already given is not answered again', async () => {
+    const client = createScriptedClient([{ text: 'How long should it be?' }, build, { text: 'Built it. Want slots?' }, build], { chunk: false })
+    const run = await runPrompt(P, { geom: undefined, client })
+    expect(run.answered).toBe(true)
+    expect(run.asks).toBe(2)
+    expect(client.requests).toHaveLength(3)
+  })
+
+  it('replays a recording from before the answer after a build as captured: it ends at the question, not stale', async () => {
+    const steps = [build, { text: 'The base is built. Should I add the cable slots too?' }]
+    const old = await runPrompt(P, { geom: undefined, steps, answerRecorded: true, tabTools: true, samePart: true })
+    expect(old.answered).toBe(false)
+    expect(old.asks).toBe(1)
+    expect(old.stale).toBeUndefined()
+    expect(old.error).toBeUndefined()
+    // a live capture since then is stamped midBuildAnswer, and its replay sends the answer where the live run did
+    const fresh = await runPrompt(P, { geom: undefined, steps: [...steps, build, { text: 'Done.' }], answerRecorded: true, midBuildAnswer: true, tabTools: true, samePart: true })
+    expect(fresh.answered).toBe(true)
+    expect(fresh.error).toBeUndefined()
+  })
+
+  it('counts every question card, answered or not', async () => {
+    const card = { calls: [{ name: 'pilot.ask', args: { title: 'Size', question: 'How long should it be?', choices: [{ id: 'short', label: '80 mm' }, { id: 'long', label: '120 mm' }] } }] }
+    const client = createScriptedClient([card, card, build, { text: 'Built it.' }], { chunk: false })
+    const run = await runPrompt(P, { geom: undefined, client })
+    expect(run.answered).toBe(true)
+    expect(run.asks).toBe(2)
   })
 
   it('counts reads and a plan as building nothing', async () => {

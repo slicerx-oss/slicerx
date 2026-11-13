@@ -47,6 +47,11 @@ export interface BuildRecording {
   capturedAt: string
   steps: EvalStep[]
   score: ScoreSummary
+  /**
+   * Captured since the drive also answers a question asked after a build (drive.ts), so a replay sends that answer too.
+   * Recordings from before leave it out: their live run ended at that question, and so does the replay.
+   */
+  midBuildAnswer?: boolean
 }
 
 export function loadRecording(id: string, dir = RECORDINGS_DIR): BuildRecording | null {
@@ -69,7 +74,7 @@ export function saveRecording(id: string, rec: BuildRecording, dir = RECORDINGS_
  */
 export function recordLive(id: string, run: { steps: EvalStep[]; score: CaseScore; error?: string }, from: { model: string; provider: string; stopped: boolean }, dir = RECORDINGS_DIR): boolean {
   if (!run.steps.length || run.error || from.stopped) return false
-  saveRecording(id, { model: from.model, provider: from.provider, capturedAt: new Date().toISOString(), steps: run.steps, score: summarize(run.score) }, dir)
+  saveRecording(id, { model: from.model, provider: from.provider, capturedAt: new Date().toISOString(), steps: run.steps, score: summarize(run.score), midBuildAnswer: true }, dir)
   return true
 }
 

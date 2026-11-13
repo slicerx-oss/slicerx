@@ -193,7 +193,15 @@ export function classifyNoBuild(reply: string, after?: string): NoBuild {
   return after === undefined ? 'none' : 'stopped'
 }
 
-/** What the eval says, once, when the model asks a question instead of building. */
+/**
+ * The runs that passed, split by whether they needed the eval's one answer: those that passed unaided and those that
+ * passed after one answer. The two are never added into one pass rate, so help the eval gave stays visible.
+ */
+export function passCounts<T extends { id: string; pass: boolean; answered: boolean }>(runs: readonly T[]): { unaided: string[]; afterOneAnswer: string[] } {
+  return { unaided: runs.filter((r) => r.pass && !r.answered).map((r) => r.id), afterOneAnswer: runs.filter((r) => r.pass && r.answered).map((r) => r.id) }
+}
+
+/** What the eval says, once, when the model asks a question before or after building. */
 export const DEFAULT_ANSWER = 'Use common sizes and sensible defaults, then build it'
 
 export interface PromptRun {
@@ -210,6 +218,11 @@ export interface PromptRun {
   gaps?: GapReport
   /** The model asked (in its reply, or with pilot.ask), and the eval gave it the default answer. */
   answered: boolean
+  /**
+   * How many times the model asked the person: each question card (pilot.ask) and each reply that ends asking, answered
+   * or not. The eval answers one of them at most, so a second ask ends the run and still counts here.
+   */
+  asks: number
   /** mimir went on once with the plan approved in the run unfinished (the plan_left note); a live capture stamps it. */
   planGoesOn?: true
   /** Why the recording no longer stands for what a live run would do (replay only). */
@@ -260,16 +273,18 @@ function restartRefused(messages: readonly LlmMessage[]): boolean {
  * One prompt through mimir on the tab's tools. `client` is the live model; without it the recorded steps replay.
  * The eval stands in for the person: a design tool's approval is given, anything else is denied; a plan card gets Go,
  * a dimension sheet is confirmed as shown, and a question card (pilot.ask) gets the default answer as the person's own
- * words, once; any other card is dismissed. When the reply builds nothing and asks a question, the eval answers once
- * with DEFAULT_ANSWER and lets the model go on (`defaultAnswer`, on unless false; the card and the reply share the one
- * answer). A replay answers only when the recording was captured with the answer (`answerRecorded`); a recorded
+ * words, once; any other card is dismissed. When the reply asks a question, the eval answers once with DEFAULT_ANSWER
+ * and lets the model go on (`defaultAnswer`, on unless false; the card and the reply share the one answer), whether the
+ * reply built nothing or asks after building. A replay answers only when the recording was captured with the answer
+ * (`answerRecorded`, and for a question after a build `midBuildAnswer`): a recording from before that answer ends at
+ * the question, as it did live, and replays as captured; a recorded
  * question without it is marked stale, and so is a recording from before the tab's tools (`tabTools` unset) and one whose
  * reply met the refusal of a restarted part though it was captured before that refusal (STALE_RESTART, `samePart` unset),
  * or got the note that its approved plan is unfinished though it was captured before that note (STALE_PLAN_GOES_ON,
  * `planGoesOn` unset). A run that ends early says why in `error`: an error the chat showed, the step cap, or a cancel
  * the eval did not ask for; so does a replay that leaves recorded replies unused. The eval never records such a run.
  */
-export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; planGoesOn?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
+export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; planGoesOn?: boolean; midBuildAnswer?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
   const script = opts.client ? undefined : createScriptedClient(opts.steps ?? [], { chunk: false })
   const inner = opts.client ?? script!
   const steps: ScriptStepData[] = []
@@ -325,6 +340,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   let error: string | undefined
   let text = ''
   let answered = false
+  // each question card and each reply that ends asking
+  let asks = 0
   let stale: string | undefined
   // what the reply said since its plan was approved or the eval answered it; undefined while neither has happened
   let after: string | undefined
@@ -356,6 +373,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
       if (ev.type === 'sheet') void env.pilot.answerSheet?.(ev.sheet.id, Object.fromEntries(ev.sheet.dims.map((d) => [d.key, d.value])))
       if (ev.type === 'ask') {
         const go = running === 'design.plan' ? ev.choices.find((c) => c.id.startsWith('go:')) : undefined
+        // a question card counts as an ask, answered or not
+        if (running === 'pilot.ask') asks++
         if (go) {
           after = ''
           void env.pilot.answer?.(ev.askId, go.id)
@@ -372,12 +391,20 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   if (!opts.client && opts.tabTools !== true) stale = STALE_TOOLS
   try {
     text = await turn(p.prompt)
-    if (!built() && classifyNoBuild(text, after) === 'asked' && opts.defaultAnswer !== false && !answered) {
-      if (!opts.client && !opts.answerRecorded) stale ??= 'recorded before the default answer: the model asked a question, which a live run now answers once before scoring'
-      else {
+    const asked = classifyNoBuild(text, after) === 'asked'
+    if (asked) asks++
+    if (asked && opts.defaultAnswer !== false && !answered) {
+      // a question after a build: a replay answers it only when the live run did (midBuildAnswer); one captured before
+      // that answer ended at the question live, so it ends there again
+      const replayed = built() ? opts.midBuildAnswer === true : opts.answerRecorded === true
+      if (!opts.client && !replayed) {
+        if (!built()) stale ??= 'recorded before the default answer: the model asked a question, which a live run now answers once before scoring'
+      } else {
         answered = true
         after = ''
         text = await turn(DEFAULT_ANSWER)
+        // asked again: the one answer is spent, so the run ends here, counted
+        if (classifyNoBuild(text, after) === 'asked') asks++
       }
     }
   } catch (e) {
@@ -420,6 +447,7 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     reply: events.map((e) => (e.type === 'text' ? e.delta : '')).join('').slice(0, 600),
     steps,
     answered,
+    asks,
   }
   if (noBuild) run.noBuild = noBuild
   if (p.mechanism && parts.length && opts.geom) {

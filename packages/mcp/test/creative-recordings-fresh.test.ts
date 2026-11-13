@@ -34,7 +34,7 @@ describe.skip('creative eval recordings on the current code', () => {
       // a recording keeps what the model read before each reply (seen), so the replay can tell where it parts from it;
       // one from before that cannot be checked, and a replay of it can fail far from the cause
       if (rec.steps.some((s) => s.calls?.length)) expect(rec.steps.some((s) => s.seen?.length), `${p.id} has no seen: capture it again`).toBe(true)
-      const run = await runPrompt(p, { geom, steps: rec.steps, defaultAnswer: true, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true, planGoesOn: rec.planGoesOn === true })
+      const run = await runPrompt(p, { geom, steps: rec.steps, defaultAnswer: true, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true, planGoesOn: rec.planGoesOn === true, midBuildAnswer: rec.midBuildAnswer === true })
       expect(run.stale, `${p.id} is stale`).toBeUndefined()
       expect(run.error, `${p.id} no longer replays`).toBeUndefined()
     })
