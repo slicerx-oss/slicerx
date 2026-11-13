@@ -1031,14 +1031,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.8.0',
+    version: '1.10.0',
     source: 'command',
     permission: 'slice',
     description:
       'Loft a solid through 2 to 64 profiles in order, each on its own plane, as a new body, joined to or cut from a target; neighbors must not touch or cross each other\'s plane. thicken makes it hollow with open ends (a tapered stem, a vase).',
     input: z.object({
       profiles: z.array(loftProfile).min(2).max(64).optional().describe('In loft order; no frame is the bed'),
-      smooth: z.boolean().optional().describe('Curved sides'),
+      smooth: z.boolean().optional().describe('Curved sides through the sections; a section may have arcs and splines, and its straight segments stay straight'),
       closed: z.boolean().optional().describe('Last joins first'),
       thicken: thicken.optional(),
       exact: z.boolean().optional().describe('Without a design: also return the exact solid. A design decides its own'),

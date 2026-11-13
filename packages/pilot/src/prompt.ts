@@ -78,6 +78,21 @@ export interface PromptOptions {
 // curved bodies lofted through sections and its repeated details patterned, each step named for what it is.
 export const DETAIL_LINE = `- A model of a real thing (a car, a plane, a house, a lamp) named without sizes is planned at display detail unless the person asks for something simple or detailed: a car body, fuselage or bottle is a series of sections, so loft it, and repeated details are built once and patterned, with steps named for what they are ("Body (loft)", "Window rows (array)").`
 
+// cloud prompt only, with design.plan and geom.loft: a first build of a body with curved or tapering sides. Without it a
+// curved body came out as a stack of extrudes, or a loft through straight sections whose later cuts left the exact
+// path. The loft comes first and stays exact through the cuts and joins after it; pieces overlap what they stand on,
+// walls keep to the nozzle, a row of openings is one cut, and one filament is planned unless color is asked for.
+export const LOFT_BODY_LINES: readonly string[] = [
+  '- A body whose section changes along its length (sides that curve or taper, an end that rounds off) is one geom.loft through sections, not a stack of extrudes. Draw 6 to 9 sections across it, closer together where the shape changes fastest (usually the ends), each a closed outline on its own plane, and loft them smooth as one new body. Where a side is curved, draw that part of the section as a curve (an arc or a spline). Where an edge has to stay straight and flat (a top or a base), draw it as one straight segment in every section.',
+  "- Make the loft the part's first step, then shape it. Openings, recesses and pieces that stand on it come after it, each as its own step.",
+  '- A piece that stands on another goes 0.05 mm into it, never exactly on its face.',
+  '- Every wall, lip, post and arm is at least twice the nozzle (0.8 mm for 0.4), and a cut stops at least that far short of the far side.',
+  '- A row or field of openings is one sketch of many loops cut in one step, not a pattern of a one-opening step. Keep a row cut from a flat plane on the flat run of a curved side: toward the ends it only grazes.',
+  "- The plan's overall height is the highest point the model reaches, not the top of its main body.",
+  '- Plan one filament and no paint steps unless the person asks for color. When they ask, the color planning applies. Openings meant to be seen from the front read better with a draft on their sides (taper 20 to 30 degrees).',
+  '- A symmetric body is drawn with symmetric sections.',
+]
+
 // cloud prompt only, with design.plan and design.edit_step: a follow-up on a built design. Without it a short follow-up
 // ("make the posts shorter", "add top details") raised a plan card or a size sheet, pushed each patterned copy apart
 // instead of editing the step they came from, and ended on a question the person had not asked for.
@@ -148,6 +163,7 @@ const buildLines = (has: HasTool, o: PromptOptions): Piece[] => {
     SIZES_PIECES,
     has('pilot.ask') && has('parts.lookup') && FAMILY_LINE,
     has('design.plan') && DETAIL_LINE,
+    ...(has('design.plan') && has('geom.loft') ? LOFT_BODY_LINES : []),
     ...(has('design.plan') ? [[local(PLAN_LINE), ...PLAN_LID, checks && MOVING_PARTS_ORDER], local(FEATURE_LINE)] : [local(STEPS_LINE)]),
     has('design.plan') && assembledLine(has),
     followUp && FOLLOWUP_LINE,

@@ -5,7 +5,7 @@ export { createPilot, isRuntimeNote, RUNTIME_NOTES, type CreatePilotOptions, typ
 export { PLAN_LEFT_CODE, planLeft, unsettledQuestion, type PlanLeft } from './plan-left'
 export { ASSISTANT_NAME, assistantBrand, assistantName, assistantText, setAssistantBrand, setAssistantName } from './name'
 export { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'
-export { DETAIL_LINE, FAMILY_LINE, FOLLOWUP_LINE, GENEROUS_LINE, LID_IN_PLACE, LID_PUT_ON, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SIZES_ASK, SIZES_REPLY, tabsLine, VAGUE_LINE } from './prompt'
+export { DETAIL_LINE, FAMILY_LINE, FOLLOWUP_LINE, GENEROUS_LINE, LID_IN_PLACE, LID_PUT_ON, LOFT_BODY_LINES, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SIZES_ASK, SIZES_REPLY, tabsLine, VAGUE_LINE } from './prompt'
 export { plainEngine } from './engine-words'
 export { inTurnSet, TURN_SET_TOOL, TURN_SET_WORDS, TURN_SETS, turnSet, turnSetsOf, turnSetTools, type TurnChat, type TurnSet } from './turnsets'
 export { fitContext, messageTokens, MIMIR_CONTEXT, REPLY_RESERVE, toolsTokens } from './context'

@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { HISTORY_VERSION } from '@slicerx/cad-history'
 import type { Host, JsonSchema, LlmHttpRequest, LlmTransport, MeshHandle } from '@slicerx/contracts'
-import { describedPaths, DETAIL_LINE, encodeToolName, FAMILY_LINE, FOLLOWUP_LINE, GENEROUS_LINE, LID_IN_PLACE, LID_PUT_ON, LOCAL_BUILD_CAP, LOCAL_TOOLS, localToolDef, messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, type PilotTool, REPLY_RESERVE, RESHAPE_LINE, SIZES_ASK, SIZES_REPLY, surfaceTools, toolSpec, toolsTokens, TURN_SET_TOOL, VAGUE_LINE } from '@slicerx/pilot'
+import { describedPaths, DETAIL_LINE, encodeToolName, FAMILY_LINE, FOLLOWUP_LINE, GENEROUS_LINE, LID_IN_PLACE, LID_PUT_ON, LOCAL_BUILD_CAP, LOCAL_TOOLS, LOFT_BODY_LINES, localToolDef, messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, type PilotTool, REPLY_RESERVE, RESHAPE_LINE, SIZES_ASK, SIZES_REPLY, surfaceTools, toolSpec, toolsTokens, TURN_SET_TOOL, VAGUE_LINE } from '@slicerx/pilot'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { runCall } from '../src/app-link/methods'
 import { builtinCommands } from '../src/commands/builtin'
@@ -222,7 +222,7 @@ describe('the mimir tab on a local model', () => {
     // a thing made of colored parts is built assembled: the cloud prompt says so, the local one has no room for it
     expect(cloud.messages[0]!.content).toContain('- A thing made of parts in different colors')
     expect(sent.messages[0]!.content).not.toContain('parts in different colors')
-    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${GENEROUS_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(/\n- A thing made of parts in different colors[^\n]*/, ''))
+    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${LOFT_BODY_LINES.join('\n')}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${GENEROUS_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(/\n- A thing made of parts in different colors[^\n]*/, ''))
     // each prompt is pinned to its own text, so a wording change that moves the local prompt, and its budget, is made on purpose
     expect(sent.messages[0]!.content, 'the local prompt (packages/pilot/test/fixtures/mimir-prompt-local.txt)').toBe(LOCAL_PROMPT)
     expect(cloud.messages[0]!.content.replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${GENEROUS_LINE}`, '').replace(`\n${VAGUE_LINE}`, ''), 'the cloud prompt (packages/pilot/test/fixtures/mimir-prompt-cloud.txt), less the follow-up line of a turn on a built design').toBe(CLOUD_PROMPT)
