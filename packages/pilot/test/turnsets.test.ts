@@ -66,6 +66,10 @@ const names = (req: { tools: readonly { name: string }[] }) => req.tools.map((t)
 describe('the set a request picks', () => {
   // [request, the set the chat's last turn ended on, whether the chat has a design yet, the set it starts on]
   it.each<[string, TurnSet | undefined, boolean, TurnSet]>([
+    // a rail is a shaping tool: on a design it shapes, with none it builds
+    ['Add a railing round the deck', 'build', true, 'shape'],
+    ['put a handrail along the top edge', 'edit', true, 'shape'],
+    ['Add a railing round the deck', undefined, false, 'build'],
     ['A 30 mm cube with a fillet', undefined, false, 'build'],
     ['Design a wall hook for a 6 mm screw', undefined, false, 'build'],
     ['Make a hook and then slice it for my A1', undefined, false, 'build'],

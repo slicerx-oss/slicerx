@@ -12,6 +12,7 @@
 import type { PilotAttachment } from '@slicerx/contracts'
 import { z } from 'zod'
 import { toolGroupOf, type GroupedTool } from './surfaces'
+import { RAIL_WORDS } from './toolsets'
 import { defineTool, type PilotTool } from './tool'
 
 /** The sets a local model's turn in the mimir tab picks from. */
@@ -127,7 +128,7 @@ const PRINT_WORDS = /\b(printers?|printing|jobs?|spools?|ams|camera|pause\w*|res
 /** Words that ask for a new part. */
 const BUILD_WORDS = /\b(make|design|model|build|create|draw|cad|sketch|part|box|cube|cylinder|bracket|hook|lid|gear|knob|holder|mount|stand|clip|spacer|plate with|enclosure|case)\w*\b/i
 
-/** Words that shape a part further. */
+/** Words that shape a part further; a rail (RAIL_WORDS) does too. */
 const SHAPE_WORDS = /\b(mirror\w*|array|pattern\w*|split\w*|subtract\w*|emboss\w*|engrav\w*|text on|(?:text|labels?) (?:on|onto|into)|hollow\w*|repair\w*|push|pull|measure\w*|cut (?:out|away|off|a|the|it|into)|cuts? (?:in|on|through|across|along)|cut-?outs?|cop(?:y|ies) of|combine|merge)\b/i
 
 /** Words that change a part already built. */
@@ -168,7 +169,7 @@ export function turnSet(message: string, files: readonly Pick<PilotAttachment, '
   const design = chat.design === true
   const there = design && (SHAPE_START.test(message) || OWN_START.test(message) || (ON_A_PART.test(message) && !NEW_PART.test(message)) || SHAPING_OPEN.test(message))
   const newPart = build && !there
-  if (SHAPE_WORDS.test(message) && !app) {
+  if ((SHAPE_WORDS.test(message) || RAIL_WORDS.test(message)) && !app) {
     if (!design) return 'build'
     if (!newPart) return 'shape'
   }
