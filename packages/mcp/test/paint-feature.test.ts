@@ -96,6 +96,15 @@ describe('a paint step tagged with its plan feature', () => {
     expect(b.items.find((i) => i.name === 'feature count')!.pass).toBe(false)
   })
 
+  it('refuses a paint preview with no target at its input, so no paint step without one is stored', async () => {
+    const h = await connect({ geomEngine: async () => { throw new Error('no engine call is expected') } })
+    const design = data<{ output: { design: string } }>(await h.call('slicerx_design_new', { name: 'Hull' })).output.design
+    const r = await h.call('slicerx_paint_preview', { design, layer: 'color', state: 2 })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('target')
+    expect(data<{ output: { steps: unknown[] } }>(await h.call('slicerx_design_steps', { design })).output.steps).toEqual([])
+  })
+
   it('is paint.apply 1.3.0, which takes feature, and paint.preview 1.4.0, which takes it for the apply', () => {
     const t = paintTools(NO_ENGINE_HOST).find((x) => x.name === 'paint.apply')!
     expect(t.version).toBe('1.3.0')

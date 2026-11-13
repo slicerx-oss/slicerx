@@ -37,6 +37,14 @@ describe('the tab paint tools', () => {
     expect(shape(tab[0]!)).toEqual(['design', 'layer', 'state', 'target', 'part', 'max_depth', 'view', 'size', 'image', 'feature', 'whole'])
   })
 
+  it('refuse a paint preview with no target at the input, as over MCP, so no paint step without one is made', () => {
+    const tab = tabToolset(NO_ENGINE_HOST as DesignHost, createCardPlans(createPlanRegistry()), { filaments: project() })
+    const preview = tab.find((t) => t.name === 'paint.preview')!
+    const parsed = preview.input.safeParse({ design: 'd1', layer: 'color', state: 2 })
+    expect(parsed.success).toBe(false)
+    expect(parsed.error!.issues.map((i) => i.path.join('.'))).toEqual(['target'])
+  })
+
   it('applying color paint in a filament past the last adds it and says so', async () => {
     const p = project(2)
     let seq = 0

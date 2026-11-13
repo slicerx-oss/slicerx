@@ -53,6 +53,17 @@ describe('a paint step on replay', () => {
     expect(e.asked.some((a) => a.op === 'paint.select')).toBe(false)
   })
 
+  it('is broken as a lost face, without asking the engine, when it holds no target', async () => {
+    clearReplayCache()
+    const e = engine()
+    const bare = { op: 'paint', layer: 'color', state: 2 } as unknown as StepParams
+    const history: History = { version: HISTORY_VERSION, base: [boxMesh(20, 20, 10)], steps: [step('bare', bare)] }
+    const r = await replayHistory(e.call, { history })
+    expect(r.status[0]).toEqual({ state: 'broken', message: 'Missing face; pick the face again to repair this step.' })
+    expect(r.parts[0]?.paint).toBeUndefined()
+    expect(e.asked.some((a) => a.op === 'paint.select')).toBe(false)
+  })
+
   it('paints its target again through the engine and keeps the paint on the part', async () => {
     clearReplayCache()
     const e = engine()
