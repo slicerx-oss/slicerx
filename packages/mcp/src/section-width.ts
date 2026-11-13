@@ -3,9 +3,10 @@
 // How thin a loft's sections are across, read in each section's own plane the way design.check reads a wall: from
 // points along every edge of the outline, straight in to the first other edge. A hit on the next or the previous edge
 // within two nozzle lines of their shared corner is the tip of a V (a keel, a pointed nose), not a wall, as body-facts'
-// minWall skips tips. A section under two nozzle lines across is named in a note by geom.loft and design.edit_step,
-// never refused: a section cannot see a body joined over its edge, and design.check, which reads the whole part, has
-// the last word.
+// minWall skips tips. A first or last section thin only at the body's end, past two lines a nozzle width in, is the
+// end's taper, as design.check leaves a sharp edge's taper out. A section under two nozzle lines across is named in a
+// note by geom.loft and design.edit_step, never refused: a section cannot see a body joined over its edge, and
+// design.check, which reads the whole part, has the last word.
 import type { SketchLoop } from '@slicerx/cad-history'
 
 type P2 = readonly [number, number]
@@ -99,24 +100,55 @@ export function outlineWidth(pts: readonly P2[], tipMm: number): number | null {
   return Number.isFinite(best) ? best : null
 }
 
+/** A loft section as the note reads it: its loops, whether it is an open chain, and its frame when it has one. */
+export interface LoftSection {
+  loops: readonly SketchLoop[]
+  open?: boolean | undefined
+  frame?: { origin: readonly number[]; normal: readonly number[] } | undefined
+}
+
+/** How thin a section is across: its outer outline (its largest loop that is not a construction loop), or null. */
+function sectionWidth(p: LoftSection, floor: number): number | null {
+  // an open chain has no inside to be thin across: it lofts only thickened
+  if (p.open) return null
+  const outlines = p.loops.filter((l) => !l.construction).map(loopOutline)
+  const across = outlines.flatMap((o) => (o && 'acrossMm' in o ? [o.acrossMm] : []))
+  const rings = outlines.flatMap((o) => (o && 'points' in o ? [o.points] : []))
+  const outer = rings.reduce<P2[] | null>((m, r) => (!m || Math.abs(area(r)) > Math.abs(area(m)) ? r : m), null)
+  // a round loop is the outline when it is the only one, or wider than every ring
+  const round = across.length && (!outer || across.some((a) => (Math.PI * a * a) / 4 > Math.abs(area(outer)))) ? Math.max(...across) : null
+  return round !== null ? round : outer ? outlineWidth(outer, floor) : null
+}
+
+/**
+ * Whether a thin end section is the taper of the body's end: the width one nozzle width inboard, read straight between
+ * it and the section next to it over the distance between their planes, is at least the floor. The slicer prints that
+ * last fraction of a millimeter thin or drops it, as design.check leaves a sharp edge's taper out of the wall. Only the
+ * first and the last section are ends; a section with no frame, or one whose neighbor does not read, is not a taper.
+ */
+function endTaper(profiles: readonly LoftSection[], k: number, mm: number, floor: number, nozzleMm: number): boolean {
+  const n = profiles.length
+  if (n < 2 || (k !== 0 && k !== n - 1)) return false
+  const [end, next] = [profiles[k]!, profiles[k === 0 ? 1 : n - 2]!]
+  const inboard = next && sectionWidth(next, floor)
+  if (!end.frame || !next.frame || inboard === null || inboard === undefined) return false
+  const nl = Math.hypot(end.frame.normal[0] ?? 0, end.frame.normal[1] ?? 0, end.frame.normal[2] ?? 0)
+  const gap = nl > 1e-9 ? Math.abs([0, 1, 2].reduce((s, i) => s + ((next.frame!.origin[i] ?? 0) - (end.frame!.origin[i] ?? 0)) * (end.frame!.normal[i] ?? 0), 0)) / nl : 0
+  if (gap < 1e-6) return false
+  return mm + ((inboard - mm) * Math.min(nozzleMm, gap)) / gap >= floor - 1e-9
+}
+
 /**
  * The sections of a loft under two nozzle lines across, thinnest first. Each section is read by its outer outline (its
  * largest loop that is not a construction loop); a hole in it is left to design.check, and an open chain is skipped.
+ * A first or last section that is only the taper of the body's end (endTaper) is left out.
  */
-export function thinSections(profiles: readonly { loops: readonly SketchLoop[]; open?: boolean | undefined }[], nozzleMm: number): ThinSection[] {
+export function thinSections(profiles: readonly LoftSection[], nozzleMm: number): ThinSection[] {
   const floor = 2 * nozzleMm
   const out: ThinSection[] = []
   profiles.forEach((p, k) => {
-    // an open chain has no inside to be thin across: it lofts only thickened
-    if (p.open) return
-    const outlines = p.loops.filter((l) => !l.construction).map(loopOutline)
-    const across = outlines.flatMap((o) => (o && 'acrossMm' in o ? [o.acrossMm] : []))
-    const rings = outlines.flatMap((o) => (o && 'points' in o ? [o.points] : []))
-    const outer = rings.reduce<P2[] | null>((m, r) => (!m || Math.abs(area(r)) > Math.abs(area(m)) ? r : m), null)
-    // a round loop is the outline when it is the only one, or wider than every ring
-    const round = across.length && (!outer || across.some((a) => (Math.PI * a * a) / 4 > Math.abs(area(outer)))) ? Math.max(...across) : null
-    const mm = round !== null ? round : outer ? outlineWidth(outer, floor) : null
-    if (mm !== null && mm < floor - 1e-9) out.push({ index: k + 1, of: profiles.length, mm: r2(mm) })
+    const mm = sectionWidth(p, floor)
+    if (mm !== null && mm < floor - 1e-9 && !endTaper(profiles, k, mm, floor, nozzleMm)) out.push({ index: k + 1, of: profiles.length, mm: r2(mm) })
   })
   return out.sort((a, b) => a.mm - b.mm)
 }
@@ -125,7 +157,7 @@ export function thinSections(profiles: readonly { loops: readonly SketchLoop[]; 
  * A loft's answer with its thin sections named: the note after the summary and the sections as thinSections. An answer
  * with none comes back as it is.
  */
-export function withThinNote<T extends { summary: string; output: Record<string, unknown> }>(out: T, profiles: readonly { loops: readonly SketchLoop[]; open?: boolean | undefined }[], nozzleMm: number): T {
+export function withThinNote<T extends { summary: string; output: Record<string, unknown> }>(out: T, profiles: readonly LoftSection[], nozzleMm: number): T {
   const thin = thinSections(profiles, nozzleMm)
   if (!thin.length) return out
   const note = thinSectionNote(thin[0]!, r2(2 * nozzleMm), nozzleMm)
