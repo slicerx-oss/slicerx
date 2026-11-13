@@ -50,7 +50,7 @@ impl Work {
 #[cfg(test)]
 thread_local! {
     /// what the last join on this thread handed the kernel
-    static SPENT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    pub(crate) static SPENT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// what the end cleanup may hand the kernel, per triangle of the body it cleans
