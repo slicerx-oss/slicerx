@@ -6,7 +6,7 @@
 // one that a turn cannot carry (a box cut, a band of paint, a rounded edge) refuses the lean by name. Before it is kept, what the leaning steps make alone, with each copy
 // a pattern of them makes, is measured against what each other step makes alone with its copies: a lean that pushes
 // one of them into another step's shape, or lifts it off everything it stood on, is refused with that step by name.
-import { direction, invert, multiply, nearestFoot, partFeet, replayHistory, stepCopyMoves, stepName, tiltFoot, withTilt, type Design, type DesignHost, type HistoryMesh, type Step, type StepParams, type StepTilt, type Vec3 } from '@slicerx/cad-history'
+import { direction, invert, multiply, nearestFoot, partFeet, replayOn, stepCopyMoves, stepName, tiltFoot, withTilt, type Design, type DesignHost, type HistoryMesh, type Step, type StepParams, type StepTilt, type Vec3 } from '@slicerx/cad-history'
 import { z } from 'zod'
 
 export const TILT_TOWARD = ['x', '-x', 'y', '-y'] as const
@@ -66,7 +66,7 @@ async function alone(host: DesignHost, s: Step, steps: readonly Step[]): Promise
   const out: HistoryMesh[] = []
   for (const [k, transform] of at.entries()) {
     try {
-      const r = await replayHistory((op, request) => host.call(op, request), { history: { version: 1, base: [], steps: [{ id: `${s.id}~${k}`, part: 0, transform, params }] } })
+      const r = await replayOn(host, { version: 1, base: [], steps: [{ id: `${s.id}~${k}`, part: 0, transform, params }] })
       if (r.status[0]?.state !== 'done' || !r.parts.length) return null
       out.push(...r.parts)
     } catch {

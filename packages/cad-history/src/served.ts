@@ -185,3 +185,28 @@ export function tagBodies(fields: Record<string, unknown>, from: number): void {
 
 /** Whether a kernel request names a body by number. */
 export const namesBody = (request: unknown): boolean => BODY_IN.some((k) => typeof (request as Record<string, unknown> | null)?.[k] === 'number')
+
+/** What the served engine writes once before its first answer (serve.rs HELLO). */
+export const HELLO = 'SXGEOM1\n'
+
+/**
+ * The first whole frame in `bytes`, as bytes arrive from the process, and what follows it; null while the frame is not
+ * all there yet.
+ */
+export function takeFrame(bytes: Uint8Array): { frame: Uint8Array; rest: Uint8Array } | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const u32 = (at: number) => (at + 4 <= bytes.length ? view.getUint32(at, true) : null)
+  const text = u32(0)
+  if (text === null) return null
+  let at = 4 + text
+  const count = u32(at)
+  if (count === null) return null
+  at += 4
+  for (let i = 0; i < count; i++) {
+    const len = u32(at)
+    if (len === null) return null
+    at += 4 + len
+  }
+  if (at > bytes.length) return null
+  return { frame: bytes.subarray(0, at), rest: bytes.subarray(at) }
+}

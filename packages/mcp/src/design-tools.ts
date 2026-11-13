@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, replayHistory, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, replayOn, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -111,7 +111,7 @@ export async function partsAt(host: DesignHost, d: HostDesign, step?: number | s
   if (step === undefined) return d.parts
   const k = stepIndex(d, step)
   if (k === d.history.steps.length - 1) return d.parts
-  const r = await replayHistory((op, request) => host.call(op, request), { history: { ...d.history, steps: d.history.steps.slice(0, k + 1) } })
+  const r = await replayOn(host, { ...d.history, steps: d.history.steps.slice(0, k + 1) })
   if (d.history.exact) {
     const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')
     if (broken || r.exactFellBack?.length) throw new ToolInputError(`Exact history could not be inspected: ${broken?.message ?? 'a step requires the mesh path'}.`)
@@ -414,7 +414,7 @@ async function sectionFollow(host: DesignHost, d: HostDesign, k: number, edited:
   const joins = d.history.steps.map((x, j) => ({ x, j })).filter(({ x, j }) => j > k && x.part === body && !x.suppressed && x.params.op === 'shape.extrude' && x.params.spec.operation === 'join' && x.params.frame && x.params.frame.normal[2] > 0.99)
   if (joins.length) {
     const loftAt = async (hist: Step[]) => {
-      const r = await replayHistory((op, request) => host.call(op, request), { history: { ...d.history, steps: hist.slice(0, k + 1) } })
+      const r = await replayOn(host, { ...d.history, steps: hist.slice(0, k + 1) })
       return r.parts[body] ? onPlate(r.parts[body]!, d.transform) : null
     }
     const before = await loftAt(d.history.steps)
