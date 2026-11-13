@@ -432,6 +432,22 @@ mod ffi {
         #[cxx_name = "sx_cast"]
         unsafe fn spline_as_curve(curve: *const SmBSplineCurve) -> *const SmCurve;
         fn sx_normal(aux: &SmPolyVertAuxData) -> &SmVector3d;
+        fn sx_uv(aux: &SmPolyVertAuxData, axis: i32) -> f64;
+        fn sx_surface_at(
+            surface: &SmSurface,
+            u: f64,
+            v: f64,
+            point: &mut SmVector3d,
+            normal: &mut SmVector3d,
+        ) -> Result<SmLong>;
+        fn sx_surface_nearest(
+            surface: &SmSurface,
+            point: &SmVector3d,
+            on: &mut SmVector3d,
+            u: &mut f64,
+            v: &mut f64,
+            distance: &mut f64,
+        ) -> Result<SmLong>;
         fn sx_failed_face(failure: &SmTessellationFailure) -> ULONG;
         fn sx_failed_stage(failure: &SmTessellationFailure) -> i32;
         fn sx_failed_status(failure: &SmTessellationFailure) -> SmLong;
@@ -1215,7 +1231,52 @@ pub(crate) fn take_over(number: i64) -> Option<Solid> {
     }
 }
 
+/// A corner of one of the kernel's polygons: its point, the normal stored there, which of the kernel's records
+/// holds it, and where it is on its face's surface.
+type PolyCorner = (u32, Option<Vec3>, Option<u32>, Option<[f64; 2]>);
+
 impl FaceRef<'_> {
+    fn surface(&self) -> Result<&ffi::SmSurface> {
+        // SAFETY: the face belongs to a solid that is borrowed for as long as `self` lives, so it is live.
+        let raw = unsafe { self.ptr.as_ref() }.GetSurface().cast_const();
+        // SAFETY: a face's surface belongs to the same solid; null (no surface) is refused.
+        unsafe { raw.as_ref() }.ok_or(Error::Kernel {
+            op: "surface",
+            status: 0,
+        })
+    }
+
+    /// The face's surface at a place in its own two parameters: the point there, and the surface's unit normal as
+    /// the kernel has it, which may point into the solid. No normal where the surface has none, as where it
+    /// narrows to a point.
+    pub(crate) fn at(self, uv: [f64; 2]) -> Result<(Vec3, Option<Vec3>)> {
+        let _kernel = held();
+        let zero = Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let (mut point, mut normal) = (zero, zero);
+        check(
+            "surface point",
+            ffi::sx_surface_at(self.surface()?, uv[0], uv[1], &mut point, &mut normal),
+        )?;
+        let length = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+        Ok((point, ((length - 1.0).abs() <= 1e-6).then_some(normal)))
+    }
+
+    /// The point of the face's surface nearest `point`, its two parameters there and how far it is in mm. The
+    /// whole surface is searched, past the face's outline too.
+    pub(crate) fn nearest(self, point: Vec3) -> Result<(Vec3, [f64; 2], f64)> {
+        let _kernel = held();
+        let (mut on, mut u, mut v, mut distance) = (point, 0.0, 0.0, 0.0);
+        check(
+            "surface distance",
+            ffi::sx_surface_nearest(self.surface()?, &point, &mut on, &mut u, &mut v, &mut distance),
+        )?;
+        Ok((on, [u, v], distance))
+    }
+
     /// How far `point` is from the face, within its outline, in mm, by the kernel's own closest point.
     pub(crate) fn distance_to(&self, point: Vec3) -> Result<f64> {
         let _kernel = held();
@@ -1375,8 +1436,8 @@ impl<'s> EdgeRef<'s> {
         self.edge().IsClosed() != 0
     }
 
-    /// How far a point is from the edge, in mm.
-    pub(crate) fn distance_to(&self, point: Vec3) -> Result<f64> {
+    /// The point of the edge nearest `point`, and how far it is in mm.
+    pub(crate) fn nearest(&self, point: Vec3) -> Result<(Vec3, f64)> {
         let _kernel = held();
         let mut closest = point;
         let (mut parameter, mut distance) = (0.0, 0.0);
@@ -1391,7 +1452,12 @@ impl<'s> EdgeRef<'s> {
                 &mut distance,
             )
         })?;
-        Ok(distance)
+        Ok((closest, distance))
+    }
+
+    /// How far `point` is from the edge, in mm.
+    pub(crate) fn distance_to(self, point: Vec3) -> Result<f64> {
+        self.nearest(point).map(|(_, distance)| distance)
     }
 
     /// Its start and end points, or none when it has no vertex.
@@ -1460,8 +1526,7 @@ impl Solid {
         let mut out = Polygons::default();
         let mut vertex_at: HashMap<*mut ffi::SmPolyVertex, u32> = HashMap::new();
         let mut record_at: HashMap<*mut ffi::SmPolyVertAuxData, u32> = HashMap::new();
-        // a polygon's corners: its point, the normal stored there, and which of the kernel's records holds it
-        let mut corners: Vec<(u32, Option<Vec3>, Option<u32>)> = Vec::new();
+        let mut corners: Vec<PolyCorner> = Vec::new();
         for polygon in items(&poly_faces) {
             // SAFETY: the polygons, and the loops, sides, vertices and normals reached from them below, belong to
             // `owner`, which lives to the end of this function; the kernel is held, so nothing changes them.
@@ -1500,13 +1565,15 @@ impl Solid {
                 let stored = side.GetAuxData();
                 // SAFETY: as for the polygon; null means the kernel stored no normal here.
                 let normal = unsafe { stored.as_ref() }.map(|aux| *ffi::sx_normal(aux));
+                // SAFETY: as for the normal.
+                let uv = unsafe { stored.as_ref() }.map(|aux| [ffi::sx_uv(aux, 0), ffi::sx_uv(aux, 1)]);
                 let record = if stored.is_null() {
                     None
                 } else {
                     let next = index(record_at.len())?;
                     Some(*record_at.entry(stored).or_insert(next))
                 };
-                corners.push((id, normal, record));
+                corners.push((id, normal, record, uv));
             }
             let Some(&face) = face_at.get(&polygon.GetOriginalFace()) else {
                 return Err(mesh_error("the kernel returned a polygon of no face of the body"));
@@ -1520,6 +1587,7 @@ impl Solid {
                 out.faces.push(face);
                 out.normals.push([a.1, b.1, c.1]);
                 out.records.push([a.2, b.2, c.2]);
+                out.uvs.push([a.3, b.3, c.3]);
             }
         }
         Ok(out)

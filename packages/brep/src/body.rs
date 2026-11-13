@@ -357,6 +357,12 @@ impl Face<'_> {
         self.0.distance_to(point.into())
     }
 
+    /// The point of the face's surface at a place in the surface's own two parameters, as [`crate::Mesh::uvs`]
+    /// gives them for the corners of a triangle. A place outside the surface's range is an error.
+    pub fn point_at(&self, uv: [f64; 2]) -> Result<[f64; 3]> {
+        self.0.at(uv).map(|(point, _)| point.into())
+    }
+
     /// Whether the face lies within `mm` of one plane, by the kernel's own test, whatever kind its surface is. Never
     /// for a distance that is not more than 0.
     pub fn flat_within(&self, mm: f64) -> bool {

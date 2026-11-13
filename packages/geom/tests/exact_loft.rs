@@ -6,7 +6,7 @@
 #![cfg(feature = "brep")]
 mod common;
 
-use common::volume_near;
+use common::{farthest_off_its_faces, off_its_face, sampled, volume_near};
 use serde_json::{Value, json};
 use std::f64::consts::TAU;
 use sx_brep::{Surface, Tessellation};
@@ -913,32 +913,14 @@ fn mesh_loft_keeps_corners(profiles: &Value) -> bool {
     })
 }
 
-/// The farthest any of `points` is from the edges of a tessellated body, as their polylines.
-fn farthest_from_edges(points: &[V3], body: &sx_brep::Mesh) -> f64 {
-    let segments: Vec<(V3, V3)> = body
-        .edges
-        .iter()
-        .flat_map(|e| {
-            e.points
-                .windows(2)
-                .map(|w| (body.positions[w[0] as usize], body.positions[w[1] as usize]))
-        })
-        .collect();
+/// The farthest any of `points` is from the nearest of a body's edges, by each edge's own curve.
+fn farthest_from_edges(points: &[V3], edges: &[sx_brep::Edge<'_>]) -> f64 {
     points
         .iter()
         .map(|&p| {
-            segments
+            edges
                 .iter()
-                .map(|&(a, b)| {
-                    let d = vec3::sub(b, a);
-                    let l2 = vec3::dot(d, d);
-                    let f = if l2 > 0.0 {
-                        (vec3::dot(vec3::sub(p, a), d) / l2).clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    };
-                    vec3::len(vec3::sub(vec3::add(a, vec3::scale(d, f)), p))
-                })
+                .map(|edge| edge.distance_to(p).expect("a distance"))
                 .fold(f64::INFINITY, f64::min)
         })
         .fold(0.0, f64::max)
@@ -951,7 +933,7 @@ struct Measured {
 
 /// Every corner rail of `rails` runs from drawn corner to drawn corner of `sections`, and the body's deck edges lie
 /// on it within 0.01 mm all along it, not only at the sections; says how far, in mm.
-fn corner_rails_checked(name: &str, rails: &Rails, sections: &[Value], body: &sx_brep::Mesh) -> f64 {
+fn corner_rails_checked(name: &str, rails: &Rails, sections: &[Value], edges: &[sx_brep::Edge<'_>]) -> f64 {
     let mut rail_to_edges = 0.0f64;
     for piece in &rails.pieces {
         let rail = &rails.rails[piece.first % rails.rails.len()];
@@ -990,7 +972,7 @@ fn corner_rails_checked(name: &str, rails: &Rails, sections: &[Value], body: &sx
             .flat_map(|b| (0..64).map(move |i| bezier_at(b, f64::from(i) / 64.0)))
             .chain(rail.last().map(|b| b[3]))
             .collect();
-        rail_to_edges = rail_to_edges.max(farthest_from_edges(&along, body));
+        rail_to_edges = rail_to_edges.max(farthest_from_edges(&along, edges));
     }
     assert!(rail_to_edges <= sx_brep::DRAWN_MM, "{name}: {rail_to_edges} mm");
     rail_to_edges
@@ -1047,10 +1029,35 @@ fn spline_loft_checked(name: &str, request: &Value) -> Measured {
     }
     let volume = lofted.body.volume().expect("volume");
     assert!(volume > 0.0, "{name}: {volume}");
-    // a tessellation fine enough to measure to a hundredth of a millimeter, checked by its volume
+    // distances to the body are the kernel's own, from each point to the nearest point of the body's surface
+    let to_body = |points: &[V3]| -> f64 {
+        points
+            .iter()
+            .map(|&p| lofted.body.distance_to(p).expect("a distance"))
+            .fold(0.0, f64::max)
+    };
+    let cell = 0.5;
+    // every drawn section at its station
+    let sections = request["profiles"].as_array().unwrap();
+    let mut drawn_to_body = 0.0f64;
+    for (k, section) in sections.iter().enumerate() {
+        let off = to_body(&drawn_section(section, 256));
+        assert!(
+            off <= sx_brep::DRAWN_MM,
+            "{name}: section {} is {off} mm off the body",
+            k + 1
+        );
+        drawn_to_body = drawn_to_body.max(off);
+    }
+    let edges = lofted.body.edges().expect("edges");
+    let rail_to_edges = corner_rails_checked(name, rails, sections, &edges);
+    let mesh = sketch_loft::loft_with(&profiles, &opts).unwrap();
+    let mesh_to_body = to_body(&mesh.positions);
+    // the kernel's own triangles, fine enough to measure to a hundredth of a millimeter, checked by their volume.
+    // They are for measuring only and not held to their chord
     let body = lofted
         .body
-        .tessellate(&Tessellation {
+        .tessellate_as_made(&Tessellation {
             chord_mm: 1e-4,
             max_edge_mm: 0.25,
             ..Tessellation::default()
@@ -1068,28 +1075,7 @@ fn spline_loft_checked(name: &str, request: &Value) -> Measured {
         (tessellated - volume).abs() <= 1e-4 * volume,
         "{name}: {tessellated} against {volume}"
     );
-    let cell = 0.5;
-    // every drawn section at its station
-    let sections = request["profiles"].as_array().unwrap();
-    let mut drawn_to_body = 0.0f64;
-    for (k, section) in sections.iter().enumerate() {
-        let off = farthest_from(
-            &drawn_section(section, 256),
-            &body.positions,
-            &body.triangles,
-            cell,
-        );
-        assert!(
-            off <= sx_brep::DRAWN_MM,
-            "{name}: section {} is {off} mm off the body",
-            k + 1
-        );
-        drawn_to_body = drawn_to_body.max(off);
-    }
-    let rail_to_edges = corner_rails_checked(name, rails, sections, &body);
-    let mesh = sketch_loft::loft_with(&profiles, &opts).unwrap();
     let body_to_mesh = farthest_from(&body.positions, &mesh.positions, &mesh.triangles, cell);
-    let mesh_to_body = farthest_from(&mesh.positions, &body.positions, &body.triangles, cell);
     let drawn: Vec<V3> = sections.iter().flat_map(|s| drawn_section(s, 256)).collect();
     let drawn_to_mesh = farthest_from(&drawn, &mesh.positions, &mesh.triangles, cell);
     println!(
@@ -1156,4 +1142,236 @@ fn a_loft_too_coarse_to_hold_its_drawing_is_refused_in_words() {
     // allowed to double, the same rails come close enough
     let doubled = exact::lofted_through(&profiles, &opts, &coarse, 6).expect("doubled until it holds");
     assert!(doubled.doublings > 0 && doubled.drawn_mm <= sx_brep::DRAWN_MM);
+}
+
+/// What a body's triangles are held to at a chord: every triangle's middle and the middle of each of its sides is
+/// within the chord of the triangle's own face, the mesh is closed, every point on an edge of the body is on that
+/// edge's curve, and every corner normal is a unit vector on the side its triangle faces. Answers the triangle
+/// count and the farthest any sample is from its face.
+fn held_to_its_chord(name: &str, body: &sx_brep::Body, chord: f64) -> (usize, f64) {
+    let how = Tessellation {
+        chord_mm: chord,
+        ..Tessellation::default()
+    };
+    let started = std::time::Instant::now();
+    let mesh = body.tessellate(&how).unwrap_or_else(|e| panic!("{name}: {e}"));
+    println!(
+        "CHORD {name} at {chord}: {} triangles in {:.0} ms",
+        mesh.triangles.len(),
+        started.elapsed().as_secs_f64() * 1e3
+    );
+    within_its_chord(name, body, &mesh, chord)
+}
+
+fn within_its_chord(name: &str, body: &sx_brep::Body, mesh: &sx_brep::Mesh, chord: f64) -> (usize, f64) {
+    use std::collections::HashMap;
+    let edges = body.edges().unwrap();
+    let at = |v: u32| mesh.positions[v as usize];
+    let mut users: HashMap<(u32, u32), usize> = HashMap::new();
+    for triangle in &mesh.triangles {
+        for k in 0..3 {
+            let (from, to) = (triangle[k], triangle[(k + 1) % 3]);
+            *users.entry((from.min(to), from.max(to))).or_default() += 1;
+        }
+    }
+    assert!(users.values().all(|&n| n == 2), "{name}: the mesh is not closed");
+    let (worst, face, sample) = farthest_off_its_faces(body, mesh, chord);
+    assert!(
+        worst <= chord,
+        "{name}: a triangle of face {face} is {worst:e} mm from it at {sample:?}"
+    );
+    for (triangle, normals) in mesh.triangles.iter().zip(&mesh.normals) {
+        let [pa, pb, pc] = triangle.map(at);
+        if let Some(normals) = normals {
+            let winding = vec3::cross(vec3::sub(pb, pa), vec3::sub(pc, pa));
+            for n in normals {
+                assert!(
+                    (vec3::len(*n) - 1.0).abs() <= 1e-9,
+                    "{name}: a normal of length {}",
+                    vec3::len(*n)
+                );
+                assert!(
+                    vec3::dot(*n, winding) > 0.0,
+                    "{name}: a normal against its triangle"
+                );
+            }
+        }
+    }
+    let size = mesh
+        .positions
+        .iter()
+        .flatten()
+        .fold(1.0_f64, |most, c| most.max(c.abs()));
+    for (edge, run) in edges.iter().zip(&mesh.edges) {
+        for &v in &run.points {
+            let off = edge.distance_to(at(v)).unwrap();
+            assert!(off <= 1e-9 * size, "{name}: a point {off:e} mm off its edge");
+        }
+    }
+    println!("CHORD {name} at {chord}: farthest {worst:.5} mm");
+    (mesh.triangles.len(), worst)
+}
+
+// the triangles of a lofted body are within the chord asked of every one of its faces. The kernel alone leaves the
+// two sides that narrow to the bow five times too coarse, whatever chord it is asked for
+#[test]
+fn a_loft_s_triangles_are_within_the_chord_asked() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let start = table::count();
+    let lofted = |profiles: &Value| -> u32 {
+        let request = json!({ "profiles": profiles, "smooth": true, "exact": true });
+        let reply: Value = serde_json::from_str(&op("sketch.loft", &request)).unwrap();
+        u32::try_from(reply["body"].as_u64().expect("a body")).unwrap()
+    };
+    // a tight turn between two flatter stretches, as a bilge has
+    let bilge = json!([
+        level(0.0, &rectangle(20.0, 10.0)),
+        level(10.0, &rectangle(20.0, 10.0)),
+        level(11.0, &rectangle(22.0, 11.0)),
+        level(12.0, &rectangle(24.0, 12.0)),
+        level(22.0, &rectangle(24.0, 12.0))
+    ]);
+    // sides that narrow almost to a point, as a bow does
+    let bow = json!([
+        level(0.0, &rectangle(20.0, 10.0)),
+        level(15.0, &rectangle(12.0, 6.0)),
+        level(30.0, &rectangle(0.2, 0.1))
+    ]);
+    for (name, profiles) in [("hull", hull()), ("bilge", bilge), ("bow", bow)] {
+        let body = lofted(&profiles);
+        table::with(body, |held| {
+            let (coarse, _) = held_to_its_chord(name, &held.body, 0.01);
+            let (fine, _) = held_to_its_chord(name, &held.body, 0.002);
+            assert!(
+                fine >= coarse,
+                "{name}: {fine} triangles at a fifth of the chord, {coarse} at the chord"
+            );
+        })
+        .expect("held");
+        assert_eq!(op("brep.free", &json!({ "body": body })), r#"{"freed":true}"#);
+    }
+    assert_eq!(table::count(), start);
+}
+
+/// A body's triangles at the default chord are within it of every face, or the body is refused in words when
+/// bringing them there passes the limits tessellation keeps: never triangles that miss.
+fn within_its_chord_or_refused(name: &str, body: &sx_brep::Body) {
+    let how = Tessellation::default();
+    let started = std::time::Instant::now();
+    match body.tessellate(&how) {
+        Ok(mesh) => {
+            println!(
+                "CHORD {name}: {} triangles in {:.0} ms",
+                mesh.triangles.len(),
+                started.elapsed().as_secs_f64() * 1e3
+            );
+            within_its_chord(name, body, &mesh, how.chord_mm);
+        }
+        Err(refused) => {
+            let said = refused.to_string();
+            println!(
+                "CHORD {name}: refused in {:.0} ms: {said}",
+                started.elapsed().as_secs_f64() * 1e3
+            );
+            assert!(
+                said.starts_with("tessellate: the triangles stay ")
+                    && said.ends_with(" mm asked for; ask for a larger chord"),
+                "{said}"
+            );
+        }
+    }
+}
+
+// the hull drawn by hand is thinner than the chord at its bow: its two sides are a few hundredths of a millimeter
+// apart there. The face's own closest point then answers with a point of the far side, even for a point of the
+// surface itself, so a triangle is measured by the nearer of two points of the face: that one, and the surface's
+// point at the triangle's own place
+#[test]
+fn a_body_thinner_than_the_chord_is_measured_by_the_nearer_of_two_points_of_its_face() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let request = spline_loft("hull18");
+    let (profiles, opts) = request_parts(&request);
+    let drawn = exact::lofted_through(&profiles, &opts, &Density::default(), exact::MOST_DOUBLINGS)
+        .expect("the drawn hull");
+    let chord = Tessellation::default().chord_mm;
+    let faces = drawn.body.faces().unwrap();
+    // the kernel's own triangles: places the closest point calls past the chord and the surface's own point does not
+    let made = drawn
+        .body
+        .tessellate_as_made(&Tessellation::default())
+        .expect("a mesh");
+    let mut thin = 0;
+    for (face, sample, on) in sampled(&made) {
+        let Some((points, places, shares)) = on else {
+            continue;
+        };
+        let face = faces[face as usize];
+        if face.distance_to(sample).unwrap() <= chord || off_its_face(face, sample, chord, on, &[]) > chord {
+            continue;
+        }
+        thin += 1;
+        // the triangle's corners are the surface's points at their places, so the places are the face's own
+        let middle = [0, 1].map(|k| (places[0][k] + places[1][k] + places[2][k]) / 3.0);
+        let inward = places.map(|uv| [0, 1].map(|k| uv[k] + (middle[k] - uv[k]) * 1e-9));
+        for (corner, place) in points.iter().zip(inward) {
+            let there = face.point_at(place).expect("a corner's place");
+            assert!(
+                vec3::len(vec3::sub(there, *corner)) <= 1e-6,
+                "{corner:?} at {place:?}"
+            );
+        }
+        // the surface's point at the sample's own share of those places is a point of the face, and within the
+        // chord of the sample
+        let uv = [0, 1].map(|k| {
+            inward[0][k]
+                + shares[0] * (inward[1][k] - inward[0][k])
+                + shares[1] * (inward[2][k] - inward[0][k])
+        });
+        let there = face.point_at(uv).expect("a place inside the triangle");
+        let near = vec3::len(vec3::sub(there, sample));
+        if near <= chord {
+            // a record of the kernel's answer as measured on 2026-11-12, not a rule: asked how far that point of
+            // the surface is from the face, it is not always 0, and asked about the sample it is past the chord
+            println!(
+                "THIN at {sample:?}: the surface's own point is {near:.5} mm away; the closest point says {:.5} mm, \
+                 and {:e} mm for the surface's point itself",
+                face.distance_to(sample).unwrap(),
+                face.distance_to(there).unwrap()
+            );
+        }
+    }
+    assert!(thin > 0, "no place of the hull reads as thin now");
+    println!("THIN {thin} places are within the chord by the surface's point and not by the closest point");
+    // held to the chord, every triangle is within it by the nearer of the two, or the hull is refused in words
+    within_its_chord_or_refused("drawn hull", &drawn.body);
+}
+
+// triangles as the kernel made them can miss their chord, so they are for measuring only: nothing in the engine's
+// source asks for them
+#[test]
+fn no_operation_takes_triangles_as_the_kernel_made_them() {
+    fn sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("a source folder").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                sources(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    sources(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut files,
+    );
+    assert!(files.len() > 10, "{} source files", files.len());
+    for file in files {
+        let text = std::fs::read_to_string(&file).expect("a source file");
+        assert!(!text.contains("tessellate_as_made"), "{}", file.display());
+    }
 }

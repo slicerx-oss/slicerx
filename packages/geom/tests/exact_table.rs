@@ -5,11 +5,18 @@
 // bodies are the kernel's four primitives, made by the typed makers and put in the table through its Rust calls.
 // Skipped in a build without the kernel, and empty without the brep feature.
 #![cfg(feature = "brep")]
+#[allow(
+    dead_code,
+    reason = "each test file uses its own share of what they have in common"
+)]
+mod common;
+
+use common::farthest_off_its_faces;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::{Mutex, MutexGuard};
-use sx_brep::Body;
+use sx_brep::{Body, Tessellation};
 use sx_geom::fm::Fm;
 use sx_geom::{exact, normals};
 
@@ -543,12 +550,12 @@ fn round_faces_read_as_the_engine_s_own_kinds() {
     clippy::cast_possible_truncation,
     reason = "coordinates times 1e6 stay far inside i64"
 )]
-fn welded(m: &Read) -> (Vec<f64>, Vec<u64>, Vec<i64>, usize) {
+fn welded(points: &[[f64; 3]], triangles: &[[u32; 3]], of: &[u32]) -> (Vec<f64>, Vec<u64>, Vec<i64>, usize) {
     let mut weld: HashMap<[i64; 3], u64> = HashMap::new();
     let (mut positions, mut indices, mut faces, mut left_out) = (Vec::new(), Vec::new(), Vec::new(), 0);
-    for (triangle, &face) in m.triangles.iter().zip(&m.faces) {
+    for (triangle, &face) in triangles.iter().zip(of) {
         let ids = triangle.map(|corner| {
-            let p = m.positions[corner as usize];
+            let p = points[corner as usize];
             let next = weld.len() as u64;
             *weld
                 .entry(p.map(|c| (c * 1e6).round() as i64))
@@ -689,8 +696,23 @@ fn a_held_body_tessellates_to_the_old_op_s_triangles() {
         let old: Value = serde_json::from_str(&reply).unwrap();
         let kept = Kept::new((shape.typed)());
         let new = read(kept.0);
+        // the kernel leaves a ball's triangles past the chord asked, and a held body's answer is those triangles
+        // brought within it. So for the ball it is the kernel's own triangles that are the old op's, which never
+        // reads its own back; for the other shapes the answer itself is
+        let as_made = (name == "sphere").then(|| {
+            exact::with(kept.0, |held| {
+                held.body
+                    .tessellate_as_made(&Tessellation::default())
+                    .expect("a mesh")
+            })
+            .expect("held")
+        });
+        let (points, triangles, of) = match &as_made {
+            Some(made) => (&made.positions, &made.triangles, &made.faces),
+            None => (&new.positions, &new.triangles, &new.faces),
+        };
 
-        let (positions, indices, faces, left_out) = welded(&new);
+        let (positions, indices, faces, left_out) = welded(points, triangles, of);
         let old_positions = positions_of(&reply);
         assert_eq!(
             indices,
@@ -715,8 +737,8 @@ fn a_held_body_tessellates_to_the_old_op_s_triangles() {
             .fold(0.0, f64::max);
         println!(
             "{name}: {} triangles on {} kernel vertices, {} welded points; {differ} of {} coordinates differ from the old op's, the largest by {largest:e} mm",
-            new.triangles.len(),
-            new.positions.len(),
+            triangles.len(),
+            points.len(),
             positions.len() / 3,
             positions.len()
         );
@@ -724,11 +746,31 @@ fn a_held_body_tessellates_to_the_old_op_s_triangles() {
             assert_eq!(positions, old_positions, "{name}: positions");
         }
         assert_eq!(left_out, 0, "{name}: triangles the weld leaves out");
-        assert_eq!(
-            new.positions.len() * 3,
-            old_positions.len(),
-            "{name}: kernel vertices"
-        );
+        assert_eq!(points.len() * 3, old_positions.len(), "{name}: kernel vertices");
+        if let Some(made) = &as_made {
+            // why the two differ: as the kernel made them the ball's triangles are past the chord, and held to it
+            // they are within it, which takes more of them
+            let chord = Tessellation::default().chord_mm;
+            let (before, after) = exact::with(kept.0, |held| {
+                let refined = held.body.tessellate(&Tessellation::default()).expect("a mesh");
+                (
+                    farthest_off_its_faces(&held.body, made, chord).0,
+                    farthest_off_its_faces(&held.body, &refined, chord).0,
+                )
+            })
+            .expect("held");
+            println!(
+                "{name}: {} triangles {before:.5} mm from it as the kernel made them, {} triangles {after:.5} mm held",
+                made.triangles.len(),
+                new.triangles.len()
+            );
+            assert!(
+                before > chord,
+                "{name}: the kernel's triangles are within the chord now: {before}"
+            );
+            assert!(after <= chord, "{name}: {after}");
+            assert!(new.triangles.len() > made.triangles.len(), "{name}");
+        }
 
         // the same body read twice, and a second body made the same way, give the same bytes in both forms
         let again = Kept::new((shape.typed)());
@@ -888,9 +930,30 @@ fn chord_and_angle_have_the_old_op_s_limits() {
         default
     );
     assert_eq!(triangles(json!({ "body": kept.0, "chordMm": null })), default);
+    // a smaller angle gives more triangles, at a chord wide enough that the angle is what decides
     let coarse = triangles(json!({ "body": kept.0, "chordMm": 0.5, "angleDeg": 45 }));
-    let fine = triangles(json!({ "body": kept.0, "chordMm": 0.01, "angleDeg": 5 }));
-    assert!(coarse < default && default < fine, "{coarse} {default} {fine}");
+    let middle = triangles(json!({ "body": kept.0, "chordMm": 0.5, "angleDeg": 15 }));
+    let fine = triangles(json!({ "body": kept.0, "chordMm": 0.5, "angleDeg": 5 }));
+    println!(
+        "LIMITS at a chord of 0.5 mm: {coarse} triangles at 45 degrees, {middle} at 15, {fine} at 5; {default} by default"
+    );
+    assert!(coarse < middle && middle < fine, "{coarse} {middle} {fine}");
+    // at the default chord the angle no longer orders the counts, as triangles past the chord are split until they
+    // are within it. What holds at either angle is the chord
+    for angle in [15.0, 5.0] {
+        let how = Tessellation {
+            chord_mm: 0.01,
+            curve_angle_deg: angle,
+            surface_angle_deg: angle,
+            ..Tessellation::default()
+        };
+        let far = exact::with(kept.0, |held| {
+            let mesh = held.body.tessellate(&how).expect("a mesh");
+            farthest_off_its_faces(&held.body, &mesh, how.chord_mm).0
+        })
+        .expect("held");
+        assert!(far <= 0.01, "{far} mm at {angle} degrees");
+    }
 
     // out of range, a body held from the start and one an older operation made are refused in the same words
     let old = Made(run("brep.primitive", &json!({ "type": "sphere", "diameterMm": 20 }))["body"].clone());

@@ -45,6 +45,9 @@ pub enum Error {
     /// The kernel joined faces along a side this far, in mm, from the curves they were given, so the solid it made
     /// is not the one asked for. The gap it reports does not show this.
     Moved { off_mm: f64 },
+    /// The triangles made of a body stay this far from its surface, in mm, more than the chord asked for, and
+    /// splitting them further did not bring them closer.
+    Coarse { off_mm: f64, chord_mm: f64 },
     /// The kernel could not tessellate these faces. It made no mesh.
     Faces { status: i64, faces: Vec<FailedFace> },
     /// The kernel's tessellation is not something a mesh can hold.
@@ -57,6 +60,25 @@ impl Error {
             what,
             why: why.into(),
         }
+    }
+}
+
+/// A distance in mm as a person reads it: three figures that count, no exponent, no zeros after them.
+fn plain(mm: f64) -> String {
+    if !mm.is_finite() || mm == 0.0 {
+        return format!("{mm}");
+    }
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a power of ten of a finite f64 is within 309 either way"
+    )]
+    let places = (2 - mm.abs().log10().floor() as i32).clamp(0, 17);
+    let places = usize::try_from(places).unwrap_or(0);
+    let text = format!("{mm:.places$}");
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.').to_owned()
+    } else {
+        text
     }
 }
 
@@ -77,6 +99,12 @@ impl fmt::Display for Error {
             Self::Moved { off_mm } => write!(
                 f,
                 "stitch: the faces were joined along a side {off_mm:.3e} mm off the curves they were given; they must meet on them"
+            ),
+            Self::Coarse { off_mm, chord_mm } => write!(
+                f,
+                "tessellate: the triangles stay {} mm from the surface, more than the {} mm asked for; ask for a larger chord",
+                plain(*off_mm),
+                plain(*chord_mm)
             ),
             Self::Faces { status, faces } => {
                 write!(f, "tessellate: the kernel could not tessellate")?;
