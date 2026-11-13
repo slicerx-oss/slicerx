@@ -5,6 +5,7 @@
 // how deep it now sits, and the step that made it, so the model lifts it there (design.edit_step move) and its copies
 // follow.
 import { bakeMesh, type Design } from '@slicerx/cad-history'
+import { makers } from './part-form'
 
 type Box = { lo: [number, number, number]; hi: [number, number, number] }
 
@@ -26,14 +27,10 @@ export function partBoxes(d: Design): Box[] {
 
 const r1 = (n: number): number => Math.round(n * 10) / 10
 
-/** The step that made part `k` (the first step that started it), as its number from 1, or 0 when none is found. */
+/** The step that made part `k`, followed through the history as replay numbers the parts (part-form.ts makers), as its number from 1, or 0 when none is found. */
 export function maker(d: Design, k: number): number {
-  const made = (p: unknown): boolean => {
-    const q = p as { op: string; operation?: string; spec?: { operation?: string } }
-    return q.op === 'parts.add' || (q.operation ?? q.spec?.operation) === 'new'
-  }
-  const i = d.history.steps.findIndex((s) => s.part === k && made(s.params))
-  return i + 1
+  const m = makers(d)[k]
+  return m ? d.history.steps.indexOf(m) + 1 : 0
 }
 
 /** A part a step left sunk inside the body it stood on: its index, how deep, and the step that made it (from 0, or -1). */

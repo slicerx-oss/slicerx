@@ -5,7 +5,7 @@
 // a turned outline, a loft), what joined it, whether any edge is rounded or beveled, a "plain block" mark for a part
 // made only of boxes and cylinders with every edge sharp, and where it sits (on which part, at which end). A vague
 // follow-up ("add bevels", "make it nicer") goes to the plain blocks first. Beyond FORMS_MAX parts the rest are counted.
-import { bakeMesh, type Design, type Step } from '@slicerx/cad-history'
+import { bakeMesh, makesBody, numbering, placeBody, stepParts, turnedOff, type Design, type Numbering, type Step } from '@slicerx/cad-history'
 
 /** Parts given a form line; a design with more lists these and counts the rest. */
 export const FORMS_MAX = 16
@@ -33,27 +33,35 @@ function madeAs(s: Step): { word: string; plain: boolean } {
   }
 }
 
-const startsBody = (s: Step): boolean => {
-  const p = s.params as { op: string; operation?: string; spec?: { operation?: string } }
-  if (p.op === 'parts.add') return true
-  if (p.op === 'shape.extrude' || p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') return (p.operation ?? p.spec?.operation ?? 'new') === 'new'
-  return false
-}
-
-/** For each part now, the step that made it, followed through the history; null where it cannot be told. */
-function makers(d: Design): (Step | null)[] {
-  let at: (Step | null)[] = []
+/**
+ * For each part now, the step that made it, followed through the history with replay's own part numbers (cad-history
+ * numbering.ts): a new body is placed as replay places it, and a turned-off step sets parts aside as replay does. A part
+ * of the history's base, or one no step can be told for, is null.
+ */
+export function makers(d: Design): (Step | null)[] {
+  const none = () => d.parts.map(() => null)
+  let at: Numbering<Step | null> = numbering(d.history.base.map(() => null))
   for (const [i, s] of d.history.steps.entries()) {
-    if (s.suppressed || (d.status[i] && d.status[i]!.state !== 'done')) continue
+    // replay stops at a broken step, and every step after it is skipped
+    const state = d.status[i]?.state
+    if (state === 'broken' || state === 'skipped') break
+    if (s.suppressed) {
+      at = turnedOff(s, at)
+      continue
+    }
     const p = s.params
-    if (p.op === 'parts.add') at.push(...p.parts.map(() => s))
-    else if (startsBody(s)) at.splice(Math.min(Math.max(s.part, 0), at.length), 0, s)
-    else if (p.op === 'boolean') at = at.filter((_, k) => !p.with.includes(k))
-    else if (p.op === 'plane.cut' && p.keep === 'both') at.splice(s.part + 1, 0, at[s.part] ?? null)
-    else if (p.op === 'parts.order') at = p.order.map((k) => at[k] ?? null)
-    else if (p.op === 'split') return d.parts.map(() => null)
+    const on = stepParts(s, at)
+    let out = on.parts.slice()
+    if (p.op === 'parts.add') out.push(...p.parts.map(() => s))
+    else if (makesBody(p)) placeBody(out, s.part, s)
+    else if (p.op === 'boolean') out = out.filter((_, k) => !p.with.includes(k))
+    else if (p.op === 'plane.cut' && p.keep === 'both') out.splice(s.part + 1, 0, out[s.part] ?? null)
+    else if (p.op === 'parts.order') out = p.order.map((k) => out[k] ?? null)
+    // how many pieces a split makes only the engine knows
+    else if (p.op === 'split') return none()
+    at = on.after(out)
   }
-  return at.length === d.parts.length ? at : d.parts.map(() => null)
+  return at.parts.length === d.parts.length ? at.parts : none()
 }
 
 type Box = { lo: number[]; hi: number[] }

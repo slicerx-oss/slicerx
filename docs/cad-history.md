@@ -31,6 +31,17 @@ Per step result, shown in the list: done, broken (with the engine's sentence, or
 - Kept dimensions follow: after a replay, dimension.evaluate runs on the object, with a move for an edited push.
 - Undo and redo are unchanged: the history is part of the plate entry, and each history edit is one store update, so one undo step. The rollback while a step is open is not an edit and never reaches undo or autosave.
 
+## Part numbers
+
+A step names its part by its index in the parts list as it was when the step was made. A new body's index is the part count then, so it is added after the last part; an index that is already taken makes that part again in place.
+
+- A suppressed step still numbers the parts as if it had run. A boolean takes its `with` parts away; suppressed, those parts stay in the design, moved to the end of the parts list. Build A and B, union them, build C, and suppress the union: the parts are A, C and B. C keeps index 1, the index it was made with, and every later step finds its part where it was made. Turning the union back on gives A joined with B, then C.
+- The parts the history numbers come first; the ones a suppressed boolean set aside follow. A step made while that boolean ran names only numbered parts (or adds a body or parts right after them), so it runs on the numbered parts and the set-aside parts stay after them. A step made after the suppress names parts as they were shown then, set-aside ones among them, so it runs on every part. A new order of every part numbers them all again.
+- Added parts (a clone, a merged object, an array of separate copies) name no number: they go after every part, set-aside ones included, where the app puts a part it adds without a replay. A part added in the app after a suppress stays where it was put when the design replays or opens again. The cost: parts added while the boolean ran, then named by a later step, are shown after the set-aside parts once it is suppressed, so that later step finds a set-aside part at its number.
+- The other steps that change the part count add parts (a plane cut that keeps both pieces, a split). Suppressed, they number nothing, as before: they take no part away.
+- A deleted step leaves nothing to number from, so this does not cover deleting a boolean: its parts come back, and a new body made after it can still take the place of one of them, as before. Suppress the step to keep every part.
+- `@slicerx/cad-history` numbering.ts holds the rule. The MCP server's form lines follow the parts through the history with it, so they match the replay.
+
 ## Push beside a round
 
 A push or pull of a face that a fillet or chamfer in the history rounds does not cut the rounded body. The round was made for the edge where it was, and a cut around it would leave its strip standing at full height. The push goes into the history just before the first fillet or chamfer step that rounds an edge of that face, and the steps from there run again: the push moves the face of the body as it was before the round, and the round is made again on the moved edge.

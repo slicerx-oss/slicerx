@@ -9,6 +9,7 @@ import type { EdgeRef, FaceFrame, MovedFace, Vec3 } from './types'
 import { withTilt } from './tilt'
 import { IDENTITY, bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type LoftProfile, type Mat4, type PaintTexts, type PatternCopies, type PrimitiveSpec, type ReplayResult, type SkippedEdge, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
+import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
@@ -125,6 +126,8 @@ interface Learned {
   copies: Found['copies']
   /** Per step with face or edge keys: the keys it ran with and the keys it has once the app saves what it found. */
   ran: Record<string, [string, string]>
+  /** How many of the parts the history numbers; the rest a turned-off step set aside (numbering.ts). All when absent. */
+  numbered?: number
 }
 // What was learned up to each cached step, by the same keys.
 const learnedAt = new Map<string, Learned>()
@@ -158,9 +161,9 @@ function hold(parts: readonly Flat[], by: 1 | -1): void {
   }
 }
 
-function remember(key: string, parts: Flat[], learned: { gone: ReadonlySet<string>; moved: Record<string, MovedFace>; found: Found; ran: Learned['ran'] }): void {
+function remember(key: string, parts: Flat[], learned: { gone: ReadonlySet<string>; moved: Record<string, MovedFace>; found: Found; ran: Learned['ran']; numbered?: number }): void {
   if (cache.has(key)) return
-  learnedAt.set(key, { gone: [...learned.gone], moved: { ...learned.moved }, keys: { ...learned.found.keys }, notes: { ...learned.found.notes }, copies: { ...learned.found.copies }, ran: { ...learned.ran } })
+  learnedAt.set(key, { gone: [...learned.gone], moved: { ...learned.moved }, keys: { ...learned.found.keys }, notes: { ...learned.found.notes }, copies: { ...learned.found.copies }, ran: { ...learned.ran }, ...(learned.numbered !== undefined && learned.numbered < parts.length ? { numbered: learned.numbered } : {}) })
   cache.set(key, parts)
   hold(parts, 1)
   cachedNumbers += sizeOf(parts)
@@ -399,7 +402,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   if (exact && p.op === 'parts.add') return [...parts, ...p.parts.map(flat)]
   // A step that works only on mesh parts, and makes no new body, runs on the mesh: there is no exact part to keep.
   const reads = s.part === -1 ? parts : [parts[s.part], ...(p.op === 'boolean' ? p.with.map((i) => parts[i]) : [])]
-  const newBody = (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') === 'new') || ((p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && (p.operation ?? 'new') === 'new')
+  const newBody = makesBody(p)
   const onMesh = exact && !newBody && reads.length > 0 && reads.every((x) => !!x && meshPart(x))
   if (exact && !onMesh && (parts.some((x) => x.smb || x.body !== undefined || x.primitive) || p.op === 'shape.extrude')) {
     let big: string | undefined
@@ -462,8 +465,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       } else if (!solids.keep && typeof r.bodySmb === 'string') body = await fromSolid(call, like, r.bodySmb)
       if (body) {
         const out = parts.slice()
-        if (s.part < out.length) out[s.part] = body
-        else out.push(body)
+        placeBody(out, s.part, body)
         return out
       }
       fell(typeof r.exact?.why === 'string' && r.exact.why ? r.exact.why : EXACT_FELL_BACK)
@@ -491,13 +493,13 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   const keep = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }) => next(part, m, dropped)
   if (p.op === 'parts.add') return [...out, ...p.parts.map(flat)]
   if (p.op === 'boolean' || p.op === 'plane.cut' || p.op === 'split' || p.op === 'mirror') return partsStep(call, s, p, out, dropped)
-  if (newBody) {
-    const name = (p.op === 'shape.extrude' || p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && p.name ? p.name : 'Body'
+  // newBody holds only for these ops; naming them again narrows p
+  if (newBody && (p.op === 'shape.extrude' || p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep')) {
+    const name = p.name ? p.name : 'Body'
     const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: 'new' } : p.op === 'sketch.sweep' ? { ...sweepOpts(p), operation: 'new' } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: 'new' }
     const r = lofted ?? ((await call(p.op, req)) as { mesh: { positions: number[]; indices: number[] } })
     const body = local(r.mesh, { name, slot: newSlot(p) ?? out[s.part]?.slot ?? 1 })
-    if (s.part < out.length) out[s.part] = body
-    else out.push(body)
+    placeBody(out, s.part, body)
     return out
   }
   for (const i of targets) {
@@ -920,12 +922,15 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   // Start after the last step whose result is still known, when every step before it went through.
   let start = 0
   let parts: Flat[] = history.base.map(flat)
+  // how many parts the steps number, the rest set aside by a turned-off step (numbering.ts)
+  let numbered = parts.length
   for (let i = keys.length - 1; i >= 0; i--) {
     const hit = known(i)
     if (hit) {
       start = i + 1
       parts = hit
       const learned = learnedAt.get(keys[i]!)
+      numbered = learned?.numbered ?? hit.length
       gone = new Set(learned?.gone)
       Object.assign(moved, learned?.moved)
       Object.assign(found.keys, learned?.keys)
@@ -946,16 +951,20 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
     if (req.before === i) before = parts
     const s = effective[i]!
     if (s.suppressed) {
-      remember(keys[i]!, parts, { gone, moved, found, ran })
+      // turned off, it still numbers the parts as if it had run, and keeps the parts it would have taken away
+      ;({ parts, numbered } = turnedOff(s, { parts, numbered }))
+      remember(keys[i]!, parts, { gone, moved, found, ran, numbered })
       continue
     }
     if (o.yieldStep) await o.yieldStep(s)
     try {
-      parts = s.params.op === 'pattern' ? await patternStep(call, s, effective.slice(0, i), parts, fonts, moved, gone, found, req.exact, solids, !!history.exact) : await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
+      const on = stepParts(s, { parts, numbered })
+      const out = s.params.op === 'pattern' ? await patternStep(call, s, effective.slice(0, i), on.parts, fonts, moved, gone, found, req.exact, solids, !!history.exact) : await runStep(call, s, on.parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
+      ;({ parts, numbered } = on.after(out))
       status[i] = doneStatus(found, s.id)
       const had = keysOf(s.params)
       if (had) ran[s.id] = [had, keysOf(withFound(s.params, found.keys[s.id]))]
-      remember(keys[i]!, parts, { gone, moved, found, ran })
+      remember(keys[i]!, parts, { gone, moved, found, ran, numbered })
     } catch (e) {
       if ((e as { name?: string }).name === 'AbortError') throw e
       status[i] = { state: 'broken', message: e instanceof Error ? e.message : String(e) }
