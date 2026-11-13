@@ -8,7 +8,7 @@ use std::io::{BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use sx_geom::json::OutFile;
-use sx_geom::serve::{HELLO, read_frame, serve, serve_with, write_frame};
+use sx_geom::serve::{HELLO, read_frame, serve, serve_watched_with, serve_with, write_frame};
 
 /// A closed cube of 8 vertices and 12 triangles in the raw form (`TriMesh::from_raw`).
 fn cube_raw() -> Vec<u8> {
@@ -208,22 +208,28 @@ fn ends_when_the_input_closes() {
 }
 
 /// The child side of the process tests: this test binary run again with `SX_GEOM_SERVE_CHILD` set serves on its stdin
-/// and stdout, `abort` ending it the way a crash in the kernel would. Without the variable it does nothing.
+/// and stdout, `abort` ending it the way a crash in the kernel would and `watched` serving as `sx-geom serve` does.
+/// Without the variable it does nothing.
 #[test]
 fn serve_child() {
     let Ok(mode) = std::env::var("SX_GEOM_SERVE_CHILD") else {
         return;
     };
-    let ran = serve_with(
-        std::io::stdin().lock(),
-        std::io::stdout().lock(),
-        |op, req, files| {
-            if op == "abort" && mode == "abort" {
-                std::process::abort();
-            }
-            sx_geom::json::call_value(op, req, files)
-        },
-    );
+    let call = |op: &str, req: &Value, files: sx_geom::json::FileLoader<'_>| {
+        if op == "abort" && mode == "abort" {
+            std::process::abort();
+        }
+        // a call that runs far longer than any test waits
+        if op == "sleep" {
+            std::thread::sleep(Duration::from_secs(120));
+        }
+        sx_geom::json::call_value(op, req, files)
+    };
+    let ran = if mode == "watched" {
+        serve_watched_with(std::io::stdin(), std::io::stdout().lock(), call)
+    } else {
+        serve_with(std::io::stdin().lock(), std::io::stdout().lock(), call)
+    };
     std::process::exit(i32::from(ran.is_err()));
 }
 
@@ -423,4 +429,243 @@ fn kernel_bodies_last_from_call_to_call() {
     let replies = run(&input);
     assert_eq!(replies[0].0["result"]["freed"], true);
     assert_eq!(replies[1].0["result"]["bodies"], 0);
+}
+
+/// `sx-geom serve`, the served engine an MCP server or another host starts, with its stdin and stdout piped.
+fn sx_geom_serve() -> Child {
+    Command::new(env!("CARGO_BIN_EXE_sx-geom"))
+        .arg("serve")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
+/// Sends one call and reads its answer.
+fn call(
+    input: &mut impl Write,
+    out: &mut impl Read,
+    id: u32,
+    op: &str,
+    request: &Value,
+    files: Vec<Vec<u8>>,
+) -> (Value, Vec<Vec<u8>>) {
+    input.write_all(&frame(id, op, request, files)).unwrap();
+    input.flush().unwrap();
+    let (text, files) = read_frame(out).unwrap();
+    let reply: Value = serde_json::from_slice(&text).unwrap();
+    assert_eq!(reply["id"], id, "{reply}");
+    (reply, files)
+}
+
+#[test]
+fn sx_geom_serve_answers_as_the_loop_does_and_ends_when_its_input_closes() {
+    let mut c = sx_geom_serve();
+    let mut out = BufReader::new(c.stdout.take().unwrap());
+    // the CLI writes nothing ahead of HELLO
+    let mut hello = [0u8; 8];
+    out.read_exact(&mut hello).unwrap();
+    assert_eq!(&hello, HELLO);
+    let mut input = c.stdin.take().unwrap();
+    let request = json!({ "mesh": { "rawPath": "mem:0" }, "meshOutput": "raw" });
+    let (reply, files) = call(&mut input, &mut out, 1, "repair", &request, vec![cube_raw()]);
+    let mut looped = Vec::new();
+    serve(
+        frame(1, "repair", &request, vec![cube_raw()]).as_slice(),
+        &mut looped,
+    )
+    .unwrap();
+    let [(same, same_files)]: [(Value, Vec<Vec<u8>>); 1] = answers(&looped).try_into().unwrap();
+    assert_eq!(reply, same);
+    assert_eq!(files, same_files, "the same buffers back");
+    assert_eq!(
+        sx_geom::TriMesh::from_raw(&files[0], "out")
+            .unwrap()
+            .triangles
+            .len(),
+        12
+    );
+    // failures are answers, and the process goes on
+    let (reply, _) = call(&mut input, &mut out, 2, "no.such.op", &json!({}), vec![]);
+    assert!(reply["error"].as_str().unwrap().contains("no.such.op"), "{reply}");
+    let (reply, _) = call(
+        &mut input,
+        &mut out,
+        3,
+        "info",
+        &json!({ "mesh": { "rawPath": "mem:0" } }),
+        vec![cube_raw()],
+    );
+    assert_eq!(reply["result"]["watertight"], true, "{reply}");
+    drop(input);
+    let status = wait(&mut c, Duration::from_secs(10));
+    if status.is_none() {
+        let _ = c.kill();
+    }
+    assert!(status.is_some_and(|s| s.success()), "{status:?}");
+}
+
+#[test]
+fn a_watched_engine_ends_when_its_input_closes_even_during_a_call() {
+    let mut c = child("watched");
+    let mut out = BufReader::new(c.stdout.take().unwrap());
+    skip_to_hello(&mut out);
+    let mut input = c.stdin.take().unwrap();
+    let (reply, _) = call(
+        &mut input,
+        &mut out,
+        1,
+        "info",
+        &json!({ "mesh": { "rawPath": "mem:0" } }),
+        vec![cube_raw()],
+    );
+    assert!(reply.get("result").is_some(), "{reply}");
+    input.write_all(&frame(2, "sleep", &json!({}), vec![])).unwrap();
+    input.flush().unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(c.try_wait().unwrap().is_none(), "still running the call");
+    let t = Instant::now();
+    drop(input);
+    // the call runs for 120 s; the process ends long before
+    let status = wait(&mut c, Duration::from_secs(10));
+    if status.is_none() {
+        let _ = c.kill();
+    }
+    assert!(status.is_some_and(|s| s.success()), "{status:?}");
+    assert!(t.elapsed() < Duration::from_secs(10));
+}
+
+/// The middle process of the parent tests: this test binary run again with `SX_GEOM_SERVE_MIDDLE` set starts
+/// `sx-geom serve` with its own stdout, says the engine's process id on its stderr and waits to be ended. `piped`: the
+/// engine's stdin is a pipe this process holds; `inherit`: it is this process's stdin, held by the test.
+#[test]
+fn serve_middle() {
+    let Ok(mode) = std::env::var("SX_GEOM_SERVE_MIDDLE") else {
+        return;
+    };
+    let engine = Command::new(env!("CARGO_BIN_EXE_sx-geom"))
+        .arg("serve")
+        .stdin(if mode == "piped" {
+            Stdio::piped()
+        } else {
+            Stdio::inherit()
+        })
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    eprintln!("engine {}", engine.id());
+    std::thread::sleep(Duration::from_secs(120));
+    // the pipe stays open until here: the test ends this process long before
+    drop(engine);
+    std::process::exit(1);
+}
+
+/// Starts the middle process, reads the engine's process id, ends the middle (by its own handle) and says whether the
+/// engine outlived it by 10 s: the engine is gone when the shared stdout reads to its end, every writer closed.
+fn engine_outlives_its_parent(mode: &str) -> bool {
+    let mut middle = Command::new(std::env::current_exe().unwrap())
+        .args(["serve_middle", "--exact", "--nocapture", "--test-threads=1"])
+        .env("SX_GEOM_SERVE_MIDDLE", mode)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let held_stdin = middle.stdin.take();
+    let mut err = BufReader::new(middle.stderr.take().unwrap());
+    let mut line = String::new();
+    let pid: u32 = loop {
+        line.clear();
+        assert!(
+            std::io::BufRead::read_line(&mut err, &mut line).unwrap() > 0,
+            "no engine id"
+        );
+        if let Some(n) = line.trim().strip_prefix("engine ") {
+            break n.parse().unwrap();
+        }
+    };
+    let mut out = BufReader::new(middle.stdout.take().unwrap());
+    skip_to_hello(&mut out);
+    middle.kill().unwrap();
+    middle.wait().unwrap();
+    let (done, ended) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut rest = Vec::new();
+        let _ = out.read_to_end(&mut rest);
+        let _ = done.send(());
+    });
+    let outlived = ended.recv_timeout(Duration::from_secs(10)).is_err();
+    if outlived {
+        // the engine this test started, by its recorded id
+        let pid = pid.to_string();
+        let _ = if cfg!(windows) {
+            Command::new("taskkill").args(["/PID", &pid, "/F"]).status()
+        } else {
+            Command::new("kill").args(["-9", &pid]).status()
+        };
+    }
+    drop(held_stdin);
+    outlived
+}
+
+#[test]
+fn sx_geom_serve_ends_when_its_parent_goes() {
+    assert!(
+        !engine_outlives_its_parent("piped"),
+        "the engine outlived its parent"
+    );
+}
+
+/// On Unix the engine also ends when its parent goes while something else still holds its stdin open.
+#[cfg(unix)]
+#[test]
+fn sx_geom_serve_ends_when_its_parent_goes_with_its_input_still_open() {
+    assert!(
+        !engine_outlives_its_parent("inherit"),
+        "the engine outlived its parent"
+    );
+}
+
+/// Exact bodies made by one call stay in `sx-geom serve` by number for the next, until freed.
+#[cfg(feature = "brep")]
+#[test]
+fn sx_geom_serve_holds_kernel_bodies_by_number() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let mut c = sx_geom_serve();
+    let mut out = BufReader::new(c.stdout.take().unwrap());
+    skip_to_hello(&mut out);
+    let mut input = c.stdin.take().unwrap();
+    let mut io = |id: u32, op: &str, request: Value| call(&mut input, &mut out, id, op, &request, vec![]).0;
+    let small = io(1, "brep.box", json!({ "min": [0, 0, 0], "max": [10, 10, 10] }));
+    let small = small["result"]["body"].as_u64().unwrap();
+    let big = io(2, "brep.box", json!({ "min": [0, 0, 0], "max": [20, 10, 10] }));
+    let big = big["result"]["body"].as_u64().unwrap();
+    assert_ne!(small, big);
+    assert_eq!(io(3, "brep.count", json!({}))["result"]["bodies"], 2);
+    let info = io(4, "brep.info", json!({ "body": big }));
+    let volume = info["result"]["volumeMm3"].as_f64().unwrap();
+    assert!((volume - 2000.0).abs() < 1e-6, "{info}");
+    assert_eq!(
+        io(5, "brep.free", json!({ "body": small }))["result"]["freed"],
+        true
+    );
+    assert_eq!(io(6, "brep.count", json!({}))["result"]["bodies"], 1);
+    let info = io(7, "brep.info", json!({ "body": small }));
+    assert!(
+        info.get("error").is_some(),
+        "a freed number names nothing: {info}"
+    );
+    let info = io(8, "brep.info", json!({ "body": big }));
+    let volume = info["result"]["volumeMm3"].as_f64().unwrap();
+    assert!((volume - 2000.0).abs() < 1e-6, "{info}");
+    drop(input);
+    let status = wait(&mut c, Duration::from_secs(10));
+    if status.is_none() {
+        let _ = c.kill();
+    }
+    assert!(status.is_some_and(|s| s.success()), "{status:?}");
 }
