@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_design_plan` 1.13.0 (from 1.12.0), in the mimir tab: a display or fine plan whose tier list is keyed by a name that is no planned feature, over levels that all are, is refused once with both readings in the plan's own names: the levels of one body, keyed by the lowest and with only it in flat, or separate bodies, each with its own list; a single level is keyed by itself. The lists are given in the compact JSON the tool takes. The levels it lists are no longer each asked for a tier list of their own as well. The build method in the description and in every refusal ends with a plan shape that passes on the first try. No plan that was taken before is refused.

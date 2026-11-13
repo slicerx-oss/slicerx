@@ -9,7 +9,7 @@ import type { PilotMachine } from '@slicerx/contracts'
 import { type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { type BodyFacts, colorBands, createPlanRegistry, designCheck, partPlanSchema, type PartPlan } from '../src/design-check'
-import { DEFAULT_BED, DETAIL_HELP, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem, stackItem, STANDS_BASE_OFF, STANDS_FLOATS, STANDS_HEIGHT_OFF, STANDS_OFF, TIER_ON_DISAGREES } from '../src/plan-detail'
+import { DEFAULT_BED, DETAIL_HELP, DETAIL_WORKED_SHAPE, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem, stackItem, STANDS_BASE_OFF, STANDS_FLOATS, STANDS_HEIGHT_OFF, STANDS_OFF, TIER_GROUP_KEY, TIER_ON_DISAGREES } from '../src/plan-detail'
 import { LocalPlanInputSchema, PLAN_GO, STANDS_ON_HELP, type PlanInput } from '../src/tab-tools'
 import { createCardPlans, designToolset, tabToolset } from '../src/toolset'
 import type { DesignHost } from '@slicerx/cad-history'
@@ -248,6 +248,39 @@ describe('detailProblem: the rules are about the object', () => {
     expect(stackItem(plan, { rail: { lo: 0, hi: 4, loose: true }, post: { lo: 2, hi: 12 }, deck: { lo: 0, hi: 3 }, arch: { lo: 1, hi: 13, loose: true } })).toBeNull()
     // the same with exact ranges is read
     expect(stackItem(plan, { rail: { lo: 0, hi: 2 }, post: { lo: 2, hi: 12 }, deck: { lo: 0, hi: 3 }, arch: { lo: 3, hi: 11 } })).toMatchObject({ pass: true, got: '2 stacked parts on their supports' })
+  })
+
+  it('answers a tier list keyed by a name over its levels once, with both readings in the plan\'s own names', () => {
+    // the walls in two stories, each listed as a main body and keyed together by a name that is no feature
+    const stories: PlanInput = {
+      ...house,
+      flat: ['Ground floor', 'Upper floor', 'Roof'],
+      tiers: { Storeys: ['Ground floor', 'Upper floor'], Roof: ['Roof'] },
+      features: [...house.features.filter((f) => f.name !== 'Walls'), { name: 'Ground floor', kind: 'extrude', sizes: { width: 100, depth: 80, height: 28 } }, { name: 'Upper floor', kind: 'extrude', sizes: { width: 100, depth: 80, height: 27 } }],
+      colors: undefined,
+      real: [{ feature: 'Ground floor', size: 'width', mm: 10000 }],
+    }
+    // the sentences, word for word, for several levels and for one; the refusal's join gives each its one period
+    expect(TIER_GROUP_KEY('Deck houses', ['Lower deck house', 'Middle deck house', 'Boat deck'])).toBe('tiers: Deck houses is not a planned feature but a name over Lower deck house, Middle deck house and Boat deck. If they are levels of one body, key them by the lowest, the body flat lists: tiers: {"Lower deck house":["Lower deck house","Middle deck house","Boat deck"]}, with only Lower deck house in flat. If they are separate bodies, give each its own list')
+    expect(TIER_GROUP_KEY('Deck houses', ['Lower deck house'])).toBe('tiers: Deck houses is not a planned feature but a name over Lower deck house. Key its list by Lower deck house: tiers: {"Lower deck house":["Lower deck house"]}, with only Lower deck house in flat')
+    const problem = detailProblem(stories)!
+    expect(problem).toContain('tiers: Storeys is not a planned feature but a name over Ground floor and Upper floor. If they are levels of one body, key them by the lowest, the body flat lists: tiers: {"Ground floor":["Ground floor","Upper floor"]}, with only Ground floor in flat. If they are separate bodies, give each its own list. ')
+    const one = detailProblem({ ...stories, flat: ['Ground floor', 'Upper floor', 'Roof'], tiers: { Storeys: ['Ground floor'], 'Upper floor': ['Upper floor'], Roof: ['Roof'] } })!
+    expect(one).toContain('tiers: Storeys is not a planned feature but a name over Ground floor. Key its list by Ground floor: tiers: {"Ground floor":["Ground floor"]}, with only Ground floor in flat. ')
+    expect(one).not.toContain('in flat..')
+    // the levels it lists are not asked for lists of their own as well
+    expect(problem).not.toContain('give the levels of Ground floor')
+    expect(problem).not.toContain('give the levels of Upper floor')
+    // either reading it offers passes
+    expect(detailProblem({ ...stories, flat: ['Ground floor', 'Roof'], tiers: { 'Ground floor': ['Ground floor', 'Upper floor'], Roof: ['Roof'] } })).toBeNull()
+    expect(detailProblem({ ...stories, tiers: { 'Ground floor': ['Ground floor'], 'Upper floor': ['Upper floor'], Roof: ['Roof'] } })).toBeNull()
+    // a key over a name that is no feature either keeps the plain refusal
+    expect(detailProblem({ ...stories, tiers: { Storeys: ['Ground floor', 'Attic'], Roof: ['Roof'] } })).toContain('tiers: Storeys is not a planned feature. ')
+  })
+
+  it('shows a plan shape that passes on the first try, in the help every refusal and the description carry', () => {
+    expect(DETAIL_HELP).toContain(`then array and mirror. ${DETAIL_WORKED_SHAPE}`)
+    expect(DETAIL_WORKED_SHAPE).toContain('a stepped body is one main body in flat, keyed in tiers by its own name')
   })
 
   it('names a body built by a feature the plan does not have', () => {
