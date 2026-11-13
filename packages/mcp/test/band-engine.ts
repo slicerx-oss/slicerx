@@ -7,6 +7,8 @@ interface Face {
   key: number
   lo: number
   hi: number
+  /** Where along X it is drawn; a face's pieces keep their face's place, so a piece is found by its place. */
+  x: number
 }
 /** A part's row in a paint answer, with the faces it names. */
 export type Row = { part: number; faces?: { key: number; state: number; areaMm2: number }[] }
@@ -17,9 +19,11 @@ export const leaf = (state: number) => (state << 2).toString(16).toUpperCase()
 /**
  * An engine whose kernel keeps bodies as text, a list of faces each 30 mm wide: an extrude is a box's bottom, one side
  * from 0 to its height and its top. Each face is two triangles, 40 mm apart along X. brep.imprint splits a face a
- * plane crosses in two, each piece with a new key, and names each piece's face in `split`.
+ * plane crosses in two, each piece with a new key, and names each piece's face in `split`. `imprint: false` is an
+ * engine without it; `clash` gives both pieces one key, `unnamed` leaves `split` out. A cut into the body merges the
+ * side's pieces from 0 to `merge` mm high into one face with no key, as a cut that heals the line between them.
  */
-export function bandEngine(o: { imprint?: boolean } = {}) {
+export function bandEngine(o: { imprint?: boolean; clash?: boolean; unnamed?: boolean; merge?: number } = {}) {
   const ops: string[] = []
   const call = async (op: string, request: unknown): Promise<unknown> => {
     ops.push(op)
@@ -31,8 +35,14 @@ export function bandEngine(o: { imprint?: boolean } = {}) {
         return { bodies: 0 }
       case 'exact.ops':
         return { ops: o.imprint === false ? [] : ['brep.imprint'] }
-      case 'brep.extrude':
-        return { bodySmb: JSON.stringify([{ key: salt + 1, lo: 0, hi: 0 }, { key: salt + 2, lo: 0, hi: 20 }, { key: salt + 3, lo: 20, hi: 20 }]) }
+      case 'brep.extrude': {
+        if (!req['target']) return { bodySmb: JSON.stringify([{ key: salt + 1, lo: 0, hi: 0, x: 0 }, { key: salt + 2, lo: 0, hi: 20, x: 40 }, { key: salt + 3, lo: 20, hi: 20, x: 80 }]) }
+        // a cut: the faces stay, but the upright ones up to `merge` mm become one; the cut's wall is a new face
+        const faces = facesOf(req['target'])
+        const merged = faces.filter((f) => o.merge !== undefined && f.lo < f.hi && f.hi <= o.merge)
+        const kept = merged.length > 1 ? [...faces.filter((f) => !merged.includes(f)), { key: 0, lo: 0, hi: Math.max(...merged.map((f) => f.hi)), x: merged[0]!.x }] : faces
+        return { bodySmb: JSON.stringify([...kept, { key: salt + 100, lo: 5, hi: 15, x: 200 }]), touches: true }
+      }
       case 'brep.imprint': {
         let faces = facesOf(req['body'])
         const split: [number, number][] = []
@@ -41,18 +51,21 @@ export function bandEngine(o: { imprint?: boolean } = {}) {
           const h = p.origin[2]!
           faces = faces.flatMap((f) => {
             if (!(f.lo < h && f.hi > h)) return [f]
-            const pieces = [{ key: salt + 50 + k++, lo: f.lo, hi: h }, { key: salt + 50 + k++, lo: h, hi: f.hi }]
-            for (const x of pieces) split.push([x.key, f.key])
+            const pieces = [{ key: salt + 50 + k++, lo: f.lo, hi: h, x: f.x }, { key: o.clash ? salt + 50 + k - 1 : salt + 50 + k++, lo: h, hi: f.hi, x: f.x }]
+            // a piece split again names the face it came from, and is itself no longer in the result
+            const from = split.find(([key]) => key === f.key)?.[1] ?? f.key
+            split.splice(0, split.length, ...split.filter(([key]) => key !== f.key))
+            for (const x of pieces) split.push([x.key, from])
             return pieces
           })
         }
-        return { bodySmb: JSON.stringify(faces), split }
+        return { bodySmb: JSON.stringify(faces), ...(o.unnamed ? {} : { split }) }
       }
       case 'brep.tessellate': {
         const faces = facesOf(req['body'])
         const positions: number[] = []
-        faces.forEach((f, i) => {
-          const x = 40 * i
+        faces.forEach((f) => {
+          const x = f.x
           const quad = f.lo === f.hi ? [[x, 0, f.lo], [x + 30, 0, f.lo], [x + 30, 10, f.lo], [x, 10, f.lo]] : [[x, 0, f.lo], [x + 30, 0, f.lo], [x + 30, 0, f.hi], [x, 0, f.hi]]
           for (const c of [0, 1, 2, 0, 2, 3]) positions.push(...quad[c]!)
         })

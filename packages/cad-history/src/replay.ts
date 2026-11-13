@@ -13,7 +13,7 @@ import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Solids } from './exact'
+import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Plane, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -66,6 +66,8 @@ interface Flat {
   primitive?: PrimitiveSpec
   /** The part's paint by face while it is an exact solid (exact.ts FacePaint); its triangles' paint is made from it. */
   facePaint?: FacePaint
+  /** The planes a height band split the solid's faces along (exact.ts ExactPart.splitAt). */
+  splitAt?: Plane[]
 }
 
 const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: { ...m.faces, ids: Array.from(m.faces.ids) } } : {}), ...(m.paint ? { paint: m.paint } : {}), ...(m.primitive ? { primitive: m.primitive } : {}) })
@@ -303,10 +305,14 @@ function carryPaint(before: readonly Flat[], after: Flat[], from: readonly numbe
   const fp: FacePaint = {}
   for (const i of from) for (const [layer, list] of Object.entries(before[i]?.facePaint ?? {})) fp[layer as keyof FacePaint] = [...(fp[layer as keyof FacePaint] ?? []), ...(list ?? [])]
   const dropped = before.some((x) => x.paint && !x.facePaint && !kept.has(x))
-  if (!Object.keys(fp).length) return { parts: after, dropped }
+  // the planes a band split the faces along go on with the solid, for the edge steps after it
+  const splitAt = from.flatMap((i) => before[i]?.splitAt ?? [])
+  if (!Object.keys(fp).length && !splitAt.length) return { parts: after, dropped }
   const parts = after.map((x) => {
     if (old.has(x)) return x
+    if (!Object.keys(fp).length) return { ...x, splitAt }
     const { paint: _paint, ...rest } = x
+    if (splitAt.length) Object.assign(rest, { splitAt })
     if (x.unmeshed) return { ...rest, facePaint: fp }
     const paint = paintOfFaces(x, fp)
     return { ...rest, facePaint: fp, ...(Object.keys(paint).length ? { paint } : {}) }
