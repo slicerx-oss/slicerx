@@ -1670,12 +1670,20 @@ mod tests {
     #[test]
     fn a_banded_hub_with_a_tooth_arrayed_about_it_stores() {
         // an extruded 70 or 100 mm hub with a tooth joined on its wall, the tooth full height or within one band
+        // triangles each join may hand the kernel, in the order of the loops: a debug build counted 12808, 47038, 21024,
+        // 97620, 13942, 45954, 23064 and 101220, and without the round-wrap lineup the first case counted 243762
+        let mut limits = [14_000, 52_000, 23_000, 107_000, 15_300, 50_500, 25_400, 111_000].into_iter();
         for (r, sides) in [(35.0, 188), (50.0, 224)] {
             for z in [(0.0, 10.0), (3.2, 3.8)] {
                 let part = toothed(r, sides, true, z, 0.5);
                 for count in [12, 30] {
-                    let secs = stores_as_the_union(&part, count);
-                    assert!(secs < 2.0, "r {r} {z:?} x{count}: {secs} s");
+                    let _ = stores_as_the_union(&part, count);
+                    let spent = boolean::SPENT.get();
+                    let limit = limits.next().unwrap();
+                    assert!(
+                        spent < limit,
+                        "r {r} {z:?} x{count}: {spent} triangles, limit {limit}"
+                    );
                 }
             }
         }
