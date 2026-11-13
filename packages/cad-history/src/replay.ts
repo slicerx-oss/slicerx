@@ -377,6 +377,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     if (p.order.length > parts.length) throw new Broken(`This step orders ${p.order.length} parts, and the object has ${parts.length} here.`)
     return [...p.order.map((k) => parts[k]!), ...parts.slice(p.order.length)]
   }
+  // A part's filament changes no geometry either: the part, exact or not, keeps its shape and takes the slot.
+  if (p.op === 'parts.slot') {
+    if (s.part !== -1 && !parts[s.part]) throw new Broken('The part this step works on is gone.')
+    return parts.map((x, i) => (s.part === -1 || i === s.part ? { ...x, slot: p.slot } : x))
+  }
   // A part added to a design with exact solids lives beside the exact parts as it is: a mesh part, or a shape the
   // kernel makes when a step first works on it. The parts there stay as they are, exact or not.
   if (exact && p.op === 'parts.add') return [...parts, ...p.parts.map(flat)]

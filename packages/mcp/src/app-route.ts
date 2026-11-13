@@ -15,6 +15,7 @@ export const APP_DESIGN_TOOLS = new Set([
   'design.edit_step',
   'design.undo',
   'design.redo',
+  'design.part_filament',
   'design.timeline',
   'design.roll',
   'design.sketch',
