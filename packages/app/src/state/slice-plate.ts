@@ -138,7 +138,8 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
     const { request } = await plateSliceRequest(host, s, signal)
     let sliced
     try {
-      sliced = await host.slicer.slice({ ...request, options: { ...request.options, emitGcode: false, emitPreview: false } }, { signal, local: true })
+      // counted as every engine slice is, so auto slice starts none beside it, canceled or not (actions.ts engineSlice)
+      sliced = await engineSlice(() => host.slicer.slice({ ...request, options: { ...request.options, emitGcode: false, emitPreview: false } }, { signal, local: true }), signal)
     } catch (e) {
       // A host that slices only in the cloud turns the local slice down: the caller asks for a slice instead.
       if (signal.aborted || isNoLocalEngine(e)) throw e
