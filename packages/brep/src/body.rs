@@ -45,7 +45,7 @@ const KEY_LIMIT: u64 = 1 << 52;
 
 /// How far from a plane a face may be, in mm, and still be a plane where faces are sorted into kinds
 /// ([`Face::flat_within`]): a tapered extrude's flat sides are ruled surfaces, flat to 1e-5 mm. A sorting only. What
-/// the kernel made is checked against what it was given far more closely (`stitch.rs`), and that limit is another.
+/// the kernel made is checked against what it was given far more closely (`readback.rs`), and that limit is another.
 /// The older operations sort by the same number (`cpp/sx_keys.h`).
 pub const FLAT_KIND_MM: f64 = 1e-4;
 
