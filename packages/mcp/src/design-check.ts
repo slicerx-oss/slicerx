@@ -125,6 +125,8 @@ export type CheckResult = z.infer<typeof checkResultSchema>
 export interface BodyFacts {
   /** The size of the bounds of every part together. */
   size: { x: number; y: number; z: number }
+  /** Where the body reaches furthest each way along each axis: a corner at each end, and its part when there are several. */
+  reach?: Record<'x' | 'y' | 'z', { lo: SizeEnd; hi: SizeEnd }> | undefined
   /** The round holes found in it, each once. */
   holes: { diameterMm: number }[]
   /**
@@ -284,6 +286,16 @@ const displayOk: SizeOk = (got, want) => Math.abs(got - want) <= Math.max(DISPLA
  * that still has the name every new body gets ("Body", "Body 2"), which says nothing either.
  */
 export const partNamed = (name: string | undefined, parts: number): string | undefined => (parts > 1 && name?.trim() && !/^Body(?: \d+)?$/.test(name.trim()) ? name.trim() : undefined)
+
+/** One end of the body along an axis: a corner there, mm, and the part it is on when it is named (partNamed). */
+export interface SizeEnd {
+  at: [number, number, number]
+  part?: string
+}
+
+/** Where a failed overall size is off, one axis: its size against the plan's and the corners at its two ends. */
+export const SIZE_WHERE = (axis: string, got: number, want: number, lo: SizeEnd, hi: SizeEnd): string =>
+  `Along ${axis} it is ${r2(got)} mm against the plan's ${r2(want)} mm, from (${lo.at.map(r2).join(', ')}) mm${lo.part ? ` on ${lo.part}` : ''} to (${hi.at.map(r2).join(', ')}) mm${hi.part ? ` on ${hi.part}` : ''}.`
 
 /** Whether a size matches axis by axis, x and y swapped passing (turned on the bed), with a note on a swap. */
 function sizeMatch(got: number[], want: number[], sizeOk: SizeOk = tightOk): { pass: boolean; note: string } {
@@ -692,7 +704,11 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
     const near = !pass && looks ? sizeMatch(axes.map((a) => body.size[a]), want, displayOk) : undefined
     const off = near?.pass ? axes.flatMap((a, k) => (tightOk(body.size[a], want[k]!) ? [] : [`${a} ${r2(body.size[a] - want[k]!) > 0 ? '+' : ''}${r2(body.size[a] - want[k]!)} mm`])) : []
     const warning = near?.pass ? `${off.join(', ')} from the plan, within the ${DISPLAY_SIZE_MM} mm or ${DISPLAY_SIZE_SHARE * 100} percent a ${plan.detail} model is held to; no plan change needed, say it in the reply` : undefined
-    items.push({ name: 'overall size', want: `${want.map(r2).join(' x ')} mm${inches}`, got, pass: pass || near?.pass === true, ...(warning ? { warning } : {}) })
+    // a failed size says, beside the reading, where the body ends along each axis that is off (not for a body that is
+    // only turned: its note says to rotate it)
+    const reach = body.reach
+    const where = !pass && !near?.pass && reach && !whole.note ? axes.flatMap((a, k) => (tightOk(body.size[a], want[k]!) ? [] : [SIZE_WHERE(a, body.size[a], want[k]!, reach[a].lo, reach[a].hi)])).join(' ') : ''
+    items.push({ name: 'overall size', want: `${want.map(r2).join(' x ')} mm${inches}`, got, pass: pass || near?.pass === true, ...(warning ? { warning } : {}), ...(where ? { where } : {}) })
   }
 
   // a recess row is held to the blind openings read on the part, never to its holes
