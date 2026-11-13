@@ -85,18 +85,37 @@ impl Curve {
         }
     }
 
-    /// A spline piece as drawn: its cubic spans from its start to its end, cut from the spline's own where the piece
-    /// begins and ends within them. None for any other piece.
-    pub fn spline_spans(&self) -> Option<Vec<[V2; 4]>> {
-        let Self::Spline { spans, from, to } = self else {
-            return None;
-        };
-        let forward = spans.portion(spans.step_at(from.min(*to)), spans.step_at(from.max(*to)));
-        Some(if from <= to {
-            forward
-        } else {
-            forward.iter().rev().map(|&[a, b, c, d]| [d, c, b, a]).collect()
-        })
+    /// The piece as drawn, as cubic Bezier spans from its start to its end. A spline's are its own spans, cut where
+    /// the piece begins and ends within them. An arc of a circle or an ellipse is written as cubic arcs, a span to
+    /// each 32nd of a turn or less, each with its handles a third of the tangent span along (4/3 tan of a quarter of
+    /// its angle), mapped onto the ellipse by its half axes and turn: within about a billionth of its radius of the
+    /// true curve. None for a line, whose drawn form is its own two ends.
+    pub fn drawn_spans(&self) -> Option<Vec<[V2; 4]>> {
+        match *self {
+            Self::Line => None,
+            Self::Spline { ref spans, from, to } => {
+                let forward = spans.portion(spans.step_at(from.min(to)), spans.step_at(from.max(to)));
+                Some(if from <= to {
+                    forward
+                } else {
+                    forward.iter().rev().map(|&[a, b, c, d]| [d, c, b, a]).collect()
+                })
+            }
+            Self::Arc {
+                center,
+                radius,
+                from,
+                sweep,
+            } => Some(arc_spans(center, radius, radius, 0.0, from, sweep)),
+            Self::Ellipse {
+                center,
+                half_width,
+                half_height,
+                turn,
+                from,
+                sweep,
+            } => Some(arc_spans(center, half_width, half_height, turn, from, sweep)),
+        }
     }
 
     /// How far around it goes, radians; 0 for a line. A spline's is how far it turns, all its bends summed.
@@ -303,6 +322,43 @@ type Try<T> = std::result::Result<T, No>;
 
 fn unmatched<T>(why: impl Into<String>) -> Try<T> {
     Err(No::Unmatched(why.into()))
+}
+
+/// An arc of the ellipse with half axes `a` and `b`, its first turned `turn` from the plane's x, as cubic Bezier
+/// spans from the angle `from` through `sweep` (the angle that maps it to a circle): a span to each 32nd of a turn or
+/// less. Each is the circle's own cubic arc mapped onto the ellipse, which an affine map keeps exactly, and its ends
+/// are the ellipse's own points.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    reason = "a span count of at most 32 a turn"
+)]
+fn arc_spans(center: V2, a: f64, b: f64, turn: f64, from: f64, sweep: f64) -> Vec<[V2; 4]> {
+    let count = ((sweep.abs() / TAU * 32.0).ceil() as usize).max(1);
+    let step = sweep / count as f64;
+    let (sq, cq) = (step / 4.0).m_sin_cos();
+    let handle = 4.0 / 3.0 * sq / cq;
+    let (st, ct) = turn.m_sin_cos();
+    // a point of the unit circle, and a direction along it, mapped onto the ellipse
+    let on = |x: f64, y: f64| {
+        [
+            center[0] + ct * a * x - st * b * y,
+            center[1] + st * a * x + ct * b * y,
+        ]
+    };
+    (0..count)
+        .map(|i| {
+            let (t0, t1) = (from + step * i as f64, from + step * (i + 1) as f64);
+            let ((s0, c0), (s1, c1)) = (t0.m_sin_cos(), t1.m_sin_cos());
+            [
+                ellipse_at(center, a, b, turn, t0),
+                on(c0 - handle * s0, s0 + handle * c0),
+                on(c1 + handle * s1, s1 - handle * c1),
+                ellipse_at(center, a, b, turn, t1),
+            ]
+        })
+        .collect()
 }
 
 /// The part of the cubic Bezier `b` from its parameter `a` to `t`, as a cubic Bezier of its own.

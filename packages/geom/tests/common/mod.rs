@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// What the exact tests share.
+// What the exact tests share. Each test file uses some of them.
 
+use serde_json::Value;
 use sx_geom::vec3::{self, V3};
 
 /// Whether a volume the kernel computed is `want` to a millionth of it. The kernel integrates a solid's volume
@@ -139,4 +140,102 @@ pub fn farthest_off_its_faces(body: &sx_brep::Body, mesh: &sx_brep::Mesh, chord:
         }
     }
     worst
+}
+
+/// The SHA-256 of `bytes`, as lowercase hex: replies too large to keep are held to the bytes the code made before by
+/// it.
+pub fn sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    Sha256::digest(bytes).iter().fold(String::new(), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
+}
+
+/// The farthest any of `points` is from the triangles `triangles` over `positions`. The triangles are filed in a
+/// grid of `cell` mm, and the cells are searched outward from each point until no unsearched cell could hold a
+/// nearer triangle.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "grid cells of a body a few hundred mm across"
+)]
+pub fn farthest_from(points: &[V3], positions: &[V3], triangles: &[[u32; 3]], cell: f64) -> f64 {
+    use std::collections::HashMap;
+    let key = |p: V3| p.map(|c| (c / cell).floor() as i64);
+    let mut grid: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
+    for (i, t) in triangles.iter().enumerate() {
+        let corners = t.map(|v| positions[v as usize]);
+        let (lo, hi) = (
+            key([0, 1, 2].map(|a| corners.iter().map(|c| c[a]).fold(f64::INFINITY, f64::min))),
+            key([0, 1, 2].map(|a| corners.iter().map(|c| c[a]).fold(f64::NEG_INFINITY, f64::max))),
+        );
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    grid.entry([x, y, z]).or_default().push(i);
+                }
+            }
+        }
+    }
+    let near = |p: V3| -> f64 {
+        let at = key(p);
+        let mut best = f64::INFINITY;
+        for r in 0_i64..1000 {
+            for x in -r..=r {
+                for y in -r..=r {
+                    for z in -r..=r {
+                        if x.abs().max(y.abs()).max(z.abs()) != r {
+                            continue;
+                        }
+                        for &i in grid.get(&[at[0] + x, at[1] + y, at[2] + z]).into_iter().flatten() {
+                            let [a, b, c] = triangles[i].map(|v| positions[v as usize]);
+                            let q = sx_geom::hollow::closest_point_on_triangle(p, a, b, c);
+                            best = best.min(vec3::len(vec3::sub(q, p)));
+                        }
+                    }
+                }
+            }
+            // any triangle not yet searched is more than r cells away
+            if best <= r as f64 * cell {
+                break;
+            }
+        }
+        best
+    };
+    points.iter().map(|&p| near(p)).fold(0.0, f64::max)
+}
+
+/// Whether the mesh loft is the reference an exact loft of `profiles` is held to. The mesh loft flattens every
+/// section into a ring of points and joins the rings point for point by count. Where a section is straight lines
+/// alone, or one whole circle or ellipse, that keeps each corner on the corners of the sections beside it (or there
+/// is no corner), so its sides are the loft's own. Where a section mixes corners with curves, the curves flatten to
+/// different counts on different sections and the mesh loft joins a corner of one section to a point along the curve
+/// of the next, so its side leans off the corners between sections. There the exact loft is held to the drawing: the
+/// sections as drawn at their stations, and its corner rails, which join the drawn corners as the loft defines them.
+pub fn mesh_loft_keeps_corners(profiles: &Value) -> bool {
+    profiles.as_array().unwrap().iter().all(|p| {
+        p["loops"].as_array().unwrap().iter().all(|lp| {
+            let kind = lp["type"].as_str().unwrap_or("path");
+            let segments = lp["segments"].as_array().map_or(&[][..], Vec::as_slice);
+            matches!(kind, "circle" | "ellipse") || segments.iter().all(|s| s["type"] == "line")
+        })
+    })
+}
+
+/// A `width` by `height` rectangle about the origin with its corners rounded at `radius`: four lines and four arcs.
+pub fn rounded(width: f64, height: f64, radius: f64) -> Value {
+    let (half_w, half_h) = (width / 2.0, height / 2.0);
+    let arc = |to: [f64; 2]| serde_json::json!({ "type": "arc", "to": to, "radiusMm": radius });
+    let line = |to: [f64; 2]| serde_json::json!({ "type": "line", "to": to });
+    serde_json::json!({
+        "start": [-half_w + radius, -half_h],
+        "segments": [
+            line([half_w - radius, -half_h]), arc([half_w, -half_h + radius]),
+            line([half_w, half_h - radius]), arc([half_w - radius, half_h]),
+            line([-half_w + radius, half_h]), arc([-half_w, half_h - radius]),
+            line([-half_w, -half_h + radius]), arc([-half_w + radius, -half_h]),
+        ],
+    })
 }
