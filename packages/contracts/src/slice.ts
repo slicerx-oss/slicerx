@@ -127,8 +127,8 @@ export interface MeshPart {
   primitive?: PrimitiveSpec
   /**
    * Exact corner normals from the geometry engine, packed (normals.ts): six numbers per triangle, one pair per corner in
-   * index order. A triangle with all three corners set shades with them; the others, and every triangle when this is
-   * absent, crease as usual. Code that changes the triangles turns these with a rigid move or leaves them out, never
+   * index order. A triangle with all three corners set shades with them, smoothed only across a fold between faces under
+   * the viewer's crease angle; the others, and every triangle when this is absent, crease as usual. Code that changes the triangles turns these with a rigid move or leaves them out, never
    * keeps them stale. Never saved in a project.
    */
   normals?: Int16Array

@@ -114,7 +114,8 @@ function release(part: PartEntry): void {
 
 /**
  * Indexed geometry whose normals average only faces within CREASE_DEG of each other (creasedArrays in mesh-math.ts),
- * except triangles with exact corner normals in `N`, which keep those. Triangle t of the result is triangle t of the input.
+ * except triangles with exact corner normals in `N`, which keep those inside each face of the solid and average them
+ * only across a fold under CREASE_DEG. Triangle t of the result is triangle t of the input.
  */
 export function creasedGeometry(P: Float32Array, I: ArrayLike<number>, N?: Int16Array): BufferGeometry {
   return creasedMesh(creasedArrays(P, I, CREASE_DEG, N))
