@@ -13,7 +13,7 @@ import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintedFrom, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Plane, type Solids } from './exact'
+import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, facingFaceIds, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintedFrom, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Plane, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -709,6 +709,15 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         } catch (err) {
           if (err instanceof Broken || err instanceof ExactBroken) throw err
           throw new Broken(engineReason(err))
+        }
+        // a direction on an exact part goes on whole faces too: each face it reached, when the face's own normal is
+        // within the angle (a curved face only partly facing that way stays bare), so the paint lasts as paint by face
+        if (target.kind === 'direction' && (on.smb || on.body !== undefined) && on.faces) {
+          try {
+            r = await paintFaces(engine, on, s.transform, facingFaceIds(on, s.transform, target, Object.keys(r.changed).map(Number)), texts, p.state)
+          } catch (err) {
+            throw new Broken(engineReason(err))
+          }
         }
         const layer: Record<number, string> = { ...texts }
         for (const [k, v] of Object.entries(r.changed)) {

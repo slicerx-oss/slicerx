@@ -195,16 +195,19 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       const params: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target, ...(maxDepth !== undefined ? { maxDepth } : {}) }
       const expected: Record<number, Texts> = {}
       const rows: { part: number; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[]; faces?: PaintedFace[] }[] = []
-      // a height band on an exact design: the step's own replay, whose kernel splits the faces the band's edges cross
-      const after = target.kind === 'height' && d.history.exact && designs.trial ? await designs.trial(d, part, params) : undefined
-      if (after && target.kind === 'height') {
-        const band = bandOf(target)
+      // a height band or a direction on an exact design: the step's own replay, whose kernel splits the faces the band's
+      // edges cross, and which paints a direction on whole faces
+      const after = (target.kind === 'height' || target.kind === 'direction') && d.history.exact && designs.trial ? await designs.trial(d, part, params) : undefined
+      if (after) {
+        const band = target.kind === 'height' ? bandOf(target) : undefined
         for (const k of parts) {
           const p = after[k]
           if (!p) continue
           const texts = p.paint?.[i.layer] ?? {}
           expected[k] = texts
-          const ids = bandFaceIds(p, d.transform, band)
+          // a band's faces by height; a direction's, the faces of the triangles the step painted anew (it splits none)
+          const was = d.parts[k]?.paint?.[i.layer] ?? {}
+          const ids = band ? bandFaceIds(p, d.transform, band) : new Set(Array.from(p.faces?.ids ?? []).filter((_, t) => texts[t] !== was[t]))
           const tris = Array.from(p.faces?.ids ?? []).filter((id) => ids.has(id)).length
           const faces = facesOf(p, i.layer, ids)
           const r = (await engine('paint.regions', { mesh: meshOf(p), transform: d.transform, paint: texts })) as { states: { state: number; regionCount: number; regions: Region[] }[] }
