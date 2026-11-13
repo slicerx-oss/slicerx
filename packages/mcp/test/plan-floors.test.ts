@@ -9,7 +9,7 @@ import type { AskAnswer, ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { createPlanRegistry, type PartPlan } from '../src/design-check'
 import { jointProblem, LID_ON_HINGE, LID_ONE_WAY, LID_STATEMENT, planFloors, printsInPlace, raiseToFloors, unstatedJoint, underFloors } from '../src/plan-floors'
-import { createCardPlans, PLAN_GO, planChoiceId, type PlanAnswer, type PlanInput } from '../src/tab-tools'
+import { createCardPlans, JOINT_LAYOUT_HELP, PLAN_GO, planChoiceId, type PlanAnswer, type PlanInput } from '../src/tab-tools'
 import { designToolset } from '../src/toolset'
 
 /** The hinged box of the build eval as mimir planned it: print-in-place gaps of 0.3 mm, where the printer needs 0.4 mm. */
@@ -372,6 +372,15 @@ const run3: PlanInput = {
   ],
   questions: ['Should the lid wrap the base edge or sit flush on top?'],
 }
+
+describe('a print-in-place plan settles its joints first', () => {
+  it('tells the model, in design.plan\'s description, to settle where pieces join and build each at its joint', () => {
+    const tool = createCardPlans(createPlanRegistry()).planTool()
+    expect(tool.description).toContain(`an approved plan's result gives this printer's. ${JOINT_LAYOUT_HELP} Two or more`)
+    expect(JOINT_LAYOUT_HELP).toContain('ask any choice that moves a joint (pilot.ask) before the plan')
+    expect(JOINT_LAYOUT_HELP).toContain('never laid loose to join later')
+  })
+})
 
 describe('a hinged plan says one way it prints', () => {
   it('is refused when it says both assembled and apart, told to say one', async () => {

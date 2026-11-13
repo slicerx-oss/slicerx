@@ -925,7 +925,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.21.0',
+    version: '1.22.0',
     source: 'command',
     permission: 'read',
     description:

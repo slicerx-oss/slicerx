@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_design_check` 1.22.0 (from 1.21.0): for a print-in-place plan, the gaps item for pieces that join no other piece now says how far the closest of them is from the nearest piece, in whole mm, and what to do: "Cube 2, Cube 3 and 5 more join no other piece: each is 10 mm or more from the nearest. Pieces that print in place print at their joints, each its planned gap from the piece it joins, so move each one there before checking again." One piece and two pieces have their own forms. The distance is the gap between the pieces' bounding boxes, and never under the 2 mm the check looks within. The item fails in the same cases as before.
