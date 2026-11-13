@@ -7,7 +7,7 @@
 // for pieces that are bodies of one part (after geom.mirror or geom.array), which no tool can name one by one.
 import type { Design as HostDesign, DesignHost, HistoryMesh } from '@slicerx/cad-history'
 import { describe, expect, it } from 'vitest'
-import { fitItems, isNamingMiss, type BodyFacts, type FitFacts, type FitGap } from '../src/design-check'
+import { fitItems, isNamingMiss, lonePieces, type BodyFacts, type FitFacts, type FitGap } from '../src/design-check'
 import { FIT_TOLERANCE_MM, fitFacts, fitLimits, fitVerdict } from '../src/fit-facts'
 import * as toolset from '../src/toolset'
 import type { ToolContext } from '@slicerx/pilot'
@@ -507,6 +507,39 @@ describe('the fit tolerance', () => {
       expect(fitVerdict(gap, limits)).toBe('fuses')
       expect(gapsItem(fit).pass).toBe(false)
     }
+  })
+})
+
+describe('the gaps item for pieces that join no other', () => {
+  const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2 })
+  const cube = (k: number, x: number) => ({ part: k, name: `Cube ${k + 1}`, partName: `Cube ${k + 1}`, box: { min: [x, 0, 0], max: [x + 20, 20, 20] } })
+  const gaps = (fit: FitFacts) => fitItems(fit.bodies.map((b) => b.name), { fit } as BodyFacts).find((i) => i.name === 'gaps')!
+  const knuckle = (a: number, b: number): FitGap => ({ bodies: [a, b], kind: 'apart', gapMm: 0.4, limitMm: 0.3, from: [0, 0, 0], to: [0.4, 0, 0], direction: 'xy' })
+
+  it('says each form word for word: one piece, two, and three or more', () => {
+    expect(lonePieces(['Cube 2'], 10)).toBe('Cube 2 joins no other piece: it is 10 mm or more from the nearest. Pieces that print in place print at their joints, each its planned gap from the piece it joins, so move it there before checking again.')
+    expect(lonePieces(['Cube 2', 'Cube 3'], 10)).toBe('Cube 2 and Cube 3 join no other piece: each is 10 mm or more from the nearest. Pieces that print in place print at their joints, each its planned gap from the piece it joins, so move each one there before checking again.')
+    expect(lonePieces(['Cube 2', 'Cube 3', 'Cube 4', 'Cube 5', 'Cube 6', 'Cube 7', 'Cube 8'], 10)).toBe('Cube 2, Cube 3 and 5 more join no other piece: each is 10 mm or more from the nearest. Pieces that print in place print at their joints, each its planned gap from the piece it joins, so move each one there before checking again.')
+  })
+
+  it('fails eight cubes laid 10 mm apart with no joint, naming them and the closest distance in whole mm', () => {
+    const fit: FitFacts = { limits, pieces: 8, bodies: [0, 1, 2, 3, 4, 5, 6, 7].map((k) => cube(k, k * 30.4)), gaps: [] }
+    const g = gaps(fit)
+    expect(g.pass).toBe(false)
+    expect(g.got).toBe('Cube 1, Cube 2 and 6 more join no other piece: each is 10 mm or more from the nearest. Pieces that print in place print at their joints, each its planned gap from the piece it joins, so move each one there before checking again.')
+  })
+
+  it('fails one cube left apart from a joined pair, and says at least the 2 mm the check looked within when the boxes say less', () => {
+    const fit: FitFacts = { limits, pieces: 3, bodies: [cube(0, 0), cube(1, 20.4), { ...cube(2, 60), box: { min: [0, 0, 30], max: [40, 20, 50] } }], gaps: [knuckle(0, 1)] }
+    expect(gaps(fit).got).toBe('Cube 3 joins no other piece: it is 10 mm or more from the nearest. Pieces that print in place print at their joints, each its planned gap from the piece it joins, so move it there before checking again.')
+    // boxes that overlap while the bodies stay 2 mm or more apart (the engine looked within 2 mm and found nothing)
+    const tucked: FitFacts = { ...fit, bodies: [cube(0, 0), cube(1, 20.4), { ...cube(2, 0), box: { min: [5, 5, 5], max: [15, 15, 15] } }] }
+    expect(gaps(tucked).got).toContain('Cube 3 joins no other piece: it is 2 mm or more from the nearest.')
+  })
+
+  it('passes pieces that each meet another', () => {
+    const fit: FitFacts = { limits, pieces: 2, bodies: [cube(0, 0), cube(1, 20.4)], gaps: [knuckle(0, 1)] }
+    expect(gaps(fit).pass).toBe(true)
   })
 })
 

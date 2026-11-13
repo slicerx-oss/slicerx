@@ -189,7 +189,7 @@ export async function fitFacts(host: DesignHost, d: HostDesign, limits: FitLimit
     seen.set(p.item, n)
     const base = (count.get(nameOf(part)) ?? 0) > 1 ? `${nameOf(part)} (part ${part + 1})` : nameOf(part)
     const array = named.get(nameOf(part)) === 1 ? copies.get(nameOf(part)) : undefined
-    return { part, name: (perPart.get(p.item) ?? 0) > 1 ? `${base} ${n}` : base, partName: nameOf(part), ...(array ? { array } : {}) }
+    return { part, name: (perPart.get(p.item) ?? 0) > 1 ? `${base} ${n}` : base, partName: nameOf(part), ...(array ? { array } : {}), box: p.bounds }
   })
   const flatsOf = new Map<Mesh, Facing>()
   const facing = (m: Mesh): Facing => flatsOf.get(m) ?? flatsOf.set(m, { up: flats(m, true), down: flats(m, false), leaningUp: flats(m, true, WALL), leaning: flats(m, false, WALL) }).get(m)!

@@ -248,9 +248,10 @@ export interface FitFacts {
   limits: FitLimits
   /**
    * Each body, with the part it is in, the name it goes by and its part's name; `array` when an array of separate
-   * copies made its part (n 2 and up) or copied it (n 1), with the name of the part copied.
+   * copies made its part (n 2 and up) or copied it (n 1), with the name of the part copied; `box`, its bounds in mm
+   * as the engine read them, when known.
    */
-  bodies: { part: number; name: string; partName?: string | undefined; array?: { of: string; n: number } | undefined }[]
+  bodies: { part: number; name: string; partName?: string | undefined; array?: { of: string; n: number } | undefined; box?: { min: readonly number[]; max: readonly number[] } | undefined }[]
   /** Bodies that touch print as one piece: how many separate pieces print. */
   pieces: number
   /** Touches and gaps under the limits, then the closest gap of each two pieces within NEAR_MM. */
@@ -1179,12 +1180,31 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   for (const g of fit.gaps) for (const b of g.bodies) near.add(b)
   const alone = fit.bodies.map((_, b) => b).filter((b) => !near.has(b))
   if (alone.length) {
-    items.push({ name: 'gaps', want: gapsWant, got: `${listAnd(alone.map(name))} ${alone.length === 1 ? 'is' : 'are'} ${NEAR_MM} mm or more from every other piece; print-in-place pieces print assembled, ${mm(limits.sideMm)} apart where they meet`, pass: false })
+    // how far the closest of them is from any other piece: their boxes' gap, never more than the real one, and the
+    // NEAR_MM the engine looked within, so the distance said is one they are at least
+    const boxGap = (p: number, q: number): number => {
+      const [a, c] = [fit.bodies[p]?.box, fit.bodies[q]?.box]
+      if (!a || !c) return 0
+      return Math.hypot(...[0, 1, 2].map((k) => Math.max(0, c.min[k]! - a.max[k]!, a.min[k]! - c.max[k]!)))
+    }
+    const nearest = Math.min(...alone.map((p) => Math.min(...fit.bodies.map((_, q) => (q === p ? Infinity : boxGap(p, q))))))
+    items.push({ name: 'gaps', want: gapsWant, got: lonePieces(alone.map(name), Math.floor(Math.max(nearest, NEAR_MM))), pass: false })
     return items
   }
   const least = fit.gaps.reduce((a, g) => (g.gapMm < a.gapMm ? g : a))
   items.push({ name: 'gaps', want: gapsWant, got: `smallest gap ${gapMm(least.gapMm)}, between ${pair(least)}`, pass: true })
   return items
+}
+
+/**
+ * Pieces of a print-in-place part that join no other piece, and how far the closest of them is from the nearest other
+ * piece, in whole mm (at least that far). The sentence for them has one form for one piece, one for two, one for more.
+ */
+export function lonePieces(names: readonly string[], mm: number): string {
+  const fix = 'Pieces that print in place print at their joints, each its planned gap from the piece it joins'
+  if (names.length === 1) return `${names[0]} joins no other piece: it is ${mm} mm or more from the nearest. ${fix}, so move it there before checking again.`
+  const who = names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]}, ${names[1]} and ${names.length - 2} more`
+  return `${who} join no other piece: each is ${mm} mm or more from the nearest. ${fix}, so move each one there before checking again.`
 }
 
 /**
