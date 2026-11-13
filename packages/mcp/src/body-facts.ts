@@ -108,6 +108,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     ...(wall.why ? { minWallWhy: wall.why } : {}),
     ...(wall.tip ? { minWallTip: wall.tip } : {}),
     ...(wall.mm !== null && wallAt.point && wallAt.part !== undefined ? { minWallAt: { at: wallAt.point, ...wallPart(d.parts[wallAt.part]?.name, d.parts.length) } } : {}),
+    ...(wall.mm !== null && wallAt.others?.length ? { minWallOthers: wallAt.others.map((o) => ({ mm: o.mm, at: o.point, ...wallPart(d.parts[o.part]?.name, d.parts.length) })) } : {}),
     ...gaps,
     ...loose,
     ...(opts.hook ? hookFacts(world) : {}),
@@ -432,6 +433,12 @@ export interface WallReading {
 export interface WallPlace {
   part?: number
   point?: V3
+  /**
+   * When the thinnest wall is under the floor: every other part read whose own thinnest wall is under it too, thinnest
+   * first, each with its reading and the middle of it, so one fix round can take them all. A part another one is moved
+   * from (an arrayed copy) is read once, under the first of them.
+   */
+  others?: { part: number; mm: number; point: V3 }[]
 }
 
 /** The nozzle minWall reads tips for when it is given none: a tip zone and a floor of two nozzle widths. */
@@ -467,20 +474,40 @@ export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGE
     return { mm: Number.isFinite(read.best) ? r3(read.best) : null, ...tip }
   }
   const seen: Mesh[] = []
+  const kept: number[] = []
   // the faces where two parts meet at a cut, read only when a taper asks
   let cuts: SharedCuts | null = null
+  const onCutOf = (k: number) => (meshes.length > 1 ? (p: V3, n: V3): boolean => (cuts ??= sharedCuts(meshes)).has(k, p, n) : undefined)
+  const fits = (m: Mesh): boolean => Math.floor(m.indices.length / 3) <= budget.maxFacets
+  // once the thinnest wall is under the floor, each other part is read again on its own, held to the floor alone
+  // rather than to the thinnest wall: its own thinnest wall under the floor, when it has one. The reading the item
+  // passes or fails on is the one above, unchanged.
+  const others = (): WallReading => {
+    const out = reading()
+    // under the floor as design.check holds it: the reading to the micron, short of the floor by more than 1e-6
+    const under = (mm: number): boolean => mm < floor - 1e-6
+    if (!place || out.mm === null || !under(out.mm)) return out
+    const thin = kept.flatMap((k) => {
+      if (k === read.bestPart || !fits(meshes[k]!)) return []
+      const own: PartReading = { best: floor, tip: Infinity, tipAt: [0, 0, 0], bestAt: null, bestPart: k }
+      partWall(meshes[k]!, own, budget.maxWork, opposed, floor, used, onCutOf(k))
+      return under(r3(own.best)) && own.bestAt ? [{ part: k, mm: r3(own.best), point: own.bestAt.map((v) => Math.round(v * 100) / 100) as V3 }] : []
+    })
+    if (thin.length) place.others = thin.sort((a, b) => a.mm - b.mm || a.part - b.part)
+    return out
+  }
   for (const [k, m] of meshes.entries()) {
     // a part that is another one moved (an arrayed copy) has its walls: it is read once
     if (seen.some((o) => moved(o, m))) continue
     seen.push(m)
-    const onCut = meshes.length > 1 ? (p: V3, n: V3): boolean => (cuts ??= sharedCuts(meshes)).has(k, p, n) : undefined
+    kept.push(k)
     const was = read.best
-    const done = Math.floor(m.indices.length / 3) <= budget.maxFacets && partWall(m, read, budget.maxWork, opposed, floor, used, onCut)
+    const done = fits(m) && partWall(m, read, budget.maxWork, opposed, floor, used, onCutOf(k))
     if (read.best < was) read.bestPart = k
     // out of budget: a wall under the floor read already fails the part, whatever else it holds; else not measured
-    if (!done) return read.best < floor ? reading() : { mm: null, why: TOO_DENSE }
+    if (!done) return read.best < floor ? others() : { mm: null, why: TOO_DENSE }
   }
-  return reading()
+  return others()
 }
 
 /** Where the parts of a design touch face to face, as a cut between two bands of one body leaves them. */

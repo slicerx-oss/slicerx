@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_design_check` 1.21.0 (from 1.20.0): a failed minimum wall item now lists every other part whose own thinnest wall is under the floor too, after the thinnest, thinnest first, each with its reading and a point in it, so one fix round can take them all. The list stops at 12 places, the thinnest included, and gives the rest by their count. Its fix then asks for every listed place in the one fix round. The body gains `minWallOthers` (each place's `mm`, `at` and, when it is named, `part`). The item passes and fails exactly as before: the same floor, the same reading and the same rule for sharp edges and points. Parts are read again only when the wall fails.
