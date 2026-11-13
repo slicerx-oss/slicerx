@@ -249,6 +249,9 @@ describe('toolsets', () => {
     expect(toolsetOf(t('geom.rail'))).toBe('cad_more')
     for (const ask of ['Add a railing all round the deck', 'put a rail along the top', 'a fence round the tray']) expect(turnNeeds(ask).has('cad_more')).toBe(true)
     for (const ask of ['make a trail map', 'print it on Printer 2', 'the guardrails of the slicer']) expect(turnNeeds(ask).has('cad_more')).toBe(false)
+    // a handrail or a guardrail is a rail too, but not a guardrail for something, a limit
+    for (const ask of ['add a handrail up the stairs', 'Handrails on both sides', 'put a guardrail along the deck edge', 'guardrails round the balcony']) expect(turnNeeds(ask).has('cad_more')).toBe(true)
+    for (const ask of ['what guardrails for the AI are there?', 'a railway bridge model', 'derail the plan']) expect(turnNeeds(ask).has('cad_more')).toBe(false)
     // painting a design in filaments goes with the project's filament tools
     for (const n of ['paint.preview', 'paint.apply', 'paint.regions', 'project.add_filament']) expect(toolsetOf(t(n))).toBe('project')
     expect(toolsetOf(t('kb.filament'))).toBe('kb')
