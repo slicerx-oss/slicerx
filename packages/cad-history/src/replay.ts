@@ -440,6 +440,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   // added shape the kernel makes (a box, a cylinder, a cone) is its own solid; any other added part is a mesh part, and
   // elsewhere a shape becomes a solid when a step first works on it. The parts there stay as they are, exact or not.
   if (exact && p.op === 'parts.add') {
+    // Separate copies of an exact part (copyOf) are to be made from its solid by the engine's copy call, one move each
+    // (piece F). Until the engine has it they are the meshes the step stores: mesh parts beside the exact ones.
     const added: Flat[] = []
     for (const x of p.parts) added.push((strict ? (await addedSolids(call, [x], solids))?.[0] : undefined) ?? flat(x))
     return [...parts, ...added]

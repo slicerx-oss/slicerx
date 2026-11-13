@@ -201,7 +201,9 @@ export function tiltedParams(p: StepParams, t: StepTilt | undefined): StepParams
         return foot ? tiltMatrix(t, foot) : null
       }),
     )
-    return { ...p, parts }
+    // each copy now turns on its own, so the moves from the part it copied no longer hold
+    const { copyOf: _moves, ...rest } = p
+    return { ...rest, parts }
   }
   const foot = t.about ?? tiltFoot(p, t.up)
   const m = foot ? tiltMatrix(t, foot) : null

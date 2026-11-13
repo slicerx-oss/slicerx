@@ -270,10 +270,12 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         if (!src) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
         const r = (await ds.call('array', { mesh: item(d, part), spec })) as { transforms: number[][] }
         const back = invert(d.transform)
-        const parts = r.transforms.slice(1).map((t, k) => ({ ...bakeMesh({ name: `${src.name} ${k + 2}`, slot: src.slot, positions: Array.from(src.positions), indices: Array.from(src.indices) }, multiply(back, t)) }))
+        // each copy's move from the part, in the design's own frame, kept on the step (copyOf) with the copies' meshes
+        const moves = r.transforms.slice(1).map((t) => multiply(back, t))
+        const parts = moves.map((m, k) => ({ ...bakeMesh({ name: `${src.name} ${k + 2}`, slot: src.slot, positions: Array.from(src.positions), indices: Array.from(src.indices) }, m) }))
         // a name the project file would drop on reopening is not recorded, so the copies match the same way after it
         const n = d.parts.length
-        await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate`, ...(keepsArrayOf(src.name) ? { arrayOf: src.name } : {}) }, undefined, withFeature(i.feature))
+        await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate`, ...(keepsArrayOf(src.name) ? { arrayOf: src.name } : {}), copyOf: { part, moves } }, undefined, withFeature(i.feature))
         // separate copies a hair from another part are named, not moved
         const said = await seatNew(ds, d, Array.from({ length: Math.max(0, d.parts.length - n) }, (_, k) => n + k), seatOpts())
         return withSeat(added(d, `Arrayed ${copies} separate copies`), said)

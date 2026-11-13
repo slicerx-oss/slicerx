@@ -9,7 +9,7 @@ import { readTilt } from './tilt'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC, SKETCH_ANCHORS } from './file'
 import { MAX_STEPS_REPEATED, stepPatternProblem, type StepPattern } from './pattern'
 import { idNumber, MAX_PROJECTION, type Projection, type ProjectSource } from './project'
-import { followField, keepsArrayOf, MAX_PART_NAME, MAX_PART_SLOT, plainPartName, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
+import { followField, keepsArrayOf, keptCopyOf, MAX_PART_NAME, MAX_PART_SLOT, plainPartName, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
 const MAX_TRIANGLES = 20_000_000
@@ -271,8 +271,10 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       const parts = readStored(s['params']['parts'], files)
       if (!parts) return null
       // the part an array copied, by name: kept only as a name a part could have
-      const { arrayOf, ...rest } = params
-      params = { ...rest, parts, ...(keepsArrayOf(arrayOf) ? { arrayOf } : {}) }
+      const { arrayOf, copyOf, ...rest } = params
+      // each copy's move from the part it copied, kept only with one move for each part the step adds
+      const moves = keptCopyOf(copyOf, parts.length)
+      params = { ...rest, parts, ...(keepsArrayOf(arrayOf) ? { arrayOf } : {}), ...(moves ? { copyOf: moves } : {}) }
     }
     steps.push({
       id: s['id'],

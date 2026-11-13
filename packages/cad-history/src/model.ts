@@ -76,8 +76,12 @@ export type StepParams =
   | { op: 'repair' }
   | { op: 'simplify'; targetRatio: number }
   | { op: 'array.merged'; spec: ArraySpec }
-  /** Parts added; `arrayOf` when an array of separate copies made them: the name of the part copied, parts[k] being its copy k + 2 (the part itself is copy 1). */
-  | { op: 'parts.add'; parts: HistoryMesh[]; label: string; arrayOf?: string }
+  /**
+   * Parts added; `arrayOf` when an array of separate copies made them: the name of the part copied, parts[k] being its
+   * copy k + 2 (the part itself is copy 1). `copyOf` is the part copied, by its index before the step, and each copy's
+   * move from it in the object's own frame: parts[k] is that part's mesh moved by moves[k].
+   */
+  | { op: 'parts.add'; parts: HistoryMesh[]; label: string; arrayOf?: string; copyOf?: CopyOf }
   /** The parts put in a new order, no geometry changed: part i after the step is part `order[i]` before it. */
   | { op: 'parts.order'; order: number[] }
   /** The part prints in filament `slot` (from 1) from here on, its shape as it is; `name` is the part's when the step was made. */
@@ -305,6 +309,24 @@ export function partNameProblem(name: string, names: readonly string[], index: n
   const other = names.findIndex((n, i) => i !== index && plainPartName(n).toLowerCase() === key)
   if (other >= 0) return `part ${other} is already called ${names[other]}; give this one a name no other part has`
   return null
+}
+
+/** The part an array of separate copies copied, and each copy's move from it (a parts.add step's `copyOf`). */
+export interface CopyOf {
+  part: number
+  moves: Mat4[]
+}
+
+/**
+ * A parts.add step's `copyOf` as the project file may keep it: a part index and one move of 16 numbers for each of the
+ * step's `count` parts; undefined for anything else, which the step then goes without.
+ */
+export function keptCopyOf(v: unknown, count: number): CopyOf | undefined {
+  if (typeof v !== 'object' || v === null) return undefined
+  const { part, moves } = v as Record<string, unknown>
+  if (!Number.isInteger(part) || (part as number) < 0 || !Array.isArray(moves) || moves.length !== count) return undefined
+  if (!moves.every((m) => Array.isArray(m) && m.length === 16 && m.every((x) => typeof x === 'number' && Number.isFinite(x)))) return undefined
+  return { part: part as number, moves: moves.map((m) => [...(m as number[])]) }
 }
 
 let seq = 0
