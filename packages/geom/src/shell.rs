@@ -18,7 +18,7 @@ use crate::hollow::{self, HollowOptions};
 use crate::mesh::{self, TriMesh};
 use crate::vec3::{self, V3};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// A face to leave open: a point on it and its outward normal, world coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -362,6 +362,7 @@ fn open_by_room(
         };
         rooms.push(prism(w, faces, f, normal, past, voxel));
     }
+    corners(w, faces, opened, past, &mut rooms);
     let (inner, voxel) = hollow::inner_wall_through(w, hollow_opts, &rooms).map_err(|_| too_thick())?;
     if inner.triangles.is_empty() {
         return Err(too_thick());
@@ -378,6 +379,106 @@ fn open_by_room(
     // a body too thin for the wall has its only cavity in the room past the face, and loses nothing
     let hollowed = r.volume_mm3 < before * (1.0 - 1e-6);
     Ok((r.watertight && !r.empty && hollowed).then_some((out, r, voxel, None)))
+}
+
+/// The room past open faces that meet at an edge or a corner, added to `rooms`, so no wall is left along it.
+fn corners(w: &TriMesh, faces: &Faces, opened: &[u32], past: f64, rooms: &mut Vec<TriMesh>) {
+    let mut across: HashMap<(u32, u32), usize> = HashMap::new();
+    for (t, tri) in w.triangles.iter().enumerate() {
+        for i in 0..3 {
+            across.insert((tri[i], tri[(i + 1) % 3]), t);
+        }
+    }
+    let middle = |t: [u32; 3]| {
+        let [a, b, c] = w.corners(t);
+        vec3::scale(vec3::add(vec3::add(a, b), c), 1.0 / 3.0)
+    };
+    for (t, tri) in w.triangles.iter().enumerate() {
+        let f = faces.ids[t];
+        if !opened.contains(&f) {
+            continue;
+        }
+        let Some(&Surface::Plane { normal: n, .. }) = faces.table.get(f as usize) else {
+            continue;
+        };
+        for i in 0..3 {
+            let (a, b) = (tri[i], tri[(i + 1) % 3]);
+            let Some(&t2) = across.get(&(b, a)) else { continue };
+            // each edge between two open faces once; a kept neighbor keeps the lip the wall has always ended in
+            let g = faces.ids[t2];
+            if g <= f || !opened.contains(&g) {
+                continue;
+            }
+            let (p, q) = (w.positions[a as usize], w.positions[b as usize]);
+            let Some(m) = vec3::normalize(w.normal(w.triangles[t2])) else {
+                continue;
+            };
+            // a fold in: the rooms past the two faces already meet
+            if vec3::dot(m, vec3::sub(middle(*tri), p)) >= 0.0 {
+                continue;
+            }
+            let ring = [
+                [0.0; 3],
+                vec3::scale(n, past),
+                vec3::scale(vec3::add(n, m), past),
+                vec3::scale(m, past),
+            ];
+            rooms.push(swept(p, q, &ring));
+        }
+    }
+    // the corners where three open faces meet, each face once by its normal with a triangle's middle on it
+    let mut at: BTreeMap<u32, Vec<(V3, V3)>> = BTreeMap::new();
+    for (t, tri) in w.triangles.iter().enumerate() {
+        let f = faces.ids[t];
+        if !opened.contains(&f) {
+            continue;
+        }
+        let Some(&Surface::Plane { normal, .. }) = faces.table.get(f as usize) else {
+            continue;
+        };
+        for &v in tri {
+            let list = at.entry(v).or_default();
+            if !list.iter().any(|(m, _)| vec3::dot(*m, normal) > 1.0 - 1e-9) {
+                list.push((normal, middle(*tri)));
+            }
+        }
+    }
+    for (v, l) in at {
+        let &[(a, _), (b, _), (c, _)] = l.as_slice() else {
+            continue;
+        };
+        let p = w.positions[v as usize];
+        // a corner that folds in is inside the rooms already
+        let folds_in = |i: usize, j: usize| i != j && vec3::dot(l[i].0, vec3::sub(l[j].1, p)) >= 0.0;
+        if (0..3).any(|i| (0..3).any(|j| folds_in(i, j))) {
+            continue;
+        }
+        let ring = [
+            [0.0; 3],
+            vec3::scale(a, past),
+            vec3::scale(vec3::add(a, b), past),
+            vec3::scale(b, past),
+        ];
+        rooms.push(swept(p, vec3::add(p, vec3::scale(c, past)), &ring));
+    }
+}
+
+/// The closed prism of the polygon `ring`, offsets from a point, along the edge from `p` to `q`.
+fn swept(p: V3, q: V3, ring: &[V3]) -> TriMesh {
+    let mut m = TriMesh::default();
+    let a: Vec<u32> = ring.iter().map(|o| m.push_vertex(vec3::add(p, *o))).collect();
+    let b: Vec<u32> = ring.iter().map(|o| m.push_vertex(vec3::add(q, *o))).collect();
+    let n = ring.len();
+    for i in 1..n - 1 {
+        m.triangles.push([a[0], a[i + 1], a[i]]);
+        m.triangles.push([b[0], b[i], b[i + 1]]);
+    }
+    for i in 0..n {
+        let j = (i + 1) % n;
+        m.triangles.push([a[i], a[j], b[j]]);
+        m.triangles.push([a[i], b[j], b[i]]);
+    }
+    m
 }
 
 /// The body with the inner wall `inner` (as the hollow makes it, facing into the cavity) and each open face cut
@@ -516,6 +617,8 @@ mod tests {
     use super::*;
     use crate::boolean::{self, BoolOp};
     use crate::build;
+    use crate::fm::Fm;
+    use crate::poly2d::Polygon;
     use crate::vec3::Frame;
 
     fn o() -> BooleanOptions {
@@ -569,6 +672,91 @@ mod tests {
         assert!(r.exact && r.watertight && r.open_faces == 2);
         let want = 500.0 * 20.0 - (276.0 + 2.0 * 6.0) * 18.0;
         assert!((out.volume() - want).abs() < 1e-6, "{} vs {want}", out.volume());
+    }
+
+    /// 40 long in x, a box on a half round in y and z: flat at y 0, y 20 and z 20, round below z 10.
+    fn on_a_half_round() -> TriMesh {
+        let f = Frame {
+            origin: [0.0; 3],
+            u: [0.0, 1.0, 0.0],
+            v: [0.0, 0.0, 1.0],
+            w: [1.0, 0.0, 0.0],
+        };
+        let mut ring = vec![[0.0, 20.0], [0.0, 10.0]];
+        for i in 1..32 {
+            let a = std::f64::consts::PI * (1.0 + f64::from(i) / 32.0);
+            ring.push([10.0 + 10.0 * a.m_cos(), 10.0 + 10.0 * a.m_sin()]);
+        }
+        ring.extend([[20.0, 10.0], [20.0, 20.0]]);
+        build::extrude(&[Polygon::simple(ring)], &f, 0.0, 40.0).unwrap()
+    }
+
+    #[test]
+    fn open_faces_that_meet_leave_nothing_along_their_edge() {
+        let solid = |m: &TriMesh, p: V3| crate::convex::point_inside_mesh(m, p);
+        let side = OpenFace {
+            at: [20.0, 0.0, 15.0],
+            normal: [0.0, -1.0, 0.0],
+            key: None,
+        };
+        let m = on_a_half_round();
+        let (out, r) = shell(&m, &[top(20.0), side], 1.5, &o()).unwrap();
+        assert!(!r.exact && r.watertight && r.shells == 1, "{r:?}");
+        // nothing along the edge of the top and the side, which both open; the wall on the far side stays
+        for p in [[20.0, 0.3, 19.7], [20.0, 0.7, 19.3], [20.0, 1.0, 19.0]] {
+            assert!(!solid(&out, p), "{p:?}");
+        }
+        assert!(solid(&out, [20.0, 19.25, 15.0]));
+        // and nothing where the end opens as well, along its edges and at the corner of all three
+        let end = OpenFace {
+            at: [0.0, 10.0, 15.0],
+            normal: [-1.0, 0.0, 0.0],
+            key: None,
+        };
+        let (out, r) = shell(&m, &[top(20.0), side, end], 1.5, &o()).unwrap();
+        assert!(!r.exact && r.watertight && r.shells == 1, "{r:?}");
+        for p in [
+            [0.3, 0.3, 19.7],
+            [0.3, 10.0, 19.7],
+            [0.3, 0.3, 15.0],
+            [20.0, 0.3, 19.7],
+        ] {
+            assert!(!solid(&out, p), "{p:?}");
+        }
+        assert!(solid(&out, [40.0 - 0.75, 10.0, 15.0]));
+        // and nothing along the top of a half hull open on top and on its centerline, sent without its faces as an
+        // app sends a mesh
+        let f = Frame {
+            origin: [0.0; 3],
+            u: [0.0, 1.0, 0.0],
+            v: [0.0, 0.0, 1.0],
+            w: [1.0, 0.0, 0.0],
+        };
+        let outline = vec![
+            [0.0, 30.0],
+            [0.0, 8.0],
+            [3.0, 3.0],
+            [8.0, 0.5],
+            [15.0, 0.0],
+            [22.0, 2.0],
+            [25.0, 8.0],
+            [25.0, 30.0],
+        ];
+        let mut hull = build::extrude(&[Polygon::simple(outline)], &f, 0.0, 120.0).unwrap();
+        hull.faces = None;
+        let centerline = OpenFace {
+            at: [60.0, 0.0, 20.0],
+            normal: [0.0, -1.0, 0.0],
+            key: None,
+        };
+        let (out, r) = shell(&hull, &[top(30.0), centerline], 1.5, &o()).unwrap();
+        assert!(!r.exact && r.watertight && r.shells == 1, "{r:?}");
+        assert!(!solid(&out, [60.0, 0.3, 29.7]));
+        // the slanted kept face meets the centerline at z 8 and keeps its rounded lip, solid at y 0.05 up to z 9.4;
+        // a wall run on flush to z 10.9 would end in a knife edge too thin to print
+        assert!(solid(&out, [60.0, 0.1, 9.0]));
+        assert!(!solid(&out, [60.0, 0.1, 10.0]));
+        assert!(!solid(&out, [60.0, 0.1, 11.5]));
     }
 
     #[test]
