@@ -336,6 +336,20 @@ jobs:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
           ALL: ${{ steps.scope.outputs.all }}
           PACKAGES: ${{ steps.scope.outputs.packages }}
+      # The creative replay's scored count against main's (scripts/ci/creative-guard.mjs): a change that leaves a
+      # recording stale, so out of the score, fails here unless it recaptures a recording or lowers the count in
+      # packages/mcp/evals/creative/expected-scored.json. The replay builds real geometry, so it runs where this job
+      # built the engine and tests the MCP server, which the merge queue always does. A recording that no longer
+      # replays as captured makes eval:creative exit 1 (its own report); the count is read from its summary either way.
+      - if: steps.scope.outputs.engine == 'true' && (steps.scope.outputs.all != 'false' || contains(format(' {0} ', steps.scope.outputs.packages), ' @slicerx/mcp '))
+        name: Creative replay keeps main's scored count
+        env:
+          MQ_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          base=HEAD^1
+          if [ -n "$MQ_BASE_SHA" ]; then git fetch -q --depth=1 origin "$MQ_BASE_SHA" && base=$MQ_BASE_SHA; fi
+          pnpm --filter @slicerx/mcp eval:creative --summary "$RUNNER_TEMP/creative.json" || true
+          node scripts/ci/creative-guard.mjs "$RUNNER_TEMP/creative.json" "$base"
       - if: always()
         run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
         env:

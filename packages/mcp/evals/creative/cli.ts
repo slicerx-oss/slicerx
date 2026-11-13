@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // pnpm --filter @slicerx/mcp eval:creative [--prompt id,id] [--log] [--change "what changed"] [--no-default-answer]
+//   [--summary file]: also write the counts as JSON (scored, passed, stale, broken, skipped, waiting, all), for
+//   scripts/ci/creative-guard.mjs
 //   live: --mode live --model id --usd-in n --usd-out n [--cap-usd 1.50] [--record]
 //         [--long-above tokens --usd-in-long n --usd-out-long n] [--usd-per-search 0.01]
 //         [--provider openai|anthropic|openai-compatible] [--base-url http://127.0.0.1:11434/v1]
@@ -37,7 +39,7 @@
 // (body-facts.ts WALL_BUDGET), so a loaded machine reads the wall a quiet one does, live or replayed.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
-import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createTransportClient, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, type LlmClient } from '@slicerx/pilot'
 import { createNodeTransport, EVALS_DIR, evalGeom } from '@slicerx/pilot/evals/node'
@@ -226,5 +228,9 @@ if (flag('log') && scores.length) {
     appendFileSync(logMd, `| ${ts.slice(0, 16).replace('T', ' ')} | ${mode} | ${modelName} | ${line.scenarios} | 1 | ${line.value} | ${Math.round(line.pass_rate * 100)}% | ${line.tool_calls_per_task} | 0 | ${notes.filter(Boolean).join('; ')} |\n`)
   }
 }
+
+// the counts on their own, for the stale guard (scripts/ci/creative-guard.mjs); all: every prompt was run
+const summary = arg('summary')
+if (summary) writeFileSync(summary, `${JSON.stringify({ mode, all: !ids, scored: scores.length, passed: passes.unaided.length + passes.afterOneAnswer.length, stale, broken, skipped, waiting })}\n`)
 
 process.exit(mode === 'replay' && broken.length ? 1 : 0)
