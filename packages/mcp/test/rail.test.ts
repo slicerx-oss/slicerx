@@ -4,6 +4,7 @@
 // top of a tray as a part of its own, along one side joined to it, and refused in words when it would not print or
 // the line is not one. Checked by the reply's rail facts, the steps it adds, and the parts' sizes.
 import { describe, expect, it } from 'vitest'
+import { RAIL_UNDO_NOTE } from '../src/modeling-tools'
 import { insetOutline, railLayout } from '../src/rail'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -121,8 +122,12 @@ describe('a rail on a design', () => {
   }, 60_000)
 
   it('runs along one side joined to the tray', async () => {
-    const { ok, d } = await tray()
-    const r = await ok('slicerx_geom_rail', { design: d, path: { frame: { origin: [0, 0, 5], normal: [0, 0, 1] }, points: [[-18, -9], [18, -9]] }, height_mm: 2, part: 0, join: true })
+    const { h, d } = await tray()
+    const res = await h.call('slicerx_geom_rail', { design: d, path: { frame: { origin: [0, 0, 5], normal: [0, 0, 1] }, points: [[-18, -9], [18, -9]] }, height_mm: 2, part: 0, join: true })
+    expect(res.isError, text(res)).toBeFalsy()
+    const r = data<{ output: Summary }>(res).output
+    // the reply says one undo takes both steps, and how to change one
+    expect(text(res)).toContain(`Railed: steps 2 and 3, 13 posts (2 on corners) at most 3 mm apart along 36 mm, 2 mm tall, joined to Body; ${RAIL_UNDO_NOTE}`)
     expect(r.rail).toMatchObject({ part: 0, closed: false, posts: 13, cornerPosts: 2, spacingMm: 3, lengthMm: 36 })
     expect(r.parts).toHaveLength(1)
     expect(r.sizeMm[2]).toBeCloseTo(7, 3)
