@@ -70,6 +70,26 @@ describe.skipIf(process.platform === 'win32')('the served design engine', () => 
     expect(new Set(calls.map((c) => c.pid)).size).toBe(2)
   }, 30_000)
 
+  it('reads no bytes of a process that ended into the next one, though they come after it has ended', async () => {
+    const { bin, read } = setUp()
+    // the late bytes come once the next process has said HELLO, and before its first answer is read
+    vi.stubEnv('SX_STANDIN_LATE_MS', '200')
+    const engine = servedGeomEngine(bin, { perCall: geomEngine(bin) })
+    expect(await engine.keepsBodies()).toBe(true)
+    await expect(engine('test.late', {})).rejects.toThrow(/ended before it answered/)
+    expect(await engine.keepsBodies()).toBe(true)
+    // the next process's answers, each its own, while the ended one's late bytes arrive
+    for (let k = 1; k <= 3; k++) {
+      const made = (await engine('brep.extrude', { withKeys: true })) as { body: number }
+      expect(made.body).toBe(2 * PER_PROCESS + k)
+      await new Promise((r) => setTimeout(r, 150))
+    }
+    // all three in the one process started after it
+    const calls = read().filter((c) => c.op)
+    expect(calls.map((c) => c.op)).toEqual(['brep.extrude', 'brep.extrude', 'brep.extrude'])
+    expect(new Set(calls.map((c) => c.pid)).size).toBe(1)
+  }, 30_000)
+
   it('runs an sx-geom with no serve mode once per call, as before, holding no bodies', async () => {
     const { bin, read } = setUp()
     vi.stubEnv('SX_STANDIN_NO_SERVE', '1')

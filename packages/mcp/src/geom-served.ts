@@ -120,7 +120,6 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
   // the process that runs now; 0 when none does
   let generation = 0
   let made = 0
-  let pending: Uint8Array = new Uint8Array(0)
   let running: (Job & { done: (frame: Uint8Array) => void; fail: (e: Error) => void }) | null = null
   const queue: Job[] = []
   let seq = 0
@@ -142,7 +141,9 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
       const c = spawn(bin, serveArgs, { stdio: ['pipe', 'pipe', 'ignore'] })
       track(c)
       let greeted = false
-      pending = new Uint8Array(0)
+      // this process's bytes not yet read as frames: its own, so bytes it sends after it has ended (a process it left
+      // holding its output) never mix with the next one's
+      let pending: Uint8Array = new Uint8Array(0)
       const refuse = () => {
         if (greeted) return
         clearTimeout(timer)
@@ -157,6 +158,8 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
         else ended(c)
       })
       c.stdout!.on('data', (d: Buffer) => {
+        // a process that ended, or was replaced, answers no call: what it still sends is dropped
+        if (greeted && child !== c) return
         pending = concat(pending, new Uint8Array(d))
         if (!greeted) {
           if (pending.length < HELLO_BYTES.length) return
