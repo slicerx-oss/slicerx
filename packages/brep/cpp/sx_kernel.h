@@ -116,6 +116,30 @@ inline const SmVector3d& sx_normal(const SmPolyVertAuxData& a) { return a.m_vNor
 inline ULONG sx_failed_face(const SmTessellationFailure& f) { return f.lFaceIndex; }
 inline int sx_failed_stage(const SmTessellationFailure& f) { return static_cast<int>(f.eStage); }
 inline SmLong sx_failed_status(const SmTessellationFailure& f) { return f.eStatus; }
+// where on its face's surface a mesh point is, in the surface's own two parameters
+inline double sx_uv(const SmPolyVertAuxData& a, int axis) { return axis == 0 ? a.m_vUV.x : a.m_vUV.y; }
+// a surface at a place in its own parameters: the point there and the unit normal, which is left all zero where
+// the surface has none (where it narrows to a point)
+inline SmLong sx_surface_at(const SmSurface& s, double u, double v, SmVector3d& point, SmVector3d& normal)
+{
+    const SmVector2d uv(u, v);
+    const SmLong st = SmApiEvaluateSurfacePoint(&s, uv, point);
+    if (st != SM_SUCCESS) return st;
+    SmVector3d n(0.0, 0.0, 0.0);
+    if (SmApiEvaluateSurfaceNormal(&s, uv, n) == SM_SUCCESS) normal = n;
+    return st;
+}
+// the point of a surface nearest a point in space, its parameters there and how far it is
+inline SmLong sx_surface_nearest(const SmSurface& s, const SmVector3d& p, SmVector3d& on, double& u, double& v, double& far)
+{
+    SmTArray<SmPoint2d> uvs;
+    const SmLong st = SmApiSurfaceClosestPoint(&s, p, on, uvs, far);
+    if (st != SM_SUCCESS) return st;
+    if (uvs.GetSize() == 0) return 0;
+    u = uvs[0].x;
+    v = uvs[0].y;
+    return st;
+}
 // a surface's own test for lying within a distance of one plane; it changes nothing
 inline bool sx_flat(const SmSurface& s, double within) { return const_cast<SmSurface&>(s).IsPlanar(within) != 0; }
 // a long attribute, made in the kernel's context as its objects are; the object it is added to owns it

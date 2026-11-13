@@ -8,6 +8,7 @@
 
 use crate::body::{Body, Curve, Surface};
 use crate::error::{Error, Result};
+use crate::kernel::{EdgeRef, FaceRef};
 use crate::values::{Params, Polygons, Vec3};
 use std::collections::HashMap;
 
@@ -101,6 +102,9 @@ pub struct Mesh {
     /// with a corner at the cone's tip, where the surface has no one normal and the kernel stores a single
     /// direction for every triangle around it.
     pub normals: Vec<Option<[[f64; 3]; 3]>>,
+    /// For each triangle, where each of its corners is on its face's surface, in the surface's own two parameters
+    /// ([`crate::Face::point_at`]). None when the kernel stored no place at one of the three.
+    pub uvs: Vec<Option<[[f64; 2]; 3]>>,
     /// The surface of every face of the body, in face order.
     pub surfaces: Vec<Surface>,
     /// Every edge of the body, in edge order.
@@ -276,21 +280,45 @@ impl Body {
     /// The body as triangles. The kernel tessellates every face or none: a face it cannot do is an error that
     /// names it.
     pub fn tessellate(&self, how: &Tessellation) -> Result<Mesh> {
+        self.triangles(how, true)
+    }
+
+    /// The body as triangles just as the kernel made them, which may miss the chord asked. For measuring only: the
+    /// points the kernel puts on the body's edges, which are on the edges' curves whatever the faces' triangles
+    /// are, and a test's own measure of a body. No operation hands these out.
+    #[doc(hidden)]
+    pub fn tessellate_as_made(&self, how: &Tessellation) -> Result<Mesh> {
+        self.triangles(how, false)
+    }
+
+    fn triangles(&self, how: &Tessellation, held_to_chord: bool) -> Result<Mesh> {
         let params = how.checked()?;
         let solid = self.solid();
+        let mut polygons = solid.tessellate(params)?;
+        let face_list = solid.faces()?;
+        let edge_list = solid.edges()?;
+        let joined = faces_of_edges(&face_list, &edge_list)?;
+        // the kernel does not always hold the chord it is asked for: read it back, and split what is past it
+        if held_to_chord && params.chord > 0.0 {
+            crate::readback::held_to_chord(&face_list, &edge_list, &joined, &mut polygons, params.chord)?;
+        }
         let Polygons {
             positions,
             triangles,
             faces,
             normals,
             records,
-        } = solid.tessellate(params)?;
+            uvs,
+        } = polygons;
+        let uvs = uvs
+            .into_iter()
+            .map(|[first, second, third]| Some([first?, second?, third?]))
+            .collect();
         let positions: Vec<[f64; 3]> = positions.into_iter().map(Into::into).collect();
         if positions.iter().flatten().any(|c| !c.is_finite()) {
             return Err(mesh_error("the kernel returned a point that is not finite"));
         }
         let at = |i: u32| positions[i as usize];
-        let face_list = solid.faces()?;
         let surfaces: Vec<Surface> = face_list.iter().map(|f| f.shape().into()).collect();
         let normals = triangles
             .iter()
@@ -304,26 +332,6 @@ impl Body {
                 corner_normals(corners, stored)
             })
             .collect();
-        let edge_list = solid.edges()?;
-        let mut joined = Vec::with_capacity(edge_list.len());
-        for (i, edge) in edge_list.iter().enumerate() {
-            let on: Vec<u32> = edge
-                .faces()
-                .iter()
-                .filter_map(|f| face_list.iter().position(|g| g == f))
-                .filter_map(|f| u32::try_from(f).ok())
-                .collect();
-            joined.push(match on[..] {
-                [a, b] => [a, b],
-                [a] => [a, a],
-                _ => {
-                    return Err(mesh_error(&format!(
-                        "edge {i} lies on {} faces of the body, not two",
-                        on.len()
-                    )));
-                }
-            });
-        }
         let middle = |[a, b]: [u32; 2]| {
             let (a, b) = (at(a), at(b));
             [0, 1, 2].map(|i| f64::midpoint(a[i], b[i]))
@@ -347,10 +355,35 @@ impl Body {
             triangles,
             faces,
             normals,
+            uvs,
             surfaces,
             edges,
         })
     }
+}
+
+/// The two faces each edge joins, as places in `faces`. A seam, where a face meets itself, has the same face twice.
+fn faces_of_edges(faces: &[FaceRef<'_>], edges: &[EdgeRef<'_>]) -> Result<Vec<[u32; 2]>> {
+    let mut joined = Vec::with_capacity(edges.len());
+    for (i, edge) in edges.iter().enumerate() {
+        let on: Vec<u32> = edge
+            .faces()
+            .iter()
+            .filter_map(|f| faces.iter().position(|g| g == f))
+            .filter_map(|f| u32::try_from(f).ok())
+            .collect();
+        joined.push(match on[..] {
+            [a, b] => [a, b],
+            [a] => [a, a],
+            _ => {
+                return Err(mesh_error(&format!(
+                    "edge {i} lies on {} faces of the body, not two",
+                    on.len()
+                )));
+            }
+        });
+    }
+    Ok(joined)
 }
 
 fn mesh_error(why: &str) -> Error {
@@ -369,6 +402,87 @@ mod tests {
     )]
     fn v(x: f64, y: f64, z: f64) -> Option<Vec3> {
         Some(Vec3 { x, y, z })
+    }
+
+    /// The kernel's own triangles of a body, and the same held to the chord.
+    fn made_and_held(body: &Body) -> (Polygons, Polygons) {
+        let params = Tessellation::default().checked().unwrap();
+        let solid = body.solid();
+        let made = solid.tessellate(params).unwrap();
+        let (faces, edges) = (solid.faces().unwrap(), solid.edges().unwrap());
+        let joined = faces_of_edges(&faces, &edges).unwrap();
+        let mut held = made.clone();
+        crate::readback::held_to_chord(&faces, &edges, &joined, &mut held, params.chord).unwrap();
+        (made, held)
+    }
+
+    /// The farthest a mesh's triangles are from their faces, at their middles and the middles of their sides.
+    fn farthest(body: &Body, mesh: &Polygons) -> f64 {
+        let faces = body.solid().faces().unwrap();
+        let mut worst = 0.0_f64;
+        for (corners, &face) in mesh.triangles.iter().zip(&mesh.faces) {
+            let [pa, pb, pc]: [[f64; 3]; 3] = corners.map(|vertex| mesh.positions[vertex as usize].into());
+            let mid = |points: &[[f64; 3]]| -> [f64; 3] {
+                #[allow(clippy::cast_precision_loss, reason = "two or three")]
+                let n = points.len() as f64;
+                [0, 1, 2].map(|k| points.iter().map(|p| p[k]).sum::<f64>() / n)
+            };
+            for sample in [mid(&[pa, pb, pc]), mid(&[pa, pb]), mid(&[pb, pc]), mid(&[pc, pa])] {
+                worst = worst.max(faces[face as usize].distance_to(sample.into()).unwrap());
+            }
+        }
+        worst
+    }
+
+    // triangles the kernel made within the chord come back from the read-back exactly as it made them
+    #[test]
+    fn a_mesh_within_its_chord_is_left_as_the_kernel_made_it() {
+        if !crate::KERNEL {
+            return;
+        }
+        for (name, body) in [
+            ("box", Body::cuboid([0.0; 3], [3.0, 4.0, 5.0])),
+            ("cylinder", Body::cylinder([0.0; 3], 6.0, 10.0)),
+            ("cone", Body::cone([0.0; 3], 6.0, 2.0, 10.0)),
+        ] {
+            let body = body.unwrap();
+            let (made, held) = made_and_held(&body);
+            assert!(
+                farthest(&body, &made) <= Tessellation::default().chord_mm,
+                "the {name} is past the chord as the kernel made it"
+            );
+            assert!(
+                held == made,
+                "the {name}'s mesh was changed: {} triangles, {} as the kernel made it",
+                held.triangles.len(),
+                made.triangles.len()
+            );
+        }
+    }
+
+    // the kernel's triangles of a ball of 5 mm are a fifth past the 0.01 mm chord asked, all over it; held to the
+    // chord they are within it
+    #[test]
+    fn a_ball_the_kernel_leaves_past_the_chord_is_brought_within_it() {
+        if !crate::KERNEL {
+            return;
+        }
+        let chord = Tessellation::default().chord_mm;
+        let ball = Body::sphere([0.0; 3], 5.0).unwrap();
+        let (made, held) = made_and_held(&ball);
+        let (before, after) = (farthest(&ball, &made), farthest(&ball, &held));
+        println!(
+            "BALL {} triangles {before:.5} mm as made, {} triangles {after:.5} mm held",
+            made.triangles.len(),
+            held.triangles.len()
+        );
+        assert!(
+            before > chord,
+            "the kernel's ball is within the chord now: {before}"
+        );
+        assert!(after <= chord, "{after}");
+        assert!(held.triangles.len() > made.triangles.len());
+        assert!(held.normals.iter().flatten().all(Option::is_some));
     }
 
     #[test]

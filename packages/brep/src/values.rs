@@ -88,4 +88,7 @@ pub(crate) struct Polygons {
     /// For each triangle corner, which of the kernel's records its normal comes from, or none. The kernel keeps one
     /// record for a vertex on a face, and two where the face meets itself along a seam.
     pub records: Vec<[Option<u32>; 3]>,
+    /// For each triangle corner, where it is on its face's surface, in the surface's own two parameters, or none
+    /// when the kernel stored nothing there.
+    pub uvs: Vec<[Option<[f64; 2]>; 3]>,
 }

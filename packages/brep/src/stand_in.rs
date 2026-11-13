@@ -102,6 +102,14 @@ pub(crate) fn take_over(_number: i64) -> Option<Solid> {
 }
 
 impl FaceRef<'_> {
+    pub(crate) fn at(self, _uv: [f64; 2]) -> Result<(Vec3, Option<Vec3>)> {
+        match *self.solid {}
+    }
+
+    pub(crate) fn nearest(self, _point: Vec3) -> Result<(Vec3, [f64; 2], f64)> {
+        match *self.solid {}
+    }
+
     pub(crate) fn distance_to(&self, _point: Vec3) -> Result<f64> {
         match *self.solid {}
     }
@@ -136,7 +144,11 @@ impl<'s> EdgeRef<'s> {
         match *self.solid {}
     }
 
-    pub(crate) fn distance_to(&self, _point: Vec3) -> Result<f64> {
+    pub(crate) fn nearest(&self, _point: Vec3) -> Result<(Vec3, f64)> {
+        match *self.solid {}
+    }
+
+    pub(crate) fn distance_to(self, _point: Vec3) -> Result<f64> {
         match *self.solid {}
     }
 
