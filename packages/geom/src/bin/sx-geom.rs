@@ -2,6 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! `sx-geom <operation> [--out-dir DIR] < request.json > response.json`; `sx-geom --version` prints the version.
 //!
+//! `sx-geom serve` keeps the engine running for a host: calls and answers as frames on stdin and stdout
+//! (`sx_geom::serve`), one at a time, with exact bodies held by number from call to call. It ends when stdin closes,
+//! a running call with it, and on Unix when its parent process goes, so no engine outlives its host.
+//!
 //! meshes come back as numbers (`positions` and `indices`, as `meshOutput` asks), or with `--out-dir` as stl files
 //! (`stlPath`). `format.read3mf` reads a 3mf named by `{"data":{"path":"file.3mf"}}` this way: each part's mesh in
 //! its object's space, its vertices shared as the file has them.
@@ -17,6 +21,11 @@ fn main() {
     if matches!(args.first().map(String::as_str), Some("--version" | "-V")) {
         println!("sx-geom {}", env!("CARGO_PKG_VERSION"));
         return;
+    }
+    if args.len() == 1 && args.first().map(String::as_str) == Some("serve") {
+        let output = std::io::BufWriter::with_capacity(1 << 20, std::io::stdout().lock());
+        let served = sx_geom::serve::serve_watched(std::io::stdin(), output);
+        std::process::exit(i32::from(served.is_err()));
     }
     let code = match run(&args) {
         Ok(out) => {
@@ -34,7 +43,7 @@ fn main() {
 fn run(args: &[String]) -> sx_geom::Result<Value> {
     let Some(op) = args.first() else {
         return Err(sx_geom::Error::invalid_arg(
-            "usage: sx-geom <operation> [--out-dir DIR] < request.json",
+            "usage: sx-geom <operation> [--out-dir DIR] < request.json, or sx-geom serve",
         ));
     };
     if op == "ops" || op == "--help" || op == "-h" {
