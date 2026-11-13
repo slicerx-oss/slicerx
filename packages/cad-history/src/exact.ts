@@ -7,7 +7,7 @@
 // leaves is the solid's tessellation, with the solid's faces and keys.
 import type { FaceFrame, FreeShape, MovedFace, Polygon, Shape, Vec2, Vec3 } from './types'
 import { placeBody } from './numbering'
-import { direction, findTriangle, IDENTITY, invert, multiply, newSlot, point, type HistoryMesh, type Mat4, type PaintLayer, type PaintTexts, type PrimitiveSpec, type SolidSpec, type Step, type StepParams } from './model'
+import { direction, findTriangle, IDENTITY, invert, multiply, newSlot, point, type HistoryMesh, type Mat4, type PaintLayer, type PaintTarget, type PaintTexts, type PrimitiveSpec, type SolidSpec, type Step, type StepParams } from './model'
 
 export type Call = (op: string, request: unknown) => Promise<unknown>
 
@@ -231,6 +231,39 @@ export function bandCrossings(m: Pick<ExactPart, 'positions' | 'indices' | 'face
 export function bandFaceIds(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, transform: Mat4, band: { lo: number; hi: number }): Set<number> {
   const out = new Set<number>()
   for (const [id, e] of faceHeights(m, transform)) if (e.mid >= band.lo - BAND_EDGE_EPS && e.mid <= band.hi + BAND_EDGE_EPS) out.add(id)
+  return out
+}
+
+/** The way each named direction of a paint target points, in world, as the engine reads them (paint_ops.rs). */
+const SIDES: Record<string, Vec3> = { bottom: [0, 0, -1], top: [0, 0, 1], front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] }
+
+/**
+ * The faces a direction target paints whole on an exact part: of the faces with a triangle it picked (`picked`), those
+ * whose own normal, the mean of their triangles' by area in world at `transform`, is within the target's angle (30
+ * degrees when left out, as the engine takes it). A curved face that only partly faces that way is left out.
+ */
+export function facingFaceIds(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, transform: Mat4, t: Extract<PaintTarget, { kind: 'direction' }>, picked: Iterable<number>): Set<number> {
+  const f = m.faces
+  const out = new Set<number>()
+  if (!f) return out
+  const d = typeof t.direction === 'string' ? SIDES[t.direction]! : t.direction
+  const l = Math.hypot(...d) || 1
+  const cos = Math.cos(((t.angleDeg ?? 30) * Math.PI) / 180)
+  const touched = new Set([...picked].map((t) => f.ids[t]!))
+  const sum = new Map<number, Vec3>()
+  const at = (v: number) => point(transform, m.positions, 3 * v)
+  for (let k = 0; k < Math.floor(m.indices.length / 3); k++) {
+    const id = f.ids[k]!
+    if (!touched.has(id)) continue
+    const [a, b, c] = [at(m.indices[3 * k]!), at(m.indices[3 * k + 1]!), at(m.indices[3 * k + 2]!)]
+    const n = cross([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]])
+    const s = sum.get(id) ?? [0, 0, 0]
+    sum.set(id, [s[0] + n[0], s[1] + n[1], s[2] + n[2]])
+  }
+  for (const [id, n] of sum) {
+    const len = Math.hypot(...n)
+    if (len > 0 && (n[0] * d[0] + n[1] * d[1] + n[2] * d[2]) / (len * l) >= cos - 1e-9) out.add(id)
+  }
   return out
 }
 
