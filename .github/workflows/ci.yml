@@ -1125,7 +1125,7 @@ jobs:
     needs: detect
     if: (github.event_name == 'workflow_dispatch' && inputs.geom_windows) || (needs.detect.outputs.desktop_geom == 'true' && needs.detect.outputs.queued != 'true' && github.event_name != 'merge_group' && vars.GEOM_WINDOWS_LANE == 'true')
     runs-on: [self-hosted, sx-gpu]
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
@@ -1156,7 +1156,10 @@ jobs:
       - name: Placeholder frontend
         run: mkdir -p apps/desktop/dist && echo '<!doctype html><title>ci</title>' > apps/desktop/dist/index.html
       - run: bash scripts/ci/heavy.sh --class engine timeout 1500 cargo clippy --locked -p slicerx-desktop --features native-geom --all-targets -- -D warnings
+      # Each test step is built first under the build limit, so its own limit times only the tests.
+      - run: bash scripts/ci/heavy.sh --class engine timeout 1500 cargo test --locked -p slicerx-desktop --features native-geom --bin slicerx --no-run
       - run: bash scripts/ci/heavy.sh --class engine timeout 900 cargo test --locked -p slicerx-desktop --features native-geom --bin slicerx geom_host
+      - run: bash scripts/ci/heavy.sh --class engine timeout 1500 cargo test --locked -p sx-geom --features brep --test serve --test brep_free --no-run
       - run: bash scripts/ci/heavy.sh --class engine timeout 900 cargo test --locked -p sx-geom --features brep --test serve --test brep_free
       - run: bash scripts/ci/heavy.sh --class engine timeout 1500 cargo build --locked -p slicerx-desktop --features native-geom
       - if: failure()
