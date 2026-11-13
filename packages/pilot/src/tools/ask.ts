@@ -227,12 +227,24 @@ export function sheetProblems(i: SheetIn): Issue[] {
   return out
 }
 
+/** A row's note with something in it, trimmed; a note of only spaces says nothing. */
+const noteText = (d: { note?: string | undefined }): string | undefined => d.note?.trim() || undefined
+
+/**
+ * A looked-up row names its page by sourceTitle or sourceUrl. One that gives neither but says where the value came from
+ * in its note ("269 m real at 1:1250") takes the note as its sourceTitle, cut to the 80 characters a title holds.
+ */
+const lookupTitle = (d: z.infer<typeof dim>): { sourceTitle?: string } => {
+  const note = d.source === 'lookup' && d.sourceTitle === undefined && d.sourceUrl === undefined ? noteText(d) : undefined
+  return note ? { sourceTitle: note.slice(0, 80).trimEnd() } : {}
+}
+
 /** The checked input as the sheet carries it: each row's place and each solid with only its own fields. */
 export function sheetOf(i: SheetIn): Omit<PilotSheet, 'id'> {
   return {
     title: i.title,
     views: i.views,
-    dims: i.dims.map(({ at: a, ...d }) => ({ ...d, ...(a ? { at: placeOf(a) } : {}) }) as PilotDim),
+    dims: i.dims.map(({ at: a, ...d }) => ({ ...d, ...lookupTitle(d), ...(a ? { at: placeOf(a) } : {}) }) as PilotDim),
     ...(i.part ? { part: i.part.map(solidOf) } : {}),
     ...(i.design ? { design: i.design } : {}),
     ...(i.fits ? { fits: true } : {}),
@@ -263,7 +275,7 @@ export function sheetTool(): PilotTool<never> {
       })
       .refine((i) => new Set(i.dims.map((d) => d.key)).size === i.dims.length, 'each dimension needs its own key')
       .refine((i) => i.dims.every((d) => (d.min === undefined || d.value >= d.min) && (d.max === undefined || d.value <= d.max)), 'a value is outside its own min and max')
-      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined || d.sourceTitle !== undefined), 'a looked-up value needs its sourceTitle, or its sourceUrl')
+      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined || d.sourceTitle !== undefined || noteText(d) !== undefined), 'a looked-up value needs its sourceTitle, or its sourceUrl')
       .superRefine((i, ctx) => {
         for (const p of sheetProblems(i)) ctx.addIssue({ code: 'custom', path: p.path, message: p.message })
       }),

@@ -72,6 +72,23 @@ describe('pilot.sheet', () => {
     expect((sheet as { sheet: { dims: { sourceTitle?: string; sourceUrl?: string }[] } }).sheet.dims[0]).toMatchObject({ sourceTitle: 'apple.com' })
   })
 
+  it('shows a looked-up value with only a note, taking the note as its page title, and refuses one with none of the three', async () => {
+    const lookup = { key: 'hull_length', label: 'Hull length', value: 215, unit: 'mm', source: 'lookup' }
+    const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims: [{ ...lookup, note: '269 m real at 1:1250' }] } }] }], () => ({}))
+    const sheet = events.find((e) => e.type === 'sheet') as { sheet: PilotSheet } | undefined
+    expect(sheet?.sheet.dims[0]).toMatchObject({ sourceTitle: '269 m real at 1:1250', note: '269 m real at 1:1250' })
+    expect(sheet?.sheet.dims[0]!.sourceUrl).toBeUndefined()
+    // a long note is cut to the 80 characters a title holds
+    const long = 'Overall length 269.1 m, from the builder plans as drawn at 1:1250 for the display case model'
+    expect(sheetOf(sheetTool().input.parse({ title: 'Sizes', dims: [{ ...lookup, note: long }] }) as never).dims[0]!.sourceTitle).toBe(long.slice(0, 80).trimEnd())
+    // with no title, link or note, or a note of only spaces, the sheet is refused in the same words as before
+    for (const dims of [[lookup], [{ ...lookup, note: '   ' }]]) {
+      const refused = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims } }] }], () => ({}))
+      expect(refused.some((e) => e.type === 'sheet'), JSON.stringify(dims)).toBe(false)
+      expect(refused.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('a looked-up value needs its sourceTitle, or its sourceUrl') })
+    }
+  })
+
   it('shows a count row with no place among sizes that have one, since a count is no length on the part', async () => {
     const at = { a: [0, 0, 0], b: [40, 0, 0] }
     const dims = [
