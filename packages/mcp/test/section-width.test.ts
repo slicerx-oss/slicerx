@@ -73,6 +73,30 @@ describe('how thin a loft section is across', () => {
   })
 })
 
+// the last two sections of three recorded hull lofts, as their histories hold them: a bow the check fails at 0.75 mm, a
+// stern the check passes at 1.12 mm (0.52 mm at its end face, 0.845 mm 0.4 mm in), and a stem the check fails at 0.36 mm
+const RUN1_BOW = [{ frame: { origin: [205, 0, 0], normal: [1, 0, 0] }, loops: [{ points: [[-3.5, 20.5], [3.5, 20.5], [3.36, 13.98], [2.63, 8.9], [1.23, 6], [-1.23, 6], [-2.63, 8.9], [-3.36, 13.98]] }] }, { frame: { origin: [214, 0, 0], normal: [1, 0, 0] }, loops: [{ points: BOW }] }]
+const RUN2_STERN = [{ frame: { origin: [0.5, 0, 0], normal: [1, 0, 0] }, loops: [{ points: [[-0.5, 15.5], [0.5, 15.5], [0.5, 13.3], [0.45, 11.65], [0.25, 10], [-0.25, 10], [-0.45, 11.65], [-0.5, 13.3]] }] }, { frame: { origin: [8, 0, 0], normal: [1, 0, 0] }, loops: [{ points: [[-4.5, 15.2], [4.5, 15.2], [4.5, 11.12], [4.05, 8.06], [2.25, 5], [-2.25, 5], [-4.05, 8.06], [-4.5, 11.12]] }] }]
+const spline = (top: number[], points: number[][]) => ({ start: [-top[0]!, top[1]!], segments: [{ type: 'line', to: [top[0]!, top[1]!] }, { type: 'spline', to: [-top[0]!, top[1]!], points }] })
+const SHIP_STEM = [
+  { frame: { origin: [184, 128, 0], normal: [1, 0, 0] }, loops: [spline([3.2, 9.1], [[3.093, 7.913], [2.785, 6.209], [2.305, 4.413], [1.704, 2.762], [1.051, 1.442], [0.431, 0.593], [0, 0.3], [-0.431, 0.593], [-1.051, 1.442], [-1.704, 2.762], [-2.305, 4.413], [-2.785, 6.209], [-3.093, 7.913]])] },
+  { frame: { origin: [190, 128, 0], normal: [1, 0, 0] }, loops: [spline([0.25, 9.35], [[0.239, 8.813], [0.207, 7.542], [0.16, 5.855], [0.106, 4.076], [0.055, 2.525], [0.016, 1.472], [0, 1.1], [-0.016, 1.472], [-0.055, 2.525], [-0.106, 4.076], [-0.16, 5.855], [-0.207, 7.542], [-0.239, 8.813]])] },
+] as never[]
+
+describe('a thin end section that is only the taper of the end', () => {
+  it('still names the recorded bow and stem the check fails, and no longer the stern it passes', () => {
+    expect(thinSections(RUN1_BOW as never, 0.4)).toEqual([{ index: 2, of: 2, mm: 0.48 }])
+    expect(thinSections(SHIP_STEM, 0.4)).toEqual([{ index: 2, of: 2, mm: 0.04 }])
+    expect(thinSections(RUN2_STERN as never, 0.4)).toEqual([])
+  })
+
+  it('reads only the first and last sections as ends, and not a section with no frame', () => {
+    // the same thin box in the middle of a loft is a section of it, never its end
+    expect(thinSections([profile(0, box(9, 5)), profile(7.5, box(0.6, 5)), profile(15, box(9, 5))] as never, 0.4)).toEqual([{ index: 2, of: 3, mm: 0.6 }])
+    expect(thinSections([{ loops: [{ points: box(0.6, 5) }] }, { loops: [{ points: box(9, 5) }] }] as never, 0.4)).toEqual([{ index: 1, of: 2, mm: 0.6 }])
+  })
+})
+
 describe('the note from the loft and the section edit', () => {
   it('says its sentence word for word, with only the numbers from the case', () => {
     expect(thinSectionNote({ index: 9, of: 9, mm: 0.46 }, 0.8, 0.4)).toBe('Section 9 of 9 is 0.46 mm across at its narrowest, under the 0.8 mm a 0.4 mm nozzle prints (two lines). Widen it there, or leave it if another body covers that edge.')
@@ -80,7 +104,8 @@ describe('the note from the loft and the section edit', () => {
 
   it('names the thinnest of several thin sections in that sentence, and lists every one', async () => {
     const { run } = host()
-    const out = await run('geom.loft', { design: 'd1', profiles: [profile(0, box(0.7, 5)), profile(10, box(6, 5)), profile(20, box(0.5, 5))] })
+    // the middle section narrow too, so neither end widens past the floor a nozzle width in (endTaper)
+    const out = await run('geom.loft', { design: 'd1', profiles: [profile(0, box(0.7, 5)), profile(10, box(2, 5)), profile(20, box(0.5, 5))] })
     expect(out.summary).toContain('Section 3 of 3 is 0.5 mm across at its narrowest, under the 0.8 mm a 0.4 mm nozzle prints (two lines). Widen it there, or leave it if another body covers that edge.')
     expect(out.output['thinSections']).toEqual([{ index: 3, of: 3, mm: 0.5 }, { index: 1, of: 3, mm: 0.7 }])
   })
@@ -93,11 +118,21 @@ describe('the note from the loft and the section edit', () => {
     expect(out.output['thinSections']).toEqual([{ index: 3, of: 3, mm: expect.any(Number) }])
   })
 
-  it('names a narrow stern at the end of a taper as a note, and keeps the step', async () => {
+  it('names a narrow stern that stays under the floor a nozzle width in as a note, and keeps the step', async () => {
     const { d, run } = host()
-    const out = await run('geom.loft', { design: 'd1', profiles: [profile(0.5, STERN), profile(8, box(9, 10)), profile(25, box(18, 10))] })
+    // 0.6 mm at the end, and only 0.62 mm a nozzle width in toward a section 1 mm wide 7.5 mm away
+    const out = await run('geom.loft', { design: 'd1', profiles: [profile(0.5, STERN), profile(8, box(1, 10)), profile(25, box(18, 10))] })
     expect(d.history.steps).toHaveLength(1)
     expect(out.summary).toMatch(/Section 1 of 3 is 0\.\d+ mm across at its narrowest/)
+  })
+
+  it('says nothing of a narrow stern that is the taper of the end: past the floor a nozzle width in', async () => {
+    const { d, run } = host()
+    // 0.6 mm at the end, and 1.05 mm a nozzle width in toward a section 9 mm wide 7.5 mm away
+    const out = await run('geom.loft', { design: 'd1', profiles: [profile(0.5, STERN), profile(8, box(9, 10)), profile(25, box(18, 10))] })
+    expect(d.history.steps).toHaveLength(1)
+    expect(out.summary).not.toMatch(/across at its narrowest/)
+    expect(out.output['thinSections']).toBeUndefined()
   })
 
   it('says nothing of a hull with a pointed keel, of a cut, or of a thickened shell', async () => {

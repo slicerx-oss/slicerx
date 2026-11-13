@@ -615,7 +615,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'slice',
     description:
