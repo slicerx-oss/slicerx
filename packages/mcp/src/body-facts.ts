@@ -7,7 +7,7 @@
 // from each facet inward to the far side, through a grid of the facets, within a budget, skipping slivers and ledges
 // a join leaves), when asked, the hook on its upright stem (hook-lip.ts) and, when asked, the floor of a part that holds
 // something (holder-floor.ts), and for a plan with recess rows, its blind openings on any face (recesses.ts).
-import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
+import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh, type Step } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import { colorWord, colorWordHex } from '@slicerx/pilot'
 import { partNamed, type BodyFacts, type PartBox, type FitLimits, type FloorFacts, type PaintedRegion } from './design-check'
@@ -96,6 +96,8 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     tags: shaping.map((s) => s.feature?.trim() || null),
     stepIds: shaping.map((s) => s.id),
     paintTags: d.history.steps.flatMap((s) => (!s.suppressed && s.params.op === 'paint' && s.feature?.trim() ? [{ feature: s.feature.trim(), step: stepName(s) }] : [])),
+    // a hint only: a paint step it cannot name is left out rather than failing the check
+    paintUntagged: d.history.steps.flatMap((s) => (!s.suppressed && s.params?.op === 'paint' && !s.feature?.trim() ? hintName(s) : [])),
     lofts: loftSections(shaping as unknown as Parameters<typeof loftSections>[0]),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     ...(world.length > 1 ? { partBoxes: world.map((w, k) => partBox(w, d.parts[k]!)) } : {}),
@@ -151,6 +153,15 @@ function zRange(m: Mesh): [number, number] {
     hi = Math.max(hi, m.positions[i]!)
   }
   return [lo, hi]
+}
+
+/** An untagged paint step for design.check's hint, by its id and name; none when it cannot be named. */
+function hintName(s: Step): { id: string; step: string }[] {
+  try {
+    return [{ id: s.id, step: stepName(s) }]
+  } catch {
+    return []
+  }
 }
 
 /** Each part's floor, named by its part when it has a name (the build eval scorer reads it the same way). */

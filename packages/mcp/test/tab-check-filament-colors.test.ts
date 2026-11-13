@@ -23,8 +23,8 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
  * One closed 60 x 60 x 100 mm block, d1, built by one step tagged Body and painted with filament 2 from 80 to 90 mm,
  * as the engine reads the paint back.
  */
-function paintedHost(): DesignHost {
-  const step = (id: string, op: string, feature?: string) => ({ id, params: { op }, ...(feature ? { feature } : {}) })
+function paintedHost(paint: Record<string, unknown> = { op: 'paint' }): DesignHost {
+  const step = (id: string, op: string, feature?: string) => ({ id, params: op === 'paint' ? paint : { op }, ...(feature ? { feature } : {}) })
   const d = {
     id: 'd1',
     name: 'Block',
@@ -59,14 +59,18 @@ const plan = { planId: 'plan_1', part: 'Block', units: 'mm', features: [{ name: 
 /** The open project's filaments: 1 blue, 2 white. */
 const project = (): FilamentList => ({ list: () => [{ slot: 1, type: 'PLA', color: '#1030a0' }, { slot: 2, type: 'PLA', color: '#ffffff' }], add: () => undefined, set: () => undefined })
 
-async function featureCount(filaments?: FilamentList) {
+async function checked(filaments?: FilamentList, paint?: Record<string, unknown>) {
   const card = createCardPlans(createPlanRegistry())
   card.plans.put(plan, 'd1', 'card')
-  const tools = tabToolset(paintedHost(), card, { nozzleMm: () => machine.nozzle, ...(filaments ? { filaments } : {}) })
+  const tools = tabToolset(paintedHost(paint), card, { nozzleMm: () => machine.nozzle, ...(filaments ? { filaments } : {}) })
   const check = tools.find((t) => t.name === 'design.check')!
   const ctx = { context: { project: 'creative', machine, objects: [] } } as unknown as ToolContext
   const out = await check.run(check.input.parse({ planId: 'plan_1' }) as never, ctx)
-  return (out.output as { items: { name: string; got: string; pass: boolean }[] }).items.find((i) => i.name === 'feature count')!
+  return out.output as { items: { name: string; got: string; pass: boolean }[]; body: { paintUntagged?: { id: string; step: string }[] } }
+}
+
+async function featureCount(filaments?: FilamentList) {
+  return (await checked(filaments)).items.find((i) => i.name === 'feature count')!
 }
 
 describe('design.check in the tab, against the project filaments', () => {
@@ -80,5 +84,14 @@ describe('design.check in the tab, against the project filaments', () => {
     const item = await featureCount()
     expect(item.pass).toBe(false)
     expect(item.got).toContain('White band: planned white from 80 mm to 90 mm; painted filament 2 (color not known) from 80 to 90 mm')
+  })
+
+  it('checks a design whose paint step was saved with no target, and names that step plainly', async () => {
+    // as an older build or a hand-written history can hold it: the layer and filament, and no place
+    const out = await checked(project(), { op: 'paint', layer: 'color', state: 2 })
+    expect(out.items.find((i) => i.name === 'feature count')!.pass).toBe(true)
+    expect(out.body.paintUntagged).toEqual([{ id: 's2', step: 'Paint filament 2' }])
+    // and one with no layer or filament either
+    expect((await checked(project())).body.paintUntagged).toEqual([{ id: 's2', step: 'Paint' }])
   })
 })
