@@ -168,10 +168,9 @@ fn grow(b: &mut Option<Aabb>, p: V3) {
     }
 }
 
-/// What the drawing reads off the objects: colored pieces in world space, the bounds of everything and of the paint,
-/// the painted area by state, the area-weighted facing of the paint, and the counts.
+/// What the drawing reads off the objects: the bounds of everything and of the paint, the painted area by state, the
+/// area-weighted facing of the paint, and the counts.
 struct Scene {
-    pieces: Vec<Piece>,
     all: Option<Aabb>,
     painted_box: Option<Aabb>,
     painted: BTreeMap<u8, f64>,
@@ -180,8 +179,10 @@ struct Scene {
     tris: usize,
 }
 
-fn pieces(objects: &[Object], colors: &[[u8; 3]]) -> Scene {
-    let mut out = Vec::new();
+/// Walks the colored pieces in world space, in drawing order, handing each to `put` as it is read. A thin painted band
+/// splits its triangles into thousands of pieces each, so the pieces are never kept: the scene is read once for the
+/// camera with `put` doing nothing, then again to draw.
+fn pieces(objects: &[Object], colors: &[[u8; 3]], mut put: impl FnMut(&Piece)) -> Scene {
     let (mut all, mut painted_box) = (None, None);
     let mut painted: BTreeMap<u8, f64> = BTreeMap::new();
     let mut painted_facing = [0.0; 3];
@@ -230,12 +231,11 @@ fn pieces(objects: &[Object], colors: &[[u8; 3]]) -> Scene {
                 } else {
                     slot_color(colors, state)
                 };
-                out.push(Piece { v: lv, color });
+                put(&Piece { v: lv, color });
             }
         }
     }
     Scene {
-        pieces: out,
         all,
         painted_box,
         painted,
@@ -329,37 +329,52 @@ impl Camera {
     }
 }
 
-/// The pieces drawn with a z-buffer and flat shading: the depth and the colors of each pixel.
-fn draw(pieces: &[Piece], cam: &Camera) -> (Vec<f64>, Vec<u8>) {
-    let (wu, hu) = (cam.width as usize, cam.height as usize);
-    let mut depth = vec![f64::INFINITY; wu * hu];
-    let mut rgb: Vec<u8> = BACKGROUND.iter().copied().cycle().take(wu * hu * 3).collect();
-    let d = cam.d;
-    // Light from above the camera's left shoulder; both sides of a face are lit alike.
-    let light = vec3::normalize([-0.4 - d[0], 0.5 - d[1], 0.8 - d[2]]).unwrap_or([0.0, 0.0, 1.0]);
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        reason = "clamped to the picture"
-    )]
-    let span = |lo: f64, hi: f64, max: usize| -> (usize, usize) {
-        let l = lo.floor().max(0.0) as usize;
-        let h = (hi.ceil().max(0.0) as usize).min(max);
-        (l, h)
-    };
-    for piece in pieces {
+/// The picture being drawn with a z-buffer and flat shading: the depth and the colors of each pixel.
+struct Canvas<'a> {
+    cam: &'a Camera,
+    depth: Vec<f64>,
+    rgb: Vec<u8>,
+    light: V3,
+}
+
+impl<'a> Canvas<'a> {
+    fn new(cam: &'a Camera) -> Self {
+        let (wu, hu) = (cam.width as usize, cam.height as usize);
+        let d = cam.d;
+        Self {
+            cam,
+            depth: vec![f64::INFINITY; wu * hu],
+            rgb: BACKGROUND.iter().copied().cycle().take(wu * hu * 3).collect(),
+            // Light from above the camera's left shoulder; both sides of a face are lit alike.
+            light: vec3::normalize([-0.4 - d[0], 0.5 - d[1], 0.8 - d[2]]).unwrap_or([0.0, 0.0, 1.0]),
+        }
+    }
+
+    /// Draws one piece over what is there, where it is nearer.
+    fn put(&mut self, piece: &Piece) {
+        let (wu, hu) = (self.cam.width as usize, self.cam.height as usize);
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "clamped to the picture"
+        )]
+        let span = |lo: f64, hi: f64, max: usize| -> (usize, usize) {
+            let l = lo.floor().max(0.0) as usize;
+            let h = (hi.ceil().max(0.0) as usize).min(max);
+            (l, h)
+        };
         let n = vec3::normalize(vec3::tri_normal(piece.v[0], piece.v[1], piece.v[2]));
-        let Some(n) = n else { continue };
-        let shade = 0.35 + 0.65 * vec3::dot(n, light).abs();
+        let Some(n) = n else { return };
+        let shade = 0.35 + 0.65 * vec3::dot(n, self.light).abs();
         let col = piece.color.map(|c| {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "0 to 255")]
             let v = (f64::from(c) * shade).round().clamp(0.0, 255.0) as u8;
             v
         });
-        let [a, b, c] = piece.v.map(|p| cam.to_px(p));
+        let [a, b, c] = piece.v.map(|p| self.cam.to_px(p));
         let area = (b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1);
         if area.abs() < 1e-12 {
-            continue;
+            return;
         }
         let (x0, x1) = span(a.0.min(b.0).min(c.0), a.0.max(b.0).max(c.0), wu);
         let (y0, y1) = span(a.1.min(b.1).min(c.1), a.1.max(b.1).max(c.1), hu);
@@ -375,18 +390,17 @@ fn draw(pieces: &[Piece], cam: &Camera) -> (Vec<f64>, Vec<u8>) {
                 }
                 let z = w0 * a.2 + w1 * b.2 + w2 * c.2;
                 let k = py * wu + px;
-                if let Some(slot) = depth.get_mut(k)
+                if let Some(slot) = self.depth.get_mut(k)
                     && z < *slot
                 {
                     *slot = z;
-                    if let Some(px3) = rgb.get_mut(k * 3..k * 3 + 3) {
+                    if let Some(px3) = self.rgb.get_mut(k * 3..k * 3 + 3) {
                         px3.copy_from_slice(&col);
                     }
                 }
             }
         }
     }
-    (depth, rgb)
 }
 
 /// Darkens each pixel next to background or to a depth jump of more than a millimetre, so shapes read in a small
@@ -428,7 +442,7 @@ fn darken_edges(depth: &[f64], rgb: &mut [u8], wu: usize, hu: usize) {
 
 /// Draws the objects. Fails when there is nothing to draw.
 pub fn render(objects: &[Object], opts: &Options) -> Result<(Image, Summary)> {
-    let scene = pieces(objects, &opts.colors);
+    let scene = pieces(objects, &opts.colors, |_| {});
     let bounds = scene
         .all
         .ok_or_else(|| Error::invalid("objects", "nothing to draw"))?;
@@ -437,7 +451,9 @@ pub fn render(objects: &[Object], opts: &Options) -> Result<(Image, Summary)> {
         _ => bounds,
     };
     let cam = Camera::new(opts.view, &framed, scene.painted_facing, opts.size);
-    let (depth, mut rgb) = draw(&scene.pieces, &cam);
+    let mut canvas = Canvas::new(&cam);
+    pieces(objects, &opts.colors, |p| canvas.put(p));
+    let Canvas { depth, mut rgb, .. } = canvas;
     darken_edges(&depth, &mut rgb, cam.width as usize, cam.height as usize);
     let summary = Summary {
         view: opts.view,

@@ -69,6 +69,8 @@ export async function wasmGeom(record?: (r: Recorded) => void) {
       record?.({ op, request: req, error: message })
       throw new Error(message)
     },
+    /** What the module's memory holds, as the app's worker reports it with each answer. */
+    memoryBytes: (): number => x.memory.buffer.byteLength,
   }
 }
 
