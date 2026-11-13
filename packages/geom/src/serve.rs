@@ -13,12 +13,17 @@
 //! is no other file access, so a path that is not a `mem:N` buffer fails, as in the browser.
 //!
 //! The process writes `HELLO` before its first answer, so a host can pass over anything written ahead of it.
+//!
+//! `serve_watched` is the same loop for a process that must not outlive its host (`sx-geom serve`): it reads the input
+//! on a thread of its own, so the input closing ends the process at once, a running call with it, and on Unix it also
+//! ends when its parent process goes.
 
 use crate::json::{self, FileLoader, OutFile};
 use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::io::{self, Read, Write};
 use std::panic::AssertUnwindSafe;
+use std::sync::mpsc;
 
 /// What the process writes once, before any answer.
 pub const HELLO: &[u8; 8] = b"SXGEOM1\n";
@@ -72,6 +77,67 @@ pub fn serve_with(
         let (reply, out) = answer(&text, files, &mut call);
         write_frame(&mut output, reply.to_string().as_bytes(), &out)?;
         output.flush()?;
+    }
+}
+
+/// Serves the engine's operations as `serve` does, in a process that ends with its host: see `serve_watched_with`.
+pub fn serve_watched(input: impl Read + Send + 'static, output: impl Write) -> io::Result<()> {
+    serve_watched_with(input, output, json::call_value)
+}
+
+/// Serves calls with `call` as `serve_with` does, and ends this process (exit code 0) as soon as its host goes, even
+/// while a call runs: when `input` closes, the host's end of the pipe, which the system closes when the host exits or
+/// crashes; and on Unix when the parent process changes, for a host that went while something else still holds the
+/// pipe. A host that wants its answers keeps its end open until it has them. A frame that is not one of ours ends it
+/// with that error, as in `serve_with`.
+pub fn serve_watched_with(
+    mut input: impl Read + Send + 'static,
+    mut output: impl Write,
+    mut call: impl FnMut(&str, &Value, FileLoader<'_>) -> crate::Result<Value>,
+) -> io::Result<()> {
+    keep_panics();
+    watch_parent();
+    let (frames, next) = mpsc::channel::<io::Result<(Vec<u8>, Vec<Vec<u8>>)>>();
+    // read ahead while a call runs, so a close is seen at once rather than at the next frame
+    std::thread::spawn(move || {
+        loop {
+            match read_frame(&mut input) {
+                Ok(frame) => {
+                    if frames.send(Ok(frame)).is_err() {
+                        return;
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => std::process::exit(0),
+                Err(e) => {
+                    let _ = frames.send(Err(e));
+                    return;
+                }
+            }
+        }
+    });
+    output.write_all(HELLO)?;
+    output.flush()?;
+    while let Ok(frame) = next.recv() {
+        let (text, files) = frame?;
+        let (reply, out) = answer(&text, files, &mut call);
+        write_frame(&mut output, reply.to_string().as_bytes(), &out)?;
+        output.flush()?;
+    }
+    Ok(())
+}
+
+/// Ends this process when its parent process changes (Unix hands an orphan to another parent). Elsewhere the input
+/// closing is the sign, since the system closes a process's pipes when it exits.
+fn watch_parent() {
+    #[cfg(unix)]
+    {
+        let parent = std::os::unix::process::parent_id();
+        std::thread::spawn(move || {
+            while std::os::unix::process::parent_id() == parent {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            std::process::exit(0);
+        });
     }
 }
 
