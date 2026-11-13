@@ -159,24 +159,24 @@ describe('design.plan with amends', () => {
     await t.approve(chain)
     const asked = { ...chain, features: chain.features.map((f) => (f.name === 'Links' ? { ...f, sizes: { ...f.sizes, link_gap: 0.3 } } : f)), amends: 'plan_1', reason: 'A tighter gap keeps the links from rattling.' }
     const out = await t.run('design.plan', asked)
-    // the card shows 0.4 mm, the limit above or below on a 0.4 mm nozzle in PLA, with its line first among the assumptions
+    // the card shows 0.45 mm, 0.05 mm over the limit above or below on a 0.4 mm nozzle in PLA, with its line first among the assumptions
     const shown = t.cards.at(-1)!.plan!
-    expect(shown.features[1]!.sizes['link_gap']).toBe(0.4)
-    expect(shown.assumptions[0]).toBe('Links link gap raised from 0.3 mm to 0.4 mm on each side, the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.')
+    expect(shown.features[1]!.sizes['link_gap']).toBe(0.45)
+    expect(shown.assumptions[0]).toBe('Links link gap raised from 0.3 mm to 0.45 mm on each side, 0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.')
     const answer = out.output as PlanAnswer
-    expect(answer.changes).toEqual([{ where: 'feature', feature: 'Links', size: 'link_gap', from: 0.5, to: 0.4 }])
-    expect(answer.raised).toEqual([{ feature: 'Links', size: 'link_gap', from: 0.3, to: 0.4, why: 'the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA' }])
-    expect(out.summary).toContain('The card raised Links link gap to 0.4 mm on each side')
+    expect(answer.changes).toEqual([{ where: 'feature', feature: 'Links', size: 'link_gap', from: 0.5, to: 0.45 }])
+    expect(answer.raised).toEqual([{ feature: 'Links', size: 'link_gap', from: 0.3, to: 0.45, why: '0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA' }])
+    expect(out.summary).toContain('The card raised Links link gap to 0.45 mm on each side')
     const { item } = await t.check()
-    expect(item('planned gaps')).toMatchObject({ got: 'link_gap 0.4 mm (vertical)', pass: true })
+    expect(item('planned gaps')).toMatchObject({ got: 'link_gap 0.45 mm (vertical)', pass: true })
   })
 
   it('changes nothing when every asked size is raised back to what the plan has', async () => {
     const t = tab()
-    await t.approve({ ...chain, features: chain.features.map((f) => (f.name === 'Links' ? { ...f, sizes: { ...f.sizes, link_gap: 0.4 } } : f)) })
+    await t.approve({ ...chain, features: chain.features.map((f) => (f.name === 'Links' ? { ...f, sizes: { ...f.sizes, link_gap: 0.45 } } : f)) })
     const out = await t.run('design.plan', { ...chain, features: chain.features.map((f) => (f.name === 'Links' ? { ...f, sizes: { ...f.sizes, link_gap: 0.2 } } : f)), amends: 'plan_1', reason: 'Tighter links.' })
     expect(out.ok).toBe(false)
-    expect(out.summary).toBe('Nothing changed: Links link gap stays 0.4 mm on each side, the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA. Build to the plan as approved')
+    expect(out.summary).toBe('Nothing changed: Links link gap stays 0.45 mm on each side, 0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA. Build to the plan as approved')
     expect(t.cards).toHaveLength(1)
     expect(t.card.plans.get('plan_1')!.revision).toBeUndefined()
   })

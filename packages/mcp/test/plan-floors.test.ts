@@ -80,45 +80,45 @@ const apart: PlanInput = {
 }
 
 describe('design.plan holds sizes to the floors before Go', () => {
-  it('raises the hinged box gaps from 0.3 mm to 0.4 mm on each side, with the bore around the pin and a line on the card saying why', async () => {
+  it('raises the hinged box gaps from 0.3 mm to 0.45 mm on each side, 0.05 mm over the 0.4 mm floor, with the bore around the pin and a line on the card saying why', async () => {
     const { out, answer, shown } = await plan(hingedBox)
     const pin = shown.features.find((f) => f.name === 'Hinge pin')!
     // printed in place, a gap named no way is on every face, so it takes the larger floor
-    expect(pin.sizes).toEqual({ pin_diameter: 3, gap: 0.4, vertical_gap: 0.4 })
+    expect(pin.sizes).toEqual({ pin_diameter: 3, gap: 0.45, vertical_gap: 0.45 })
     expect(shown.assumptions).toEqual([
-      'Hinge pin gap raised from 0.3 mm to 0.4 mm on each side (3 mm pin, 3.8 mm bore), the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.',
-      'Hinge pin vertical gap raised from 0.3 mm to 0.4 mm on each side, the smallest gap above or below parts printed in place with a 0.4 mm nozzle in PLA.',
+      'Hinge pin gap raised from 0.3 mm to 0.45 mm on each side (3 mm pin, 3.9 mm bore), 0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.',
+      'Hinge pin vertical gap raised from 0.3 mm to 0.45 mm on each side, 0.05 mm over the smallest gap above or below parts printed in place with a 0.4 mm nozzle in PLA.',
       ...hingedBox.assumptions,
     ])
     // the answer gives the raised plan to build from, and what was raised
     expect(answer.accepted).toBe(true)
-    expect(answer.edits?.features[2]?.sizes).toEqual({ pin_diameter: 3, gap: 0.4, vertical_gap: 0.4 })
+    expect(answer.edits?.features[2]?.sizes).toEqual({ pin_diameter: 3, gap: 0.45, vertical_gap: 0.45 })
     expect(answer.raised).toEqual([
-      { feature: 'Hinge pin', size: 'gap', from: 0.3, to: 0.4, why: 'the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA', pin: 3, bore: 3.8 },
-      { feature: 'Hinge pin', size: 'vertical_gap', from: 0.3, to: 0.4, why: 'the smallest gap above or below parts printed in place with a 0.4 mm nozzle in PLA' },
+      { feature: 'Hinge pin', size: 'gap', from: 0.3, to: 0.45, why: '0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA', pin: 3, bore: 3.9 },
+      { feature: 'Hinge pin', size: 'vertical_gap', from: 0.3, to: 0.45, why: '0.05 mm over the smallest gap above or below parts printed in place with a 0.4 mm nozzle in PLA' },
     ])
-    expect(out.summary).toBe("Approved as shown. The card raised Hinge pin gap to 0.4 mm on each side (3 mm pin, 3.8 mm bore), Hinge pin vertical gap to 0.4 mm on each side to this printer's smallest sizes; build from edits")
+    expect(out.summary).toBe("Approved as shown. The card raised Hinge pin gap to 0.45 mm on each side (3 mm pin, 3.9 mm bore), Hinge pin vertical gap to 0.45 mm on each side to this printer's smallest sizes; build from edits")
   })
 
-  it('raises a stated print-in-place hinge clearance to 0.4 mm on each side and gives the bore around its 2 mm pin', async () => {
+  it('raises a stated print-in-place hinge clearance to 0.45 mm on each side and gives the bore around its 2 mm pin', async () => {
     const inPlace: PlanInput = { ...apart, assumptions: ['The lid, base and pin print in place, closed.'], questions: [] }
     const { answer, shown } = await plan(inPlace)
-    expect(shown.features.map((f) => f.sizes['hinge_clearance'])).toEqual([undefined, 0.4, 0.4, undefined])
-    expect(shown.assumptions[0]).toBe('Hinge pin bore hinge clearance raised from 0.3 mm to 0.4 mm on each side (2 mm pin, 2.8 mm bore), the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.')
+    expect(shown.features.map((f) => f.sizes['hinge_clearance'])).toEqual([undefined, 0.45, 0.45, undefined])
+    expect(shown.assumptions[0]).toBe('Hinge pin bore hinge clearance raised from 0.3 mm to 0.45 mm on each side (2 mm pin, 2.9 mm bore), 0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.')
     expect(answer.raised?.map((r) => [r.feature, r.to, r.pin, r.bore])).toEqual([
-      ['Hinge pin bore', 0.4, 2, 2.8],
-      ['Lid hinge knuckle', 0.4, 2, 2.8],
+      ['Hinge pin bore', 0.45, 2, 2.9],
+      ['Lid hinge knuckle', 0.45, 2, 2.9],
     ])
   })
 
-  it('keeps the side by side floor for a hinge printed apart: 0.3 mm stays, less is raised to 0.3 mm', async () => {
+  it('keeps the side by side floor for a hinge printed apart: 0.3 mm stays, less is raised to 0.35 mm', async () => {
     const kept = await plan(apart)
     expect(kept.shown).toEqual({ planId: 'plan-1', ...apart })
     expect(kept.answer).toEqual({ planId: 'plan-1', accepted: true })
     const thin: PlanInput = { ...apart, features: apart.features.map((f) => (f.sizes['hinge_clearance'] ? { ...f, sizes: { ...f.sizes, hinge_clearance: 0.2 } } : f)) }
     const { shown } = await plan(thin)
-    expect(shown.features.map((f) => f.sizes['hinge_clearance'])).toEqual([undefined, 0.3, 0.3, undefined])
-    expect(shown.assumptions[0]).toBe('Hinge pin bore hinge clearance raised from 0.2 mm to 0.3 mm on each side (2 mm pin, 2.6 mm bore), the smallest gap for parts printed side by side with a 0.4 mm nozzle in PLA.')
+    expect(shown.features.map((f) => f.sizes['hinge_clearance'])).toEqual([undefined, 0.35, 0.35, undefined])
+    expect(shown.assumptions[0]).toBe('Hinge pin bore hinge clearance raised from 0.2 mm to 0.35 mm on each side (2 mm pin, 2.7 mm bore), 0.05 mm over the smallest gap for parts printed side by side with a 0.4 mm nozzle in PLA.')
   })
 
   it('leaves a gap alone in a part with no hinge or pin that does not print in place, such as a lid that slides on', async () => {
@@ -168,8 +168,8 @@ describe('design.plan holds sizes to the floors before Go', () => {
     const counted = underFloors({ part: 'Hinged gear', units: 'mm', features: [{ name: 'Gear', sizes: { wall: 0.3, gap: 0.2 }, kinds: { wall: 'count', gap: 'angle' } }], assumptions: [] }, planFloors())
     expect(counted).toEqual([])
     const inch = raiseToFloors({ part: 'Hinged box', units: 'in' as const, features: [{ name: 'Base', sizes: { wall: 0.02, gap: 0.01 } }], assumptions: ['Prints in place'] }, planFloors())
-    // 0.8 mm is 0.0315 in, 0.4 mm is 0.0157 in, each rounded up
-    expect(inch.plan.features[0]!.sizes).toEqual({ wall: 0.032, gap: 0.016 })
+    // 0.8 mm is 0.0315 in, and the gap 0.05 mm over its 0.4 mm floor, 0.45 mm, is 0.0177 in, each rounded up
+    expect(inch.plan.features[0]!.sizes).toEqual({ wall: 0.032, gap: 0.018 })
   })
 
   it('says a size the person typed back under its floor, and builds from their plan', async () => {
@@ -183,10 +183,48 @@ describe('design.plan holds sizes to the floors before Go', () => {
     const full = { ...hingedBox, assumptions: ['The pieces print in place', ...Array.from({ length: 10 }, (_, k) => `assumption ${k + 2}`)] }
     const one = raiseToFloors(full, planFloors())
     expect(one.plan.assumptions).toHaveLength(12)
-    expect(one.plan.assumptions[0]).toBe("Raised to this printer's smallest sizes: Hinge pin gap 0.4 mm on each side (3 mm pin, 3.8 mm bore), Hinge pin vertical gap 0.4 mm on each side.")
+    expect(one.plan.assumptions[0]).toBe("Raised to this printer's smallest sizes: Hinge pin gap 0.45 mm on each side (3 mm pin, 3.9 mm bore), Hinge pin vertical gap 0.45 mm on each side.")
     const none = raiseToFloors({ ...full, assumptions: [...full.assumptions, 'one more, print in place'] }, planFloors())
     expect(none.plan.assumptions).toHaveLength(12)
-    expect(none.plan.features[2]!.sizes['gap']).toBe(0.4)
+    expect(none.plan.features[2]!.sizes['gap']).toBe(0.45)
+  })
+})
+
+describe('a raised gap lands over its floor', () => {
+  // the creative hinge box as planned: a 0.5 mm axial gap in PETG, whose floor above or below is 0.6 mm. The card raised
+  // it to exactly 0.6 mm, the bore came out of facets, and the gap measured 0.582 mm: it passed only by the check's
+  // allowance for facets. A raised gap now lands 0.05 mm over its floor, and the floor itself is where it was.
+  const hingeBox: PlanInput = {
+    part: 'SD card box',
+    units: 'mm',
+    features: [
+      { name: 'Base', kind: 'extrude', sizes: { length: 60, width: 40, height: 30, wall: 2 } },
+      { name: 'Hinge pin', kind: 'extrude', sizes: { pin_diameter: 2.4, gap_side: 0.4, gap_axial: 0.5 } },
+    ],
+    overall: { x: 60, y: 40, z: 30 },
+    printInPlace: ['Base', 'Lid'],
+    assumptions: ['PETG on a 0.4 mm nozzle'],
+    questions: [],
+  }
+  const petg = { printer: 'test_printer', material: 'petg', nozzle: 0.4 }
+
+  it('raises the hinge box axial gap from 0.5 mm to 0.65 mm, and keeps the 0.4 mm side gap planned at its floor', async () => {
+    const { shown, answer } = await plan(hingeBox, { machine: petg })
+    expect(shown.features[1]!.sizes).toEqual({ pin_diameter: 2.4, gap_side: 0.4, gap_axial: 0.65 })
+    expect(shown.assumptions[0]).toBe('Hinge pin gap axial raised from 0.5 mm to 0.65 mm on each side (2.4 mm pin, 3.7 mm bore), 0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PETG.')
+    expect(answer.raised).toEqual([{ feature: 'Hinge pin', size: 'gap_axial', from: 0.5, to: 0.65, why: '0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PETG', pin: 2.4, bore: 3.7 }])
+  })
+
+  it('holds the floor itself where it was: a size at the floor is not under it, and the floors are the fit rule\'s', () => {
+    const f = planFloors({ material: 'petg' })
+    expect([f.gapSideMm, f.gapVerticalMm]).toEqual([0.4, 0.6])
+    const atFloor = underFloors({ ...hingeBox, features: [hingeBox.features[0]!, { name: 'Hinge pin', kind: 'extrude', sizes: { pin_diameter: 2.4, gap_side: 0.4, gap_axial: 0.6 } }] }, f)
+    expect(atFloor).toEqual([])
+    const [u] = underFloors(hingeBox, f)
+    expect(u).toMatchObject({ floor: 0.6, to: 0.65, bore: 3.6, toBore: 3.7 })
+    // a wall, a pin or a hole is raised to its floor, with no margin
+    const [wall] = underFloors({ ...hingeBox, features: [{ name: 'Base', sizes: { wall: 0.5 } }] }, f)
+    expect(wall).toMatchObject({ floor: 0.8, to: 0.8 })
   })
 })
 
@@ -354,16 +392,16 @@ describe('a hinged plan says one way it prints', () => {
   it('rewrites the plan\'s own line that names the old gap, so the plan the build reads says the new one with the bore', async () => {
     const inPlace: PlanInput = { ...run3, assumptions: run3.assumptions.filter((a) => !a.includes('beside')) }
     const { shown, answer } = await plan(inPlace)
-    expect(shown.features[2]!.sizes).toEqual({ hinge_pin_diameter: 2, hinge_clearance: 0.4 })
+    expect(shown.features[2]!.sizes).toEqual({ hinge_pin_diameter: 2, hinge_clearance: 0.45 })
     expect(shown.assumptions).toEqual([
-      'Hinge knuckles hinge clearance raised from 0.3 mm to 0.4 mm on each side (2 mm pin, 2.8 mm bore), the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.',
+      'Hinge knuckles hinge clearance raised from 0.3 mm to 0.45 mm on each side (2 mm pin, 2.9 mm bore), 0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.',
       'Base is 80 x 50 x 27 mm, open top, 2 mm walls and floor',
-      'Pin hinge along the back edge (Y = 50 side): alternating knuckles on base and lid, 2 mm pin, 0.4 mm clearance on each side (2.8 mm bore)',
+      'Pin hinge along the back edge (Y = 50 side): alternating knuckles on base and lid, 2 mm pin, 0.45 mm clearance on each side (2.9 mm bore)',
       'Lid and base print in place as separate pieces; no supports needed',
     ])
     expect(answer.edits?.assumptions).toEqual(shown.assumptions)
     // a line naming the old value as something else, or another number, is left alone
     const other = raiseToFloors({ ...inPlace, assumptions: ['The pieces print in place', 'A 0.3 mm chamfer on the rim', 'Clearance of 0.3 mm on the hinge', 'hinge gap: 0.35 mm'] }, planFloors())
-    expect(other.plan.assumptions.slice(2)).toEqual(['A 0.3 mm chamfer on the rim', 'Clearance of 0.4 mm on each side (2.8 mm bore) on the hinge', 'hinge gap: 0.35 mm'])
+    expect(other.plan.assumptions.slice(2)).toEqual(['A 0.3 mm chamfer on the rim', 'Clearance of 0.45 mm on each side (2.9 mm bore) on the hinge', 'hinge gap: 0.35 mm'])
   })
 })
