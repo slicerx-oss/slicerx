@@ -594,15 +594,104 @@ export interface StepRange {
   loose?: true
 }
 
+/** A range copied by an array or pattern: in a row, moved by each copy's rise; about an upright axis, as it is; else null. */
+function copiedRange(base: StepRange, spec: ArraySpec, inv: Mat4): StepRange | null {
+  if (spec.kind === 'circular') return Math.abs(unit(direction(inv, spec.axis ?? [0, 0, 1]))[2]) < 0.999 ? null : base
+  const rise = (v: Vec3 | undefined): number => (v ? direction(inv, v)[2] : 0)
+  const rises = [...Array(spec.count).keys()].flatMap((i) => [...Array(spec.count2 ?? 1).keys()].map((j) => i * rise(spec.step) + j * rise(spec.step2)))
+  return { ...base, lo: base.lo + Math.min(...rises), hi: base.hi + Math.max(...rises) }
+}
+
+/** Two ranges as one, loose when either is. */
+const joinedRange = (a: StepRange, b: StepRange): StepRange => ({ lo: Math.min(a.lo, b.lo), hi: Math.max(a.hi, b.hi), ...(a.loose || b.loose ? { loose: true as const } : {}) })
+
+/** A step that makes a new body, as replay makes it: a part of its own, or the part at its index made again. */
+const makesBody = (p: StepParams): boolean => (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') === 'new') || ((p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && (p.operation ?? 'new') === 'new')
+
+/**
+ * A step that only takes solid away, or reshapes the part within where it already is, so the part's height range is
+ * never wider after it: a cut, a hole or thread cut, a round or bevel, a shell, a filament or paint change, a mirror
+ * through an upright plane, and a pattern of such steps.
+ */
+function keepsRange(s: Step, stepById?: (id: string) => Step | undefined): boolean {
+  const p = s.params
+  switch (p.op) {
+    case 'shape.extrude':
+      return p.spec.operation === 'cut'
+    case 'sketch.revolve':
+    case 'sketch.loft':
+    case 'sketch.sweep':
+      return p.operation === 'cut'
+    case 'subtract':
+    case 'hollow':
+    case 'repair':
+    case 'simplify':
+    case 'hole.apply':
+    case 'edge.fillet':
+    case 'edge.chamfer':
+    case 'shell':
+    case 'parts.slot':
+    case 'paint':
+      return true
+    case 'mirror':
+      return Math.abs(unit(direction(invert(s.transform), p.plane.normal))[2]) < 0.001
+    case 'pattern':
+      return !!stepById && p.steps.every((id) => {
+        const t = stepById(id)
+        return !!t && keepsRange(t, stepById)
+      })
+    default:
+      return false
+  }
+}
+
+/**
+ * Each part's height range after the first `upTo` steps of `history` (the steps that ran, in order), read from the
+ * steps alone as replay follows the parts: a new body starts a part's range, each later step on it widens it by its
+ * own range or keeps it (keepsRange), and a merged array copies it. A part is null once a step on it adds solid no
+ * range is read for (a face push, a joined boolean, a cut by a plane, a tilted extrude) or when mesh parts made it;
+ * the whole answer is null after a split, whose piece count only the engine knows.
+ */
+function partRanges(history: readonly Step[], upTo: number, stepById?: (id: string) => Step | undefined): (StepRange | null)[] | null {
+  let at: (StepRange | null)[] = []
+  for (const s of history.slice(0, upTo)) {
+    const p = s.params
+    const targets = s.part === -1 ? at.map((_, k) => k) : s.part < at.length ? [s.part] : []
+    if (p.op === 'split') return null
+    if (p.op === 'parts.add') at.push(...p.parts.map(() => null))
+    else if (p.op === 'parts.order') at = p.order.map((k) => at[k] ?? null)
+    else if (makesBody(p)) {
+      const r = rangeOf(s, stepById)
+      if (s.part >= 0 && s.part < at.length) at[s.part] = r
+      else at.push(r)
+    } else if (p.op === 'boolean') {
+      for (const k of targets) if (p.kind === 'union') at[k] = null
+      at = at.filter((_, k) => !p.with.includes(k))
+    } else if (p.op === 'plane.cut') {
+      for (const k of targets) at[k] = null
+      if (p.keep === 'both' && s.part >= 0) at.splice(s.part + 1, 0, null)
+    } else if (p.op === 'array.merged') {
+      const inv = invert(s.transform)
+      for (const k of targets) at[k] = at[k] ? copiedRange(at[k]!, p.spec, inv) : null
+    } else if (!keepsRange(s, stepById)) {
+      const r = rangeOf(s, stepById)
+      for (const k of targets) at[k] = r && at[k] ? joinedRange(at[k]!, r) : null
+    }
+  }
+  return at
+}
+
 /**
  * The height range a step adds solid over, read from the step's own numbers alone, no engine and no mesh: a one-sided
  * extrude that rises straight up (and its copies, which stay in its plane); a loft, over every point of its sections,
  * each placed by its frame; a revolve about an upright axis, over its profile; a sweep, over its path widened by its
- * profile's reach, as a loose bound; and a step pattern in a row, its steps' range moved by each copy's rise, or turned
- * about an upright axis, unchanged. Null for a cut and for every other step (a revolve on a tilted axis, a boolean, an
- * array of a whole part, a mesh step), and for a pattern when `stepById` cannot give its steps or one of them has none.
+ * profile's reach, as a loose bound; a step pattern in a row, its steps' range moved by each copy's rise, or turned
+ * about an upright axis, unchanged; and a merged array of a whole part, the same way over the range the part's own
+ * steps give it (partRanges), which needs `history`, the steps that ran with this one among them. Null for a cut and
+ * for every other step (a revolve on a tilted axis, a boolean, separate copies of a part, a mesh step), for a pattern
+ * when `stepById` cannot give its steps or one of them has none, and for an array when a part it copies has none.
  */
-export function rangeOf(s: Step, stepById?: (id: string) => Step | undefined): StepRange | null {
+export function rangeOf(s: Step, stepById?: (id: string) => Step | undefined, history?: readonly Step[]): StepRange | null {
   const p = s.params
   // the step's own frame, read only by the cases that need it, so a step of any other kind is never asked for one
   let frame: Mat4 | undefined
@@ -638,11 +727,13 @@ export function rangeOf(s: Step, stepById?: (id: string) => Step | undefined): S
       const from = p.steps.map((id) => stepById(id))
       const ranges = from.map((t) => (t ? rangeOf(t, stepById) : null))
       if (!ranges.length || ranges.some((r) => !r)) return null
-      const base = { lo: Math.min(...ranges.map((r) => r!.lo)), hi: Math.max(...ranges.map((r) => r!.hi)), ...(ranges.some((r) => r!.loose) ? { loose: true as const } : {}) }
-      if (spec.kind === 'circular') return Math.abs(unit(direction(inv(), spec.axis ?? [0, 0, 1]))[2]) < 0.999 ? null : base
-      const rise = (v: Vec3 | undefined): number => (v ? direction(inv(), v)[2] : 0)
-      const rises = [...Array(spec.count).keys()].flatMap((i) => [...Array(spec.count2 ?? 1).keys()].map((j) => i * rise(spec.step) + j * rise(spec.step2)))
-      return { ...base, lo: base.lo + Math.min(...rises), hi: base.hi + Math.max(...rises) }
+      return copiedRange(ranges.reduce((a, b) => joinedRange(a!, b!))!, spec, inv())
+    }
+    case 'array.merged': {
+      const at = history ? history.findIndex((t) => t.id === s.id) : -1
+      const parts = at >= 0 ? partRanges(history!, at, stepById) : null
+      const copied = (parts ? (s.part === -1 ? parts : [parts[s.part] ?? null]) : []).map((r) => (r ? copiedRange(r, p.spec, inv()) : null))
+      return copied.length && copied.every((r) => r) ? copied.reduce((a, b) => joinedRange(a!, b!)) : null
     }
     default:
       return null
