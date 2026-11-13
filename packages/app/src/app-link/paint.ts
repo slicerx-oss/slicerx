@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { bareFaces } from '@slicerx/cad-history'
 import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, storedTarget } from '@slicerx/mcp/toolset'
 import { geom } from '../geom/client'
 import { slotCount } from '../filament/slots'
@@ -39,13 +40,15 @@ async function editable(e: PlateEntry) {
 }
 
 async function regions(e: PlateEntry, layer: PaintLayerName, paint = e.paint) {
-  const parts: { part: number; name: string; states: States }[] = []
+  const parts: { part: number; name: string; states: States; bare?: ReturnType<typeof bareFaces> }[] = []
   for (const [part, mesh] of e.parts.entries()) {
     const texts = paint?.[part]?.[layer]
     const result = texts && Object.keys(texts).length
       ? await geom().call<{ states: States }>('paint.regions', { mesh: { positions: mesh.positions, indices: mesh.indices }, transform: e.transform, paint: texts })
       : { states: [] }
-    parts.push({ part, name: mesh.name, states: result.states })
+    // a face a replay left bare though it was painted (pieces painted apart, then joined), with the reason
+    const bare = bareFaces(mesh, layer)
+    parts.push({ part, name: mesh.name, states: result.states, ...(bare.length ? { bare } : {}) })
   }
   return { object: e.id, name: e.name, layer, colorSlots: slotCount(get()), parts }
 }

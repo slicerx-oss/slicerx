@@ -39,6 +39,7 @@ export function historyPart(m: HistoryMesh): MeshPart {
   const ids = Array.from(faces.ids)
   if (ids.some(id => !Number.isInteger(id) || id < 0 || id >= faces.table.length)) return part
   part.faces = { ids: new Uint32Array(ids), table: faces.table.map(surface) }
+  if (m.unpainted && Object.keys(m.unpainted).length) part.unpainted = m.unpainted
   if (faces.keys?.length === faces.table.length) part.faces.keys = faces.keys.map(key => Number.isSafeInteger(key) && key > 0 ? key : 0)
   return part
 }

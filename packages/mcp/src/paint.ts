@@ -6,7 +6,7 @@
 // into a region, or one state for another. Read-back gives each painted state's area and regions, and on an exact
 // design each face painted whole. A height band on an exact part goes on whole faces, split by the kernel at the
 // band's edges, so its preview is the step's own replay.
-import { bandFaceIds, bandOf, paintedFaces, stepName, type DesignHost, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
+import { bandFaceIds, bandOf, bareFaces, paintedFaces, stepName, type DesignHost, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
 import { paintTextMaxState } from '@slicerx/threemf/paint-text'
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
@@ -263,13 +263,18 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
   })
 
   async function regions(d: Design, layer: PaintLayer) {
-    const out: { part: number; states: { state: number; areaMm2: number; triangles: number; regionCount: number; regions: Region[] }[]; faces?: PaintedFace[] }[] = []
+    const out: { part: number; states: { state: number; areaMm2: number; triangles: number; regionCount: number; regions: Region[] }[]; faces?: PaintedFace[]; bare?: ReturnType<typeof bareFaces> }[] = []
     for (const [k, p] of d.parts.entries()) {
       const texts = p.paint?.[layer]
-      if (!texts || !Object.keys(texts).length) continue
+      // a face a replay left bare though it was painted (pieces painted apart, then joined) is listed with the reason
+      const bare = bareFaces(p, layer)
+      if (!texts || !Object.keys(texts).length) {
+        if (bare.length) out.push({ part: k, states: [], bare })
+        continue
+      }
       const r = (await engine('paint.regions', { mesh: meshOf(p), transform: d.transform, paint: texts })) as { states: { state: number; areaMm2: number; triangles: number; regionCount: number; regions: Region[] }[] }
       // an exact part's paint by face, each face named by its key
-      out.push({ part: k, states: r.states, ...(d.history.exact && p.faces?.keys ? { faces: facesOf(p, layer) } : {}) })
+      out.push({ part: k, states: r.states, ...(d.history.exact && p.faces?.keys ? { faces: facesOf(p, layer) } : {}), ...(bare.length ? { bare } : {}) })
     }
     return out
   }

@@ -5,7 +5,7 @@
 // the same paint back, face by face, and so does slicerx_paint_regions. An engine that cannot split faces refuses the
 // band on an exact design, as before.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clearReplayCache, IMPRINT_CLASH, IMPRINT_UNNAMED } from '@slicerx/cad-history'
+import { clearReplayCache, IMPRINT_UNCLEAN, PIECES_PAINTED_APART } from '@slicerx/cad-history'
 import { bandEngine as engine, type Row } from './band-engine'
 import { connect, data, text } from './helpers'
 
@@ -75,14 +75,31 @@ describe('a height band on an exact design, over MCP', () => {
     expect(read.parts[0]!.faces!.map((f) => [f.key === 0, f.state, f.areaMm2])).toEqual([[false, 2, 300], [true, 2, 240]])
   })
 
+  it('lists the face a cut joins from pieces painted apart as bare, with the reason', async () => {
+    const { h, design } = await shipDesign(engine({ merge: 20 }))
+    for (const [state, target] of [[1, { kind: 'part' }], [2, { kind: 'height', below: 4 }]] as const) {
+      const pv = data<{ output: { preview: string } }>(await h.call('slicerx_paint_preview', { design, layer: 'color', state, target })).output
+      const applied = await h.call('slicerx_paint_apply', { preview: pv.preview })
+      expect(data<{ ok: boolean }>(applied).ok, text(applied)).toBe(true)
+    }
+    const cut = await h.call('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: 4 }, frame: { origin: [15, 5, 20], normal: [0, 0, 1] }, distance_mm: 5, operation: 'cut' })
+    expect(cut.isError, text(cut)).toBeFalsy()
+    const read = data<{ output: { parts: (Row & { bare?: unknown[] })[] } }>(await h.call('slicerx_paint_regions', { design, layer: 'color' })).output
+    // the side, 30 x 20, was red below 4 mm and white above: joined, it is bare, and the read-back says why
+    expect(read.parts[0]!.bare).toEqual([{ key: 0, areaMm2: 600, reason: PIECES_PAINTED_APART }])
+    expect(read.parts[0]!.faces!.map((f) => [f.state, f.areaMm2])).toEqual([[2, 300], [1, 300]])
+  })
+
   it.each([
-    [{ clash: true }, IMPRINT_CLASH],
-    [{ unnamed: true }, IMPRINT_UNNAMED],
-  ] as const)('refuses a split the kernel answers wrongly (%o), and the design is unchanged', async (o, sentence) => {
+    [{ clash: true }, 'clash'],
+    [{ unnamed: true }, 'unnamed'],
+  ] as const)('refuses a split that comes back wrong (%o) in one plain sentence, the cause for a developer, and the design is unchanged', async (o, cause) => {
     const { h, design } = await shipDesign(engine(o))
     const preview = await h.call('slicerx_paint_preview', { design, layer: 'color', state: 2, target: { kind: 'height', below: 4 } })
     expect(preview.isError).toBe(true)
-    expect(text(preview)).toContain(sentence)
+    expect(text(preview)).toContain(IMPRINT_UNCLEAN)
+    expect(text(preview)).not.toMatch(/kernel/i)
+    expect(data<{ error: { details?: { cause?: string } } }>(preview).error.details?.cause).toBe(cause)
     const listed = data<{ output: { designs: { steps: number }[] } }>(await h.call('slicerx_design_list')).output
     expect(listed.designs[0]!.steps).toBe(1)
   })

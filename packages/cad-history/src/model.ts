@@ -48,6 +48,11 @@ export interface HistoryMesh {
    * them, and a project never stores them.
    */
   normals?: Int16Array
+  /**
+   * Faces (ids in `faces`) left bare in a layer though paint by face named them: pieces painted differently that a later
+   * step joined into one face. The read-back lists them, so the missing paint is never silent. Never saved.
+   */
+  unpainted?: Partial<Record<PaintLayer, number[]>>
 }
 
 export type StepParams =
@@ -232,6 +237,8 @@ export interface StepStatus {
   copies?: PatternCopies
   /** The edges a step that may leave some out left as they were on this replay; empty when it did them all. */
   skipped?: SkippedEdge[]
+  /** For a developer, never shown: which of the causes a broken step's one sentence covers it was (ExactBroken.cause). */
+  cause?: string
 }
 
 /**

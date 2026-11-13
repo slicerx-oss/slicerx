@@ -5,11 +5,13 @@
 // the MCP server's preview does, and applying it lands the same paint on the plate. The engine is the MCP tests'
 // stand-in (bodies as text, a kernel that splits faces along planes).
 import { afterEach, beforeEach, expect, it } from 'vitest'
-import { clearReplayCache, type StepParams } from '@slicerx/cad-history'
+import { clearReplayCache, PIECES_PAINTED_APART, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { bandEngine, type Row } from '../../mcp/test/band-engine'
 import { paintTools } from '../../mcp/src/paint'
+import { readPaint } from '../src/app-link/paint'
 import { appDesignHost } from '../src/cad/design-host'
+import { createHistory } from '../src/plate/history'
 import { setGeomProvider } from '../src/geom/client'
 import { get, set } from '../src/state/store'
 
@@ -54,4 +56,34 @@ it('previews a band on an exact design by its faces, writes nothing until it is 
   expect(get().plate[0]!.history?.steps.map((s) => s.params.op)).toEqual(['shape.extrude', 'paint'])
   const faces = (applied.output['paint'] as Row[])[0]!.faces!
   expect(faces.map((f) => [f.state, f.areaMm2])).toEqual([[2, 300], [2, 120]])
+})
+
+it("lists a face a cut joins from pieces painted apart as bare, with the reason, in the tab's read-back and the app link's", async () => {
+  const undo = createHistory()
+  try {
+    const e = bandEngine({ merge: 20 })
+    setGeomProvider({ call: async <T,>(op: string, request: unknown) => (await e.call(op, request)) as T })
+    const host = appDesignHost(loader)
+    const d = await host.create('Hull', [], undefined, undefined, { exact: true })
+    await host.add(d, 0, hull)
+    const tools = paintTools(host)
+    const run = (name: string, args: Record<string, unknown>) => {
+      const t = tools.find((x) => x.name === name)!
+      return t.run(t.input.parse(args) as never, undefined as never) as Promise<{ ok?: boolean; output: Record<string, unknown> }>
+    }
+    for (const [state, target] of [[1, { kind: 'part' }], [2, { kind: 'height', below: 4 }]] as const) {
+      const pv = await run('paint.preview', { design: d.id, layer: 'color', state, target })
+      expect((await run('paint.apply', { preview: pv.output['preview'] })).ok).toBe(true)
+    }
+    // the design as the paint tools left it
+    await host.add(host.get(d.id), 0, { op: 'shape.extrude', frame: { ...BED, origin: [15, 5, 20] }, shape: { type: 'circle', diameterMm: 4 }, placement: {}, spec: { distanceMm: 5, operation: 'cut' } })
+    // the side, 30 x 20, was red below 4 mm and white above; joined by the cut, it is bare, and both read-backs say why
+    const bare = [{ key: 0, areaMm2: 600, reason: PIECES_PAINTED_APART }]
+    const tab = (await run('paint.regions', { design: d.id, layer: 'color' })).output['parts'] as { bare?: unknown }[]
+    expect(tab[0]!.bare).toEqual(bare)
+    const link = (await readPaint({ object: d.id, layer: 'color' })).output.parts as { bare?: unknown }[]
+    expect(link[0]!.bare).toEqual(bare)
+  } finally {
+    undo.dispose()
+  }
 })
