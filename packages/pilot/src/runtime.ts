@@ -1225,6 +1225,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     if (project) ctx.project = project
     if (web) ctx.web = web
+    // a local model sends each tool's local form, so the tool holds it only to what that form says
+    if (local) ctx.localForm = true
     // only built-in tools write the print run; a plugin's tool never gets the handle
     const builtin = isBuiltin(tool)
     if (runBook && builtin) ctx.run = runHandle(runBook, sessionId)

@@ -314,7 +314,7 @@ export function createCardPlans(plans: PlanRegistry) {
         if (joint) throw new ToolInputError(`assumptions: ${joint}`)
         // a display or fine plan holds its level's rules before the person sees it, so the build follows a plan that can
         // look like the real thing
-        const detail = detailProblem(input, { bed: opts.bed?.() ?? DEFAULT_BED, printer: opts.bed?.() ? ctx?.context?.machine?.printer : undefined })
+        const detail = detailProblem(input, { bed: opts.bed?.() ?? DEFAULT_BED, printer: opts.bed?.() ? ctx?.context?.machine?.printer : undefined }, { local: ctx?.localForm === true })
         if (detail) throw new ToolInputError(detail)
         const { plan: raisedPlan, raised } = raiseToFloors(tidyPlan({ planId: (opts.newId ?? newPlanId)(), ...input }), floors)
         // pieces that print together without printInPlace naming them: the card says so first, plainly
