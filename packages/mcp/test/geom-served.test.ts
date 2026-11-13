@@ -34,7 +34,7 @@ function setUp() {
       return []
     }
   }
-  return { bin: standInBin(dir), read }
+  return { bin: standInBin(dir), read, dir }
 }
 
 const PER_PROCESS = 2 ** 32
@@ -89,6 +89,24 @@ describe.skipIf(process.platform === 'win32')('the served design engine', () => 
     expect(calls.map((c) => c.op)).toEqual(['brep.extrude', 'brep.extrude', 'brep.extrude'])
     expect(new Set(calls.map((c) => c.pid)).size).toBe(1)
   }, 30_000)
+
+  it('holds no bodies while its process cannot start again, and refuses a call that holds one in plain words', async () => {
+    const { bin, dir } = setUp()
+    // the first probe and the first start serve; every later start never says HELLO
+    vi.stubEnv('SX_STANDIN_SERVE_ONCE', join(dir, 'served'))
+    const engine = servedGeomEngine(bin, { perCall: geomEngine(bin), helloMs: 1500 })
+    expect(await engine.keepsBodies()).toBe(true)
+    const made = (await engine('brep.extrude', { withKeys: true })) as { body: number }
+    await expect(engine('test.exit', {})).rejects.toThrow(/ended before it answered/)
+    // a replay that starts now is told no bodies are held: its calls go per call, as bodies of text
+    expect(await engine.keepsBodies()).toBe(false)
+    expect(await engine('brep.extrude', { save: true })).toEqual({ bodySmb: 'faces:3' })
+    // a call of a replay told they are held is refused, not sent per call to fail there
+    const stopped = 'The geometry engine stopped and did not start again, so this step did not run. Try it again.'
+    await expect(engine('brep.extrude', { withKeys: true })).rejects.toThrow(stopped)
+    await expect(engine('brep.tessellate', { body: made.body })).rejects.toThrow(stopped)
+    expect(await engine('brep.free', { body: made.body })).toEqual({ freed: false })
+  }, 60_000)
 
   it('runs an sx-geom with no serve mode once per call, as before, holding no bodies', async () => {
     const { bin, read } = setUp()
