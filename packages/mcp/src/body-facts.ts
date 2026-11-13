@@ -233,14 +233,15 @@ function reach(meshes: readonly Mesh[], names: readonly string[]): NonNullable<B
 
 /**
  * Each tagged feature's height range over the steps tagged with it that rangeOf can read from their own numbers, loose
- * when any of them gives only a bound. A feature none of whose steps has a range has none, and is not read.
+ * when any of them gives only a bound; a merged array reads the part it copies from the shaping steps before it. A
+ * feature none of whose steps has a range has none, and is not read.
  */
 function featureHeights(all: readonly Step[], shaping: readonly Step[]): Record<string, { lo: number; hi: number; loose?: true }> {
   const byId = new Map(all.map((s) => [s.id, s]))
   const out: Record<string, { lo: number; hi: number; loose?: true }> = {}
   for (const s of shaping) {
     const tag = s.feature?.trim().toLowerCase()
-    const r = tag ? rangeOf(s, (id) => byId.get(id)) : null
+    const r = tag ? rangeOf(s, (id) => byId.get(id), shaping) : null
     if (!tag || !r) continue
     const was = out[tag]
     const loose = r.loose || was?.loose

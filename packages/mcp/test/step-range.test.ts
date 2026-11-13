@@ -52,4 +52,55 @@ describe('rangeOf', () => {
     expect(rangeOf(step({ op: 'boolean', kind: 'union', with: [1] } as StepParams))).toBeNull()    // as a hand-written history can hold it, with no frame saved
     expect(rangeOf({ id: 's1', params: { op: 'parts.add' } } as unknown as Step)).toBeNull()
   })
+
+  describe('a merged array of a whole part', () => {
+    // a step on `part`, its history read with it: the steps that ran, in order
+    const on = (part: number, params: StepParams, id: string): Step => ({ ...step(params, id), part }) as Step
+    const funnel = on(0, extrude(21.15, 8.35), 'f')
+    const array = (spec: Record<string, unknown>, part = 0) => on(part, { op: 'array.merged', spec } as StepParams, 'a')
+    const read = (history: Step[]) => rangeOf(history.at(-1)!, (id) => history.find((s) => s.id === id), history)
+
+    it('reads the copied part from its own steps, moved by each copy\'s rise in a row and kept for a ring about an upright axis', () => {
+      expect(read([funnel, array({ kind: 'linear', count: 4, step: [8, 0, 0] })])).toEqual({ lo: 21.15, hi: 29.5 })
+      expect(read([funnel, array({ kind: 'linear', count: 3, step: [8, 0, 2] })])).toEqual({ lo: 21.15, hi: 33.5 })
+      expect(read([funnel, array({ kind: 'circular', count: 4, center: [44, 10, 0] })])).toEqual({ lo: 21.15, hi: 29.5 })
+      expect(read([funnel, array({ kind: 'circular', count: 4, center: [44, 10, 0], rotateCopies: false })])).toEqual({ lo: 21.15, hi: 29.5 })
+      expect(read([funnel, array({ kind: 'circular', count: 4, center: [44, 10, 0], axis: [1, 0, 0] })])).toBeNull()
+    })
+
+    it('widens the part by a step joined to it, keeps it through a cut, and reads it again after an earlier array', () => {
+      const cap = on(0, extrude(29.5, 1, { operation: 'join' }), 'c')
+      const cut = on(0, extrude(29.5, 3, { operation: 'cut', flip: true }), 'x')
+      const first = on(0, { op: 'array.merged', spec: { kind: 'linear', count: 2, step: [0, 0, 1] } } as StepParams, 'r')
+      expect(read([funnel, cap, cut, array({ kind: 'linear', count: 2, step: [8, 0, 0] })])).toEqual({ lo: 21.15, hi: 30.5 })
+      expect(read([funnel, first, array({ kind: 'linear', count: 2, step: [8, 0, 0] })])).toEqual({ lo: 21.15, hi: 30.5 })
+    })
+
+    it('follows the part it copies through a reorder and a boolean that takes another part away', () => {
+      const hull = on(0, extrude(0, 14.5), 'h')
+      const top = on(1, extrude(21.15, 8.35), 't')
+      const spare = on(2, extrude(0, 1), 's')
+      const order = on(-1, { op: 'parts.order', order: [1, 0, 2] } as StepParams, 'o')
+      const cutAway = on(1, { op: 'boolean', kind: 'difference', with: [2] } as StepParams, 'b')
+      // after the reorder the funnel is part 0; the difference on the hull takes part 2 away
+      expect(read([hull, top, spare, order, cutAway, array({ kind: 'linear', count: 2, step: [8, 0, 0] }, 0)])).toEqual({ lo: 21.15, hi: 29.5 })
+      expect(read([hull, top, spare, order, cutAway, array({ kind: 'linear', count: 2, step: [8, 0, 0] }, 1)])).toEqual({ lo: 0, hi: 14.5 })
+      // every part arrayed at once: each part's range, together
+      expect(read([hull, top, array({ kind: 'linear', count: 2, step: [8, 0, 0] }, -1)])).toEqual({ lo: 0, hi: 29.5 })
+    })
+
+    it('reads none when a step on the part adds solid with no range, mesh parts made it, a split came before, or no history is given', () => {
+      const push = on(0, { op: 'face.push', at: [0, 0, 29.5], normal: [0, 0, 1], distanceMm: 2 } as StepParams, 'u')
+      const union = on(0, { op: 'boolean', kind: 'union', with: [1] } as StepParams, 'b')
+      const other = on(1, extrude(0, 1), 'o')
+      const added = on(-1, { op: 'parts.add', parts: [{ name: 'Funnel', slot: 1, positions: [], indices: [] }], label: 'Built solids' } as unknown as StepParams, 'm')
+      const split = on(0, { op: 'split', buildVolumeMm: [100, 100, 100] } as StepParams, 'z')
+      const row = { kind: 'linear', count: 2, step: [8, 0, 0] }
+      expect(read([funnel, push, array(row)])).toBeNull()
+      expect(read([funnel, other, union, array(row)])).toBeNull()
+      expect(read([added, array(row)])).toBeNull()
+      expect(read([funnel, split, array(row)])).toBeNull()
+      expect(rangeOf(array(row), (id) => (id === 'f' ? funnel : undefined))).toBeNull()
+    })
+  })
 })

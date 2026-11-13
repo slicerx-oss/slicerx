@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_design_check` 1.23.0 (from 1.22.0): the "stands on" item now reads a merged array of a whole part (geom.array without steps), so a row or ring of copies planned as its own feature is held to what it stands on. Each copy's height range is the copied part's own, read from the steps that built it, moved by the copy's rise in a row and kept as it is in a ring about an upright axis. A part that a step with no read height built or widened (a face push, a joined boolean, a cut by a plane, mesh parts), a ring about a tilted axis, and separate copies (geom.array without merge) are still skipped, as before.

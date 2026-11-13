@@ -1307,9 +1307,10 @@ describe('a display plan\'s stacked parts', () => {
   /**
    * Two decks and a funnel on a hull, each extruded from the height `funnelFrom` gives the funnel, as the stage 1 ships
    * were; with `row`, the funnel is joined to the deck and is one of a row of four patterned from it with geom.array, the row its own
-   * feature.
+   * feature. With `copies` as well, the funnel is a part of its own and the row is that whole part arrayed by `copies`,
+   * merged (geom.array without steps).
    */
-  async function ship(funnelFrom: number, plan: Partial<PartPlan>, row?: string) {
+  async function ship(funnelFrom: number, plan: Partial<PartPlan>, row?: string, copies?: Record<string, unknown>) {
     const plans = createPlanRegistry()
     const h = await connect({ geomEngine: engine, plans })
     const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
@@ -1321,8 +1322,9 @@ describe('a display plan\'s stacked parts', () => {
     await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 100, heightMm: 20 }, placement: { center: [50, 10] }, distance_mm: 14.5, feature: 'Hull' })
     await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 10 }, frame: top(14.5), placement: { center: [50, 10] }, distance_mm: 3.65, feature: 'Lower deckhouse' })
     await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 30, heightMm: 8 }, frame: top(18.1), placement: { center: [50, 10] }, distance_mm: 3.05, feature: 'Upper deckhouse' })
-    await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: 4 }, frame: top(funnelFrom), placement: { center: [row ? 38 : 50, 10] }, distance_mm: 29.5 - funnelFrom, feature: 'Funnel 1', ...(row ? { operation: 'join', part: 2 } : {}) })
-    if (row) await ok('slicerx_geom_array', { design, steps: ['Funnel 1'], spec: { kind: 'linear', count: 4, step: [8, 0, 0] }, feature: row })
+    const funnel = await ok<{ parts: unknown[] }>('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: 4 }, frame: top(funnelFrom), placement: { center: [row ? 38 : 50, 10] }, distance_mm: 29.5 - funnelFrom, feature: 'Funnel 1', ...(copies ? { operation: 'new' } : row ? { operation: 'join', part: 2 } : {}) })
+    if (row && copies) await ok('slicerx_geom_array', { design, part: funnel.parts.length - 1, merge: true, spec: copies, feature: row })
+    else if (row) await ok('slicerx_geom_array', { design, steps: ['Funnel 1'], spec: { kind: 'linear', count: 4, step: [8, 0, 0] }, feature: row })
     plans.put({
       planId: 'ship-1', part: 'Ship', units: 'mm', detail: 'display', assumptions: [], questions: [],
       features: [
@@ -1365,6 +1367,26 @@ describe('a display plan\'s stacked parts', () => {
       got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse',
       pass: false,
     })
+  })
+
+  it('holds a merged row of copies of a whole funnel part to the deck, each copy read from the funnel\'s own steps', async () => {
+    const planned = (from: number) => ({
+      features: [
+        { name: 'Hull', kind: 'extrude', sizes: { length: 100, width: 20, height: 14.5 } },
+        { name: 'Lower deckhouse', kind: 'extrude', sizes: { length: 40, width: 10, height: 3.6 } },
+        { name: 'Upper deckhouse', kind: 'extrude', sizes: { length: 30, width: 8, height: 3 } },
+        { name: 'Funnel 1', kind: 'extrude', sizes: { diameter: 4 } },
+        { name: 'Funnels (4)', kind: 'array', sizes: { count: 4, height: from === 14.5 ? 15 : 8.4 }, on: 'Upper deckhouse' },
+      ],
+    })
+    const row = { kind: 'linear', count: 4, step: [8, 0, 0] }
+    expect(stands(await ship(21.1, planned(21.1), 'Funnels (4)', row))).toMatchObject({ got: '2 stacked parts on their supports', pass: true })
+    expect(stands(await ship(14.5, planned(14.5), 'Funnels (4)', row))).toMatchObject({
+      got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse',
+      pass: false,
+    })
+    // a ring about an upright axis keeps the funnel's height, so the ring stands where the funnel does
+    expect(stands(await ship(21.1, planned(21.1), 'Funnels (4)', { kind: 'circular', count: 4, center: [44, 10, 0] }))).toMatchObject({ got: '2 stacked parts on their supports', pass: true })
   })
 
   it('checks nothing for a plan that names no support and has no tiers', async () => {
