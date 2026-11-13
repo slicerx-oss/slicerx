@@ -159,6 +159,15 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     async addWithReceipt(d, part, params, label, opts) {
       return add(d, part, params, label, opts, true)
     },
+    // the parts the step would make, replayed as `add` replays it, with nothing written to the plate
+    async trial(d, part, params) {
+      const w = empty.get(d.id)
+      const plate = w ? w.transform : (get().plate.find((p) => p.id === d.id)?.transform ?? identity())
+      const r = await runReplay({ history: appendStep(d.history, recorded(d, plate, part, params, undefined, undefined, undefined)) })
+      const st = r.status.at(-1)
+      if (st?.state !== 'done') throw new Error(`The step would not go through: ${unstopped(st?.message ?? 'the steps before it are broken')}.`)
+      return r.parts
+    },
     async replay(d, opts) {
       // `landed` is only ever this call's news
       delete d.landed
