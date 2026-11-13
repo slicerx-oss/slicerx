@@ -364,6 +364,11 @@ export interface DesignToolOptions {
   cardSide?: boolean | undefined
   /** The project's filament colors as #rrggbb, slot 1 first, so design.check can read a painted color band's color. */
   filamentColors?: (() => readonly string[]) | undefined
+  /**
+   * Whether design.new makes an exact design when it is not given `exact`; read only there. Off when absent, so a
+   * design is a mesh one unless asked. `exact` given either way wins.
+   */
+  exactByDefault?: boolean | undefined
 }
 
 /** Two names for one part: the same words, whatever the case or the spaces around them. */
@@ -500,7 +505,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const create = defineTool({
     name: 'design.new',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -509,7 +514,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       'Start a design (name): a part the geom tools build step by step from its design id, each step editable in its history. Start empty (the first step makes a body) or from an STL (from). Units mm, Z up, bed at Z = 0. More: kb.search "modeling tools".',
     input: z.object({
       name: z.string().min(1).max(120).default('Design'),
-      exact: z.boolean().optional().describe('Require native exact features, with developer opt-in. Unsupported operations refuse instead of using mesh geometry.'),
+      exact: z.boolean().optional().describe('Require native exact features, where turned on. Unsupported operations refuse instead of using mesh geometry.'),
       from: z.string().min(1).optional().describe('Start from this model: an STL path, URL or sample: name. Absent: an empty design'),
     }),
     async run(i) {
@@ -520,7 +525,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           `${done.name} is already built and passed its check against its plan, in the open design ${done.name}${opts.cardSide ? '' : ` (${done.id})`}. Change that design rather than building the part again; if the person asked for a second one, give it another name.`,
         )
       const base = i.from ? await files.model(i.from, i.name) : []
-      const d = await designs.create(i.name, base, undefined, undefined, { exact: i.exact === true })
+      const d = await designs.create(i.name, base, undefined, undefined, { exact: i.exact ?? opts.exactByDefault === true })
       return { summary: `Started ${d.name} (${d.id})${base.length ? ' from the model' : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
     },
   })

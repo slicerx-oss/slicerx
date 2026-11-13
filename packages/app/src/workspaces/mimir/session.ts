@@ -125,8 +125,11 @@ export function usableBed(s: AppState): { x: number; y: number; z: number } | un
   return { x: area.widthMm, y: area.depthMm, z: z > 0 ? z : 256 }
 }
 
-/** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
-export function toolsFor(loader: Loader): PilotTool<never>[] {
+/**
+ * The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window, with
+ * `opts` from the call that first makes them (exactByDefault: tabToolset's, off when absent).
+ */
+export function toolsFor(loader: Loader, opts: { exactByDefault?: boolean } = {}): PilotTool<never>[] {
   // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
   // positive size) and print-in-place gaps to that nozzle, the layer height and the filament. The card's design.plan puts its plans in the same registry, and the part built after an approved
   // plan ties to it (withPlanTies), so design.check checks that design. The toolset's design.put_plan (for MCP clients)
@@ -134,7 +137,7 @@ export function toolsFor(loader: Loader): PilotTool<never>[] {
   if (tools.length === 0) {
     tabHost?.dispose()
     tabHost = appDesignHost(loader)
-    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments, bed: () => usableBed(get()) })
+    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments, bed: () => usableBed(get()), ...opts })
   }
   return tools
 }
