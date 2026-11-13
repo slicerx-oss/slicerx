@@ -14,7 +14,7 @@ cache="${SX_SMLIB_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/slicerx/smlib}"
 # sha256sum marks the line of a name with a backslash, so the path is put in the shell's own form first.
 if command -v cygpath > /dev/null; then cache=$(cygpath -u "$cache"); fi
 dir="$cache/$commit"
-ready="$dir/.ready-3"
+ready="$dir/.ready-4"
 if [ -f "$ready" ]; then
   sh "$(dirname "$0")/swap-routines.sh" --check "$dir"
   echo "$dir"

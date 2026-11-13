@@ -6,6 +6,8 @@
 # the smos_Pythag macro becomes hypot, and SmIntegrator.cpp goes, for cpp/integrator.cpp. fetch-smlib.sh runs this
 # once, after unpacking, and with --check before each use, which fails unless every one of them is swapped out.
 # The list is the full inventory: no other kernel code cites Numerical Recipes or uses its routines.
+# Each file it changes gets one line after NVIDIA's SPDX header saying so (Apache-2.0 section 4(b)), which --check
+# also requires.
 set -eu
 check=0
 if [ "$1" = --check ]; then check=1; shift; fi
@@ -25,6 +27,11 @@ SmMatrix.cpp|SmMatrix::LUDecompose|return sx_SmMatrix_LUDecompose(*this, plIndx)
 SmMatrix.cpp|SmMatrix::SolveWithLUMatrix|return sx_SmMatrix_SolveWithLUMatrix(*this, laIndx, crRightHandSide, rSolutionVector);'
 
 h="$1/source/SMLib/inc/SmMath.h"
+marker='// Changed by SlicerX (packages/brep/scripts/swap-routines.sh):'
+# the files this script changes, each with what changed in it
+changed="$src/NL_Math.cpp|routine bodies replaced with calls to SlicerX's own versions (sx_routines.h).
+$src/SmMatrix.cpp|routine bodies replaced with calls to SlicerX's own versions (sx_routines.h).
+$h|smos_Pythag is hypot."
 if [ "$check" = 1 ]; then
   bad=0
   # each definition's body is our call alone, on its first line
@@ -34,6 +41,10 @@ if [ "$check" = 1 ]; then
   done; exit $bad; } || bad=1
   [ ! -e "$src/SmIntegrator.cpp" ] || { echo "swap-routines: $src/SmIntegrator.cpp is still there" >&2; bad=1; }
   grep -q '^#define[ \t]*smos_Pythag(a,b)[ \t]*hypot((a),(b))$' "$h" || { echo "swap-routines: smos_Pythag is not hypot" >&2; bad=1; }
+  echo "$changed" | { while IFS='|' read -r f what; do
+    n=$(grep -cxF "$marker $what" "$f" || true)
+    [ "$n" = 1 ] || { echo "swap-routines: $f does not say SlicerX changed it" >&2; bad=1; }
+  done; exit $bad; } || bad=1
   exit $bad
 fi
 
@@ -105,3 +116,10 @@ mv "$h.tmp" "$h"
 
 # all of SmIntegrator.cpp cites it; cpp/integrator.cpp defines the classes SmIntegrator.h declares instead
 rm "$src/SmIntegrator.cpp"
+
+# one line in each changed file, after NVIDIA's SPDX header, saying SlicerX changed it and how
+echo "$changed" | while IFS='|' read -r f what; do
+  awk -v line="$marker $what" '{ print } /SPDX-License-Identifier:/ && !done { print line; done = 1 }
+    END { if (!done) { print "swap-routines: no SPDX header in " FILENAME > "/dev/stderr"; exit 1 } }' "$f" > "$f.tmp"
+  mv "$f.tmp" "$f"
+done

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 const COMMIT: &str = "c9c5979f04cea8c38213004d4f04df0dcfb40d05";
 // written by scripts/fetch-smlib.sh once swap-routines.sh has put our routines in the source
-const READY: &str = ".ready-3";
+const READY: &str = ".ready-4";
 
 fn kernel_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("SX_SMLIB_DIR") {
