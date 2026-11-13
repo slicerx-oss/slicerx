@@ -291,6 +291,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `object-lock`, `object-printable` | Lock, and leave out of the print |
 | `object-rename` | The name field that replaces the row's name while renaming |
 | `object-part-slot` | The filament ring of a part in the row's tree, one per part; opens the slot menu |
+| `object-part-rename` | The name field that replaces a part's name in the row's tree while renaming |
+| `object-part-rename-item` | Rename, in a part's menu (F2) |
 | `object-nozzle` | The row's nozzle chip ("0.6 R"), on printers whose nozzles differ in size only; `data-extruder` is its nozzle, `data-conflict` marks an object on two sizes; opens `object-nozzle-pick` |
 | `object-nozzle-pick` | The object's nozzle menu (`data-target` is the object id) |
 | `object-nozzle-item` | One nozzle in that menu, `data-extruder` 1-based, checked for the object's own |
