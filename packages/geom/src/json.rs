@@ -590,7 +590,7 @@ pub fn allow_brep_text(on: bool) {
 /// An exact solid op of sx-brep. A body lasts only as long as the process that made it. Bodies sent back as
 /// `{"smb": text}` are a cache the app keeps for itself, not an input: the kernel's reader trusts its text, so a
 /// request may carry one only with `SX_BREP_DEV=1` (developers, and tests that run one process per call).
-/// The engine holds every body itself and answers from its table (`exact.rs`).
+/// The engine holds every body itself and answers from its table (`exact.rs`), a body sent as text included.
 #[cfg(feature = "brep")]
 fn brep_op(op: &str, req: &Value, enc: MeshOut) -> Result<Value> {
     let carries_text = req

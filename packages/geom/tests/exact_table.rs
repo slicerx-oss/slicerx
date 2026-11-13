@@ -853,6 +853,72 @@ fn a_freed_body_is_gone_and_the_count_comes_back() {
     assert_eq!(exact::count(), held);
 }
 
+// tessellate, info and save of a body sent as text answer from the table, as for a held body: the ball's triangles
+// come within the chord, where the kernel's own, which the older operation hands out, are not
+#[test]
+fn a_body_sent_as_text_is_answered_as_a_held_body_is() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let _one = alone();
+    let (center, radius) = ([0.0, 0.0, 10.0], 10.0);
+    let chord = Tessellation::default().chord_mm;
+    let kept = Kept::new(Body::sphere(center, radius).unwrap());
+    let saved = run("brep.save", &json!({ "body": kept.0 }));
+    let start = bodies();
+    sx_geom::json::allow_brep_text(true);
+    let sent = run("brep.tessellate", &json!({ "body": saved }));
+    let info = run("brep.info", &json!({ "body": saved }));
+    let again = run("brep.save", &json!({ "body": saved }));
+    let unread = refused("brep.tessellate", &json!({ "body": { "smb": "not a body" } }));
+    sx_geom::json::allow_brep_text(false);
+    // nothing of the text stays in the table, read or refused
+    assert_eq!(bodies(), start);
+    assert!(unread.starts_with("brep: "), "{unread}");
+    // how far the middle of every triangle and of each of its sides is from the ball, by its center and radius
+    let farthest = |mesh: &Value| {
+        let flat = numbers(&mesh["positions"], Value::as_f64);
+        let corners = numbers(&mesh["indices"], Value::as_u64);
+        let at = |corner: u64| {
+            let first = 3 * usize::try_from(corner).unwrap();
+            [flat[first], flat[first + 1], flat[first + 2]]
+        };
+        let off = |points: &[[f64; 3]]| {
+            #[allow(clippy::cast_precision_loss, reason = "two or three")]
+            let count = points.len() as f64;
+            let middle = [0, 1, 2].map(|k| points.iter().map(|point| point[k]).sum::<f64>() / count);
+            (sx_geom::vec3::len(sx_geom::vec3::sub(middle, center)) - radius).abs()
+        };
+        let worst = corners
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|&[a, b, c]| {
+                let [a, b, c] = [at(a), at(b), at(c)];
+                off(&[a, b, c])
+                    .max(off(&[a, b]))
+                    .max(off(&[b, c]))
+                    .max(off(&[c, a]))
+            })
+            .fold(0.0_f64, f64::max);
+        (corners.len() / 3, worst)
+    };
+    let held = run("brep.tessellate", &json!({ "body": kept.0 }));
+    let (triangles, off) = farthest(&sent);
+    assert_eq!(triangles, farthest(&held).0);
+    assert!(off <= chord, "{off}");
+    let old_body = Old::made("load", &json!({ "body": saved }));
+    let old: Value = serde_json::from_str(&older("tessellate", &json!({ "body": old_body.0 }))).unwrap();
+    let (fewer, before) = farthest(&old);
+    assert!(fewer < triangles && before > chord, "{fewer} triangles, {before}");
+    let kept_info = run("brep.info", &json!({ "body": kept.0 }));
+    assert_eq!(info["faces"], kept_info["faces"]);
+    assert_eq!(info["faceTypes"], kept_info["faceTypes"]);
+    let volume = info["volumeMm3"].as_f64().unwrap();
+    assert!((volume - 4.0 / 3.0 * PI * 1000.0).abs() < 1.0, "{volume}");
+    assert!(again["smb"].as_str().is_some_and(|smb| !smb.is_empty()));
+}
+
 #[test]
 fn the_older_operations_take_a_held_body_and_leave_it_held() {
     if !sx_brep::KERNEL {
