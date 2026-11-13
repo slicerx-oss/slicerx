@@ -7,7 +7,7 @@
 import { stepName, type DesignHost, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
-import { designArg, designSummary, faceAt, type Design } from './design-tools'
+import { designArg, designSummary, faceAt, featureArg, withFeature, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import { bandDepth, layerArg, paintState, targetArg, storedTarget } from './paint-target'
 
@@ -200,17 +200,17 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
 
   const apply = defineTool({
     name: 'paint.apply',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
-    description: "Apply a paint preview as a step in the design's history (it replays, saves with slicerx_design_save and undoes with slicerx_design_undo). Refused when the design changed since the preview; preview again then. Returns the paint read back, which matches the preview.",
-    input: z.object({ preview: z.string().min(1).describe('The preview id from slicerx_paint_preview') }),
+    description: "Apply a paint preview as a design step (it replays, saves and undoes like any step). Refused if the design changed since; preview again. Returns the paint read back.",
+    input: z.object({ preview: z.string().min(1).describe('The preview id from slicerx_paint_preview'), feature: featureArg }),
     async run(i) {
       const pv = previews.get(i.preview)
       if (!pv) throw new ToolInputError(`preview: no preview ${i.preview}; make one with slicerx_paint_preview`)
       const d = designs.get(pv.design)
       if (d.history.steps.length !== pv.steps || d.history.steps.at(-1)?.id !== pv.last) throw new ToolInputError('The design changed since this preview; preview again.')
-      const s = await designs.add(d, pv.part, pv.params)
+      const s = await designs.add(d, pv.part, pv.params, undefined, withFeature(i.feature))
       previews.delete(pv.id)
       // What replay painted is what the preview showed.
       const off = Object.entries(pv.expected).filter(([k, t]) => !sameTexts(d.parts[Number(k)]?.paint?.[pv.params.layer], t)).map(([k]) => Number(k))

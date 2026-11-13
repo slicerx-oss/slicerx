@@ -148,6 +148,8 @@ export interface BodyFacts {
   tags?: (string | null)[] | undefined
   /** Those steps' ids, in order (slicerx_design_edit_step takes a step by id; an index counts paint and suppressed steps too). */
   stepIds?: string[] | undefined
+  /** The paint steps tagged with a planned feature (the paint tool's feature), each with its step name. */
+  paintTags?: { feature: string; step: string }[] | undefined
   /** Each loft step's sections and the feature it was tagged with, read so a display plan's curved bodies are held to change along their length. */
   lofts?: LoftSections[] | undefined
   /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
@@ -319,7 +321,8 @@ const steps = (n: number): string => `${n} step${n === 1 ? '' : 's'}`
  * feature its name shares the most words with (on a tie, the feature with fewer words left over), and a step whose name
  * matches no feature stands for none. Fewer steps than features, or a feature left with none, fails by name.
  */
-function featureItem(features: string[], body: BodyFacts, bands: Bands = { painted: new Map(), why: new Map() }): CheckItem {
+function featureItem(features: string[], body: BodyFacts, read: Bands = { painted: new Map(), why: new Map() }): CheckItem {
+  const bands = withPaintSteps(features, body, read)
   const n = features.length
   const m = body.features
   // a color band painted where and as the plan says needs no step that shapes it
@@ -397,6 +400,24 @@ function featureItem(features: string[], body: BodyFacts, bands: Bands = { paint
     ? `${m} steps, none tagged for ${missing.join(', ')}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}${hints.length ? `; ${hints.join('; ')}` : ''}`
     : `${m} steps, none for ${missing.join(', ')}${loose.length ? `; ${quoted} match${loose.length === 1 ? 'es' : ''} no planned feature` : ''}; pass feature on each step to tie it to the plan`
   return { name: 'feature count', want, got: `${got}${unpainted}`, pass: false }
+}
+
+/**
+ * The bands read from the paint, with each feature a paint step was tagged for counted as painted by that step, as a
+ * shaping step tagged for a feature counts as built. A band the paint reads as planned keeps what was read.
+ */
+function withPaintSteps(features: string[], body: BodyFacts, bands: Bands): Bands {
+  if (!body.paintTags?.length) return bands
+  const painted = new Map(bands.painted)
+  const why = new Map(bands.why)
+  for (const f of features) {
+    if (painted.has(f)) continue
+    const by = body.paintTags.filter((t) => nameKey(t.feature) === nameKey(f))
+    if (!by.length) continue
+    painted.set(f, `painted by ${by.map((t) => `"${t.step}"`).join(', ')}`)
+    why.delete(f)
+  }
+  return { painted, why }
 }
 
 /** A painted region of one filament on one part, as body facts read it, mm. */

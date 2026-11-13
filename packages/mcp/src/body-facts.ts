@@ -93,6 +93,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     steps: shaping.map((s) => stepName(s)),
     tags: shaping.map((s) => s.feature?.trim() || null),
     stepIds: shaping.map((s) => s.id),
+    paintTags: d.history.steps.flatMap((s) => (!s.suppressed && s.params.op === 'paint' && s.feature?.trim() ? [{ feature: s.feature.trim(), step: stepName(s) }] : [])),
     lofts: loftSections(shaping as unknown as Parameters<typeof loftSections>[0]),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     watertight,

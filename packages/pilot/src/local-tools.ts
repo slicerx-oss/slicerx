@@ -296,7 +296,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
       'timeLimitS',
     ] },
   'orient': { tokens: 133, description: true, fields: ['apply', 'supportAngle'] },
-  'paint.apply': { tokens: 110, description: true, fields: ['preview'] },
+  'paint.apply': { tokens: 115, description: true, fields: ['feature', 'preview'] },
   'paint.preview': { tokens: 796, description: true, fields: [
       'design',
       'layer',
