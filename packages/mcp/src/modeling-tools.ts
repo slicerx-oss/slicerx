@@ -45,6 +45,9 @@ const designOrModel = (i: { model?: string | undefined; design?: string | undefi
 
 const partArg = z.number().int().min(0).optional().describe('With a design: the part to work on, from 0; absent: every part')
 
+/** The rail reply's line on its two steps: what one undo takes, and how to change one of them. */
+export const RAIL_UNDO_NOTE = 'one slicerx_design_undo takes both steps off, and slicerx_design_edit_step changes either one'
+
 export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost | undefined; /** The plans a new part's piece name comes from (pieceNameFor). */ plans?: PiecePlans | undefined; /** The nozzle, mm, for the gap a new part is seated across (seat.ts); 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; /** The layer height the part prints with, for the same. */ fitProfile?: (() => FitProfile) | undefined }): PilotTool<never>[] {
   const call = deps.files.call
   const meshOut = deps.files.mesh
@@ -566,7 +569,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
       const facts = { part: target, posts: lay.posts.length, cornerPosts: lay.cornerPosts, spacingMm: lay.spacingMm, lengthMm: lay.lengthMm, closed, heightMm: i.height_mm, postMm, barMm, barHeightMm }
       const k = d.history.steps.length
       return {
-        summary: `Railed: steps ${k - 1} and ${k}, ${lay.posts.length} posts (${lay.cornerPosts} on corners) at most ${Math.round(lay.spacingMm * 100) / 100} mm apart along ${Math.round(lay.lengthMm * 10) / 10} mm, ${i.height_mm} mm tall, ${i.join ? `joined to ${d.parts[target]?.name ?? `part ${target}`}` : `a new part, ${d.parts[target]?.name ?? 'Rail'}`}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`,
+        summary: `Railed: steps ${k - 1} and ${k}, ${lay.posts.length} posts (${lay.cornerPosts} on corners) at most ${Math.round(lay.spacingMm * 100) / 100} mm apart along ${Math.round(lay.lengthMm * 10) / 10} mm, ${i.height_mm} mm tall, ${i.join ? `joined to ${d.parts[target]?.name ?? `part ${target}`}` : `a new part, ${d.parts[target]?.name ?? 'Rail'}`}; ${RAIL_UNDO_NOTE}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`,
         output: { ...designSummary(d), rail: facts },
       }
     },
