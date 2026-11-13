@@ -6,12 +6,21 @@
 // stdin, which the per-call run would wait on. `test.late` dies mid-answer and leaves the rest of its answer, and an
 // answer of its own, to come after it has ended (SX_STANDIN_LATE_MS later, 1.5 s by default).
 import { spawn } from 'node:child_process'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { decodeFrame, encodeFrame, HELLO, takeFrame } from '@slicerx/cad-history/served'
 import { standInKernel } from './served-engine'
 
 const kernel = standInKernel()
 const op = process.argv[2] ?? ''
-if ((op === 'serve' || op === '--sx-geom-engine') && process.env['SX_STANDIN_NO_SERVE'] !== '1') {
+// SX_STANDIN_SERVE_ONCE=<file>: serves for the look at whether it serves and for the first start (it counts them in the
+// file); later starts never say HELLO, as a binary that cannot start again would
+const once = process.env['SX_STANDIN_SERVE_ONCE']
+const served = (op === 'serve' || op === '--sx-geom-engine') && process.env['SX_STANDIN_NO_SERVE'] !== '1'
+const starts = once && existsSync(once) ? Number(readFileSync(once, 'utf8')) : 0
+if (served && once && starts >= 2) {
+  setTimeout(() => process.exit(4), 60_000)
+} else if (served) {
+  if (once) writeFileSync(once, String(starts + 1))
   process.stdout.write(HELLO)
   let pending: Uint8Array = new Uint8Array(0)
   process.stdin.on('data', (d: Buffer) => {

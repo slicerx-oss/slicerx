@@ -8,7 +8,7 @@
 // to the next one. An sx-geom with no serve mode (it does not say HELLO) is run once per call, as before.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { clearReplayCache, type EngineCall } from '@slicerx/cad-history'
-import { decodeFrame, encodeFrame, handsOutBodies, HELLO, ownBodies, plainArrays, readBuffers, tagBodies, takeFrame } from '@slicerx/cad-history/served'
+import { decodeFrame, encodeFrame, handsOutBodies, HELLO, namesBody, ownBodies, plainArrays, readBuffers, tagBodies, takeFrame } from '@slicerx/cad-history/served'
 import { ToolInputError } from './models'
 
 /** The design engine of a server: calls, and whether bodies stay in the engine between them. */
@@ -36,6 +36,9 @@ interface Job {
 }
 
 const HELLO_BYTES = new TextEncoder().encode(HELLO)
+
+/** Why a call that holds a body does not run when the served process stopped and did not start again. */
+export const ENGINE_DID_NOT_RESTART = 'The geometry engine stopped and did not start again, so this step did not run. Try it again.'
 
 // every served child, so the server's exit ends them even while a call runs
 const children = new Set<ChildProcess>()
@@ -107,6 +110,9 @@ export function paintCodes(v: unknown, buffers: readonly Uint8Array[]): unknown 
   for (const [k, e] of Object.entries(o)) out[k] = paintCodes(e, buffers)
   return out
 }
+
+/** Whether a call asks the engine to keep the body it makes (`withKeys`). */
+const holdsBody = (op: string, request: unknown): boolean => handsOutBodies(op, request) && (request as Record<string, unknown> | null)?.['withKeys'] === true
 
 /** sx-geom `bin` served for the server, or per call when it has no serve mode. */
 export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
@@ -235,6 +241,13 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
     if (!job) return
     busy = true
     if (!(await ensure())) {
+      // a binary that serves, whose process stopped and did not start again: a call that holds a body (one it keeps,
+      // or one it names) is of a replay told bodies are held here, and a process of its own would not have it
+      if (mode === 'served' && (holdsBody(job.op, job.request) || namesBody(job.request))) {
+        if (job.op === 'brep.free') job.resolve({ freed: false })
+        else job.reject(new ToolInputError(ENGINE_DID_NOT_RESTART))
+        return next()
+      }
       // no serve mode: today's call, a process of its own
       o.perCall(job.op, job.request).then(job.resolve, job.reject)
       return next()
@@ -284,6 +297,8 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
       queue.push({ op, request, resolve, reject })
       void pump()
     })) as DesignEngine
-  call.keepsBodies = async () => mode === 'served' || (mode === 'unknown' && (await ensure()))
+  // bodies are held only while a served process is up, started here when none is: a replay that starts while the
+  // process cannot start again runs as one per call does, its bodies as text
+  call.keepsBodies = async () => mode !== 'perCall' && (await ensure())
   return call
 }
