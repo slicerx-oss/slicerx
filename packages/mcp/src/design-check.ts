@@ -117,7 +117,7 @@ export function tidyPlan<P extends PartPlan>(plan: P): P {
 }
 
 export const checkItemSchema = z.object({ name: z.string(), want: z.string(), got: z.string(), pass: z.boolean(), warning: z.string().optional(), where: z.string().optional(), fix: z.string().optional() })
-export const checkResultSchema = z.object({ pass: z.boolean(), items: z.array(checkItemSchema) })
+export const checkResultSchema = z.object({ pass: z.boolean(), items: z.array(checkItemSchema), notes: z.array(z.string()).optional() })
 export type CheckItem = z.infer<typeof checkItemSchema>
 export type CheckResult = z.infer<typeof checkResultSchema>
 
@@ -156,6 +156,8 @@ export interface BodyFacts {
   lofts?: LoftSections[] | undefined
   /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
   parts?: { x: number; y: number; z: number }[] | undefined
+  /** Each part's box, filament slot and name, and whether it has color paint, when the design has more than one part. */
+  partBoxes?: PartBox[] | undefined
   /** True when every part is closed. */
   watertight: boolean
   /** What keeps it from being closed, when it is not: "5 edges where more than two faces meet". */
@@ -296,6 +298,58 @@ export interface SizeEnd {
 /** Where a failed overall size is off, one axis: its size against the plan's and the corners at its two ends. */
 export const SIZE_WHERE = (axis: string, got: number, want: number, lo: SizeEnd, hi: SizeEnd): string =>
   `Along ${axis} it is ${r2(got)} mm against the plan's ${r2(want)} mm, from (${lo.at.map(r2).join(', ')}) mm${lo.part ? ` on ${lo.part}` : ''} to (${hi.at.map(r2).join(', ')}) mm${hi.part ? ` on ${hi.part}` : ''}.`
+
+/** A part's box in the design, mm, with its filament slot, its name and whether any of it is painted in color. */
+export interface PartBox {
+  name: string
+  slot: number
+  painted: boolean
+  min: [number, number, number]
+  max: [number, number, number]
+}
+
+/** A part whose footprint is at most this share of the part under it is small beside it. */
+export const SMALL_SHARE = 0.25
+/** A part sits on another when its bottom is within this of the other's top, or below it and above the other's bottom, mm. */
+export const SITS_MM = 0.2
+
+/**
+ * The note for a small part in the same filament as the part it sits on, which hides it in the views and the print.
+ * A part with no name of its own (partNamed: the name a new body gets) is said in words instead.
+ */
+export const SAME_FILAMENT = (part: string | undefined, on: string | undefined, slot: number): string =>
+  `${part ?? 'A small part'} is the same filament (${slot}) as ${on ? `${on}, which it sits on` : 'the part it sits on'}, so it will hardly show. Give it another filament, or paint ${on ?? 'that part'} under it.`
+
+/**
+ * The small parts of a display or fine model in the same filament as the part they sit on (sameFilament), one note
+ * each: a white boat on a white deck vanishes in the views. "Sits on": the part's bottom is no lower than the other's
+ * bottom and no higher than SITS_MM over its top, and the middle of its footprint is over the other's footprint. Of
+ * the parts it could sit on, the one with the highest top is taken. "Small": its footprint (x by y) is at most
+ * SMALL_SHARE of that part's. A part painted in color, or one it sits on that is, is left out: the paint may well be
+ * the contrast. Never a failed item, only notes beside the check.
+ */
+export function sameFilament(boxes: readonly PartBox[]): string[] {
+  const area = (b: PartBox) => Math.max(0, b.max[0] - b.min[0]) * Math.max(0, b.max[1] - b.min[1])
+  return boxes.flatMap((a, i) => {
+    const cx = (a.min[0] + a.max[0]) / 2
+    const cy = (a.min[1] + a.max[1]) / 2
+    const under = boxes
+      .filter((b, j) => j !== i && a.min[2] >= b.min[2] && a.min[2] <= b.max[2] + SITS_MM && a.max[2] > b.max[2] - SITS_MM && cx >= b.min[0] && cx <= b.max[0] && cy >= b.min[1] && cy <= b.max[1])
+      .sort((p, q) => q.max[2] - p.max[2])[0]
+    if (!under || a.slot !== under.slot || a.painted || under.painted) return []
+    if (area(a) > SMALL_SHARE * area(under)) return []
+    return [SAME_FILAMENT(partNamed(a.name, boxes.length), partNamed(under.name, boxes.length), a.slot)]
+  })
+}
+
+/**
+ * Whether color is in play for a part: the design already uses it (parts on more than one filament, or color paint on
+ * any part). A build from a request that never asked for color is one default filament with no color planning, and
+ * the color comes when the person asks for it, so what the plan says does not count here.
+ */
+export function colorInPlay(boxes: readonly PartBox[]): boolean {
+  return new Set(boxes.map((b) => b.slot)).size > 1 || boxes.some((b) => b.painted)
+}
 
 /** Whether a size matches axis by axis, x and y swapped passing (turned on the bed), with a note on a swap. */
 function sizeMatch(got: number[], want: number[], sizeOk: SizeOk = tightOk): { pass: boolean; note: string } {
@@ -766,7 +820,10 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   const floor = plannedFloor(plan)
   if (floor && body.floor) items.push(floorItem(floor, body.floor))
 
-  return { pass: items.every((i) => i.pass), items }
+  // a display or fine model's small parts in the filament of what they sit on vanish: a note, never a failed item, and
+  // only once color is in play (colorInPlay): a build nobody asked color of is one default filament, and says nothing
+  const notes = (plan.detail === 'display' || plan.detail === 'fine') && body.partBoxes && colorInPlay(body.partBoxes) ? sameFilament(body.partBoxes) : []
+  return { pass: items.every((i) => i.pass), items, ...(notes.length ? { notes } : {}) }
 }
 
 /** Loose parts: no two bodies above 0 and under the gap a printer keeps open, which neither fuse nor print apart. */

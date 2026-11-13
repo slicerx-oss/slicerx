@@ -10,7 +10,7 @@
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import { colorWord, colorWordHex } from '@slicerx/pilot'
-import { partNamed, type BodyFacts, type FitLimits, type FloorFacts, type PaintedRegion } from './design-check'
+import { partNamed, type BodyFacts, type PartBox, type FitLimits, type FloorFacts, type PaintedRegion } from './design-check'
 import { fitFacts } from './fit-facts'
 import { looseGaps, looseText, movingParts, partsNear } from './seat'
 import { floorOpenings } from './holder-floor'
@@ -98,6 +98,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     paintTags: d.history.steps.flatMap((s) => (!s.suppressed && s.params.op === 'paint' && s.feature?.trim() ? [{ feature: s.feature.trim(), step: stepName(s) }] : [])),
     lofts: loftSections(shaping as unknown as Parameters<typeof loftSections>[0]),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
+    ...(world.length > 1 ? { partBoxes: world.map((w, k) => partBox(w, d.parts[k]!)) } : {}),
     watertight,
     ...(watertight ? {} : { openWhy: notClosedWords(open) }),
     minWallMm: wall.mm,
@@ -215,6 +216,21 @@ function reach(meshes: readonly Mesh[], names: readonly string[]): NonNullable<B
   }
   const axis = (k: number) => ({ lo: end(lo[k]!), hi: end(hi[k]!) })
   return { x: axis(0), y: axis(1), z: axis(2) }
+}
+
+/** A part's box in the design, with its slot, name and whether it has color paint (PartBox). */
+function partBox(m: Mesh, p: { name: string; slot: number; paint?: { color?: Record<number, string> } }): PartBox {
+  const lo: V3 = [Infinity, Infinity, Infinity]
+  const hi: V3 = [-Infinity, -Infinity, -Infinity]
+  for (let j = 0; j < m.indices.length; j++) {
+    const v = vertex(m, m.indices[j] ?? 0)
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k]!, v[k]!)
+      hi[k] = Math.max(hi[k]!, v[k]!)
+    }
+  }
+  const r = (v: number) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : 0)
+  return { name: p.name, slot: p.slot, painted: Object.keys(p.paint?.color ?? {}).length > 0, min: lo.map(r) as V3, max: hi.map(r) as V3 }
 }
 
 /** Two readings on one axis are one hole when their diameters agree within this, or this share of the narrower. */
