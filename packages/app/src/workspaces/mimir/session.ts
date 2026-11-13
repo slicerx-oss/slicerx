@@ -45,6 +45,7 @@ import { NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter, scriptsFor } f
 import { SCRIPTS } from './scripts'
 import { appTabs } from './tabs'
 import { checkedDesign, standingPlan, withPlanState } from './plan-state'
+import { agentCall } from '../../state/auto-slice'
 
 export const mimirLogs = createMemorySessionStore()
 
@@ -137,7 +138,11 @@ export function toolsFor(loader: Loader, opts: { exactByDefault?: boolean } = {}
   if (tools.length === 0) {
     tabHost?.dispose()
     tabHost = appDesignHost(loader)
-    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments, bed: () => usableBed(get()), ...opts })
+    // a run of the tab's tool calls holds auto slice until it goes quiet, then it slices once (auto-slice.ts agentCall)
+    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments, bed: () => usableBed(get()), ...opts }).map((t) => {
+      const run = t.run.bind(t)
+      return { ...t, run: (input: never, ctx: Parameters<typeof run>[1]) => agentCall(() => run(input, ctx)) }
+    })
   }
   return tools
 }
