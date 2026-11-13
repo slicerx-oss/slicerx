@@ -10,6 +10,9 @@ use crate::fm::Fm;
 use crate::import::auto::edge_shells;
 use crate::mesh::{Aabb, TriMesh};
 use crate::vec3::{self, V3};
+use manifold_rust::linalg::{Vec2, Vec3};
+use manifold_rust::robust::exact::Sign;
+use manifold_rust::robust::exact::filtered::{orient2d, orient3d};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -631,35 +634,113 @@ fn seg_seg(p1: V3, q1: V3, p2: V3, q2: V3) -> (V3, V3) {
     )
 }
 
-fn seg_hits_tri(p: V3, q: V3, [a, b, c]: &[V3; 3]) -> Option<V3> {
-    let dir = vec3::sub(q, p);
-    let (e1, e2) = (vec3::sub(*b, *a), vec3::sub(*c, *a));
-    let h = vec3::cross(dir, e2);
-    let det = vec3::dot(e1, h);
-    if det.abs() < 1e-18 {
-        return None;
-    }
-    let s = vec3::sub(p, *a);
-    let u = vec3::dot(s, h) / det;
-    if !(0.0..=1.0).contains(&u) {
-        return None;
-    }
-    let qv = vec3::cross(s, e1);
-    let v = vec3::dot(dir, qv) / det;
-    if v < 0.0 || u + v > 1.0 {
-        return None;
-    }
-    let t = vec3::dot(e2, qv) / det;
-    (0.0..=1.0)
-        .contains(&t)
-        .then(|| vec3::add(p, vec3::scale(dir, t)))
+/// the corner of `v` as the exact predicates take it
+fn pt(v: V3) -> Vec3 {
+    Vec3::new(v[0], v[1], v[2])
 }
 
+/// Where the closed segment `p q` meets the closed triangle `t`, given the exact sides of `p` and `q` against the
+/// triangle's plane (`orient3d` of the triangle and the point). Whether they meet is decided by exact orientation
+/// signs only, so facets a rounding error out of one plane are never taken for touching; the point given back is
+/// rounded. A triangle with no area meets nothing here: its neighbors, and the closest points, cover it.
+fn seg_hits_tri(p: V3, q: V3, sp: Sign, sq: Sign, t: &[V3; 3]) -> Option<V3> {
+    if sp == sq && sp != Sign::Zero {
+        return None;
+    }
+    if sp == Sign::Zero && sq == Sign::Zero {
+        return coplanar_hit(p, q, t);
+    }
+    // the line crosses the plane once: the crossing is in the closed triangle when no two of its edges see the line
+    // turn opposite ways
+    let [a, b, c] = t.map(pt);
+    let (pp, pq) = (pt(p), pt(q));
+    let turns = [
+        orient3d(pp, pq, a, b),
+        orient3d(pp, pq, b, c),
+        orient3d(pp, pq, c, a),
+    ];
+    if turns.contains(&Sign::Pos) && turns.contains(&Sign::Neg) {
+        return None;
+    }
+    let n = vec3::cross(vec3::sub(t[1], t[0]), vec3::sub(t[2], t[0]));
+    let (dp, dq) = (vec3::dot(n, vec3::sub(p, t[0])), vec3::dot(n, vec3::sub(q, t[0])));
+    // the rounded heights can agree where the exact sides differ: then either end will do as the point
+    let rise = dp - dq;
+    let s = if rise == 0.0 {
+        0.0
+    } else {
+        (dp / rise).clamp(0.0, 1.0)
+    };
+    Some(vec3::add(p, vec3::scale(vec3::sub(q, p), s)))
+}
+
+/// Where the closed segment `p q`, in the plane of triangle `t`, meets it, decided exactly in a projection that keeps
+/// the triangle's area (dropping an axis its plane is not parallel to keeps every side test's sign).
+fn coplanar_hit(p: V3, q: V3, t: &[V3; 3]) -> Option<V3> {
+    let n = vec3::cross(vec3::sub(t[1], t[0]), vec3::sub(t[2], t[0]));
+    let mut axes = [0, 1, 2];
+    axes.sort_by(|&i, &j| n[j].abs().total_cmp(&n[i].abs()));
+    let (drop, turn) = axes.into_iter().find_map(|k| {
+        let flat = |v: V3| Vec2::new(v[(k + 1) % 3], v[(k + 2) % 3]);
+        let s = orient2d(flat(t[0]), flat(t[1]), flat(t[2]));
+        (s != Sign::Zero).then_some((k, s))
+    })?;
+    let flat = |v: V3| Vec2::new(v[(drop + 1) % 3], v[(drop + 2) % 3]);
+    let [a, b, c] = t.map(flat);
+    let edges = [(a, b), (b, c), (c, a)];
+    let inside = |x: Vec2| edges.iter().all(|&(u, v)| orient2d(u, v, x) != turn.flip());
+    if inside(flat(p)) {
+        return Some(p);
+    }
+    if inside(flat(q)) {
+        return Some(q);
+    }
+    let (fp, fq) = (flat(p), flat(q));
+    (0..3)
+        .find(|&k| segments_meet(fp, fq, edges[k].0, edges[k].1))
+        .map(|k| seg_seg(p, q, t[k], t[(k + 1) % 3]).0)
+}
+
+/// whether closed segments `p q` and `u v` in a plane meet, by exact orientation signs
+fn segments_meet(p: Vec2, q: Vec2, u: Vec2, v: Vec2) -> bool {
+    let (su, sv) = (orient2d(p, q, u), orient2d(p, q, v));
+    let (sp, sq) = (orient2d(u, v, p), orient2d(u, v, q));
+    if (su == sv && su != Sign::Zero) || (sp == sq && sp != Sign::Zero) {
+        return false;
+    }
+    if [su, sv, sp, sq].iter().all(|&s| s == Sign::Zero) {
+        // on one line: they meet where their spans overlap on both axes (exact comparisons)
+        let over = |a: f64, b: f64, c: f64, d: f64| a.max(b) >= c.min(d) && c.max(d) >= a.min(b);
+        return over(p.x, q.x, u.x, v.x) && over(p.y, q.y, u.y, v.y);
+    }
+    true
+}
+
+#[cfg(test)]
+thread_local! {
+    /// triangle pairs measured on this thread, so tests can bound a fit check's work
+    static TRI_PAIRS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The closest points of two triangles and their distance, or a point where they touch or cross (distance 0, true).
+/// Touching is decided exactly (`seg_hits_tri`); the distances are rounded.
 fn tri_tri(x: &[V3; 3], y: &[V3; 3]) -> (f64, V3, V3, bool) {
-    for (s, t) in [(x, y), (y, x)] {
-        for k in 0..3 {
-            if let Some(h) = seg_hits_tri(s[k], s[(k + 1) % 3], t) {
-                return (0.0, h, h, true);
+    #[cfg(test)]
+    TRI_PAIRS.with(|n| n.set(n.get() + 1));
+    let side = |t: &[V3; 3], v: V3| orient3d(pt(t[0]), pt(t[1]), pt(t[2]), pt(v));
+    let sy = y.map(|v| side(x, v));
+    // one triangle wholly on one side of the other's plane: no edge of either meets the other
+    let apart = |s: &[Sign; 3]| s[0] != Sign::Zero && s[0] == s[1] && s[1] == s[2];
+    if !apart(&sy) {
+        let sx = x.map(|v| side(y, v));
+        if !apart(&sx) {
+            for (s, signs, t) in [(x, &sx, y), (y, &sy, x)] {
+                for k in 0..3 {
+                    let k1 = (k + 1) % 3;
+                    if let Some(h) = seg_hits_tri(s[k], s[k1], signs[k], signs[k1], t) {
+                        return (0.0, h, h, true);
+                    }
+                }
             }
         }
     }
@@ -895,5 +976,159 @@ mod tests {
         assert!((r.gaps[0].gap_mm - 0.1).abs() < 0.01, "{}", r.gaps[0].gap_mm);
         assert_eq!(r.gaps[0].kind, GapKind::Horizontal);
         assert!(fit_check(&m, &opts(0.05)).unwrap().gaps.is_empty());
+    }
+
+    /// The hinge-box pair from a fit check that said the lid touched the base: a base knuckle facet (x 4 to 16) and the
+    /// lid knuckle facet beside it (x 16.6 to 43.4), on one cylinder of radius 1.8, 0.6 mm apart along the axis. `z` is
+    /// one corner height, as drawn (bits 403dcd3900000000) or read one ulp low (403dcd38ffffffff).
+    fn hinge_pair(z: f64) -> ([V3; 3], [V3; 3]) {
+        let f = f64::from_bits;
+        let (y0, z0) = (f(0x4044_09a0_a000_0000), f(0x403d_2ae5_6000_0000));
+        let y1 = f(0x4044_2607_2000_0000);
+        let (lid0, lid1) = (f(0x4030_9999_a000_0000), f(0x4045_b333_4000_0000));
+        (
+            [[16.0, y0, z0], [16.0, y1, z], [4.0, y1, z]],
+            [[lid0, y0, z0], [lid1, y0, z0], [lid0, y1, z]],
+        )
+    }
+
+    #[test]
+    fn facets_of_one_cylinder_apart_along_it_do_not_touch() {
+        // the facets are in one plane with either z. With z one ulp low, the edge test once found a lid edge in the base
+        // facet: its parallel test compared a determinant to a fixed 1e-18, rounding made it -4.4e-16 where it is 0,
+        // and the ratios of that noise (u -0, v 1, t 1) put the lid corner on the facet, so fit.check said 0.0 mm
+        let gap = f64::from_bits(0x4030_9999_a000_0000) - 16.0;
+        for bits in [0x403d_cd39_0000_0000_u64, 0x403d_cd38_ffff_ffff] {
+            let (base, lid) = hinge_pair(f64::from_bits(bits));
+            for (x, y) in [(&base, &lid), (&lid, &base)] {
+                let (d, p, q, crosses) = tri_tri(x, y);
+                assert!(!crosses, "{bits:016x}: a contact at {p:?}");
+                assert!(
+                    (d - gap).abs() < 1e-9,
+                    "{bits:016x}: {d} mm from {p:?} to {q:?}, not {gap}"
+                );
+            }
+            let a = TriMesh {
+                positions: base.to_vec(),
+                triangles: vec![[0, 1, 2]],
+                faces: None,
+            };
+            let b = TriMesh {
+                positions: lid.to_vec(),
+                triangles: vec![[0, 1, 2]],
+                faces: None,
+            };
+            let (d, _, _, fused) = closest(&a, &b).unwrap();
+            assert!(!fused && (d - gap).abs() < 1e-9, "{bits:016x}: {d}");
+        }
+    }
+
+    #[test]
+    fn a_few_ulps_never_make_a_contact_of_coplanar_facets_apart() {
+        // every corner of the pair nudged by up to two ulps each way: the facets stay 0.6 mm apart, never touching
+        let nudge = |v: f64, k: i64| f64::from_bits(v.to_bits().wrapping_add_signed(k));
+        let (base, lid) = hinge_pair(f64::from_bits(0x403d_cd39_0000_0000));
+        let gap = lid[0][0] - base[0][0];
+        let mut tried = 0;
+        for c in 0..3 {
+            for k in -2..=2 {
+                for (which, axis) in [(0, 1), (0, 2), (1, 1), (1, 2)] {
+                    let (mut x, mut y) = (base, lid);
+                    let t = if which == 0 { &mut x } else { &mut y };
+                    t[c][axis] = nudge(t[c][axis], k);
+                    let (d, p, _, crosses) = tri_tri(&x, &y);
+                    assert!(
+                        !crosses && (d - gap).abs() < 1e-9,
+                        "corner {c} axis {axis} by {k}: {d} at {p:?}"
+                    );
+                    tried += 1;
+                }
+            }
+        }
+        assert_eq!(tried, 60);
+    }
+
+    #[test]
+    fn coplanar_contacts_still_touch() {
+        // touching within the plane still counts: an edge on an edge, a corner on an edge, and overlapping facets
+        let a = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        for b in [
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+            [[0.5, 0.5, 0.0], [1.0, 1.0, 0.0], [2.0, 0.5, 0.0]],
+            [[0.2, 0.2, 0.0], [3.0, 0.2, 0.0], [0.2, 3.0, 0.0]],
+            [[-1.0, 0.25, 0.0], [2.0, 0.25, 0.0], [2.0, 0.3, 0.0]],
+        ] {
+            let (d, _, _, crosses) = tri_tri(&a, &b);
+            assert!(crosses && d == 0.0, "{b:?}: {d}");
+        }
+        // and the same facet moved 0.6 off its edge does not
+        let b = [[1.3, 0.0, 0.0], [0.6, 0.7, 0.0], [1.6, 1.0, 0.0]];
+        let (d, _, _, crosses) = tri_tri(&a, &b);
+        assert!(!crosses && d > 0.2, "{d}");
+    }
+
+    #[test]
+    fn a_hinge_with_one_ulp_low_corners_is_two_pieces_in_bounded_work() {
+        // two knuckles on one axis and radius, 0.6 mm apart: one ring of corners read one ulp low at a time
+        let along_x = crate::vec3::Frame {
+            origin: [0.0, 40.0, 27.5],
+            u: [0.0, 1.0, 0.0],
+            v: [0.0, 0.0, 1.0],
+            w: [1.0, 0.0, 0.0],
+        };
+        let knuckles = || {
+            (
+                build::cylinder(&along_x, 1.8, 4.0, 16.0, 24),
+                build::cylinder(&along_x, 1.8, 16.6, 43.4, 24),
+            )
+        };
+        let (a, _) = knuckles();
+        let rings: Vec<(u64, u64)> = {
+            let mut r: Vec<(u64, u64)> = a
+                .positions
+                .iter()
+                .map(|p| (p[1].to_bits(), p[2].to_bits()))
+                .collect();
+            r.sort_unstable();
+            r.dedup();
+            r
+        };
+        assert_eq!(rings.len(), 24);
+        let opts: FitOptions = serde_json::from_value(serde_json::json!({
+            "minGapMm": 0.4, "minVerticalGapMm": 0.6, "layerHeightMm": 0.2, "byDirection": true, "apartMm": 2
+        }))
+        .unwrap();
+        for &(y, z) in &rings {
+            let (mut a, mut b) = knuckles();
+            for p in a.positions.iter_mut().chain(b.positions.iter_mut()) {
+                if (p[1].to_bits(), p[2].to_bits()) == (y, z) {
+                    p[2] = f64::from_bits(z - 1);
+                }
+            }
+            TRI_PAIRS.with(|n| n.set(0));
+            let r = fit_check_items(&[a.clone(), b.clone()], &opts).unwrap();
+            let tried = TRI_PAIRS.with(|n| n.replace(0));
+            assert_eq!(r.pieces, 2, "ring ({y:016x}, {z:016x}): {r:?}");
+            assert!(
+                r.gaps.iter().all(|g| g.kind != GapKind::Fused && g.gap_mm > 0.59),
+                "{r:?}"
+            );
+            // the work: no more triangle pairs measured than the pairs whose boxes are in reach (2 mm here), which
+            // is what the search may not skip; a false touch used to end it early instead
+            let reach: f64 = 2.0;
+            let in_reach = a
+                .triangles
+                .iter()
+                .flat_map(|&x| b.triangles.iter().map(move |&y| (x, y)))
+                .filter(|&(x, y)| {
+                    let c = a.corners(x);
+                    box_gap2(&[0, 1, 2].map(|k| span(&c, k)), &b.corners(y)) <= reach * reach
+                })
+                .count();
+            assert!(
+                tried > 0 && tried <= in_reach,
+                "{tried} pairs measured, {in_reach} in reach"
+            );
+        }
     }
 }
