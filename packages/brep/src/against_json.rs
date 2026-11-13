@@ -11,8 +11,9 @@ use crate::{Mesh, Tessellation};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-fn call(op: &str, request: &Value) -> Value {
-    let reply = crate::call(op, &request.to_string()).expect("kernel call");
+// a failure names the case and the operation, so a run on one platform says which one failed
+fn call(case: &str, op: &str, request: &Value) -> Value {
+    let reply = crate::call(op, &request.to_string()).unwrap_or_else(|e| panic!("{case}: {op}: {e}"));
     serde_json::from_str(&reply).expect("JSON reply")
 }
 
@@ -117,13 +118,15 @@ fn the_typed_mesh_is_the_operation_s_mesh_on_every_solid_case() {
                 let mut bodies = HashMap::new();
                 for step in fixture["steps"].as_array().unwrap() {
                     let input = request(&step[2], "", scale, &offset, &bodies);
-                    let body = call(step[1].as_str().unwrap(), &input)["body"].as_u64().unwrap();
+                    let body = call(&name, step[1].as_str().unwrap(), &input)["body"]
+                        .as_u64()
+                        .unwrap();
                     held.0.push(body);
                     bodies.insert(step[0].as_str().unwrap().to_owned(), body);
                 }
                 // one saved text, read by both: the operation's `load` and the typed reader
-                let saved = call("save", &json!({"body": bodies["result"]}))["smb"].clone();
-                let loaded = call("load", &json!({"body": {"smb": saved}}))["body"]
+                let saved = call(&name, "save", &json!({"body": bodies["result"]}))["smb"].clone();
+                let loaded = call(&name, "load", &json!({"body": {"smb": saved}}))["body"]
                     .as_u64()
                     .unwrap();
                 held.0.push(loaded);
@@ -131,7 +134,7 @@ fn the_typed_mesh_is_the_operation_s_mesh_on_every_solid_case() {
                     "tessellate",
                     &json!({"body": loaded, "chordMm": 0.01 * scale, "angleDeg": 15}).to_string(),
                 )
-                .expect("the operation's mesh");
+                .unwrap_or_else(|e| panic!("{name}: tessellate: {e}"));
                 let old: Value = serde_json::from_str(&reply).expect("JSON reply");
                 let body =
                     crate::saved::body(saved.as_str().unwrap()).unwrap_or_else(|e| panic!("{name}: {e}"));
