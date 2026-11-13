@@ -270,6 +270,8 @@ class Missed extends Broken {}
 
 const missed = (e: unknown): boolean => e instanceof Missed || e instanceof ExactMissed
 
+/** A mesh part: no exact solid, and no shape the kernel would make it as (exact.ts makes no sphere yet). */
+const meshPart = (x: Flat): boolean => !x.smb && x.body === undefined && (!x.primitive || x.primitive.type === 'sphere')
 const meshOnly = ({ smb: _smb, body: _body, unmeshed: _keys, ...rest }: Flat): Flat => rest
 
 const meshedAll = (call: EngineCall, parts: Flat[]): Promise<Flat[]> => (parts.some((p) => p.unmeshed) ? Promise.all(parts.map((p) => meshed(call, p))) : Promise.resolve(parts))
@@ -367,7 +369,14 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     if (p.order.length > parts.length) throw new Broken(`This step orders ${p.order.length} parts, and the object has ${parts.length} here.`)
     return [...p.order.map((k) => parts[k]!), ...parts.slice(p.order.length)]
   }
-  if (exact && (parts.some((x) => x.smb || x.body !== undefined || x.primitive) || p.op === 'shape.extrude')) {
+  // A part added to a design with exact solids lives beside the exact parts as it is: a mesh part, or a shape the
+  // kernel makes when a step first works on it. The parts there stay as they are, exact or not.
+  if (exact && p.op === 'parts.add') return [...parts, ...p.parts.map(flat)]
+  // A step that works only on mesh parts, and makes no new body, runs on the mesh: there is no exact part to keep.
+  const reads = s.part === -1 ? parts : [parts[s.part], ...(p.op === 'boolean' ? p.with.map((i) => parts[i]) : [])]
+  const newBody = (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') === 'new') || ((p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && (p.operation ?? 'new') === 'new')
+  const onMesh = exact && !newBody && reads.length > 0 && reads.every((x) => !!x && meshPart(x))
+  if (exact && !onMesh && (parts.some((x) => x.smb || x.body !== undefined || x.primitive) || p.op === 'shape.extrude')) {
     let big: string | undefined
     const done = await exactStep(
       call,
@@ -432,7 +441,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       if (same) lofted = r
     }
   }
-  if (strict) throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
+  if (strict && !onMesh) throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
   // a part that was an exact solid until this step is a mesh from here on: the step says so, once, as a step the kernel
   // could not do does (EXACT_FELL_BACK)
   if (exact && !found.notes[s.id] && (s.part === -1 ? parts : [parts[s.part]]).some((x) => !!x && (!!x.smb || x.body !== undefined))) found.notes[s.id] = EXACT_MESH_FROM_HERE
@@ -450,7 +459,6 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     return flat(bakeMesh({ name: like.name, slot: like.slot, ...m }, invert(s.transform)))
   }
   const keep = (part: Flat, m: { positions: ArrayLike<number>; indices: ArrayLike<number>; faces?: Faces }) => next(part, m, dropped)
-  const newBody = (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') === 'new') || ((p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && (p.operation ?? 'new') === 'new')
   if (p.op === 'parts.add') return [...out, ...p.parts.map(flat)]
   if (p.op === 'boolean' || p.op === 'plane.cut' || p.op === 'split' || p.op === 'mirror') return partsStep(call, s, p, out, dropped)
   if (newBody) {
@@ -913,12 +921,14 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       break
     }
   }
+  // the parts that are meshes, read before the kept bodies are meshed too
+  const meshIndices = parts.flatMap((x, i) => (meshPart(x) ? [i] : []))
   // the result's meshes, made now for kept bodies
   parts = await meshedAll(call, parts)
   if (before) before = await meshedAll(call, before)
   const made = madeAfter(steps, keys, status, parts)
   // the solids stay in the cache here: the caller gets meshes, and a project or an undo step never holds one
-  return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}) }
+  return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}), ...(req.exact ? { meshParts: meshIndices } : {}) }
 }
 
 /**
