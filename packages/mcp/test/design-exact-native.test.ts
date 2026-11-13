@@ -4,11 +4,15 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { clearReplayCache, historiesOf, historyFiles, parseHistories, parseTimeline, timelineFiles, timelineOf, type History } from '@slicerx/cad-history'
 import { geomEngine } from '../src/geom'
-import { BREP_BUILD, built, connect, data, noSx, sxBin, text } from './helpers'
+import { connect, data, noKernel, noSx, sxBin, text } from './helpers'
 import { readZip } from '../src/zip'
 
 const bin = process.env['SLICERX_SX_GEOM_BIN']
-const exact = built(bin, BREP_BUILD)
+// the native exact tests run on an sx-geom with the exact kernel: the binary is asked, since one built without it
+// (cargo build -p sx-geom) refuses every brep operation, and they skip saying why
+const why = noKernel(bin)
+const exact = why === null
+const skipped = why ? ` (skipped: ${why})` : ''
 afterEach(() => { vi.unstubAllEnvs(); clearReplayCache() })
 
 it('refuses an exact design before creation when the developer opt-in is off', async () => {
@@ -48,7 +52,7 @@ it('checks a persistent exact engine without allocating a probe body', async () 
   expect(bodies).toBe(0)
 })
 
-it.skipIf(!exact)('selects the real native exact path and reads back its representation', async () => {
+it.skipIf(!exact)(`selects the real native exact path and reads back its representation${skipped}`, async () => {
   vi.stubEnv('SX_BREP_DEV', '1')
   const calls: string[] = []
   const native = geomEngine(bin!, 20000)
@@ -88,7 +92,7 @@ it('refuses damaged required exact histories instead of opening their saved mesh
   expect(() => parseHistories(future, ids)).toThrow(/required exact history/)
 })
 
-it.skipIf(!exact)('keeps exact history and redo intact when an edit or redo fails', async () => {
+it.skipIf(!exact)(`keeps exact history and redo intact when an edit or redo fails${skipped}`, async () => {
   vi.stubEnv('SX_BREP_DEV', '1')
   let refuse = false
   const native = geomEngine(bin!, 20000)
@@ -124,7 +128,7 @@ it.skipIf(!exact)('keeps exact history and redo intact when an edit or redo fail
   expect((await ok('slicerx_design_steps', { design: d })).steps).toHaveLength(1)
 }, 40000)
 
-it.skipIf(!exact || noSx())('replays an exact bracket hole edit through a later cut, project reopen and real slicing', async () => {
+it.skipIf(!exact || noSx())(`replays an exact bracket hole edit through a later cut, project reopen and real slicing${skipped}`, async () => {
   vi.stubEnv('SX_BREP_DEV', '1')
   const calls: string[] = []
   const native = geomEngine(bin!, 20000)
