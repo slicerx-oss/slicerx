@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The parts of an object for a connected client over the app link (parts.list, .clone and .order, the MCP server's
+// The parts of an object for a connected client over the app link (parts.list, .clone, .order and .rename, the MCP server's
 // app_parts tools): each edit is one undo step, the person sees a toast naming the client with Undo, and the parts read
 // back.
 import { appPartInputs, type AppParts } from '@slicerx/mcp/toolset'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
-import { stepName } from '@slicerx/cad-history'
+import { partNameProblem, stepName } from '@slicerx/cad-history'
 import { effectiveSlot } from '../filament/slots'
 import { history } from '../plate/history'
 import { partOverridesOf } from '../plate/object-settings'
-import { clonePart, isPartOrder, orderMoving, reorderParts } from '../plate/parts'
+import { clonePart, isPartOrder, orderMoving, renamePart, reorderParts } from '../plate/parts'
 import { bounds, identity } from '../plate/transform'
 import { get, toast, type AppState, type PlateEntry } from '../state/store'
 import { LinkError } from './methods-error'
@@ -74,6 +74,8 @@ export function readParts(args: Record<string, unknown>): AppParts {
   return state(s, object(s, i.object))
 }
 
+const entryOf = (id: string): PlateEntry => object(get(), id)
+
 /** A client never changes what the person locked or is changing right now. */
 async function editable(name: string): Promise<{ e: PlateEntry; guard: () => void }> {
   const { replaying } = await import('../cad/history/ops')
@@ -99,7 +101,7 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-export async function partAction(action: 'clone' | 'order', args: Record<string, unknown>, client: string, loader: Loader | null): Promise<AppParts> {
+export async function partAction(action: 'clone' | 'order' | 'rename', args: Record<string, unknown>, client: string, loader: Loader | null): Promise<AppParts> {
   if (!loader) throw new LinkError('not_ready', 'The app is still starting its geometry loader')
   if (action === 'clone') {
     const i = input('clone', args)
@@ -109,6 +111,17 @@ export async function partAction(action: 'clone' | 'order', args: Record<string,
     if (!made) throw new LinkError('not_found', 'The part is gone')
     toast(`${client} cloned ${e.parts[index]!.name} in ${e.name}.`, 'info', { label: 'Undo', run: () => void history().undo() })
     return { ...state(get(), object(get(), e.id)), cloned: made }
+  }
+  if (action === 'rename') {
+    const i = input('rename', args)
+    const { e, guard } = await editable(i.object)
+    const index = partIndex(e, i.part)
+    const was = e.parts[index]!.name
+    const problem = partNameProblem(i.name, e.parts.map((p) => p.name), index)
+    if (problem) throw new LinkError('invalid_input', `name: ${problem}`)
+    const changed = await run(() => renamePart(loader, e.id, index, i.name, guard))
+    if (changed) toast(`${client} renamed ${was} to ${entryOf(e.id).parts[index]!.name} in ${e.name}.`, 'info', { label: 'Undo', run: () => void history().undo() })
+    return { ...state(get(), object(get(), e.id)), changed }
   }
   const i = input('order', args)
   const { e, guard } = await editable(i.object)

@@ -65,6 +65,7 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'parts.list': 'read',
   'parts.clone': 'edit',
   'parts.order': 'edit',
+  'parts.rename': 'edit',
   'project.set_overrides': 'edit',
   'settings.get': 'read',
   // The slice preview only changes what the window shows, never the project.
@@ -170,6 +171,7 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.subtract': 'edit',
   'geom.rail': 'edit',
   'design.part_filament': 'edit',
+  'design.rename_part': 'edit',
   // a built part checked against a plan the mimir tab made
   'design.check': 'read',
   // a client's own plan kept for design.check, beside the tab's (never in place of one); no card, nothing on the plate changes
@@ -443,6 +445,7 @@ const HANDLERS: Record<string, Handler> = {
   'parts.list': async (args) => (await import('./parts')).readParts(args),
   'parts.clone': async (args, client) => (await import('./parts')).partAction('clone', args, client.name, linkLoader),
   'parts.order': async (args, client) => (await import('./parts')).partAction('order', args, client.name, linkLoader),
+  'parts.rename': async (args, client) => (await import('./parts')).partAction('rename', args, client.name, linkLoader),
   'project.set_overrides': async (args, client) => (await import('./project-settings')).editProjectSettings(args, client.name),
   'settings.get': async (args) => (await import('./project-settings')).readProjectSettings(args),
   'paint.get': async (args) => (await import('./paint')).readPaint(args),

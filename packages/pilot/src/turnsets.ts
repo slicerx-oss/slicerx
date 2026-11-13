@@ -49,7 +49,7 @@ const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.me
  * Editing a part already built: open it, go through its steps and sketches, pick its faces and edges, project them
  * into a sketch (never a first part's step, so not in build), and step back and forth. Every other design tool is here too, so a design tool is never in no set.
  */
-const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'design.sketch_svg', 'design.sketch_project', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces', 'geom.hole_edit', 'design.part_filament'])
+const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.rename_part', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'design.sketch_svg', 'design.sketch_project', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces', 'geom.hole_edit', 'design.part_filament'])
 
 /**
  * The project's filaments: shaping a part carries them beside the rest of the project in app. Not in build, whose turn

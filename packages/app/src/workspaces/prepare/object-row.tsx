@@ -6,6 +6,7 @@
 import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, type IconName } from '@slicerx/ui'
 import { useContextMenu } from '@slicerx/ui/context-menu'
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { MAX_PART_NAME } from '@slicerx/cad-history'
 import { partBadge, slotLabel } from '../../filament/rail'
 import { effectiveSlot, type ResolvedSlot } from '../../filament/slots'
 import { useResolvedSlots, useStripSlots } from '../../filament/use-slots'
@@ -15,7 +16,7 @@ import { usePhoneLayout } from '../../lib/phone-layout'
 import { MiddleName } from '../../lib/short-name'
 import { Silhouette } from '../../parts'
 import { selectObject } from '../../plate/edit'
-import { clonePart, movePart } from '../../plate/parts'
+import { clonePart, movePart, renamePart } from '../../plate/parts'
 import { useHost } from '../../host'
 import { moveObject, objectWarnings, onRenameRequest, renameObject, setPartSlot, toggleLock, togglePrintable, type ObjectMatch } from '../../plate/object-list'
 import { countSettings } from '../../plate/easy-groups'
@@ -99,6 +100,9 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const [drop, setDrop] = useState(false)
   const [slotMenu, setSlotMenu] = useState<{ part: string; at: { x: number; y: number } } | null>(null)
   const [partMenu, setPartMenu] = useState<{ index: number; at: { x: number; y: number } } | null>(null)
+  // the part whose name is being typed in place, and whether Escape let it go (its blur then keeps the old name)
+  const [renamingPart, setRenamingPart] = useState<number | null>(null)
+  const partRenameLeft = useRef(false)
   const [partDrop, setPartDrop] = useState<number | null>(null)
   // the part being dragged in this tree, so the drop line shows on the side it lands on
   const dragging = useRef<number | null>(null)
@@ -236,7 +240,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
                   data-testid="object-part-row"
                   data-part-index={i}
                   data-drop={partDrop === i && dragging.current !== null && dragging.current !== i ? (dragging.current > i ? 'above' : 'below') : undefined}
-                  draggable={parts > 1}
+                  draggable={parts > 1 && renamingPart !== i}
                   onDragStart={(e) => {
                     e.stopPropagation()
                     e.dataTransfer.setData(PART_DRAG_TYPE, `${p.id} ${i}`)
@@ -264,23 +268,58 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
                   }}
                 >
                   <Icon name="part" size={14} className="part-role" />
-                  <button
-                    type="button"
-                    className="n part-pick"
-                    data-testid="slice-object-part"
-                    aria-pressed={scopePart?.id === p.id && scopePart.part === part.name}
-                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                    {...tipAttrs({ title: part.name, body: `Pick this part to give it settings of its own. Part ${i + 1} of ${parts}: drag it, or press Alt and an arrow key, to reorder.` })}
-                    onClick={() => set({ selection: p.id, selectedIds: [p.id], scopePart: { id: p.id, part: part.name }, settingsScope: 'objects' })}
-                    onKeyDown={(e) => {
-                      if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
-                      e.preventDefault()
-                      const to = e.key === 'ArrowUp' ? i - 1 : i + 1
-                      if (to >= 0 && to < parts) partEdit(() => movePart(host.slicer, p.id, i, to))
-                    }}
-                  >
-                    {part.name}
-                  </button>
+                  {renamingPart === i ? (
+                    <input
+                      className="sx-input obj-rename-input part-rename-input"
+                      data-testid="object-part-rename"
+                      aria-label={`Name of ${part.name}`}
+                      defaultValue={part.name}
+                      maxLength={MAX_PART_NAME}
+                      autoFocus
+                      onFocus={(e) => {
+                        partRenameLeft.current = false
+                        e.currentTarget.select()
+                      }}
+                      onBlur={(e) => {
+                        const value = e.currentTarget.value
+                        setRenamingPart(null)
+                        if (!partRenameLeft.current) partEdit(() => renamePart(host.slicer, p.id, i, value))
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur()
+                        if (e.key === 'Escape') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          partRenameLeft.current = true
+                          setRenamingPart(null)
+                        }
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="n part-pick"
+                      data-testid="slice-object-part"
+                      aria-pressed={scopePart?.id === p.id && scopePart.part === part.name}
+                      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown F2"
+                      {...tipAttrs({ title: part.name, body: `Pick this part to give it settings of its own. Part ${i + 1} of ${parts}: drag it, or press Alt and an arrow key, to reorder. Double-click or F2 to rename.` })}
+                      onClick={() => set({ selection: p.id, selectedIds: [p.id], scopePart: { id: p.id, part: part.name }, settingsScope: 'objects' })}
+                      onDoubleClick={() => setRenamingPart(i)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'F2') {
+                          e.preventDefault()
+                          setRenamingPart(i)
+                          return
+                        }
+                        if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+                        e.preventDefault()
+                        const to = e.key === 'ArrowUp' ? i - 1 : i + 1
+                        if (to >= 0 && to < parts) partEdit(() => movePart(host.slicer, p.id, i, to))
+                      }}
+                    >
+                      {part.name}
+                    </button>
+                  )}
                   <PartSlotBadge part={part} slot={effectiveSlot(p, part)} slots={slots} strip={strip} fallback={p.colors[i]} onOpen={(at) => setSlotMenu({ part: part.name, at })} />
                   <Button
                     size="sm"
@@ -290,7 +329,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
                     data-testid="object-part-more"
                     aria-haspopup="menu"
                     aria-label={`More for ${part.name}`}
-                    tip={{ title: 'Part', body: 'Clone it, or move it up or down the list.' }}
+                    tip={{ title: 'Part', body: 'Rename it, clone it, or move it up or down the list.' }}
                     onClick={(e) => {
                       const r = e.currentTarget.getBoundingClientRect()
                       setPartMenu({ index: i, at: { x: r.left, y: r.bottom + 4 } })
@@ -318,6 +357,18 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
       ) : null}
       {phone ? null : <SelectionMenu at={ctx.at} onClose={ctx.close} label={p.name} />}
       <Menu open={partMenu !== null} onClose={() => setPartMenu(null)} label="Part" at={partMenu?.at} testId="object-part-menu">
+        <MenuItem
+          icon="rename"
+          aside="F2"
+          data-testid="object-part-rename-item"
+          onClick={() => {
+            const at = partMenu?.index
+            setPartMenu(null)
+            if (at !== undefined) setRenamingPart(at)
+          }}
+        >
+          Rename
+        </MenuItem>
         <MenuItem
           icon="duplicate"
           data-testid="object-part-clone"

@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, MAX_PART_SLOT, replayOn, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, MAX_PART_SLOT, partNameProblem, plainPartName, replayOn, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -769,6 +769,29 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
+  const renamePart = defineTool({
+    name: 'design.rename_part',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: 'Rename an existing part, as a step that replays, saves and undoes. part from 0; a name no other part has.',
+    input: z.object({
+      design: designArg,
+      part: z.number().int().min(0).describe('The part, from 0'),
+      name: z.string().describe('Its new name'),
+    }),
+    async run(i) {
+      const d = designs.get(i.design)
+      const part = partOf(d.parts, i.part)
+      const name = plainPartName(i.name)
+      const problem = partNameProblem(name, d.parts.map((p) => p.name), i.part)
+      if (problem) throw new ToolInputError(`name: ${problem}`)
+      if (name === part.name) throw new ToolInputError(`name: part ${i.part} is already called ${name}`)
+      await designs.add(d, i.part, { op: 'parts.name', name, was: part.name })
+      return { summary: `Renamed ${part.name} to ${name}: step ${d.history.steps.length}`, output: designSummary(d) }
+    },
+  })
+
   const timeline = defineTool({
     name: 'design.timeline',
     version: '1.0.0',
@@ -1068,7 +1091,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     }
   }
 
-  return [create, open, list, steps, edit, undo, redo, partFilament, timeline, roll, save, check, plan] as PilotTool<never>[]
+  return [create, open, list, steps, edit, undo, redo, partFilament, renamePart, timeline, roll, save, check, plan] as PilotTool<never>[]
 }
 
 /** Sizes under the printer's floors in the result's words, for a plan kept as the client gave it. */

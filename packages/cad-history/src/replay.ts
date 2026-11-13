@@ -382,6 +382,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     if (s.part !== -1 && !parts[s.part]) throw new Broken('The part this step works on is gone.')
     return parts.map((x, i) => (s.part === -1 || i === s.part ? { ...x, slot: p.slot } : x))
   }
+  // Nor does a part's new name: the part, exact or not, keeps its shape and takes the name.
+  if (p.op === 'parts.name') {
+    if (!parts[s.part]) throw new Broken('The part this step works on is gone.')
+    return parts.map((x, i) => (i === s.part ? { ...x, name: p.name } : x))
+  }
   // A part added to a design with exact solids lives beside the exact parts as it is: a mesh part, or a shape the
   // kernel makes when a step first works on it. The parts there stay as they are, exact or not.
   if (exact && p.op === 'parts.add') return [...parts, ...p.parts.map(flat)]

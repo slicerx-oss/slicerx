@@ -44,6 +44,7 @@
 .obj-tree .part[data-drop="below"] { box-shadow: 0 -2px 0 0 var(--purple) inset; }
 .obj-tree .part[data-drop="above"] { box-shadow: 0 2px 0 0 var(--purple) inset; }
 .obj-tree .part-more { flex: none; }
+.obj-tree .part-rename-input { height: 24px; font-size: var(--fs-sm); }
 .part-slot { flex: none; display: flex; align-items: center; gap: 4px; padding: 2px 4px 2px 2px; border: 0; border-radius: var(--r-sm); background: none; cursor: pointer; }
 .part-slot:hover { background: var(--ink-3); }
 .part-slot:focus-visible { outline: var(--focus-ring); outline-offset: 0; }

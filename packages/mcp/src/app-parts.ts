@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The parts inside an object open in the app: read them, clone one beside itself, and put them in a new order. Each
-// edit is one undo step in the app and reads the parts back.
+// The parts inside an object open in the app: read them, clone one beside itself, put them in a new order, and rename
+// one. Each edit is one undo step in the app and reads the parts back.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
@@ -22,6 +22,7 @@ export const appPartInputs = {
       to: z.number().int().min(0).optional().describe('With part: its new index from 0'),
     })
     .strict(),
+  rename: z.object({ object, part, name: z.string().describe('Its new name') }).strict(),
 }
 
 export interface AppParts {
@@ -44,7 +45,7 @@ export interface AppParts {
   history: { steps: number; last: string | null } | null
   /** After a clone: the new part. */
   cloned?: { index: number; name: string }
-  /** After a reorder: false when the order was already that one. */
+  /** After a reorder or a rename: false when it was already that way. */
   changed?: boolean
 }
 
@@ -68,6 +69,7 @@ export function appPartTools(link: AppLinkCaller | undefined, appName: string): 
     ['list', 'app.parts', 'parts.list', "Read the parts of an open object in list order: index, name, filament slot, triangles, paint layers, print settings of its own and bounds in the object's coordinates, plus its CAD history length."],
     ['clone', 'app.part_clone', 'parts.clone', 'Clone one part inside its object, as Clone part in the object list: the copy is named like "Body 2", keeps the filament, print settings and paint, sits beside the original on X (its width plus 2 mm), goes last in the list and is picked. With a CAD history it is a step, so the timeline stays editable. One toolbar Undo. Returns the new part and the parts read back.'],
     ['order', 'app.parts_order', 'parts.order', 'Put the parts of an open object in a new order, by a full order of old indices or by moving one part to an index. Order is the list order only and does not change the print. Paint, filaments and print settings stay with their parts. With a CAD history it is a step. One toolbar Undo. Returns the parts read back.'],
+    ['rename', 'app.part_rename', 'parts.rename', 'Rename one part of an open object, as Rename in the object list, such as a piece a cut or a file named "Hull top top": a name no other part has. Its filament, print settings and paint stay with it. With a CAD history it is a step. One toolbar Undo. Returns the parts read back.'],
   ] as const
   return commands.map(([input, name, method, description]) => defineTool({
     name, version: '1.0.0', source: 'command', permission: input === 'list' ? 'read' : 'slice',
@@ -79,7 +81,7 @@ export function appPartTools(link: AppLinkCaller | undefined, appName: string): 
       const byMove = i['order'] === undefined && i['part'] !== undefined && i['to'] !== undefined
       if (input === 'order' && !byOrder && !byMove) throw new ToolInputError('Give order, or part with to', 'invalid_input')
       const out = await call(method, i)
-      const what = out.cloned ? `cloned as ${out.cloned.name}, ` : input === 'order' ? (out.changed ? 'reordered, ' : 'already in that order, ') : ''
+      const what = out.cloned ? `cloned as ${out.cloned.name}, ` : input === 'order' ? (out.changed ? 'reordered, ' : 'already in that order, ') : input === 'rename' ? (out.changed ? 'renamed, ' : 'already called that, ') : ''
       return { summary: `${out.object.name}: ${what}${out.parts.length} parts read back.`, output: out }
     },
   })) as PilotTool<never>[]

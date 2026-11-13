@@ -202,4 +202,23 @@ describe('no mimir tab request carries more than 128 tools', () => {
       off()
     }
   }, 60_000)
+
+  it('sends the part rename only on a part rename ask, and keeps every tool a capped build or print turn sent', async () => {
+    const off = await registerApp('desktop')
+    try {
+      const before = JSON.parse(readFileSync(new URL('./fixtures/capped-tools-main.json', import.meta.url), 'utf8')) as { build: string[]; print: string[] }
+      for (const mode of ['mimir cloud', 'openai key'] as Mode[])
+        for (const [i, want] of [[0, before.build], [4, before.print]] as const) {
+          const names = toolNames((await turn('desktop', NEUTRAL, mode, TURNS[i]!)).req)
+          expect(want.filter((n) => !names.includes(n)), `${TURNS[i]!.kind} turn, ${mode}: tools it no longer sends`).toEqual([])
+          expect(names, `${TURNS[i]!.kind} turn, ${mode}`).not.toContain('design__rename_part')
+        }
+      for (const message of ['rename the hull top top to Decks', 'call that part the funnel', 'name this part Lid'])
+        expect(toolNames((await turn('desktop', NEUTRAL, 'mimir cloud', { kind: 'rename', message })).req), message).toContain('design__rename_part')
+      for (const message of ['rename the project', 'rename this file to ship.3mf', 'save it as Titanic'])
+        expect(toolNames((await turn('desktop', NEUTRAL, 'mimir cloud', { kind: 'rename', message })).req), message).not.toContain('design__rename_part')
+    } finally {
+      off()
+    }
+  }, 60_000)
 })

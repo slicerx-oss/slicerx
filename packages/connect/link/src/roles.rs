@@ -145,10 +145,11 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("volumes.set", LinkClass::Edit),
     ("volumes.copy", LinkClass::Edit),
     ("volumes.remove", LinkClass::Edit),
-    // The parts inside an object: cloning one and putting them in a new order, each one undo step.
+    // The parts inside an object: cloning one, putting them in a new order and renaming one, each one undo step.
     ("parts.list", LinkClass::Read),
     ("parts.clone", LinkClass::Edit),
     ("parts.order", LinkClass::Edit),
+    ("parts.rename", LinkClass::Edit),
     ("project.set_overrides", LinkClass::Edit),
     ("settings.get", LinkClass::Read),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
@@ -251,6 +252,7 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("geom.subtract", LinkClass::Edit),
     ("geom.rail", LinkClass::Edit),
     ("design.part_filament", LinkClass::Edit),
+    ("design.rename_part", LinkClass::Edit),
     // A built part checked against a plan the mimir tab made: it reads only.
     ("design.check", LinkClass::Read),
     // A client's plan kept for design.check; no card and nothing on the plate changes.
@@ -526,6 +528,7 @@ mod tests {
         ("parts.list", LinkClass::Read),
         ("parts.clone", LinkClass::Edit),
         ("parts.order", LinkClass::Edit),
+        ("parts.rename", LinkClass::Edit),
         ("project.set_overrides", LinkClass::Edit),
         ("settings.get", LinkClass::Read),
         ("paint.get", LinkClass::Read),
@@ -609,6 +612,7 @@ mod tests {
         ("geom.subtract", LinkClass::Edit),
         ("geom.rail", LinkClass::Edit),
         ("design.part_filament", LinkClass::Edit),
+        ("design.rename_part", LinkClass::Edit),
         ("design.check", LinkClass::Read),
         ("design.put_plan", LinkClass::Read),
         ("sheet.ask", LinkClass::Edit),

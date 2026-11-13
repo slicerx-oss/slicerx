@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit it by hand or in a pull request: each release writes it again (`pnpm --filter @slicerx/mcp tools-doc`), so on main it can be behind the tools a server built from main lists. The TOOLS.md of a release tag matches that release; a client reads the current list with `tools/list`.
 
-290 tools.
+292 tools.
 
 | Tool | Version | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- | --- |
@@ -29,6 +29,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_paint_from_texture` | 1.0.0 |  |  | read | Preview color paint from an object's texture in SlicerX's shown plate without changing it: the texture the object was opened with (an OBJ opened together with its MTL and images, or a 3MF with textures). |
 | `slicerx_app_paint_preview` | 1.1.0 |  |  | read | Preview paint on an object in SlicerX's shown plate without changing it. |
 | `slicerx_app_part_clone` | 1.0.0 |  |  | slice | Clone one part inside its object, as Clone part in the object list: the copy is named like "Body 2", keeps the filament, print settings and paint, sits beside the original on X (its width plus 2 mm), goes last in the list and is picked. |
+| `slicerx_app_part_rename` | 1.0.0 |  |  | slice | Rename one part of an open object, as Rename in the object list, such as a piece a cut or a file named "Hull top top": a name no other part has. |
 | `slicerx_app_parts` | 1.0.0 |  |  | read | Read the parts of an open object in list order: index, name, filament slot, triangles, paint layers, print settings of its own and bounds in the object's coordinates, plus its CAD history length. |
 | `slicerx_app_parts_order` | 1.0.0 |  |  | slice | Put the parts of an open object in a new order, by a full order of old indices or by moving one part to an index. |
 | `slicerx_app_pick_filter` | 1.0.0 |  |  | read | Read SlicerX's Model pick filter and selected bodies, faces and edges. |
@@ -96,6 +97,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_design_part_filament` | 1.0.0 |  |  | slice | Set which filament an existing part prints with, as a step that replays, saves and undoes. |
 | `slicerx_design_put_plan` | 1.6.0 |  |  | read | Add your own part plan for slicerx_design_check to check a built part against, before or after building it. |
 | `slicerx_design_redo` | 1.2.0 |  |  | slice | Put back the step slicerx_design_undo last removed. |
+| `slicerx_design_rename_part` | 1.0.0 |  |  | slice | Rename an existing part, as a step that replays, saves and undoes. |
 | `slicerx_design_roll` | 1.0.0 |  |  | slice | Move the timeline marker, rolling the whole design back to how it was after that many items (0 is before everything; leave marker out for the end), as dragging the marker in SlicerX does. |
 | `slicerx_design_save` | 1.1.0 |  |  | slice | Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in SlicerX with every step editable (other slicers open the parts). |
 | `slicerx_design_sketch` | 1.4.0 |  |  | slice | Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. |
