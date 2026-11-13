@@ -17,7 +17,7 @@
 # the reset when none are spare, and 300 s when the reply has no rate limit headers. SX_GREEN_POLL overrides it. A 403
 # or 429 reply is an API error (exit 2).
 #   --dry-run                  report each check and the verdict, and exit 0 either way
-#   SX_PUBLISH_ALLOW_RED=1     owner-approved emergency only: prints a loud warning and lets a red commit through
+#   SX_PUBLISH_ALLOW_RED=1     approved emergency only: prints a loud warning and lets a red commit through
 #   SX_GREEN_WAIT=<seconds>    how long to wait for pending or missing checks
 #   SX_GREEN_POLL=<seconds>    poll interval while waiting (default 20, or paced by the rate limit when anonymous)
 #   SX_GREEN_GH=0              skip gh and read anonymously
@@ -161,8 +161,8 @@ if [ -z "$bad" ]; then echo "require-green: ${sha:0:8} has every required check 
 } >&2
 if [ "$dry" = 1 ]; then echo "require-green: dry run, nothing refused" >&2; exit 0; fi
 if [ "${SX_PUBLISH_ALLOW_RED:-}" = 1 ]; then
-  echo "require-green: *** SX_PUBLISH_ALLOW_RED=1: CONTINUING WITH A RED COMMIT. Owner-approved emergencies only. ***" >&2
+  echo "require-green: *** SX_PUBLISH_ALLOW_RED=1: CONTINUING WITH A RED COMMIT. Approved emergencies only. ***" >&2
   exit 0
 fi
-echo "require-green: refusing. Fix main and release from a green commit (SX_PUBLISH_ALLOW_RED=1 is for an owner-approved emergency only)." >&2
+echo "require-green: refusing. Fix main and release from a green commit (SX_PUBLISH_ALLOW_RED=1 is for an approved emergency only)." >&2
 exit 1

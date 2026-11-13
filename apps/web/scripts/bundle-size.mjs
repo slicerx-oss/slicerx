@@ -26,8 +26,8 @@ const BREP_WASM_KB = 1400
 const isStepReader = (file) => /occt-import-js/.test(file)
 const isFullGeom = (file) => /sx_geom_wasm/.test(file)
 const isBrep = (file) => /sx_brep/.test(file)
-// The slicer engine's module (sx_wasm): the browser no longer slices, so its size is reported, never a failure
-// (owner, 2026-10-12). The geometry modules and the shell keep their budgets.
+// The slicer engine's module (sx_wasm): the browser no longer slices, so its size is reported, never a failure.
+// The geometry modules and the shell keep their budgets.
 const isSlicer = (file) => /(^|[/_-])sx_wasm[^/]*\.wasm$/.test(file) && !/sx_geom/.test(file)
 
 const gz = (file) => gzipSync(readFileSync(join(dist, file)), { level: 9 }).length

@@ -244,7 +244,7 @@ describe('the thinnest wall at a sharp edge or point', () => {
 
   it('a rim at a cut shared with a neighboring part reads as wall, as two bands of one body do; apart, it stays a tip', () => {
     // the flared body above with a band above it: the band's bottom is the body's cut face, so the two print as one body
-    // there and the rim is as thin as it reads (owner, 2026-11-12)
+    // there and the rim is as thin as it reads
     const lower = prism(flaredSection(), 40)
     const upper = prism(bandAbove(0), 40)
     const alone = minWall([lower])

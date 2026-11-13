@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Keep this file free of DOM and CSS imports.
-// mimir's working steps in one loop (owner's pick, 2026-11-12): a reply's thoughts and tool steps fold into one live block while it works, and
+// mimir's working steps in one loop: a reply's thoughts and tool steps fold into one live block while it works, and
 // into one line when the work is done. Cards that wait for the person, errors, the result card and mimir's reply text
 // stay outside; one landing mid-turn closes the loop there, and the next working step opens a new one.
 import { changesDesign, createdPart } from './part'
@@ -93,7 +93,7 @@ export function loopSegments(blocks: readonly Block[], words: StepWords): Segmen
         else out.push({ kind: 'block', block: b })
         break
       }
-      // mimir's own text stays in the chat, and closes the loop there (owner, 2026-11-12)
+      // mimir's own text stays in the chat, and closes the loop there
       default:
         close()
         out.push({ kind: 'block', block: b })

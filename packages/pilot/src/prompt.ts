@@ -191,7 +191,7 @@ export const SCOPE_LINE = `- Build only shapes the tools can make: outlines of l
 // pick are an answer, not a turn-down: someone who takes the defaults wants the part built, not the question again. Only
 // offered with pilot.ask.
 // when to ask at all: only a request read two ways that build different things; anything with a sensible default is
-// chosen, built and said, never asked (the owner's rule for display models: no size or confirm questions)
+// chosen, built and said, never asked (for display models: no size or confirm questions)
 export const ASK_LINE = `- Ask only when the request can be read two ways that build different things (a stand that could hold a phone or a tablet, a name that fits two different objects), and then once, with pilot.ask, before any build call. Never ask about anything with a sensible default: the size, the scale, the colors, the level of detail, or whether to go ahead. Choose it, build, and say in the reply what you chose so the person can change it.`
 export const DISMISSED_LINE = `- When the person turns a question card down (pilot.ask gives back dismissed), all its choices are declined. Do not list them or put the same question in words, and do not ask it again. Say in one short sentence what you will do without it, then do it. If you cannot go on without something, ask one different, narrower question. Words written in place of a pick (said) answer the card and turn no choice down: do what they say, and when they leave it to you, take the choice that gives what the request asked for and go on without asking again.`
 

@@ -491,7 +491,7 @@ app's 213 test files fail per seed, all known and listed there, so a nightly run
 `required-checks.txt` to be success or skipped. A check still pending, or not yet reported, is waited for up to
 `SX_GREEN_WAIT` seconds (default 3600, an hour: a push to main takes 35 to 43 minutes to turn every required check green) and then counts as not green. `apps/desktop/release/publish.sh` runs it before it
 builds or publishes anything. `SX_PUBLISH_CHECK_ONLY=1 publish.sh ...` (or `require-green.sh --dry-run <commit>`) only
-reports. `SX_PUBLISH_ALLOW_RED=1` lets a red commit through with a loud warning: for an owner-approved emergency only.
+reports. `SX_PUBLISH_ALLOW_RED=1` lets a red commit through with a loud warning: for an approved emergency only.
 The read uses `gh api` when gh is installed and works. When gh is missing, fails, or `SX_GREEN_GH=0` is set (a machine
 where gh is not signed in), the script reads `api.github.com` anonymously with `curl`, follows the `Link` pages, parses
 the JSON with `node`, and prints one note on stderr. This works for a public repository only. Anonymous reads are

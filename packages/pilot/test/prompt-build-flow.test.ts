@@ -25,7 +25,7 @@ describe('the prompt builds what was asked in one plan', () => {
     it(`${scope}: a lid prints open and flat, on its hinge when it prints in place, beside the base when put on after`, () => {
       const text = systemPrompt(scope, undefined, '', { cloud: true })
       expect(text).toContain('A lid planned with its case stays in that design, and a lid or moving piece prints open and flat')
-      // option a (owner, 2026-11-12): a print in place lid prints open on its hinge; 10 mm apart only for a lid put on after.
+      // a print in place lid prints open on its hinge; 10 mm apart only for a lid put on after.
       // A local model keeps the one rule it had; design.plan refuses a print in place lid laid apart for either.
       expect(systemPrompt(scope)).toContain('A lid planned with its case stays in that design, and a lid or moving piece prints open and flat: a lid top down on the bed beside the base, 10 mm apart, never on top.')
       expect(text).toContain("a lid that prints in place on its hinge lies open flat on the shared hinge axis, its knuckles between the base's, never apart; a lid put on after printing lies top down on the bed beside the base, 10 mm apart, never on top.")

@@ -288,7 +288,7 @@ pub(crate) async fn report(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         .and_then(Value::as_f64)
         .filter(|c| (0.0..=1.0).contains(c))
         .ok_or_else(|| RpcError::new("bad_request", "confidence is 0 to 1"))?;
-    // huginn, the detector's second look, agreed. Only a confirmed finding may pause (owner's rule);
+    // huginn, the detector's second look, agreed. Only a confirmed finding may pause;
     // an unconfirmed one notifies.
     let confirmed = match p.get("confirmed") {
         None | Some(Value::Null) => false,
