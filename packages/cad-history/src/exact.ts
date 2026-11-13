@@ -35,12 +35,20 @@ export interface ExactPart {
   primitive?: PrimitiveSpec
   /** The part's paint by face, while it is an exact solid (FacePaint): its triangles' paint is made again from it. */
   facePaint?: FacePaint
+  /** The planes, in the part's own frame, a height band split its faces along (imprinted), for the edge steps after it. */
+  splitAt?: Plane[]
+}
+
+/** A plane by a point on it and its normal. */
+export interface Plane {
+  origin: Vec3
+  normal: Vec3
 }
 
 /**
  * Paint on an exact part, kept by face: per layer, each face painted whole and its text. A face goes by its key; one
  * whose key is 0 (a face a cut split or a join merged) goes by its place, a point on it and the way it faces, as picks
- * do. Every tessellation makes the part's triangles again, so their paint is made again from this (paintOfFaces).
+ * do. A keyed face keeps its place too, for when a later step merges it into a face whose key is 0. Every tessellation makes the part's triangles again, so their paint is made again from this (paintOfFaces).
  */
 export type FacePaint = Partial<Record<PaintLayer, { key: number; at?: Vec3; normal?: Vec3; text: string }[]>>
 
@@ -69,13 +77,10 @@ export function facePaintOf(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'
       if (text === null) return null
       if (!text) continue
       const key = f.keys?.[id] ?? 0
-      if (key) list.push({ key, text })
-      else {
-        const [a, b, c] = [0, 1, 2].map((j) => point(IDENTITY, m.positions, 3 * m.indices[3 * first + j]!))
-        const n = cross([b![0] - a![0], b![1] - a![1], b![2] - a![2]], [c![0] - a![0], c![1] - a![1], c![2] - a![2]])
-        const l = Math.hypot(...n) || 1
-        list.push({ key: 0, at: [(a![0] + b![0] + c![0]) / 3, (a![1] + b![1] + c![1]) / 3, (a![2] + b![2] + c![2]) / 3], normal: [n[0] / l, n[1] / l, n[2] / l], text })
-      }
+      const [a, b, c] = [0, 1, 2].map((j) => point(IDENTITY, m.positions, 3 * m.indices[3 * first + j]!))
+      const n = cross([b![0] - a![0], b![1] - a![1], b![2] - a![2]], [c![0] - a![0], c![1] - a![1], c![2] - a![2]])
+      const l = Math.hypot(...n) || 1
+      list.push({ key, at: [(a![0] + b![0] + c![0]) / 3, (a![1] + b![1] + c![1]) / 3, (a![2] + b![2] + c![2]) / 3], normal: [n[0] / l, n[1] / l, n[2] / l], text })
     }
     if (list.length) out[layer] = list
   }
@@ -89,12 +94,24 @@ export function paintOfFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces
   if (!f) return out
   const triangles = Math.floor(m.indices.length / 3)
   for (const [layer, list] of Object.entries(fp) as [PaintLayer, NonNullable<FacePaint[PaintLayer]>][]) {
-    const texts: Record<number, string> = {}
+    // each face's text; null for a face two entries give different texts (a merge of faces painted apart), left bare
+    const byFace = new Map<number, string | null>()
+    const put = (face: number, text: string) => byFace.set(face, byFace.has(face) && byFace.get(face) !== text ? null : text)
     for (const e of list) {
-      // a face with a key wherever it is now; one without, the face under its point
-      const at = e.key ? -1 : findTriangle(m, IDENTITY, e.at!, e.normal!)
-      const face = at >= 0 ? f.ids[at] : undefined
-      for (let t = 0; t < triangles; t++) if (e.key ? f.keys?.[f.ids[t]!] === e.key : f.ids[t] === face) texts[t] = e.text
+      // a face with a key wherever it is now; one without, or one whose key a later step merged away, the face under
+      // its point, when that face has no key either
+      const keyed = e.key ? new Set(Array.from(f.keys ?? []).flatMap((k, id) => (k === e.key ? [id] : []))) : new Set<number>()
+      if (keyed.size) for (const id of keyed) put(id, e.text)
+      else if (e.at && e.normal) {
+        const at = findTriangle(m, IDENTITY, e.at, e.normal)
+        const face = at >= 0 ? f.ids[at] : undefined
+        if (face !== undefined && !(f.keys?.[face] ?? 0)) put(face, e.text)
+      }
+    }
+    const texts: Record<number, string> = {}
+    for (let t = 0; t < triangles; t++) {
+      const text = byFace.get(f.ids[t]!)
+      if (text) texts[t] = text
     }
     if (Object.keys(texts).length) out[layer] = texts
   }
@@ -102,6 +119,31 @@ export function paintOfFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces
 }
 
 /** The kernel operation that splits a body's faces where planes cross them and leaves its shape as it is. */
+export const IMPRINT_CLASH = 'The kernel gave two faces the same name when it split them at the band, so the band was not painted.'
+/** What a band step says when the kernel's split leaves a face it does not say the origin of. */
+export const IMPRINT_UNNAMED = 'The kernel split faces at the band without saying which face each piece came from, so the band was not painted.'
+/** What an edge step says when its edge runs across where a band split the part's faces: the edge is in pieces now. */
+export const EDGE_SPLIT_BY_BAND = 'This edge runs across where a paint band split its faces, so it is in pieces now; pick the edge again to repair this step.'
+
+/** Whether the edge from `a` to `b` (an arc about `center` when given) crosses one of the planes, in the same frame. */
+export function edgeCrosses(planes: readonly Plane[], a: Vec3, b: Vec3, center?: Vec3): boolean {
+  const side = (p: Plane, q: Vec3) => (q[0] - p.origin[0]) * p.normal[0] + (q[1] - p.origin[1]) * p.normal[1] + (q[2] - p.origin[2]) * p.normal[2]
+  return planes.some((p) => {
+    const [da, db] = [side(p, a), side(p, b)]
+    if ((da < -BAND_EDGE_EPS && db > BAND_EDGE_EPS) || (da > BAND_EDGE_EPS && db < -BAND_EDGE_EPS)) return true
+    // an arc can cross and come back: its circle crosses when the plane is nearer its center than the circle reaches
+    // across it (counted as crossing, as the arc's own span is not known)
+    if (!center) return false
+    const u: Vec3 = [a[0] - center[0], a[1] - center[1], a[2] - center[2]]
+    const w = cross(u, [b[0] - center[0], b[1] - center[1], b[2] - center[2]])
+    const lw = Math.hypot(...w)
+    if (lw < 1e-12) return false
+    const along = (p.normal[0] * w[0] + p.normal[1] * w[1] + p.normal[2] * w[2]) / lw
+    const reach = Math.hypot(...u) * Math.sqrt(Math.max(0, 1 - along * along))
+    return Math.abs(side(p, center)) < reach - BAND_EDGE_EPS
+  })
+}
+
 export const EXACT_IMPRINT = 'brep.imprint'
 
 /** How near a band's edge, mm, a face's corner may be and still count as on the edge rather than across it. */
@@ -198,6 +240,12 @@ export async function imprinted(call: Call, part: ExactPart, transform: Mat4, at
   const r = (await call(EXACT_IMPRINT, { body, planes, ...(solids.keep ? { withKeys: true } : { save: true }) })) as Record<string, unknown>
   const made = await madePart(call, solids, part, r, 'body', tooBig)
   const pairs = Array.isArray(r['split']) ? (r['split'] as unknown[]).filter((x): x is [number, number] => Array.isArray(x) && x.length === 2 && x.every(Number.isInteger)) : []
+  // every face of the result is one the part had, or a piece the reply names with the face it came from, each key once
+  const before = new Set(part.unmeshed ?? Array.from(part.faces?.keys ?? []))
+  const after = (made.unmeshed ?? Array.from(made.faces?.keys ?? [])).filter((k) => k)
+  const pieces = new Map(pairs)
+  if (new Set(after).size !== after.length || pieces.size !== pairs.length) throw new ExactBroken(IMPRINT_CLASH)
+  if (after.some((k) => !before.has(k) && !before.has(pieces.get(k)!)) || pairs.some(([k, from]) => !after.includes(k) || !before.has(from))) throw new ExactBroken(IMPRINT_UNNAMED)
   let facePaint: FacePaint | undefined
   if (part.facePaint) {
     facePaint = {}
@@ -205,7 +253,7 @@ export async function imprinted(call: Call, part: ExactPart, transform: Mat4, at
       facePaint[layer] = list.flatMap((e) => [e, ...(e.key ? pairs.filter(([, from]) => from === e.key).map(([key]) => ({ key, text: e.text })) : [])])
     }
   }
-  const x: ExactPart = { ...made, ...(facePaint ? { facePaint } : {}) }
+  const x: ExactPart = { ...made, ...(facePaint ? { facePaint } : {}), splitAt: [...(part.splitAt ?? []), ...planes] }
   if (x.unmeshed) return meshed(call, x)
   const paint = facePaint ? paintOfFaces(x, facePaint) : {}
   return Object.keys(paint).length ? { ...x, paint } : x
@@ -787,6 +835,8 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         // the edges in the part's own coordinates; the kernel finds each by its faces' keys, then by place
         const inv = invert(s.transform)
         const edges = p.edges.map((e) => ({ a: point(inv, e.a), b: point(inv, e.b), ...(e.center ? { center: point(inv, e.center) } : {}), ...(e.keys ? { keys: e.keys } : {}) }))
+        // an edge a band split in pieces would be found by its place as one of them: never a part of the edge in silence
+        if (target.splitAt?.length && edges.some((e) => edgeCrosses(target.splitAt!, e.a, e.b, e.center))) throw new ExactBroken(EDGE_SPLIT_BY_BAND)
         const size = p.op === 'edge.fillet' ? { radiusMm: p.radiusMm } : { distanceMm: p.distanceMm, ...(p.distance2Mm !== undefined ? { distance2Mm: p.distance2Mm } : {}) }
         const r = await call(p.op === 'edge.fillet' ? 'brep.fillet' : 'brep.chamfer', { body: b, edges, ...size, ...kept })
         out[s.part] = await part(target, r)

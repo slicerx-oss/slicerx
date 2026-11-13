@@ -7,7 +7,7 @@
 // fall where faces already meet needs no split. An engine that cannot split faces leaves the band on the triangles,
 // as before: a design that must stay exact refuses it, and anywhere else the next exact step clears it with its note.
 import { beforeEach, describe, expect, it } from 'vitest'
-import { EXACT_IMPRINT, EXACT_OPS, IDENTITY, PAINT_DROPPED, clearReplayCache, replayHistory, stepSalt, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
+import { EDGE_SPLIT_BY_BAND, EXACT_IMPRINT, EXACT_OPS, IDENTITY, IMPRINT_CLASH, IMPRINT_UNNAMED, PAINT_DROPPED, clearReplayCache, replayHistory, stepSalt, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 
 type Vec3 = [number, number, number]
 /** A face of a stand-in body: its key, and the heights it runs between (a flat face has both the same). */
@@ -15,6 +15,8 @@ interface Face {
   key: number
   lo: number
   hi: number
+  /** Where along X it is drawn; a face's pieces keep their face's place, so a piece is found by its place. */
+  x: number
 }
 interface Sent {
   op: string
@@ -29,9 +31,11 @@ const REFUSED = 'brep: imprint: the kernel could not split the faces (status 100
  * An engine whose kernel holds bodies by number, each a list of faces. Each face tessellates as two triangles, 10 mm
  * apart along X: upright from its low height to its high one, or flat at its height. brep.imprint splits every face a
  * plane crosses into a piece below and a piece above, each with a new key from the step's salt, and names each piece's
- * face in `split`. `imprint: false` is an engine without it; `refuse` one whose kernel fails it.
+ * face in `split`. `imprint: false` is an engine without it; `refuse` one whose kernel fails it; `clash` one that gives
+ * both pieces one key, `unnamed` one that leaves `split` out. A cut merges the faces with the keys in `merge` into one
+ * face with no key, as a join or cut does that heals the line between them.
  */
-function engine(o: { imprint?: boolean; refuse?: boolean } = {}) {
+function engine(o: { imprint?: boolean; refuse?: boolean; clash?: boolean; unnamed?: boolean; merge?: number[] } = {}) {
   const sent: Sent[] = []
   const held = new Map<number, Face[]>()
   let n = 0
@@ -54,7 +58,7 @@ function engine(o: { imprint?: boolean; refuse?: boolean } = {}) {
         return { ops: ['sketch.loft', ...(o.imprint === false ? [] : [EXACT_IMPRINT])] }
       case 'sketch.loft':
         // a hull: its bottom at 0, one side from 0 to 20, its deck at 20
-        return { mesh: { positions: [], indices: [] }, report: { watertight: true }, ...hold([{ key: salt + 1, lo: 0, hi: 0 }, { key: salt + 2, lo: 0, hi: 20 }, { key: salt + 3, lo: 20, hi: 20 }]) }
+        return { mesh: { positions: [], indices: [] }, report: { watertight: true }, ...hold([{ key: salt + 1, lo: 0, hi: 0, x: 0 }, { key: salt + 2, lo: 0, hi: 20, x: 10 }, { key: salt + 3, lo: 20, hi: 20, x: 20 }]) }
       case EXACT_IMPRINT: {
         if (o.refuse) throw new Error(REFUSED)
         let faces = facesOf(req['body'])
@@ -64,21 +68,30 @@ function engine(o: { imprint?: boolean; refuse?: boolean } = {}) {
           const h = p.origin[2]
           faces = faces.flatMap((f) => {
             if (!(f.lo < h && f.hi > h)) return [f]
-            const pieces = [{ key: salt + 50 + k++, lo: f.lo, hi: h }, { key: salt + 50 + k++, lo: h, hi: f.hi }]
-            for (const x of pieces) split.push([x.key, split.find(([key]) => key === f.key)?.[1] ?? f.key])
+            const pieces = [{ key: salt + 50 + k++, lo: f.lo, hi: h, x: f.x }, { key: o.clash ? salt + 50 + k - 1 : salt + 50 + k++, lo: h, hi: f.hi, x: f.x }]
+            // a piece split again names the face it came from, and is itself no longer in the result
+            const from = split.find(([key]) => key === f.key)?.[1] ?? f.key
+            split.splice(0, split.length, ...split.filter(([key]) => key !== f.key))
+            for (const x of pieces) split.push([x.key, from])
             return pieces
           })
         }
-        return { ...hold(faces), split }
+        return { ...hold(faces), ...(o.unnamed ? {} : { split }) }
       }
-      case 'brep.subtract':
-        // the faces keep their keys; the hole's wall is a new face with the step's
-        return hold([...facesOf(req['body']), { key: salt + 100, lo: 5, hi: 15 }])
+      case 'brep.subtract': {
+        // the faces keep their keys, but those in `merge`, which become one; the hole's wall is a new face with the step's
+        const faces = facesOf(req['body'])
+        const merged = faces.filter((f) => o.merge?.includes(f.key))
+        const kept = merged.length > 1 ? [...faces.filter((f) => !merged.includes(f)), { key: 0, lo: Math.min(...merged.map((f) => f.lo)), hi: Math.max(...merged.map((f) => f.hi)), x: merged[0]!.x }] : faces
+        return hold([...kept, { key: salt + 100, lo: 5, hi: 15, x: 90 }])
+      }
+      case 'brep.fillet':
+        return hold([...facesOf(req['body'])])
       case 'brep.tessellate': {
         const faces = facesOf(req['body'])
         const positions: number[] = []
-        faces.forEach((f, i) => {
-          const x = 10 * i
+        faces.forEach((f) => {
+          const x = f.x
           const quad = f.lo === f.hi ? [[x, 0, f.lo], [x + 5, 0, f.lo], [x + 5, 5, f.lo], [x, 5, f.lo]] : [[x, 0, f.lo], [x + 5, 0, f.lo], [x + 5, 0, f.hi], [x, 0, f.hi]]
           for (const c of [0, 1, 2, 0, 2, 3]) positions.push(...quad[c]!)
         })
@@ -206,6 +219,53 @@ describe('a height band on an exact part', () => {
   it("breaks the step with the kernel's words when it cannot split the faces", async () => {
     const r = await replayHistory(engine({ refuse: true }).call, { history: strict(hull(), band('red', { below: 4 })) }, kept)
     expect(r.status[1]).toEqual({ state: 'broken', message: 'The kernel could not split the faces (status 1001)' })
+  })
+})
+
+describe('a band after the kernel split for it', () => {
+  const hole2 = step('hole-2', { op: 'subtract', solids: [{ type: 'cylinder', origin: [0, 0, 10], axis: [0, 1, 0], diameterMm: 2, heightMm: 40 }], label: 'Hole' } as StepParams)
+  const fillet = (id: string, a: Vec3, b: Vec3) => step(id, { op: 'edge.fillet', edges: [{ a, b, face: a }], radiusMm: 1 } as StepParams)
+
+  it('stays by place on a face a later step merges two band pieces into (key 0), and through the step after', async () => {
+    // two bands: the side's piece below 4, then the piece from 4 to 8; a cut then heals the line between them
+    const merge = [salt('red') + 50, salt('red2') + 50]
+    const e = engine({ merge })
+    const r = await replayHistory(e.call, { history: strict(hull(), band('red', { below: 4 }), band('red2', { below: 8 }), hole, hole2) }, kept)
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done'])
+    exactPart(r.parts[0])
+    const keys = r.parts[0]!.faces!.keys!
+    expect(keys.filter((k) => k === 0)).toHaveLength(1)
+    // the merged face (no key) is painted whole, as the two pieces were; the bottom keeps its key and its paint
+    expect(paintByKey(r.parts[0])).toEqual({ 0: 'S2', [salt('hull') + 1]: 'S2' })
+  })
+
+  it('leaves a face bare that a merge makes of pieces painted apart, rather than paint one over the other', async () => {
+    const e = engine({ merge: [salt('red') + 50, salt('red') + 51] })
+    const r = await replayHistory(e.call, { history: strict(hull(), whole('white', 1), band('red', { below: 4 }), hole) }, kept)
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+    expect(paintByKey(r.parts[0])).toEqual({ [salt('hull') + 1]: 'S2', [salt('hull') + 3]: 'S1' })
+  })
+
+  it('refuses a fillet on an edge the band cut in two, in plain words, and keeps one that it did not', async () => {
+    const across = await replayHistory(engine().call, { history: strict(hull(), band('red', { below: 4 }), fillet('round', [10, 0, 0], [10, 0, 20])) }, kept)
+    expect(across.status[2]).toEqual({ state: 'broken', message: EDGE_SPLIT_BY_BAND })
+    clearReplayCache()
+    const e = engine()
+    const along = await replayHistory(e.call, { history: strict(hull(), band('red', { below: 4 }), fillet('round', [0, 0, 0], [5, 0, 0])) }, kept)
+    expect(along.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+    expect(e.of('brep.fillet')).toHaveLength(1)
+    // a fillet before any band is as it was
+    clearReplayCache()
+    const plain = await replayHistory(engine().call, { history: strict(hull(), fillet('round', [10, 0, 0], [10, 0, 20])) }, kept)
+    expect(plain.status.map((s) => s.state)).toEqual(['done', 'done'])
+  })
+
+  it('refuses a split whose pieces share a key, or whose pieces it does not name, and paints nothing', async () => {
+    const clash = await replayHistory(engine({ clash: true }).call, { history: strict(hull(), band('red', { below: 4 })) }, kept)
+    expect(clash.status[1]).toEqual({ state: 'broken', message: IMPRINT_CLASH })
+    clearReplayCache()
+    const unnamed = await replayHistory(engine({ unnamed: true }).call, { history: strict(hull(), band('red', { below: 4 })) }, kept)
+    expect(unnamed.status[1]).toEqual({ state: 'broken', message: IMPRINT_UNNAMED })
   })
 })
 
