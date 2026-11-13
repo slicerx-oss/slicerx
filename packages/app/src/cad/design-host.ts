@@ -18,7 +18,7 @@
 // now, moved with the design it was drawn for or the first feature drawn on it, then into a design's frame by that
 // design's landing (cad-history design-frame.ts). Where a body stands comes from one place for every reader
 // (sketch-place.ts), waiting designs included, so the mimir tab's host, the app link's and Model read the same.
-import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, unstopped, withPlaced, type AddOptions, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, unstopped, withPlaced, type AddOptions, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
@@ -70,6 +70,14 @@ export type AppDesignHost = DesignHost & {
 }
 
 export function appDesignHost(loader: Loader): AppDesignHost {
+  // The step statuses of the last replay this host ran of each design, by the history it wrote: a step's answer reads
+  // its note and a pattern's copies from them, as the server's own designs do. A history written any other way (a
+  // person's edit) has only what the saved steps keep.
+  const ran = new WeakMap<History, StepStatus[]>()
+  const remember = (id: string, status: StepStatus[]) => {
+    const h = get().plate.find((p) => p.id === id)?.history
+    if (h) ran.set(h, status)
+  }
   // Designs with no body yet, by id: their history and where the object stands on the plate. Their first step puts
   // them on the plate under the same id. Where each waits is shared, so a sketch drawn for it reads the same anywhere.
   const empty = new Waiting()
@@ -86,7 +94,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       ...(history.placed ? { placed: [...history.placed] as [number, number] } : {}),
       // each part with its paint, so the paint tools paint over what is there and read it back
       parts: withPaint(e),
-      status: history.steps.map((s) => (s.broken !== undefined ? { state: 'broken', message: s.broken } : { state: 'done' })),
+      status: (e.history && ran.get(e.history)) ?? history.steps.map((s) => (s.broken !== undefined ? { state: 'broken', message: s.broken } : s.note ? { state: 'done', note: s.note } : { state: 'done' })),
       madeBy: {},
       redo: redo.get(e.id) ?? [],
     }
@@ -170,7 +178,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       let landed: Landed | undefined
       if (d.history.steps.length) {
         const after = afterEdit(d.id)
-        await applyHistory(loader, d.id, d.history, undefined, guard, undefined, after.land)
+        await applyHistory(loader, d.id, d.history, undefined, guard, (status) => remember(d.id, status), after.land)
         landed = after.landed()
       } else {
         // Every step undone: the object goes back to its base parts, or off the plate while it has none. It waits
@@ -279,12 +287,17 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     const step = recorded(d, plate, part, params, label, opts?.sketch, opts?.feature, opts?.group)
     const next = appendStep(d.history, step)
     let committed: DesignCommit | undefined
-    const capture = receipt ? () => {
+    // the replay's own statuses go with the history it wrote, before anything reads the design back
+    const capture = (status: StepStatus[]) => {
+      remember(d.id, status)
+      if (receipt) take()
+    }
+    const take = () => {
       empty.delete(d.id)
       redo.delete(d.id)
       const current = host.get(d.id)
       committed = { step: structuredClone(current.history.steps.at(-1)!), revision: bodyRevisions.current(d.id), design: structuredClone(current) }
-    } : undefined
+    }
     let moved: Landed | undefined
     if (w) {
       moved = await place(d.id, d.name, next, w.transform, step.id, guard, capture)
@@ -312,7 +325,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
    * reason when `need` fails. Returns how the body landed when it was built off the bed: the move joins the history's
    * landing moves, and so does the move of any design moved over to make room for it.
    */
-  async function place(id: string, name: string, history: History, transform: Mat4, need?: string, guard?: () => void, committed?: () => void): Promise<Landed | undefined> {
+  async function place(id: string, name: string, history: History, transform: Mat4, need?: string, guard?: () => void, committed?: (status: StepStatus[]) => void): Promise<Landed | undefined> {
     guard?.()
     // built for the project the plate holds as this starts: a new project, or one opened in its place, meanwhile gets
     // no body from it
@@ -378,7 +391,8 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       const moves: RoomMove[] = applied.map((a) => ({ design: a.id, name: a.name, ...landShift(a.from, a.to) }))
       moved = { ...moved, room: moves }
     }
-    committed?.()
+    remember(id, r.status)
+    committed?.(r.status)
     markStale()
     return moved
   }

@@ -102,7 +102,7 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * commit, not the ones `next` started with.
  * `step`, when given, is the undo step the result lands in (plate/history.ts newStep).
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => (Pick<PlateEntry, 'landedAt'> & { transform: Mat4; placed: [number, number] | undefined }) | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: (status: StepStatus[]) => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => (Pick<PlateEntry, 'landedAt'> & { transform: Mat4; placed: [number, number] | undefined }) | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
@@ -150,7 +150,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
       return { handle, parts, history: withPlaced(history, placed), colors: partColors(latest, parts, history, brandAccent()), ...(paint ? { paint } : {}), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
     }, { exactReplay: next.exact === true })
     if (!(step ? step.write(write) : write())) throw abortError()
-    committed?.()
+    committed?.(r.status)
     markStale()
     // sketches that project from this body find it again, and the bodies drawn on them follow
     await followBodies(host, [objectId])
