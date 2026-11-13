@@ -111,6 +111,8 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("brep.load", "brep"),
     ("brep.free", "brep"),
     ("exact.ops", "brep"),
+    // in every build, so a client can ask any engine which kernel it has
+    ("exact.kernel", ""),
 ];
 
 /// Whether this build has the feature.
@@ -543,6 +545,7 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             Ok(json!({}))
         }
         // the operations that make an exact body when asked (`exact`): none in a build without the kernel
+        "exact.kernel" => Ok(exact_kernel()),
         #[cfg(feature = "brep")]
         "exact.ops" => {
             let ops: &[&str] = if sx_brep::KERNEL && cfg!(feature = "cad") {
@@ -558,6 +561,21 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
         }
         _ => crate::json_cad::call(op, req, enc, files).unwrap_or_else(|| Err(unknown(op))),
     }
+}
+
+/// Which kernel this build holds: `real` (with its pinned commit) only when a call only the kernel answers goes
+/// through, `stand-in` for a build with exact solids made without the kernel's source, and `none` for one without.
+fn exact_kernel() -> Value {
+    #[cfg(feature = "brep")]
+    {
+        if sx_brep::runs() {
+            json!({ "kernel": "real", "commit": sx_brep::KERNEL_COMMIT })
+        } else {
+            json!({ "kernel": "stand-in" })
+        }
+    }
+    #[cfg(not(feature = "brep"))]
+    json!({ "kernel": "none" })
 }
 
 #[cfg(feature = "brep")]
