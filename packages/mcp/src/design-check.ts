@@ -178,6 +178,11 @@ export interface BodyFacts {
   minWallTip?: { mm: number; at: [number, number, number] } | undefined
   /** Where the thinnest wall (minWallMm) is: a point in the middle of the wall, mm, and its part when it is named (partNamed). */
   minWallAt?: { part?: string; at: [number, number, number] } | undefined
+  /**
+   * When the thinnest wall is under the floor: every other part whose own thinnest wall is under it too, thinnest first,
+   * each with its reading, a point in it and its part when it is named (partNamed).
+   */
+  minWallOthers?: { mm: number; at: [number, number, number]; part?: string }[] | undefined
   /** The pieces and the gaps between them, read only for a print-in-place plan. */
   fit?: FitFacts | undefined
   /** Why the gaps were not measured, when the fit check failed. */
@@ -892,6 +897,20 @@ function curvedItem(plan: PartPlan, body: BodyFacts): CheckItem | null {
 export const WALL_WHERE = (part: string | undefined, at: readonly number[]): string => `The thinnest wall is ${part ? `in ${part}, ` : ''}near (${at.map(r2).join(', ')}) mm.`
 /** How to fix a failed minimum wall, for the wall thickness the nozzle needs. */
 export const WALL_FIX = (wall: string): string => `Make it at least ${wall} thick there. A lip, rim, post or arm needs that thickness too, and a cut must stop at least ${wall} short of the far side.`
+/**
+ * The most thin places a failed minimum wall lists, the thinnest included. The most measured so far is 12, the parts
+ * under the floor in the scripted ship's final design, so a design like it is listed whole; at about 20 tokens a place,
+ * 12 keep the item near 250 tokens. Past it, the rest are given by their count.
+ */
+export const WALL_PLACES_MAX = 12
+// The sentences a failed minimum wall adds when other parts are under the floor too: the list
+// after the thinnest, and the fix that takes them all in the one fix round.
+/** One more thin place, as the list gives it: its part (when it is named, partNamed), its reading and a point in it. */
+export const WALL_ALSO_PLACE = (part: string | undefined, got: string, at: readonly number[]): string => `${part ? `${part}, ` : ''}${got} near (${at.map(r2).join(', ')}) mm`
+/** The other thin places after the thinnest (WALL_WHERE), with how many more there are past the list. */
+export const WALL_ALSO = (wall: string, places: readonly string[], more: number): string => `Also under ${wall}: ${places.join('; ')}${more ? `; and ${more} more` : ''}.`
+/** How to fix a failed minimum wall with several thin places: all of them in the one fix round. */
+export const WALL_FIX_ALL = (wall: string): string => `Make every place listed at least ${wall} thick, all in this one fix round. A lip, rim, post or arm needs that thickness too, and a cut must stop at least ${wall} short of the far side.`
 
 /**
  * The minimum wall: the thinnest wall away from sharp edges and points against twice the nozzle. Thinner readings
@@ -912,7 +931,12 @@ function wallItem(body: BodyFacts, nozzle: number): CheckItem {
   }
   const pass = body.minWallMm >= wall - 1e-6
   // a failed wall says where it is and how to fix it, beside the reading (got stays the reading alone)
-  const place = !pass && body.minWallAt ? { where: WALL_WHERE(body.minWallAt.part, body.minWallAt.at), fix: WALL_FIX(mm(wall)) } : !pass ? { fix: WALL_FIX(mm(wall)) } : {}
+  // with other parts under the floor too, it lists them after the thinnest, so one fix round takes them all
+  const others = !pass ? (body.minWallOthers ?? []) : []
+  const listed = others.slice(0, WALL_PLACES_MAX - 1).map((o) => WALL_ALSO_PLACE(o.part, mm(o.mm), o.at))
+  const also = listed.length ? ` ${WALL_ALSO(mm(wall), listed, others.length - listed.length)}` : ''
+  const fix = listed.length ? WALL_FIX_ALL(mm(wall)) : WALL_FIX(mm(wall))
+  const place = !pass && body.minWallAt ? { where: `${WALL_WHERE(body.minWallAt.part, body.minWallAt.at)}${also}`, fix } : !pass ? { fix } : {}
   return { name: 'minimum wall', want, got: mm(body.minWallMm), pass, ...(pass && tipWarning ? { warning: tipWarning } : {}), ...place }
 }
 

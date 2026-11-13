@@ -242,7 +242,7 @@ describe('design.put_plan with amends', () => {
   it('is 1.6.0, and changes a client plan of a built part with the same rules and no card', async () => {
     const t = tools()
     expect(t.tool('design.put_plan').version).toBe('1.7.0')
-    expect(t.tool('design.check').version).toBe('1.20.0')
+    expect(t.tool('design.check').version).toBe('1.21.0')
     await t.run('design.put_plan', { plan: mine, design: 'd1' })
     const out = await t.run('design.put_plan', { plan: { ...mine, ...taller(box, 34) }, amends: 'box-1', reason: 'The lid adds 4 mm.' })
     expect(out.summary).toBe('Changed plan box-1 for Hinged box (revision 2): Base height 30 mm to 34 mm, Overall height 30 mm to 34 mm. Build to it as changed, then check it with design.check and planId box-1.')
