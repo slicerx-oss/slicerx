@@ -277,8 +277,13 @@ struct Closest {
     fused: bool,
 }
 
+/// Two bodies closer than this touch: a gap under a thousandth of a millimeter is far below what a printer makes, so it
+/// is two faces meant to meet that rounding moved apart (a model's coordinates come through 32-bit floats, a few
+/// millionths of a millimeter at plate sizes), never a gap to print or a piece that prints loose.
+pub const TOUCH_MM: f64 = 1e-3;
+
 fn classify(c: &Closest) -> GapKind {
-    if c.fused || c.d <= 1e-9 {
+    if c.fused || c.d < TOUCH_MM {
         return GapKind::Fused;
     }
     if runs_vertical(c.p, c.q) {
@@ -795,6 +800,50 @@ mod tests {
         assert!((g.to[0] - g.from[0] - 0.15).abs() < 1e-9);
         assert!(r.warnings[0].contains("0.15 mm apart side by side"));
         assert!(fit_check(&m, &opts(0.1)).unwrap().gaps.is_empty());
+    }
+
+    #[test]
+    fn a_gap_under_a_thousandth_of_a_millimeter_touches() {
+        // side by side 0.0009 mm apart: one piece; 0.0011 mm apart: a gap, against the clearance as any other
+        for (gap, touches) in [(0.0009, true), (0.0011, false)] {
+            let mut m = build::box_mesh([0.0; 3], [10.0, 10.0, 10.0]);
+            m.append(&build::box_mesh([10.0 + gap, 2.0, 0.0], [20.0, 8.0, 10.0]));
+            let r = fit_check(&m, &opts(0.2)).unwrap();
+            assert_eq!(r.gaps.len(), 1, "{gap}: {r:?}");
+            let g = &r.gaps[0];
+            if touches {
+                assert_eq!(g.kind, GapKind::Fused, "{gap}");
+            } else {
+                assert_eq!(g.kind, GapKind::Horizontal, "{gap}");
+                assert!((g.gap_mm - gap).abs() < 1e-9, "{gap}: {}", g.gap_mm);
+            }
+        }
+    }
+
+    #[test]
+    fn the_thousandth_holds_for_a_pair_turned_off_the_axes() {
+        // the same pair turned 37 degrees about z and 11 about x, so no face lies on an axis plane
+        let turn = |m: &mut TriMesh| {
+            let (a, b) = (37f64.to_radians(), 11f64.to_radians());
+            let (ca, sa, cb, sb) = (a.m_cos(), a.m_sin(), b.m_cos(), b.m_sin());
+            for p in &mut m.positions {
+                let [x, y, z] = *p;
+                let (x, y) = (x * ca - y * sa, x * sa + y * ca);
+                *p = [x, y * cb - z * sb, y * sb + z * cb];
+            }
+        };
+        for (gap, touches) in [(0.0009, true), (0.0011, false)] {
+            let mut m = build::box_mesh([0.0; 3], [10.0, 10.0, 10.0]);
+            m.append(&build::box_mesh([10.0 + gap, 2.0, 0.0], [20.0, 8.0, 10.0]));
+            turn(&mut m);
+            let r = fit_check(&m, &opts(0.2)).unwrap();
+            assert_eq!(r.gaps.len(), 1, "{gap}: {r:?}");
+            let g = &r.gaps[0];
+            assert_eq!(g.kind == GapKind::Fused, touches, "{gap}: {g:?}");
+            if !touches {
+                assert!((g.gap_mm - gap).abs() < 1e-7, "{gap}: {}", g.gap_mm);
+            }
+        }
     }
 
     #[test]
