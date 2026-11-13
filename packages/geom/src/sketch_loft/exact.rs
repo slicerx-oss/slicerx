@@ -4,13 +4,16 @@
 //!
 //! The faces are where [`super::rails`] says the loft's sides are. A piece that is a straight line on every profile
 //! is a ruled face between its first and last rails, so a straight run such as a deck stays flat. A piece that is a
-//! spline on every profile is skinned across all of its rails. An open loft's first and last profiles are flat
+//! spline on every profile is skinned across all of its rails, and so is one whole circle or ellipse on every
+//! profile, across every rail and back onto the first. An open loft's first and last profiles are flat
 //! faces, bounded by the straight pieces' lines and, along each skinned side, by the curve that side ends on as the
 //! kernel reads it off its own surface ([`sx_brep::skin_ends`]); a closed one has none, since its rails come back onto
 //! the first profile and the faces meet there. The kernel joins the faces into one solid, which is read back before
 //! it is kept: closed, one manifold solid, with a volume, and its edges on the curves its faces were given.
 //!
-//! Profiles with arcs, circles or ellipses are refused for now.
+//! Each skinned side is held to the drawing: at every profile it comes within [`DRAWN_MM`] of the profile as drawn,
+//! or its rails are doubled, or the loft is refused. Profiles with arcs among other pieces, and a closed loft through
+//! circles or ellipses, are refused for now.
 
 use super::{Curve, Density, Match, Options, Profile, Rails};
 use crate::error::{Error, Result};
@@ -18,6 +21,7 @@ use crate::exact as table;
 use crate::faces;
 use crate::mesh::TriMesh;
 use crate::vec3::V3;
+use std::f64::consts::TAU;
 use sx_brep::{Body, DRAWN_MM, Path, Sheet, Tessellation, apart, skin_stations};
 
 /// What a face of an exact loft is.
@@ -96,12 +100,27 @@ fn sheets(rails: &Rails) -> Result<(Vec<Sheet>, Vec<Part>, f64)> {
             "open profiles make a surface, and an exact loft is a solid; close the profiles",
         ));
     }
+    // a whole circle or ellipse on every profile is one piece all the way around, skinned across every rail and
+    // back onto the first; arcs among other pieces are not made yet
     let round = |c: &Curve| matches!(c, Curve::Arc { .. } | Curve::Ellipse { .. });
+    let whole = |c: &Curve| match *c {
+        Curve::Arc { sweep, .. } | Curve::Ellipse { sweep, .. } => (sweep.abs() - TAU).abs() <= 1e-9,
+        Curve::Line | Curve::Spline { .. } => false,
+    };
     if rails.pieces.iter().any(|p| p.curves.iter().any(round)) {
-        return Err(Error::geometry(
-            "loft",
-            "an exact loft is made only through profiles of straight lines and splines for now; these have an arc, a circle or an ellipse",
-        ));
+        let one_whole = matches!(&rails.pieces[..], [p] if p.stretches == n && p.curves.iter().all(whole));
+        if !one_whole {
+            return Err(Error::geometry(
+                "loft",
+                "an exact loft is made only through profiles of straight lines and splines, or one whole circle or ellipse on every profile, for now; these have arcs",
+            ));
+        }
+        if rails.wrap.is_some() {
+            return Err(Error::geometry(
+                "loft",
+                "a closed loft through circles or ellipses is not made exact yet",
+            ));
+        }
     }
     let mut out = Vec::with_capacity(rails.pieces.len() + 2);
     let mut parts = Vec::with_capacity(rails.pieces.len() + 2);
@@ -122,10 +141,10 @@ fn sheets(rails: &Rails) -> Result<(Vec<Sheet>, Vec<Part>, f64)> {
             for (k, station) in stations.iter().enumerate() {
                 // a closed loft's last station is its first section again
                 let (ring, curve) = (&rails.rings[k % count], &piece.curves[k % count]);
-                let Some(spans) = curve.spline_spans() else {
+                let Some(spans) = curve.drawn_spans() else {
                     return Err(Error::geometry(
                         "loft",
-                        "a spline piece is a spline on every profile",
+                        "a skinned piece is a curve on every profile",
                     ));
                 };
                 let drawn = Path::Cubics(

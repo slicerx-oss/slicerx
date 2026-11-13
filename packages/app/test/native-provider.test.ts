@@ -686,7 +686,7 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
     console.log(lines.join('\n'))
   }, 120_000)
 
-  it.skipIf(process.env['SX_NATIVE_KERNEL'] !== '1')('makes a new lofted body exact in a replay without exact solids, and a curved one on the mesh with no note', async () => {
+  it.skipIf(process.env['SX_NATIVE_KERNEL'] !== '1')('makes new lofted bodies exact in a replay without exact solids, a round one too, and one with an arc beside a spline on the mesh with no note', async () => {
     const engine = processEngine()
     const p = nativeProvider(engine)
     type Part = { indices: ArrayLike<number>; normals?: Int16Array; faces?: { keys?: number[] } }
@@ -701,14 +701,23 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
       expect(block.exactLoftsQuiet).toBeUndefined()
       expect(block.parts[0]!.normals).toHaveLength(block.parts[0]!.indices.length * 2)
       expect(block.parts[0]!.faces!.keys).toHaveLength(6)
-      // a round section the kernel does not loft exactly yet: today's mesh loft, no note, the engine's reason kept quietly
+      // one whole circle on every profile lofts exact too: its side and two caps
       const round = await p.call<Out>('history.replay', { history: { version: HISTORY_VERSION, base: [], steps: [loft('loft-2', [{ type: 'circle', center: [0, 0], diameterMm: 10 }])] } })
       expect(round.status).toEqual([{ state: 'done' }])
       expect(round.exactFellBack).toBeUndefined()
-      expect(round.exactLoftsQuiet).toHaveLength(1)
-      expect(round.exactLoftsQuiet![0]!.step).toBe('loft-2')
-      expect(round.exactLoftsQuiet![0]!.why.length).toBeGreaterThan(0)
-      expect('normals' in round.parts[0]!).toBe(false)
+      expect(round.exactLoftsQuiet).toBeUndefined()
+      expect(round.parts[0]!.normals).toHaveLength(round.parts[0]!.indices.length * 2)
+      expect(round.parts[0]!.faces!.keys).toHaveLength(3)
+      // a section with an arc beside a spline, which the kernel does not loft exactly yet: today's mesh loft, no note,
+      // the engine's reason kept quietly
+      const slotted = { start: [-10, -5], segments: [{ type: 'line', to: [10, -5] }, { type: 'arc', to: [10, 5], center: [10, 0], sweepDeg: 180 }, { type: 'spline', points: [[0, 8]], to: [-10, 5] }, { type: 'line', to: [-10, -5] }] }
+      const curved = await p.call<Out>('history.replay', { history: { version: HISTORY_VERSION, base: [], steps: [loft('loft-3', [slotted])] } })
+      expect(curved.status).toEqual([{ state: 'done' }])
+      expect(curved.exactFellBack).toBeUndefined()
+      expect(curved.exactLoftsQuiet).toHaveLength(1)
+      expect(curved.exactLoftsQuiet![0]!.step).toBe('loft-3')
+      expect(curved.exactLoftsQuiet![0]!.why.length).toBeGreaterThan(0)
+      expect('normals' in curved.parts[0]!).toBe(false)
     } finally {
       await engine.end()
     }
