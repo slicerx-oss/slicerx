@@ -7,7 +7,7 @@
 // fall where faces already meet needs no split. An engine that cannot split faces leaves the band on the triangles,
 // as before: a design that must stay exact refuses it, and anywhere else the next exact step clears it with its note.
 import { beforeEach, describe, expect, it } from 'vitest'
-import { EDGE_SPLIT_BY_BAND, EXACT_IMPRINT, EXACT_OPS, IDENTITY, IMPRINT_CLASH, IMPRINT_UNNAMED, PAINT_DROPPED, clearReplayCache, replayHistory, stepSalt, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
+import { EDGE_SPLIT_BY_BAND, EXACT_IMPRINT, EXACT_OPS, IDENTITY, IMPRINT_UNCLEAN, PIECES_PAINTED_APART, bareFaces, PAINT_DROPPED, clearReplayCache, replayHistory, stepSalt, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 
 type Vec3 = [number, number, number]
 /** A face of a stand-in body: its key, and the heights it runs between (a flat face has both the same). */
@@ -239,16 +239,32 @@ describe('a band after the kernel split for it', () => {
     expect(paintByKey(r.parts[0])).toEqual({ 0: 'S2', [salt('hull') + 1]: 'S2' })
   })
 
-  it('leaves a face bare that a merge makes of pieces painted apart, rather than paint one over the other', async () => {
+  it('leaves a face bare that a merge makes of pieces painted apart, and lists it with the reason, through later steps', async () => {
     const e = engine({ merge: [salt('red') + 50, salt('red') + 51] })
-    const r = await replayHistory(e.call, { history: strict(hull(), whole('white', 1), band('red', { below: 4 }), hole) }, kept)
-    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
-    expect(paintByKey(r.parts[0])).toEqual({ [salt('hull') + 1]: 'S2', [salt('hull') + 3]: 'S1' })
+    const r = await replayHistory(e.call, { history: strict(hull(), whole('white', 1), band('red', { below: 4 }), hole, hole2, band('deck', { from: 20, to: 20 }, 3)) }, kept)
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done', 'done'])
+    const p = r.parts[0]!
+    // the bottom red and, after the last band, the deck in filament 3; the merged side neither
+    expect(paintByKey(p)).toEqual({ [salt('hull') + 1]: 'S2', [salt('hull') + 3]: 'S3' })
+    const merged = p.faces!.keys!.indexOf(0)
+    expect(p.unpainted).toEqual({ color: [merged] })
+    // the side is 20 mm by 5 mm in the stand-in's drawing
+    expect(bareFaces(p, 'color')).toEqual([{ key: 0, areaMm2: 100, reason: PIECES_PAINTED_APART }])
+    expect(PIECES_PAINTED_APART).toBe('its pieces were painted differently before a later step joined them')
+  })
+
+  it('lists the face no longer once the layer paints it again', async () => {
+    const e = engine({ merge: [salt('red') + 50, salt('red') + 51] })
+    const r = await replayHistory(e.call, { history: strict(hull(), whole('white', 1), band('red', { below: 4 }), hole, whole('again', 4)) }, kept)
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done'])
+    expect(r.parts[0]!.unpainted).toBeUndefined()
+    expect(new Set(Object.values(paintByKey(r.parts[0])))).toEqual(new Set(['S4']))
   })
 
   it('refuses a fillet on an edge the band cut in two, in plain words, and keeps one that it did not', async () => {
     const across = await replayHistory(engine().call, { history: strict(hull(), band('red', { below: 4 }), fillet('round', [10, 0, 0], [10, 0, 20])) }, kept)
     expect(across.status[2]).toEqual({ state: 'broken', message: EDGE_SPLIT_BY_BAND })
+    expect(EDGE_SPLIT_BY_BAND).toBe('A paint band now splits this edge in two. Pick the edge again to repair this step.')
     clearReplayCache()
     const e = engine()
     const along = await replayHistory(e.call, { history: strict(hull(), band('red', { below: 4 }), fillet('round', [0, 0, 0], [5, 0, 0])) }, kept)
@@ -261,11 +277,13 @@ describe('a band after the kernel split for it', () => {
   })
 
   it('refuses a split whose pieces share a key, or whose pieces it does not name, and paints nothing', async () => {
+    // one plain sentence for both, and the cause for a developer
+    expect(IMPRINT_UNCLEAN).toBe("This part's faces could not be split cleanly at the band, so the band was not painted.")
     const clash = await replayHistory(engine({ clash: true }).call, { history: strict(hull(), band('red', { below: 4 })) }, kept)
-    expect(clash.status[1]).toEqual({ state: 'broken', message: IMPRINT_CLASH })
+    expect(clash.status[1]).toEqual({ state: 'broken', message: IMPRINT_UNCLEAN, cause: 'clash' })
     clearReplayCache()
     const unnamed = await replayHistory(engine({ unnamed: true }).call, { history: strict(hull(), band('red', { below: 4 })) }, kept)
-    expect(unnamed.status[1]).toEqual({ state: 'broken', message: IMPRINT_UNNAMED })
+    expect(unnamed.status[1]).toEqual({ state: 'broken', message: IMPRINT_UNCLEAN, cause: 'unnamed' })
   })
 })
 

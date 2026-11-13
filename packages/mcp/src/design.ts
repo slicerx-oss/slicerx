@@ -154,7 +154,8 @@ export class Designs implements DesignHost {
     const r = await replayHistory(this.deps.engine, { history, exact: history.exact === true }, await this.held())
     if (history.exact) {
       const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')
-      if (broken || r.exactFellBack?.length) throw new ToolInputError(`Exact replay stopped: ${unstopped(broken?.message ?? 'a step requires the mesh path')}. The design is unchanged.`)
+      // a cause for a developer, when the step's sentence covers more than one (StepStatus.cause)
+      if (broken || r.exactFellBack?.length) throw new ToolInputError(`Exact replay stopped: ${unstopped(broken?.message ?? 'a step requires the mesh path')}. The design is unchanged.`, 'invalid_input', broken?.cause ? { cause: broken.cause } : undefined)
     }
     return r
   }

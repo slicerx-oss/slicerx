@@ -132,6 +132,11 @@ export interface MeshPart {
    * keeps them stale. Never saved in a project.
    */
   normals?: Int16Array
+  /**
+   * Faces (ids in `faces`) a replay left bare in a paint layer because pieces painted differently were joined into one
+   * face (cad-history HistoryMesh.unpainted), for the paint read-back to list. Never saved in a project.
+   */
+  unpainted?: Partial<Record<'color' | 'seam' | 'support' | 'fuzzy', number[]>>
 }
 
 export interface Bed {

@@ -37,6 +37,8 @@ export interface ExactPart {
   facePaint?: FacePaint
   /** The planes, in the part's own frame, a height band split its faces along (imprinted), for the edge steps after it. */
   splitAt?: Plane[]
+  /** Faces left bare in a layer (HistoryMesh.unpainted). */
+  unpainted?: Partial<Record<PaintLayer, number[]>>
 }
 
 /** A plane by a point on it and its normal. */
@@ -89,9 +91,15 @@ export function facePaintOf(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'
 
 /** The triangles' paint from the part's paint by face: every triangle of a face painted whole gets its text. */
 export function paintOfFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, fp: FacePaint): PaintTexts {
+  return paintedFrom(m, fp).paint ?? {}
+}
+
+/** The triangles' paint from paint by face, and the faces left bare because entries gave them different texts. */
+export function paintedFrom(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, fp: FacePaint): Pick<ExactPart, 'paint' | 'unpainted'> {
   const f = m.faces
   const out: PaintTexts = {}
-  if (!f) return out
+  const bare: NonNullable<ExactPart['unpainted']> = {}
+  if (!f) return {}
   const triangles = Math.floor(m.indices.length / 3)
   for (const [layer, list] of Object.entries(fp) as [PaintLayer, NonNullable<FacePaint[PaintLayer]>][]) {
     // each face's text; null for a face two entries give different texts (a merge of faces painted apart), left bare
@@ -114,16 +122,22 @@ export function paintOfFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces
       if (text) texts[t] = text
     }
     if (Object.keys(texts).length) out[layer] = texts
+    const apart = [...byFace].flatMap(([id, text]) => (text === null ? [id] : []))
+    if (apart.length) bare[layer] = apart
   }
-  return out
+  return { ...(Object.keys(out).length ? { paint: out } : {}), ...(Object.keys(bare).length ? { unpainted: bare } : {}) }
 }
 
 /** The kernel operation that splits a body's faces where planes cross them and leaves its shape as it is. */
-export const IMPRINT_CLASH = 'The kernel gave two faces the same name when it split them at the band, so the band was not painted.'
-/** What a band step says when the kernel's split leaves a face it does not say the origin of. */
-export const IMPRINT_UNNAMED = 'The kernel split faces at the band without saying which face each piece came from, so the band was not painted.'
+/**
+ * What a band step says when the split of the faces at the band's edges comes back wrong: two pieces with one key
+ * (cause `clash`), or a piece not named with the face it came from (cause `unnamed`, on the error and the step status).
+ */
+export const IMPRINT_UNCLEAN = "This part's faces could not be split cleanly at the band, so the band was not painted."
 /** What an edge step says when its edge runs across where a band split the part's faces: the edge is in pieces now. */
-export const EDGE_SPLIT_BY_BAND = 'This edge runs across where a paint band split its faces, so it is in pieces now; pick the edge again to repair this step.'
+export const EDGE_SPLIT_BY_BAND = 'A paint band now splits this edge in two. Pick the edge again to repair this step.'
+/** Why a face named in paint by face is bare in the read-back (HistoryMesh.unpainted). */
+export const PIECES_PAINTED_APART = 'its pieces were painted differently before a later step joined them'
 
 /** Whether the edge from `a` to `b` (an arc about `center` when given) crosses one of the planes, in the same frame. */
 export function edgeCrosses(planes: readonly Plane[], a: Vec3, b: Vec3, center?: Vec3): boolean {
@@ -199,6 +213,14 @@ export function paintedFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces
   return out
 }
 
+/** One layer's faces left bare though paint by face named them (unpainted), each with its key, area and the reason. */
+export function bareFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces' | 'unpainted'>, layer: PaintLayer): { key: number; areaMm2: number; reason: string }[] {
+  const ids = m.unpainted?.[layer]
+  if (!ids?.length) return []
+  const at = faceHeights(m, IDENTITY)
+  return ids.map((id) => ({ key: m.faces?.keys?.[id] ?? 0, areaMm2: Math.round((at.get(id)?.area ?? 0) * 100) / 100, reason: PIECES_PAINTED_APART }))
+}
+
 /** The band's edges (world Z) that some face of the part crosses: the heights its faces must be split at to be painted whole. */
 export function bandCrossings(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, transform: Mat4, band: { lo: number; hi: number }): number[] {
   const faces = [...faceHeights(m, transform).values()]
@@ -244,8 +266,8 @@ export async function imprinted(call: Call, part: ExactPart, transform: Mat4, at
   const before = new Set(part.unmeshed ?? Array.from(part.faces?.keys ?? []))
   const after = (made.unmeshed ?? Array.from(made.faces?.keys ?? [])).filter((k) => k)
   const pieces = new Map(pairs)
-  if (new Set(after).size !== after.length || pieces.size !== pairs.length) throw new ExactBroken(IMPRINT_CLASH)
-  if (after.some((k) => !before.has(k) && !before.has(pieces.get(k)!)) || pairs.some(([k, from]) => !after.includes(k) || !before.has(from))) throw new ExactBroken(IMPRINT_UNNAMED)
+  if (new Set(after).size !== after.length || pieces.size !== pairs.length) throw new ExactBroken(IMPRINT_UNCLEAN, 'clash')
+  if (after.some((k) => !before.has(k) && !before.has(pieces.get(k)!)) || pairs.some(([k, from]) => !after.includes(k) || !before.has(from))) throw new ExactBroken(IMPRINT_UNCLEAN, 'unnamed')
   let facePaint: FacePaint | undefined
   if (part.facePaint) {
     facePaint = {}
@@ -255,8 +277,7 @@ export async function imprinted(call: Call, part: ExactPart, transform: Mat4, at
   }
   const x: ExactPart = { ...made, ...(facePaint ? { facePaint } : {}), splitAt: [...(part.splitAt ?? []), ...planes] }
   if (x.unmeshed) return meshed(call, x)
-  const paint = facePaint ? paintOfFaces(x, facePaint) : {}
-  return Object.keys(paint).length ? { ...x, paint } : x
+  return facePaint ? { ...x, ...paintedFrom(x, facePaint) } : x
 }
 
 /** How a replay holds its solids: as text through each call, or (`keep`) as kernel bodies, each one `made` told. */
@@ -341,7 +362,14 @@ export const EXACT_FELL_BACK = 'The exact solid could not do this step, so it ra
 export const EXACT_MESH_FROM_HERE = 'This step works on the mesh, so this part is no longer an exact solid from here on.'
 
 /** Thrown for an answer that is the step's real outcome, not a kernel failure (no fallback). */
-export class ExactBroken extends Error {}
+export class ExactBroken extends Error {
+  /** For a developer, never shown: which cause the sentence covers, when it covers more than one (StepStatus.cause). */
+  override readonly cause?: string
+  constructor(message: string, cause?: string) {
+    super(message)
+    if (cause) this.cause = cause
+  }
+}
 
 /** A join or cut that did not reach the part: a pattern leaves that copy out, as the mesh path does. */
 export class ExactMissed extends ExactBroken {}
@@ -371,11 +399,10 @@ export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot
 export async function meshed<P extends ExactPart>(call: Call, p: P): Promise<P> {
   if (!p.unmeshed || p.body === undefined) return p
   // normals come from this tessellation or not at all
-  const { unmeshed: _keys, normals: _old, paint: _paint, ...rest } = p
+  const { unmeshed: _keys, normals: _old, paint: _paint, unpainted: _bare, ...rest } = p
   const mesh = tessellated((await call('brep.tessellate', { body: p.body })) as Tessellated)
   // paint kept by face goes on the new triangles
-  const paint = p.facePaint ? paintOfFaces(mesh, p.facePaint) : undefined
-  return { ...rest, ...mesh, ...(paint && Object.keys(paint).length ? { paint } : {}) } as P
+  return { ...rest, ...mesh, ...(p.facePaint ? paintedFrom(mesh, p.facePaint) : {}) } as P
 }
 
 /** The part fields a tessellation gives, from either form of the answer. */
