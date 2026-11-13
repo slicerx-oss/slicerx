@@ -539,7 +539,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const open = defineTool({
     name: 'design.open',
-    version: '1.3.0',
+    version: '1.3.1',
     source: 'command',
     permission: 'read',
     description:
@@ -579,7 +579,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   const STEPS_TEXT = 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.'
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.6.0',
+    version: '1.6.1',
     source: 'command',
     permission: 'read',
     // a local model gets the steps without the loft stations' words, which only the cloud follow-up guidance uses
@@ -612,7 +612,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.6.1',
+    version: '1.6.2',
     source: 'command',
     permission: 'slice',
     description:
