@@ -39,6 +39,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/kernel.rs");
     println!("cargo:rerun-if-changed=scripts/swap-routines.sh");
     println!("cargo::rustc-check-cfg=cfg(sx_brep_kernel)");
+    // the one pinned commit, for lib.rs's KERNEL_COMMIT
+    println!("cargo:rustc-env=SX_SMLIB_COMMIT={COMMIT}");
     let dir = kernel_dir().filter(|d| d.join("source/SMLib/inc").is_dir());
     let Some(dir) = dir else {
         assert!(
