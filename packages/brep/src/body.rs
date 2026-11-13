@@ -176,6 +176,13 @@ impl Body {
         self.solid.volume(VOLUME_ACCURACY)
     }
 
+    /// How far `point` is from the body's surface, in mm, whether it is outside the body or in it. The distance is
+    /// to a real point of the surface, which on a thin body can be a point of its far side: then it is larger than
+    /// the true nearest distance, never smaller.
+    pub fn distance_to(&self, point: [f64; 3]) -> Result<f64> {
+        self.solid.distance_to(point.into())
+    }
+
     /// The tight box around the body: its lowest and highest corners.
     pub fn bounds(&self) -> Result<([f64; 3], [f64; 3])> {
         self.solid.bounds().map(|(min, max)| (min.into(), max.into()))
@@ -343,6 +350,13 @@ impl Face<'_> {
         self.0.shape().into()
     }
 
+    /// How far `point` is from the face, within its outline, in mm. The distance is to a real point of the face,
+    /// which on a thin body can be a point of its far side: then it is larger than the true nearest distance, never
+    /// smaller.
+    pub fn distance_to(&self, point: [f64; 3]) -> Result<f64> {
+        self.0.distance_to(point.into())
+    }
+
     /// Whether the face lies within `mm` of one plane, by the kernel's own test, whatever kind its surface is. Never
     /// for a distance that is not more than 0.
     pub fn flat_within(&self, mm: f64) -> bool {
@@ -372,6 +386,12 @@ impl<'b> Edge<'b> {
     /// Whether it starts and ends at one point, as a full circle does.
     pub fn is_closed(&self) -> bool {
         self.0.is_closed()
+    }
+
+    /// How far `point` is from the edge's curve, in mm. The distance is to a real point of the edge, and can be
+    /// larger than the true nearest distance where the curve passes close to itself, never smaller.
+    pub fn distance_to(&self, point: [f64; 3]) -> Result<f64> {
+        self.0.distance_to(point.into())
     }
 
     /// Its start and end points, or none when it has no vertex.

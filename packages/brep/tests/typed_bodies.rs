@@ -232,6 +232,65 @@ fn a_sphere_reads_back_with_its_center_and_radius() {
     close3(frame.origin, [3.0, -2.0, 7.0]);
 }
 
+// how far a point is from a body's surface, outside it, in it and on it
+#[test]
+fn a_body_measures_how_far_a_point_is_from_its_surface() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let cube = Body::cuboid([0.0; 3], [2.0; 3]).unwrap();
+    for (point, far) in [
+        ([1.0, 1.0, 3.0], 1.0),
+        ([1.0, 1.0, 1.5], 0.5),
+        ([1.0, 1.0, 2.0], 0.0),
+        ([5.0, 6.0, 2.0], 5.0),
+    ] {
+        let got = cube.distance_to(point).unwrap();
+        assert!((got - far).abs() <= 1e-12, "{point:?}: {got}");
+    }
+    let ball = Body::sphere([0.0; 3], 5.0).unwrap();
+    for (point, far) in [
+        ([8.0, 0.0, 0.0], 3.0),
+        ([0.0, 3.0, 4.0], 0.0),
+        ([0.0, 0.0, 1.0], 4.0),
+    ] {
+        let got = ball.distance_to(point).unwrap();
+        assert!((got - far).abs() <= 1e-9, "{point:?}: {got}");
+    }
+}
+
+// a face measures to itself within its outline and an edge to its curve, so the nearest of a body's faces is as far
+// as the body is
+#[test]
+fn a_face_and_an_edge_measure_how_far_a_point_is_from_them() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let cube = Body::cuboid([0.0; 3], [2.0; 3]).unwrap();
+    let above = [1.0, 1.0, 3.0];
+    let mut faces: Vec<f64> = cube
+        .faces()
+        .unwrap()
+        .iter()
+        .map(|face| face.distance_to(above).unwrap())
+        .collect();
+    faces.sort_by(f64::total_cmp);
+    // the top, the four sides by their top sides, and the bottom
+    let side = 2.0_f64.sqrt();
+    for (got, want) in faces.iter().zip([1.0, side, side, side, side, 3.0]) {
+        assert!((got - want).abs() <= 1e-12, "{faces:?}");
+    }
+    let edges = cube.edges().unwrap();
+    let nearest = |point: [f64; 3]| {
+        edges
+            .iter()
+            .map(|edge| edge.distance_to(point).unwrap())
+            .fold(f64::INFINITY, f64::min)
+    };
+    assert!((nearest(above) - side).abs() <= 1e-12, "{}", nearest(above));
+    assert!(nearest([0.0, 1.0, 0.0]) <= 1e-12);
+}
+
 // where faces are sorted into kinds, a face is a plane when the kernel calls it flat within FLAT_KIND_MM
 #[test]
 fn the_kernel_says_which_faces_are_flat() {
