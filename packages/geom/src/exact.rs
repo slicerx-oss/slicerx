@@ -13,7 +13,7 @@ use crate::mesh::TriMesh;
 use crate::normals;
 use crate::vec3::{self, V3};
 use serde_json::{Map, Value, json};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,8 +29,85 @@ pub struct Held {
 // the next number, for every thread's table: one is never given out twice in a process
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
+/// A held body's mesh at one chord and angle, and which of its faces are sorted as flat; `tessellate` answers from it.
+struct Shown {
+    mesh: Mesh,
+    flat: Vec<bool>,
+}
+
+impl Shown {
+    /// the bytes its lists hold
+    fn bytes(&self) -> usize {
+        let m = &self.mesh;
+        let points: usize = m.edges.iter().map(|e| size_of_val(e.points.as_slice())).sum();
+        size_of_val(m.positions.as_slice())
+            + size_of_val(m.triangles.as_slice())
+            + size_of_val(m.faces.as_slice())
+            + size_of_val(m.normals.as_slice())
+            + size_of_val(m.surfaces.as_slice())
+            + size_of_val(m.edges.as_slice())
+            + points
+            + size_of_val(self.flat.as_slice())
+    }
+}
+
+/// The most bytes of meshes a thread keeps (256 MiB); past it the one asked for longest ago is dropped and made again.
+pub const MESH_BYTES: usize = 256 << 20;
+
+/// a kept mesh: the body's number, chord and angle bits, the mesh, and its bytes
+type KeptMesh = ((u32, u64, u64), Rc<Shown>, usize);
+
 thread_local! {
     static TABLE: RefCell<BTreeMap<u32, Rc<Held>>> = const { RefCell::new(BTreeMap::new()) };
+    // the one asked for last at the end
+    static MESHES: RefCell<Vec<KeptMesh>> = const { RefCell::new(Vec::new()) };
+    static MESH_CAP: Cell<usize> = const { Cell::new(MESH_BYTES) };
+    static TESSELLATED: Cell<u64> = const { Cell::new(0) };
+}
+
+/// How many meshes this thread's `tessellate` has asked the kernel for.
+#[doc(hidden)]
+#[must_use]
+pub fn tessellated() -> u64 {
+    TESSELLATED.get()
+}
+
+/// The triangles and bytes of the meshes this thread keeps.
+#[doc(hidden)]
+#[must_use]
+pub fn kept_meshes() -> (usize, usize) {
+    MESHES.with(|m| {
+        m.borrow().iter().fold((0, 0), |(t, b), (_, shown, bytes)| {
+            (t + shown.mesh.triangles.len(), b + bytes)
+        })
+    })
+}
+
+/// Sets the most bytes of meshes this thread keeps, [`MESH_BYTES`] until set, and drops what no longer fits.
+#[doc(hidden)]
+pub fn keep_mesh_bytes(cap: usize) {
+    MESH_CAP.set(cap);
+    MESHES.with(|m| trim(&mut m.borrow_mut(), 0));
+}
+
+/// drops the meshes asked for longest ago until `room` more bytes fit under the cap
+fn trim(meshes: &mut Vec<KeptMesh>, room: usize) {
+    let over = meshes
+        .iter()
+        .map(|kept| kept.2)
+        .sum::<usize>()
+        .saturating_add(room)
+        .saturating_sub(MESH_CAP.get());
+    let mut freed = 0;
+    let n = meshes
+        .iter()
+        .take_while(|kept| {
+            let take = freed < over;
+            freed += kept.2;
+            take
+        })
+        .count();
+    meshes.drain(..n);
 }
 
 fn kernel(e: &sx_brep::Error) -> Error {
@@ -75,6 +152,7 @@ pub fn with<R>(handle: u32, f: impl FnOnce(&Held) -> R) -> Option<R> {
 pub fn free(handle: u32) -> bool {
     // dropped after the table is let go: freeing a body goes into the kernel
     let gone = TABLE.with(|t| t.borrow_mut().remove(&handle));
+    MESHES.with(|m| m.borrow_mut().retain(|(key, ..)| key.0 != handle));
     gone.is_some()
 }
 
@@ -129,7 +207,9 @@ pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Result<Value> {
         ("count", _) => Ok(json!({ "bodies": count() })),
         ("free", n) => Ok(json!({ "freed": n.and_then(handle_of).is_some_and(free) })),
         ("tessellate" | "info" | "save", Some(n)) => {
-            let held = held(n).ok_or_else(|| no_such_body("body"))?;
+            let (handle, held) = handle_of(n)
+                .and_then(|handle| get(handle).map(|held| (handle, held)))
+                .ok_or_else(|| no_such_body("body"))?;
             match op {
                 "info" => info(&held),
                 // the text the older `save` writes, keys line and checksum included, so `load` reads it
@@ -138,7 +218,7 @@ pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Result<Value> {
                     .saved(&held.keys)
                     .map(|smb| json!({ "smb": smb }))
                     .map_err(|e| kernel(&e)),
-                _ => tessellate(&held, req, raw),
+                _ => tessellate(handle, &held, req, raw),
             }
         }
         _ if sx_brep::handover::ROUTED.contains(&op) => handed(op, req),
@@ -457,7 +537,7 @@ fn le_bytes<const N: usize, T: Copy>(values: &[T], bytes: impl Fn(T) -> [u8; N])
 /// `edgePointsOut` (u32 vertex numbers, each edge's run after the last); `meshForm` is 2 and `faces` is the table
 /// and keys alone. Without it the answer is the old `tessellate`'s JSON, positions as f64, with `normals`,
 /// `surfaces` and `edges` added.
-fn tessellate(held: &Held, req: &Value, raw: bool) -> Result<Value> {
+fn tessellate(handle: u32, held: &Held, req: &Value, raw: bool) -> Result<Value> {
     // the old tessellate's own limits, in its words, so a caller hears the same whichever table holds the body.
     // the typed call takes an angle of 0 when a chord is given; this operation never has
     let refuse = |field: &str, why: &str| Err(Error::geometry("brep", format!("{field}: {why}")));
@@ -475,28 +555,10 @@ fn tessellate(held: &Held, req: &Value, raw: bool) -> Result<Value> {
         surface_angle_deg: angle,
         ..Tessellation::default()
     };
-    let mesh = held.body.tessellate(&how).map_err(|e| kernel(&e))?;
-    let flat: Vec<bool> = held
-        .body
-        .faces()
-        .map_err(|e| kernel(&e))?
-        .iter()
-        .map(|&face| sorted_flat(face))
-        .collect();
-    let triangles = mesh.triangles.len();
-    let faces = mesh.surfaces.len();
-    if mesh.faces.len() != triangles
-        || mesh.normals.len() != triangles
-        || mesh.faces.iter().any(|&f| f as usize >= faces)
-        || (!held.keys.is_empty() && held.keys.len() != faces)
-        || flat.len() != faces
-    {
-        return Err(Error::geometry(
-            "brep",
-            "tessellate: the mesh does not match the body's faces",
-        ));
-    }
-    let kinds: Vec<Value> = table(&mesh, &flat).iter().map(kind_json).collect();
+    // the answer is built anew on every call: each call's raw buffers are its own
+    let shown = shown(handle, held, &how)?;
+    let (mesh, flat) = (&shown.mesh, &shown.flat);
+    let kinds: Vec<Value> = table(mesh, flat).iter().map(kind_json).collect();
     let surfaces: Vec<Value> = mesh.surfaces.iter().map(surface_json).collect();
     let packed = normals::pack_triangles(&mesh.normals);
     let edges = |points: &dyn Fn(&[u32]) -> Value| -> Vec<Value> {
@@ -548,7 +610,7 @@ fn tessellate(held: &Held, req: &Value, raw: bool) -> Result<Value> {
     let out = |bytes: Vec<u8>| crate::json::push_out_file(OutFile::Bytes(bytes));
     Ok(json!({
         "meshForm": 2,
-        "rawOut": out(TriMesh::new(mesh.positions, mesh.triangles).to_raw()),
+        "rawOut": out(TriMesh::new(mesh.positions.clone(), mesh.triangles.clone()).to_raw()),
         "normalsOut": out(le_bytes(&packed, i16::to_le_bytes)),
         "faceIdsOut": out(face_ids),
         "edgePointsOut": out(le_bytes(&runs, u32::to_le_bytes)),
@@ -556,6 +618,56 @@ fn tessellate(held: &Held, req: &Value, raw: bool) -> Result<Value> {
         "surfaces": surfaces,
         "edges": edges,
     }))
+}
+
+/// A held body's mesh at a chord and angle, kept until the body is freed or newer meshes pass [`MESH_BYTES`].
+fn shown(handle: u32, held: &Held, how: &Tessellation) -> Result<Rc<Shown>> {
+    let key = (handle, how.chord_mm.to_bits(), how.curve_angle_deg.to_bits());
+    let found = MESHES.with(|m| {
+        let mut m = m.borrow_mut();
+        let at = m.iter().position(|kept| kept.0 == key)?;
+        let kept = m.remove(at);
+        let shown = Rc::clone(&kept.1);
+        m.push(kept);
+        Some(shown)
+    });
+    if let Some(shown) = found {
+        return Ok(shown);
+    }
+    TESSELLATED.set(TESSELLATED.get() + 1);
+    let mut mesh = held.body.tessellate(how).map_err(|e| kernel(&e))?;
+    // no answer reads them
+    mesh.uvs = Vec::new();
+    let flat: Vec<bool> = held
+        .body
+        .faces()
+        .map_err(|e| kernel(&e))?
+        .iter()
+        .map(|&face| sorted_flat(face))
+        .collect();
+    let triangles = mesh.triangles.len();
+    let faces = mesh.surfaces.len();
+    if mesh.faces.len() != triangles
+        || mesh.normals.len() != triangles
+        || mesh.faces.iter().any(|&f| f as usize >= faces)
+        || (!held.keys.is_empty() && held.keys.len() != faces)
+        || flat.len() != faces
+    {
+        return Err(Error::geometry(
+            "brep",
+            "tessellate: the mesh does not match the body's faces",
+        ));
+    }
+    let shown = Rc::new(Shown { mesh, flat });
+    let bytes = shown.bytes();
+    if bytes <= MESH_CAP.get() {
+        MESHES.with(|m| {
+            let mut m = m.borrow_mut();
+            trim(&mut m, bytes);
+            m.push((key, Rc::clone(&shown), bytes));
+        });
+    }
+    Ok(shown)
 }
 
 #[cfg(test)]

@@ -769,7 +769,24 @@ fn a_hull_with_more_holes_than_text_can_carry_stays_exact() {
     let after = info["volumeMm3"].as_f64().expect("a volume");
     assert!(after < whole && after > 0.85 * whole, "{after} of {whole}");
     // the hull's own faces keep their keys, each on at least one face (a side with holes through it stays one face)
+    let (tessellated, before) = (exact::tessellated(), exact::kept_meshes());
+    let timed = std::time::Instant::now();
     let mesh_keys = kernel_mesh("hull", &hull);
+    let first = timed.elapsed();
+    // asked again it is answered from the mesh kept for it; the times are printed, never held to
+    let timed = std::time::Instant::now();
+    assert_eq!(kernel_mesh("hull", &hull), mesh_keys);
+    let again = timed.elapsed();
+    assert_eq!(exact::tessellated(), tessellated + 1);
+    let (triangles, bytes) = exact::kept_meshes();
+    let (triangles, bytes) = (triangles - before.0, bytes - before.1);
+    println!(
+        "HULL MESH {triangles} triangles in {bytes} bytes kept, {} a triangle, so the cap of {} bytes is {} \
+         triangles; tessellated in {first:?}, again in {again:?}",
+        bytes / triangles,
+        exact::MESH_BYTES,
+        exact::MESH_BYTES / (bytes / triangles)
+    );
     for key in &keys {
         assert!(mesh_keys.contains(key), "{key}");
     }
