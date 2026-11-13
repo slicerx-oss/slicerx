@@ -181,4 +181,25 @@ describe('no mimir tab request carries more than 128 tools', () => {
       off()
     }
   }, 60_000)
+
+  it('keeps every tool a capped build or print turn sent before the rail, and loads the rail only when asked for', async () => {
+    const off = await registerApp('desktop')
+    try {
+      // what these turns sent at the cap before the rail tool was added (fixtures/capped-tools-main.json): the rail is
+      // asked for by name, so the room left after the wanted toolsets never goes to it
+      const before = JSON.parse(readFileSync(new URL('./fixtures/capped-tools-main.json', import.meta.url), 'utf8')) as { build: string[]; print: string[] }
+      for (const mode of ['mimir cloud', 'openai key'] as Mode[])
+        for (const [i, want] of [[0, before.build], [4, before.print]] as const) {
+          const names = toolNames((await turn('desktop', NEUTRAL, mode, TURNS[i]!)).req)
+          expect(names.length, `${TURNS[i]!.kind} turn, ${mode}`).toBe(CAP)
+          expect(names, `${TURNS[i]!.kind} turn, ${mode}`).toContain('printer__queue')
+          expect(want.filter((n) => !names.includes(n)), `${TURNS[i]!.kind} turn, ${mode}: tools it no longer sends`).toEqual([])
+          expect(names, `${TURNS[i]!.kind} turn, ${mode}`).not.toContain('geom__rail')
+        }
+      const rail = toolNames((await turn('desktop', NEUTRAL, 'mimir cloud', { kind: 'rail', message: 'Add a railing all round the deck' })).req)
+      expect(rail).toContain('geom__rail')
+    } finally {
+      off()
+    }
+  }, 60_000)
 })
