@@ -39,6 +39,7 @@ import { bodyRevisions } from './body-revisions'
 import { placeOf } from './sketch-place'
 import { ownWaiting, projectGeneration, setWaiting } from './waiting'
 import { paintOf, withPaint } from './history/paint'
+import { overridesAfterSlotSteps, withSlotOverrides } from './history/slot-steps'
 import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
 
 /** A step that did not go through, and why: a reason that already says the design is unchanged says it once. */
@@ -203,7 +204,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
           const handle = await loader.loadParts(d.name, parts)
           guard?.()
           // the base parts' own paint, and none of what the undone steps painted
-          set((s) => ({ plate: s.plate.map((p) => (p.id === d.id ? { ...withoutPaint(p), handle, parts, history: d.history, ...withReplayPaint(base) } : p)) }))
+          set((s) => ({ plate: s.plate.map((p) => (p.id === d.id ? withSlotOverrides({ ...withoutPaint(p), handle, parts, history: d.history, ...withReplayPaint(base) }, overridesAfterSlotSteps(p, p.history, d.history, parts.map((x) => x.name))) : p)) }))
         }
         markStale()
       }
