@@ -117,9 +117,11 @@ mv "$h.tmp" "$h"
 # all of SmIntegrator.cpp cites it; cpp/integrator.cpp defines the classes SmIntegrator.h declares instead
 rm "$src/SmIntegrator.cpp"
 
+# REUSE-IgnoreStart
 # one line in each changed file, after NVIDIA's SPDX header, saying SlicerX changed it and how
 echo "$changed" | while IFS='|' read -r f what; do
   awk -v line="$marker $what" '{ print } /SPDX-License-Identifier:/ && !done { print line; done = 1 }
     END { if (!done) { print "swap-routines: no SPDX header in " FILENAME > "/dev/stderr"; exit 1 } }' "$f" > "$f.tmp"
   mv "$f.tmp" "$f"
 done
+# REUSE-IgnoreEnd
