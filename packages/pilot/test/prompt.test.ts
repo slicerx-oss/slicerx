@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { ASSEMBLED_LINE, assembledLine, DETAIL_LINE, DISMISSED_LINE, FAMILY_LINE, FOLLOWUP_LINE, GENEROUS_LINE, LID_IN_PLACE, LID_PUT_ON, local, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, SIZES_ASK, SIZES_REPLY, systemPrompt, VAGUE_LINE, VOICE_HEADER } from '../src/prompt'
+import { ASSEMBLED_LINE, assembledLine, DETAIL_LINE, DISMISSED_LINE, FAMILY_LINE, FOLLOWUP_LINE, GENEROUS_LINE, LID_IN_PLACE, LID_PUT_ON, local, LOFT_BODY_LINES, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, SCOPE_LINE, SIZES_ASK, SIZES_REPLY, systemPrompt, VAGUE_LINE, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 import { turnSet, turnSetTools } from '../src/turnsets'
@@ -244,7 +244,7 @@ describe('the line for parts that move', () => {
   const all = (): boolean => true
   /** The cloud prompt less its cloud-only parts: the line for parts that move, the plan line's pointer to it, the line for a sweep that changes shape and the line for a family. */
   // the line for things made of colored parts names only the tools offered, so it is taken out by its start
-  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${GENEROUS_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '')
+  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${LOFT_BODY_LINES.join('\n')}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${GENEROUS_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '')
 
   it('is one line, in the cloud prompt only, after the check line', () => {
     expect(MOVING_PARTS_LINE).not.toContain('\n')
@@ -300,6 +300,32 @@ describe('the line for parts that move', () => {
       expect(cloud).not.toContain(MOVING_PARTS_LINE)
       expect(cloud).not.toContain(MOVING_PARTS_ORDER)
       expect(asLocal(cloud)).toBe(systemPrompt('full', has))
+    }
+  })
+})
+
+describe('the lines for a body lofted through sections', () => {
+  it('are eight lines in the cloud prompt only, with design.plan and geom.loft, right after the display detail line', () => {
+    expect(LOFT_BODY_LINES).toHaveLength(8)
+    for (const l of LOFT_BODY_LINES) {
+      expect(l.startsWith('- ')).toBe(true)
+      expect(l).not.toContain('\n')
+    }
+    expect(LOFT_BODY_LINES[0]).toContain('is one geom.loft through sections, not a stack of extrudes')
+    expect(LOFT_BODY_LINES[0]).toContain('draw it as one straight segment in every section')
+    expect(LOFT_BODY_LINES[1]).toContain("Make the loft the part's first step")
+    expect(LOFT_BODY_LINES[6]).toContain('Plan one filament and no paint steps unless the person asks for color')
+    expect(LOFT_BODY_LINES[7]).toBe('- A symmetric body is drawn with symmetric sections.')
+    // general: no subject words and no colors
+    for (const word of ['hull', 'ship', 'boat', 'car', 'airplane', 'bottle', 'vase', 'red', 'blue', 'green', 'black', 'white', 'gray', 'yellow']) {
+      for (const l of LOFT_BODY_LINES) expect(new RegExp(`\\b${word}\\b`, 'i').test(l), `${word} in ${l}`).toBe(false)
+    }
+    for (const scope of ['full', 'cad'] as const) {
+      const cloud = systemPrompt(scope, () => true, '', { cloud: true })
+      expect(cloud).toContain(`${DETAIL_LINE}\n${LOFT_BODY_LINES.join('\n')}\n`)
+      expect(systemPrompt(scope, () => true)).not.toContain(LOFT_BODY_LINES[0])
+      expect(systemPrompt(scope, (n) => n !== 'geom.loft', '', { cloud: true })).not.toContain(LOFT_BODY_LINES[0])
+      expect(systemPrompt(scope, (n) => n !== 'design.plan', '', { cloud: true })).not.toContain(LOFT_BODY_LINES[0])
     }
   })
 })
@@ -393,11 +419,11 @@ describe('the lines a local model gets', () => {
     for (const scope of ['full', 'cad'] as const) {
       const cloud = systemPrompt(scope, () => true, '', { cloud: true }).split('\n')
       const local = systemPrompt(scope, () => true).split('\n')
-      const cloudOnly = new Set([FAMILY_LINE, DETAIL_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, assembledLine(() => true)])
+      const cloudOnly = new Set([FAMILY_LINE, DETAIL_LINE, ...LOFT_BODY_LINES, MOVING_PARTS_LINE, RESHAPE_LINE, assembledLine(() => true)])
       // every local line is a cloud line, in the same order, the plan line less its pointer to the moving parts line and
       // its words on a lid that prints in place
       expect(cloud.filter((l) => !cloudOnly.has(l)).map((l) => l.replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, ''))).toEqual(local)
-      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength(5)
+      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength(5 + LOFT_BODY_LINES.length)
     }
   })
 

@@ -180,7 +180,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
   'geom.hollow': { tokens: 261, description: true, fields: ['design', 'drain_holes', 'feature', 'model', 'part', 'voxel_mm'] },
   'geom.info': { tokens: 176, fields: ['design', 'model', 'step'] },
   'geom.interference': { tokens: 208, description: true, fields: ['a', 'b', 'design'] },
-  'geom.loft': { tokens: 447, description: true, fields: [
+  'geom.loft': { tokens: 468, description: true, fields: [
       'closed',
       'design',
       'feature',
