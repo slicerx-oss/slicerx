@@ -101,6 +101,115 @@ export function paintOfFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces
   return out
 }
 
+/** The kernel operation that splits a body's faces where planes cross them and leaves its shape as it is. */
+export const EXACT_IMPRINT = 'brep.imprint'
+
+/** How near a band's edge, mm, a face's corner may be and still count as on the edge rather than across it. */
+const BAND_EDGE_EPS = 1e-4
+
+/** The heights (world Z, mm) a height band covers: open below or above, or between two heights in either order. */
+export function bandOf(t: { below?: number; above?: number; from?: number; to?: number }): { lo: number; hi: number } {
+  if (t.below !== undefined) return { lo: -Infinity, hi: t.below }
+  if (t.above !== undefined) return { lo: t.above, hi: Infinity }
+  const a = t.from ?? 0
+  const b = t.to ?? 0
+  return { lo: Math.min(a, b), hi: Math.max(a, b) }
+}
+
+/** Each face's lowest and highest corner, and its middle height by area, in world Z at `transform`. */
+function faceHeights(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, transform: Mat4): Map<number, { lo: number; hi: number; area: number; mid: number }> {
+  const out = new Map<number, { lo: number; hi: number; area: number; mid: number }>()
+  const f = m.faces
+  if (!f) return out
+  const at = (v: number) => point(transform, m.positions, 3 * v)
+  for (let t = 0; t < Math.floor(m.indices.length / 3); t++) {
+    const [a, b, c] = [at(m.indices[3 * t]!), at(m.indices[3 * t + 1]!), at(m.indices[3 * t + 2]!)]
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+    const w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
+    const area = Math.hypot(u[1]! * w[2]! - u[2]! * w[1]!, u[2]! * w[0]! - u[0]! * w[2]!, u[0]! * w[1]! - u[1]! * w[0]!) / 2
+    const e = out.get(f.ids[t]!) ?? { lo: Infinity, hi: -Infinity, area: 0, mid: 0 }
+    e.lo = Math.min(e.lo, a[2], b[2], c[2])
+    e.hi = Math.max(e.hi, a[2], b[2], c[2])
+    e.mid = (e.mid * e.area + ((a[2] + b[2] + c[2]) / 3) * area) / (e.area + area || 1)
+    e.area += area
+    out.set(f.ids[t]!, e)
+  }
+  return out
+}
+
+/** One layer's faces painted whole, each with its key (0 for a face that has none), its text and its area in mm2. */
+export function paintedFaces(m: Pick<ExactPart, 'positions' | 'indices' | 'faces' | 'paint'>, layer: PaintLayer): { key: number; text: string; areaMm2: number }[] {
+  const texts = m.paint?.[layer]
+  const f = m.faces
+  if (!texts || !f) return []
+  const text = new Map<number, string | null>()
+  for (let t = 0; t < Math.floor(m.indices.length / 3); t++) {
+    const id = f.ids[t]!
+    const v = texts[t] ?? ''
+    if (!text.has(id)) text.set(id, v)
+    else if (text.get(id) !== v) text.set(id, null)
+  }
+  const out: { key: number; text: string; areaMm2: number }[] = []
+  for (const [id, e] of faceHeights(m, IDENTITY)) {
+    const v = text.get(id)
+    if (v) out.push({ key: f.keys?.[id] ?? 0, text: v, areaMm2: Math.round(e.area * 100) / 100 })
+  }
+  return out
+}
+
+/** The band's edges (world Z) that some face of the part crosses: the heights its faces must be split at to be painted whole. */
+export function bandCrossings(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, transform: Mat4, band: { lo: number; hi: number }): number[] {
+  const faces = [...faceHeights(m, transform).values()]
+  return [band.lo, band.hi].filter((h) => Number.isFinite(h) && faces.some((e) => e.lo < h - BAND_EDGE_EPS && e.hi > h + BAND_EDGE_EPS))
+}
+
+/** The faces a band covers on a part none of whose faces cross its edges (bandCrossings): each by its middle height. */
+export function bandFaceIds(m: Pick<ExactPart, 'positions' | 'indices' | 'faces'>, transform: Mat4, band: { lo: number; hi: number }): Set<number> {
+  const out = new Set<number>()
+  for (const [id, e] of faceHeights(m, transform)) if (e.mid >= band.lo - BAND_EDGE_EPS && e.mid <= band.hi + BAND_EDGE_EPS) out.add(id)
+  return out
+}
+
+/** The body a kernel reply makes (`k`): a held number (told to `solids`), or the solid's text when bodies are not held. */
+function bodyOf(solids: Solids, r: unknown, k = 'body'): number | string {
+  const v = (r as Record<string, unknown>)[solids.keep ? k : `${k}Smb`]
+  if (solids.keep ? typeof v !== 'number' : typeof v !== 'string') throw new Error(`brep: no ${k} in the reply`)
+  if (typeof v === 'number') solids.made(v)
+  return v as number | string
+}
+
+/** The part a kernel reply makes (`k`): held, with its faces' keys and no mesh yet, or tessellated from its text. */
+async function madePart(call: Call, solids: Solids, like: Pick<ExactPart, 'name' | 'slot'>, r: unknown, k = 'body', tooBig?: (chars: number, limit: number) => void): Promise<ExactPart> {
+  const v = bodyOf(solids, r, k)
+  if (typeof v === 'string') return fromSolid(call, like, v, tooBig, (await solids.limit?.()) ?? MAX_SOLID_TEXT)
+  const keys = (r as Record<string, unknown>)[`${k}Keys`]
+  return { name: like.name, slot: like.slot, positions: [], indices: [], body: v, unmeshed: Array.isArray(keys) ? (keys as number[]) : [] }
+}
+
+/**
+ * The part with its faces split by the kernel where the heights `at` (world Z at `transform`) cross them, its shape
+ * unchanged (EXACT_IMPRINT), and tessellated. A face split in pieces is named by the reply's `split` ([piece, face]
+ * key pairs), so paint the part kept by face goes on every piece of the face it was on.
+ */
+export async function imprinted(call: Call, part: ExactPart, transform: Mat4, at: readonly number[], solids: Solids, tooBig?: (chars: number, limit: number) => void): Promise<ExactPart> {
+  const inv = invert(transform)
+  const planes = at.map((h) => ({ origin: point(inv, [0, 0, h]), normal: direction(inv, [0, 0, 1]) }))
+  const body = part.body !== undefined ? part.body : { smb: part.smb }
+  const r = (await call(EXACT_IMPRINT, { body, planes, ...(solids.keep ? { withKeys: true } : { save: true }) })) as Record<string, unknown>
+  const made = await madePart(call, solids, part, r, 'body', tooBig)
+  const pairs = Array.isArray(r['split']) ? (r['split'] as unknown[]).filter((x): x is [number, number] => Array.isArray(x) && x.length === 2 && x.every(Number.isInteger)) : []
+  let facePaint: FacePaint | undefined
+  if (part.facePaint) {
+    facePaint = {}
+    for (const [layer, list] of Object.entries(part.facePaint) as [PaintLayer, NonNullable<FacePaint[PaintLayer]>][]) {
+      facePaint[layer] = list.flatMap((e) => [e, ...(e.key ? pairs.filter(([, from]) => from === e.key).map(([key]) => ({ key, text: e.text })) : [])])
+    }
+  }
+  const x: ExactPart = { ...made, ...(facePaint ? { facePaint } : {}) }
+  if (x.unmeshed) return meshed(call, x)
+  const paint = facePaint ? paintOfFaces(x, facePaint) : {}
+  return Object.keys(paint).length ? { ...x, paint } : x
+}
 
 /** How a replay holds its solids: as text through each call, or (`keep`) as kernel bodies, each one `made` told. */
 export interface Solids {
@@ -559,19 +668,8 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
   const solid = (b: ExactPart | undefined) => (b?.body !== undefined ? b.body : b?.smb ? { smb: b.smb } : null)
   // kept bodies come back by number with their faces' keys, text ones as text
   const kept = solids.keep ? { withKeys: true } : { save: true }
-  const reply = (r: unknown, k = 'body') => {
-    const v = (r as Record<string, unknown>)[solids.keep ? k : `${k}Smb`]
-    if (solids.keep ? typeof v !== 'number' : typeof v !== 'string') throw new Error(`brep: no ${k} in the reply`)
-    if (typeof v === 'number') solids.made(v)
-    return v as number | string
-  }
-  const limit = async () => (await solids.limit?.()) ?? MAX_SOLID_TEXT
-  const part = async (like: Pick<ExactPart, 'name' | 'slot'>, r: unknown, k = 'body'): Promise<ExactPart> => {
-    const v = reply(r, k)
-    if (typeof v === 'string') return fromSolid(call, like, v, tooBig, await limit())
-    const keys = (r as Record<string, unknown>)[`${k}Keys`]
-    return { name: like.name, slot: like.slot, positions: [], indices: [], body: v, unmeshed: Array.isArray(keys) ? (keys as number[]) : [] }
-  }
+  const reply = (r: unknown, k = 'body') => bodyOf(solids, r, k)
+  const part = (like: Pick<ExactPart, 'name' | 'slot'>, r: unknown, k = 'body'): Promise<ExactPart> => madePart(call, solids, like, r, k, tooBig)
   // a step with no exact version runs on the mesh, before any part is made a solid for it
   if (!EXACT_STEPS.has(p.op)) return null
   if (copies && !(copies.length && (p.op === 'subtract' || (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') !== 'new')))) return null
@@ -679,7 +777,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         }
         // as the mesh boolean does: an intersection keeps what every part shares
         const acc = await fold(p.kind, solid(target), others.map(solid))
-        out[s.part] = typeof acc === 'number' ? await part(target!, r) : await fromSolid(call, target!, (acc as { smb: string }).smb, tooBig, await limit())
+        out[s.part] = typeof acc === 'number' ? await part(target!, r) : await fromSolid(call, target!, (acc as { smb: string }).smb, tooBig, (await solids.limit?.()) ?? MAX_SOLID_TEXT)
         return out.filter((_, i) => !p.with.includes(i))
       }
       case 'edge.fillet':

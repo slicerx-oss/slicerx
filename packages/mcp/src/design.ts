@@ -111,6 +111,13 @@ export class Designs implements DesignHost {
     return { step: committed.history.steps[committed.history.steps.length - 1]!, revision: this.revision(d.id), design: committed }
   }
 
+  async trial(d: Design, part: number, params: StepParams): Promise<HistoryMesh[]> {
+    const r = await this.run(appendStep(d.history, { id: stepId(), part, transform: [...d.transform], params }))
+    const st = r.status[r.status.length - 1]
+    if (st?.state !== 'done') throw new ToolInputError(`The step would not go through: ${unstopped(st?.message ?? 'the steps before it are broken')}.`, 'invalid_input', { design: d.id })
+    return r.parts
+  }
+
   /** Replays the design as it is, after an edit of its steps. */
   async replay(d: Design, opts?: { expectedRevision?: string }): Promise<void> {
     const guard = () => { if (opts?.expectedRevision !== undefined) this.revisions.assert(d.id, opts.expectedRevision) }

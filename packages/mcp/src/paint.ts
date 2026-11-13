@@ -3,8 +3,11 @@
 // Painting a design over MCP: a preview of what a target paints (nothing changes), then applying the preview as a
 // paint step in the design's history, so it replays, saves and undoes the way the app's history does. Targets are
 // in words a person uses (sx-geom paint.select): the part, faces facing a direction, a height band, a point grown
-// into a region, or one state for another. Read-back gives each painted state's area and regions.
-import { stepName, type DesignHost, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
+// into a region, or one state for another. Read-back gives each painted state's area and regions, and on an exact
+// design each face painted whole. A height band on an exact part goes on whole faces, split by the kernel at the
+// band's edges, so its preview is the step's own replay.
+import { bandFaceIds, bandOf, paintedFaces, stepName, type DesignHost, type HistoryMesh, type PaintLayer, type PaintTarget, type StepParams } from '@slicerx/cad-history'
+import { paintTextMaxState } from '@slicerx/threemf/paint-text'
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import { designArg, designSummary, faceAt, featureArg, withFeature, type Design } from './design-tools'
@@ -68,6 +71,20 @@ function boundsOf(regions: Region[]): { min: V3; max: V3 } | undefined {
 
 const meshOf = (p: HistoryMesh) => ({ positions: Array.from(p.positions), indices: Array.from(p.indices) })
 
+/** A face painted whole on an exact part: its key, the state painted on it and its area. */
+interface PaintedFace {
+  key: number
+  state: number
+  areaMm2: number
+}
+
+/** The faces of `p` painted whole in one layer, each with its state; the faces of `only` alone when given. */
+function facesOf(p: HistoryMesh, layer: PaintLayer, only?: ReadonlySet<number>): PaintedFace[] {
+  const keys = p.faces?.keys
+  const ids = only && keys ? new Set([...only].map((id) => keys[id] ?? 0)) : undefined
+  return paintedFaces(p, layer).filter((f) => !ids || ids.has(f.key)).map((f) => ({ key: f.key, state: paintTextMaxState(f.text), areaMm2: f.areaMm2 }))
+}
+
 /**
  * The paint tools on any design host: the server's own designs, or the app's plate, where the mimir tab paints. They
  * need only what every host has: its designs, a step added to one, and its geometry engine.
@@ -107,10 +124,10 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
   let seq = 0
 
   /** A picture of the design with `layerPaint` drawn on its parts; the PNG only when asked. */
-  async function picture(d: Design, layer: PaintLayer, layerPaint: (part: number) => Texts | undefined, view: string, focus: { min: V3; max: V3 } | undefined, size: number | undefined, image: boolean) {
+  async function picture(d: Design, layer: PaintLayer, layerPaint: (part: number) => Texts | undefined, view: string, focus: { min: V3; max: V3 } | undefined, size: number | undefined, image: boolean, parts: readonly HistoryMesh[] = d.parts) {
     // The layer's states are drawn as filament colors (for color paint they are the filaments).
     void layer
-    const objects = d.parts.map((p, i) => {
+    const objects = parts.map((p, i) => {
       const t = layerPaint(i)
       return { mesh: meshOf(p), transform: d.transform, slot: p.slot, ...(t && Object.keys(t).length ? { paint: t } : {}) }
     })
@@ -135,7 +152,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
   })
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'read',
     description:
@@ -177,8 +194,26 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       const maxDepth = i.max_depth ?? (target.kind === 'height' ? bandDepth(parts.map((k) => d.parts[k]!), d.transform) : undefined)
       const params: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target, ...(maxDepth !== undefined ? { maxDepth } : {}) }
       const expected: Record<number, Texts> = {}
-      const rows: { part: number; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[] }[] = []
-      for (const k of parts) {
+      const rows: { part: number; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[]; faces?: PaintedFace[] }[] = []
+      // a height band on an exact design: the step's own replay, whose kernel splits the faces the band's edges cross
+      const after = target.kind === 'height' && d.history.exact && designs.trial ? await designs.trial(d, part, params) : undefined
+      if (after && target.kind === 'height') {
+        const band = bandOf(target)
+        for (const k of parts) {
+          const p = after[k]
+          if (!p) continue
+          const texts = p.paint?.[i.layer] ?? {}
+          expected[k] = texts
+          const ids = bandFaceIds(p, d.transform, band)
+          const tris = Array.from(p.faces?.ids ?? []).filter((id) => ids.has(id)).length
+          const faces = facesOf(p, i.layer, ids)
+          const r = (await engine('paint.regions', { mesh: meshOf(p), transform: d.transform, paint: texts })) as { states: { state: number; regionCount: number; regions: Region[] }[] }
+          const st = r.states.find((x) => x.state === i.state)
+          const area = Math.round(faces.reduce((a, f) => a + f.areaMm2, 0) * 100) / 100
+          if (tris) rows.push({ part: k, changedTriangles: tris, selectedAreaMm2: area, regionCount: st?.regionCount ?? 0, regions: st?.regions ?? [], faces })
+        }
+      }
+      for (const k of after ? [] : parts) {
         const p = d.parts[k]!
         const before = p.paint?.[i.layer]
         const { faceKey: _key, ...asked } = target as PaintTarget & { faceKey?: number }
@@ -191,7 +226,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       previews.set(id, { id, design: d.id, steps: d.history.steps.length, last: d.history.steps.at(-1)?.id, part, params, expected, feature: i.feature })
       if (previews.size > 32) previews.delete(previews.keys().next().value!)
       const focus = boundsOf(rows.flatMap((r) => r.regions))
-      const pic = await picture(d, i.layer, (k) => expected[k] ?? d.parts[k]?.paint?.[i.layer], i.view, i.view === 'fit' ? focus : undefined, i.size, i.image)
+      const pic = await picture(d, i.layer, (k) => expected[k] ?? (after ?? d.parts)[k]?.paint?.[i.layer], i.view, i.view === 'fit' ? focus : undefined, i.size, i.image, after)
       const area = Math.round(rows.reduce((a, r) => a + r.selectedAreaMm2, 0) * 100) / 100
       return {
         summary: `${took ? `The person picked ${took.toLowerCase()}. ` : ''}Preview ${id}: ${stepName({ params })}, ${area} mm2 on ${rows.length} part${rows.length === 1 ? '' : 's'}. Apply with slicerx_paint_apply.`,
@@ -203,7 +238,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
 
   const apply = defineTool({
     name: 'paint.apply',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description: "Apply a paint preview as a design step (it replays, saves and undoes like any step). Refused if the design changed since; preview again. Returns the paint read back.",
@@ -228,19 +263,20 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
   })
 
   async function regions(d: Design, layer: PaintLayer) {
-    const out: { part: number; states: { state: number; areaMm2: number; triangles: number; regionCount: number; regions: Region[] }[] }[] = []
+    const out: { part: number; states: { state: number; areaMm2: number; triangles: number; regionCount: number; regions: Region[] }[]; faces?: PaintedFace[] }[] = []
     for (const [k, p] of d.parts.entries()) {
       const texts = p.paint?.[layer]
       if (!texts || !Object.keys(texts).length) continue
       const r = (await engine('paint.regions', { mesh: meshOf(p), transform: d.transform, paint: texts })) as { states: { state: number; areaMm2: number; triangles: number; regionCount: number; regions: Region[] }[] }
-      out.push({ part: k, states: r.states })
+      // an exact part's paint by face, each face named by its key
+      out.push({ part: k, states: r.states, ...(d.history.exact && p.faces?.keys ? { faces: facesOf(p, layer) } : {}) })
     }
     return out
   }
 
   const read = defineTool({
     name: 'paint.regions',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description: 'Read a design\'s paint back: for one layer, each part\'s painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. Optionally a picture (PNG only with image: true).',
