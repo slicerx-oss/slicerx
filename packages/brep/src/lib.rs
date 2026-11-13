@@ -92,6 +92,15 @@ pub use tess::{Mesh, MeshEdge, Tessellation};
 /// Whether this build has the kernel (its source was there when it was built).
 pub const KERNEL: bool = cfg!(sx_brep_kernel);
 
+/// The kernel commit this crate builds against, as build.rs pins it.
+pub const KERNEL_COMMIT: &str = env!("SX_SMLIB_COMMIT");
+
+/// Whether the kernel runs: a call only the kernel answers, which the stand-in refuses. Unlike [`KERNEL`], it is
+/// what the build does, not what it was built with.
+pub fn runs() -> bool {
+    call("count", "{}").is_ok()
+}
+
 #[cfg(sx_brep_kernel)]
 unsafe extern "C" {
     fn sx_brep_call(op: *const c_char, request: *const c_char) -> *mut c_char;
