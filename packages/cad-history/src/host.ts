@@ -5,7 +5,8 @@
 // edit makes. The modeling tools take a host and never know which one they run on.
 import type { SketchItem } from './design'
 import type { ProjectMode, ProjectSource } from './project'
-import type { History, HistoryMesh, Mat4, Step, StepParams, StepStatus } from './model'
+import type { History, HistoryMesh, Mat4, ReplayResult, Step, StepParams, StepStatus } from './model'
+import { replayHistory } from './replay'
 import type { FaceFrame, SketchConstraint, SketchLoop } from './types'
 
 export interface Design {
@@ -81,6 +82,11 @@ export interface DesignHost {
   addWithReceipt?(d: Design, part: number, params: StepParams, label?: string, opts?: AddOptions): Promise<DesignCommit>
   /** Replays the design as `d.history` says, after a tool edited, removed or put back steps. */
   replay(d: Design, opts?: { expectedRevision?: string }): Promise<void>
+  /**
+   * Replays a history on the host's engine without keeping it (a step looked at as it was, a move tried out), as the
+   * host replays its designs: on a served engine, with its bodies held there. Absent: replayed on `call` (replayOn).
+   */
+  replayed?(history: History): Promise<ReplayResult>
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
   call(op: string, request: unknown): Promise<unknown>
   /**
@@ -127,4 +133,9 @@ export function noDesignMessage(given: string, designs: readonly Pick<Design, 'i
   if (same.length > 1) return `design: ${same.length} designs are named ${given}; give one of these ids: ${same.map((d) => `${d.id} (${d.name})`).join(', ')}`
   const ids = designs.slice(-5).map((d) => `${d.id} (${d.name})`).join(', ')
   return `design: no design ${given}; give a design id, such as ${ids}${designs.length > 5 ? `; ${tools.list} lists them all` : ''}`
+}
+
+/** A history replayed on the host as its own replays run (DesignHost.replayed), or on its engine call. */
+export function replayOn(host: Pick<DesignHost, 'call' | 'replayed'>, history: History): Promise<ReplayResult> {
+  return host.replayed ? host.replayed(history) : replayHistory((op, request) => host.call(op, request), { history })
 }

@@ -7,7 +7,7 @@
 // or one that would run the part into a third part, is not made; the answer names the part instead. design.check fails
 // such gaps as loose parts. Pieces that move (a plan with print-in-place pieces or planned gaps, a part with a thread's
 // clearance) keep their gaps: the fit check owns those.
-import { direction, invert, replayHistory, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh, type Step, type StepParams, type Vec3 } from '@slicerx/cad-history'
+import { direction, invert, replayOn, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh, type Step, type StepParams, type Vec3 } from '@slicerx/cad-history'
 import { gapMm, gapWay, nozzleOr, printsTogether, type FitFacts, type FitGap, type FitLimits, type PartPlan } from './design-check'
 import type { PiecePlans } from './design-tools'
 import { fitFacts } from './fit-facts'
@@ -343,7 +343,7 @@ export async function seatPattern(host: DesignHost, d: HostDesign, k: number, op
     // the pattern replayed on the moved source, without keeping it: every copy must seat and run into nothing
     let parts: HistoryMesh[]
     try {
-      const r = await replayHistory((op, request) => host.call(op, request), { history: { ...d.history, steps } })
+      const r = await replayOn(host, { ...d.history, steps })
       if (r.status.some((x) => x.state !== 'done')) continue
       parts = r.parts
     } catch {

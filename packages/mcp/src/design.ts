@@ -20,6 +20,8 @@ export { designArg, designSummary, designTools, faceAt, item, partAt, type Desig
 export interface DesignDeps {
   engine: EngineCall
   policy: PathPolicy
+  /** Whether the engine holds bodies between calls (a served engine, geom-served.ts), so replays keep them there. */
+  keepsBodies?: () => Promise<boolean>
 }
 
 /** Keeps the designs of this server, and runs their steps: the MCP server's design host. */
@@ -101,9 +103,19 @@ export class Designs implements DesignHost {
     this.keep(d, d.history, r)
   }
 
+  /** How this server's replays run: with bodies held in the engine when it is served. */
+  private async held(): Promise<{ keepsBodies?: true }> {
+    return (await this.deps.keepsBodies?.()) ? { keepsBodies: true } : {}
+  }
+
+  /** A history replayed as this server's replays run, without keeping it (DesignHost.replayed). */
+  async replayed(history: History): Promise<Awaited<ReturnType<typeof replayHistory>>> {
+    return replayHistory(this.deps.engine, { history }, await this.held())
+  }
+
   private async run(history: History): Promise<Awaited<ReturnType<typeof replayHistory>>> {
     if (history.exact && process.env['SX_BREP_DEV'] !== '1') throw new ToolInputError('Exact designs require the developer opt-in SX_BREP_DEV=1.')
-    const r = await replayHistory(this.deps.engine, { history, exact: history.exact === true })
+    const r = await replayHistory(this.deps.engine, { history, exact: history.exact === true }, await this.held())
     if (history.exact) {
       const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')
       if (broken || r.exactFellBack?.length) throw new ToolInputError(`Exact replay stopped: ${unstopped(broken?.message ?? 'a step requires the mesh path')}. The design is unchanged.`)

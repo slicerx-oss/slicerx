@@ -56,6 +56,7 @@ import { appValueTools } from './app-values'
 import { appHistoryTools } from './app-history'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
 import { cadFiles, geomEngine, geomTools, findSxGeom } from './geom'
+import { servedGeomEngine, type DesignEngine } from './geom-served'
 import { createMcpSetupHost } from './setup'
 import { createSxSlicer, findSx } from './sx'
 import { sxlockTools, type SxlockOptions } from './sxlock'
@@ -205,9 +206,13 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   }
   const parts = typeof opts.partsTable === 'string' ? loadPartsTable(JSON.parse(readFileSync(resolve(opts.partsTable), 'utf8'))) : opts.partsTable
   const registry = [...pilotTools(createCombinedPlanner(kb), parts), ...(await servicePluginTools(printers?.host))]
-  const geomCall = opts.geomEngine ?? (geomBin ? geomEngine(geomBin) : undefined)
+  // design replays on one served sx-geom for the server, or one process per call when it has no serve mode
+  const served = !opts.geomEngine && geomBin ? servedGeomEngine(geomBin, { perCall: geomEngine(geomBin) }) : undefined
+  const given = opts.geomEngine as Partial<DesignEngine> | undefined
+  const geomCall = opts.geomEngine ?? served
+  const keepsBodies = served?.keepsBodies ?? (typeof given?.keepsBodies === 'function' ? given.keepsBodies : undefined)
   const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project, geom: geomCall })
-  const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
+  const designs = geomCall ? new Designs({ engine: geomCall, policy, ...(keepsBodies ? { keepsBodies } : {}) }) : undefined
   const sketchVia: SketchVia = {}
   const appLink = opts.app !== false ? printers?.appLink : undefined
   if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')
