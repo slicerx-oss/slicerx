@@ -530,6 +530,96 @@ export function capOf(s: Step): { point: Vec3; normal: Vec3; distanceMm: number;
   return null
 }
 
+/**
+ * The 2D points that outline a loop as stored in a step: its points, a circle's four extremes, or a chain's start and
+ * each segment's end. A loop of another form gives none.
+ */
+export function loopPoints(l: Record<string, unknown>): number[][] {
+  if (Array.isArray(l['points'])) return l['points'] as number[][]
+  if (l['type'] === 'circle' && Array.isArray(l['center']) && typeof l['diameterMm'] === 'number') {
+    const [x, y] = l['center'] as number[]
+    const r = (l['diameterMm'] as number) / 2
+    return [[x! - r, y!], [x! + r, y!], [x!, y! - r], [x!, y! + r]]
+  }
+  if (Array.isArray(l['start']) && Array.isArray(l['segments']))
+    return [l['start'] as number[], ...(l['segments'] as Record<string, unknown>[]).flatMap((g) => (Array.isArray(g['to']) ? [g['to'] as number[]] : []))]
+  return []
+}
+
+/** A loop's points for a height range: loopPoints, and the corners of an ellipse's box turned by its angle. */
+function rangePoints(l: SketchLoop): number[][] {
+  const e = l as Record<string, unknown>
+  if (e['type'] !== 'ellipse') return loopPoints(e)
+  const { center, widthMm, heightMm, angleDeg } = l as { center: Vec2; widthMm: number; heightMm: number; angleDeg?: number }
+  const t = ((angleDeg ?? 0) * Math.PI) / 180
+  const [a, b] = [widthMm / 2, heightMm / 2]
+  const hx = Math.hypot(a * Math.cos(t), b * Math.sin(t))
+  const hy = Math.hypot(a * Math.sin(t), b * Math.cos(t))
+  return [[center[0] - hx, center[1] - hy], [center[0] + hx, center[1] - hy], [center[0] - hx, center[1] + hy], [center[0] + hx, center[1] + hy]]
+}
+
+/** The height range a step's solid takes up, world mm; `loose` when it is a bound around the solid rather than its own range. */
+export interface StepRange {
+  lo: number
+  hi: number
+  loose?: true
+}
+
+/**
+ * The height range a step adds solid over, read from the step's own numbers alone, no engine and no mesh: a one-sided
+ * extrude that rises straight up (and its copies, which stay in its plane); a loft, over every point of its sections,
+ * each placed by its frame; a revolve about an upright axis, over its profile; a sweep, over its path widened by its
+ * profile's reach, as a loose bound; and a step pattern in a row, its steps' range moved by each copy's rise, or turned
+ * about an upright axis, unchanged. Null for a cut and for every other step (a revolve on a tilted axis, a boolean, an
+ * array of a whole part, a mesh step), and for a pattern when `stepById` cannot give its steps or one of them has none.
+ */
+export function rangeOf(s: Step, stepById?: (id: string) => Step | undefined): StepRange | null {
+  const p = s.params
+  // the step's own frame, read only by the cases that need it, so a step of any other kind is never asked for one
+  let frame: Mat4 | undefined
+  const inv = (): Mat4 => (frame ??= invert(s.transform))
+  const zAt = (f: FaceFrame, q: readonly number[]): number => point(inv(), [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * (q[0] ?? 0) + f.v[k]! * (q[1] ?? 0)))[2]
+  const over = (zs: number[]): StepRange | null => (zs.length ? { lo: Math.min(...zs), hi: Math.max(...zs) } : null)
+  const zsOf = (f: FaceFrame, loops: readonly SketchLoop[]): number[] => loops.filter((l) => !l.construction).flatMap((l) => rangePoints(l).map((q) => zAt(f, q)))
+  switch (p.op) {
+    case 'shape.extrude': {
+      const cap = p.spec.operation === 'cut' ? null : capOf(s)
+      if (!cap || cap.sign < 0 || cap.normal[2] < 0.999) return null
+      return { lo: cap.point[2] - cap.distanceMm * cap.normal[2], hi: cap.point[2] }
+    }
+    case 'sketch.loft':
+      return p.operation === 'cut' ? null : over(p.profiles.flatMap((pr) => zsOf(pr.frame ?? BED_FRAME, pr.loops)))
+    case 'sketch.revolve': {
+      if (p.operation === 'cut') return null
+      const f = p.frame ?? BED_FRAME
+      const d = p.axis.direction
+      const axis = unit(direction(inv(), [0, 1, 2].map((k) => f.u[k]! * d[0] + f.v[k]! * d[1]) as Vec3))
+      return Math.abs(axis[2]) < 0.999 ? null : over(zsOf(f, p.loops))
+    }
+    case 'sketch.sweep': {
+      if (p.operation === 'cut') return null
+      const path = p.path.points ? p.path.points.map((q) => point(inv(), q)[2]) : zsOf(p.path.frame ?? BED_FRAME, p.path.loops ?? [])
+      const reach = Math.max(0, ...p.profile.loops.filter((l) => !l.construction).flatMap((l) => rangePoints(l).map((q) => Math.hypot(q[0] ?? 0, q[1] ?? 0))))
+      const r = over(path)
+      return r ? { lo: r.lo - reach, hi: r.hi + reach, loose: true } : null
+    }
+    case 'pattern': {
+      const spec = p.spec
+      if (!stepById || spec.kind === 'mirror' || spec.onSurface) return null
+      const from = p.steps.map((id) => stepById(id))
+      const ranges = from.map((t) => (t ? rangeOf(t, stepById) : null))
+      if (!ranges.length || ranges.some((r) => !r)) return null
+      const base = { lo: Math.min(...ranges.map((r) => r!.lo)), hi: Math.max(...ranges.map((r) => r!.hi)), ...(ranges.some((r) => r!.loose) ? { loose: true as const } : {}) }
+      if (spec.kind === 'circular') return Math.abs(unit(direction(inv(), spec.axis ?? [0, 0, 1]))[2]) < 0.999 ? null : base
+      const rise = (v: Vec3 | undefined): number => (v ? direction(inv(), v)[2] : 0)
+      const rises = [...Array(spec.count).keys()].flatMap((i) => [...Array(spec.count2 ?? 1).keys()].map((j) => i * rise(spec.step) + j * rise(spec.step2)))
+      return { ...base, lo: base.lo + Math.min(...rises), hi: base.hi + Math.max(...rises) }
+    }
+    default:
+      return null
+  }
+}
+
 /** The points a step refers to, world at its transform, for following an earlier cap. Two per edge, `a` then `b`. */
 export function refPoints(p: StepParams): Vec3[] {
   if (p.op === 'face.push') return [p.at]

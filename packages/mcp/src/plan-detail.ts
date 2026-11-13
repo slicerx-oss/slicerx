@@ -10,6 +10,7 @@
 // color, a body painted in two colors is split at its line, and a plan has enough features for its level, its length and its repeated details. design.plan on the mimir tab's card refuses a display or fine plan
 // that breaks them, in words that say what to plan instead. design.check then holds each curved body's sections to
 // change along its length in both directions across it (sectionsProblem), so one shape stretched along a length fails.
+import { loopPoints } from '@slicerx/cad-history'
 import { z } from 'zod'
 
 export const DETAIL_LEVELS = ['basic', 'display', 'fine'] as const
@@ -355,19 +356,6 @@ export interface LoftSections {
 type V2 = readonly number[]
 type Frame = { origin: V2; u: V2; v: V2; normal?: V2 }
 const BED_FRAME: Frame = { origin: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0], normal: [0, 0, 1] }
-
-/** The 2D points that outline a loop as stored in a step (points, a spline's points, a circle's four extremes, segment ends). */
-function loopPoints(l: Record<string, unknown>): number[][] {
-  if (Array.isArray(l['points'])) return l['points'] as number[][]
-  if (l['type'] === 'circle' && Array.isArray(l['center']) && typeof l['diameterMm'] === 'number') {
-    const [x, y] = l['center'] as number[]
-    const r = (l['diameterMm'] as number) / 2
-    return [[x! - r, y!], [x! + r, y!], [x!, y! - r], [x!, y! + r]]
-  }
-  if (Array.isArray(l['start']) && Array.isArray(l['segments']))
-    return [l['start'] as number[], ...(l['segments'] as Record<string, unknown>[]).flatMap((g) => (Array.isArray(g['to']) ? [g['to'] as number[]] : []))]
-  return []
-}
 
 /** The sections of every loft step in a design's history, each with the feature it was tagged with. */
 export function loftSections(steps: readonly { params: Record<string, unknown>; feature?: string | undefined; suppressed?: boolean | undefined }[]): LoftSections[] {
