@@ -6,6 +6,7 @@
 // started and slices running at once, never in seconds.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
+import { STUCK_SLICE_MS } from '../src/state/actions'
 import { AGENT_QUIET_MS, AUTO_SLICE_DELAY_MS, agentCall, startAutoSlice } from '../src/state/auto-slice'
 import { set } from '../src/state/store'
 
@@ -149,4 +150,24 @@ describe('auto slice and an agent run of edits', () => {
     expect(e.most()).toBe(1)
     stop()
   })
+
+  it('goes on without a canceled slice the engine never stops, once STUCK_SLICE_MS has passed, and says so', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const e = engine()
+    const stop = startAutoSlice(e.h)
+    set({ plate: [entry(30)] })
+    await vi.advanceTimersByTimeAsync(AUTO_SLICE_DELAY_MS + 10)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(1), { timeout: 45_000 })
+    // an edit cancels it, and the engine never stops it
+    set({ plate: [entry(31)] })
+    await vi.advanceTimersByTimeAsync(STUCK_SLICE_MS - 1000)
+    await within(3000, () => e.requests.length > 1)
+    expect(e.requests).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(2), { timeout: 45_000 })
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/canceled slice was still running in the engine after 120 s/))
+    warn.mockRestore()
+    stop()
+  })
+
 })
