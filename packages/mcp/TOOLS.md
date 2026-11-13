@@ -95,7 +95,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_design_new` | 1.3.0 |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_loft, slicerx_geom_sweep, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
 | `slicerx_design_open` | 1.3.1 |  |  | read | Open the objects of any 3MF project (SlicerX, Bambu Studio, Orca) as designs, one per object. |
 | `slicerx_design_part_filament` | 1.0.0 |  |  | slice | Set which filament an existing part prints with, as a step that replays, saves and undoes. |
-| `slicerx_design_put_plan` | 1.6.0 |  |  | read | Add your own part plan for slicerx_design_check to check a built part against, before or after building it. |
+| `slicerx_design_put_plan` | 1.7.0 |  |  | read | Add your own part plan for slicerx_design_check to check a built part against, before or after building it. |
 | `slicerx_design_redo` | 1.2.0 |  |  | slice | Put back the step slicerx_design_undo last removed. |
 | `slicerx_design_rename_part` | 1.0.0 |  |  | slice | Rename an existing part, as a step that replays, saves and undoes. |
 | `slicerx_design_roll` | 1.0.0 |  |  | slice | Move the timeline marker, rolling the whole design back to how it was after that many items (0 is before everything; leave marker out for the end), as dragging the marker in SlicerX does. |

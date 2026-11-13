@@ -79,7 +79,7 @@ export const planDetailFields = {
 
 /** A plan as the detail rules read it. */
 interface DetailPlan {
-  features: readonly { name: string; kind?: string | undefined; sizes: Record<string, number> }[]
+  features: readonly { name: string; kind?: string | undefined; sizes: Record<string, number>; on?: string | undefined }[]
   detail?: DetailLevel | undefined
   curved?: readonly string[] | undefined
   flat?: readonly string[] | undefined
@@ -313,9 +313,18 @@ function tierProblems(plan: DetailPlan, feature: FeatureOf): string[] {
       const h = Object.entries(f.sizes).find(([k]) => HEIGHT.test(k.trim()))?.[1]
       if (levels.length > 1 && h !== undefined && h < LEVEL_MIN_MM) out.push(`tiers: ${f.name}, a level of ${body}, is ${r1(h)} mm tall, which reads as a thin slab at the whole-model view; give each level at least ${LEVEL_MIN_MM} mm, a story with walls, even past its true scale`)
     }
+    // a level stands on the one before it; a level that names what it stands on names that one
+    levels.forEach((l, k) => {
+      const f = feature(l)
+      if (k > 0 && f?.on && f.on.trim().toLowerCase() !== levels[k - 1]!.trim().toLowerCase()) out.push(TIER_ON_DISAGREES(f.name, f.on.trim(), levels[k - 1]!, body))
+    })
   }
   return out
 }
+
+/** The refusal for a level whose on names another feature than the level before it in its tier list. */
+export const TIER_ON_DISAGREES = (level: string, on: string, before: string, body: string): string =>
+  `on: ${level} stands on ${on}, but the tiers of ${body} put it on ${before}; name ${before} in its on, or take it out of the tier list`
 
 /** The fewest features a display or fine plan has, and why, from its level, its overall proportions and its repeated details. */
 export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, level: Exclude<DetailLevel, 'basic'>): { count: number; why: string } {

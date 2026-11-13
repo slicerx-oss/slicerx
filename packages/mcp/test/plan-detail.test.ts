@@ -9,8 +9,8 @@ import type { PilotMachine } from '@slicerx/contracts'
 import { type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { type BodyFacts, colorBands, createPlanRegistry, designCheck, partPlanSchema, type PartPlan } from '../src/design-check'
-import { DEFAULT_BED, DETAIL_HELP, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem } from '../src/plan-detail'
-import { LocalPlanInputSchema, PLAN_GO, type PlanInput } from '../src/tab-tools'
+import { DEFAULT_BED, DETAIL_HELP, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem, TIER_ON_DISAGREES } from '../src/plan-detail'
+import { LocalPlanInputSchema, PLAN_GO, STANDS_ON_HELP, type PlanInput } from '../src/tab-tools'
 import { createCardPlans, designToolset, tabToolset } from '../src/toolset'
 import type { DesignHost } from '@slicerx/cad-history'
 
@@ -207,6 +207,19 @@ describe('detailProblem: the rules are about the object', () => {
     expect(detailProblem(car)).toBeNull()
   })
 
+  it('refuses a level whose on names another feature than the level before it, and takes one that agrees or names none', () => {
+    const stacked = (on?: string): PlanInput => ({ ...house, flat: ['Walls'], tiers: { Walls: ['Walls', 'Roof'] }, features: house.features.map((f) => (f.name === 'Roof' ? { ...f, sizes: { width: 96, depth: 76, height: 30 }, ...(on ? { on } : {}) } : f)) })
+    expect(TIER_ON_DISAGREES('Roof', 'Chimney', 'Walls', 'Walls')).toBe('on: Roof stands on Chimney, but the tiers of Walls put it on Walls; name Walls in its on, or take it out of the tier list')
+    expect(detailProblem(stacked('Chimney'))).toContain('on: Roof stands on Chimney, but the tiers of Walls put it on Walls; name Walls in its on, or take it out of the tier list. ')
+    expect(detailProblem(stacked('Walls'))).toBeNull()
+    expect(detailProblem(stacked())).toBeNull()
+  })
+
+  it('says in its description that a stacked feature names what it stands on', () => {
+    expect(STANDS_ON_HELP).toBe('A stacked feature names in on the feature it stands on, its height planned above that one, and each part that makes the outline readable from afar has a real size.')
+    expect(createCardPlans(createPlanRegistry()).planTool().description).toContain(`. ${STANDS_ON_HELP} The plan has:`)
+  })
+
   it('names a body built by a feature the plan does not have', () => {
     expect(detailProblem({ ...house, flat: ['Shell'] })).toContain('flat: Shell is not a planned feature')
   })
@@ -232,7 +245,7 @@ function tab(local = false) {
 describe('design.plan with a detail level', () => {
   it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.11.0')
+    expect(t.tool.version).toBe('1.12.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
