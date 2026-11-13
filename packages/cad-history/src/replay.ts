@@ -12,7 +12,7 @@ import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { EXACT_FELL_BACK, ExactBroken, ExactMissed, exactOps, exactStep, fromSolid, meshed, rigidFrame, solidTooBig, type Solids } from './exact'
+import { EXACT_FELL_BACK, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, fromSolid, meshed, rigidFrame, solidTooBig, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -433,6 +433,9 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     }
   }
   if (strict) throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
+  // a part that was an exact solid until this step is a mesh from here on: the step says so, once, as a step the kernel
+  // could not do does (EXACT_FELL_BACK)
+  if (exact && !found.notes[s.id] && (s.part === -1 ? parts : [parts[s.part]]).some((x) => !!x && (!!x.smb || x.body !== undefined))) found.notes[s.id] = EXACT_MESH_FROM_HERE
   // the mesh path works on meshes: kept bodies not tessellated yet are now
   parts = await meshedAll(engine, parts)
   const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]

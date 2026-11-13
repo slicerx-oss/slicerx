@@ -7,7 +7,7 @@
 // makes no body the part is today's mesh loft, and the step carries the engine's sentence. An engine that lists
 // nothing, or does not know the question, gets today's request unchanged.
 import { beforeEach, describe, expect, it } from 'vitest'
-import { IDENTITY, clearReplayCache, EXACT_LOFT_NOT_PLACED, EXACT_OPS, replayHistory, stepSalt, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
+import { IDENTITY, clearReplayCache, EXACT_LOFT_NOT_PLACED, EXACT_MESH_FROM_HERE, EXACT_OPS, replayHistory, stepSalt, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 
 type Vec3 = [number, number, number]
 interface Frame {
@@ -247,7 +247,8 @@ describe('asking the engine for an exact loft', () => {
   it('a mesh step on the lofted body ends its solid and its normals', async () => {
     const e = engine()
     const r = await replayHistory(e.call, { history: history(loft(), { id: 'repair-1', part: 0, transform: [...IDENTITY], params: { op: 'repair' } }), exact: true }, kept)
-    expect(r.status).toEqual([{ state: 'done' }, { state: 'done' }])
+    // the mesh step says the part is no longer an exact solid from there on
+    expect(r.status).toEqual([{ state: 'done' }, { state: 'done', note: EXACT_MESH_FROM_HERE }])
     expect('normals' in r.parts[0]!).toBe(false)
     expect(Array.isArray(r.parts[0]!.positions)).toBe(true)
     expect(Array.isArray((e.of('repair')[0]!.req['mesh'] as { positions: unknown }).positions)).toBe(true)

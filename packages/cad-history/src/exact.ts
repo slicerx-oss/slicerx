@@ -85,6 +85,9 @@ export function solidTooBig(chars: number, strict: boolean): string {
 /** The note on a step the kernel could not do, which then ran on the mesh. */
 export const EXACT_FELL_BACK = 'The exact solid could not do this step, so it ran on the mesh.'
 
+/** The note on a step with no exact path that an exact part goes through, once: the part is a mesh from then on. */
+export const EXACT_MESH_FROM_HERE = 'This step works on the mesh, so this part is no longer an exact solid from here on.'
+
 /** Thrown for an answer that is the step's real outcome, not a kernel failure (no fallback). */
 export class ExactBroken extends Error {}
 
