@@ -30,6 +30,7 @@ import { readViewportStats } from '../viewport/stats'
 import { previewIdle, PREVIEW_BUSY_TOOLS as BUSY_TOOLS } from './preview-guard'
 import { drawnPlate, platesState } from './plate-state'
 import { agentCall } from '../state/auto-slice'
+import { fitToolRan } from '../plate/fit-state'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -613,6 +614,8 @@ async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): P
   try {
     // The reply is the tool's own: a summary and sizes, never meshes, and ok false when the tool refused.
     const out = await tool.run(parsed.data, {} as never)
+    // a gap check an agent ran draws that object's gap lines (fit-state.ts)
+    if (out.ok !== false) fitToolRan(tool.name, parsed.data, out.output)
     return { ...(out.ok === false ? { ok: false } : {}), summary: out.summary, output: out.output ?? null }
   } catch (e) {
     const code = (e as { code?: unknown }).code

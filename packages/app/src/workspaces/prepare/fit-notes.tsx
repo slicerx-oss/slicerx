@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The fit check's notes under an object in the list: one line per kind of problem, with the pairs behind
-// Show which and a fix beside it where the app can make one (gaps in the model itself are the designer's).
+// Show which and a fix beside it where the app can make one (gaps in the model itself are the designer's). Show which
+// also draws the object's gap lines in the viewport, until the note closes or the person moves on (fit-state.ts).
 import { Icon, LinkButton, tipAttrs } from '@slicerx/ui'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { resolveConfig } from '../../adapters/settings'
 import { fitNotes, type FitNote } from '../../plate/fit-notes'
-import { allTouches, objectFit, useFits } from '../../plate/fit-state'
+import { allTouches, hideMarkers, markersShown, objectFit, showMarkers, useFits } from '../../plate/fit-state'
 import { arrangePlate } from '../../plate/edit'
 import { markStale, set, useApp } from '../../state/store'
 
@@ -35,12 +36,31 @@ function fixFor(id: string, n: FitNote): { label: string; tip: string; run: () =
 function Note({ id, note }: { id: string; note: FitNote }) {
   const [open, setOpen] = useState(false)
   const fix = fixFor(id, note)
+  const lit = markersShown(id)
+  const opened = useRef(false)
+  opened.current = open
+  // the lines went (a plate edit, another object selected): the list of pairs closes with them
+  useEffect(() => {
+    if (open && !lit) setOpen(false)
+  }, [open, lit])
+  // a note that goes away while open takes its lines with it
+  useEffect(
+    () => () => {
+      if (opened.current) hideMarkers(id)
+    },
+    [id],
+  )
+  const toggle = () => {
+    if (open) hideMarkers(id)
+    else showMarkers(id)
+    setOpen(!open)
+  }
   return (
     <li className="obj-note" data-kind={note.kind}>
       <Icon name={note.kind === 'touch' || note.kind === 'apart' ? 'alert' : 'tolerance'} size={12} />
       <span className="obj-note-text">{note.text}.</span>
       <span className="obj-note-acts">
-        <LinkButton expanded={open} onClick={() => setOpen(!open)}>
+        <LinkButton expanded={open} onClick={toggle}>
           Show which
         </LinkButton>
         {fix ? (
