@@ -449,7 +449,8 @@ export function stickyCapTools<T extends SetTool>(
   }
   for (const s of wantedOut) tryWhole(s)
   for (const s of wantedOut) add(bySet.get(s)!)
-  const rest = fillOrder.filter((s) => bySet.has(s) && !whole.has(s))
+  // the room left never goes to cad_more: its tools are asked for by name, so they come only when wanted or loaded
+  const rest = fillOrder.filter((s) => bySet.has(s) && !whole.has(s) && s !== 'cad_more')
   for (const s of rest) tryWhole(s)
   for (const s of rest) add(bySet.get(s)!)
   const sets = present.filter((s) => whole.has(s) && (bySet.get(s) ?? []).every((t) => keep.has(t)))
