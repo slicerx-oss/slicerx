@@ -24,6 +24,21 @@ export interface DesignDeps {
   keepsBodies?: () => Promise<boolean>
 }
 
+/**
+ * Why `engine` cannot make exact solids, or null when it can. It asks the engine for its body count (brep.count),
+ * which an sx-geom with the exact kernel answers and one without refuses ("brep.count is not in this build"). This is
+ * the one place that asks; a report of which kernel the engine has replaces it here.
+ */
+export async function exactKernel(engine: EngineCall): Promise<string | null> {
+  let count: { bodies?: number } | undefined
+  try {
+    count = (await engine('brep.count', {})) as { bodies?: number }
+  } catch (e) {
+    return `This sx-geom has no exact kernel: ${(e as Error).message}`
+  }
+  return count && Number.isInteger(count.bodies) && count.bodies! >= 0 ? null : 'The exact kernel did not return its body count.'
+}
+
 /** Keeps the designs of this server, and runs their steps: the MCP server's design host. */
 export class Designs implements DesignHost {
   private readonly all = new Map<string, Design>()
@@ -56,10 +71,10 @@ export class Designs implements DesignHost {
   async create(name: string, base: HistoryMesh[], history?: History, transform: Mat4 = [...IDENTITY], options?: { exact?: boolean }): Promise<Design> {
     const exact = history?.exact || options?.exact
     if (exact) {
-      if (process.env['SX_BREP_DEV'] !== '1') throw new ToolInputError('Exact designs require the developer opt-in SX_BREP_DEV=1.')
+      await this.exactOpen()
       if ((history?.base ?? base).length) throw new ToolInputError('Exact designs start from native features. Imported meshes cannot be converted by this option.')
-      const count = await this.deps.engine('brep.count', {}) as { bodies?: number }
-      if (!count || !Number.isInteger(count.bodies) || count.bodies! < 0) throw new ToolInputError('The exact kernel did not return its body count.')
+      const kernel = await exactKernel(this.deps.engine)
+      if (kernel) throw new ToolInputError(kernel)
     }
     const id = `d${++this.seq}`
     const source = history ?? { version: HISTORY_VERSION, base, steps: [] }
@@ -103,6 +118,18 @@ export class Designs implements DesignHost {
     this.keep(d, d.history, r)
   }
 
+  /**
+   * Refuses unless this server may make exact designs: on a served engine, which holds bodies by number, with
+   * SLICERX_EXACT=1 or the developer opt-in SX_BREP_DEV=1; on one process per call only with SX_BREP_DEV=1, since that
+   * route sends each body back as solid text, which sx-geom takes only with SX_BREP_DEV=1 (packages/geom/src/json.rs).
+   * Whether the engine has the exact kernel is exactKernel's, asked when a design is made.
+   */
+  private async exactOpen(): Promise<void> {
+    if (process.env['SX_BREP_DEV'] === '1') return
+    if (!(await this.deps.keepsBodies?.())) throw new ToolInputError('This sx-geom runs once per call, with no serve mode, so exact designs here need the developer opt-in SX_BREP_DEV=1.')
+    if (process.env['SLICERX_EXACT'] !== '1') throw new ToolInputError('Exact designs are off: set SLICERX_EXACT=1 to turn them on, or the developer opt-in SX_BREP_DEV=1.')
+  }
+
   /** How this server's replays run: with bodies held in the engine when it is served. */
   private async held(): Promise<{ keepsBodies?: true }> {
     return (await this.deps.keepsBodies?.()) ? { keepsBodies: true } : {}
@@ -114,7 +141,7 @@ export class Designs implements DesignHost {
   }
 
   private async run(history: History): Promise<Awaited<ReturnType<typeof replayHistory>>> {
-    if (history.exact && process.env['SX_BREP_DEV'] !== '1') throw new ToolInputError('Exact designs require the developer opt-in SX_BREP_DEV=1.')
+    if (history.exact) await this.exactOpen()
     const r = await replayHistory(this.deps.engine, { history, exact: history.exact === true }, await this.held())
     if (history.exact) {
       const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')

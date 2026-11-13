@@ -176,7 +176,7 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   const config = tabConfig(opts.model ?? EVAL_MODEL)
   const noLlm = { available: async () => true, stream: () => { throw new Error('the eval passes its own client') } }
   const pilot = createPilot(
-    tabPilotOptions(host, { llm: noLlm, config, kb: await bundledKb(), tools: toolsFor(loader), commands: builtinCommands(host, WORKSPACES), client, memory: pilotMemory(currentEdition(), { where: chatNotesGo(config, true) }), toolGroups: editionToolGroups(currentEdition()) }),
+    tabPilotOptions(host, { llm: noLlm, config, kb: await bundledKb(), tools: toolsFor(loader, { exactByDefault: false }), commands: builtinCommands(host, WORKSPACES), client, memory: pilotMemory(currentEdition(), { where: chatNotesGo(config, true) }), toolGroups: editionToolGroups(currentEdition()) }),
   )
   const events: PilotEvent[] = []
   const turns: UserTurn[] = []

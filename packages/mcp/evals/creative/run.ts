@@ -164,7 +164,7 @@ export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHos
   const bed: Bed = v.shape === 'circular' ? { widthMm: v.diameter, depthMm: v.diameter, heightMm: v.z, round: true } : { widthMm: v.x, depthMm: v.y, heightMm: v.z }
   const designs = headlessDesignHost(engine, { changed, bed: (id) => plainBed(bed, () => designs.list().filter((d) => d.id !== id && d.parts.length).map((d) => ({ parts: d.parts, transform: movedBy(d.transform, d.placed) }))) })
   let plans = 0
-  const tools = tabToolset(designs, createCardPlans(createPlanRegistry()), { nozzleMm: () => p.machine.nozzle, newPlanId: () => `plan_${++plans}`, filaments: evalFilaments(designs) })
+  const tools = tabToolset(designs, createCardPlans(createPlanRegistry()), { nozzleMm: () => p.machine.nozzle, newPlanId: () => `plan_${++plans}`, filaments: evalFilaments(designs), exactByDefault: false })
   const env = createEvalEnv({ client, machine: p.machine, objects: [], hosts: () => hosts, tools, tab: { slices: tab.slices, edition: tab.edition ?? CREATIVE_TAB.edition, ...(tab.commands ? { commands: [...tab.commands] } : {}) } })
   project = env.project
   return { ...env, designs, tools }

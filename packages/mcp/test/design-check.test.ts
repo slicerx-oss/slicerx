@@ -1030,8 +1030,8 @@ describe('the tool list says when the design tools refuse', () => {
   const all = designToolset(NO_ENGINE_HOST)
   const tool = (name: string) => all.find((t) => t.name === name)!
 
-  it('design.new, at 1.2.0, says a name whose part already passed its check is refused', () => {
-    expect(tool('design.new').version).toBe('1.2.0')
+  it('design.new, at 1.3.0, says a name whose part already passed its check is refused', () => {
+    expect(tool('design.new').version).toBe('1.3.0')
     expect(tool('design.new').description).toContain('A name of an open design whose part already passed slicerx_design_check against its plan is refused')
   })
 

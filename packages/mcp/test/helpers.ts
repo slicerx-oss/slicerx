@@ -47,7 +47,7 @@ export async function connect(opts: SlicerxMcpOptions = {}, clientOpts: { elicit
   const dir = mkdtempSync(join(tmpdir(), 'slicerx-mcp-test-'))
   dirs.add(dir)
   writeFileSync(join(dir, 'cube.stl'), boxStl(20, 20, 20))
-  const ctx = await createContext({ engine: 'stub', allowDirs: [dir], outDir: join(dir, 'out'), profilesDir: join(dir, 'profiles'), policy: DEFAULT_POLICY, ...opts })
+  const ctx = await createContext({ engine: 'stub', allowDirs: [dir], outDir: join(dir, 'out'), profilesDir: join(dir, 'profiles'), policy: DEFAULT_POLICY, exactByDefault: false, ...opts })
   const server = createSlicerxServer(ctx)
   const [a, b] = InMemoryTransport.createLinkedPair()
   const client = new Client({ name: 'test', version: '0.0.0' }, clientOpts.elicit ? { capabilities: { elicitation: {} } } : {})

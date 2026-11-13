@@ -74,7 +74,7 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
  * `filaments` (the open project's) adds project.add_filament and project.set_filament, and part makers given a slot past
  * the last filament add it, and so does applying color paint in one. The paint tools are the server's, on `host`.
  */
-export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string; filaments?: FilamentList; bed?: () => Bed | undefined } = {}): PilotTool<never>[] {
+export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string; filaments?: FilamentList; bed?: () => Bed | undefined; exactByDefault?: boolean } = {}): PilotTool<never>[] {
   // design.plan names the gaps design.check holds a print-in-place part to: the same nozzle, layer height and material
   const fitProfile = () => ({ ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })
   const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile, designs: () => host.list(), ...(opts.bed ? { bed: opts.bed } : {}) })
@@ -82,7 +82,7 @@ export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?:
   // design.look draws the design for a cloud model to look at on a vague follow-up (look.ts); a local model is not offered it
   // design.check reads the open project's filament colors, to hold a colored plan's paint to them
   const filaments = opts.filaments
-  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true, ...(filaments ? { filamentColors: () => filaments.list().map((f) => f.color) } : {}) }))), ...paintTools(host), lookTool(host, opts.filaments)]
+  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true, exactByDefault: opts.exactByDefault, ...(filaments ? { filamentColors: () => filaments.list().map((f) => f.color) } : {}) }))), ...paintTools(host), lookTool(host, opts.filaments)]
   // the open project's filaments, where the host has them: the part makers add the ones their slot is past, and two
   // tools add and set them
   return opts.filaments ? [...withNewFilaments(tools, opts.filaments), ...filamentTools(opts.filaments)] : tools
