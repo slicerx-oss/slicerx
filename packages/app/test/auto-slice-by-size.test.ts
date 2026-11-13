@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host, SliceRequest } from '@slicerx/contracts'
 import { AUTO_SLICE_DELAY_MS, startAutoSlice } from '../src/state/auto-slice'
+import { cancelSlice } from '../src/state/actions'
 import { autoSliceFields, autoSliceMode } from '../src/state/auto-slice-mode'
 import { normalizePrefs } from '../src/state/prefs'
 import { get, set } from '../src/state/store'
@@ -36,9 +37,10 @@ function host() {
     slicer: {
       loadParts: async () => handle,
       loadModel: async () => handle,
-      slice: (r: SliceRequest) => {
+      slice: (r: SliceRequest, o?: { signal?: AbortSignal }) => {
         requests.push(r)
-        return new Promise(() => {})
+        // never lands; a canceled one stops, as the engine's does
+        return new Promise((_, reject) => o?.signal?.addEventListener('abort', () => reject(new DOMException('Slice canceled', 'AbortError'))))
       },
     },
   } as unknown as Host
@@ -50,6 +52,8 @@ beforeEach(() => {
   set({ plate: [entry(10, 1000)], ...autoSliceFields('auto'), sliceHeld: false, liveEdit: false, historyEdit: null, plateLoading: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {} })
 })
 afterEach(() => {
+  // the slice a test leaves running stops, so the next test's slices do not wait for it
+  cancelSlice({ quiet: true })
   start.ms = 0
   vi.useRealTimers()
 })

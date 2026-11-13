@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Auto slice and an agent's edits: a run of agent calls (mimir's tools, a client on the app link) starts no slice while
-// it goes on and one when it has been quiet for AGENT_QUIET_MS, and a person's edit slices as before. Counted in slices
-// started, never in seconds.
+// it goes on and one when it has been quiet for AGENT_QUIET_MS; a person's edit slices as before; and a slice canceled
+// while the engine still runs it is never joined by a new one: the next starts once it has stopped. Counted in slices
+// started and slices running at once, never in seconds.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
 import { AGENT_QUIET_MS, AUTO_SLICE_DELAY_MS, agentCall, startAutoSlice } from '../src/state/auto-slice'
@@ -126,4 +127,26 @@ describe('auto slice and an agent run of edits', () => {
     stop()
   })
 
+  it('starts the next slice only once a canceled one has stopped, so no two run at once', async () => {
+    const e = engine()
+    const stop = startAutoSlice(e.h)
+    set({ plate: [entry(20)] })
+    await vi.advanceTimersByTimeAsync(AUTO_SLICE_DELAY_MS + 10)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(1), { timeout: 45_000 })
+    // three more edits while the engine still runs the first slice, canceled by the first of them
+    for (let x = 21; x < 24; x++) {
+      set({ plate: [entry(x)] })
+      await vi.advanceTimersByTimeAsync(AUTO_SLICE_DELAY_MS + 10)
+    }
+    await within(3000, () => e.requests.length > 1)
+    expect(e.requests).toHaveLength(1)
+    // the engine stops the canceled slice: one slice starts, for the plate as it is now
+    e.finish()
+    await vi.waitFor(() => expect(e.requests).toHaveLength(2), { timeout: 45_000 })
+    e.finish()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(e.requests).toHaveLength(2)
+    expect(e.most()).toBe(1)
+    stop()
+  })
 })

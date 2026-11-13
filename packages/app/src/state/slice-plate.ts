@@ -22,7 +22,7 @@ import { mixedNozzleConfig } from '../filament/object-nozzle'
 import { markOpenStage } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
-import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
+import { beginSlice, currentSlice, endSlice, engineSlice, layersAfterSlice, trustOptions } from './actions'
 import { hostSlices } from './model-mode'
 import { activeResume, outputKey, planFor, RESUME_VOID, resumeVoid, sliceInputsKey, sliceStamp, sliceState, storedResumeTops } from '../plate/resume-tops'
 
@@ -230,13 +230,13 @@ export async function slicePlate(host: Host, opts: SlicePlateOptions = {}): Prom
   try {
     const { request, toPrint, config, replaces, skippedTools } = await plateSliceRequest(host, s, abort.signal, () => sliceStage(timed, 'objects'))
     const sliceWith = async () =>
-      host.slicer.slice(request, {
+      engineSlice(() => host.slicer.slice(request, {
         signal: abort.signal,
         onProgress: (progress) => {
           const cur = get().slice
           if (cur.status === 'running' && currentSlice(abort)) set({ slice: { ...cur, progress } })
         },
-      })
+      }))
     // The native engine already spreads layers across threads; shards there only add halo work.
     sliceStage(timed, 'request')
     const sliced = await sliceWith()

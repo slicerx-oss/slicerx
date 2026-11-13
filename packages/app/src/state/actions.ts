@@ -93,6 +93,31 @@ export function beginSlice(): AbortController {
   return sliceAbort
 }
 
+// Engine slices not yet stopped: the current one, and canceled ones the engine is still running (a cancel stops it only
+// between its stages), with what waits for them all to stop.
+let engineSlices = 0
+let engineStopped: (() => void)[] = []
+
+/** Runs one engine slice, counted until the engine answers or stops, canceled or not. */
+export async function engineSlice<T>(slice: () => Promise<T>): Promise<T> {
+  engineSlices++
+  try {
+    return await slice()
+  } finally {
+    if (--engineSlices === 0) {
+      const waiting = engineStopped
+      engineStopped = []
+      for (const go of waiting) go()
+    }
+  }
+}
+
+/** Whether the engine is still running a slice, a canceled one included. */
+export const engineSliceRunning = (): boolean => engineSlices > 0
+
+/** Settles once the engine runs no slice. */
+export const engineSlicesStopped = (): Promise<void> => (engineSlices === 0 ? Promise.resolve() : new Promise((go) => engineStopped.push(go)))
+
 /** Whether this run is still the current slice (no newer one replaced it). */
 export const currentSlice = (abort: AbortController): boolean => sliceAbort === abort
 

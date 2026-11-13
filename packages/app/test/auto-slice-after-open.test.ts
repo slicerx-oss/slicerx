@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host, SliceRequest } from '@slicerx/contracts'
 import { AUTO_SLICE_DELAY_MS, startAutoSlice } from '../src/state/auto-slice'
+import { cancelSlice } from '../src/state/actions'
 import { autoSliceFields } from '../src/state/auto-slice-mode'
 import { get, set } from '../src/state/store'
 
@@ -20,9 +21,10 @@ function host() {
     slicer: {
       loadParts: async () => handle,
       loadModel: async () => handle,
-      slice: (r: SliceRequest) => {
+      slice: (r: SliceRequest, o?: { signal?: AbortSignal }) => {
         requests.push(r)
-        return new Promise(() => {})
+        // never lands; a canceled one stops, as the engine's does
+        return new Promise((_, reject) => o?.signal?.addEventListener('abort', () => reject(new DOMException('Slice canceled', 'AbortError'))))
       },
     },
   } as unknown as Host
@@ -33,7 +35,11 @@ beforeEach(() => {
   vi.useFakeTimers()
   set({ plate: [], ...autoSliceFields('auto'), sliceHeld: false, heldByOpenedProject: false, liveEdit: false, historyEdit: null, plateLoading: false, revealHold: false, sliceDuringOpen: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {}, workspace: 'prepare', modelMode: 'slice', preview: null })
 })
-afterEach(() => void vi.useRealTimers())
+afterEach(() => {
+  // the slice a test leaves running stops, so the next test's slices do not wait for it
+  cancelSlice({ quiet: true })
+  vi.useRealTimers()
+})
 
 /** A project open as the app runs one: held and loading, its objects placed, then both end in one change. */
 async function openProject(): Promise<void> {
