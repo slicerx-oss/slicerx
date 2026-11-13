@@ -81,7 +81,7 @@ let mesh = body.tessellate(&Tessellation::default())?;
 - `Body::keys` reads the key on each face and `Body::set_keys` writes one per face (below 2^52, 0 for none). They are kept on the kernel's faces, where the JSON operations keep theirs, so each side reads what the other wrote.
 - `handover` is temporary. Until the JSON operations are made over typed bodies, `handover::lend` puts a typed body in their table for one call and `handover::adopt` takes a body they made out of it as a `Body`, read back like any other. `handover::ROUTED` lists the operations that still go this way.
 
-Every body is checked as it is made. Inputs are refused first (a radius of 0, a size that is not a number), since the kernel accepts some of them: it reports success for a sphere of radius -1. The result is then read back, and a body that is not closed, not one manifold solid, or has no positive volume is dropped and refused.
+Every body is checked as it is made. Inputs are refused first (a radius of 0, a size that is not a number), since the kernel accepts some of them: it reports success for a sphere of radius -1. The result is then read back, and a body that is not closed, not one manifold solid, or has no positive volume is dropped and refused. That volume is asked for at 1 percent, which is all its sign needs; `Body::volume` and `info` ask at a millionth.
 
 All `unsafe` code of the feature is in `src/kernel.rs`, next to the bridge. `cpp/sx_kernel.h` gives the bridge the names it needs and checks at compile time the sizes, field offsets and type codes the Rust side relies on. Neither holds modeling code. The typed calls take the same lock as `call`, and a body stays on the thread that made it (it is neither `Send` nor `Sync`).
 
