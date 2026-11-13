@@ -155,10 +155,12 @@ export class Designs implements DesignHost {
     const next: Design = { ...d,
       history: { ...history, steps: history.steps.map((s, i) => withBroken(s, r.status[i])) },
       parts: r.parts, status: r.status, madeBy: r.madeBy ?? {},
+      ...(r.meshParts ? { meshParts: r.meshParts } : {}),
     }
     this.export(next)
     Object.assign(d, next)
     if (!next.stl) delete d.stl
+    if (!r.meshParts) delete d.meshParts
     this.revisions.register(d.id)
   }
 
