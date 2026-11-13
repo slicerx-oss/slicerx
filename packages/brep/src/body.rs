@@ -49,8 +49,15 @@ const KEY_LIMIT: u64 = 1 << 52;
 /// The older operations sort by the same number (`cpp/sx_keys.h`).
 pub const FLAT_KIND_MM: f64 = 1e-4;
 
-/// How closely the read-back and [`Body::volume`] ask the kernel to integrate, relative to the volume.
+/// How closely [`Body::volume`] asks the kernel to integrate, relative to the volume.
 const VOLUME_ACCURACY: f64 = 1e-6;
+
+/// How closely the read-back asks for the volume it tests. What it tests is that the volume is a number and above
+/// zero, and within 1 percent a real part's volume cannot change sign, while the integral at [`VOLUME_ACCURACY`]
+/// runs over every trimmed face and costs a hull with a few hundred portholes over a minute a cut. A body that is
+/// open or not one manifold solid is caught by the edge and manifold checks before the volume is asked. The one
+/// gap: a closed body of exactly no volume could read slightly above zero at this accuracy; no operation makes one.
+const SOLID_TEST_ACCURACY: f64 = 1e-2;
 
 fn finite(what: &'static str, v: f64) -> Result<()> {
     if v.is_finite() {
@@ -91,7 +98,8 @@ fn not_a_solid(closed: bool, manifold: bool, volume: f64) -> Option<&'static str
 impl Body {
     /// The one place a body is made. `inputs` refuses what the kernel must not be asked, in plain words, before
     /// `make` calls it. What the kernel then returns is read back: every edge closed between two face sides, one
-    /// manifold solid, and a volume that is finite and above zero. Anything else is dropped here and refused.
+    /// manifold solid, and a volume that is finite and above zero, asked for at [`SOLID_TEST_ACCURACY`]. Anything
+    /// else is dropped here and refused.
     pub(crate) fn checked(
         op: &'static str,
         inputs: impl FnOnce() -> Result<()>,
@@ -100,7 +108,7 @@ impl Body {
         inputs()?;
         let solid = make()?;
         let closed = solid.edges()?.iter().all(|edge| edge.is_manifold());
-        if let Some(why) = not_a_solid(closed, solid.is_manifold()?, solid.volume(VOLUME_ACCURACY)?) {
+        if let Some(why) = not_a_solid(closed, solid.is_manifold()?, solid.volume(SOLID_TEST_ACCURACY)?) {
             return Err(Error::NotSolid { op, why });
         }
         Ok(Self {
