@@ -697,7 +697,8 @@ test.describe('a round bed', () => {
 
 /**
  * The fit check on the Vault's starters, made by the same generator: every one opens alone with no notes, a separate
- * object that touches warns and its marker goes the moment it is dragged away. A design with a real gap is a fixture
+ * object that touches warns and its marker goes the moment it is dragged away. The check runs after every edit, but its
+ * markers show only once the person opens a note's Show which (or a tool checks the gaps), and go at the next edit. A design with a real gap is a fixture
  * of its own (fixtures/loose-clip.sx3mf: an earlier cable clip, our own geometry, whose ring floats 0.76 mm off its
  * foot), so no starter has to keep a fault. Opening a design starts a new project, so designs never pile up. Moving
  * an object never rebuilds the scene.
@@ -776,11 +777,13 @@ test.describe('the fit check', () => {
     await expect(notes.nth(0)).toContainText('Touches 20 mm calibration cube, so they will print as one piece')
     await expect(notes.nth(1)).toContainText('Touches Temperature tower, so they will print as one piece')
     await expect(page.getByText(/touch, so they will print as one piece/)).toHaveCount(0)
-    await expect.poll(() => lines(page)).toEqual([true])
+    // The check alone draws no marker.
+    expect(await lines(page)).toEqual([])
 
-    // Show which lists the other object.
+    // Show which lists the other object, and marks the touch.
     await notes.nth(1).getByRole('button', { name: 'Show which' }).click()
     await expect(notes.nth(1).locator('.obj-note-which li')).toHaveText(['Temperature tower, touching'])
+    await expect.poll(() => lines(page)).toEqual([true])
 
     // Drag the cube away: the marker hides with the first move, before the drop.
     const c = await box(page, '20 mm calibration cube')
@@ -845,6 +848,7 @@ test.describe('the fit check', () => {
     const note = page.locator('.obj-note')
     await expect(note).toHaveCount(1, { timeout: 30_000 })
     await expect(note).toContainText(/Clip and Foot are 0\.\d\d mm apart and do not touch, so they print as separate pieces/)
+    expect(await lines(page)).toEqual([])
     await note.getByRole('button', { name: 'Show which' }).click()
     await expect(note.locator('.obj-note-which li')).toHaveText([/^Clip and Foot, 0\.\d\d mm$/])
     await expect.poll(() => lines(page)).toEqual([true])
@@ -892,6 +896,9 @@ test.describe('the fit check', () => {
     expect(await lines(page)).toEqual([true])
     await page.mouse.up()
     await expect(note).toHaveCount(1)
+    // The drop is an edit: the marker goes, and Show which closes with it.
+    await expect.poll(() => lines(page)).toEqual([])
+    await expect(note.getByRole('button', { name: 'Show which' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   test('opening a design over unsaved work asks nothing, keeps it, and Reopen brings it back', { tag: '@gpu' }, async ({ page }) => {
@@ -904,8 +911,9 @@ test.describe('the fit check', () => {
     // The drop has finished, so the open below starts from a settled plate.
     await expect.poll(async () => (await store(page)).plateLoading, { timeout: 60_000 }).toBe(false)
     // A design adds to the plate where its file put it: both starters sit at the bed's center, so the cube overlaps the
-    // clip and the fit check marks the two of them.
-    await expect.poll(() => lines(page), { timeout: 30_000 }).toEqual([true])
+    // clip and the fit check notes the two of them (with no marker until someone asks).
+    await expect(page.locator('.obj-note', { hasText: 'Touches' })).toHaveCount(2, { timeout: 30_000 })
+    expect(await lines(page)).toEqual([])
     // The first open kept whatever the step before left unsaved, so its own note can still be under the printer card.
     // It is closed first, so the note found below is this open's.
     const saved = page.getByTestId('open-note').filter({ hasText: 'Your previous plate is saved.' })
@@ -937,16 +945,17 @@ test.describe('the fit check', () => {
     const reopen = saved.getByTestId('open-note-action')
     await expect(reopen).toHaveText('Reopen', { timeout: 30_000 })
     await expect(page.getByTestId('toast').filter({ hasText: 'Your previous plate is saved.' })).toHaveCount(0)
-    // The old plate's fit mark goes with it: the tower alone has none.
+    // The old plate's fit notes go with it: the tower alone has none.
     await page.waitForTimeout(2500)
+    await expect(page.locator('.obj-note')).toHaveCount(0)
     expect(await lines(page)).toEqual([])
     await reopen.click()
     await expect(page.locator('.obj-name')).toHaveText(['Cable clip', '20 mm calibration cube'], { timeout: 60_000 })
     await expect.poll(async () => (await store(page)).plateLoading, { timeout: 60_000 }).toBe(false)
     // The plate was clean when Reopen ran, so it asks nothing either.
     await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
-    // It comes back as it was kept, the cube still over the clip, so the fit check marks them again.
-    await expect.poll(() => lines(page), { timeout: 30_000 }).toEqual([true])
+    // It comes back as it was kept, the cube still over the clip, so the fit check notes them again.
+    await expect(page.locator('.obj-note', { hasText: 'Touches' })).toHaveCount(2, { timeout: 30_000 })
     try {
       // Still the clip's file, the one Save writes to without asking for a name on the desktop, and the top bar names it.
       expect((await store(page)).projectFile).toEqual(clipFile)

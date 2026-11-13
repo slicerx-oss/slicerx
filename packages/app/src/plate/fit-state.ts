@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Fit check results: tight gaps inside each object, and separate objects that touch. The objects
 // list reads them for its notes, the viewport for its gap lines. Outside the app store: derived from
-// the plate, never persisted.
+// the plate, never persisted. The check runs after every plate edit, but its gap lines draw only for the objects someone
+// asked about: the person opened a fit note, or a tool checked the gaps. They go at the next plate edit.
 import { useSyncExternalStore } from 'react'
 import type { FitGap } from '../geom/cad'
 
@@ -32,6 +33,10 @@ let fits: Readonly<Record<string, ObjectFit>> = {}
 let touches: readonly Touch[] = []
 let version = 0
 const listeners = new Set<() => void>()
+/** The objects whose gap lines the viewport draws now. The automatic check alone adds none. */
+let shown: ReadonlySet<string> = new Set()
+/** The plate as last edited, while its check has not run to its end: lines measured on the plate before stay hidden. */
+let editedPlate: unknown = null
 
 function changed(): void {
   version++
@@ -39,6 +44,28 @@ function changed(): void {
 }
 
 export const objectFit = (objectId: string): ObjectFit | undefined => fits[objectId]
+
+/** Draws an object's gap lines: the person opened its fit note, or a tool checked its gaps. */
+export function showMarkers(objectId: string): void {
+  if (shown.has(objectId)) return
+  shown = new Set([...shown, objectId])
+  changed()
+}
+
+/** Takes the gap lines away: one object's (its fit note closed), or every object's. */
+export function hideMarkers(objectId?: string): void {
+  if (objectId === undefined ? shown.size === 0 : !shown.has(objectId)) return
+  shown = objectId === undefined ? new Set() : new Set([...shown].filter((id) => id !== objectId))
+  changed()
+}
+
+export const markersShown = (objectId: string): boolean => shown.has(objectId)
+
+/** The plate changed: every gap line goes, and none draws again until this plate's check is over. */
+export function plateEdited(plate: unknown): void {
+  editedPlate = plate
+  hideMarkers()
+}
 export const allTouches = (): readonly Touch[] => touches
 
 export function setFit(objectId: string, fit: ObjectFit | null): void {
@@ -77,6 +104,9 @@ const settleListeners = new Set<() => void>()
  */
 export function fitSettled(plate: unknown): void {
   settledPlate = plate
+  if (plate === editedPlate) editedPlate = null
+  // lines asked for while the check ran draw now
+  if (shown.size) changed()
   for (const l of [...settleListeners]) l()
 }
 
@@ -107,10 +137,33 @@ export interface FitLine {
   on: { id: string; transform: number[] }[]
 }
 
-/** The lines the viewport draws, every object together. */
+/** The lines the viewport draws: those of the objects someone asked about, measured on the plate as it is. */
 export function fitLines(): FitLine[] {
+  if (shown.size === 0 || editedPlate !== null) return []
   return [
-    ...Object.entries(fits).flatMap(([id, f]) => f.gaps.map((g) => ({ from: g.from, to: g.to, kind: g.kind, on: [{ id, transform: f.transform }] }))),
-    ...touches.map((t) => ({ from: t.from, to: t.to, kind: 'fused' as const, on: [{ id: t.ids[0], transform: t.transforms[0] }, { id: t.ids[1], transform: t.transforms[1] }] })),
+    ...Object.entries(fits)
+      .filter(([id]) => shown.has(id))
+      .flatMap(([id, f]) => f.gaps.map((g) => ({ from: g.from, to: g.to, kind: g.kind, on: [{ id, transform: f.transform }] }))),
+    ...touches
+      .filter((t) => shown.has(t.ids[0]) || shown.has(t.ids[1]))
+      .map((t) => ({ from: t.from, to: t.to, kind: 'fused' as const, on: [{ id: t.ids[0], transform: t.transforms[0] }, { id: t.ids[1], transform: t.transforms[1] }] })),
   ]
+}
+
+/**
+ * A tool (mimir, or an agent over the app link) ran: geom.fit_check, or design.check with a gaps or loose parts item,
+ * shows that object's gap lines. A design's id is its object's id on the plate. A refused run shows nothing.
+ */
+export function fitToolRan(tool: string, input: unknown, output: unknown): void {
+  const field = (o: unknown, k: string): unknown => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined)
+  if (tool === 'geom.fit_check') {
+    const id = field(input, 'design')
+    if (typeof id === 'string') showMarkers(id)
+    return
+  }
+  if (tool !== 'design.check') return
+  const id = field(output, 'design')
+  const items = field(output, 'items')
+  const fitItem = Array.isArray(items) && items.some((x) => ['gaps', 'loose parts'].includes(String(field(x, 'name'))))
+  if (typeof id === 'string' && fitItem) showMarkers(id)
 }

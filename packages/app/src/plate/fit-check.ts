@@ -6,8 +6,8 @@
 import { useEffect } from 'react'
 import { clearanceFor } from './clearance'
 import { resolveConfig } from '../adapters/settings'
-import { get, toast, useApp } from '../state/store'
-import { fitSettled, keepFits, setFit, setTouches } from './fit-state'
+import { appStore, get, toast, useApp } from '../state/store'
+import { fitSettled, hideMarkers, keepFits, markersShown, plateEdited, setFit, setTouches } from './fit-state'
 
 /** The smallest side-by-side gap the printer keeps open, per side: the fit clearance (`clearance.ts`). */
 export function minGapFor(s: ReturnType<typeof get>): number {
@@ -95,10 +95,22 @@ export function useFitWatch(): void {
 }
 
 /**
+ * Takes the gap lines away when the person moves on: at a plate edit, and when they select an object other than the
+ * ones whose lines show. Returns the unsubscribe function.
+ */
+export function watchMarkers(): () => void {
+  return appStore.subscribe((s, prev) => {
+    if (s.plate !== prev.plate) plateEdited(s.plate)
+    else if (s.selection !== prev.selection && s.selection !== null && !markersShown(s.selection)) hideMarkers()
+  })
+}
+
+/**
  * The one fit watch, mounted with the app shell. In the objects list it ran only while the list was drawn: with Slice's
  * right pane shut no fit check ran, and every big auto slice waited the full FIT_WAIT_MS.
  */
 export function FitWatch(): null {
   useFitWatch()
+  useEffect(watchMarkers, [])
   return null
 }
