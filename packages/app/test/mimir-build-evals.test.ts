@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import type { MeshPart, PilotEvent } from '@slicerx/contracts'
-import { createTransportClient, type LlmMessage } from '@slicerx/pilot'
+import { createScriptedClient, createTransportClient, type LlmMessage } from '@slicerx/pilot'
 import { createNodeTransport } from '@slicerx/pilot/node'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { budgetedClient, canStart, createBudget, HAIKU_5_5, STOP_MARGIN_USD } from '../../mcp/evals/creative/live'
@@ -946,6 +946,45 @@ const slowEvals = process.env['SX_SLOW_EVALS'] === '1'
  */
 const PAUSED_REPLAYS = new Set(['hinged-box'])
 
+describe.skipIf(live || !liveEngine)('a question asked after a build', () => {
+  beforeAll(async () => setGeomProvider(await wasmGeom()))
+  afterAll(() => setGeomProvider(null))
+  const c = { ...BUILD_CASES.find((x) => x.id === 'cable-clip')!, id: 'mid-build-question' }
+  // the sizes sheet the build gate asks for, then the base
+  const sheet = { calls: [{ name: 'pilot.sheet', args: { title: 'Mid clip', views: ['top', 'front', 'side', 'iso'], dims: [{ key: 'side', label: 'Side', value: 20, unit: 'mm', source: 'guess', at: { a: [-10, -10, 0], b: [10, -10, 0] } }], question: 'Confirm these sizes, or edit any before I build.', choices: [] } }] }
+  const base = { calls: [{ name: 'design.new', args: { name: 'Mid clip' } }, { name: 'geom.extrude', args: { design: 'Mid clip', shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, distance_mm: 5, operation: 'new', feature: 'Base' } }] }
+  const more = { calls: [{ name: 'geom.extrude', args: { design: 'Mid clip', shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, distance_mm: 5, operation: 'join', part: 0, feature: 'Hook' } }] }
+  const ask = { text: 'The base is built. Should I add the hook too?' }
+
+  it('is answered once, and the run goes on and is counted as answered', async () => {
+    const client = createScriptedClient([sheet, base, ask, more, { text: 'Added the hook.' }], { chunk: false })
+    const r = await driveCase(c, { client, timeoutMs: 20_000 })
+    expect(r.error).toBeUndefined()
+    expect(r.answered).toBe(true)
+    expect(r.asks).toBe(1)
+    expect(r.turns.filter((t) => t.kind === 'nudge')).toEqual([{ kind: 'nudge', text: 'Use common sizes and sensible defaults, then build it', why: 'asked' }])
+    expect(client.requests).toHaveLength(5)
+  }, 30_000)
+
+  it('ends the run at a second ask, counted', async () => {
+    const client = createScriptedClient([sheet, base, ask, { text: 'And a lid?' }, more], { chunk: false })
+    const r = await driveCase(c, { client, timeoutMs: 20_000 })
+    expect(r.answered).toBe(true)
+    expect(r.asks).toBe(2)
+    expect(client.requests).toHaveLength(4)
+  }, 30_000)
+
+  it('replays a recording from before as captured: it ends at the question, and one stamped midBuildAnswer gets the answer', async () => {
+    const old = await driveCase(c, { steps: [sheet, base, ask], timeoutMs: 20_000 })
+    expect(old.error).toBeUndefined()
+    expect(old.answered).toBe(false)
+    expect(old.asks).toBe(1)
+    const fresh = await driveCase(c, { steps: [sheet, base, ask, more, { text: 'Added the hook.' }], timeoutMs: 20_000, midBuildAnswer: true })
+    expect(fresh.error).toBeUndefined()
+    expect(fresh.answered).toBe(true)
+  }, 30_000)
+})
+
 describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
   beforeAll(async () => setGeomProvider(await wasmGeom()))
   afterAll(() => setGeomProvider(null))
@@ -956,7 +995,7 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
     // (and says so in r.error), just under the 180 s the test is given
     const title = slow && !slowEvals ? `${c.id} scores as it did live (lofted, slow to rebuild: set SX_SLOW_EVALS=1)` : `${c.id} scores as it did live`
     it.skipIf(!rec || (slow && !slowEvals) || PAUSED_REPLAYS.has(c.id))(title, { timeout: 180_000 }, async () => {
-      const r = await driveCase(c, { steps: rec!.steps, timeoutMs: REPLAY_DRIVE_MS })
+      const r = await driveCase(c, { steps: rec!.steps, timeoutMs: REPLAY_DRIVE_MS, midBuildAnswer: rec!.midBuildAnswer === true })
       console.log(line(c.id, r))
       // SX_MIMIR_EVAL_RESCORE=1 (with SX_MIMIR_EVAL_RESCORE_REASON) writes this replay's score over the stored one after
       // a scorer change, and logs each field it moved; it refuses a replay that did not run clean
@@ -1030,11 +1069,14 @@ describe.runIf(live)('live build evals', () => {
     const counts = verdictCounts(rows.map((r) => ({ id: r.id, verdict: r.run.score.verdict })))
     const tally = (n: { pass: number; fail: number; disagree: number }) => `${n.pass} pass, ${n.fail} fail, ${n.disagree} disagree`
     const perCase = [...counts.byCase].map(([id, n]) => `${id.padEnd(16)} ${tally(n)}`).join('\n')
-    console.log(`\n${rows.map((r) => line(r.id, r.run, r.usd, model)).join('\n')}\n\n${perCase}\nlive ${model}: ${rows.length} of ${cases.length} run: ${tally(counts.all)}, spent $${budget.spentUsd.toFixed(3)} of $${cap.toFixed(2)}${budget.stopped ? ' (stopped at the cap)' : ''}`)
+    // a pass after the drive answered is never counted with one that passed on its own
+    const passed = rows.filter((r) => r.run.score.verdict === 'pass')
+    const helped = `passed unaided ${passed.filter((r) => !r.run.answered).length}, passed after an answer ${passed.filter((r) => r.run.answered).length}`
+    console.log(`\n${rows.map((r) => line(r.id, r.run, r.usd, model)).join('\n')}\n\n${perCase}\nlive ${model}: ${rows.length} of ${cases.length} run: ${tally(counts.all)}, ${helped}, spent $${budget.spentUsd.toFixed(3)} of $${cap.toFixed(2)}${budget.stopped ? ' (stopped at the cap)' : ''}`)
     const out = process.env['SX_MIMIR_EVAL_OUT']
     if (out) {
       const at = new Date().toISOString()
-      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, lid: r.run.score.lid?.detail ?? null, hinge: r.run.score.hinge?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, checkCalls: r.run.checks, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
+      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, model, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, lid: r.run.score.lid?.detail ?? null, hinge: r.run.score.hinge?.detail ?? null, claim: r.run.score.claim, answered: r.run.answered, asks: r.run.asks, calls: r.run.calls, checkCalls: r.run.checks, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
     }
   })
   for (const c of cases) {

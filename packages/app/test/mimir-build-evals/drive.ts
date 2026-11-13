@@ -128,11 +128,19 @@ export interface CaseRun {
   /** Every design.check call, with the planId it named and the items that failed (score.ts checkCalls). */
   checks: CheckCall[]
   reply: string
+  /** The drive answered the model (a nudge), before or after it built. A run passed after an answer never counts as one passed unaided. */
+  answered: boolean
+  /** How many times the model asked the person: each question card and each reply that ends asking, answered or not. */
+  asks: number
   error?: string
 }
 
-/** One case: `client` is the live model; without it `steps` replay. */
-export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?: EvalStep[]; model?: string; timeoutMs?: number }): Promise<CaseRun> {
+/**
+ * One case: `client` is the live model; without it `steps` replay. A reply that has built something and ends asking
+ * gets the asked nudge once, when the run has had no nudge yet; a second ask ends the run. A replay sends it only for a
+ * recording captured with it (`midBuildAnswer`): one from before ended at that question live, and ends there again.
+ */
+export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?: EvalStep[]; model?: string; timeoutMs?: number; midBuildAnswer?: boolean }): Promise<CaseRun> {
   setHostSlices(true)
   clearPlans()
   // designs an earlier drive started and never built on wait in the host; let them go, as clearing a project does
@@ -224,15 +232,30 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   let reply = ''
   let firstReply = ''
   let firstBuilt = false
+  // each reply that ends asking; question cards are counted from the turns
+  let askedReplies = 0
+  const asks = (r: string): boolean => {
+    const a = classifyNoBuild(r) === 'asked'
+    if (a) askedReplies++
+    return a
+  }
   let error: string | undefined
   try {
     turns.push({ kind: 'message', text: c.prompt })
     reply = firstReply = await turn(c.prompt)
     firstBuilt = built()
+    let asked = asks(reply)
     for (let n = 0; n < MAX_NUDGES && !built(); n++) {
       const why = classifyNoBuild(reply)
       turns.push({ kind: 'nudge', text: NUDGES[why], why })
       reply = await turn(NUDGES[why])
+      asked = asks(reply)
+    }
+    // a question after a build: answered once, when no nudge came before; a replay only where the live run answered it
+    if (built() && asked && !turns.some((t) => t.kind === 'nudge') && (opts.client !== undefined || opts.midBuildAnswer === true)) {
+      turns.push({ kind: 'nudge', text: NUDGES.asked, why: 'asked' })
+      reply = await turn(NUDGES.asked)
+      asks(reply)
     }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
@@ -262,7 +285,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
     const checked = e.tool === 'design.check' && r?.ok !== false ? (r?.output as { pass?: unknown } | undefined)?.pass : undefined
     return [`${e.tool} ${r ? (r.ok === false ? `FAIL ${r.detail ?? r.summary ?? ''}`.slice(0, 160) : typeof checked === 'boolean' ? `ok (part ${checked ? 'passed' : 'failed'})` : 'ok') : 'no result'}`]
   })
-  const run: CaseRun = { score, turns, steps, calls, checks: checkCalls(events), reply: firstReply.slice(0, 800) }
+  const answered = turns.some((t) => t.kind === 'nudge')
+  const run: CaseRun = { score, turns, steps, calls, checks: checkCalls(events), reply: firstReply.slice(0, 800), answered, asks: askedReplies + turns.filter((t) => t.kind === 'answer').length }
   if (error) run.error = error
   return run
 }
