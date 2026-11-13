@@ -83,6 +83,15 @@ describe.skipIf(process.platform === 'win32')('the served design engine', () => 
     expect(new Set(calls.map((c) => c.pid)).size).toBe(3)
   }, 30_000)
 
+  it('starts a binary served with the arguments it is given, as the desktop app takes --sx-geom-engine', async () => {
+    const { bin, read } = setUp()
+    const engine = servedGeomEngine(bin, { args: ['--sx-geom-engine'], perCall: geomEngine(bin) })
+    expect(await engine.keepsBodies()).toBe(true)
+    const made = (await engine('brep.extrude', { withKeys: true })) as { body: number }
+    expect(made.body).toBe(PER_PROCESS + 1)
+    expect(new Set(read().filter((c) => c.op).map((c) => c.pid)).size).toBe(1)
+  })
+
   it('takes two tool calls at once on one served engine, and frees no body another replay still uses', async () => {
     const { bin, read } = setUp()
     vi.stubEnv('SX_BREP_DEV', '1')

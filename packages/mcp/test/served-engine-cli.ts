@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// served-engine.ts run as sx-geom: `serve` speaks frames until stdin closes; any other argument is one call, its
-// request as JSON on stdin and its answer as JSON on stdout. SX_STANDIN_NO_SERVE=1 is an sx-geom with no serve mode:
-// `serve` is then an operation like any other, read from stdin, which the per-call run would wait on.
+// served-engine.ts run as sx-geom: `serve` (or `--sx-geom-engine`, as the desktop app's binary takes it) speaks frames
+// until stdin closes; any other argument is one call, its request as JSON on stdin and its answer as JSON on stdout.
+// SX_STANDIN_NO_SERVE=1 is an sx-geom with no serve mode: `serve` is then an operation like any other, read from
+// stdin, which the per-call run would wait on.
 import { decodeFrame, encodeFrame, HELLO, takeFrame } from '@slicerx/cad-history/served'
 import { standInKernel } from './served-engine'
 
 const kernel = standInKernel()
 const op = process.argv[2] ?? ''
-if (op === 'serve' && process.env['SX_STANDIN_NO_SERVE'] !== '1') {
+if ((op === 'serve' || op === '--sx-geom-engine') && process.env['SX_STANDIN_NO_SERVE'] !== '1') {
   process.stdout.write(HELLO)
   let pending: Uint8Array = new Uint8Array(0)
   process.stdin.on('data', (d: Buffer) => {
