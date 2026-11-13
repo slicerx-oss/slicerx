@@ -1695,6 +1695,10 @@ class ViewportImpl implements Viewport {
 
   setGapLines(lines: readonly GapLine[]): void {
     this.gaps.set(lines)
+    // placed where their objects are now, not at the next frame: lines can arrive with the view still, when someone
+    // asks for them, and a read before that frame found them unplaced
+    this.gaps.follow((id) => this.objects.get(id)?.group.matrix)
+    this.gaps.group.updateMatrixWorld(true)
     this.invalidate()
   }
 
