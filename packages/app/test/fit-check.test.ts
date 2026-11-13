@@ -9,7 +9,7 @@ import { measuredHoleClearance, tuneContext, tuneKey } from '../src/calibration/
 import { resolveSlots } from '../src/filament/slots'
 import type { UserPreset } from '../src/presets/store'
 import { get } from '../src/state/store'
-import { allTouches, fitLines, keepFits, setFit, setTouches, type ObjectFit, type Touch } from '../src/plate/fit-state'
+import { allTouches, fitLines, hideMarkers, keepFits, setFit, setTouches, showMarkers, type ObjectFit, type Touch } from '../src/plate/fit-state'
 
 const gap = (kind: FitGap['kind'], parts: [number, number], gapMm = 0.1): FitGap => ({ kind, parts, gapMm, limitMm: 0.2, from: [0, 0, 0], to: [1, 0, 0] })
 const body = (item: number) => ({ bounds: { min: [0, 0, 0] as [number, number, number], max: [1, 1, 1] as [number, number, number] }, volumeMm3: 1, triangles: 12, item })
@@ -74,6 +74,9 @@ describe('fit check', () => {
     setFit('a', fit([gap('horizontal', [0, 1])]))
     setFit('b', fit([gap('vertical', [0, 1])]))
     setTouches([touch('a', 'b')])
+    // lines draw only for objects someone asked about (fit-markers.test.ts)
+    showMarkers('a')
+    showMarkers('b')
     expect(fitLines()).toHaveLength(3)
     expect(fitLines()[2]!.on.map((o) => o.id)).toEqual(['a', 'b'])
     keepFits(['a'])
@@ -82,6 +85,7 @@ describe('fit check', () => {
     expect(allTouches()).toEqual([])
     setFit('a', null)
     expect(fitLines()).toEqual([])
+    hideMarkers()
   })
 
   it('uses the clearance the hole tolerance test measured, whatever the hole compensation setting says now', () => {

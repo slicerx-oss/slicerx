@@ -46,6 +46,7 @@ import { SCRIPTS } from './scripts'
 import { appTabs } from './tabs'
 import { checkedDesign, standingPlan, withPlanState } from './plan-state'
 import { agentCall, agentWaits } from '../../state/auto-slice'
+import { fitToolRan } from '../../plate/fit-state'
 
 export const mimirLogs = createMemorySessionStore()
 
@@ -142,7 +143,15 @@ export function toolsFor(loader: Loader, opts: { exactByDefault?: boolean } = {}
     tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()), filaments: appFilaments, bed: () => usableBed(get()), ...opts }).map((t) => {
       const run = t.run.bind(t)
       // a question to the person lets the hold go while it waits (agentWaits), so they see a fresh slice meanwhile
-      return { ...t, run: (input: never, ctx: Parameters<typeof run>[1]) => agentCall(() => run(input, waitsLetGo(ctx))) }
+      // a gap check mimir ran draws that object's gap lines (fit-state.ts)
+      return {
+        ...t,
+        run: async (input: never, ctx: Parameters<typeof run>[1]) => {
+          const out = await agentCall(() => run(input, waitsLetGo(ctx)))
+          if (out.ok !== false) fitToolRan(t.name, input, out.output)
+          return out
+        },
+      }
     })
   }
   return tools
