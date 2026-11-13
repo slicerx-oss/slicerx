@@ -10,7 +10,7 @@
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import { colorWord, colorWordHex } from '@slicerx/pilot'
-import type { BodyFacts, FitLimits, FloorFacts, PaintedRegion } from './design-check'
+import { partNamed, type BodyFacts, type FitLimits, type FloorFacts, type PaintedRegion } from './design-check'
 import { fitFacts } from './fit-facts'
 import { looseGaps, looseText, movingParts, partsNear } from './seat'
 import { floorOpenings } from './holder-floor'
@@ -65,7 +65,8 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
       holes.push({ part, at: loop.at, axis: loop.axis, diameterMm })
     }
   }
-  const wall = minWall(world, checkWallBudget(), undefined, opts.nozzleMm)
+  const wallAt: WallPlace = {}
+  const wall = minWall(world, checkWallBudget(), undefined, opts.nozzleMm, undefined, wallAt)
   const shaping = d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint')
   let gaps: Pick<BodyFacts, 'fit' | 'fitWhy'> = {}
   if (fit)
@@ -101,6 +102,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     minWallMm: wall.mm,
     ...(wall.why ? { minWallWhy: wall.why } : {}),
     ...(wall.tip ? { minWallTip: wall.tip } : {}),
+    ...(wall.mm !== null && wallAt.point && wallAt.part !== undefined ? { minWallAt: { at: wallAt.point, ...wallPart(d.parts[wallAt.part]?.name, d.parts.length) } } : {}),
     ...gaps,
     ...loose,
     ...(opts.hook ? hookFacts(world) : {}),
@@ -183,6 +185,12 @@ function bounds(meshes: readonly Mesh[]): BodyFacts['size'] {
     }
   const r = (k: number): number => (hi[k]! >= lo[k]! ? Math.round((hi[k]! - lo[k]!) * 1000) / 1000 : 0)
   return { x: r(0), y: r(1), z: r(2) }
+}
+
+/** The wall place's part, when it is named (partNamed). */
+function wallPart(name: string | undefined, parts: number): { part?: string } {
+  const part = partNamed(name, parts)
+  return part ? { part } : {}
 }
 
 /** Two readings on one axis are one hole when their diameters agree within this, or this share of the narrower. */
@@ -350,6 +358,12 @@ export interface WallReading {
   tip?: { mm: number; at: V3 }
 }
 
+/** Where the thinnest wall is, filled by minWall when asked: its part (an index into the meshes read) and the middle of the reading, mm. */
+export interface WallPlace {
+  part?: number
+  point?: V3
+}
+
 /** The nozzle minWall reads tips for when it is given none: a tip zone and a floor of two nozzle widths. */
 const WALL_NOZZLE_MM = 0.4
 /** A taper's faces close to this share of the gap the ray read within the zone (tapers in partWall). */
@@ -368,14 +382,18 @@ const MAX_ENTRIES = 4_000_000
  * ray starts from: the cosine between their two normals is under -`opposed` (OPPOSED unless given). Needles, specks and
  * flat patches narrower than LEDGE_MM across measure no wall.
  */
-export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, opposed = OPPOSED, nozzleMm = WALL_NOZZLE_MM, used?: { work: number }): WallReading {
+export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, opposed = OPPOSED, nozzleMm = WALL_NOZZLE_MM, used?: { work: number }, place?: WallPlace): WallReading {
   const nozzle = Number.isFinite(nozzleMm) && nozzleMm > 0 ? nozzleMm : WALL_NOZZLE_MM
   // the floor design.check holds the wall to (twice the nozzle), which is also the tip zone
   const floor = 2 * nozzle
-  const read: PartReading = { best: Infinity, tip: Infinity, tipAt: [0, 0, 0] }
+  const read: PartReading = { best: Infinity, tip: Infinity, tipAt: [0, 0, 0], bestAt: null, bestPart: -1 }
   const r3 = (v: number): number => Math.round(v * 1000) / 1000
   const reading = (): WallReading => {
     const tip = read.tip < read.best ? { tip: { mm: r3(read.tip), at: read.tipAt.map((v) => Math.round(v * 100) / 100) as V3 } } : {}
+    if (place && Number.isFinite(read.best) && read.bestAt) {
+      place.part = read.bestPart
+      place.point = read.bestAt.map((v) => Math.round(v * 100) / 100) as V3
+    }
     return { mm: Number.isFinite(read.best) ? r3(read.best) : null, ...tip }
   }
   const seen: Mesh[] = []
@@ -386,7 +404,9 @@ export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGE
     if (seen.some((o) => moved(o, m))) continue
     seen.push(m)
     const onCut = meshes.length > 1 ? (p: V3, n: V3): boolean => (cuts ??= sharedCuts(meshes)).has(k, p, n) : undefined
+    const was = read.best
     const done = Math.floor(m.indices.length / 3) <= budget.maxFacets && partWall(m, read, budget.maxWork, opposed, floor, used, onCut)
+    if (read.best < was) read.bestPart = k
     // out of budget: a wall under the floor read already fails the part, whatever else it holds; else not measured
     if (!done) return read.best < floor ? reading() : { mm: null, why: TOO_DENSE }
   }
@@ -452,6 +472,9 @@ interface PartReading {
   best: number
   tip: number
   tipAt: V3
+  /** The middle of the thinnest wall's reading so far, and the part it is on. */
+  bestAt: V3 | null
+  bestPart: number
 }
 
 /** A facet whose doubled area is under this share of its longest edge squared is a needle (about a 0.06 degree corner). */
@@ -571,9 +594,11 @@ function partWall(m: Mesh, read: PartReading, maxWork: number, opposed: number, 
   // whether each facet's flat patch is narrower than LEDGE_MM: 0 not measured yet, 1 narrow, 2 wide
   const flat = new Int8Array(tris)
   let best = read.best
+  let bestAt: V3 | null = null
   for (let t = 0; t < tris; t++) {
     if ((t & 255) === 0 && work > maxWork) {
       if (used) used.work += work
+      if (best < read.best && bestAt) read.bestAt = bestAt
       read.best = Math.min(read.best, best)
       return false
     }
@@ -670,9 +695,14 @@ function partWall(m: Mesh, read: PartReading, maxWork: number, opposed: number, 
           read.tip = hit
           read.tipAt = [o0, o1, o2]
         }
-      } else if (hit < best) best = hit
+      } else if (hit < best) {
+        best = hit
+        // the middle of the wall the ray crossed, so the place named is in the wall and not on one face of it
+        bestAt = [o0 + (d0 * hit) / 2, o1 + (d1 * hit) / 2, o2 + (d2 * hit) / 2]
+      }
     }
   }
+  if (best < read.best && bestAt) read.bestAt = bestAt
   read.best = best
   if (used) used.work += work
   return true
