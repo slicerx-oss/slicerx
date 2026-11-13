@@ -680,6 +680,7 @@ Ids that tests read for their text:
 | --- | --- |
 | `device-firmware` | The firmware version a printer reports, in its Controls and files dialog |
 | `about-attribution`, `about-step-reader` | About: the engine attribution and the STEP reader line |
+| `about-licenses` | About, in a desktop build that ships its license files: the line saying they come with the app, with Show license files, which opens their folder |
 | `bug-preview` | Report a bug: what the report sends |
 | `step-note`, `step-bind` | A CAD history step's note and binding |
 | `model-box-select` | The box while a Shift and left drag selects in Model; `data-dir` is `inside` (left to right) or `touch` (right to left) |
