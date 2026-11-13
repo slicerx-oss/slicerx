@@ -78,7 +78,7 @@ export const TURN_SET_WORDS: Record<TurnSet, string> = {
 /** The same sets in fewer words, for the local description of pilot.tools. */
 const TURN_SET_SHORT: Record<TurnSet, string> = {
   build: 'a new part (dimension sheet, plan, sketches extruded, revolved, lofted or swept, holes, fillets, chamfers, shells, booleans, reading it back)',
-  shape: 'push and pull faces, mirror, pattern, split, subtract, emboss text, cut, hollow, repair, paint, measure',
+  shape: 'push and pull faces, mirror, pattern, split, subtract, emboss text, cut, hollow, repair, paint, measure, rails',
   edit: 'a built part (open it, timeline, steps, sketches, face and edge picks, undo, redo)',
   app: 'slicing, settings, profiles, project, plate, knowledge base, app commands, sending a sliced plate to a printer',
   print: 'printers (state, history, cameras, sending, pausing and canceling prints, spools, fleets, schedules, setup, commands)',
@@ -268,7 +268,7 @@ export function turnSetTool(pick: (sessionId: string, set: TurnSet) => void): Pi
     source: 'command',
     permission: 'read',
     description: `Load another set of tools when the ones you have do not cover the next step. You get its tools from your next step on, in place of the current set. ${TURN_SETS.map((s) => `${s}: ${TURN_SET_WORDS[s]}.`).join(' ')}`,
-    localDescription: `Load another tool set (set) when yours does not cover the next step; it replaces yours from your next step on. ${TURN_SETS.map((s) => `${s}: ${TURN_SET_SHORT[s]}.`).join(' ')}`,
+    localDescription: `Load another tool set (set) when yours lacks the next step; it replaces yours from your next step on. ${TURN_SETS.map((s) => `${s}: ${TURN_SET_SHORT[s]}.`).join(' ')}`,
     input: z.object({ set: z.enum(TURN_SETS) }),
     args: (i) => i.set,
     async run(i, ctx) {
