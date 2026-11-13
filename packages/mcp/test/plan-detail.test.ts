@@ -9,7 +9,7 @@ import type { PilotMachine } from '@slicerx/contracts'
 import { type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { type BodyFacts, colorBands, createPlanRegistry, designCheck, partPlanSchema, type PartPlan } from '../src/design-check'
-import { DEFAULT_BED, DETAIL_HELP, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem, TIER_ON_DISAGREES } from '../src/plan-detail'
+import { DEFAULT_BED, DETAIL_HELP, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem, stackItem, STANDS_BASE_OFF, STANDS_FLOATS, STANDS_HEIGHT_OFF, STANDS_OFF, TIER_ON_DISAGREES } from '../src/plan-detail'
 import { LocalPlanInputSchema, PLAN_GO, STANDS_ON_HELP, type PlanInput } from '../src/tab-tools'
 import { createCardPlans, designToolset, tabToolset } from '../src/toolset'
 import type { DesignHost } from '@slicerx/cad-history'
@@ -218,6 +218,36 @@ describe('detailProblem: the rules are about the object', () => {
   it('says in its description that a stacked feature names what it stands on', () => {
     expect(STANDS_ON_HELP).toBe('A stacked feature names in on the feature it stands on, its height planned above that one, and each part that makes the outline readable from afar has a real size.')
     expect(createCardPlans(createPlanRegistry()).planTool().description).toContain(`. ${STANDS_ON_HELP} The plan has:`)
+  })
+
+  it('reads no stacking from a plan with no on and no tiers', () => {
+    expect(stackItem({ ...house, tiers: undefined }, { walls: { lo: 0, hi: 55 }, roof: { lo: 70, hi: 100 } })).toBeNull()
+  })
+
+  it('says each way a stacked part is off, word for word', () => {
+    const plan = (height?: number) => ({ detail: 'display' as const, features: [{ name: 'Upper deckhouse', sizes: { height: 3 } }, { name: 'Funnel 1', sizes: height === undefined ? { diameter: 4 } : { height }, on: 'Upper deckhouse' }] })
+    const got = (height: number | undefined, lo: number, hi: number) => stackItem(plan(height), { 'upper deckhouse': { lo: 18.1, hi: 21.15 }, 'funnel 1': { lo, hi } })!.got
+    // sunk, with a height planned
+    expect(got(15, 14.5, 29.5)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse')
+    // floating, with a height planned or not
+    expect(got(15, 21.95, 36.95)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 0.8 mm above its top, so it floats; build it from the top of Upper deckhouse')
+    expect(got(undefined, 21.95, 36.95)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 0.8 mm above its top, so it floats; build it from the top of Upper deckhouse')
+    // on the top, its planned height not showing
+    expect(got(15, 21.15, 29.5)).toBe('Funnel 1 stands on Upper deckhouse, but 8.35 mm of it shows of a planned 15 mm; make it 15 mm tall above the top of Upper deckhouse')
+    // sunk, with no height planned: the base alone
+    expect(got(undefined, 14.5, 29.5)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 6.65 mm below its top; build it from the top of Upper deckhouse')
+    // on the top with no height planned, and on the top showing its height, both pass
+    expect(stackItem(plan(undefined), { 'upper deckhouse': { lo: 18.1, hi: 21.15 }, 'funnel 1': { lo: 21.1, hi: 25 } })!.pass).toBe(true)
+    expect(stackItem(plan(15), { 'upper deckhouse': { lo: 18.1, hi: 21.15 }, 'funnel 1': { lo: 21.1, hi: 36.1 } })!.pass).toBe(true)
+    expect([STANDS_OFF, STANDS_FLOATS, STANDS_HEIGHT_OFF, STANDS_BASE_OFF].every((f) => typeof f === 'function')).toBe(true)
+  })
+
+  it('reads no pair with a loose range on either side, since a bound for a top makes a part placed right look sunk or floating', () => {
+    const plan = { detail: 'display' as const, features: [{ name: 'Rail', sizes: { height: 2 } }, { name: 'Post', sizes: { height: 10 }, on: 'Rail' }, { name: 'Deck', sizes: { height: 3 } }, { name: 'Arch', sizes: { height: 8 }, on: 'Deck' }] }
+    // a post on a swept rail, and a swept arch on an extruded deck: both a bound, so neither pair is read
+    expect(stackItem(plan, { rail: { lo: 0, hi: 4, loose: true }, post: { lo: 2, hi: 12 }, deck: { lo: 0, hi: 3 }, arch: { lo: 1, hi: 13, loose: true } })).toBeNull()
+    // the same with exact ranges is read
+    expect(stackItem(plan, { rail: { lo: 0, hi: 2 }, post: { lo: 2, hi: 12 }, deck: { lo: 0, hi: 3 }, arch: { lo: 3, hi: 11 } })).toMatchObject({ pass: true, got: '2 stacked parts on their supports' })
   })
 
   it('names a body built by a feature the plan does not have', () => {

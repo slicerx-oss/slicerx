@@ -7,7 +7,7 @@
 // from each facet inward to the far side, through a grid of the facets, within a budget, skipping slivers and ledges
 // a join leaves), when asked, the hook on its upright stem (hook-lip.ts) and, when asked, the floor of a part that holds
 // something (holder-floor.ts), and for a plan with recess rows, its blind openings on any face (recesses.ts).
-import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh, type Step } from '@slicerx/cad-history'
+import { bakeMesh, rangeOf, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh, type Step } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import { colorWord, colorWordHex } from '@slicerx/pilot'
 import { partNamed, type BodyFacts, type PartBox, type FitLimits, type FloorFacts, type PaintedRegion } from './design-check'
@@ -99,6 +99,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     // a hint only: a paint step it cannot name is left out rather than failing the check
     paintUntagged: d.history.steps.flatMap((s) => (!s.suppressed && s.params?.op === 'paint' && !s.feature?.trim() ? hintName(s) : [])),
     lofts: loftSections(shaping as unknown as Parameters<typeof loftSections>[0]),
+    featureHeights: featureHeights(d.history.steps, shaping),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     ...(world.length > 1 ? { partBoxes: world.map((w, k) => partBox(w, d.parts[k]!)) } : {}),
     watertight,
@@ -227,6 +228,24 @@ function reach(meshes: readonly Mesh[], names: readonly string[]): NonNullable<B
   }
   const axis = (k: number) => ({ lo: end(lo[k]!), hi: end(hi[k]!) })
   return { x: axis(0), y: axis(1), z: axis(2) }
+}
+
+/**
+ * Each tagged feature's height range over the steps tagged with it that rangeOf can read from their own numbers, loose
+ * when any of them gives only a bound. A feature none of whose steps has a range has none, and is not read.
+ */
+function featureHeights(all: readonly Step[], shaping: readonly Step[]): Record<string, { lo: number; hi: number; loose?: true }> {
+  const byId = new Map(all.map((s) => [s.id, s]))
+  const out: Record<string, { lo: number; hi: number; loose?: true }> = {}
+  for (const s of shaping) {
+    const tag = s.feature?.trim().toLowerCase()
+    const r = tag ? rangeOf(s, (id) => byId.get(id)) : null
+    if (!tag || !r) continue
+    const was = out[tag]
+    const loose = r.loose || was?.loose
+    out[tag] = { lo: Math.min(was?.lo ?? r.lo, r.lo), hi: Math.max(was?.hi ?? r.hi, r.hi), ...(loose ? { loose: true as const } : {}) }
+  }
+  return out
 }
 
 /** A part's box in the design, with its slot, name and whether it has color paint (PartBox). */

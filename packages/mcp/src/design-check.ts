@@ -9,7 +9,7 @@
 import { SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { LIP_RISE_MM } from './hook-lip'
-import { type LoftSections, planDetailFields, sectionsProblem } from './plan-detail'
+import { type FeatureHeights, type LoftSections, planDetailFields, sectionsProblem, stackItem } from './plan-detail'
 
 /** The largest size a plan takes, in its own units. */
 export const PLAN_SIZE_MAX = 10_000
@@ -160,6 +160,8 @@ export interface BodyFacts {
   parts?: { x: number; y: number; z: number }[] | undefined
   /** Each part's box, filament slot and name, and whether it has color paint, when the design has more than one part. */
   partBoxes?: PartBox[] | undefined
+  /** Each tagged feature's height range in mm (rangeOf over its steps), by its name in lower case; `loose` when a step gave only a bound. */
+  featureHeights?: FeatureHeights | undefined
   /** True when every part is closed. */
   watertight: boolean
   /** What keeps it from being closed, when it is not: "5 edges where more than two faces meet". */
@@ -822,6 +824,9 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   items.push(wallItem(body, nozzle))
   const curved = curvedItem(plan, body)
   if (curved) items.push(curved)
+  // a display or fine model's stacked parts stand on what the plan says they stand on, their planned height showing
+  const stack = stackItem(plan, body.featureHeights)
+  if (stack) items.push(stack)
   if (plan.printInPlace) items.push(...fitItems(plan.printInPlace, body))
   // the gaps the plan sets, held to the same limits as the gaps measured; a plan whose pieces print together without
   // naming them (printsTogether) gets this item alone, as it names no pieces to measure
