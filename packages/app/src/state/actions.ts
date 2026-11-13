@@ -98,17 +98,45 @@ export function beginSlice(): AbortController {
 let engineSlices = 0
 let engineStopped: (() => void)[] = []
 
-/** Runs one engine slice, counted until the engine answers or stops, canceled or not. */
-export async function engineSlice<T>(slice: () => Promise<T>): Promise<T> {
+/**
+ * How long a canceled slice may go on in the engine before it no longer counts (ms). The slowest slice measured is a
+ * painted hull with a thin color band, 36.8 s on an 11-core Mac; this is that with room for a slower machine. A canceled
+ * slice still running past it is taken as stuck: it is logged, and the next slice no longer waits for it.
+ */
+export const STUCK_SLICE_MS = 120_000
+
+const oneStopped = (): void => {
+  if (--engineSlices > 0) return
+  const waiting = engineStopped
+  engineStopped = []
+  for (const go of waiting) go()
+}
+
+/** Runs one engine slice, counted until the engine answers or stops it, or until STUCK_SLICE_MS after its cancel. */
+export async function engineSlice<T>(slice: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   engineSlices++
+  let counted = true
+  const drop = (): void => {
+    if (!counted) return
+    counted = false
+    oneStopped()
+  }
+  let stuck: ReturnType<typeof setTimeout> | undefined
+  const onAbort = (): void => {
+    stuck = setTimeout(() => {
+      if (!counted) return
+      console.warn(`A canceled slice was still running in the engine after ${STUCK_SLICE_MS / 1000} s; auto slice goes on without waiting for it`)
+      drop()
+    }, STUCK_SLICE_MS)
+  }
+  if (signal?.aborted) onAbort()
+  else signal?.addEventListener('abort', onAbort, { once: true })
   try {
     return await slice()
   } finally {
-    if (--engineSlices === 0) {
-      const waiting = engineStopped
-      engineStopped = []
-      for (const go of waiting) go()
-    }
+    clearTimeout(stuck)
+    signal?.removeEventListener('abort', onAbort)
+    drop()
   }
 }
 

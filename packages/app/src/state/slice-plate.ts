@@ -236,7 +236,7 @@ export async function slicePlate(host: Host, opts: SlicePlateOptions = {}): Prom
           const cur = get().slice
           if (cur.status === 'running' && currentSlice(abort)) set({ slice: { ...cur, progress } })
         },
-      }))
+      }), abort.signal)
     // The native engine already spreads layers across threads; shards there only add halo work.
     sliceStage(timed, 'request')
     const sliced = await sliceWith()
