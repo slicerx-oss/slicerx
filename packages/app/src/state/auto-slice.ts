@@ -61,6 +61,23 @@ export async function agentCall<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * Runs `wait`, a tool's question to the person (an ask, a sheet), with the agent's hold let go while it waits: auto
+ * slice slices the plate as it is now, so they see a fresh slice while they decide. The hold comes back with the
+ * answer, and a slice already running when the run goes on is one the next waits for, never one beside it.
+ */
+export async function agentWaits<T>(wait: () => Promise<T>): Promise<T> {
+  if (agentCalls === 0) return wait()
+  if (--agentCalls === 0) agentRunEnded?.()
+  try {
+    return await wait()
+  } finally {
+    agentCalls++
+    if (agentQuiet) clearTimeout(agentQuiet)
+    agentQuiet = null
+  }
+}
+
 /** Whether the running watch has a slice about to start: its pause after an edit, or a big slice's wait for the fit check. */
 let pending: () => boolean = () => false
 
