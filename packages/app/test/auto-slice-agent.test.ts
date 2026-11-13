@@ -7,6 +7,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
 import { STUCK_SLICE_MS } from '../src/state/actions'
+import { plateLayerZ } from '../src/state/slice-plate'
 import { AGENT_QUIET_MS, AUTO_SLICE_DELAY_MS, agentCall, startAutoSlice } from '../src/state/auto-slice'
 import { set } from '../src/state/store'
 
@@ -167,6 +168,28 @@ describe('auto slice and an agent run of edits', () => {
     await vi.waitFor(() => expect(e.requests).toHaveLength(2), { timeout: 45_000 })
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/canceled slice was still running in the engine after 120 s/))
     warn.mockRestore()
+    stop()
+  })
+
+  it("starts no auto slice beside the resume dialog's layer slice the engine still runs, and one once it has stopped", async () => {
+    const e = engine()
+    const stop = startAutoSlice(e.h)
+    // the dialog's layer slice, then the dialog closes while the engine still runs it
+    const dialog = new AbortController()
+    const layers = plateLayerZ(e.h, dialog.signal).catch(() => null)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(1), { timeout: 45_000 })
+    dialog.abort()
+    // an edit while it runs
+    set({ plate: [entry(40)] })
+    await vi.advanceTimersByTimeAsync(AUTO_SLICE_DELAY_MS + 10)
+    await within(3000, () => e.requests.length > 1)
+    expect(e.requests).toHaveLength(1)
+    // the engine stops the layer slice: the plate's slice starts, alone
+    e.finish()
+    await layers
+    await vi.waitFor(() => expect(e.requests).toHaveLength(2), { timeout: 45_000 })
+    e.finish()
+    expect(e.most()).toBe(1)
     stop()
   })
 
