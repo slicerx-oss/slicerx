@@ -62,6 +62,10 @@ impl Solid {
         match *self {}
     }
 
+    pub(crate) fn distance_to(&self, _point: Vec3) -> Result<f64> {
+        match *self {}
+    }
+
     pub(crate) fn faces(&self) -> Result<Vec<FaceRef<'_>>> {
         match *self {}
     }
@@ -98,6 +102,10 @@ pub(crate) fn take_over(_number: i64) -> Option<Solid> {
 }
 
 impl FaceRef<'_> {
+    pub(crate) fn distance_to(&self, _point: Vec3) -> Result<f64> {
+        match *self.solid {}
+    }
+
     pub(crate) fn flat_within(&self, _mm: f64) -> bool {
         match *self.solid {}
     }

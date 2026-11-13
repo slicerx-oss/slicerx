@@ -257,6 +257,18 @@ mod ffi {
             max: &mut SmVector3d,
         ) -> Result<SmLong>;
         unsafe fn SmApiGetFaces(body: *mut SmBrep, out: Pin<&mut SmFaceArray>) -> Result<SmLong>;
+        unsafe fn SmApiFaceClosestPoint(
+            face: *mut SmFace,
+            point: &SmVector3d,
+            closest: &mut SmVector3d,
+            distance: &mut f64,
+        ) -> Result<SmLong>;
+        unsafe fn SmApiGetClosestPoint(
+            body: *const SmBrep,
+            point: &SmVector3d,
+            closest: &mut SmVector3d,
+            distance: &mut f64,
+        ) -> Result<SmLong>;
         unsafe fn SmApiGetEdges(body: *mut SmBrep, out: Pin<&mut SmEdgeArray>) -> Result<SmLong>;
 
         // faces and their surfaces
@@ -975,6 +987,17 @@ impl Solid {
     }
 
     /// The enclosed volume in mm3, to a relative accuracy.
+    /// How far `point` is from the body's surface, in mm, by the kernel's own closest point.
+    pub(crate) fn distance_to(&self, point: Vec3) -> Result<f64> {
+        let _kernel = held();
+        let (mut closest, mut distance) = (point, 0.0);
+        // SAFETY: the body is live for as long as `self` is, and the call does not change it.
+        check("distance", unsafe {
+            ffi::SmApiGetClosestPoint(self.brep.as_ptr(), &point, &mut closest, &mut distance)
+        })?;
+        Ok(distance)
+    }
+
     pub(crate) fn volume(&self, accuracy: f64) -> Result<f64> {
         let _kernel = held();
         let mut volume = 0.0;
@@ -1193,6 +1216,18 @@ pub(crate) fn take_over(number: i64) -> Option<Solid> {
 }
 
 impl FaceRef<'_> {
+    /// How far `point` is from the face, within its outline, in mm, by the kernel's own closest point.
+    pub(crate) fn distance_to(&self, point: Vec3) -> Result<f64> {
+        let _kernel = held();
+        let (mut closest, mut distance) = (point, 0.0);
+        // SAFETY: the face belongs to a solid that is borrowed for as long as `self` lives, so it is live; the call
+        // does not change the face.
+        check("face distance", unsafe {
+            ffi::SmApiFaceClosestPoint(self.ptr.as_ptr(), &point, &mut closest, &mut distance)
+        })?;
+        Ok(distance)
+    }
+
     /// Whether the kernel's own test finds the face's surface within `mm` of one plane.
     pub(crate) fn flat_within(&self, mm: f64) -> bool {
         let _kernel = held();
