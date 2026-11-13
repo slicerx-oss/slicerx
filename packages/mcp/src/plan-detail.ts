@@ -5,9 +5,9 @@
 // ("detailed", "accurate"). The rules hold to the object, never to one kind of thing: each main body says whether the
 // real thing is curved or flat-sided, a curved body is built through smooth sections (a loft, a revolve or a sweep),
 // the proportions come from a lookup or a stated source, and a real object's repeated detail (windows,
-// slats, vents) gets a pass by pattern. A flat-sided object (a house, a bookshelf) needs no loft. Each feature says its
-// color as the real thing is painted, a body painted in two colors is split at its line, and a plan has enough features
-// for its level, its length and its repeated details. design.plan on the mimir tab's card refuses a display or fine plan
+// slats, vents) gets a pass by pattern. A flat-sided object (a house, a bookshelf) needs no loft. A part is planned in
+// one default filament unless the person asks for color (in the request or a follow-up); then each feature says its
+// color, a body painted in two colors is split at its line, and a plan has enough features for its level, its length and its repeated details. design.plan on the mimir tab's card refuses a display or fine plan
 // that breaks them, in words that say what to plan instead. design.check then holds each curved body's sections to
 // change along its length in both directions across it (sectionsProblem), so one shape stretched along a length fails.
 import { z } from 'zod'
@@ -19,7 +19,7 @@ export type DetailLevel = (typeof DETAIL_LEVELS)[number]
 export const SECTIONS_FLOOR: Record<Exclude<DetailLevel, 'basic'>, number> = { display: 5, fine: 8 }
 
 /**
- * The fewest features a plan at each level has: its main bodies, a feature for each color band, the parts above them
+ * The fewest features a plan at each level has: its main bodies, a feature for each color band when color is asked for, the parts above them
  * and a pass for each repeated detail. Fewer reads as a block with a few parts on it, not the real thing.
  */
 export const FEATURES_FLOOR: Record<Exclude<DetailLevel, 'basic'>, number> = { display: 8, fine: 12 }
@@ -59,7 +59,7 @@ export const planDetailFields = {
   colors: z
     .record(text(60), text(40))
     .optional()
-    .describe('Display and fine: each feature\'s color as the real thing is painted, by feature name, such as {"Lower body": "red"}. A body the real thing paints in two or more colors is built in its lightest large color, and each darker band (a stripe, a trim line) is its own feature with its color here and its heights as sizes, painted on by height'),
+    .describe('Only when the person asks for color, in the request or a follow-up: each feature\'s color, by feature name, such as {"Lower body": "red"}. A body painted in two or more colors is built in its lightest large color, and each darker band (a stripe, a trim line) is its own feature with its color here and its heights as sizes, painted on by height. Left out, the part prints in one default filament'),
   scale: z
     .union([z.number().positive(), z.string().trim().regex(/^(1\s*:\s*)?\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
     .optional()
@@ -178,10 +178,10 @@ export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: stri
   }
   const least = featuresFloor(plan, level)
   if (plan.features.length < least.count)
-    problems.push(`features: a ${name} plan of this object has at least ${least.count} features (${least.why}); this one has ${plan.features.length}. Add the real thing's parts you left out: each color band as its own feature, the parts that stand on the main body, and its smaller details, each repeated one built once and patterned`)
+    problems.push(`features: a ${name} plan of this object has at least ${least.count} features (${least.why}); this one has ${plan.features.length}. Add the real thing's parts you left out: ${Object.keys(plan.colors ?? {}).length ? 'each color band as its own feature, ' : ''}the parts that stand on the main body, and its smaller details, each repeated one built once and patterned`)
   const colors = Object.entries(plan.colors ?? {})
-  if (!colors.length) problems.push(`colors: give each feature's color as the real thing is painted, such as {"Lower body": "red"}; a body painted in two or more colors is built in its lightest large color with each darker band its own feature, its heights as sizes`)
-  else {
+  // a part is one default filament until the person asks for color; colors given are held to the color rules
+  if (colors.length) {
     const colored = new Set<string>()
     for (const [name, color] of colors) {
       const f = feature(name)
@@ -335,7 +335,7 @@ export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, lev
  * lines in the plan tool's description and in each refusal, never a recipe for one object.
  */
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a top line rising toward the ends, a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. A body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built; a band a person sees from the whole-model view is a real share of the side, not a sliver. Faces that read as their own surface from above (a flat top, a roof, a floor) may take their own color, painted by direction top, so the top view has contrast. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Where the real thing is one continuous body along most of its length, its levels are continuous too, each stepped in from the one below, and the parts standing on it stand on its top level. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. An upright the real thing leans (a chimney, a table leg, a lamp post) gives its lean in degrees as a size named rake; a tapered or raked round part is a loft between two ellipses, offset for the rake, then arrayed, its cap or band leaning with it. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, at their real count, color and lean, with the detail its size can carry: a repeated detail the scale leaves at least two nozzle widths wide is built in rows on every side that has it (a row on a curved side follows the side), and anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror'
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a top line rising toward the ends, a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built; a band a person sees from the whole-model view is a real share of the side, not a sliver. Faces that read as their own surface from above (a flat top, a roof, a floor) may then take their own color, painted by direction top, so the top view has contrast. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Where the real thing is one continuous body along most of its length, its levels are continuous too, each stepped in from the one below, and the parts standing on it stand on its top level. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. An upright the real thing leans (a chimney, a table leg, a lamp post) gives its lean in degrees as a size named rake; a tapered or raked round part is a loft between two ellipses, offset for the rake, then arrayed, its cap or band leaning with it. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, at their real count and lean (and color, when the person asks for it), with the detail its size can carry: a repeated detail the scale leaves at least two nozzle widths wide is built in rows on every side that has it (a row on a curved side follows the side), and anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror'
 
 /** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
 export interface LoftSections {
