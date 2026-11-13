@@ -798,7 +798,7 @@ async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[
       if (!below || !above) throw new Broken('The plane no longer crosses the part.')
       if (p.keep === 'below') out[s.part] = next(part, below, dropped)
       else if (p.keep === 'above') out[s.part] = next(part, above, dropped)
-      else out.splice(s.part, 1, next(part, below, dropped), { ...next(part, above, dropped), name: `${part.name} top` })
+      else out.splice(s.part, 1, next(part, below, dropped), { ...next(part, above, dropped), name: p.name ?? `${part.name} top` })
       return out
     }
     case 'split': {

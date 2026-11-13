@@ -23,6 +23,17 @@ describe('a step that sets a part\'s filament', () => {
   })
 })
 
+describe('a cut that names its upper piece', () => {
+  it('comes back from the project file with its name, an old cut as before, and one whose name is not text is dropped', () => {
+    const plane = { point: [0, 0, 2], normal: [0, 0, 1] }
+    const named = { op: 'plane.cut', plane, keep: 'both', name: 'Upper hull' } as StepParams
+    expect(roundTrip(named)?.steps[0]?.params).toEqual(named)
+    const old = { op: 'plane.cut', plane, keep: 'both' } as StepParams
+    expect(roundTrip(old)?.steps[0]?.params).toEqual(old)
+    for (const name of [3, '', 'x'.repeat(121)]) expect(roundTrip({ op: 'plane.cut', plane, keep: 'both', name } as unknown as StepParams), String(name).slice(0, 8)).toBeUndefined()
+  })
+})
+
 function roundTrip(params: StepParams): History | undefined {
   const history: History = { version: 1, base: [boxMesh(10, 10, 5)], steps: [{ id: 's1', part: 0, transform: T, params }] }
   const files = new Map(historyFiles([{ id: 'o1', history }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))

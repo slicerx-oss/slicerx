@@ -181,7 +181,7 @@ function paramsOk(p: Record<string, unknown>): boolean {
     case 'boolean':
       return ['union', 'difference', 'intersection'].includes(p['kind'] as string) && Array.isArray(p['with']) && p['with'].length > 0 && p['with'].length <= 64 && p['with'].every((k) => Number.isInteger(k) && (k as number) >= 0)
     case 'plane.cut':
-      return planeOk(p['plane']) && ['both', 'below', 'above'].includes(p['keep'] as string)
+      return planeOk(p['plane']) && ['both', 'below', 'above'].includes(p['keep'] as string) && (p['name'] === undefined || (typeof p['name'] === 'string' && p['name'].length >= 1 && p['name'].length <= 120))
     case 'split':
       return vec3(p['buildVolumeMm']) && (p['buildVolumeMm'] as number[]).every((n) => n > 0) && (p['marginMm'] === undefined || isNum(p['marginMm']))
     case 'mirror':

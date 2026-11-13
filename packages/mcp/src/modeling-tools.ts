@@ -100,28 +100,34 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
     return { point: pl.point, normal: pl.normal }
   }
 
+  const cutInput = z.object({
+    model: modelOpt,
+    design: designArg.optional(),
+    feature: featureArg,
+    part: z.number().int().min(0).optional().describe('With a design: the part to cut, from 0 (default 0)'),
+    keep: z.enum(['both', 'below', 'above']).default('both').describe('With a design: which pieces to keep'),
+    name: z.string().min(1).max(120).optional().describe("With a design and keep both: the name of the upper piece; default the part's name and top"),
+    plane,
+    connector: connector.optional(),
+  })
+
   const cut = defineTool({
     name: 'geom.cut',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
       'Cut a model or a design part with a plane into a lower and an upper piece with flat caps. With "design" it adds a step: keep both (the upper piece becomes a new part after it), or only the one below or above the plane. With a model it can add pin, dowel or dovetail connectors and writes two STL files.',
-    input: z.object({
-      model: modelOpt,
-      design: designArg.optional(),
-      feature: featureArg,
-      part: z.number().int().min(0).optional().describe('With a design: the part to cut, from 0 (default 0)'),
-      keep: z.enum(['both', 'below', 'above']).default('both').describe('With a design: which pieces to keep'),
-      plane,
-      connector: connector.optional(),
-    }),
+    input: cutInput,
+    // a local model's form leaves out the upper piece's name, so its text costs a local model nothing
+    localInput: cutInput.omit({ name: true }),
     async run(i) {
       designOrModel(i)
       if (i.design) {
         if (i.connector) throw new ToolInputError('connector: a design cut has no connectors yet; cut the saved STL, or leave connector out', 'not_supported')
+        if (i.name !== undefined && i.keep !== 'both') throw new ToolInputError('name: only a cut that keeps both pieces makes a new part; leave name out')
         const [ds, d] = designOf(i.design)
-        await ds.add(d, i.part ?? 0, { op: 'plane.cut', plane: planeOf(i.plane), keep: i.keep }, undefined, withFeature(i.feature))
+        await ds.add(d, i.part ?? 0, { op: 'plane.cut', plane: planeOf(i.plane), keep: i.keep, ...(i.name !== undefined ? { name: i.name } : {}) }, undefined, withFeature(i.feature))
         return added(d, 'Cut')
       }
       const out = await call('cut', { mesh: await meshOut(i.model!), plane: i.plane, options: i.connector ? { connector: i.connector } : {} })

@@ -120,7 +120,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_geom_build` | 1.6.0 |  |  | slice | Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. |
 | `slicerx_geom_calibration_model` | 1.0.0 |  |  | slice | Generate a calibration print: temperature tower, flow pads, pressure advance, retraction, max volumetric speed, tolerance plate, shrinkage L, or the feature piece (a small print with a bridge, an overhang, a thin wall, a hole and text). |
 | `slicerx_geom_chamfer` | 1.6.0 |  |  | slice | Bevel straight edges on a flat face, along rounds too (a rounded rectangle's outline, a cone's base rim), set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). |
-| `slicerx_geom_cut` | 1.3.0 |  |  | slice | Cut a model or a design part with a plane into a lower and an upper piece with flat caps. |
+| `slicerx_geom_cut` | 1.4.0 |  |  | slice | Cut a model or a design part with a plane into a lower and an upper piece with flat caps. |
 | `slicerx_geom_edge_pick` | 2.0.0 |  |  | read | Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face's normal. |
 | `slicerx_geom_emboss` | 1.4.0 |  |  | slice | Raise (emboss) or cut in (deboss) text on a face of the model. |
 | `slicerx_geom_extrude` | 1.12.0 |  |  | slice | Extrude a shape on the bed, a plane or a picked face as a new body, joined to a target or cut from it: with "design" a step (join and cut work on "part"), with a model an STL with volume, bounds and watertightness. |
