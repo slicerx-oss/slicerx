@@ -47,6 +47,8 @@ const BY_NAME: Record<string, Toolset> = {
   // a rail along a design's line or edge is asked for by name ("add a railing"), so it loads on those words rather than
   // taking a place in every capped request beside the rest of the design tools
   'geom.rail': 'cad_more',
+  // so is setting the filament a part already made prints with ("make the hull red", PART_FILAMENT_WORDS)
+  'design.part_filament': 'cad_more',
   // painting a design in filaments goes with the project's filament tools (project.add_filament and set_filament)
   'paint.preview': 'project',
   'paint.apply': 'project',
@@ -108,6 +110,13 @@ export function toolsetOf(tool: SetTool): Toolset {
  */
 export const RAIL_WORDS = /\b(?:(?:hand)?rail(?:ing)?s?|guardrails?(?!\s+(?:of|for)\b)|fences?|balustrades?|banisters?)\b/i
 
+/**
+ * Words that put a part already made in a filament: "make the hull red", "the lower hull in filament 3". A filament
+ * profile ask ("which filament", "load filament", PLA or PETG) is not one; it stays with the project and settings.
+ */
+export const PART_FILAMENT_WORDS =
+  /\b(?:(?:make|turn|paint|colou?r|set)\s+(?:the|its|that|this|it)\b(?:\s+[\w-]+){0,3}?\s+(?:in\s+)?(?:red|orange|yellow|green|blue|purple|pink|black|white|gr[ae]y|brown|silver|gold)\b(?!\s+(?:pla|petg|abs|asa|tpu|nylon|filament|spool)\b)|(?:in|to|with)\s+filament\s*#?\d+\b)/i
+
 /** Words in a request that say which toolsets it needs. */
 const NEEDS: readonly [Toolset, RegExp][] = [
   ['cad', /\b(design|model|part|sketch|extrude|fillet|chamfer|hole|bracket|hook|box|lid|gear|thread|build|make|draw|cad)\w*/i],
@@ -119,6 +128,7 @@ const NEEDS: readonly [Toolset, RegExp][] = [
   ['kb', /\b(why|how|which|recommend|best|troubleshoot|problem|issue|string|warp|clog|look up|source|material)\w*/i],
   ['mesh', /\b(mesh|repair|hollow|emboss|cut|split|paint|color|colour)\w*/i],
   ['cad_more', RAIL_WORDS],
+  ['cad_more', PART_FILAMENT_WORDS],
   ['calibration', /\bcalibrat\w*/i],
   ['fleets', /\b(fleet|farm|schedule|overnight|tonight)\w*/i],
   ['theme', /\b(theme|look|dark mode|light mode)\b/i],
@@ -332,7 +342,7 @@ export const TOOLSET_WORDS: Record<Exclude<Toolset, 'core'>, string> = {
   project: 'the project, its plates and files',
   kb: 'the knowledge base and lookups',
   mesh: 'plate mesh edits: cut, hollow, emboss, repair, paint',
-  cad_more: 'more design tools: a rail of posts and a top bar along a line or a face edge',
+  cad_more: 'more design tools: a rail of posts and a top bar along a line or a face edge, and the filament an existing part prints with',
   calibration: 'calibration prints',
   fleets: 'fleets and schedules',
   skills: 'connected apps and other skills',

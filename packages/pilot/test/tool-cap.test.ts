@@ -252,6 +252,13 @@ describe('toolsets', () => {
     // a handrail or a guardrail is a rail too, but not a guardrail for something, a limit
     for (const ask of ['add a handrail up the stairs', 'Handrails on both sides', 'put a guardrail along the deck edge', 'guardrails round the balcony']) expect(turnNeeds(ask).has('cad_more')).toBe(true)
     for (const ask of ['what guardrails for the AI are there?', 'a railway bridge model', 'derail the plan']) expect(turnNeeds(ask).has('cad_more')).toBe(false)
+    // setting the filament a part already made prints with loads on part-coloring words, never on a filament profile ask
+    expect(toolsetOf(t('design.part_filament'))).toBe('cad_more')
+    for (const ask of ['make the hull red', 'Put the lower hull in filament 3', 'paint the funnel black', 'set the strake to filament 2', 'make it blue', 'turn the deck white'])
+      expect(turnNeeds(ask).has('cad_more'), ask).toBe(true)
+    for (const ask of ['which filament should I use?', 'load filament 2', 'switch to PLA', 'is PETG better for this?', 'use set_filament on slot 2', 'add a red filament', 'make a red box', 'what filament is in slot 3?', 'Print it on Printer 2 in green PLA', 'make the hull in green PETG'])
+      expect(turnNeeds(ask).has('cad_more'), ask).toBe(false)
+    for (const ask of ['which filament should I use?', 'load filament 2']) expect(turnNeeds(ask).has('settings'), ask).toBe(true)
     // painting a design in filaments goes with the project's filament tools
     for (const n of ['paint.preview', 'paint.apply', 'paint.regions', 'project.add_filament']) expect(toolsetOf(t(n))).toBe('project')
     expect(toolsetOf(t('kb.filament'))).toBe('kb')

@@ -68,6 +68,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
   'design.edit_step': { tokens: 272, description: true, fields: ['design', 'feature', 'label', 'step', 'value'] },
   'design.list': { tokens: 44, description: true },
   'design.new': { tokens: 163, fields: ['exact', 'from'] },
+  'design.part_filament': { tokens: 110, description: true, fields: ['design'] },
   'design.plan': { tokens: 514, fields: ['holes[].count', 'printInPlace'] },
   'design.redo': { tokens: 75, description: true, fields: ['design'] },
   'design.roll': { tokens: 128, description: true, fields: ['marker'] },

@@ -35,6 +35,8 @@ export function stepIcon(p: StepParams): IconName {
       return 'box-shape'
     case 'parts.order':
       return 'list'
+    case 'parts.slot':
+      return 'spool'
     case 'edge.fillet':
     case 'edge.chamfer':
       return 'fillet-edge'

@@ -9,7 +9,7 @@ import { readTilt } from './tilt'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC, SKETCH_ANCHORS } from './file'
 import { MAX_STEPS_REPEATED, stepPatternProblem, type StepPattern } from './pattern'
 import { idNumber, MAX_PROJECTION, type Projection, type ProjectSource } from './project'
-import { followField, keepsArrayOf, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
+import { followField, keepsArrayOf, MAX_PART_SLOT, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
 const MAX_TRIANGLES = 20_000_000
@@ -164,6 +164,8 @@ function paramsOk(p: Record<string, unknown>): boolean {
       return typeof p['label'] === 'string'
     case 'parts.order':
       return isOrder(p['order'])
+    case 'parts.slot':
+      return Number.isInteger(p['slot']) && (p['slot'] as number) >= 1 && (p['slot'] as number) <= MAX_PART_SLOT && typeof p['name'] === 'string'
     case 'edge.fillet':
       return edgesOk(p['edges']) && isNum(p['radiusMm'])
     case 'edge.chamfer':

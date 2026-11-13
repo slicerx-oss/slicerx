@@ -103,6 +103,7 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string?]>> = {
   pattern: ['model', 'Pattern'],
   'parts.add': ['model', 'Add parts'],
   'parts.order': ['model', 'Reorder parts'],
+  'parts.slot': ['model', 'Part filament'],
   'brep.box': ['model', 'Solid shape'],
   'brep.cylinder': ['model', 'Solid shape'],
   'brep.primitive': ['model', 'Solid shape'],
