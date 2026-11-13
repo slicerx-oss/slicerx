@@ -64,6 +64,7 @@ describe('a row of cuts along a curved side', () => {
     const { ok, d, pod, one } = await slitPod()
     expect(one).toBeGreaterThan(2)
     const row = await ok('slicerx_geom_array', { design: d, steps: ['slit'], spec: { kind: 'linear', count: 5, step: [15, 0, 0], onSurface: true } })
+    expect((row as { copies?: unknown }).copies).toEqual({ total: 5, kept: 5, missed: [] })
     const taken = pod - row.volumeMm3
     // five slits, each within a fifth of the first one's volume on average
     expect(taken / 5).toBeGreaterThan(one * 0.8)

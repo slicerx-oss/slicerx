@@ -87,6 +87,7 @@ describe('repeating steps as one step', () => {
     await ok('slicerx_geom_extrude', { design: d, part: 0, shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, frame: { origin: [25, 0, 30], normal: [0, 0, 1] }, distance_mm: 20, operation: 'cut' })
     const both = await ok('slicerx_geom_mirror', { design: d, steps: [2], plane: { axis: 'x', at: 0 } })
     expect(both.parts).toHaveLength(1)
+    expect((both as Summary & { copies?: unknown }).copies).toEqual({ total: 2, kept: 2, missed: [] })
     expect(both.sizeMm[0]).toBeCloseTo(80, 3)
     expect(both.volumeMm3).toBeCloseTo(80 * 40 * 30 - 2 * 8000, 1)
     expect((await steps(d))[2]).toMatchObject({ op: 'pattern', name: 'Mirror of 1 step', state: 'done' })
@@ -125,6 +126,8 @@ describe('repeating steps as one step', () => {
     const off = await h.call('slicerx_geom_array', { design: d, steps: [2], spec: { kind: 'linear', count: 4, step: [20, 0, 0] } })
     expect(off.isError, text(off)).toBeFalsy()
     expect(text(off)).toMatch(/Copy 4 did not reach the part and was left out/)
+    // and as data, numbered as the note numbers them
+    expect(data<{ output: { copies: unknown } }>(off).output.copies).toEqual({ total: 4, kept: 3, missed: [4] })
     const rows = await steps(d)
     expect(rows.map((r) => r.op)).toEqual(['shape.extrude', 'shape.extrude', 'pattern'])
     expect(rows[2]).toMatchObject({ state: 'done', note: 'Copy 4 did not reach the part and was left out.' })

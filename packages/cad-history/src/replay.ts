@@ -7,7 +7,7 @@
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, FaceFrame, MovedFace, Vec3 } from './types'
 import { withTilt } from './tilt'
-import { IDENTITY, bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type LoftProfile, type Mat4, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
+import { IDENTITY, bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type LoftProfile, type Mat4, type PaintTexts, type PatternCopies, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
@@ -117,6 +117,7 @@ interface Learned {
   moved: Record<string, MovedFace>
   keys: Found['keys']
   notes: Found['notes']
+  copies: Found['copies']
   /** Per step with face or edge keys: the keys it ran with and the keys it has once the app saves what it found. */
   ran: Record<string, [string, string]>
 }
@@ -154,7 +155,7 @@ function hold(parts: readonly Flat[], by: 1 | -1): void {
 
 function remember(key: string, parts: Flat[], learned: { gone: ReadonlySet<string>; moved: Record<string, MovedFace>; found: Found; ran: Learned['ran'] }): void {
   if (cache.has(key)) return
-  learnedAt.set(key, { gone: [...learned.gone], moved: { ...learned.moved }, keys: { ...learned.found.keys }, notes: { ...learned.found.notes }, ran: { ...learned.ran } })
+  learnedAt.set(key, { gone: [...learned.gone], moved: { ...learned.moved }, keys: { ...learned.found.keys }, notes: { ...learned.found.notes }, copies: { ...learned.found.copies }, ran: { ...learned.ran } })
   cache.set(key, parts)
   hold(parts, 1)
   cachedNumbers += sizeOf(parts)
@@ -304,6 +305,8 @@ function keptEdges<E>(s: Step, edges: readonly E[], gone: ReadonlySet<string>): 
 interface Found {
   keys: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
   notes: Record<string, string>
+  /** Per pattern of steps, which copies landed (StepStatus.copies). */
+  copies: Record<string, PatternCopies>
   /** Steps the exact kernel failed on this replay, which ran on the mesh. */
   fellBack: string[]
 }
@@ -613,6 +616,13 @@ function copyParams(p: StepParams): StepParams {
   return { ...q, target }
 }
 
+/** A step that went through: its note and, for a pattern of steps, which copies landed. */
+function doneStatus(found: Found, id: string): StepStatus {
+  const note = found.notes[id]
+  const copies = found.copies[id]
+  return { state: 'done', ...(note ? { note } : {}), ...(copies ? { copies } : {}) }
+}
+
 /**
  * A pattern step: the steps it repeats (from `earlier`, the steps before it) run again for each copy, at their
  * transform moved by the copy's move, so each lands where the copy is, with no value of theirs rewritten. Copies get
@@ -706,6 +716,8 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
   }
   const landed = copiesLanded(moves.map((_, k) => k + 2), left, inCopy)
   if (landed.broken) throw new Missed(landed.broken)
+  // which copies landed, as data, from the same reckoning the note words; an inner pattern's are its outer copy's
+  if (inCopy === undefined) found.copies[s.id] = { total: moves.length + 1, kept: moves.length + 1 - landed.missed.length, missed: landed.missed }
   if (landed.note) notes.unshift(landed.note)
   if (notes.length) found.notes[s.id] = notes.join(' ')
   return out
@@ -820,7 +832,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   const steps = history.steps
   const status: StepStatus[] = steps.map((s) => (s.suppressed ? { state: 'suppressed' } : { state: 'skipped' }))
   const moved: Record<string, MovedFace> = {}
-  const found: Found = { keys: {}, notes: {}, fellBack: [] }
+  const found: Found = { keys: {}, notes: {}, copies: {}, fellBack: [] }
   // Pushes whose face went through the part.
   let gone = new Set<string>()
   // Keys after each step; a step's key covers everything that can change its result. The face and edge keys a replay
@@ -863,17 +875,17 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       Object.assign(moved, learned?.moved)
       Object.assign(found.keys, learned?.keys)
       Object.assign(found.notes, learned?.notes)
+      Object.assign(found.copies, learned?.copies)
       Object.assign(ran, learned?.ran)
       break
     }
   }
-  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, fellBack: [] }, ran: {} })
+  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, copies: {}, fellBack: [] }, ran: {} })
   const fonts = req.fonts ?? {}
   let before: Flat[] | undefined = req.before === 0 ? history.base.map(flat) : req.before !== undefined && req.before <= start && req.before > 0 ? known(req.before - 1) : undefined
   for (let i = 0; i < start; i++) {
     if (steps[i]!.suppressed) continue
-    const note = found.notes[steps[i]!.id]
-    status[i] = note ? { state: 'done', note } : { state: 'done' }
+    status[i] = doneStatus(found, steps[i]!.id)
   }
   for (let i = start; i < effective.length; i++) {
     if (req.before === i) before = parts
@@ -885,8 +897,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
     if (o.yieldStep) await o.yieldStep(s)
     try {
       parts = s.params.op === 'pattern' ? await patternStep(call, s, effective.slice(0, i), parts, fonts, moved, gone, found, req.exact, solids, !!history.exact) : await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
-      const note = found.notes[s.id]
-      status[i] = note ? { state: 'done', note } : { state: 'done' }
+      status[i] = doneStatus(found, s.id)
       const had = keysOf(s.params)
       if (had) ran[s.id] = [had, keysOf(withFound(s.params, found.keys[s.id]))]
       remember(keys[i]!, parts, { gone, moved, found, ran })
