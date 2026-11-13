@@ -323,7 +323,7 @@ describe('paint on an exact part, kept by face', () => {
     expect(r.parts[0]!.paint).toEqual({ color: { 0: '2' } })
   })
 
-  it('paints both faces a join gives one key for now, until a joined result keys each face once', async () => {
+  it('paints both faces a join gives one key, provisionally, until a joined result reads back with one key per face', async () => {
     // two boxes made for the same join have the same keys; the union keeps one face of each with the same key
     const e = engine()
     const call = async (op: string, req: unknown) => (op === 'paint.select' ? { changed: { '1': '2' } } : e.call(op, req))
