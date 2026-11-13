@@ -89,6 +89,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     }
   return {
     size: bounds(world),
+    ...(world.some((m) => m.indices.length) ? { reach: reach(world, d.parts.map((p) => p.name)) } : {}),
     holes: sameHoles(holes).map((h) => ({ diameterMm: h.diameterMm })),
     features: shaping.length,
     steps: shaping.map((s) => stepName(s)),
@@ -191,6 +192,29 @@ function bounds(meshes: readonly Mesh[]): BodyFacts['size'] {
 function wallPart(name: string | undefined, parts: number): { part?: string } {
   const part = partNamed(name, parts)
   return part ? { part } : {}
+}
+
+/**
+ * Where the body reaches furthest each way along each axis: a corner at each end and the part it is on, when it is
+ * named (partNamed), so a design of several parts says which part sets the size.
+ */
+function reach(meshes: readonly Mesh[], names: readonly string[]): NonNullable<BodyFacts['reach']> {
+  const lo: { v: number; at: V3; part: number }[] = [0, 1, 2].map(() => ({ v: Infinity, at: [0, 0, 0] as V3, part: -1 }))
+  const hi: { v: number; at: V3; part: number }[] = [0, 1, 2].map(() => ({ v: -Infinity, at: [0, 0, 0] as V3, part: -1 }))
+  for (const [p, m] of meshes.entries())
+    for (let j = 0; j < m.indices.length; j++) {
+      const v = vertex(m, m.indices[j] ?? 0)
+      for (let k = 0; k < 3; k++) {
+        if (v[k]! < lo[k]!.v) lo[k] = { v: v[k]!, at: [v[0]!, v[1]!, v[2]!], part: p }
+        if (v[k]! > hi[k]!.v) hi[k] = { v: v[k]!, at: [v[0]!, v[1]!, v[2]!], part: p }
+      }
+    }
+  const end = (e: { at: V3; part: number }) => {
+    const part = partNamed(names[e.part], meshes.length)
+    return { at: e.at.map((x) => Math.round(x * 100) / 100) as V3, ...(part ? { part } : {}) }
+  }
+  const axis = (k: number) => ({ lo: end(lo[k]!), hi: end(hi[k]!) })
+  return { x: axis(0), y: axis(1), z: axis(2) }
 }
 
 /** Two readings on one axis are one hole when their diameters agree within this, or this share of the narrower. */
