@@ -71,6 +71,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
   'design.part_filament': { tokens: 110, description: true, fields: ['design'] },
   'design.plan': { tokens: 514, fields: ['holes[].count', 'printInPlace'] },
   'design.redo': { tokens: 75, description: true, fields: ['design'] },
+  'design.rename_part': { tokens: 97, description: true, fields: ['design'] },
   'design.roll': { tokens: 128, description: true, fields: ['marker'] },
   'design.sketch': { tokens: 568, description: true, fields: ['constraints[]', 'design', 'frame', 'loops'] },
   'design.sketch_project': { tokens: 710, description: true, fields: [

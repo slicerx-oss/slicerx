@@ -442,6 +442,51 @@ test.describe('the Objects card', () => {
     }
   })
 
+  test("a part's name changes in place: double-click, F2 or Rename in its menu, a name another part has is refused, and Undo takes it back", async ({ page }) => {
+    await sidebarAs(page, { mode: 'simple' })
+    try {
+      const row = rows(page).first()
+      await row.getByTestId('slice-object-expand').click()
+      const names = () => row.getByTestId('slice-object-part').allTextContents()
+      await expect(row.getByTestId('object-part-row')).toHaveCount(2)
+      const [first, second] = await names()
+      const field = row.getByTestId('object-part-rename')
+      // Double-click the name, type a new one, Enter.
+      await row.getByTestId('slice-object-part').nth(1).dblclick()
+      await expect(field).toBeFocused()
+      await field.fill('  Lid  ')
+      await field.press('Enter')
+      await expect.poll(names).toEqual([first, 'Lid'])
+      // F2 on the name, then Escape: nothing changes.
+      await row.getByTestId('slice-object-part').nth(0).focus()
+      await page.keyboard.press('F2')
+      await field.fill('Base')
+      await field.press('Escape')
+      await expect(field).toHaveCount(0)
+      expect(await names()).toEqual([first, 'Lid'])
+      // From the part's menu, a name the other part has: refused in words, and the name stays.
+      await row.getByTestId('object-part-more').nth(0).click()
+      await page.getByRole('menu', { name: 'Part' }).getByRole('menuitem', { name: 'Rename' }).click()
+      await field.fill('lid')
+      await field.press('Enter')
+      await expect(page.getByText('Part 1 is already called Lid; give this one a name no other part has.')).toBeVisible()
+      expect(await names()).toEqual([first, 'Lid'])
+      // Then a plain new name from the menu.
+      await row.getByTestId('object-part-more').nth(0).click()
+      await page.getByRole('menu', { name: 'Part' }).getByRole('menuitem', { name: 'Rename' }).click()
+      await field.fill('Base')
+      await field.press('Enter')
+      await expect.poll(names).toEqual(['Base', 'Lid'])
+      // Each rename was one undo step.
+      for (const want of [[first, 'Lid'], [first, second]]) {
+        await page.getByRole('button', { name: 'Undo' }).first().click()
+        await expect.poll(names).toEqual(want)
+      }
+    } finally {
+      await sidebarDone(page)
+    }
+  })
+
   test('a volume shows in the tree with its role', async ({ page }) => {
     await sidebarAs(page, { mode: 'advanced' })
     await page.locator('[data-section="volumes"]').getByRole('button', { name: 'Add' }).click()

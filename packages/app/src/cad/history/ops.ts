@@ -25,6 +25,7 @@ import { toolError } from '../op-preview'
 import { stepNumber } from './step-number'
 import { followBodies } from '../project-sketch'
 import { overridesAfterSlotSteps, withSlotOverrides } from './slot-steps'
+import { renamedParts, renamedScope, withRenamedParts } from '../../plate/part-renames'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -148,11 +149,17 @@ export async function applyHistory(host: Loader, objectId: string, next: History
       // the landing moves are the object's as it is now (a landing elsewhere may have moved it while this ran), plus
       // this commit's own
       const placed = moved ? moved.placed : latest.history?.placed
+      // a part renamed (a parts.name step, or one undone) takes its filament choice and settings to its new name
+      const keyed = withRenamedParts(latest, renamedParts(latest.parts.map((p) => p.name), parts.map((p) => p.name)))
       // a step that sets a part's filament clears the plate's own for it, and undoing one puts that back (slot-steps.ts)
-      const own = overridesAfterSlotSteps(latest, latest.history, history, parts.map((p) => p.name))
-      return { handle, parts, history: withPlaced(history, placed), colors: partColors(withSlotOverrides(latest, own), parts, history, brandAccent()), ...(own ? { slotOverrides: own } : {}), ...(paint ? { paint } : {}), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
+      const own = overridesAfterSlotSteps(keyed, latest.history, history, parts.map((p) => p.name)) ?? (keyed !== latest ? (keyed.slotOverrides ?? {}) : null)
+      return { handle, parts, history: withPlaced(history, placed), colors: partColors(withSlotOverrides(keyed, own), parts, history, brandAccent()), ...(own ? { slotOverrides: own } : {}), ...(keyed !== latest && keyed.partSettings ? { partSettings: keyed.partSettings } : {}), ...(paint ? { paint } : {}), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
     }, { exactReplay: next.exact === true })
+    const before = now.parts.map((p) => p.name)
     if (!(step ? step.write(write) : write())) throw abortError()
+    // the part picked for settings follows its rename
+    const scope = renamedScope(get().scopePart, objectId, renamedParts(before, parts.map((p) => p.name)))
+    if (scope !== get().scopePart) set({ scopePart: scope })
     committed?.(r.status)
     markStale()
     // sketches that project from this body find it again, and the bodies drawn on them follow

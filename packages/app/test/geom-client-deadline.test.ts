@@ -381,6 +381,7 @@ describe('a geometry call past its time limit', () => {
       'parts.add': 'model',
       'parts.order': 'model',
       'parts.slot': 'model',
+      'parts.name': 'model',
       pattern: 'model',
       'plane.cut': 'mesh',
       repair: 'mesh',

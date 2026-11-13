@@ -77,6 +77,8 @@ export type StepParams =
   | { op: 'parts.order'; order: number[] }
   /** The part prints in filament `slot` (from 1) from here on, its shape as it is; `name` is the part's when the step was made. */
   | { op: 'parts.slot'; slot: number; name: string }
+  /** The part is called `name` from here on, its shape as it is; `was` is its name when the step was made. */
+  | { op: 'parts.name'; name: string; was: string }
   | { op: 'edge.fillet'; edges: EdgeRef[]; radiusMm: number; toleranceMm?: number; allOrNothing?: boolean; skipped?: number[] }
   | { op: 'edge.chamfer'; edges: EdgeRef[]; distanceMm: number; distance2Mm?: number; allOrNothing?: boolean; skipped?: number[] }
   | { op: 'hole.apply'; hole: Hole; spec: HoleSpec; label: string }
@@ -271,6 +273,27 @@ export const keepsArrayOf = (name: unknown): name is string => typeof name === '
 
 /** The highest filament slot a part may print in, as the tools that make and set parts take it. */
 export const MAX_PART_SLOT = 32
+
+/** The longest name a part may be given, as the project file keeps an array's part name (keepsArrayOf). */
+export const MAX_PART_NAME = 120
+
+/** A part name as a person or a tool gives it, plain: no space at either end, and each run of spaces, tabs or line breaks one space. */
+export const plainPartName = (name: string): string => name.replace(/\s+/g, ' ').trim()
+
+/**
+ * Why part `index` cannot be called `name` (taken plain), as a sentence that starts lower case for a tool's field to
+ * lead; null when it can. `names` are the parts' names now, by index. Another part with the name, in any case, is
+ * refused: two parts called alike cannot be told apart in a list, a plan's pieces or the per-part settings.
+ */
+export function partNameProblem(name: string, names: readonly string[], index: number): string | null {
+  const plain = plainPartName(name)
+  if (!plain) return 'give the part a name'
+  if (plain.length > MAX_PART_NAME) return `keep the name to ${MAX_PART_NAME} characters (this one has ${plain.length})`
+  const key = plain.toLowerCase()
+  const other = names.findIndex((n, i) => i !== index && plainPartName(n).toLowerCase() === key)
+  if (other >= 0) return `part ${other} is already called ${names[other]}; give this one a name no other part has`
+  return null
+}
 
 let seq = 0
 // the counter is decimal so every id holds a digit: tools and replays that pick ids out of text tell an id from a word by its digit
@@ -759,6 +782,8 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
       return 'Reorder parts'
     case 'parts.slot':
       return `Filament ${p.slot} for ${p.name}`
+    case 'parts.name':
+      return `Rename ${p.was} to ${p.name}`
     case 'edge.fillet':
       return `Fillet ${len(p.radiusMm)}${p.edges.length > 1 ? `, ${p.edges.length} edges` : ''}`
     case 'edge.chamfer':

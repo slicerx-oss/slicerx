@@ -48,7 +48,7 @@ import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type Tool
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
-import { capLine, capTools, LOAD_TOOLS_TOOL, loadFits, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnKind, turnNeeds, type StickyToolsets, type ToolCapReport, type TurnKind } from './toolsets'
+import { askedTools, capLine, capTools, LOAD_TOOLS_TOOL, loadFits, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnKind, turnNeeds, type StickyToolsets, type ToolCapReport, type TurnKind } from './toolsets'
 import { designMade, inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { clearanceProfileOf, GAP_ROW_KEYS, withGapRows } from '../skills/fit_check/clearance'
@@ -1453,7 +1453,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { message: toolMessage(plain ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${plain.hint}` } : out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
 
-  async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet, kind?: TurnKind, building = false): Promise<PilotEvent & { type: 'done'; capped?: true }> {
+  async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet, kind?: TurnKind, building = false, wordsAsk?: ReadonlySet<string>): Promise<PilotEvent & { type: 'done'; capped?: true }> {
     runPart.delete(sessionId)
     // this run's messages start here: an approved plan is read from them, or from the earlier run that approved it
     // when the person asks to go on with it (plan-left.ts)
@@ -1657,7 +1657,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           const covers = (r: NonNullable<StickyToolsets['lastPick']>): boolean => [...r.names].every((n) => turn.some((t) => t.name === n)) && (building || [...needs].every((s) => r.sets.includes(s) || !turn.some((t) => toolsetOf(t) === s)))
           const again: StickyToolsets['lastPick'] = reuse && !want.size && !strayCall && covers(reuse) ? reuse : undefined
           reuse = undefined
-          const got: { tools: AnyTool[]; sets: Toolset[]; report: ToolCapReport | null } = again ? { tools: turn.filter((t) => again.names.has(t.name)), sets: again.sets, report: again.report } : stickyCapTools(turn, { cap: client.maxTools, needs, called, protect, loaded, state: chatSets, ...(kind ? { kind } : {}) })
+          const got: { tools: AnyTool[]; sets: Toolset[]; report: ToolCapReport | null } = again ? { tools: turn.filter((t) => again.names.has(t.name)), sets: again.sets, report: again.report } : stickyCapTools(turn, { cap: client.maxTools, needs, called, protect, loaded, state: chatSets, ...(kind ? { kind } : {}), ...(wordsAsk ? { asked: wordsAsk } : {}) })
           chatSets.sets = got.sets
           pick = { names: new Set(got.tools.map((t) => t.name)), report: got.report }
           const sets = chatSets
@@ -2185,7 +2185,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           // what the turn is for on a capped cloud chat: its message's own needs, the tab, and a plan still being built
           const building = !local && planLeft(messages) !== null
           const kind = local ? undefined : turnKind(turnNeeds(message, { sliceToPrint: true }), { designs, building, ...(sticky.get(sessionId) ? { offer: sticky.get(sessionId)!.lastOffer } : {}) })
-          const { capped, ...end } = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context, sliceToPrint: !local }), startSet, kind, building)
+          const { capped, ...end } = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context, sliceToPrint: !local }), startSet, kind, building, askedTools(message))
           done = end
           // cut off at either limit (the call limit ends the run as denied) with the part begun: the next run may finish it
           if ((done.stopReason === 'max_steps' || capped) && usedSheet.has(sessionId)) cutShort.add(sessionId)

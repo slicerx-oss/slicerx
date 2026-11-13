@@ -34,6 +34,15 @@ describe('a cut that names its upper piece', () => {
   })
 })
 
+describe('a step that renames a part', () => {
+  it('comes back from the project file, and one with a name no part could have is dropped', () => {
+    const p = { op: 'parts.name', name: 'Decks', was: 'Hull top top' } as StepParams
+    expect(roundTrip(p)?.steps[0]?.params).toEqual(p)
+    for (const name of ['', ' Decks', 'Decks  top', 'x'.repeat(121), 3]) expect(roundTrip({ op: 'parts.name', name, was: 'Hull top top' } as unknown as StepParams), String(name)).toBeUndefined()
+    expect(roundTrip({ op: 'parts.name', name: 'Decks' } as unknown as StepParams)).toBeUndefined()
+  })
+})
+
 function roundTrip(params: StepParams): History | undefined {
   const history: History = { version: 1, base: [boxMesh(10, 10, 5)], steps: [{ id: 's1', part: 0, transform: T, params }] }
   const files = new Map(historyFiles([{ id: 'o1', history }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))

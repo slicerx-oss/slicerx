@@ -10,7 +10,7 @@ import { z } from 'zod'
 import { readFileSync } from 'node:fs'
 import { createPilot, createTransportClient, DEFAULT_CONFIG, defineTool, MIMIR_CLOUD_MAX_TOOLS, type PilotTool, type Toolset } from '../src/index'
 import { OPENAI_MAX_TOOLS } from '../src/provider/openai'
-import { capTools, TOOLSET_PRIORITY, toolsetOf, turnNeeds } from '../src/toolsets'
+import { askedTools, capTools, TOOLSET_PRIORITY, toolsetOf, turnNeeds } from '../src/toolsets'
 
 const tool = (name: string, toolset: Toolset): PilotTool<never> =>
   defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', toolset, input: z.object({}), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
@@ -259,6 +259,20 @@ describe('toolsets', () => {
     for (const ask of ['which filament should I use?', 'load filament 2', 'switch to PLA', 'is PETG better for this?', 'use set_filament on slot 2', 'add a red filament', 'make a red box', 'what filament is in slot 3?', 'Print it on Printer 2 in green PLA', 'make the hull in green PETG'])
       expect(turnNeeds(ask).has('cad_more'), ask).toBe(false)
     for (const ask of ['which filament should I use?', 'load filament 2']) expect(turnNeeds(ask).has('settings'), ask).toBe(true)
+    // renaming a part loads on rename words, and on calling a part something
+    expect(toolsetOf(t('design.rename_part'))).toBe('cad_more')
+    for (const ask of ['rename the hull top top to Decks', 'call that part the funnel', 'name this part Lid', 'Renaming that piece to Strake', 'name the lower piece Keel', 're-name the strake', 'rename it to Decks'])
+      expect(turnNeeds(ask).has('cad_more'), ask).toBe(true)
+    // each asks for its own tool only, so one ask never brings the other more design tools
+    expect([...askedTools('rename the hull top top to Decks')]).toEqual(['design.rename_part'])
+    expect([...askedTools('make the hull red')]).toEqual(['geom.rail', 'design.part_filament'])
+    expect([...askedTools('Add a railing all round the deck')]).toEqual(['geom.rail', 'design.part_filament'])
+    expect([...askedTools('rename the project')]).toEqual([])
+    // renaming the project or a file, or saving under a name, is not a part's rename
+    for (const ask of ['rename the project', 'rename this file to ship.3mf', 'save it as Titanic', 'Rename my project to Titanic', 'rename it to ship.3mf', 'rename the plate', 'rename this chat'])
+      expect(turnNeeds(ask).has('cad_more'), ask).toBe(false)
+    for (const ask of ['what is this part called?', 'make a name tag', 'call me when it is done', 'name a good filament for this', 'a part that holds a phone'])
+      expect(turnNeeds(ask).has('cad_more'), ask).toBe(false)
     // painting a design in filaments goes with the project's filament tools
     for (const n of ['paint.preview', 'paint.apply', 'paint.regions', 'project.add_filament']) expect(toolsetOf(t(n))).toBe('project')
     expect(toolsetOf(t('kb.filament'))).toBe('kb')

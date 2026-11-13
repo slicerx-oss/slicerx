@@ -49,6 +49,8 @@ const BY_NAME: Record<string, Toolset> = {
   'geom.rail': 'cad_more',
   // so is setting the filament a part already made prints with ("make the hull red", PART_FILAMENT_WORDS)
   'design.part_filament': 'cad_more',
+  // and renaming a part ("rename the hull top top to Decks", RENAME_PART_WORDS)
+  'design.rename_part': 'cad_more',
   // painting a design in filaments goes with the project's filament tools (project.add_filament and set_filament)
   'paint.preview': 'project',
   'paint.apply': 'project',
@@ -117,6 +119,34 @@ export const RAIL_WORDS = /\b(?:(?:hand)?rail(?:ing)?s?|guardrails?(?!\s+(?:of|f
 export const PART_FILAMENT_WORDS =
   /\b(?:(?:make|turn|paint|colou?r|set)\s+(?:the|its|that|this|it)\b(?:\s+[\w-]+){0,3}?\s+(?:in\s+)?(?:red|orange|yellow|green|blue|purple|pink|black|white|gr[ae]y|brown|silver|gold)\b(?!\s+(?:pla|petg|abs|asa|tpu|nylon|filament|spool)\b)|(?:in|to|with)\s+filament\s*#?\d+\b)/i
 
+/**
+ * Words that rename a part already made: "rename the hull top top to Decks", "call that part the funnel", "name this
+ * part Lid". Renaming the project, a file, a plate or the chat is not one ("rename the project", "rename this file to
+ * ship.3mf"), nor is saving under a name ("save it as Titanic"); those stay with the project.
+ */
+const NOT_A_PART_RENAME = String.raw`(?:projects?|files?|plates?|printers?|presets?|profiles?|filaments?|spools?|folders?|tabs?|chats?|conversations?)`
+export const RENAME_PART_WORDS = new RegExp(
+  String.raw`\b(?:re-?nam(?:e|es|ed|ing)\b(?!\s+(?:(?:the|this|that|my|our|its|a)\s+)?${NOT_A_PART_RENAME}\b)(?!\s+(?:it|this|that)\s+(?:to|as)\s+\S+\.\w{2,5}\b)|(?:call|name)\s+(?:the|that|this|its|it)\s+(?:[\w-]+\s+){0,3}?(?:part|piece|body)\b)`,
+  'i',
+)
+
+/**
+ * The words that ask for more design tools, and the tools each sends. A capped request sends a tool of more design
+ * only when words ask for it (askedTools), the chat called it, or pilot.load_tools loaded the toolset. A rail ask or a
+ * part filament ask sends both of those tools; a part rename ask sends only the rename, so it takes no room from the
+ * toolsets a turn wants beyond the one tool.
+ */
+const ASKED_BY: readonly [RegExp, readonly string[]][] = [
+  [RAIL_WORDS, ['geom.rail', 'design.part_filament']],
+  [PART_FILAMENT_WORDS, ['geom.rail', 'design.part_filament']],
+  [RENAME_PART_WORDS, ['design.rename_part']],
+]
+
+/** The more design tools `message` asks for by their words. */
+export function askedTools(message: string): Set<string> {
+  return new Set(ASKED_BY.filter(([words]) => words.test(message)).flatMap(([, names]) => names))
+}
+
 /** Words in a request that say which toolsets it needs. */
 const NEEDS: readonly [Toolset, RegExp][] = [
   ['cad', /\b(design|model|part|sketch|extrude|fillet|chamfer|hole|bracket|hook|box|lid|gear|thread|build|make|draw|cad)\w*/i],
@@ -127,8 +157,7 @@ const NEEDS: readonly [Toolset, RegExp][] = [
   ['project', /\b(project|plate|open|file|export|save|stl|3mf|step|paint|colou?r|recolou?r)\w*/i],
   ['kb', /\b(why|how|which|recommend|best|troubleshoot|problem|issue|string|warp|clog|look up|source|material)\w*/i],
   ['mesh', /\b(mesh|repair|hollow|emboss|cut|split|paint|color|colour)\w*/i],
-  ['cad_more', RAIL_WORDS],
-  ['cad_more', PART_FILAMENT_WORDS],
+  ...ASKED_BY.map(([words]): [Toolset, RegExp] => ['cad_more', words]),
   ['calibration', /\bcalibrat\w*/i],
   ['fleets', /\b(fleet|farm|schedule|overnight|tonight)\w*/i],
   ['theme', /\b(theme|look|dark mode|light mode)\b/i],
@@ -342,7 +371,7 @@ export const TOOLSET_WORDS: Record<Exclude<Toolset, 'core'>, string> = {
   project: 'the project, its plates and files',
   kb: 'the knowledge base and lookups',
   mesh: 'plate mesh edits: cut, hollow, emboss, repair, paint',
-  cad_more: 'more design tools: a rail of posts and a top bar along a line or a face edge, and the filament an existing part prints with',
+  cad_more: 'more design tools: a rail of posts and a top bar along a line or a face edge, the filament an existing part prints with, and renaming a part',
   calibration: 'calibration prints',
   fleets: 'fleets and schedules',
   skills: 'connected apps and other skills',
@@ -393,12 +422,19 @@ export function stickyToolsets(): StickyToolsets {
  */
 export function stickyCapTools<T extends SetTool>(
   tools: readonly T[],
-  opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; loaded?: ReadonlySet<Toolset>; state: Readonly<StickyToolsets>; kind?: TurnKind },
+  opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; loaded?: ReadonlySet<Toolset>; state: Readonly<StickyToolsets>; kind?: TurnKind; asked?: ReadonlySet<string> },
 ): { tools: T[]; sets: Toolset[]; report: ToolCapReport | null } {
   const bySet = new Map<Toolset, T[]>()
   for (const t of tools) {
     const set = toolsetOf(t)
     bySet.set(set, [...(bySet.get(set) ?? []), t])
+  }
+  // with `asked`, more design sends only the tools asked for by their words or called, unless pilot.load_tools loaded
+  // it; the whole toolset still counts as left out, so pilot.load_tools can bring the rest
+  const asked = opts.asked
+  const sendable = (s: Toolset): T[] => {
+    const members = bySet.get(s) ?? []
+    return s === 'cad_more' && asked && !opts.loaded?.has(s) ? members.filter((t) => asked.has(t.name) || opts.called.has(t.name)) : members
   }
   const present = TOOLSET_PRIORITY.filter((s) => bySet.has(s))
   const cap = opts.cap
@@ -426,7 +462,7 @@ export function stickyCapTools<T extends SetTool>(
   const pins = pinnedFor(opts.kind)
   const pinned = tools.filter((t) => pins.has(t.name))
   const chosen = new Set<Toolset>(present.filter((s) => s === 'core' || st.sets.includes(s) || tier(s) > 0))
-  const size = (sets: ReadonlySet<Toolset>): number => new Set([...pinned, ...calledTools, ...[...sets].flatMap((s) => bySet.get(s) ?? [])]).size
+  const size = (sets: ReadonlySet<Toolset>): number => new Set([...pinned, ...calledTools, ...[...sets].flatMap((s) => sendable(s))]).size
   const evicted: Toolset[] = []
   while (size(chosen) > room) {
     const out = [...chosen].filter((s) => s !== 'core' && !kept(s)).sort(less)[0]
@@ -445,20 +481,20 @@ export function stickyCapTools<T extends SetTool>(
   // most wanted first, so a chat whose protected toolsets alone are over the room keeps the most of them
   const whole = new Set<Toolset>(['core'])
   for (const s of [...chosen].filter((x) => x !== 'core').sort(less).reverse()) {
-    const members = bySet.get(s)!
+    const members = sendable(s)
     const fits = keep.size + members.filter((t) => !keep.has(t)).length <= room
     add(members)
     if (fits) whole.add(s)
   }
   const wantedOut = evicted.filter((s) => tier(s) > 0).sort(less).reverse()
   const tryWhole = (s: Toolset): void => {
-    const members = bySet.get(s)!
+    const members = sendable(s)
     if (keep.size + members.filter((t) => !keep.has(t)).length > room) return
     add(members)
     whole.add(s)
   }
   for (const s of wantedOut) tryWhole(s)
-  for (const s of wantedOut) add(bySet.get(s)!)
+  for (const s of wantedOut) add(sendable(s))
   // the room left never goes to cad_more: its tools are asked for by name, so they come only when wanted or loaded
   const rest = fillOrder.filter((s) => bySet.has(s) && !whole.has(s) && s !== 'cad_more')
   for (const s of rest) tryWhole(s)

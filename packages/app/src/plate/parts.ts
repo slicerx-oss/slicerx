@@ -9,6 +9,8 @@ import { partOverridesOf } from './object-settings'
 import { brandAccent } from '../edition'
 import { bake } from './mesh-ops'
 import { bounds, compose, identity, type Vec3 } from './transform'
+import { partNameProblem, plainPartName } from '@slicerx/cad-history'
+import { renamedScope, withRenamedParts } from './part-renames'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -190,4 +192,46 @@ export function movePart(host: Loader, objectId: string, from: number, to: numbe
   const e = get().plate.find((p) => p.id === objectId)
   if (!e || from < 0 || from >= e.parts.length) return Promise.resolve(false)
   return reorderParts(host, objectId, orderMoving(e.parts.length, from, to))
+}
+
+/**
+ * Renames part `index` of the object to `name`, taken plain (part-renames.ts): its filament choice, settings and paint
+ * go with it. In a CAD history the rename is a step (parts.name) that changes no geometry, so it replays, saves and
+ * undoes like the rest. One undo step. False when the name is the part's own; an empty name, one too long or one
+ * another part has is refused with a sentence that says so.
+ */
+export async function renamePart(host: Loader, objectId: string, index: number, name: string, guard?: () => void): Promise<boolean> {
+  const e = get().plate.find((p) => p.id === objectId)
+  const part = e?.parts[index]
+  if (!e || !part) return false
+  const plain = plainPartName(name)
+  if (plain === part.name) return false
+  const problem = partNameProblem(plain, e.parts.map((p) => p.name), index)
+  if (problem) throw new Error(`${problem[0]!.toUpperCase()}${problem.slice(1)}.`)
+  await editable(objectId)
+  const parts = e.parts.map((p, i) => (i === index ? { ...p, name: plain } : p))
+  const history = e.history ? (await import('../cad/history/record')).withStep(e, index, { op: 'parts.name', name: plain, was: part.name }, e.transform, true) : undefined
+  const { placedNow } = await import('../cad/commit')
+  const handle = await host.loadParts(e.name, parts)
+  guard?.()
+  const now = get().plate.find((p) => p.id === objectId)
+  if (!now || now.parts !== e.parts) throw new Error(`${e.name} changed while its parts loaded. Try again.`)
+  const renames = new Map([[part.name, plain]])
+  commit(
+    objectId,
+    (o, settings) => {
+      const moved = withRenamedParts({ ...(o.slotOverrides ? { slotOverrides: o.slotOverrides } : {}), partSettings: settings }, renames)
+      const { slotOverrides: _s, history: _h, ...plain } = o
+      return {
+        ...plain,
+        handle,
+        parts,
+        ...(moved.slotOverrides && Object.keys(moved.slotOverrides).length ? { slotOverrides: moved.slotOverrides } : {}),
+        ...withSettings(moved.partSettings ?? {}),
+        ...(history ? { history: placedNow(history, o) } : o.history ? { history: o.history } : {}),
+      }
+    },
+    { scopePart: renamedScope(get().scopePart, objectId, renames) },
+  )
+  return true
 }

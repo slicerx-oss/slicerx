@@ -18,6 +18,7 @@
 // now, moved with the design it was drawn for or the first feature drawn on it, then into a design's frame by that
 // design's landing (cad-history design-frame.ts). Where a body stands comes from one place for every reader
 // (sketch-place.ts), waiting designs included, so the mimir tab's host, the app link's and Model read the same.
+import { renamedParts, renamedScope, withRenamedParts } from '../plate/part-renames'
 import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, unstopped, withPlaced, type AddOptions, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
@@ -204,7 +205,18 @@ export function appDesignHost(loader: Loader): AppDesignHost {
           const handle = await loader.loadParts(d.name, parts)
           guard?.()
           // the base parts' own paint, and none of what the undone steps painted
-          set((s) => ({ plate: s.plate.map((p) => (p.id === d.id ? withSlotOverrides({ ...withoutPaint(p), handle, parts, history: d.history, ...withReplayPaint(base) }, overridesAfterSlotSteps(p, p.history, d.history, parts.map((x) => x.name))) : p)) }))
+          // a part a rename step had renamed takes its filament choice and settings back to its base name (part-renames.ts)
+          const was = get().plate.find((p) => p.id === d.id)
+          const renames = renamedParts(was?.parts.map((x) => x.name) ?? [], parts.map((x) => x.name))
+          set((s) => ({
+            plate: s.plate.map((p) => {
+              if (p.id !== d.id) return p
+              const keyed = withRenamedParts(p, renames)
+              const own = overridesAfterSlotSteps(keyed, p.history, d.history, parts.map((x) => x.name)) ?? (keyed !== p ? (keyed.slotOverrides ?? {}) : null)
+              return withSlotOverrides({ ...withoutPaint(keyed), handle, parts, history: d.history, ...withReplayPaint(base) }, own)
+            }),
+            scopePart: renamedScope(s.scopePart, d.id, renames),
+          }))
         }
         markStale()
       }
