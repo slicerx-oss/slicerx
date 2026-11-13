@@ -1284,6 +1284,41 @@ fn within_its_chord_or_refused(name: &str, body: &sx_brep::Body) {
     }
 }
 
+// one spline face wraps the hull drawn by hand, and the kernel's triangles of it are three times past the chord in
+// places. Asked for exact, the loft is a body whose triangles are within the chord, or it is the mesh loft to the
+// byte and says why
+#[test]
+fn the_drawn_hull_is_a_body_within_the_chord_or_a_mesh_loft_that_says_why() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let start = table::count();
+    let mut request = spline_loft("hull18");
+    request.as_object_mut().expect("a request").remove("exact");
+    let plain = sx_geom::json::call("sketch.loft", &request.to_string()).expect("the mesh loft");
+    request["exact"] = json!(true);
+    let asked = sx_geom::json::call("sketch.loft", &request.to_string()).expect("the loft");
+    let reply: Value = serde_json::from_str(&asked).unwrap();
+    if let Some(body) = reply["body"].as_u64() {
+        let body = u32::try_from(body).unwrap();
+        println!("CHORD drawn hull: an exact body");
+        table::with(body, |held| within_its_chord_or_refused("drawn hull", &held.body)).expect("held");
+        assert_eq!(op("brep.free", &json!({ "body": body })), r#"{"freed":true}"#);
+    } else {
+        println!("CHORD drawn hull: {}", reply["exact"]);
+        assert_eq!(
+            reply["exact"],
+            json!({
+                "made": false,
+                "why": "The exact solid could not be shown within 0.01 mm of its surface, so this loft was made as a mesh."
+            })
+        );
+        assert!(reply.get("body").is_none() && reply.get("bodySmb").is_none());
+        assert_eq!(without(&asked, &printed(&reply, "exact")), plain);
+    }
+    assert_eq!(table::count(), start);
+}
+
 // the hull drawn by hand is thinner than the chord at its bow: its two sides are a few hundredths of a millimeter
 // apart there. The face's own closest point then answers with a point of the far side, even for a point of the
 // surface itself, so a triangle is measured by the nearer of two points of the face: that one, and the surface's
