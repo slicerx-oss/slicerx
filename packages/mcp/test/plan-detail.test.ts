@@ -167,8 +167,11 @@ describe('detailProblem: the rules are about the object', () => {
     expect(featuresFloor({ repeats: ['a', 'b', 'c', 'd', 'e'] }, 'display')).toEqual({ count: 10, why: '8 at display model, 2 more for 5 repeated details' })
   })
 
-  it('wants each body\'s color, and a body of two colors as its lightest color with the other a band feature', () => {
-    expect(detailProblem({ ...house, colors: undefined })).toContain("colors: give each feature's color as the real thing is painted")
+  it('plans no color unasked, and once color is asked wants each body\'s color, and a body of two colors as its lightest color with the other a band feature', () => {
+    // a request that does not ask for color is one default filament: no colors, and nothing asks for them
+    expect(detailProblem({ ...house, colors: undefined })).toBeNull()
+    expect(detailProblem({ ...house, colors: {} })).toBeNull()
+    expect(detailProblem({ ...house, colors: undefined, features: house.features.slice(0, 3) })).not.toMatch(/colors:|each color band/)
     for (const two of ['white and yellow', 'white/yellow', 'white, yellow'])
       expect(detailProblem({ ...house, colors: { ...house.colors, Walls: two } })).toContain(`colors: Walls is ${two}; give it its lightest large color, and each other color its own band feature with its color and its heights as sizes`)
     const { Roof: _roof, ...noRoof } = house.colors!
@@ -228,7 +231,7 @@ function tab() {
 describe('design.plan with a detail level', () => {
   it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.10.0')
+    expect(t.tool.version).toBe('1.11.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
@@ -247,6 +250,24 @@ describe('design.plan with a detail level', () => {
     for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'a loft between two ellipses, offset for the rake, then arrayed', 'Repeated small parts are one part, then array and mirror', 'is built whole in its lightest large color, and each darker band is its own feature', 'painted by direction top', 'its levels are continuous too', 'gives its lean in degrees as a size named rake', 'Plan the features a person recognizes the real thing by', 'a bottom lifting at the ends', 'each darker band its own feature, with its color and its heights as sizes, painted on by height'])
       expect(d).toContain(step)
     await expect(tab().run({ ...car, proportions: undefined })).rejects.toThrow(DETAIL_HELP)
+  })
+
+  it('shows a display plan with no colors, so the part builds in one default filament', async () => {
+    const t = tab()
+    const { colors: _colors, ...bare } = house
+    const out = await t.run(bare)
+    expect(out.ok).not.toBe(false)
+    expect(t.shown[0]).toMatchObject({ detail: 'display', flat: ['Walls', 'Roof'] })
+    expect(t.shown[0]!.colors).toBeUndefined()
+    // with no color planned, the check reads no color band to paint
+    expect(colorBands(t.shown[0]!)).toEqual([])
+  })
+
+  it('still plans colors when the person asks for them, held to the same rules', async () => {
+    await expect(tab().run({ ...house, colors: { ...house.colors, Walls: 'white and yellow' } })).rejects.toThrow('colors: Walls is white and yellow')
+    const t = tab()
+    await t.run(house)
+    expect(t.shown[0]!.colors).toEqual(house.colors)
   })
 
   it('leaves the level out of design.put_plan', () => {
