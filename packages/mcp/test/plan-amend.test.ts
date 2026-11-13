@@ -101,7 +101,7 @@ const taller = (p: PlanInput, z: number): PlanInput => ({ ...p, features: p.feat
 describe('design.plan with amends', () => {
   it('tells the model a first plan takes no reason: amends and reason are for changing an approved plan', () => {
     const plan = tabToolset(boxHost(), createCardPlans(createPlanRegistry()), { nozzleMm: () => machine.nozzle }).find((t) => t.name === 'design.plan')!
-    expect(plan.version).toBe('1.11.0')
+    expect(plan.version).toBe('1.12.0')
     const props = toolSpec(plan).inputSchema.properties as Record<string, { description?: string }>
     expect(props['amends']?.description).toMatch(/only to change a plan the person approved/i)
     expect(props['reason']?.description).toMatch(/only with amends/i)
@@ -241,7 +241,7 @@ describe('design.put_plan with amends', () => {
 
   it('is 1.6.0, and changes a client plan of a built part with the same rules and no card', async () => {
     const t = tools()
-    expect(t.tool('design.put_plan').version).toBe('1.6.0')
+    expect(t.tool('design.put_plan').version).toBe('1.7.0')
     expect(t.tool('design.check').version).toBe('1.19.0')
     await t.run('design.put_plan', { plan: mine, design: 'd1' })
     const out = await t.run('design.put_plan', { plan: { ...mine, ...taller(box, 34) }, amends: 'box-1', reason: 'The lid adds 4 mm.' })

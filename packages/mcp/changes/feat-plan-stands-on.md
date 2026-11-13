@@ -1,0 +1,4 @@
+### Changed
+
+- `slicerx_design_plan` 1.12.0 (from 1.11.0), in the mimir tab: each planned feature can name the planned feature it stands on, in `on`, with its height planned above that one. A tier list means each level stands on the one before it, and a level whose `on` names another feature is refused: "on: Roof stands on Chimney, but the tiers of Walls put it on Walls; name Walls in its on, or take it out of the tier list". `on` is optional, and a plan without it is taken as before. The description says a stacked feature names what it stands on, its height planned above that one, and that each part that makes the outline readable from afar has a real size.
+- `slicerx_design_put_plan` 1.7.0 (from 1.6.0): a plan's feature takes the same optional `on`, so `slicerx_design_check` can hold the built part to it.

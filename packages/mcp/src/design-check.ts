@@ -18,7 +18,7 @@ const text = (max: number) => z.string().trim().min(1).max(max)
 
 /** A planned feature: its name, its operation (kind), its sizes, and what each size measures (kinds) when it says. */
 const feature = z
-  .object({ name: text(60), kind: text(40).optional(), sizes: z.record(text(40), size), kinds: z.record(text(40), z.enum(SIZE_KINDS)).optional() })
+  .object({ name: text(60), kind: text(40).optional(), sizes: z.record(text(40), size), kinds: z.record(text(40), z.enum(SIZE_KINDS)).optional(), on: text(60).optional().describe('The planned feature this one stands on; its height is planned above it') })
   .superRefine((f, ctx) => {
     const sizes = Object.keys(f.sizes)
     for (const k of Object.keys(f.kinds ?? {}))
