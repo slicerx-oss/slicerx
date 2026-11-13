@@ -41,6 +41,9 @@ import { ownWaiting, projectGeneration, setWaiting } from './waiting'
 import { paintOf, withPaint } from './history/paint'
 import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
 
+/** A step that did not go through, and why: a reason that already says the design is unchanged says it once. */
+export const notThrough = (why: string): string => `The step did not go through: ${unstopped(why.replace(/\s*The design is unchanged\.?\s*$/, ''))}. The design is unchanged.`
+
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
 /** A tool's error for a design id that names nothing. */
@@ -306,7 +309,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       const after = afterEdit(d.id)
       await applyHistory(loader, d.id, next, step.id, guard, capture, after.land, undoStepOf(d.id, opts?.group)).catch((e: unknown) => {
         if (e instanceof Error && 'code' in e && e.code === 'stale_body') throw e
-        throw new Error(`The step did not go through: ${unstopped(e instanceof Error ? e.message : String(e))}. The design is unchanged.`)
+        throw new Error(notThrough(e instanceof Error ? e.message : String(e)))
       })
       moved = after.landed()
     }
@@ -332,7 +335,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     const project = projectGeneration()
     const r = await runReplay({ history })
     const k = need === undefined ? -1 : history.steps.findIndex((s) => s.id === need)
-    if (k >= 0 && r.status[k]?.state !== 'done') throw new Error(`The step did not go through: ${unstopped(r.status[k]?.message ?? 'the steps before it are broken')}. The design is unchanged.`)
+    if (k >= 0 && r.status[k]?.state !== 'done') throw new Error(notThrough(r.status[k]?.message ?? 'the steps before it are broken'))
     if (!r.parts.length) throw new Error('The design has no body yet.')
     const parts = r.parts.map(toPart)
     const handle = await loader.loadParts(name, parts)
