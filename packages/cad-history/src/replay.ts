@@ -614,7 +614,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
 /** A step's params for a copy a pattern makes: without the face and edge keys, which name the original's faces. */
 function copyParams(p: StepParams): StepParams {
   const q = unkeyed(p)
-  if (q.op !== 'paint' || q.target.kind !== 'seed' || !q.target.faceKey) return q
+  if (q.op !== 'paint' || q.target?.kind !== 'seed' || !q.target.faceKey) return q
   const { faceKey: _key, ...target } = q.target
   return { ...q, target }
 }

@@ -767,11 +767,16 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
 
 const SIDE_WORDS: Record<string, string> = { bottom: 'the bottom', top: 'the top', front: 'the front', back: 'the back', left: 'the left side', right: 'the right side' }
 
-/** "Paint the bottom filament 2", "Clear paint below 10 mm", "Seam from a point". */
+/**
+ * "Paint the bottom filament 2", "Clear paint below 10 mm", "Seam from a point". A paint step that reads with no target
+ * (a saved history written by hand or by an older build) is named without the place, "Paint filament 2" or "Paint".
+ */
 function paintName(p: Extract<StepParams, { op: 'paint' }>): string {
-  const t = p.target
-  const where =
-    t.kind === 'part'
+  const t = p.target as PaintTarget | undefined
+  const state = typeof p.state === 'number' ? p.state : undefined
+  const where = !t || typeof t !== 'object'
+    ? ''
+    : t.kind === 'part'
       ? 'the part'
       : t.kind === 'direction'
         ? typeof t.direction === 'string'
@@ -788,9 +793,11 @@ function paintName(p: Extract<StepParams, { op: 'paint' }>): string {
               ? 'a filled area'
               : 'from a point'
             : 'state ' + String(t.from)
-  if (p.layer === 'color') return p.state > 0 ? `Paint ${where} filament ${p.state}` : `Clear paint, ${where}`
-  const what = p.layer === 'seam' ? 'Seam' : p.layer === 'support' ? (p.state === 2 ? 'Support blocker' : 'Support') : 'Fuzzy skin'
-  return p.state > 0 ? `${what}, ${where}` : `Clear ${what.toLowerCase()}, ${where}`
+  const at = where ? ` ${where}` : ''
+  if (p.layer === undefined || p.layer === 'color') return state === undefined ? `Paint${at}` : state > 0 ? `Paint${at} filament ${state}` : where ? `Clear paint, ${where}` : 'Clear paint'
+  const what = p.layer === 'seam' ? 'Seam' : p.layer === 'support' ? (state === 2 ? 'Support blocker' : 'Support') : 'Fuzzy skin'
+  if (!where) return state === 0 ? `Clear ${what.toLowerCase()}` : what
+  return state === 0 ? `Clear ${what.toLowerCase()}, ${where}` : `${what}, ${where}`
 }
 
 /** The one number a step is mostly about, for editing it in place in the list. Null when it has none. */
@@ -820,8 +827,8 @@ export function mainNumber(p: StepParams): { label: string; value: number; unit:
       return { label: 'Position', value: Math.round(dot(p.plane.point, unit(p.plane.normal)) * 1000) / 1000, unit: 'mm' }
     case 'paint':
       // A one-sided height band is about its height.
-      if (p.target.kind === 'height' && p.target.below !== undefined) return { label: 'Below', value: p.target.below, unit: 'mm' }
-      if (p.target.kind === 'height' && p.target.above !== undefined) return { label: 'Above', value: p.target.above, unit: 'mm' }
+      if (p.target?.kind === 'height' && p.target.below !== undefined) return { label: 'Below', value: p.target.below, unit: 'mm' }
+      if (p.target?.kind === 'height' && p.target.above !== undefined) return { label: 'Above', value: p.target.above, unit: 'mm' }
       return null
     case 'pattern':
       return p.spec.kind === 'mirror' ? null : { label: 'Copies', value: p.spec.count, unit: '', min: 2 }
@@ -867,8 +874,8 @@ export function withNumber(p: StepParams, v: number): StepParams | string {
       return { ...p, plane: { point: [p.plane.point[0] + n[0] * d, p.plane.point[1] + n[1] * d, p.plane.point[2] + n[2] * d], normal: p.plane.normal } }
     }
     case 'paint':
-      if (p.target.kind === 'height' && p.target.below !== undefined) return { ...p, target: { ...p.target, below: v } }
-      if (p.target.kind === 'height' && p.target.above !== undefined) return { ...p, target: { ...p.target, above: v } }
+      if (p.target?.kind === 'height' && p.target.below !== undefined) return { ...p, target: { ...p.target, below: v } }
+      if (p.target?.kind === 'height' && p.target.above !== undefined) return { ...p, target: { ...p.target, above: v } }
       return 'This step has no number to change.'
     case 'pattern': {
       if (p.spec.kind === 'mirror') return 'This step has no number to change.'

@@ -188,7 +188,7 @@ export function repeatProblem(s: Pick<Step, 'part' | 'params'>): string | null {
   if (!REPEATS.has(p.op)) return 'A pattern repeats steps that add, cut, round or paint material where they are: a push or pull, a join or cut, a hole, a thread, a fillet, a chamfer, paint from a point, or another pattern of those.'
   const op = p.op === 'shape.extrude' ? (p.spec.operation ?? 'new') : p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep' ? (p.operation ?? 'new') : null
   if (op === 'new') return 'A pattern repeats joins and cuts on a part; this step makes a new body, so array that part instead.'
-  if (p.op === 'paint' && p.target.kind !== 'seed') return 'A pattern repeats paint from a point; this step paints by side or height, which already covers the part.'
+  if (p.op === 'paint' && p.target?.kind !== 'seed') return 'A pattern repeats paint from a point; this step paints by side or height, which already covers the part.'
   return null
 }
 

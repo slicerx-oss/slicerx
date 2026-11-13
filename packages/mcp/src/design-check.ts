@@ -152,6 +152,8 @@ export interface BodyFacts {
   stepIds?: string[] | undefined
   /** The paint steps tagged with a planned feature (the paint tool's feature), each with its step name. */
   paintTags?: { feature: string; step: string }[] | undefined
+  /** The paint steps tagged with no planned feature, each with its id and step name, for the hint to tag one. */
+  paintUntagged?: { id: string; step: string }[] | undefined
   /** Each loft step's sections and the feature it was tagged with, read so a display plan's curved bodies are held to change along their length. */
   lofts?: LoftSections[] | undefined
   /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
@@ -390,6 +392,12 @@ function nameKey(name: string): string {
 const steps = (n: number): string => `${n} step${n === 1 ? '' : 's'}`
 
 /**
+ * The hint that names an untagged step, a shaping or a paint step, by `step` (its id in quotes, or its place) and
+ * `name`, with `which` the planned feature, or features, to tag it with.
+ */
+export const untaggedStepHint = (step: string, name: string, which: string): string => `step ${step} ("${name}") is untagged: set its feature to ${which} with slicerx_design_edit_step`
+
+/**
  * The planned features against the steps that built them. Each modeling tool takes the planned feature its step builds
  * (feature), recorded on the step as its tag. A feature may take several steps (four standoffs, five port cutouts), so
  * more steps than features is fine as long as each feature has a step tagged with its name (case, punctuation and
@@ -406,7 +414,21 @@ function featureItem(features: string[], body: BodyFacts, read: Bands = { painte
   const shaped = n - features.filter((f) => bands.painted.has(f)).length
   const paintedNote = features.filter((f) => bands.painted.has(f)).map((f) => `; ${f} ${bands.painted.get(f)}`).join('')
   const unpaintedNote = features.filter((f) => bands.why.has(f)).map((f) => `; ${f}: ${bands.why.get(f)}`).join('')
-  if (m < shaped) return { name: 'feature count', want: String(n), got: `${steps(m)} for ${n} planned features${paintedNote ? `, ${n - shaped} of them painted bands` : ''}${unpaintedNote}`, pass: false }
+  // an untagged paint step goes with a planned band that is not painted as planned, else with a missing feature it
+  // shares a word with: the paint was applied without its feature (paint.apply's feature), so say to tag it
+  const paintHintsFor = (missing: string[]): string[] => {
+    const quote = (fs: string[]) => (fs.length === 1 ? `"${fs[0]}"` : `one of ${fs.map((f) => `"${f}"`).join(', ')}`)
+    const unbanded = missing.filter((f) => bands.why.has(f))
+    return (body.paintUntagged ?? []).flatMap((p) => {
+      const sw = nameWords(p.step)
+      const best = unbanded.length ? unbanded : missing.filter((f) => [...nameWords(f)].some((w) => sw.has(w)))
+      return best.length ? [untaggedStepHint(`"${p.id}"`, p.step, quote(best))] : []
+    })
+  }
+  if (m < shaped) {
+    const early = paintHintsFor(features.filter((f) => !bands.painted.has(f)))
+    return { name: 'feature count', want: String(n), got: `${steps(m)} for ${n} planned features${paintedNote ? `, ${n - shaped} of them painted bands` : ''}${unpaintedNote}${early.length ? `; ${early.join('; ')}` : ''}`, pass: false }
+  }
   // nothing known about the steps but their count
   if (!body.steps) return { name: 'feature count', want: String(n), got: String(m), pass: true }
   const per = features.map(() => 0)
@@ -470,12 +492,14 @@ function featureItem(features: string[], body: BodyFacts, read: Bands = { painte
         const best = missing.filter((_, k) => shared[k] === most)
         const id = body.stepIds?.[i - 1]
         const which = best.length === 1 ? `"${best[0]}"` : `one of ${best.map((f) => `"${f}"`).join(', ')}`
-        return [`step ${id ? `"${id}"` : i} ("${body.steps![i - 1]}") is untagged: set its feature to ${which} with slicerx_design_edit_step`]
+        return [untaggedStepHint(id ? `"${id}"` : String(i), body.steps![i - 1]!, which)]
       })
     : []
+  const paintHints = paintHintsFor(missing)
+  const allHints = [...hints, ...paintHints]
   const got = tagged
-    ? `${m} steps, none tagged for ${missing.join(', ')}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}${hints.length ? `; ${hints.join('; ')}` : ''}`
-    : `${m} steps, none for ${missing.join(', ')}${loose.length ? `; ${quoted} match${loose.length === 1 ? 'es' : ''} no planned feature` : ''}; pass feature on each step to tie it to the plan`
+    ? `${m} steps, none tagged for ${missing.join(', ')}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}${allHints.length ? `; ${allHints.join('; ')}` : ''}`
+    : `${m} steps, none for ${missing.join(', ')}${loose.length ? `; ${quoted} match${loose.length === 1 ? 'es' : ''} no planned feature` : ''}; pass feature on each step to tie it to the plan${paintHints.length ? `; ${paintHints.join('; ')}` : ''}`
   return { name: 'feature count', want, got: `${got}${unpainted}`, pass: false }
 }
 

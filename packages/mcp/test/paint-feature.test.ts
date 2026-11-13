@@ -60,14 +60,16 @@ describe('a paint step tagged with its plan feature', () => {
     expect(count.pass, count.got).toBe(true)
     expect(count.got).toContain('Hull paint painted by "Paint the top filament 2"')
     expect(r.body.paintTags).toEqual([{ feature: 'Hull paint', step: 'Paint the top filament 2' }])
+    expect(r.body.paintUntagged).toEqual([])
   })
 
   it('fails the feature by name when the paint is applied without it, as before', async () => {
-    const { ok } = await hull()
+    const { ok, applied } = await hull()
     const r = await ok<Check>('slicerx_design_check', { planId: 'hull-1' })
     const count = r.items.find((i) => i.name === 'feature count')!
     expect(count.pass).toBe(false)
-    expect(count.got).toBe('1 step for 2 planned features; Hull paint: the plan gives it no color')
+    expect(r.body.paintUntagged).toEqual([{ id: applied.step.id, step: 'Paint the top filament 2' }])
+    expect(count.got).toBe(`1 step for 2 planned features; Hull paint: the plan gives it no color; step "${applied.step.id}" ("Paint the top filament 2") is untagged: set its feature to "Hull paint" with slicerx_design_edit_step`)
   })
 
   it('matches the tag as other tags are matched, case and plurals aside, and a blank one tags nothing', async () => {
@@ -107,4 +109,28 @@ describe('design.check with paint steps tagged for features', () => {
     expect(got.pass).toBe(false)
     expect(got.got).toContain('none tagged for Hull paint')
   })
+})
+
+describe('design.check names an untagged paint step for the feature it could paint', () => {
+  const body: BodyFacts = { size: { x: 40, y: 20, z: 5 }, holes: [], features: 2, steps: ['Rectangle extrude 5 mm', 'Fillet 1 mm'], tags: ['Hull', 'Hull'], stepIds: ['s1', 's2'], watertight: true, minWallMm: 5 }
+  const item = (b: BodyFacts) => designCheck(plan, b, 0.4).items.find((i) => i.name === 'feature count')!
+  const hint = 'step "s3" ("Paint the top filament 2") is untagged: set its feature to "Hull paint" with slicerx_design_edit_step'
+
+  it('hints the edit that tags the paint step for the missing paint feature', () => {
+    const got = item({ ...body, paintUntagged: [{ id: 's3', step: 'Paint the top filament 2' }] })
+    expect(got.pass).toBe(false)
+    expect(got.got).toContain(hint)
+  })
+
+  it('gives the same hint when there are too few shaping steps', () => {
+    const got = item({ ...body, steps: ['Rectangle extrude 5 mm'], tags: [''], stepIds: ['s1'], features: 1, paintUntagged: [{ id: 's3', step: 'Paint the top filament 2' }] })
+    expect(got.pass).toBe(false)
+    expect(got.got).toContain(hint)
+  })
+
+  it('gives no paint hint with no untagged paint step, so the reply is as before', () => {
+    expect(item(body).got).not.toContain('is untagged')
+    expect(item({ ...body, paintUntagged: [] }).got).toBe(item(body).got)
+  })
+
 })
