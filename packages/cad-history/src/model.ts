@@ -243,6 +243,9 @@ export interface ReplayResult {
   madeBy?: Record<number, string>
   /** Steps the exact kernel failed on in this replay, which ran on the mesh instead (exact.ts). */
   exactFellBack?: string[]
+  /** On a replay with exact solids: the parts that are meshes, by index, beside the exact ones (an added mesh part,
+   * or a part a step took to the mesh). */
+  meshParts?: number[]
 }
 
 export const HISTORY_VERSION = 1

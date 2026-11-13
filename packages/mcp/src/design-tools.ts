@@ -263,7 +263,7 @@ export function designSummary(d: Design): Record<string, unknown> {
     const s = meshStats(soup([bakeMesh(p, d.transform)]))
     const paint = p.paint
     const painted = paint ? Object.fromEntries(Object.entries(paint).map(([k, v]) => [k, Object.keys(v ?? {}).length])) : undefined
-    return { index: i, name: p.name, slot: p.slot, triangles: s.triangles, minMm: s.minMm, sizeMm: s.bboxMm, volumeMm3: r3(s.volumeMm3), ...(painted ? { paintedTriangles: painted } : {}) }
+    return { index: i, name: p.name, slot: p.slot, triangles: s.triangles, minMm: s.minMm, sizeMm: s.bboxMm, volumeMm3: r3(s.volumeMm3), ...(painted ? { paintedTriangles: painted } : {}), ...(d.meshParts?.includes(i) ? { mesh: true } : {}) }
   })
   const all = d.parts.length ? meshStats(soup(d.parts.map((p) => bakeMesh(p, d.transform)))) : null
   const forms = partForms(d)
@@ -572,7 +572,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   const STEPS_TEXT = 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.'
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'read',
     // a local model gets the steps without the loft stations' words, which only the cloud follow-up guidance uses

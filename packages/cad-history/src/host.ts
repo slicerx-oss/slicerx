@@ -26,6 +26,8 @@ export interface Design {
   status: StepStatus[]
   /** The step that made each face, by face key. */
   madeBy: Record<number, string>
+  /** On a design with exact solids: the parts that are meshes, by index (ReplayResult.meshParts). */
+  meshParts?: number[]
   /** Steps undone, last undone last; a new step clears them. */
   redo: Step[]
   /** Set only on the call that landed the part: its first body built off the bed, or an edit that left it off (Landed). */
