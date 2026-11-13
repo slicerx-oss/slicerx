@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, MAX_PART_SLOT, partNameProblem, plainPartName, replayOn, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, MAX_PART_SLOT, partNameProblem, plainPartName, replayOn, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type SketchLoop, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -20,6 +20,7 @@ import { movedStep, sizedStep } from './step-reshape'
 import { carriedSteps, leanRow, tiltedStep, tiltInput, tiltProblem, type Leaning } from './step-tilt'
 import { FORMS_MAX, partForms } from './part-form'
 import { bodyOf, sectionEdited, SHAPE_WORDS, stationRows } from './section-edit'
+import { withThinNote } from './section-width'
 import { onPlate, seatShift, seatWords, standingOn, supportArea, surfaceAt } from './section-follow'
 import { maker } from './sunk'
 import { keepOpenLimits, plansMoving } from './seat'
@@ -614,7 +615,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.6.2',
+    version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -692,7 +693,10 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         const rows = d.history.steps.map((_, j) => stepRow(d, j))
         const broken = rows.filter((r) => r['state'] === 'broken')
         const words = [...said, ...follow.said]
-        return { ok: broken.length === 0, summary: `Edited step ${k + 1}, ${stepName(clean)}: ${words.join('; ')}${broken.length ? `; step ${String(broken[0]!['index'])} broke: ${String(broken[0]!['message'] ?? '')}` : ''}`, output: { ...designSummary(d), steps: rows, ...(follow.moved.length ? { moved: follow.moved } : {}), ...(follow.warnings.length ? { warnings: follow.warnings } : {}) } }
+        const out = { ok: broken.length === 0, summary: `Edited step ${k + 1}, ${stepName(clean)}: ${words.join('; ')}${broken.length ? `; step ${String(broken[0]!['index'])} broke: ${String(broken[0]!['message'] ?? '')}` : ''}`, output: { ...designSummary(d), steps: rows, ...(follow.moved.length ? { moved: follow.moved } : {}), ...(follow.warnings.length ? { warnings: follow.warnings } : {}) } }
+        // the reshaped sections under two nozzle lines are named, as geom.loft names them; the edit is kept either way
+        const p = clean.params as { profiles?: { loops: SketchLoop[] }[]; operation?: string; thicken?: unknown }
+        return p.operation === 'cut' || p.thicken || !p.profiles ? out : withThinNote(out, p.profiles, nozzleOr(opts.nozzleMm?.()))
       }
       await replayChange(designs, d, { ...d.history, steps: d.history.steps.map((x, j) => (j === k ? clean : (carried.find((c) => c.k === j)?.now ?? x))) })
       // paint laid on the part after this step follows what it painted: a move shifts it, a size stretches it
