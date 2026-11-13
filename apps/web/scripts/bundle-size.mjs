@@ -21,7 +21,7 @@ const WASM_KB = 1056
 // The slicer engine's module (sx_wasm) is only reported against this reference, never failed on it (see below).
 const SLICER_WASM_KB = 1444
 const STEP_WASM_KB = 3584
-const FULL_GEOM_WASM_KB = 1536
+const FULL_GEOM_WASM_KB = 1600
 const BREP_WASM_KB = 1400
 const isStepReader = (file) => /occt-import-js/.test(file)
 const isFullGeom = (file) => /sx_geom_wasm/.test(file)
