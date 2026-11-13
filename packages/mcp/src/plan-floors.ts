@@ -231,6 +231,74 @@ export function jointProblem(plan: FloorPlan): string | null {
   return null
 }
 
+/** The facts of a planetary set whose evenly spaced planets cannot all mesh, for the refusal. */
+export interface PlanetsMiss {
+  sun: string
+  sunTeeth: number
+  planet: string
+  planetTeeth: number
+  planets: number
+  ring: string
+  ringTeeth: number
+  /** Two sun and ring tooth counts that do mesh with the same planets, nearest first: [sun, ring]. */
+  instead: [number, number][]
+}
+
+/**
+ * The sentence for a print-in-place planetary set whose evenly spaced planets cannot all mesh, with two tooth
+ * counts that do.
+ */
+export const PLANETS_CANNOT_MESH = (m: PlanetsMiss): string =>
+  `features: ${m.planets} ${m.planet} of ${m.planetTeeth} teeth, evenly spaced between a ${m.sun} of ${m.sunTeeth} and a ${m.ring} of ${m.ringTeeth}, cannot all mesh, since ${m.planets} does not divide ${m.sunTeeth} + ${m.ringTeeth} = ${m.sunTeeth + m.ringTeeth}. Pick teeth where it does, such as ${m.instead.map(([s, r]) => `a ${m.sun} of ${s} and a ${m.ring} of ${r}`).join(', or ')}.`
+
+/** A feature's whole tooth count: its size named for teeth (teeth, tooth_count, teeth_small), 3 or more. */
+function teethOf(f: FloorPlan['features'][number]): number | undefined {
+  for (const [k, v] of Object.entries(f.sizes)) if (keyWords(k).some((w) => w === 'teeth' || w === 'tooth') && Number.isInteger(v) && v >= 3) return v
+  return undefined
+}
+
+/**
+ * How many copies a feature stands for: a count size of its own other than its teeth (count, planet_count), else the
+ * print-in-place pieces named with the feature's first word (Planet 1 to Planet 3 for Planet gears).
+ */
+function copiesOf(f: FloorPlan['features'][number], pieces: readonly string[]): number | undefined {
+  for (const [k, v] of Object.entries(f.sizes))
+    if (kindOf(k, f.kinds?.[k]) === 'count' && !keyWords(k).some((w) => w === 'teeth' || w === 'tooth') && Number.isInteger(v)) return v
+  const first = (t: string): string => (keyWords(t)[0] ?? '').replace(/s$/, '')
+  const word = first(f.name)
+  const named = word ? pieces.filter((p) => first(p) === word).length : 0
+  return named || undefined
+}
+
+/**
+ * A planetary set that prints in place and cannot turn: a sun, planets and a ring (ring teeth = sun teeth + 2 x planet
+ * teeth) whose evenly spaced planets cannot all mesh, because the sun's and ring's teeth together do not divide by the
+ * planet count. Read only from tooth counts the plan gives, and only when the ring's count says it is such a set, so a
+ * pair of gears, a train or a model of gears that does not turn is never refused. Null when it can mesh or is no such set.
+ */
+export function planetsMiss(plan: FloorPlan & { questions?: readonly string[] }): PlanetsMiss | null {
+  if (!printsInPlace(plan)) return null
+  const pieces = Array.isArray(plan.printInPlace) ? plan.printInPlace : []
+  const gears = plan.features.flatMap((f) => {
+    const t = teethOf(f)
+    return t === undefined ? [] : [{ f, t }]
+  })
+  for (const sun of gears)
+    for (const planet of gears)
+      for (const ring of gears) {
+        if (sun === planet || planet === ring || sun === ring || ring.t !== sun.t + 2 * planet.t) continue
+        const n = copiesOf(planet.f, pieces)
+        if (n === undefined || n < 2 || (sun.t + ring.t) % n === 0) continue
+        // the nearest sun counts that mesh with the same planets, one below and one above when there is one below
+        const fits = (s: number): boolean => s >= 3 && (2 * s + 2 * planet.t) % n === 0
+        const below = [...Array(n).keys()].map((k) => sun.t - 1 - k).find(fits)
+        const above = [...Array(2 * n).keys()].map((k) => sun.t + 1 + k).filter(fits)
+        const suns = below !== undefined ? [below, above[0]!] : above.slice(0, 2)
+        return { sun: sun.f.name, sunTeeth: sun.t, planet: planet.f.name, planetTeeth: planet.t, planets: n, ring: ring.f.name, ringTeeth: ring.t, instead: suns.map((s) => [s, s + 2 * planet.t]) }
+      }
+  return null
+}
+
 /** True when a hinge or pin plan says neither how it prints (jointProblem gives LID_STATEMENT). */
 export const unstatedJoint = (plan: FloorPlan): boolean => jointProblem(plan) === LID_STATEMENT
 

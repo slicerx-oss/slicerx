@@ -13,7 +13,7 @@ import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
 import { AMEND_REASON_MAX, amendAdded, amendChanges, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
 import { type Bed, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, FEATURES_FLOOR, LONG_EXTRA, LONG_RATIO, SECTIONS_FLOOR } from './plan-detail'
-import { GAP_MARGIN_MM, jointProblem, planFloors, raisedText, raisedWhy, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
+import { GAP_MARGIN_MM, jointProblem, planetsMiss, PLANETS_CANNOT_MESH, planFloors, raisedText, raisedWhy, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
 
 export { PLAN_SIZE_MAX, type PartPlan }
 
@@ -322,6 +322,9 @@ export function createCardPlans(plans: PlanRegistry) {
         // a hinged part says one way its lid prints, so the build has nothing to guess
         const joint = jointProblem(input)
         if (joint) throw new ToolInputError(`assumptions: ${joint}`)
+        // gears that turn in place mesh only at tooth counts that fit together; no tooth shape fixes one that does not
+        const planets = planetsMiss(input)
+        if (planets) throw new ToolInputError(PLANETS_CANNOT_MESH(planets))
         // a display or fine plan holds its level's rules before the person sees it, so the build follows a plan that can
         // look like the real thing
         const detail = detailProblem(input, { bed: opts.bed?.() ?? DEFAULT_BED, printer: opts.bed?.() ? ctx?.context?.machine?.printer : undefined }, { local: ctx?.localForm === true })

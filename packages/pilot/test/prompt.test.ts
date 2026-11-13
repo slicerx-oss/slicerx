@@ -248,6 +248,8 @@ describe('the line for parts that move', () => {
 
   it('is one line, in the cloud prompt only, after the check line', () => {
     expect(MOVING_PARTS_LINE).not.toContain('\n')
+    // gears that turn mesh only at tooth counts that fit, with teeth shaped and turned to their mates
+    expect(MOVING_PARTS_LINE).toContain("evenly spaced planets need the sun's and ring's teeth together to divide by their count. Give teeth their involute shape and turn each gear so its teeth sit in its mate's gaps.")
     expect(MOVING_PARTS_LINE).toContain('call design.plan with the moving pieces by name in printInPlace')
     expect(MOVING_PARTS_LINE).toContain('above and below')
     for (const scope of ['full', 'cad'] as const) {

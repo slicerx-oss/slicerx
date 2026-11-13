@@ -8,7 +8,7 @@ import type { DesignHost } from '@slicerx/cad-history'
 import type { AskAnswer, ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { createPlanRegistry, type PartPlan } from '../src/design-check'
-import { jointProblem, LID_ON_HINGE, LID_ONE_WAY, LID_STATEMENT, planFloors, printsInPlace, raiseToFloors, unstatedJoint, underFloors } from '../src/plan-floors'
+import { jointProblem, LID_ON_HINGE, LID_ONE_WAY, LID_STATEMENT, planetsMiss, PLANETS_CANNOT_MESH, planFloors, printsInPlace, raiseToFloors, unstatedJoint, underFloors } from '../src/plan-floors'
 import { createCardPlans, JOINT_LAYOUT_HELP, PLAN_GO, planChoiceId, type PlanAnswer, type PlanInput } from '../src/tab-tools'
 import { designToolset } from '../src/toolset'
 
@@ -379,6 +379,40 @@ describe('a print-in-place plan settles its joints first', () => {
     expect(tool.description).toContain(`an approved plan's result gives this printer's. ${JOINT_LAYOUT_HELP} Two or more`)
     expect(JOINT_LAYOUT_HELP).toContain('ask any choice that moves a joint (pilot.ask) before the plan')
     expect(JOINT_LAYOUT_HELP).toContain('never laid loose to join later')
+  })
+})
+
+describe('a planetary set that prints in place can mesh', () => {
+  const recordedPlans = JSON.parse(readFileSync(new URL('./fixtures/holder-plans.json', import.meta.url), 'utf8')) as { recording: string; plan: PlanInput }[]
+  const planetary = recordedPlans.find((r) => r.recording === 'planetary-gear')!.plan
+  const teeth = (p: PlanInput, name: string, t: number): PlanInput => ({ ...p, features: p.features.map((f) => (f.name === name ? { ...f, sizes: { ...f.sizes, teeth: t } } : f)) })
+
+  it('refuses the recorded planetary set, whose 3 planets cannot all mesh between a sun of 12 and a ring of 32, with two sets that do', async () => {
+    const miss = planetsMiss(planetary)
+    expect(miss).toEqual({ sun: 'Sun gear', sunTeeth: 12, planet: 'Planet gears', planetTeeth: 10, planets: 3, ring: 'Ring gear', ringTeeth: 32, instead: [[11, 31], [14, 34]] })
+    const said = 'features: 3 Planet gears of 10 teeth, evenly spaced between a Sun gear of 12 and a Ring gear of 32, cannot all mesh, since 3 does not divide 12 + 32 = 44. Pick teeth where it does, such as a Sun gear of 11 and a Ring gear of 31, or a Sun gear of 14 and a Ring gear of 34.'
+    expect(PLANETS_CANNOT_MESH(miss!)).toBe(said)
+    await expect(plan(planetary)).rejects.toThrow(said)
+  })
+
+  it('takes either set the refusal offers, a set that is no planetary one, and gears that only look like one', async () => {
+    for (const [s, r] of [[11, 31], [14, 34]] as const) {
+      const fixed = teeth(teeth(planetary, 'Sun gear', s), 'Ring gear', r)
+      expect(planetsMiss(fixed)).toBeNull()
+      expect((await plan(fixed)).answer.accepted).toBe(true)
+    }
+    // a ring whose count is not sun + 2 x planet says no planetary set, so nothing is read from it
+    expect(planetsMiss(teeth(planetary, 'Ring gear', 33))).toBeNull()
+    // a display model of the same gears does not turn, so its tooth counts are its own business
+    const display = { ...planetary, printInPlace: false as const }
+    expect(planetsMiss(display)).toBeNull()
+    // a count size on the planet feature says how many planets there are, ahead of the piece names
+    const four = { ...planetary, features: planetary.features.map((f) => (f.name === 'Planet gears' ? { ...f, sizes: { ...f.sizes, planet_count: 4 } } : f)) }
+    expect(planetsMiss(four)).toBeNull()
+  })
+
+  it('refuses no other recorded plan', () => {
+    expect(recordedPlans.filter((r) => planetsMiss(r.plan)).map((r) => r.recording)).toEqual(['planetary-gear'])
   })
 })
 
