@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A small part in the same filament as the part it sits on hardly shows (a white boat on a white deck). design.check
-// notes it for a display or fine model, beside the check: never a failed item, and the summary stays as it was.
+// notes it for a display or fine model, beside the check: never a failed item. A check that passes asks the reply
+// to pass the note on.
 import { describe, expect, it } from 'vitest'
-import { colorInPlay, createPlanRegistry, designCheck, SAME_FILAMENT, sameFilament, SITS_MM, SMALL_SHARE, type BodyFacts, type PartBox, type PartPlan } from '../src/design-check'
+import { colorInPlay, createPlanRegistry, designCheck, NOTES_SAY, SAME_FILAMENT, sameFilament, SITS_MM, SMALL_SHARE, type BodyFacts, type PartBox, type PartPlan } from '../src/design-check'
 import { useGeomEngine } from './geom-engine'
 import { connect, data, text } from './helpers'
 
@@ -13,6 +14,10 @@ const deck = box('Deck', 2, [0, 0, 0], [100, 30, 10])
 const boat = (slot: number, z = 10, painted = false) => box('Boat', slot, [40, 10, z], [50, 16, z + 4], painted)
 
 describe('a small part in the filament of what it sits on', () => {
+  it('is asked of the reply in one sentence that carries every note', () => {
+    expect(NOTES_SAY(['A is red.', 'B is blue. Paint it.'])).toBe('Say this in the reply too, as a suggestion: A is red; B is blue. Paint it')
+  })
+
   it('is noted, naming both parts and the filament', () => {
     expect(sameFilament([deck, boat(2)])).toEqual(["Boat is the same filament (2) as Deck, which it sits on, so it will hardly show. Give it another filament, or paint Deck under it."])
     expect(SAME_FILAMENT('Boat', 'Deck', 2)).toBe(sameFilament([deck, boat(2)])[0])
@@ -115,14 +120,17 @@ describe('slicerx_design_check on a display deck with a boat in its filament', (
 
   it('says nothing when the whole ship is one filament and the plan asks no color', async () => {
     const out = await ship(false)
+    expect(out.summary).not.toContain('Say this in the reply too')
     expect(out.output.body.partBoxes?.map((b) => [b.name, b.slot])).toEqual([['Body', 1], ['Boat', 1]])
     expect(out.output.notes).toBeUndefined()
   })
 
-  it('notes the boat once a second filament is in play, and leaves the summary as it was', async () => {
+  it('notes the boat once a second filament is in play, and the passing summary says to pass it on', async () => {
     const out = await ship(true)
     expect(out.output.body.partBoxes?.map((b) => [b.name, b.slot])).toEqual([['Body', 1], ['Boat', 1], ['Flag', 2]])
     expect(out.output.notes).toEqual([SAME_FILAMENT('Boat', undefined, 1)])
-    expect(out.summary).not.toContain('hardly show')
+    // the check passes, so its summary asks the reply to pass the note on, after the size and the resize offer
+    expect(out.output.pass).toBe(true)
+    expect(out.summary.endsWith(`offer a resize as a follow-up: half size, or a length the person types. ${NOTES_SAY(out.output.notes!)}`)).toBe(true)
   })
 })

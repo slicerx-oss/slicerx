@@ -8,7 +8,7 @@ import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { assumptionsInput, changeBroke, colorBands, createPlanRegistry, designCheck, FIX_ROUNDS, fixRoundOpen, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, type PartPlan, partPlanSchema, type PlanEntry, plannedFloor, plannedHoleMm, PlanOwnedError, type PlanRegistry, printsTogether, stalePlanNote, supersededPlanNote } from './design-check'
+import { assumptionsInput, changeBroke, colorBands, createPlanRegistry, designCheck, FIX_ROUNDS, fixRoundOpen, NOTES_SAY, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, type PartPlan, partPlanSchema, type PlanEntry, plannedFloor, plannedHoleMm, PlanOwnedError, type PlanRegistry, printsTogether, stalePlanNote, supersededPlanNote } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -933,7 +933,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           const b = body.size
           const long = Math.round(Math.max(b.x, b.y))
           const printer = ctx?.context?.machine?.printer
-          return { summary: `${summary}. In the reply, give its size (${long} mm long, ${Math.round(Math.min(b.x, b.y))} mm wide and ${Math.round(b.z)} mm tall, fits ${printer ? `the ${printer}` : 'the bed'}) and offer a resize as a follow-up: half size, or a length the person types`, output }
+          // a note on its looks (a small part that hardly shows) is said too, or the reply would skip it
+          const notes = result.notes?.length ? `. ${NOTES_SAY(result.notes)}` : ''
+          return { summary: `${summary}. In the reply, give its size (${long} mm long, ${Math.round(Math.min(b.x, b.y))} mm wide and ${Math.round(b.z)} mm tall, fits ${printer ? `the ${printer}` : 'the bed'}) and offer a resize as a follow-up: half size, or a length the person types${notes}`, output }
         }
         return { summary, output }
       }
