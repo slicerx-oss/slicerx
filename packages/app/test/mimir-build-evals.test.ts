@@ -938,6 +938,14 @@ const line = (id: string, r: CaseRun, usd?: number, model?: string): string => {
 const SLOW_REPLAYS = new Set(['twisted-vase', 'flared-vase'])
 const slowEvals = process.env['SX_SLOW_EVALS'] === '1'
 
+/**
+ * Cases whose recording holds an engine answer that has since been corrected, so they no longer replay. hinged-box: its
+ * fit check was recorded as "Base and Lid touch, 0.0 mm", a false contact from a number read one unit in the last place
+ * off; read exactly, the check answers a 0.38 mm gap, which is what the design has. Each is captured again once the
+ * exact solid work has landed, and leaves this list then.
+ */
+const PAUSED_REPLAYS = new Set(['hinged-box'])
+
 describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
   beforeAll(async () => setGeomProvider(await wasmGeom()))
   afterAll(() => setGeomProvider(null))
@@ -947,7 +955,7 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
     // a lofted vase with a shell takes about a minute to rebuild in the engine; the drive stops a replay at REPLAY_DRIVE_MS
     // (and says so in r.error), just under the 180 s the test is given
     const title = slow && !slowEvals ? `${c.id} scores as it did live (lofted, slow to rebuild: set SX_SLOW_EVALS=1)` : `${c.id} scores as it did live`
-    it.skipIf(!rec || (slow && !slowEvals))(title, { timeout: 180_000 }, async () => {
+    it.skipIf(!rec || (slow && !slowEvals) || PAUSED_REPLAYS.has(c.id))(title, { timeout: 180_000 }, async () => {
       const r = await driveCase(c, { steps: rec!.steps, timeoutMs: REPLAY_DRIVE_MS })
       console.log(line(c.id, r))
       // SX_MIMIR_EVAL_RESCORE=1 (with SX_MIMIR_EVAL_RESCORE_REASON) writes this replay's score over the stored one after
