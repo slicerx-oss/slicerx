@@ -8,7 +8,7 @@
 // to the next one. An sx-geom with no serve mode (it does not say HELLO) is run once per call, as before.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { clearReplayCache, type EngineCall } from '@slicerx/cad-history'
-import { decodeFrame, encodeFrame, HELLO, ownBodies, plainArrays, readBuffers, tagBodies, takeFrame } from '@slicerx/cad-history/served'
+import { decodeFrame, encodeFrame, handsOutBodies, HELLO, ownBodies, plainArrays, readBuffers, tagBodies, takeFrame } from '@slicerx/cad-history/served'
 import { ToolInputError } from './models'
 
 /** The design engine of a server: calls, and whether bodies stay in the engine between them. */
@@ -216,7 +216,7 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
     if (typeof a['error'] === 'string') throw new ToolInputError(a['error'])
     // meshes an answer sends as buffers become numbers, as the per-call run prints them
     const result = buffers.length ? plainArrays(readBuffers(paintCodes(a['result'], buffers), buffers)) : a['result']
-    if (job.op.startsWith('brep.') && result !== null && typeof result === 'object') tagBodies(result as Record<string, unknown>, from)
+    if (handsOutBodies(job.op, job.request) && result !== null && typeof result === 'object') tagBodies(result as Record<string, unknown>, from)
     return result
   }
 

@@ -41,7 +41,11 @@ export function standInKernel() {
       case 'brep.count':
         return { bodies: held.size }
       case 'exact.ops':
-        return { ops: [] }
+        return { ops: ['sketch.loft'] }
+      case 'sketch.loft':
+        // an exact loft keeps its body as a kernel op does when asked (withKeys); a box-like body of four faces
+        if (req['exact'] === true && req['withKeys'] === true) return make(req, 4)
+        throw new Error('sketch.loft: only exact lofts kept by number here')
       case 'brep.extrude':
         if (req['target'] === undefined) return make(req, 3)
         return { ...make(req, facesOf(req['target']) + 1), touches: true }
