@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -115,6 +116,25 @@ export function built(path: string | undefined, build: string): boolean {
 export const GEOM_BUILD = 'build sx-geom (cargo build -p sx-geom) and name it in SLICERX_SX_GEOM_BIN'
 /** The native exact tests need the B-rep kernel in sx-geom; a default build answers "brep.* is not in this build". */
 export const BREP_BUILD = 'build sx-geom with the exact kernel (cargo build -p sx-geom --features brep) and name it in SLICERX_SX_GEOM_BIN'
+
+/**
+ * Why the sx-geom at `path` cannot run the native exact tests, or null when it can: it is asked for its body count
+ * (brep.count), which a build with the exact kernel answers and a default build refuses ("brep.count is not in this
+ * build"). A binary that is missing goes through built, so SLICERX_TEST_REQUIRE_SX=1 still fails on it.
+ */
+export function noKernel(path: string | undefined): string | null {
+  if (!built(path, BREP_BUILD)) return `no sx-geom: ${BREP_BUILD}`
+  const r = spawnSync(path!, ['brep.count'], { input: '{}', encoding: 'utf8', timeout: 20_000 })
+  let answer: unknown
+  try {
+    answer = JSON.parse(r.stdout)
+  } catch {
+    return `the sx-geom at ${path} gave no answer to brep.count (exit ${r.status ?? 'none'}): ${BREP_BUILD}`
+  }
+  if (typeof (answer as { bodies?: unknown }).bodies === 'number') return null
+  const said = (answer as { error?: unknown }).error
+  return `the sx-geom at ${path} has no exact kernel (${typeof said === 'string' ? said : 'brep.count answered no body count'}): ${BREP_BUILD}`
+}
 
 /** True when there is no sx-geom beside sx; with SLICERX_TEST_REQUIRE_SX=1 a missing one fails instead. */
 export function noSxGeom(): boolean {

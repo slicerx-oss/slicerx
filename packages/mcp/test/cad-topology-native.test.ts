@@ -5,13 +5,15 @@ import { rmSync } from 'node:fs'
 import { clearReplayCache } from '@slicerx/cad-history'
 import type { TopologyManifest } from '@slicerx/cad-history/topology-manifest'
 import { geomEngine } from '../src/geom'
-import { BREP_BUILD, built, connect, data, text } from './helpers'
+import { connect, data, noKernel, text } from './helpers'
 
 const bin = process.env['SLICERX_SX_GEOM_BIN']
-const exact = built(bin, BREP_BUILD)
+// the binary is asked for its exact kernel, since one built without it refuses every brep operation
+const why = noKernel(bin)
+const exact = why === null
 afterEach(() => { clearReplayCache(); vi.unstubAllEnvs() })
 
-it.skipIf(!exact)('verifies an exact scoped hole edit and refuses old revisions after undo and reopen', async () => {
+it.skipIf(!exact)(`verifies an exact scoped hole edit and refuses old revisions after undo and reopen${why ? ` (skipped: ${why})` : ''}`, async () => {
   vi.stubEnv('SX_BREP_DEV', '1')
   const calls: string[] = []
   const native = geomEngine(bin!, 20000)
