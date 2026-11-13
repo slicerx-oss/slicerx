@@ -90,10 +90,10 @@ describe('design.plan states the gaps moving pieces need', () => {
 
   it('says the gaps this printer needs once a print-in-place plan is approved, and raises a planned gap under them on the card', async () => {
     const spinner = await approve({ print_gap: 0.3 }, ['Hub', 'Spinner'])
-    expect(spinner.summary).toBe("Approved as shown. Moving pieces need gaps of at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers) on this printer. The card raised Spinner print gap to 0.4 mm on each side to this printer's smallest sizes; build from edits")
-    expect(spinner.output).toMatchObject({ accepted: true, gaps: { sideMm: 0.3, verticalMm: 0.4 }, raised: [{ feature: 'Spinner', size: 'print_gap', from: 0.3, to: 0.4 }] })
+    expect(spinner.summary).toBe("Approved as shown. Moving pieces need gaps of at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers) on this printer. The card raised Spinner print gap to 0.45 mm on each side to this printer's smallest sizes; build from edits")
+    expect(spinner.output).toMatchObject({ accepted: true, gaps: { sideMm: 0.3, verticalMm: 0.4 }, raised: [{ feature: 'Spinner', size: 'print_gap', from: 0.3, to: 0.45 }] })
     const fish = await approve({ side_gap: 0.2 }, ['Hub', 'Spinner'])
-    expect(fish.summary).toContain('The card raised Spinner side gap to 0.3 mm on each side')
+    expect(fish.summary).toContain('The card raised Spinner side gap to 0.35 mm on each side')
   })
 
   it('says nothing of gaps for a plan without printInPlace', async () => {

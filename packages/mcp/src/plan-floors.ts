@@ -110,10 +110,28 @@ export interface UnderFloor {
   floor: number
   /** Why that is the floor, in plain words: "the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA". */
   why: string
+  /** What the card raises it to: the floor, and for a gap the floor and GAP_MARGIN_MM, in the plan's units. */
+  to: number
   /** For a gap beside a pin: the pin's diameter and the bore it gives at the floor (the pin plus the gap on each side). */
   pin?: number
   bore?: number
+  /** The bore the raised gap gives around the pin. */
+  toBore?: number
 }
+
+/**
+ * How far over its floor the card raises a gap it raises: a round face is drawn as flat facets that sit a little closer
+ * than its circle (fit-facts.ts, FIT_TOLERANCE_MM), so a gap drawn at the floor measures just under it. Only the size the
+ * card raises moves; a gap planned at or over its floor is the person's, and the floor every check holds to is unchanged.
+ */
+export const GAP_MARGIN_MM = 0.05
+
+/**
+ * Why a raised gap lands over its floor, put before the floor's own why. Its words stay as they are; only the numbers
+ * and the floor's why change: "Hinge pin gap axial raised from 0.5 mm to 0.65 mm on each side (2.4 mm pin, 3.7 mm
+ * bore), 0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PETG."
+ */
+export const gapMarginWhy = (marginMm: number, why: string): string => `${r3(marginMm)} mm over ${why}`
 
 const mmText = (v: number): string => `${r3(v)} mm`
 
@@ -249,16 +267,18 @@ export function underFloors(plan: FloorPlan, floors: PlanFloors): UnderFloor[] {
       if (what === 'hole' ? !holeTooSmall(v * scale, floors) : v * scale >= needMm - 1e-6) continue
       const floor = inUnits(needMm, plan.units)
       const gap = what === 'gap' ? (z ? (way === 'z' ? 'z' : 'in place') : inPlace ? 'in place' : 'apart') : undefined
-      const u: UnderFloor = { feature: f.name, size: key, what, planned: v, floor, why: why(what, floors, gap) }
+      const to = what === 'gap' ? inUnits(needMm + GAP_MARGIN_MM, plan.units) : floor
+      const u: UnderFloor = { feature: f.name, size: key, what, planned: v, floor, why: why(what, floors, gap), to }
       // a gap beside a pin is a bore: give the bore it makes, so the build cuts a number rather than reading a gap
       const pin = what === 'gap' && way !== 'z' ? pinOf(plan, f, floors) : undefined
-      if (pin !== undefined) Object.assign(u, { pin, bore: r3(pin + 2 * floor) })
+      if (pin !== undefined) Object.assign(u, { pin, bore: r3(pin + 2 * floor), toBore: r3(pin + 2 * to) })
       out.push(u)
     }
   }
   for (const h of plan.holes ?? []) {
     if (!holeTooSmall(h.diameter * scale, floors)) continue
-    out.push({ feature: null, size: 'diameter', hole: h.name, what: 'hole', planned: h.diameter, floor: inUnits(floors.holeMm, plan.units), why: why('hole', floors) })
+    const floor = inUnits(floors.holeMm, plan.units)
+    out.push({ feature: null, size: 'diameter', hole: h.name, what: 'hole', planned: h.diameter, floor, why: why('hole', floors), to: floor })
   }
   return out
 }
@@ -276,9 +296,18 @@ export function floorText(u: UnderFloor, units: 'mm' | 'in'): string {
   return `${sized(u.floor, units)} on each side${u.bore !== undefined ? ` (${sized(u.pin!, units)} pin, ${sized(u.bore, units)} bore)` : ''}`
 }
 
-/** One line for the card: "Hinge gap raised from 0.3 mm to 0.4 mm on each side (2 mm pin, 2.8 mm bore), the smallest gap ...". */
+/** What the card raises a size to, as the build reads it: "0.45 mm on each side (2 mm pin, 2.9 mm bore)" for a gap. */
+export function raisedText(u: UnderFloor, units: 'mm' | 'in'): string {
+  if (u.what !== 'gap') return sized(u.to, units)
+  return `${sized(u.to, units)} on each side${u.toBore !== undefined ? ` (${sized(u.pin!, units)} pin, ${sized(u.toBore, units)} bore)` : ''}`
+}
+
+/** Why the card raised a size where it did: a gap lands GAP_MARGIN_MM over its floor, anything else on it. */
+export const raisedWhy = (u: UnderFloor): string => (u.what === 'gap' ? gapMarginWhy(GAP_MARGIN_MM, u.why) : u.why)
+
+/** One line for the card: "Hinge gap raised from 0.3 mm to 0.45 mm on each side (2 mm pin, 2.9 mm bore), 0.05 mm over the smallest gap ...". */
 export function raisedLine(u: UnderFloor, units: 'mm' | 'in'): string {
-  const line = `${underName(u)} raised from ${sized(u.planned, units)} to ${floorText(u, units)}, ${u.why}.`
+  const line = `${underName(u)} raised from ${sized(u.planned, units)} to ${raisedText(u, units)}, ${raisedWhy(u)}.`
   return line.length <= LINE_MAX ? line : `${line.slice(0, LINE_MAX - 1)}…`
 }
 
@@ -297,8 +326,8 @@ const esc = (v: string): string => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  */
 function restated(line: string, u: UnderFloor, units: 'mm' | 'in'): string {
   const old = esc(String(r3(u.planned)))
-  const bore = u.bore !== undefined ? ` (${sized(u.bore, units)} bore)` : ''
-  const now = `${r3(u.floor)} ${units}`
+  const bore = u.toBore !== undefined ? ` (${sized(u.toBore, units)} bore)` : ''
+  const now = `${r3(u.to)} ${units}`
   const out = line
     .replace(new RegExp(`(?<![\\d.])${old}\\s*${units}(\\s+(per[- ]side\\s+)?(?:clearance|gap|play))\\b`, 'i'), (_m, word: string, per?: string) => `${now}${word}${per ? '' : ' on each side'}${bore}`)
     .replace(new RegExp(`\\b(clearance|gap|play)(\\s+of\\s+|\\s*:\\s*|\\s+)${old}\\s*${units}(?![\\w.])`, 'i'), (_m, word: string, sep: string) => `${word}${sep}${now} on each side${bore}`)
@@ -306,7 +335,7 @@ function restated(line: string, u: UnderFloor, units: 'mm' | 'in'): string {
 }
 
 /**
- * The plan with every size under its floor raised to the floor, and a line per raised size first among its
+ * The plan with every size under its floor raised to it (a gap to GAP_MARGIN_MM over it), and a line per raised size first among its
  * assumptions, saying from what to what and why. When the lines do not fit beside the plan's own assumptions (12 at
  * most), one line names every raised size; with no room at all the card shows the raised sizes alone and the result
  * says why. A plan with nothing under its floors comes back as it is.
@@ -318,18 +347,18 @@ export function raiseToFloors<P extends FloorPlan>(plan: P, floors: PlanFloors):
   for (const u of raised) {
     if (u.feature === null) {
       const h = next.holes?.find((x) => x.name === u.hole && x.diameter === u.planned)
-      if (h) h.diameter = u.floor
+      if (h) h.diameter = u.to
       continue
     }
     const f = next.features.find((x) => x.name === u.feature && x.sizes[u.size] === u.planned)
-    if (f) f.sizes[u.size] = u.floor
+    if (f) f.sizes[u.size] = u.to
   }
   // the plan's own lines that name a raised gap's old value say the new one, so nothing the build reads says the old gap
   next.assumptions = next.assumptions.map((a) => raised.reduce((t, u) => (u.what === 'gap' ? restated(t, u, plan.units) : t), a))
   const room = LINES_MAX - next.assumptions.length
   let lines = raised.map((u) => raisedLine(u, plan.units))
   if (lines.length > room) {
-    const all = `Raised to this printer's smallest sizes: ${raised.map((u) => `${underName(u)} ${floorText(u, plan.units)}`).join(', ')}.`
+    const all = `Raised to this printer's smallest sizes: ${raised.map((u) => `${underName(u)} ${raisedText(u, plan.units)}`).join(', ')}.`
     lines = room > 0 ? [all.length <= LINE_MAX ? all : `${all.slice(0, LINE_MAX - 1)}…`] : []
   }
   next.assumptions = [...lines, ...next.assumptions]

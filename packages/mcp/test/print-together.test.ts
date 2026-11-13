@@ -125,9 +125,9 @@ describe('a recorded plan whose pieces print together', () => {
     expect([rule.sideMm, rule.verticalMm]).toEqual([0.4, 0.6])
     const r = await planAndCheck(input, petg)
     expect(r.planned.summary).toContain('at least 0.4 mm side by side and 0.6 mm above or below (PETG, 0.4 mm nozzle, 0.2 mm layers) on this printer')
-    // the card raised the 0.4 mm joint to PETG's 0.6 mm before Go, so the part built from the plan clears it
-    expect(r.planned.summary).toContain('The card raised Segments and joint gaps joint gap to 0.6 mm on each side')
-    expect(r.gaps).toEqual({ name: 'planned gaps', want: 'every gap the plan sets at least 0.4 mm side by side and 0.6 mm above or below (PETG, 0.4 mm nozzle, 0.2 mm layers)', got: 'joint_gap 0.6 mm (vertical)', pass: true })
+    // the card raised the 0.4 mm joint to 0.05 mm over PETG's 0.6 mm before Go, so the part built from the plan clears it
+    expect(r.planned.summary).toContain('The card raised Segments and joint gaps joint gap to 0.65 mm on each side')
+    expect(r.gaps).toEqual({ name: 'planned gaps', want: 'every gap the plan sets at least 0.4 mm side by side and 0.6 mm above or below (PETG, 0.4 mm nozzle, 0.2 mm layers)', got: 'joint_gap 0.65 mm (vertical)', pass: true })
   })
 })
 
@@ -153,9 +153,9 @@ describe('a plan left alone', () => {
 
   it('reads a chain of 6 links with a 0.2 mm link gap as print-in-place', async () => {
     const r = await planAndCheck(chain(), machine)
-    // the card says so first, then raises the 0.2 mm link gap to the 0.4 mm it needs
-    expect(r.shown?.assumptions).toEqual([LINE, 'Links link gap raised from 0.2 mm to 0.4 mm on each side, the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.', 'Links are 15 mm long.'])
-    expect(r.gaps).toMatchObject({ got: 'link_gap 0.4 mm (vertical)', pass: true })
+    // the card says so first, then raises the 0.2 mm link gap to 0.05 mm over the 0.4 mm it needs
+    expect(r.shown?.assumptions).toEqual([LINE, 'Links link gap raised from 0.2 mm to 0.45 mm on each side, 0.05 mm over the smallest gap for parts printed in place with a 0.4 mm nozzle in PLA.', 'Links are 15 mm long.'])
+    expect(r.gaps).toMatchObject({ got: 'link_gap 0.45 mm (vertical)', pass: true })
   })
 
   it('leaves a plan with printInPlace false alone', async () => {
