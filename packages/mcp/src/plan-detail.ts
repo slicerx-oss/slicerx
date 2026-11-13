@@ -291,6 +291,18 @@ function massProblems(plan: DetailPlan, feature: FeatureOf): string[] {
 }
 
 /**
+ * The sentence for a tier list keyed by a name that is no planned feature, over levels that all are: the levels of
+ * one body keyed by the lowest, or separate bodies each with its own list; one level is keyed by itself. The list is
+ * the plan's own levels in the compact JSON the tool takes. No closing period: the refusal joins its problems with one.
+ */
+export const TIER_GROUP_KEY = (key: string, levels: readonly string[]): string => {
+  const lowest = levels[0]!
+  if (levels.length === 1) return `tiers: ${key} is not a planned feature but a name over ${lowest}. Key its list by ${lowest}: tiers: ${JSON.stringify({ [lowest]: [lowest] })}, with only ${lowest} in flat`
+  const names = `${levels.slice(0, -1).join(', ')} and ${levels.at(-1)!}`
+  return `tiers: ${key} is not a planned feature but a name over ${names}. If they are levels of one body, key them by the lowest, the body flat lists: tiers: ${JSON.stringify({ [lowest]: levels })}, with only ${lowest} in flat. If they are separate bodies, give each its own list`
+}
+
+/**
  * Each flat-sided main body states its levels from the bottom up (tiers), each a planned feature, so a body the real
  * thing builds in steps or stories is planned that way and not as one slab; a single block lists only itself.
  */
@@ -298,11 +310,15 @@ function tierProblems(plan: DetailPlan, feature: FeatureOf): string[] {
   const out: string[] = []
   const tiers = Object.entries(plan.tiers ?? {})
   const stated = new Set(tiers.map(([body]) => body.trim().toLowerCase()))
+  // a key that is no feature over levels that all are: a name for them, answered once with both readings, so the
+  // levels it lists are not each asked for their own list as well
+  const group = (body: string, levels: readonly string[]): boolean => !feature(body) && levels.length > 0 && levels.every((l) => feature(l))
+  const grouped = new Set(tiers.flatMap(([body, levels]) => (group(body, levels) ? levels.map((l) => l.trim().toLowerCase()) : [])))
   for (const b of plan.flat ?? [])
-    if (feature(b) && !stated.has(b.trim().toLowerCase()))
+    if (feature(b) && !stated.has(b.trim().toLowerCase()) && !grouped.has(b.trim().toLowerCase()))
       out.push(`tiers: give the levels of ${b} from the bottom up; a body the real thing builds in steps or stories (a stepped roof, a tower, a tiered cake) lists each level as its own feature, a single block lists only itself`)
   for (const [body, levels] of tiers) {
-    if (!feature(body)) out.push(`tiers: ${body} is not a planned feature`)
+    if (!feature(body)) out.push(group(body, levels) ? TIER_GROUP_KEY(body, levels) : `tiers: ${body} is not a planned feature`)
     for (const l of levels) {
       const f = feature(l)
       if (!f) {
@@ -431,8 +447,12 @@ export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, lev
  * The method a display or fine plan follows, for any object (a car body, a plane's fuselage, a bottle): a few
  * lines in the plan tool's description and in each refusal, never a recipe for one object.
  */
+/** A plan shape that passes a display plan's rules on the first try, said in general terms, for any object. */
+export const DETAIL_WORKED_SHAPE =
+  'A plan of this shape passes on the first try: a stepped body is one main body in flat, keyed in tiers by its own name, its levels in order, each its own feature at least 3 mm tall, stacked; a detail that repeats is listed in repeats and planned as two features, one that builds it once and one with kind array (or pattern) and its count as a size'
+
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a top line rising toward the ends, a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built; a band a person sees from the whole-model view is a real share of the side, not a sliver. Faces that read as their own surface from above (a flat top, a roof, a floor) may then take their own color, painted by direction top, so the top view has contrast. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Where the real thing is one continuous body along most of its length, its levels are continuous too, each stepped in from the one below, and the parts standing on it stand on its top level. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. An upright the real thing leans (a chimney, a table leg, a lamp post) gives its lean in degrees as a size named rake; a tapered or raked round part is a loft between two ellipses, offset for the rake, then arrayed, its cap or band leaning with it. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, at their real count and lean (and color, when the person asks for it), with the detail its size can carry: a repeated detail the scale leaves at least two nozzle widths wide is built in rows on every side that has it (a row on a curved side follows the side), and anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror'
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a top line rising toward the ends, a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built; a band a person sees from the whole-model view is a real share of the side, not a sliver. Faces that read as their own surface from above (a flat top, a roof, a floor) may then take their own color, painted by direction top, so the top view has contrast. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Where the real thing is one continuous body along most of its length, its levels are continuous too, each stepped in from the one below, and the parts standing on it stand on its top level. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. An upright the real thing leans (a chimney, a table leg, a lamp post) gives its lean in degrees as a size named rake; a tapered or raked round part is a loft between two ellipses, offset for the rake, then arrayed, its cap or band leaning with it. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, at their real count and lean (and color, when the person asks for it), with the detail its size can carry: a repeated detail the scale leaves at least two nozzle widths wide is built in rows on every side that has it (a row on a curved side follows the side), and anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror. ' + DETAIL_WORKED_SHAPE
 
 /** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
 export interface LoftSections {
