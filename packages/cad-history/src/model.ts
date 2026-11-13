@@ -171,6 +171,11 @@ export interface Step {
   uses?: string[]
   /** What the step made leans this way, turned about its foot (tilt.ts); laid on params as the step replays. */
   tilt?: StepTilt
+  /**
+   * The steps one call made share a group (a rail's posts and bar): undo takes the whole
+   * group off the end of the history, and redo puts it back. A step with none undoes alone, as every step did before.
+   */
+  group?: string
 }
 
 /** A step's lean: `up` (the step's own up when it was given) turned toward `toward` by `degrees`, both in params' frame. */
@@ -239,6 +244,21 @@ export const keepsArrayOf = (name: unknown): name is string => typeof name === '
 let seq = 0
 // the counter is decimal so every id holds a digit: tools and replays that pick ids out of text tell an id from a word by its digit
 export const stepId = (): string => `s${Date.now().toString(36)}${++seq}`
+/** A new group for the steps one call makes (Step.group). */
+export const groupId = (): string => `g${Date.now().toString(36)}${++seq}`
+
+/**
+ * The steps at the end of `steps` that undo as one: the last step and the steps before it in its group, or the last
+ * step alone when it has no group.
+ */
+export function lastGroup(steps: readonly Step[]): Step[] {
+  const last = steps[steps.length - 1]
+  if (!last) return []
+  if (!last.group) return [last]
+  let k = steps.length - 1
+  while (k > 0 && steps[k - 1]!.group === last.group) k--
+  return steps.slice(k)
+}
 
 // Small matrix and vector helpers (column-major, like three.js).
 

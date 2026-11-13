@@ -18,7 +18,7 @@
 // now, moved with the design it was drawn for or the first feature drawn on it, then into a design's frame by that
 // design's landing (cad-history design-frame.ts). Where a body stands comes from one place for every reader
 // (sketch-place.ts), waiting designs included, so the mimir tab's host, the app link's and Model read the same.
-import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, unstopped, withPlaced, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, unstopped, withPlaced, type AddOptions, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
@@ -28,6 +28,7 @@ import { nestArrange } from '../plate/nest'
 import { identity } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
+import { newStep, type UndoStep } from '../plate/history'
 import { exactSolids } from './history/exact-flag'
 import { finishSketch, sketchById } from './sketches'
 import { addProjection, changeProjection } from './project-sketch'
@@ -251,20 +252,31 @@ export function appDesignHost(loader: Loader): AppDesignHost {
    * stands at on the plate. A step drawn on a timeline sketch is kept where that sketch is stored (cad-history
    * recordedOn), as Model's own Extrude and Revolve keep theirs, so recording it leaves the sketch's frame as it was.
    */
-  function recorded(d: Design, plate: Mat4, part: number, params: StepParams, label: string | undefined, sketch: string | undefined, feature: string | undefined): Step {
+  function recorded(d: Design, plate: Mat4, part: number, params: StepParams, label: string | undefined, sketch: string | undefined, feature: string | undefined, group?: string): Step {
     const placed = d.placed ? translation([d.placed[0], d.placed[1], 0]) : undefined
     const given = placed ? movedParams(params, placed) : params
     const { transform, params: p } = sketch !== undefined ? recordedOn(get().timeline, sketch, plate, given, placeOf) : { transform: [...plate], params: given }
-    return { id: stepId(), part, transform, params: p, ...(label ? { label } : {}), ...(sketch ? { sketch } : {}), ...(feature ? { feature } : {}) }
+    return { id: stepId(), part, transform, params: p, ...(label ? { label } : {}), ...(sketch ? { sketch } : {}), ...(feature ? { feature } : {}), ...(group ? { group } : {}) }
   }
 
-  async function add(d: Design, part: number, params: StepParams, label: string | undefined, opts: { sketch?: string; expectedRevision?: string; feature?: string } | undefined, receipt: boolean): Promise<DesignCommit> {
+  /** The undo step of the last group a call added to each design: the steps of one call land in one undo step. */
+  const groupSteps = new Map<string, { group: string; step: UndoStep }>()
+  const undoStepOf = (design: string, group: string | undefined): UndoStep | undefined => {
+    if (!group) return undefined
+    const had = groupSteps.get(design)
+    if (had?.group === group) return had.step
+    const step = newStep()
+    groupSteps.set(design, { group, step })
+    return step
+  }
+
+  async function add(d: Design, part: number, params: StepParams, label: string | undefined, opts: AddOptions | undefined, receipt: boolean): Promise<DesignCommit> {
     const guard = opts?.expectedRevision === undefined ? undefined : () => bodyRevisions.assert(d.id, opts.expectedRevision!)
     guard?.()
     delete d.landed
     const w = empty.get(d.id)
     const plate = w ? w.transform : (get().plate.find((p) => p.id === d.id)?.transform ?? identity())
-    const step = recorded(d, plate, part, params, label, opts?.sketch, opts?.feature)
+    const step = recorded(d, plate, part, params, label, opts?.sketch, opts?.feature, opts?.group)
     const next = appendStep(d.history, step)
     let committed: DesignCommit | undefined
     const capture = receipt ? () => {
@@ -279,7 +291,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       if (!committed) empty.delete(d.id)
     } else {
       const after = afterEdit(d.id)
-      await applyHistory(loader, d.id, next, step.id, guard, capture, after.land).catch((e: unknown) => {
+      await applyHistory(loader, d.id, next, step.id, guard, capture, after.land, undoStepOf(d.id, opts?.group)).catch((e: unknown) => {
         if (e instanceof Error && 'code' in e && e.code === 'stale_body') throw e
         throw new Error(`The step did not go through: ${unstopped(e instanceof Error ? e.message : String(e))}. The design is unchanged.`)
       })

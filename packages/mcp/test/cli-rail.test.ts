@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A rail through the CLI with the real geometry engine: one call adds the posts and the bar, the steps read back, and
-// one undo each takes them off again.
+// one undo takes them both off again.
 import { execFile } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,7 +20,7 @@ describe.skipIf(!built(bin, GEOM_BUILD))('a rail through the CLI with the real g
       ['geom_rail', { design: 'd1', path: { frame: { origin: [0, 0, 4], normal: [0, 0, 1] }, points: [[-18, -8], [18, -8]] }, height_mm: 2, part: 0, join: true }],
       ['design_steps', { design: 'd1' }],
       ['design_undo', { design: 'd1' }],
-      ['design_undo', { design: 'd1' }],
+      ['design_redo', { design: 'd1' }],
     ]
     try {
       const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('SLICERX_')))
@@ -32,7 +32,8 @@ describe.skipIf(!built(bin, GEOM_BUILD))('a rail through the CLI with the real g
       expect(railed).toMatchObject({ steps: 3 })
       expect(railed.sizeMm[2]).toBeCloseTo(6, 3)
       expect((lines[3]!.output.output.steps as { name: string; state: string }[]).map((s) => [s.name, s.state]).slice(1)).toEqual([['Rail posts, 13', 'done'], ['Rail bar', 'done']])
-      expect(lines[5]!.output.output).toMatchObject({ steps: 1, volumeMm3: 3200, sizeMm: [40, 20, 4] })
+      expect(lines[4]!.output.output).toMatchObject({ steps: 1, volumeMm3: 3200, sizeMm: [40, 20, 4] })
+      expect(lines[5]!.output.output.steps).toBe(3)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   }, 100_000)
 })

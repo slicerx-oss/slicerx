@@ -285,6 +285,8 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...usesOf(s['uses']),
       // the lean an edit gave what the step made
       ...readTilt(s['tilt']),
+      // the call it was made in with other steps, which undo with it (a file from before groups has none)
+      ...(typeof s['group'] === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(s['group']) ? { group: s['group'] } : {}),
     })
   }
   return { version: 1, base, steps, ...(v['exact'] === true ? { exact: true } : {}), ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}), ...placedOf(v['placed']) }
