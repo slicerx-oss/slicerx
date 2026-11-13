@@ -122,9 +122,9 @@ export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appNa
     const run = async (input: never, ctx: Parameters<typeof t.run>[1]): Promise<ToolOutput> => {
       const args = input as unknown as Record<string, unknown>
       if (!onApp(t.name, args, opts)) return local(input, ctx)
-      let out: { summary?: string; output?: unknown }
+      let out: { ok?: boolean; summary?: string; output?: unknown }
       try {
-        out = await link.call<{ summary?: string; output?: unknown }>(t.name, args)
+        out = await link.call<{ ok?: boolean; summary?: string; output?: unknown }>(t.name, args)
       } catch (e) {
         const code = String((e as { code?: unknown }).code ?? '')
         const message = e instanceof Error ? e.message : String(e)
@@ -140,7 +140,8 @@ export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appNa
       // The first reply says where designs live now, once per session.
       const note = told || opts.required || APP_PROJECT_TOOLS.has(t.name) ? '' : ` Designs now live in the project open in ${appName}, with their steps in its history; start the server with --no-app to keep them here.`
       told = true
-      return { summary: `${out.summary ?? t.name} (in ${appName})${note}`, output: { ...(typeof out.output === 'object' && out.output ? out.output : { result: out.output ?? null }), in: 'app' } }
+      // a refusal in the app is one here too
+      return { ...(out.ok === false ? { ok: false } : {}), summary: `${out.summary ?? t.name} (in ${appName})${note}`, output: { ...(typeof out.output === 'object' && out.output ? out.output : { result: out.output ?? null }), in: 'app' } }
     }
     return { ...t, run }
   })

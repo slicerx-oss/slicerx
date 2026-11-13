@@ -310,3 +310,14 @@ describe('finished sketches over the app link', () => {
   })
 })
 
+describe('a refusal the app answers', () => {
+  it('stays a failed call here, and a call that went through stays passed', async () => {
+    const call = vi.fn(async (_method: string, args: Record<string, unknown>) =>
+      args['design'] === 'obj_1' ? { ok: false, summary: 'Nothing to undo in Clip', output: { design: 'obj_1' } } : { summary: 'Undid step 2', output: { design: 'obj_2' } })
+    const { run } = routed(call as AppLinkCaller['call'])
+    expect(await run('design.undo', { design: 'obj_1' })).toMatchObject({ ok: false, summary: expect.stringMatching(/^Nothing to undo in Clip \(in SlicerX\)/) })
+    const passed = await run('design.undo', { design: 'obj_2' })
+    expect(passed.ok).toBeUndefined()
+    expect(passed.summary).toBe('Undid step 2 (in SlicerX)')
+  })
+})
