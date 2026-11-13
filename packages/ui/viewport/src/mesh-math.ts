@@ -110,20 +110,22 @@ export function allExact(normals: Int16Array | undefined, triangles: number): bo
  * source vertex and a hard edge splits where it should. Triangle t of the result is triangle t of the input.
  *
  * `normals` are the engine's packed corner normals (six numbers per triangle). A triangle with an exact normal at all
- * three corners takes those normals as they are; the other triangles crease as above. With no triangle exact the result
- * is the same as without them.
+ * three corners takes those normals as they are, except where faces of the solid meet: a corner whose vertex the exact
+ * corners around it give other normals is on an edge between faces, and there it takes the area-weighted average of
+ * the exact normals within `creaseDeg` of its own, so a fold under the angle shades smooth as on a mesh part and one
+ * over it stays hard. Inside a face every corner of a vertex has the same normal, kept bit for bit. The other
+ * triangles crease as above. With no triangle exact the result is the same as without them.
  */
 export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: number, normals?: Int16Array): CreasedArrays {
   const nt = Math.floor(I.length / 3)
   const nv = Math.floor(P.length / 3)
-  const { exact, count: nExact } = exactTriangles(normals, nt)
-  // every triangle exact: no face normals or weld needed, only the vertex sharing below
-  const creasing = nExact < nt
-  const fn = new Float32Array(creasing ? nt * 3 : 0)
-  const fu = new Float32Array(creasing ? nt * 3 : 0)
+  const { exact } = exactTriangles(normals, nt)
+  // the face normals and the weld serve both rules: the crease rule, and exact corners on an edge between faces
+  const fn = new Float32Array(nt * 3)
+  const fu = new Float32Array(nt * 3)
   const at = (k: number): number => I[k] ?? 0
   const p = (k: number): number => P[k] ?? 0
-  for (let t = 0; creasing && t < nt; t++) {
+  for (let t = 0; t < nt; t++) {
     const a = at(3 * t) * 3
     const b = at(3 * t + 1) * 3
     const c = at(3 * t + 2) * 3
@@ -135,20 +137,21 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
     fn[3 * t] = x / l; fn[3 * t + 1] = y / l; fn[3 * t + 2] = z / l
   }
   // Welded at 1 micrometer so normals see shared vertices even in unindexed files.
-  const { map: wmap, count: nw } = creasing ? weldVertices(P, 1000) : { map: new Int32Array(0), count: 0 }
+  const { map: wmap, count: nw } = weldVertices(P, 1000)
   const w = (k: number): number => wmap[at(k)] ?? 0
   const cnt = new Int32Array(nw + 1)
-  for (let i = 0; creasing && i < nt * 3; i++) {
+  for (let i = 0; i < nt * 3; i++) {
     const c = w(i) + 1
     cnt[c] = (cnt[c] ?? 0) + 1
   }
   for (let i = 0; i < nw; i++) cnt[i + 1] = (cnt[i + 1] ?? 0) + (cnt[i] ?? 0)
   const fill = cnt.slice(0, nw)
-  const lst = new Int32Array(creasing ? nt * 3 : 0)
-  for (let i = 0; creasing && i < nt * 3; i++) {
+  // the corners at each welded vertex
+  const lst = new Int32Array(nt * 3)
+  for (let i = 0; i < nt * 3; i++) {
     const c = w(i)
     const slot = fill[c] ?? 0
-    lst[slot] = (i / 3) | 0
+    lst[slot] = i
     fill[c] = slot + 1
   }
   const f = (k: number): number => fn[k] ?? 0
@@ -160,7 +163,9 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
   let next = new Int32Array(Math.max(16, nv + 16))
   const index = new Uint32Array(nt * 3)
   const cosA = Math.cos((creaseDeg * Math.PI) / 180)
-  const given = [0, 0, 0]
+  // the exact corners' normals, unpacked once: each is read by every corner of its vertex
+  const un = new Float64Array(exact ? nt * 9 : 0)
+  for (let t = 0; exact && t < nt; t++) if (exact[t] === 1) for (let j = 0; j < 3; j++) unpackNormal(normals!, 6 * t + 2 * j, un, 9 * t + 3 * j)
   for (let t = 0; t < nt; t++) {
     const tx = f(3 * t), ty = f(3 * t + 1), tz = f(3 * t + 2)
     const supplied = exact !== null && exact[t] === 1
@@ -168,15 +173,37 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
       const vi = at(3 * t + j)
       // Stored as float32, so compare as float32.
       let nx: number, ny: number, nz: number
+      const wi = w(3 * t + j)
+      const end = cnt[wi + 1] ?? 0
       if (supplied) {
-        unpackNormal(normals!, 6 * t + 2 * j, given, 0)
-        nx = Math.fround(given[0]!); ny = Math.fround(given[1]!); nz = Math.fround(given[2]!)
-      } else {
-        const wi = w(3 * t + j)
+        const own = 6 * t + 2 * j
+        const gx = un[3 * (3 * t + j)]!, gy = un[3 * (3 * t + j) + 1]!, gz = un[3 * (3 * t + j) + 2]!
+        // the exact corners here within the angle, weighted by their triangles' areas; the same packed normal as this
+        // corner's everywhere (inside a face) keeps it as it is
         let x = 0, y = 0, z = 0
-        const end = cnt[wi + 1] ?? 0
+        let same = true
         for (let k = cnt[wi] ?? 0; k < end; k++) {
-          const g = lst[k] ?? 0
+          const c = lst[k] ?? 0
+          const g = (c / 3) | 0
+          if (exact![g] !== 1) continue
+          const cx = un[3 * c]!, cy = un[3 * c + 1]!, cz = un[3 * c + 2]!
+          if (normals![2 * c] !== normals![own] || normals![2 * c + 1] !== normals![own + 1]) {
+            if (cx * gx + cy * gy + cz * gz < cosA) continue
+            same = false
+          }
+          const area = Math.hypot(u(3 * g), u(3 * g + 1), u(3 * g + 2))
+          x += cx * area; y += cy * area; z += cz * area
+        }
+        if (same) {
+          nx = Math.fround(gx); ny = Math.fround(gy); nz = Math.fround(gz)
+        } else {
+          const l = Math.hypot(x, y, z) || 1
+          nx = Math.fround(x / l); ny = Math.fround(y / l); nz = Math.fround(z / l)
+        }
+      } else {
+        let x = 0, y = 0, z = 0
+        for (let k = cnt[wi] ?? 0; k < end; k++) {
+          const g = ((lst[k] ?? 0) / 3) | 0
           if (f(3 * g) * tx + f(3 * g + 1) * ty + f(3 * g + 2) * tz >= cosA) {
             x += u(3 * g); y += u(3 * g + 1); z += u(3 * g + 2)
           }
