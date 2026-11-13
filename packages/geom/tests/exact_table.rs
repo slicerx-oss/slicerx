@@ -1047,3 +1047,129 @@ fn keys_are_one_per_face_or_none_and_bodies_may_be_used_from_inside_a_call() {
     assert!((volume - 1.0).abs() < 1e-9);
     assert_eq!(exact::count(), held);
 }
+
+/// A held body's tessellation in both forms: the JSON text, and the raw answer with its buffers.
+type Both = (String, Value, Vec<Vec<u8>>);
+
+fn both(req: &Value) -> Both {
+    let json = text("brep.tessellate", req).expect("tessellates");
+    let (answer, files) = raw(req);
+    (json, answer, files)
+}
+
+/// How many triangles a JSON answer has.
+fn triangles(json: &str) -> usize {
+    serde_json::from_str::<Value>(json).unwrap()["faceIds"]
+        .as_array()
+        .unwrap()
+        .len()
+}
+
+#[test]
+fn a_held_body_asked_again_is_answered_from_its_kept_mesh() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let _one = alone();
+    let start = exact::tessellated();
+    let before = exact::kept_meshes();
+    let ball = || Body::sphere([0.0; 3], 10.0).unwrap();
+    let kept = Kept::new(ball());
+    let ask = json!({ "body": kept.0 });
+    // one mesh for both forms, and the second asking is the first to the byte, buffers too
+    let first = both(&ask);
+    assert_eq!(exact::tessellated(), start + 1);
+    assert!(both(&ask) == first, "asked again");
+    assert_eq!(exact::tessellated(), start + 1);
+    let (kept_triangles, bytes) = exact::kept_meshes();
+    assert_eq!(kept_triangles, before.0 + triangles(&first.0));
+    assert!(bytes > before.1);
+    // a body made the same way, tessellated cold, answers what the kept mesh does
+    let twin = Kept::new(ball());
+    assert!(both(&json!({ "body": twin.0 })) == first, "a twin, cold");
+    assert_eq!(exact::tessellated(), start + 2);
+    drop(twin);
+
+    // another chord is another mesh, kept beside the first
+    let coarse = json!({ "body": kept.0, "chordMm": 0.5 });
+    let other = both(&coarse);
+    assert_eq!(exact::tessellated(), start + 3);
+    assert!(other.0 != first.0 && other.2 != first.2);
+    assert!(both(&coarse) == other && both(&ask) == first);
+    assert_eq!(exact::tessellated(), start + 3);
+}
+
+#[test]
+fn a_body_held_after_a_freed_one_is_never_answered_with_its_mesh() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let _one = alone();
+    let before = exact::kept_meshes();
+    let ball = exact::hold(Body::sphere([0.0; 3], 10.0).unwrap(), Vec::new()).unwrap();
+    let round = both(&json!({ "body": ball }));
+    assert!(exact::kept_meshes().0 > before.0);
+    assert!(exact::free(ball));
+    assert_eq!(exact::kept_meshes(), before, "a freed body's meshes go with it");
+    let cube = || Body::cuboid([0.0; 3], [10.0; 3]).unwrap();
+    let next = Kept::new(cube());
+    assert_ne!(
+        next.0, ball,
+        "numbers are never given out twice in a process: a mesh kept under one cannot answer for another"
+    );
+    let start = exact::tessellated();
+    let answer = both(&json!({ "body": next.0 }));
+    assert_eq!(
+        exact::tessellated(),
+        start + 1,
+        "the cube is tessellated for itself"
+    );
+    assert_eq!(triangles(&answer.0), 12);
+    assert!(answer != round, "the cube is not the ball");
+    let twin = Kept::new(cube());
+    assert!(
+        both(&json!({ "body": twin.0 })) == answer,
+        "a cube made the same way, cold"
+    );
+    assert_eq!(exact::tessellated(), start + 2);
+}
+
+#[test]
+fn past_the_cap_the_mesh_asked_for_longest_ago_is_made_again_alike() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let _one = alone();
+    // a cap below one mesh keeps none, and drops what the thread kept
+    exact::keep_mesh_bytes(0);
+    assert_eq!(exact::kept_meshes(), (0, 0));
+    let [a, b, c] = [(); 3].map(|()| Kept::new(Body::cylinder([0.0; 3], 5.0, 10.0).unwrap()));
+    let ask = |kept: &Kept| both(&json!({ "body": kept.0 }));
+    let start = exact::tessellated();
+    let first = ask(&a);
+    assert!(ask(&a) == first, "a, kept nowhere");
+    // each form asks for its own mesh when none is kept
+    assert_eq!(exact::tessellated(), start + 4);
+    assert_eq!(exact::kept_meshes(), (0, 0));
+
+    exact::keep_mesh_bytes(exact::MESH_BYTES);
+    assert!(ask(&a) == first && ask(&b) == first);
+    assert_eq!(exact::tessellated(), start + 6);
+    let (_, two) = exact::kept_meshes();
+    // room for two: a third pushes out the one asked for longest ago, a
+    exact::keep_mesh_bytes(two);
+    assert!(ask(&c) == first, "c, cold");
+    assert_eq!(exact::kept_meshes().1, two);
+    assert_eq!(exact::tessellated(), start + 7);
+    // b is kept, and asking for it makes c the oldest
+    assert!(ask(&b) == first, "b, kept");
+    assert_eq!(exact::tessellated(), start + 7);
+    // a is made again to the byte, and pushes out c
+    assert!(ask(&a) == first, "a, made again");
+    assert_eq!(exact::tessellated(), start + 8);
+    assert!(ask(&b) == first, "b, still kept");
+    assert_eq!(exact::tessellated(), start + 8);
+    assert!(ask(&c) == first, "c, made again");
+    assert_eq!(exact::tessellated(), start + 9);
+    exact::keep_mesh_bytes(exact::MESH_BYTES);
+}
