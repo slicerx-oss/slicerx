@@ -73,6 +73,17 @@ fn bad_sizes_are_refused_in_words() {
     assert_eq!(refusal(Body::cone([0.0; 3], 1.0, 1.5, 1.0)), top);
 }
 
+// the read-back asks for the volume only to see that it is a number above zero, and coarsely; a part as thin as
+// 0.01 mm still reads back as a solid, and its volume is exact where it is asked for
+#[test]
+fn a_thin_real_part_reads_back_as_a_solid() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let body = Body::cuboid([0.0; 3], [100.0, 100.0, 0.01]).expect("a thin plate");
+    close(body.volume().unwrap(), 100.0);
+}
+
 #[test]
 fn a_box_has_its_volume_bounds_planes_and_edges() {
     if !sx_brep::KERNEL {
