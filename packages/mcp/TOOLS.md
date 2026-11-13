@@ -193,9 +193,9 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_orient` | 1.4.0 |  |  | slice | Find the rotation with the least support (support volume and overhang area beyond the support angle) and good bed contact for an object, and apply it when apply is true. |
 | `slicerx_orientation_search` | 1.0.0 |  |  | slice | Choose how to lay a part on the bed by slicing each candidate orientation: the six axis orientations, plus 45 degree tilts when asked. |
 | `slicerx_overnight_readiness` | 1.0.0 |  |  | read | Pre-flight for a long unattended print on one printer. |
-| `slicerx_paint_apply` | 1.3.0 |  |  | slice | Apply a paint preview as a design step (it replays, saves and undoes like any step). |
-| `slicerx_paint_preview` | 1.4.0 |  |  | read | See what painting a design would do, without changing it: the triangles, area and connected regions a target paints on each part, and a picture framed on them (the PNG only with image: true). |
-| `slicerx_paint_regions` | 1.1.0 |  |  | read | Read a design's paint back: for one layer, each part's painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. |
+| `slicerx_paint_apply` | 1.4.0 |  |  | slice | Apply a paint preview as a design step (it replays, saves and undoes like any step). |
+| `slicerx_paint_preview` | 1.5.0 |  |  | read | See what painting a design would do, without changing it: the triangles, area and connected regions a target paints on each part, and a picture framed on them (the PNG only with image: true). |
+| `slicerx_paint_regions` | 1.2.0 |  |  | read | Read a design's paint back: for one layer, each part's painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. |
 | `slicerx_partner_devices` | 1.0.0 | Partner phones | printers | read, ungated | Read the partner phones the SlicerX hub answers away from home: phone apps from other companies that the person paired in Settings, Printer bridge, Devices, each under its app's name. |
 | `slicerx_partner_routes` | 1.0.0 | Partner routes | printers | read, ungated | Read the partner routes open on the SlicerX hub: each partner app's sealed byte stream between its desktop app and its own paired phone over the relay. |
 | `slicerx_parts_lookup` | 1.0.0 |  |  | read | Published sizes, with sources, of a standard part or product: 608 bearing, NEMA 17, M3, Pi 4, iPhone 15. |

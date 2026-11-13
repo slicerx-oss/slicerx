@@ -89,6 +89,12 @@ export interface DesignHost {
    * host replays its designs: on a served engine, with its bodies held there. Absent: replayed on `call` (replayOn).
    */
   replayed?(history: History): Promise<ReplayResult>
+  /**
+   * The parts the design would have with this step added, as the step's replay makes them, without keeping it; throws
+   * the step's reason as `add` does. A preview uses it where the step changes the part's triangles (a height band on an
+   * exact part, whose faces the kernel splits at the band's edges).
+   */
+  trial?(d: Design, part: number, params: StepParams): Promise<HistoryMesh[]>
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
   call(op: string, request: unknown): Promise<unknown>
   /**

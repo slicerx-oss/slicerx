@@ -13,7 +13,7 @@ import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { addedSolids, EXACT_FELL_BACK, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, fromSolid, MAX_SOLID_TEXT, meshed, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Solids } from './exact'
+import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -675,11 +675,32 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
           if (byKey.split) throw new Broken('Ambiguous face; pick the face again to repair this step.')
           target = { ...target, point: byKey.at }
         }
-        const texts = part.paint?.[p.layer] ?? {}
+        // A height band on an exact part goes on whole faces, so it lasts through the part's next exact steps as paint by
+        // face does: the kernel first splits the faces that cross the band's edges (an engine that cannot leaves the
+        // band on the triangles, below)
+        let whole: Set<number> | undefined
+        let on = part
+        if (target.kind === 'height' && (on.smb || on.body !== undefined) && on.faces && solids) {
+          const band = bandOf(target)
+          const at = bandCrossings(on, s.transform, band)
+          if (!at.length || (await solids.has?.(EXACT_IMPRINT))) {
+            if (at.length) {
+              try {
+                on = await imprinted(call, on, s.transform, at, solids, (chars, limit) => noteMore(found, s.id, tooBig(chars, limit)))
+              } catch (err) {
+                if (err instanceof ExactBroken || (err as { name?: string }).name === 'AbortError') throw err
+                throw new Broken(engineReason(err))
+              }
+            }
+            whole = bandFaceIds(on, s.transform, band)
+          }
+        }
+        const texts = on.paint?.[p.layer] ?? {}
         let r: { changed: Record<string, string> }
         try {
-          r = (await engine('paint.select', { mesh: meshOf(part), transform: s.transform, paint: texts, state: p.state, target, ...(p.maxDepth !== undefined ? { maxDepth: p.maxDepth } : {}) })) as { changed: Record<string, string> }
+          r = whole ? await paintFaces(engine, on, s.transform, whole, texts, p.state) : ((await engine('paint.select', { mesh: meshOf(on), transform: s.transform, paint: texts, state: p.state, target, ...(p.maxDepth !== undefined ? { maxDepth: p.maxDepth } : {}) })) as { changed: Record<string, string> })
         } catch (err) {
+          if (err instanceof Broken || err instanceof ExactBroken) throw err
           throw new Broken(engineReason(err))
         }
         const layer: Record<number, string> = { ...texts }
@@ -687,11 +708,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
           if (v) layer[Number(k)] = v
           else delete layer[Number(k)]
         }
-        const { [p.layer]: _was, ...others } = part.paint ?? {}
+        const { [p.layer]: _was, ...others } = on.paint ?? {}
         const paint: PaintTexts = Object.keys(layer).length ? { ...others, [p.layer]: layer } : others
-        const { paint: _old, facePaint: _byFace, ...rest } = part
+        const { paint: _old, facePaint: _byFace, ...rest } = on
         const painted: Flat = Object.keys(paint).length ? { ...rest, paint } : rest
-        if (!part.smb && part.body === undefined) {
+        if (!on.smb && on.body === undefined) {
           out[i] = painted
           break
         }
@@ -737,6 +758,23 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     }
   }
   return out
+}
+
+/**
+ * Paints `state` on the whole of faces `ids` of the part, as the engine paints a whole part (paint.select): the
+ * triangles' new texts, by the part's own triangle numbers.
+ */
+async function paintFaces(engine: EngineCall, part: Flat, transform: Mat4, ids: ReadonlySet<number>, texts: Record<number, string>, state: number): Promise<{ changed: Record<string, string> }> {
+  const tris: number[] = []
+  for (let t = 0; t < Math.floor(part.indices.length / 3); t++) if (ids.has(part.faces!.ids[t]!)) tris.push(t)
+  if (!tris.length) return { changed: {} }
+  const indices = tris.flatMap((t) => [part.indices[3 * t]!, part.indices[3 * t + 1]!, part.indices[3 * t + 2]!])
+  const paint: Record<number, string> = {}
+  tris.forEach((t, j) => {
+    if (texts[t] !== undefined) paint[j] = texts[t]!
+  })
+  const r = (await engine('paint.select', { mesh: { positions: listed(part.positions), indices }, transform, paint, state, target: { kind: 'part' } })) as { changed: Record<string, string> }
+  return { changed: Object.fromEntries(Object.entries(r.changed).map(([j, v]) => [String(tris[Number(j)]), v])) }
 }
 
 /** A step's params for a copy a pattern makes: without the face and edge keys, which name the original's faces. */
