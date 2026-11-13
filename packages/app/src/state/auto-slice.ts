@@ -6,7 +6,7 @@
 // the numbers and the preview never pass for the current plate. A drag that edits on every move (a scrub, a slider) slices
 // once, on release. An opened project and the example plate at launch wait for Slice instead.
 import type { Host } from '@slicerx/contracts'
-import { cancelSlice, currentSlice, slicePlate, STALE_SLICE } from './actions'
+import { cancelSlice, currentSlice, engineSliceRunning, engineSlicesStopped, slicePlate, STALE_SLICE } from './actions'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { isBigSlice, sliceTimingsOf } from './slice-estimate'
 import { flushRefreshOnly, inputsChanged as changed, KEY_CONFIG } from './slice-inputs'
@@ -85,13 +85,16 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
   let checkLanded = false
   // An agent's run held a slice back: it goes when the run ends.
   let heldForAgent = false
-  const isPending = (): boolean => timer !== null || waiting !== null || starting !== 0 || heldForAgent
+  // The wait for a canceled slice the engine is still running: a new one starts once it has stopped, never beside it.
+  let unwinding: object | null = null
+  const isPending = (): boolean => timer !== null || waiting !== null || starting !== 0 || heldForAgent || unwinding !== null
   pending = isPending
   const clear = (): void => {
     if (timer) clearTimeout(timer)
     timer = null
     waiting?.()
     waiting = null
+    unwinding = null
   }
   /** `force`: the wait for the fit check ran out, so a big slice goes anyway. */
   const run = (force = false): void => {
@@ -133,6 +136,18 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     }
     waiting?.()
     waiting = null
+    // A canceled slice the engine is still running (it stops only between its stages): this one starts once it has
+    // stopped, so slices never pile up side by side.
+    if (engineSliceRunning()) {
+      const mark = {}
+      unwinding = mark
+      void engineSlicesStopped().then(() => {
+        if (unwinding !== mark) return
+        unwinding = null
+        run(force)
+      })
+      return
+    }
     const mine = ++runs
     starting = mine
     // A slice that runs from now on is this run's: one still running from before (canceled, not yet unwound) keeps

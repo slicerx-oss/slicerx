@@ -8,6 +8,7 @@ import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type H
 import type { AutoImport } from '../src/geom/cad'
 import { scanStl } from '../src/export/stl-scan'
 import { startAutoSlice } from '../src/state/auto-slice'
+import { cancelSlice } from '../src/state/actions'
 import { addAutoImport } from '../src/state/import-auto'
 import { appStore, get, set } from '../src/state/store'
 import { noteSliceTiming } from '../src/state/slice-estimate'
@@ -71,10 +72,14 @@ function host() {
     slicer: {
       loadParts: async (name: string) => ({ id: `mesh${++meshes}`, hash: name, name, triangles: 12, bboxMm: [10, 10, 10], openEdges: 0, parts: [{ name, slot: 1, triangles: 12 }] }),
       release: () => undefined,
-      slice: (r: SliceRequest) => {
+      slice: (r: SliceRequest, o?: { signal?: AbortSignal }) => {
         requests.push(r)
         const id = `r${requests.length}`
-        return new Promise((resolve) => pending.push(() => resolve({ id, layerZ: Float32Array.from([0.2]), warnings: [] })))
+        // lands when the test says; a canceled one stops, as the engine's does
+        return new Promise((resolve, reject) => {
+          o?.signal?.addEventListener('abort', () => reject(new DOMException('Slice canceled', 'AbortError')))
+          pending.push(() => resolve({ id, layerZ: Float32Array.from([0.2]), warnings: [] }))
+        })
       },
       getPreview: async () => rawPreview(),
     },
@@ -101,6 +106,8 @@ function standing(): { ids: string[]; stop: () => void } {
 let stops: (() => void)[] = []
 beforeEach(() => set({ plate: [], autoSlice: true, liveEdit: false, historyEdit: null, plateLoading: true, sliceDuringOpen: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {} }))
 afterEach(() => {
+  // the slice a test leaves running stops, so the next test's slices do not wait for it
+  cancelSlice({ quiet: true })
   for (const s of stops) s()
   stops = []
 })

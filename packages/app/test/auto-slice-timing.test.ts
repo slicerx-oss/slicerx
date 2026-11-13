@@ -4,6 +4,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
 import { AUTO_SLICE_DELAY_MS, startAutoSlice } from '../src/state/auto-slice'
+import { cancelSlice } from '../src/state/actions'
 import { beginLiveEdit, endLiveEdit } from '../src/state/live-edit'
 import { set } from '../src/state/store'
 
@@ -44,9 +45,13 @@ function host() {
     slicer: {
       loadParts: async () => handle,
       loadModel: async () => handle,
-      slice: (r: SliceRequest) => {
+      slice: (r: SliceRequest, o?: { signal?: AbortSignal }) => {
         requests.push(r)
-        return new Promise((resolve) => pending.push(() => resolve({ id: `r${requests.length}`, layerZ: Float32Array.from([0.2]), warnings: [] })))
+        // lands when the test says; a canceled one stops, as the engine's does
+        return new Promise((resolve, reject) => {
+          o?.signal?.addEventListener('abort', () => reject(new DOMException('Slice canceled', 'AbortError')))
+          pending.push(() => resolve({ id: `r${requests.length}`, layerZ: Float32Array.from([0.2]), warnings: [] }))
+        })
       },
       getPreview: async () => rawPreview(),
     },
@@ -63,6 +68,8 @@ beforeEach(() => {
   set({ plate: [entry(10)], autoSlice: true, liveEdit: false, historyEdit: null, plateLoading: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {} })
 })
 afterEach(() => {
+  // the slice a test leaves running stops, so the next test's slices do not wait for it
+  cancelSlice({ quiet: true })
   endLiveEdit()
   vi.useRealTimers()
 })

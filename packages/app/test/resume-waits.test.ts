@@ -615,7 +615,7 @@ describe("the bridge's slice and mimir's slice read one stale rule, and pin thei
       }
     }, 9000)
 
-    it("keeps waiting for auto slice's second run while its first, canceled run is slow to unwind", async () => {
+    it("keeps waiting for auto slice's run while the slice it canceled is slow to unwind", async () => {
       const held = gate()
       const e = engine({ slice: held })
       autoOn()
@@ -625,19 +625,20 @@ describe("the bridge's slice and mimir's slice read one stale rule, and pin thei
         // The bridge's own slice, held in the engine.
         const out = bridge.handle('slice', { timeoutMs: 6000 })
         await vi.waitFor(() => expect(e.requests).toHaveLength(1))
-        // An edit: auto slice cancels it and starts run 1, also held in the engine.
+        // Two edits: auto slice cancels the bridge's slice, and its run waits for the engine to stop it, never
+        // starting beside it.
         set({ overrides: { ...get().overrides, wall_loops: 4 } })
-        await vi.waitFor(() => expect(e.requests).toHaveLength(2))
-        // Another edit: run 1 is canceled, and run 2 waits 1.6 s on the profile (the third profile wait).
-        gates.only = 3
-        gates.profile = new Promise<void>((r) => setTimeout(r, 1600))
         set({ overrides: { ...get().overrides, wall_loops: 5 } })
-        await vi.waitFor(() => expect(gates.calls).toBe(3))
-        expect(autoSlicePending()).toBe(true)
-        // The engine lets go: the canceled slices unwind now, while run 2 still waits on the profile.
+        await vi.waitFor(() => expect(autoSlicePending()).toBe(true))
+        expect(e.requests).toHaveLength(1)
+        // The engine lets go: the canceled slice unwinds, and auto slice's run then waits 1.6 s on the profile (the
+        // second profile wait), past the grace.
+        gates.only = 2
+        gates.profile = new Promise<void>((r) => setTimeout(r, 1600))
         held.open()
-        await expect(out).resolves.toMatchObject({ status: 'done', stale: false, id: 'r3' })
-        expect(e.requests).toHaveLength(3)
+        await expect(out).resolves.toMatchObject({ status: 'done', stale: false, id: 'r2' })
+        expect(gates.calls).toBe(2)
+        expect(e.requests).toHaveLength(2)
         expect(autoSlicePending()).toBe(false)
       } finally {
         off()
