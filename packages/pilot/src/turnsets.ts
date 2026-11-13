@@ -39,17 +39,17 @@ const NOT_ON_BUILD: ReadonlySet<string> = new Set(['memory.remember'])
 const BUILD: ReadonlySet<string> = new Set(['pilot.sheet', 'pilot.sheet_bind', 'design.new', 'design.plan', 'design.check', 'design.undo', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'geom.hole', 'geom.fillet', 'geom.chamfer', 'geom.shell', 'geom.boolean', 'geom.info', 'geom.edge_pick', 'geom.faces'])
 
 /**
- * Shaping a part further: join, cut, pattern, split, mark and fix it, and measure it: sections, interference and its
+ * Shaping a part further: join, cut, pattern, split, mark and fix it, set a part's filament, and measure it: sections, interference and its
  * print-in-place gaps. The fit check is here rather than in build, where a local model's new part turn has no room for
  * it: a print-in-place part loads it when design.check asks for it (calling it loads this set).
  */
-const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.measure', 'geom.fit_check', 'geom.interference', 'geom.push_pull', 'geom.mirror', 'geom.array', 'geom.split', 'geom.subtract', 'geom.emboss', 'geom.cut', 'geom.hollow', 'geom.repair', 'geom.build', 'geom.boolean', 'geom.rail'])
+const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.measure', 'geom.fit_check', 'geom.interference', 'geom.push_pull', 'geom.mirror', 'geom.array', 'geom.split', 'geom.subtract', 'geom.emboss', 'geom.cut', 'geom.hollow', 'geom.repair', 'geom.build', 'geom.boolean', 'geom.rail', 'design.part_filament'])
 
 /**
  * Editing a part already built: open it, go through its steps and sketches, pick its faces and edges, project them
  * into a sketch (never a first part's step, so not in build), and step back and forth. Every other design tool is here too, so a design tool is never in no set.
  */
-const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'design.sketch_svg', 'design.sketch_project', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces', 'geom.hole_edit'])
+const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'design.sketch_svg', 'design.sketch_project', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces', 'geom.hole_edit', 'design.part_filament'])
 
 /**
  * The project's filaments: shaping a part carries them beside the rest of the project in app. Not in build, whose turn

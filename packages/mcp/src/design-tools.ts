@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, replayOn, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, MAX_PART_SLOT, replayOn, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -128,10 +128,16 @@ export function partAt(d: HostDesign, at: V3): number {
   return 0
 }
 
-/** A part as an engine mesh item, with the object's transform. */
-export function item(d: HostDesign, part: number, parts: readonly HistoryMesh[] = d.parts): { mesh: { positions: number[]; indices: number[]; faces?: unknown }; transform: Mat4 } {
+/** Part `part` of `parts`, refused in the words every design tool uses when the design has no such part. */
+export function partOf(parts: readonly HistoryMesh[], part: number): HistoryMesh {
   const p = parts[part]
   if (!p) throw new ToolInputError(`part: the design has ${parts.length} part${parts.length === 1 ? '' : 's'}`)
+  return p
+}
+
+/** A part as an engine mesh item, with the object's transform. */
+export function item(d: HostDesign, part: number, parts: readonly HistoryMesh[] = d.parts): { mesh: { positions: number[]; indices: number[]; faces?: unknown }; transform: Mat4 } {
+  const p = partOf(parts, part)
   return { mesh: { positions: Array.from(p.positions), indices: Array.from(p.indices), ...(p.faces ? { faces: { ...p.faces, ids: Array.from(p.faces.ids) } } : {}) }, transform: d.transform }
 }
 
@@ -742,6 +748,27 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
+  const partFilament = defineTool({
+    name: 'design.part_filament',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: 'Set which filament an existing part prints with, as a step that replays, saves and undoes. part from 0; slot from 1.',
+    input: z.object({
+      design: designArg,
+      part: z.number().int().min(0).describe('The part, from 0'),
+      slot: z.number().int().describe('The filament slot, from 1'),
+      feature: featureArg,
+    }),
+    async run(i) {
+      const d = designs.get(i.design)
+      if (i.slot < 1 || i.slot > MAX_PART_SLOT) throw new ToolInputError(`slot: give a filament slot from 1 to ${MAX_PART_SLOT}`)
+      const part = partOf(d.parts, i.part)
+      await designs.add(d, i.part, { op: 'parts.slot', slot: i.slot, name: part.name }, undefined, withFeature(i.feature))
+      return { summary: `Set ${part.name} to filament ${i.slot}: step ${d.history.steps.length}`, output: designSummary(d) }
+    },
+  })
+
   const timeline = defineTool({
     name: 'design.timeline',
     version: '1.0.0',
@@ -1041,7 +1068,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     }
   }
 
-  return [create, open, list, steps, edit, undo, redo, timeline, roll, save, check, plan] as PilotTool<never>[]
+  return [create, open, list, steps, edit, undo, redo, partFilament, timeline, roll, save, check, plan] as PilotTool<never>[]
 }
 
 /** Sizes under the printer's floors in the result's words, for a plan kept as the client gave it. */

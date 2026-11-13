@@ -75,6 +75,8 @@ export type StepParams =
   | { op: 'parts.add'; parts: HistoryMesh[]; label: string; arrayOf?: string }
   /** The parts put in a new order, no geometry changed: part i after the step is part `order[i]` before it. */
   | { op: 'parts.order'; order: number[] }
+  /** The part prints in filament `slot` (from 1) from here on, its shape as it is; `name` is the part's when the step was made. */
+  | { op: 'parts.slot'; slot: number; name: string }
   | { op: 'edge.fillet'; edges: EdgeRef[]; radiusMm: number; toleranceMm?: number; allOrNothing?: boolean; skipped?: number[] }
   | { op: 'edge.chamfer'; edges: EdgeRef[]; distanceMm: number; distance2Mm?: number; allOrNothing?: boolean; skipped?: number[] }
   | { op: 'hole.apply'; hole: Hole; spec: HoleSpec; label: string }
@@ -265,6 +267,9 @@ export const HISTORY_VERSION = 1
  * the step is written as well as when it is read.
  */
 export const keepsArrayOf = (name: unknown): name is string => typeof name === 'string' && name.trim() !== '' && name.length <= 120
+
+/** The highest filament slot a part may print in, as the tools that make and set parts take it. */
+export const MAX_PART_SLOT = 32
 
 let seq = 0
 // the counter is decimal so every id holds a digit: tools and replays that pick ids out of text tell an id from a word by its digit
@@ -751,6 +756,8 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
       return p.label
     case 'parts.order':
       return 'Reorder parts'
+    case 'parts.slot':
+      return `Filament ${p.slot} for ${p.name}`
     case 'edge.fillet':
       return `Fillet ${len(p.radiusMm)}${p.edges.length > 1 ? `, ${p.edges.length} edges` : ''}`
     case 'edge.chamfer':

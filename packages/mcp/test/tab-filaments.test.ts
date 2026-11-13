@@ -58,6 +58,6 @@ describe('the tab filament tools', () => {
     expect(r.summary).toBe('Built: step 1. The project had 1 filament, so filaments 2 (PLA #808080), 3 (PLA #808080) were added with the default color. Set the color with project.set_filament.')
     expect(r.output).toEqual({ design: 'd1', filamentsAdded: [{ slot: 2, type: 'PLA', color: '#808080' }, { slot: 3, type: 'PLA', color: '#808080' }] })
     expect(await run(wrapped!, { slot: 2 })).toEqual({ summary: 'Built: step 1', output: { design: 'd1' } })
-    expect([...SLOT_TOOLS]).toEqual(['geom.build', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'geom.emboss'])
+    expect([...SLOT_TOOLS]).toEqual(['geom.build', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'geom.emboss', 'design.part_filament'])
   })
 })

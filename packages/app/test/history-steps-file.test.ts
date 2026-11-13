@@ -14,6 +14,15 @@ const STEPS: StepParams[] = [
   { op: 'shape.extrude', frame: { origin: [0, 0, 5], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'circle', diameterMm: 4 }, placement: {}, spec: { distanceMm: 5, operation: 'cut' }, pattern: { kind: 'circular', count: 6, center: [10, 0] } },
 ]
 
+describe('a step that sets a part\'s filament', () => {
+  it('comes back from the project file, and one with a slot no filament has is dropped', () => {
+    const p = { op: 'parts.slot', slot: 3, name: 'Funnel' } as StepParams
+    expect(roundTrip(p)?.steps[0]?.params).toEqual(p)
+    for (const slot of [0, 33, 2.5, '3']) expect(roundTrip({ op: 'parts.slot', slot, name: 'Funnel' } as unknown as StepParams), String(slot)).toBeUndefined()
+    expect(roundTrip({ op: 'parts.slot', slot: 3 } as unknown as StepParams)).toBeUndefined()
+  })
+})
+
 function roundTrip(params: StepParams): History | undefined {
   const history: History = { version: 1, base: [boxMesh(10, 10, 5)], steps: [{ id: 's1', part: 0, transform: T, params }] }
   const files = new Map(historyFiles([{ id: 'o1', history }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))

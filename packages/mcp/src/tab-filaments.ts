@@ -32,8 +32,8 @@ export interface FilamentList {
   set(slot: number, patch: FilamentPatch): void
 }
 
-/** The part makers that take a filament slot for the part they make. */
-export const SLOT_TOOLS: ReadonlySet<string> = new Set(['geom.build', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'geom.emboss'])
+/** The tools that put a part in a filament slot: the part makers, and setting an existing part's filament. */
+export const SLOT_TOOLS: ReadonlySet<string> = new Set(['geom.build', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'geom.emboss', 'design.part_filament'])
 
 /** The tab's filament tools. */
 export const FILAMENT_TOOLS: readonly string[] = ['project.add_filament', 'project.set_filament']
