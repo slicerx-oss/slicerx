@@ -10,7 +10,7 @@ import { type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { type BodyFacts, colorBands, createPlanRegistry, designCheck, partPlanSchema, type PartPlan } from '../src/design-check'
 import { DEFAULT_BED, DETAIL_HELP, detailProblem, displaySize, featuresFloor, loftSections, sectionsProblem } from '../src/plan-detail'
-import { PLAN_GO, type PlanInput } from '../src/tab-tools'
+import { LocalPlanInputSchema, PLAN_GO, type PlanInput } from '../src/tab-tools'
 import { createCardPlans, designToolset, tabToolset } from '../src/toolset'
 import type { DesignHost } from '@slicerx/cad-history'
 
@@ -212,8 +212,8 @@ describe('detailProblem: the rules are about the object', () => {
   })
 })
 
-/** The tab's design.plan over no design, answering each card with Go. */
-function tab() {
+/** The tab's design.plan over no design, answering each card with Go; `local` as a local model calls it. */
+function tab(local = false) {
   const card = createCardPlans(createPlanRegistry())
   const tools = tabToolset({ list: () => [], get: () => undefined } as unknown as DesignHost, card, { nozzleMm: () => machine.nozzle, newPlanId: () => 'plan_1' })
   const tool = tools.find((t) => t.name === 'design.plan')!
@@ -224,6 +224,7 @@ function tab() {
       shown.push(card.planById(q.choices[0]!.id.slice(PLAN_GO.length + 1)))
       return { id: q.choices[0]!.id }
     },
+    ...(local ? { localForm: true } : {}),
   } as unknown as ToolContext
   return { tool, shown, run: (input: unknown) => tool.run(tool.input.parse(input) as never, ctx) }
 }
@@ -268,6 +269,21 @@ describe('design.plan with a detail level', () => {
     const t = tab()
     await t.run(house)
     expect(t.shown[0]!.colors).toEqual(house.colors)
+  })
+
+  it('holds a local model\'s display plan only to what its form can say', async () => {
+    // the local form keeps detail and leaves out curved, flat, proportions, repeats, colors, scale, real and tiers
+    const local = LocalPlanInputSchema.parse({ ...house })
+    expect(Object.keys(local)).not.toContain('colors')
+    expect(detailProblem(local)).toContain('curved, flat:')
+    expect(detailProblem(local, undefined, { local: true })).toBeNull()
+    const t = tab(true)
+    const out = await t.run(local)
+    expect(out.ok).not.toBe(false)
+    expect(t.shown[0]).toMatchObject({ detail: 'display' })
+    // it is still held to the feature count for its level
+    expect(detailProblem({ ...local, features: local.features.slice(0, 2) }, undefined, { local: true })).toContain('features: it has at least 8 features')
+    await expect(tab(false).run(local)).rejects.toThrow('curved, flat:')
   })
 
   it('leaves the level out of design.put_plan', () => {

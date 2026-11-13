@@ -101,6 +101,11 @@ export interface ToolContext {
    */
   confirmsPlan?(): boolean
   /**
+   * True when the call came from a local model, which is shown each tool's local form (its localInput): a tool can
+   * then hold the call only to what that form can say.
+   */
+  localForm?: boolean
+  /**
    * Shows a dimension sheet and waits for the person to confirm or edit it; absent where nobody can answer. A sheet
    * without fits, and any sheet in a follow-up on a built design, shows and is confirmed as shown at once.
    */

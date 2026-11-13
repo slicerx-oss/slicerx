@@ -148,11 +148,17 @@ const CURVED_HOW = (floor: number): string =>
 
 /**
  * Why a display or fine plan does not hold the detail rules, in words that say what to plan instead; null when it
- * does, or when the plan is basic or names no level.
+ * does, or when the plan is basic or names no level. A local model's plan (`local`, its form in tab-tools.ts keeps the
+ * level and leaves out curved, flat, proportions, repeats, colors, scale, real, tiers and personSize) is held only to
+ * what that form can say: its feature count for the level.
  */
-export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: string | undefined }): string | null {
+export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: string | undefined }, opts: { local?: boolean } = {}): string | null {
   const level = plan.detail
   if (!level || level === 'basic') return null
+  if (opts.local) {
+    const least = featuresFloor(plan, level)
+    return plan.features.length < least.count ? `A ${DETAIL_LABEL[level].toLowerCase()} plan was not shown. features: it has at least ${least.count} features (${least.why}); this one has ${plan.features.length}. Add the real thing's parts you left out: the parts that stand on the main body, and its smaller details, each repeated one built once and patterned` : null
+  }
   const floor = SECTIONS_FLOOR[level]
   const name = DETAIL_LABEL[level].toLowerCase()
   const problems: string[] = []
