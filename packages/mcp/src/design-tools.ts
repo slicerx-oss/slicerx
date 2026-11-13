@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, lastGroup, mainNumber, replayHistory, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -311,6 +311,8 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
     part: s.part,
     ...(n ? { value: { label: n.label, value: n.value, unit: n.unit } } : {}),
     ...(s.feature ? { feature: s.feature } : {}),
+    // steps one call made share a group, and undo and redo take them as one
+    ...(s.group ? { group: s.group } : {}),
     state: s.suppressed ? 'suppressed' : (st?.state ?? 'done'),
     ...(st?.message ? { message: st.message } : {}),
     ...(st?.note ? { note: st.note } : {}),
@@ -565,7 +567,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   const STEPS_TEXT = 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.'
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'read',
     // a local model gets the steps without the loft stations' words, which only the cloud follow-up guidance uses
@@ -700,34 +702,37 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const undo = defineTool({
     name: 'design.undo',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: 'Remove the last step of a design and replay it, back to how it was before that step.',
     input: z.object({ design: designArg }),
     async run(i) {
       const d = designs.get(i.design)
-      const last = d.history.steps[d.history.steps.length - 1]
-      if (!last) throw new ToolInputError('The design has no steps to undo.')
-      // Every host replays, even to no steps: the app's takes the body off the plate then.
-      await replayChange(designs, d, { ...d.history, steps: d.history.steps.slice(0, -1) }, [...d.redo, last])
-      return { summary: `Removed ${stepName(last)}`, output: designSummary(d) }
+      const off = lastGroup(d.history.steps)
+      if (!off.length) throw new ToolInputError('The design has no steps to undo.')
+      // Every host replays, even to no steps: the app's takes the body off the plate then. Redo takes the steps back
+      // from the end of its list, so they go on it last first.
+      await replayChange(designs, d, { ...d.history, steps: d.history.steps.slice(0, -off.length) }, [...d.redo, ...[...off].reverse()])
+      return { summary: `Removed ${off.map((s) => stepName(s)).join(' and ')}`, output: designSummary(d) }
     },
   })
 
   const redo = defineTool({
     name: 'design.redo',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: 'Put back the step slicerx_design_undo last removed. A new step clears what can be redone.',
     input: z.object({ design: designArg }),
     async run(i) {
       const d = designs.get(i.design)
-      const step = d.redo.at(-1)
-      if (!step) throw new ToolInputError('Nothing to redo.')
-      await replayChange(designs, d, { ...d.history, steps: [...d.history.steps, step] }, d.redo.slice(0, -1))
-      return { summary: `Put back ${stepName(step)}`, output: designSummary(d) }
+      // the end of the redo list holds the undone group last step first, so it goes back on in reverse
+      const back = lastGroup(d.redo)
+      if (!back.length) throw new ToolInputError('Nothing to redo.')
+      const put = [...back].reverse()
+      await replayChange(designs, d, { ...d.history, steps: [...d.history.steps, ...put] }, d.redo.slice(0, -back.length))
+      return { summary: `Put back ${put.map((s) => stepName(s)).join(' and ')}`, output: designSummary(d) }
     },
   })
 

@@ -6,7 +6,7 @@
 // and its reason returned: a design never keeps a broken edit the client did not ask for.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, designNamed, noDesignMessage, parseHistories, replayHistory, stepId, unstopped, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, designNamed, noDesignMessage, parseHistories, replayHistory, stepId, unstopped, type AddOptions, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { soup, slug, type Design, type DesignFiles } from './design-tools'
 import { writeBinaryStl, readStlPositions } from './mesh'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
@@ -69,18 +69,18 @@ export class Designs implements DesignHost {
   }
 
   /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through. */
-  async add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string; feature?: string }): Promise<Step> {
+  async add(d: Design, part: number, params: StepParams, label?: string, opts?: AddOptions): Promise<Step> {
     return (await this.addStep(d, part, params, label, opts, false)).step
   }
 
-  async addWithReceipt(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string; feature?: string }) {
+  async addWithReceipt(d: Design, part: number, params: StepParams, label?: string, opts?: AddOptions) {
     return this.addStep(d, part, params, label, opts, true)
   }
 
-  private async addStep(d: Design, part: number, params: StepParams, label: string | undefined, opts: { sketch?: string; expectedRevision?: string; feature?: string } | undefined, receipt: boolean) {
+  private async addStep(d: Design, part: number, params: StepParams, label: string | undefined, opts: AddOptions | undefined, receipt: boolean) {
     const guard = () => { if (opts?.expectedRevision !== undefined) this.revisions.assert(d.id, opts.expectedRevision) }
     guard()
-    const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}), ...(opts?.feature ? { feature: opts.feature } : {}) }
+    const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}), ...(opts?.feature ? { feature: opts.feature } : {}), ...(opts?.group ? { group: opts.group } : {}) }
     const history = appendStep(d.history, step)
     const r = await this.run(history)
     const st = r.status[r.status.length - 1]

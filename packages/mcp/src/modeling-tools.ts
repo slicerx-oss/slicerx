@@ -3,7 +3,7 @@
 // Mesh modeling commands shared by the open app and the server. File access stays with the caller.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, MAX_STEPS_REPEATED, multiply, point, repeatProblem, stepName, stepPatternProblem, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, checkedTextFit, direction, groupId, invert, keepsArrayOf, MAX_STEPS_REPEATED, multiply, point, repeatProblem, stepName, stepPatternProblem, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
 import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, replayChange, stepIndex, type Design, type PiecePlans } from './design-tools'
 import { frameFor } from './cad'
@@ -549,9 +549,11 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
       const up = i.height_mm - barHeightMm
       const top: FaceFrame = { ...frame, origin: [frame.origin[0] + frame.normal[0] * up, frame.origin[1] + frame.normal[1] * up, frame.origin[2] + frame.normal[2] * up] }
       const bar: StepParams = { op: 'shape.extrude', frame: top, shape: { type: 'sketch', loops: lay.bar }, spec: { distanceMm: barHeightMm, operation: 'join' } }
-      await ds.add(d, target, posts, `Rail posts, ${lay.posts.length}`, withFeature(i.feature))
+      // one call, one undo: the posts and the bar share a group
+      const group = { group: groupId() }
+      await ds.add(d, target, posts, `Rail posts, ${lay.posts.length}`, withFeature(i.feature, group))
       try {
-        await ds.add(d, target, bar, 'Rail bar', withFeature(i.feature))
+        await ds.add(d, target, bar, 'Rail bar', withFeature(i.feature, group))
       } catch (e) {
         // the rail is one call: without its bar the posts go too, and the design is as it was
         await replayChange(ds, d, before)

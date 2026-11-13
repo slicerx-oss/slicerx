@@ -60,6 +60,8 @@ export interface AddOptions {
   sketch?: string
   expectedRevision?: string
   feature?: string
+  /** The group of the call that adds this step with others (Step.group), so they undo as one. */
+  group?: string
 }
 
 export interface DesignHost {
