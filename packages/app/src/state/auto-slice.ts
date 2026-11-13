@@ -26,6 +26,41 @@ export const AUTO_SLICE_DELAY_MS = 150
  */
 export const FIT_WAIT_MS = 15_000
 
+/**
+ * How long an agent's run of edits (mimir's tools, a client on the app link) is quiet before it counts as ended (ms).
+ * Auto slice holds from an agent's first call until no agent call has run for this long, then slices once.
+ */
+export const AGENT_QUIET_MS = 3000
+
+// Agent calls running now, the timer that ends the hold once they have been quiet for AGENT_QUIET_MS, and what the
+// running watch does then.
+let agentCalls = 0
+let agentQuiet: ReturnType<typeof setTimeout> | null = null
+let agentRunEnded: (() => void) | null = null
+
+/** Whether an agent's run of edits holds auto slice: a call of it running, or less than AGENT_QUIET_MS since the last. */
+export const agentHolds = (): boolean => agentCalls > 0 || agentQuiet !== null
+
+/**
+ * Runs one call of an agent (a mimir tool, an app link edit) under the hold: auto slice starts no slice while the run
+ * goes on, and slices once when it ends, as for a step open for editing.
+ */
+export async function agentCall<T>(call: () => Promise<T>): Promise<T> {
+  agentCalls++
+  if (agentQuiet) clearTimeout(agentQuiet)
+  agentQuiet = null
+  try {
+    return await call()
+  } finally {
+    if (--agentCalls === 0) {
+      agentQuiet = setTimeout(() => {
+        agentQuiet = null
+        agentRunEnded?.()
+      }, AGENT_QUIET_MS)
+    }
+  }
+}
+
 /** Whether the running watch has a slice about to start: its pause after an edit, or a big slice's wait for the fit check. */
 let pending: () => boolean = () => false
 
@@ -48,7 +83,9 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
   // A slice someone asked for was running when the nozzle volume changed: once it lands, it is checked against the
   // new value and sliced again when it read the old one.
   let checkLanded = false
-  const isPending = (): boolean => timer !== null || waiting !== null || starting !== 0
+  // An agent's run held a slice back: it goes when the run ends.
+  let heldForAgent = false
+  const isPending = (): boolean => timer !== null || waiting !== null || starting !== 0 || heldForAgent
   pending = isPending
   const clear = (): void => {
     if (timer) clearTimeout(timer)
@@ -65,6 +102,11 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     // An open that starts a project ends on Slice plate (AppState.revealHold), as does the example plate at launch
     // (AppState.exampleSeeding): each slices on a click or a later edit.
     if (!s.autoSlice || s.plate.length === 0 || s.revealHold || s.exampleSeeding || (s.plateLoading && !s.sliceDuringOpen) || s.historyEdit) return
+    // An agent's run of edits slices once, when it ends (agentCall).
+    if (agentHolds()) {
+      heldForAgent = true
+      return
+    }
     // A plate switched back to with its slice still current (workspaces/preview/plate-slices.ts) needs none.
     if (s.slice.status === 'done' && !s.slice.stale) return
     // Auto by size: a big slice waits for Slice, and the footer says so.
@@ -127,9 +169,16 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     clear()
     timer = setTimeout(() => run(), delayMs)
   }
+  agentRunEnded = () => {
+    if (!heldForAgent) return
+    heldForAgent = false
+    clear()
+    timer = setTimeout(() => run(), 0)
+  }
   const unsubscribe = appStore.subscribe((s, prev) => {
     if (!s.autoSlice) {
       checkLanded = false
+      heldForAgent = false
       if (s.sliceHeld) appStore.setState({ sliceHeld: false })
       return clear()
     }
@@ -173,6 +222,8 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
   return () => {
     clear()
     unsubscribe()
+    heldForAgent = false
+    agentRunEnded = null
     if (pending === isPending) pending = () => false
   }
 }

@@ -29,6 +29,7 @@ import { viewportLookState } from '../viewport/viewport-look'
 import { readViewportStats } from '../viewport/stats'
 import { previewIdle, PREVIEW_BUSY_TOOLS as BUSY_TOOLS } from './preview-guard'
 import { drawnPlate, platesState } from './plate-state'
+import { agentCall } from '../state/auto-slice'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -625,6 +626,12 @@ async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): P
 /** Runs one call the hub handed over, from `client`. The hub already checked the method and the client's grant. */
 export async function runCall(method: string, args: Record<string, unknown>, client: LinkClient = { id: '', name: 'An agent' }): Promise<unknown> {
   if (!Object.hasOwn(APP_LINK_METHODS, method)) throw new LinkError('not_found', `${appName()} has no app link method ${method}`)
+  // an agent's edits hold auto slice until its run of them goes quiet, then it slices once (auto-slice.ts agentCall)
+  if (APP_LINK_METHODS[method] === 'edit') return agentCall(() => runMethod(method, args, client))
+  return runMethod(method, args, client)
+}
+
+async function runMethod(method: string, args: Record<string, unknown>, client: LinkClient): Promise<unknown> {
   if (method === 'values.list' || method === 'values.set' || method === 'values.remove' || method === 'values.bind') {
     const { valueCall } = await import('./values')
     return valueCall(method, args, linkLoader)
