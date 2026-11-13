@@ -1303,6 +1303,76 @@ async function plate(t: number, d: number, plan: Partial<PartPlan> = {}, tags: [
   return { h, ok, design, plans }
 }
 
+describe('a display plan\'s stacked parts', () => {
+  /**
+   * Two decks and a funnel on a hull, each extruded from the height `funnelFrom` gives the funnel, as the stage 1 ships
+   * were; with `row`, the funnel is joined to the deck and is one of a row of four patterned from it with geom.array, the row its own
+   * feature.
+   */
+  async function ship(funnelFrom: number, plan: Partial<PartPlan>, row?: string) {
+    const plans = createPlanRegistry()
+    const h = await connect({ geomEngine: engine, plans })
+    const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: T }>(r).output
+    }
+    const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Ship' })).design
+    await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 100, heightMm: 20 }, placement: { center: [50, 10] }, distance_mm: 14.5, feature: 'Hull' })
+    await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 10 }, frame: top(14.5), placement: { center: [50, 10] }, distance_mm: 3.65, feature: 'Lower deckhouse' })
+    await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 30, heightMm: 8 }, frame: top(18.1), placement: { center: [50, 10] }, distance_mm: 3.05, feature: 'Upper deckhouse' })
+    await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: 4 }, frame: top(funnelFrom), placement: { center: [row ? 38 : 50, 10] }, distance_mm: 29.5 - funnelFrom, feature: 'Funnel 1', ...(row ? { operation: 'join', part: 2 } : {}) })
+    if (row) await ok('slicerx_geom_array', { design, steps: ['Funnel 1'], spec: { kind: 'linear', count: 4, step: [8, 0, 0] }, feature: row })
+    plans.put({
+      planId: 'ship-1', part: 'Ship', units: 'mm', detail: 'display', assumptions: [], questions: [],
+      features: [
+        { name: 'Hull', kind: 'extrude', sizes: { length: 100, width: 20, height: 14.5 } },
+        { name: 'Lower deckhouse', kind: 'extrude', sizes: { length: 40, width: 10, height: 3.6 } },
+        { name: 'Upper deckhouse', kind: 'extrude', sizes: { length: 30, width: 8, height: 3 } },
+        { name: 'Funnel 1', kind: 'extrude', sizes: { diameter: 4, height: funnelFrom === 14.5 ? 15 : 8.4 }, on: 'Upper deckhouse' },
+      ],
+      tiers: { 'Lower deckhouse': ['Lower deckhouse', 'Upper deckhouse'] },
+      ...plan,
+    })
+    return ok<Check>('slicerx_design_check', { planId: 'ship-1', design })
+  }
+  const stands = (r: Check) => r.items.find((i) => i.name === 'stands on')
+
+  it('fails a funnel built from the hull\'s deck, 6.65 mm under the top of the deckhouse it stands on', async () => {
+    const item = stands(await ship(14.5, {}))!
+    expect(item.pass).toBe(false)
+    expect(item.got).toBe('Funnel 1 stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse')
+  })
+
+  it('passes a funnel built from the top of its deckhouse, and the upper deckhouse its tiers put on the lower one', async () => {
+    const item = stands(await ship(21.1, {}))!
+    expect(item).toEqual({ name: 'stands on', want: "each stacked part's base on its support's top, within 0.2 mm, its planned height showing above it within 1.35 times", got: '2 stacked parts on their supports', pass: true })
+  })
+
+  it('holds a row of funnels patterned from one to the deck its plan puts the row on', async () => {
+    // the row is its own feature, read from its pattern step: copies standing on the deck pass, a row sunk into it fails
+    const planned = (from: number) => ({
+      features: [
+        { name: 'Hull', kind: 'extrude', sizes: { length: 100, width: 20, height: 14.5 } },
+        { name: 'Lower deckhouse', kind: 'extrude', sizes: { length: 40, width: 10, height: 3.6 } },
+        { name: 'Upper deckhouse', kind: 'extrude', sizes: { length: 30, width: 8, height: 3 } },
+        { name: 'Funnel 1', kind: 'extrude', sizes: { diameter: 4 } },
+        { name: 'Funnels (4)', kind: 'array', sizes: { count: 4, height: from === 14.5 ? 15 : 8.4 }, on: 'Upper deckhouse' },
+      ],
+    })
+    expect(stands(await ship(21.1, planned(21.1), 'Funnels (4)'))).toMatchObject({ got: '2 stacked parts on their supports', pass: true })
+    expect(stands(await ship(14.5, planned(14.5), 'Funnels (4)'))).toMatchObject({
+      got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse',
+      pass: false,
+    })
+  })
+
+  it('checks nothing for a plan that names no support and has no tiers', async () => {
+    const r = await ship(14.5, { tiers: undefined, features: [{ name: 'Hull', kind: 'extrude', sizes: { height: 14.5 } }, { name: 'Lower deckhouse', kind: 'extrude', sizes: { height: 3.6 } }, { name: 'Upper deckhouse', kind: 'extrude', sizes: { height: 3 } }, { name: 'Funnel 1', kind: 'extrude', sizes: { height: 15 } }] })
+    expect(stands(r)).toBeUndefined()
+  })
+})
+
 describe('slicerx_design_check', () => {
   it('reads the body a plate was built to and passes it against its plan', async () => {
     const { ok, design } = await plate(5, 6)

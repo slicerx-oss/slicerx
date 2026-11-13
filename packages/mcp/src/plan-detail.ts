@@ -326,6 +326,87 @@ function tierProblems(plan: DetailPlan, feature: FeatureOf): string[] {
 export const TIER_ON_DISAGREES = (level: string, on: string, before: string, body: string): string =>
   `on: ${level} stands on ${on}, but the tiers of ${body} put it on ${before}; name ${before} in its on, or take it out of the tier list`
 
+const r2 = (v: number): number => Math.round(v * 100) / 100
+
+/** The most a stacked part's base may sit off its support's top: one layer, mm. */
+export const STAND_LAYER_MM = 0.2
+
+/** The failure for a stacked part whose base is sunk below its support's top, with a planned height. */
+export const STANDS_OFF = (part: string, support: string, below: number, shows: number, planned: number): string =>
+  `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; build it from the top of ${support}`
+
+/** The failure for a stacked part whose base floats above its support's top, planned height or not. */
+export const STANDS_FLOATS = (part: string, support: string, above: number): string =>
+  `${part} stands on ${support}, but its base is ${r2(above)} mm above its top, so it floats; build it from the top of ${support}`
+
+/** The failure for a stacked part on its support's top whose planned height does not show above it. */
+export const STANDS_HEIGHT_OFF = (part: string, support: string, shows: number, planned: number): string =>
+  `${part} stands on ${support}, but ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; make it ${r2(planned)} mm tall above the top of ${support}`
+
+/** The failure for a stacked part with no planned height whose base is sunk below its support's top. */
+export const STANDS_BASE_OFF = (part: string, support: string, below: number): string =>
+  `${part} stands on ${support}, but its base is ${r2(below)} mm below its top; build it from the top of ${support}`
+
+/**
+ * The stacking pairs a plan says, each a feature and the planned feature it stands on: each on that names a planned
+ * feature, and each level of a tier list on the level before it. Display and fine plans only.
+ */
+export function stackPairs(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail'>): [string, string][] {
+  if (plan.detail === 'basic') return []
+  const named = new Map(plan.features.map((f) => [f.name.trim().toLowerCase(), f.name]))
+  const pairs = new Map<string, [string, string]>()
+  for (const f of plan.features) {
+    const on = f.on?.trim()
+    if (on && named.has(on.toLowerCase()) && on.toLowerCase() !== f.name.trim().toLowerCase()) pairs.set(f.name.trim().toLowerCase(), [f.name, named.get(on.toLowerCase())!])
+  }
+  for (const levels of Object.values(plan.tiers ?? {}))
+    levels.forEach((l, k) => {
+      const [a, b] = [named.get(l.trim().toLowerCase()), k > 0 ? named.get(levels[k - 1]!.trim().toLowerCase()) : undefined]
+      if (a && b && !pairs.has(a.trim().toLowerCase())) pairs.set(a.trim().toLowerCase(), [a, b])
+    })
+  return [...pairs.values()]
+}
+
+/** A feature's height range as built, mm, by its name in lower case; `loose` when a step gave only a bound around it. */
+export type FeatureHeights = Readonly<Record<string, { lo: number; hi: number; loose?: true }>>
+
+/** What a stacked part's base and height say against its support's top: null when both hold. */
+function standsWrong(part: string, support: string, base: number, shows: number, planned: number | undefined): string | null {
+  if (base > STAND_LAYER_MM + 1e-6) return STANDS_FLOATS(part, support, base)
+  // no height planned: only the base is held, as the plan says nothing of how much should show
+  if (base < -STAND_LAYER_MM - 1e-6) return planned === undefined ? STANDS_BASE_OFF(part, support, -base) : STANDS_OFF(part, support, -base, shows, planned)
+  if (planned === undefined || (shows >= planned / SCALE_SLACK && shows <= planned * SCALE_SLACK)) return null
+  return STANDS_HEIGHT_OFF(part, support, shows, planned)
+}
+
+/**
+ * Each stacked part against what it stands on, from the height range of each feature as built: its base within a
+ * layer of its support's top, and its planned height (a size named height) showing above that top within SCALE_SLACK,
+ * or the base alone when no height is planned. A pair is read only when both features have an exact range; a plan with
+ * no pair read gets no item.
+ */
+export function stackItem(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail'>, heights: FeatureHeights | undefined): { name: string; want: string; got: string; pass: boolean } | null {
+  if (!heights) return null
+  const read = stackPairs(plan).flatMap(([part, support]) => {
+    const [p, s] = [heights[part.trim().toLowerCase()], heights[support.trim().toLowerCase()]]
+    // a loose range on either side is a bound, not the solid: a support's top read too high or too low makes a part
+    // placed right look sunk or floating, and a part's own bound fails it wrongly, so the pair is not read
+    return p && s && !p.loose && !s.loose ? [{ part, support, p, s }] : []
+  })
+  if (!read.length) return null
+  const off = read.flatMap(({ part, support, p, s }) => {
+    const planned = Object.entries(plan.features.find((f) => f.name === part)?.sizes ?? {}).find(([k]) => /^height$/i.test(k.trim()))?.[1]
+    const wrong = standsWrong(part, support, p.lo - s.hi, p.hi - s.hi, planned)
+    return wrong ? [wrong] : []
+  })
+  return {
+    name: 'stands on',
+    want: `each stacked part's base on its support's top, within ${STAND_LAYER_MM} mm, its planned height showing above it within ${SCALE_SLACK} times`,
+    got: off.length ? off.join('; ') : `${read.length} stacked ${read.length === 1 ? 'part' : 'parts'} on ${read.length === 1 ? 'its support' : 'their supports'}`,
+    pass: off.length === 0,
+  }
+}
+
 /** The fewest features a display or fine plan has, and why, from its level, its overall proportions and its repeated details. */
 export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, level: Exclude<DetailLevel, 'basic'>): { count: number; why: string } {
   const why = [`${FEATURES_FLOOR[level]} at ${DETAIL_LABEL[level].toLowerCase()}`]
