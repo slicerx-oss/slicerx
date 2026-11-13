@@ -24,6 +24,8 @@ export interface ServedOptions {
   helloMs?: number
   /** The call when the binary has no serve mode: today's process per call. */
   perCall: EngineCall
+  /** The arguments that start the binary served (default `serve`, sx-geom's; the desktop app's binary takes `--sx-geom-engine`). */
+  args?: readonly string[]
 }
 
 interface Job {
@@ -110,6 +112,7 @@ export function paintCodes(v: unknown, buffers: readonly Uint8Array[]): unknown 
 export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
   const timeoutMs = o.timeoutMs ?? 5 * 60_000
   const helloMs = o.helloMs ?? 5_000
+  const serveArgs = [...(o.args ?? ['serve'])]
   // unknown until the first start; a binary that never says HELLO is per call for the server's life
   let mode: 'unknown' | 'served' | 'perCall' = 'unknown'
   let child: ChildProcess | null = null
@@ -136,7 +139,7 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
   /** Starts a served process; false when the binary does not serve (no HELLO, or it ends first). */
   const start = (): Promise<boolean> =>
     new Promise((resolve) => {
-      const c = spawn(bin, ['serve'], { stdio: ['pipe', 'pipe', 'ignore'] })
+      const c = spawn(bin, serveArgs, { stdio: ['pipe', 'pipe', 'ignore'] })
       track(c)
       let greeted = false
       pending = new Uint8Array(0)
@@ -180,7 +183,7 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
   // serve mode reads `serve` as an operation and refuses it. Asked once, before the first start.
   const serves = (): Promise<boolean> =>
     new Promise((resolve) => {
-      const c = spawn(bin, ['serve'], { stdio: ['pipe', 'pipe', 'ignore'] })
+      const c = spawn(bin, serveArgs, { stdio: ['pipe', 'pipe', 'ignore'] })
       track(c)
       let out: Uint8Array = new Uint8Array(0)
       const timer = setTimeout(() => c.kill('SIGKILL'), helloMs)
