@@ -76,9 +76,11 @@ Signed-off-by: Your Name <you@example.com>
 
 ### What CI runs
 
-A pull request gets the quick checks: lint, typecheck, unit tests, Rust build, clippy and tests, and, when it touches
-the app, one browser smoke job (a few quick specs that start the app, load the plate and slice). The full browser
-suite runs in the merge queue on every queued pull request, before it lands, so nothing merges less tested.
+A pull request gets the quick checks for what it changes: lint and typecheck everywhere, the unit tests of the packages
+it touches and of the packages that depend on them, the Rust build, clippy and tests when it touches Rust, and, when it
+touches the app, one browser smoke job (a few quick specs that start the app, load the plate and slice). The merge
+queue runs every check and the full browser suite on every queued pull request, before it lands, so nothing merges
+less tested.
 
 Add the `full-ci` label only when a pull request changes the browser suite's harness (the specs, their helpers,
 `apps/web/playwright.config.ts`, the printer simulators) or a maintainer asks for it. It runs the full browser suite,
