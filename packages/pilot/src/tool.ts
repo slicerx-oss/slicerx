@@ -145,7 +145,7 @@ export interface ToolOutput {
 }
 
 /** The sets tools load in (docs: agent tools architecture). A client starts with core and loads the others it needs. */
-export type Toolset = 'core' | 'cad' | 'mesh' | 'settings' | 'project' | 'printers' | 'fleets' | 'kb' | 'calibration' | 'cloud' | 'theme' | 'local_ai' | 'skills'
+export type Toolset = 'core' | 'cad' | 'mesh' | 'settings' | 'project' | 'printers' | 'fleets' | 'kb' | 'calibration' | 'cloud' | 'theme' | 'local_ai' | 'skills' | 'cad_more'
 
 export interface PlannedAction {
   action: SideEffectAction

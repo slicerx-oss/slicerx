@@ -42,7 +42,7 @@ const BUILD: ReadonlySet<string> = new Set(['pilot.sheet', 'pilot.sheet_bind', '
  * print-in-place gaps. The fit check is here rather than in build, where a local model's new part turn has no room for
  * it: a print-in-place part loads it when design.check asks for it (calling it loads this set).
  */
-const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.measure', 'geom.fit_check', 'geom.interference', 'geom.push_pull', 'geom.mirror', 'geom.array', 'geom.split', 'geom.subtract', 'geom.emboss', 'geom.cut', 'geom.hollow', 'geom.repair', 'geom.build', 'geom.boolean'])
+const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.measure', 'geom.fit_check', 'geom.interference', 'geom.push_pull', 'geom.mirror', 'geom.array', 'geom.split', 'geom.subtract', 'geom.emboss', 'geom.cut', 'geom.hollow', 'geom.repair', 'geom.build', 'geom.boolean', 'geom.rail'])
 
 /**
  * Editing a part already built: open it, go through its steps and sketches, pick its faces and edges, project them

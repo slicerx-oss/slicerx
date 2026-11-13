@@ -160,6 +160,13 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
       expect(names).toEqual(expect.arrayContaining(['design__new', 'geom__extrude', 'geom__fillet']))
     })
 
+  it('sends the rail tool on a turn that asks for a rail, and leaves it to the room left otherwise', async () => {
+    const { say } = await chat([{ text: 'Adding it.' }])
+    const names = toolNames((await say('Add a railing all round the deck'))[0]!)
+    expect(names.length).toBeLessThanOrEqual(CAP)
+    expect(names).toEqual(expect.arrayContaining(['geom__rail', 'design__new', 'geom__extrude', 'geom__fillet']))
+  })
+
   it('sends the same tools on every step of a turn and on the next turn on the same topic', async () => {
     const { say } = await chat([{ call: { name: 'printer__list' } }, { call: { name: 'printer__status', input: { printerId: 'p3' } } }, { text: 'Printer 3 is printing.' }, { call: { name: 'printer__list' } }, { text: 'Printer 3 is still printing.' }])
     const one = await say("How's the print on printer 3 going?")

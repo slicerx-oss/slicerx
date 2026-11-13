@@ -249,6 +249,7 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("geom.emboss", LinkClass::Edit),
     ("geom.build", LinkClass::Edit),
     ("geom.subtract", LinkClass::Edit),
+    ("geom.rail", LinkClass::Edit),
     // A built part checked against a plan the mimir tab made: it reads only.
     ("design.check", LinkClass::Read),
     // A client's plan kept for design.check; no card and nothing on the plate changes.
@@ -605,6 +606,7 @@ mod tests {
         ("geom.emboss", LinkClass::Edit),
         ("geom.build", LinkClass::Edit),
         ("geom.subtract", LinkClass::Edit),
+        ("geom.rail", LinkClass::Edit),
         ("design.check", LinkClass::Read),
         ("design.put_plan", LinkClass::Read),
         ("sheet.ask", LinkClass::Edit),

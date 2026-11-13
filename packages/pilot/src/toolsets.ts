@@ -26,8 +26,9 @@ import { defineTool, type PilotTool, type Toolset } from './tool'
  * The order toolsets are kept in when they do not all fit, first kept first. Core is never traded away. The design
  * tools come next because the mimir tab builds parts with them, then preparing and slicing a plate, the printers, the
  * project, the knowledge base, plate mesh edits, calibration, fleets, and what connected apps and other skills add.
+ * Last, the design tools a request asks for by name (a rail), which take only room no other toolset needs.
  */
-export const TOOLSET_PRIORITY: readonly Toolset[] = ['core', 'cad', 'settings', 'printers', 'project', 'kb', 'mesh', 'calibration', 'fleets', 'skills', 'theme', 'cloud', 'local_ai']
+export const TOOLSET_PRIORITY: readonly Toolset[] = ['core', 'cad', 'settings', 'printers', 'project', 'kb', 'mesh', 'calibration', 'fleets', 'skills', 'theme', 'cloud', 'local_ai', 'cad_more']
 
 type SetTool = Pick<PilotTool, 'name'> & Partial<Pick<PilotTool, 'toolset' | 'source' | 'permission' | 'plugin' | 'command' | 'printerFor' | 'approval'>>
 
@@ -43,6 +44,9 @@ const BY_NAME: Record<string, Toolset> = {
   mesh_analyze: 'mesh',
   mesh_repair: 'mesh',
   multicolor_assign: 'mesh',
+  // a rail along a design's line or edge is asked for by name ("add a railing"), so it loads on those words rather than
+  // taking a place in every capped request beside the rest of the design tools
+  'geom.rail': 'cad_more',
   // painting a design in filaments goes with the project's filament tools (project.add_filament and set_filament)
   'paint.preview': 'project',
   'paint.apply': 'project',
@@ -108,6 +112,7 @@ const NEEDS: readonly [Toolset, RegExp][] = [
   ['project', /\b(project|plate|open|file|export|save|stl|3mf|step|paint|colou?r|recolou?r)\w*/i],
   ['kb', /\b(why|how|which|recommend|best|troubleshoot|problem|issue|string|warp|clog|look up|source|material)\w*/i],
   ['mesh', /\b(mesh|repair|hollow|emboss|cut|split|paint|color|colour)\w*/i],
+  ['cad_more', /\b(rail|railing|fence|balustrade|banister)s?\b/i],
   ['calibration', /\bcalibrat\w*/i],
   ['fleets', /\b(fleet|farm|schedule|overnight|tonight)\w*/i],
   ['theme', /\b(theme|look|dark mode|light mode)\b/i],
@@ -304,6 +309,7 @@ export const TOOLSET_LABELS: Record<Exclude<Toolset, 'core'>, string> = {
   project: 'project and plate',
   kb: 'knowledge base',
   mesh: 'mesh editing',
+  cad_more: 'more design',
   calibration: 'calibration',
   fleets: 'fleet and schedule',
   skills: 'skill',
@@ -320,6 +326,7 @@ export const TOOLSET_WORDS: Record<Exclude<Toolset, 'core'>, string> = {
   project: 'the project, its plates and files',
   kb: 'the knowledge base and lookups',
   mesh: 'plate mesh edits: cut, hollow, emboss, repair, paint',
+  cad_more: 'more design tools: a rail of posts and a top bar along a line or a face edge',
   calibration: 'calibration prints',
   fleets: 'fleets and schedules',
   skills: 'connected apps and other skills',

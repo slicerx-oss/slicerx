@@ -10,7 +10,7 @@ import { z } from 'zod'
 import { readFileSync } from 'node:fs'
 import { createPilot, createTransportClient, DEFAULT_CONFIG, defineTool, MIMIR_CLOUD_MAX_TOOLS, type PilotTool, type Toolset } from '../src/index'
 import { OPENAI_MAX_TOOLS } from '../src/provider/openai'
-import { capTools, TOOLSET_PRIORITY, toolsetOf } from '../src/toolsets'
+import { capTools, TOOLSET_PRIORITY, toolsetOf, turnNeeds } from '../src/toolsets'
 
 const tool = (name: string, toolset: Toolset): PilotTool<never> =>
   defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', toolset, input: z.object({}), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
@@ -236,7 +236,7 @@ describe('toolsets', () => {
   it('has one fixed priority with every toolset in it once, core first', () => {
     expect(TOOLSET_PRIORITY[0]).toBe('core')
     expect(new Set(TOOLSET_PRIORITY).size).toBe(TOOLSET_PRIORITY.length)
-    const all: Toolset[] = ['core', 'cad', 'mesh', 'settings', 'project', 'printers', 'fleets', 'kb', 'calibration', 'cloud', 'theme', 'local_ai', 'skills']
+    const all: Toolset[] = ['core', 'cad', 'mesh', 'settings', 'project', 'printers', 'fleets', 'kb', 'calibration', 'cloud', 'theme', 'local_ai', 'skills', 'cad_more']
     expect([...TOOLSET_PRIORITY].sort()).toEqual([...all].sort())
   })
 
@@ -245,6 +245,10 @@ describe('toolsets', () => {
     expect(toolsetOf(t('kb.search', { toolset: 'core' }))).toBe('core')
     expect(toolsetOf(t('geom.extrude'))).toBe('cad')
     expect(toolsetOf(t('design.new'))).toBe('cad')
+    // a rail is asked for by name, so it loads on those words and takes no place in every capped request
+    expect(toolsetOf(t('geom.rail'))).toBe('cad_more')
+    for (const ask of ['Add a railing all round the deck', 'put a rail along the top', 'a fence round the tray']) expect(turnNeeds(ask).has('cad_more')).toBe(true)
+    for (const ask of ['make a trail map', 'print it on Printer 2', 'the guardrails of the slicer']) expect(turnNeeds(ask).has('cad_more')).toBe(false)
     // painting a design in filaments goes with the project's filament tools
     for (const n of ['paint.preview', 'paint.apply', 'paint.regions', 'project.add_filament']) expect(toolsetOf(t(n))).toBe('project')
     expect(toolsetOf(t('kb.filament'))).toBe('kb')

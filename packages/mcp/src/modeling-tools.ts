@@ -5,7 +5,9 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, MAX_STEPS_REPEATED, multiply, point, repeatProblem, stepName, stepPatternProblem, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
-import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, stepIndex, type Design, type PiecePlans } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, replayChange, stepIndex, type Design, type PiecePlans } from './design-tools'
+import { frameFor } from './cad'
+import { insetOutline, railLayout } from './rail'
 import { ToolInputError } from './errors'
 import { boxIn, boxOf, placeNote, solidBox, solidsInPlace, solidsNote, undercut } from './feature-place'
 import type { FitProfile } from './fit-facts'
@@ -461,7 +463,110 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
     },
   })
 
-  return [cut, split, mirror, array, repair, hollow, emboss, build, subtract] as PilotTool<never>[]
+
+  /** How far a rail's posts sink into what they stand on, mm, so they are never exactly on its top. */
+  const RAIL_SINK_MM = 0.05
+  const railInput = z.object({
+    design: designArg,
+    feature: featureArg,
+    path: z
+      .object({
+        frame: z.object({ origin: vec3, normal: vec3, u: vec3.optional() }).optional().describe('The plane the rail stands on, its normal up the posts; absent: the bed'),
+        points: z.array(z.tuple([z.number(), z.number()])).min(2).max(512).describe('[u, v] in the plane, mm'),
+        closed: z.boolean().default(false).describe('Back to the first point: a rail all round'),
+      })
+      .optional()
+      .describe('The line the rail follows'),
+    face: z
+      .object({ point: vec3.describe('A point on the face, mm'), normal: vec3.optional() })
+      .optional()
+      .describe('Instead of path: a rail all round the outer edge of this flat face (a deck, a tray floor, a shelf)'),
+    inset_mm: z.number().min(0).max(100).optional().describe('With face: how far in from the edge the rail\'s middle runs; default half the bar, so the bar\'s outside is on the edge'),
+    height_mm: z.number().positive().max(500).describe('From the plane to the top of the bar, mm'),
+    spacing_mm: z.number().positive().max(500).default(3).describe('Most distance between posts, mm; a post stands at every corner and the rest are spread evenly between'),
+    post_mm: z.number().positive().max(50).optional().describe('Post diameter; default twice the nozzle'),
+    bar_mm: z.number().positive().max(50).optional().describe('Top bar width, at least 0.1 mm over the posts; default the posts and 0.2 mm'),
+    bar_height_mm: z.number().positive().max(50).optional().describe('Top bar thickness; default twice the nozzle'),
+    part: partArg.describe('With join: the part the rail joins; with face, the face\'s part'),
+    join: z.boolean().default(false).describe('Join the rail to the part it stands on; default a new part of its own'),
+    name: z.string().min(1).max(120).optional().describe('The new part\'s name; default Rail'),
+    slot: z.number().int().min(1).max(32).optional().describe('The new part\'s filament, from 1'),
+  })
+  const rail = defineTool({
+    name: 'geom.rail',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Add a rail (a railing or fence) to a design: round posts at every corner of a line and spread evenly between, and a flat top bar on them, as two steps of one call. The line is path (points on a plane, closed for a rail all round) or face (all round the outer edge of a flat face). Posts and bar are at least twice the nozzle, so they print, and the bar is a little wider than the posts; the posts sink 0.05 mm into what they stand on. A new part of its own by default (name, slot), or joined to the part. The reply gives the posts, their spacing, the length and the sizes used.',
+    input: railInput,
+    async run(i) {
+      if (!i.path === !i.face) throw new ToolInputError(i.path ? 'face: give path or face, not both' : 'path: give the line the rail follows as path, or a flat face as face')
+      if (i.inset_mm !== undefined && !i.face) throw new ToolInputError('inset_mm: the inset is from a face\'s edge; give face, or leave inset_mm out')
+      if (i.join && (i.name !== undefined || i.slot !== undefined)) throw new ToolInputError(`${i.name !== undefined ? 'name' : 'slot'}: a joined rail is part of the part it stands on; leave ${i.name !== undefined ? 'name' : 'slot'} out, or join out`)
+      const nozzle = deps.nozzleMm?.() ?? 0.4
+      const least = Math.round(2 * nozzle * 100) / 100
+      const postMm = i.post_mm ?? least
+      // the bar a little wider than the posts, so it caps them and no post's side runs along the bar's
+      const barMm = i.bar_mm ?? Math.round((postMm + 0.2) * 100) / 100
+      const barHeightMm = i.bar_height_mm ?? least
+      for (const [k, v] of [['post_mm', postMm], ['bar_mm', barMm]] as const) if (v < least - 1e-9) throw new ToolInputError(`${k}: ${v} mm is thinner than a ${nozzle} mm nozzle prints; give at least ${least} mm (twice the nozzle)`)
+      if (barMm < postMm + 0.1 - 1e-9) throw new ToolInputError(`bar_mm: the bar caps the posts, so it is at least 0.1 mm wider than they are; give at least ${Math.round((postMm + 0.1) * 100) / 100} mm`)
+      if (barHeightMm >= i.height_mm) throw new ToolInputError(`height_mm: the rail is ${i.height_mm} mm tall and its bar ${barHeightMm} mm thick; give a height above the bar's thickness`)
+      if (i.spacing_mm < postMm) throw new ToolInputError(`spacing_mm: posts ${postMm} mm wide cannot stand ${i.spacing_mm} mm apart; give at least ${postMm} mm`)
+      const [ds, d] = designOf(i.design)
+      let frame: FaceFrame
+      let points: [number, number][]
+      let closed: boolean
+      let on = i.part
+      if (i.face) {
+        const f = faceAt(d, i.face.point, i.face.normal)
+        if (i.part !== undefined && i.part !== f.part) throw new ToolInputError(`part: the face is on part ${f.part}; leave part out or give ${f.part}`)
+        on = f.part
+        const p = d.parts[f.part]!
+        const pick = (await ds.call('face.pick', { mesh: { mesh: { positions: Array.from(p.positions), indices: Array.from(p.indices) }, transform: d.transform }, triangle: f.triangle, at: i.face.point })) as { frame: FaceFrame; outline: Polygon[] }
+        const areaOf = (q: readonly [number, number][]) => Math.abs(q.reduce((s, a, k) => s + a[0] * q[(k + 1) % q.length]![1] - q[(k + 1) % q.length]![0] * a[1], 0))
+        const outer = [...(pick.outline ?? [])].map((g) => g.outer as [number, number][]).sort((a, b) => areaOf(b) - areaOf(a))[0]
+        if (!outer || outer.length < 3) throw new ToolInputError('face: no flat face with an edge all round at that point; give a point on a flat face')
+        frame = pick.frame
+        points = insetOutline(outer, i.inset_mm ?? barMm / 2)
+        closed = true
+      } else {
+        const f = i.path!.frame
+        frame = f ? frameFor(f.origin, f.normal, f.u) : { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+        points = i.path!.points
+        closed = i.path!.closed
+      }
+      if (i.join && on === undefined) throw new ToolInputError('part: a joined rail needs the part it joins; give part')
+      if (on !== undefined && !d.parts[on]) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+      const lay = railLayout(points, closed, { spacingMm: i.spacing_mm, barMm, capMm: barMm / 2 })
+      if (typeof lay === 'string') throw new ToolInputError(`${i.face ? 'face' : 'path.points'}: ${lay}`)
+      const n = d.parts.length
+      const target = i.join ? on! : n
+      const before = d.history
+      const posts: StepParams = { op: 'shape.extrude', frame, shape: { type: 'sketch', loops: lay.posts.map((c) => ({ type: 'circle' as const, center: c, diameterMm: postMm })) }, spec: { distanceMm: i.height_mm - barHeightMm / 2, extent: 'twoSides', distance2Mm: RAIL_SINK_MM, operation: i.join ? 'join' : 'new' }, ...(i.join ? {} : { name: i.name ?? 'Rail', slot: i.slot ?? d.parts[on ?? 0]?.slot ?? 1 }) }
+      // the posts reach halfway up the bar, so no top of theirs lies in the bar's top face
+      const up = i.height_mm - barHeightMm
+      const top: FaceFrame = { ...frame, origin: [frame.origin[0] + frame.normal[0] * up, frame.origin[1] + frame.normal[1] * up, frame.origin[2] + frame.normal[2] * up] }
+      const bar: StepParams = { op: 'shape.extrude', frame: top, shape: { type: 'sketch', loops: lay.bar }, spec: { distanceMm: barHeightMm, operation: 'join' } }
+      await ds.add(d, target, posts, `Rail posts, ${lay.posts.length}`, withFeature(i.feature))
+      try {
+        await ds.add(d, target, bar, 'Rail bar', withFeature(i.feature))
+      } catch (e) {
+        // the rail is one call: without its bar the posts go too, and the design is as it was
+        await replayChange(ds, d, before)
+        throw e
+      }
+      const facts = { part: target, posts: lay.posts.length, cornerPosts: lay.cornerPosts, spacingMm: lay.spacingMm, lengthMm: lay.lengthMm, closed, heightMm: i.height_mm, postMm, barMm, barHeightMm }
+      const k = d.history.steps.length
+      return {
+        summary: `Railed: steps ${k - 1} and ${k}, ${lay.posts.length} posts (${lay.cornerPosts} on corners) at most ${Math.round(lay.spacingMm * 100) / 100} mm apart along ${Math.round(lay.lengthMm * 10) / 10} mm, ${i.height_mm} mm tall, ${i.join ? `joined to ${d.parts[target]?.name ?? `part ${target}`}` : `a new part, ${d.parts[target]?.name ?? 'Rail'}`}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`,
+        output: { ...designSummary(d), rail: facts },
+      }
+    },
+  })
+
+  return [cut, split, mirror, array, repair, hollow, emboss, build, subtract, rail] as PilotTool<never>[]
 }
 
 /** A cutter as a subtract step keeps it: a box, or a cylinder with its origin, axis, diameter and height. */
