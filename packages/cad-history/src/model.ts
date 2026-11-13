@@ -85,7 +85,8 @@ export type StepParams =
   /** The part combined with others, which go: union keeps both, difference takes them away, intersection keeps what they share. */
   | { op: 'boolean'; kind: 'union' | 'difference' | 'intersection'; with: number[] }
   /** The part cut by a plane (world at the step's transform); both keeps the piece above as a new part after it. */
-  | { op: 'plane.cut'; plane: { point: Vec3; normal: Vec3 }; keep: 'both' | 'below' | 'above' }
+  /** `name`: the upper piece's when both are kept; without one it is the part's name and "top". */
+  | { op: 'plane.cut'; plane: { point: Vec3; normal: Vec3 }; keep: 'both' | 'below' | 'above'; name?: string }
   /** The part split into pieces that each fit a build volume, the first in its place and the rest after it. */
   | { op: 'split'; buildVolumeMm: Vec3; marginMm?: number }
   /** The part mirrored through a plane (world at the step's transform); copy keeps it and joins the mirror image to it. */

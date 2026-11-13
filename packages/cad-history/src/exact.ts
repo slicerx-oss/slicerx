@@ -518,7 +518,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         for (const k of ['below', 'above']) if (solids.keep && typeof r[k] === 'number') solids.made(r[k] as number)
         if (r['below'] === null || r['above'] === null) throw new ExactBroken('The plane no longer crosses the part.')
         const below = () => part(target, r, 'below')
-        const above = async () => ({ ...(await part(target, r, 'above')), name: `${target.name} top` })
+        const above = async () => ({ ...(await part(target, r, 'above')), name: p.name ?? `${target.name} top` })
         if (p.keep === 'below') out[s.part] = await below()
         else if (p.keep === 'above') out[s.part] = { ...(await above()), name: target.name }
         else out.splice(s.part, 1, await below(), await above())
