@@ -53,6 +53,9 @@ pub struct Slicer {
     /// The cancel flag of each slice running, by the job number the page gave it.
     jobs: Mutex<HashMap<u32, Arc<AtomicBool>>>,
     next: AtomicU32,
+    /// The page load the meshes and results belong to. [`Slicer::page_start`] moves it on, and a load or slice the page
+    /// before asked for that ends after that is let go instead of kept: no page could name it.
+    page: AtomicU32,
     kept: Kept,
     checks: Checks,
 }
@@ -89,6 +92,91 @@ impl Slicer {
     pub fn gcode(&self, id: u32) -> Option<Vec<u8>> {
         lock(&self.results).get(&id).map(|o| o.gcode.clone())
     }
+
+    /// What the slicer holds now, for the agent bridge's health (agent_bridge::health).
+    #[cfg(feature = "agent-bridge")]
+    pub fn held(&self) -> Held {
+        let (meshes_len, meshes_bytes) = {
+            let meshes = lock(&self.meshes);
+            (meshes.len(), meshes.values().map(|m| mesh_bytes(m)).sum())
+        };
+        let (results_len, results_bytes) = {
+            let results = lock(&self.results);
+            (
+                results.len(),
+                results.values().map(|o| o.gcode.len() + o.sxpv.len()).sum(),
+            )
+        };
+        Held {
+            meshes_len,
+            meshes_bytes,
+            results_len,
+            results_bytes,
+            kept_sessions: lock(&self.kept.sessions).len(),
+        }
+    }
+
+    /// Keeps a loaded mesh, unless the page reloaded since it asked ([`Slicer::page_start`]).
+    fn keep_mesh(&self, page: u32, id: u32, mesh: Mesh) -> bool {
+        let mut meshes = lock(&self.meshes);
+        if self.page.load(Ordering::SeqCst) != page {
+            return false;
+        }
+        meshes.insert(id, Arc::new(mesh));
+        true
+    }
+
+    /// Keeps a slice's G-code and preview, unless the page reloaded since it asked ([`Slicer::page_start`]).
+    fn keep_result(&self, page: u32, id: u32, output: Output) -> bool {
+        let mut results = lock(&self.results);
+        if self.page.load(Ordering::SeqCst) != page {
+            return false;
+        }
+        results.insert(id, output);
+        true
+    }
+
+    /// A page starting: a launch, or a reload that forgot every id the page before it held. Everything that page loaded
+    /// or sliced goes (meshes, results, the kept sessions made from its meshes), its slices still running stop, and a
+    /// load or slice it asked for that ends after this is not kept. The id counter goes on, so no id comes back.
+    fn page_start(&self) {
+        self.page.fetch_add(1, Ordering::SeqCst);
+        for (_, flag) in lock(&self.jobs).drain() {
+            flag.store(true, Ordering::Relaxed);
+        }
+        lock(&self.meshes).clear();
+        lock(&self.results).clear();
+        lock(&self.kept.hashes).clear();
+        lock(&self.kept.sessions).clear();
+    }
+}
+
+/// What the slicer holds, for the agent bridge's health: meshes and slice results by count and bytes (geometry and
+/// paint for a mesh, G-code and the preview not yet sent for a result), and the prepared sessions kept.
+#[cfg(feature = "agent-bridge")]
+pub struct Held {
+    pub meshes_len: usize,
+    pub meshes_bytes: usize,
+    pub results_len: usize,
+    pub results_bytes: usize,
+    pub kept_sessions: usize,
+}
+
+/// About how many bytes a mesh's parts and volumes take: positions, triangles and paint, by capacity.
+#[cfg(feature = "agent-bridge")]
+fn mesh_bytes(mesh: &Mesh) -> usize {
+    fn vec<T>(v: &Vec<T>) -> usize {
+        v.capacity() * size_of::<T>()
+    }
+    let part = |p: &sx_core::MeshPart| {
+        vec(&p.positions)
+            + vec(&p.triangles)
+            + vec(&p.paint)
+            + vec(&p.support_paint)
+            + vec(&p.seam_paint)
+            + vec(&p.fuzzy_paint)
+    };
+    mesh.parts.iter().map(part).sum::<usize>() + mesh.volumes.iter().map(|v| part(&v.part)).sum::<usize>()
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -108,6 +196,7 @@ pub async fn load_mesh(request: Request<'_>, state: State<'_, Slicer>) -> Result
     };
     let name = crate::header::text(&request, "x-sx-name").unwrap_or_else(|| "model.stl".to_owned());
     let bytes = bytes.clone();
+    let page = state.page.load(Ordering::SeqCst);
     let (mesh, info) = tauri::async_runtime::spawn_blocking(move || mesh_info(&bytes, &name))
         .await
         .map_err(|e| e.to_string())??;
@@ -116,7 +205,9 @@ pub async fn load_mesh(request: Request<'_>, state: State<'_, Slicer>) -> Result
     if let Some(map) = info.as_object_mut() {
         map.insert("id".into(), id.into());
     }
-    lock(&state.meshes).insert(id, Arc::new(mesh));
+    if !state.keep_mesh(page, id, mesh) {
+        return Err(PAGE_GONE.into());
+    }
     Ok(info)
 }
 
@@ -319,6 +410,7 @@ pub async fn slice(
     state: State<'_, Slicer>,
 ) -> Result<serde_json::Value, String> {
     let req: SliceRequest = serde_json::from_str(&request).map_err(|e| format!("request: {e}"))?;
+    let page = state.page.load(Ordering::SeqCst);
     let meshes = lock(&state.meshes).clone();
     let flag = Arc::new(AtomicBool::new(false));
     if let Some(j) = job {
@@ -335,16 +427,32 @@ pub async fn slice(
     .await
     .map_err(|e| e.to_string());
     if let Some(j) = job {
-        lock(&state.jobs).remove(&j);
+        // Only this slice's own entry: a page that reloaded counts its jobs from 1 again.
+        let mut jobs = lock(&state.jobs);
+        if jobs.get(&j).is_some_and(|f| Arc::ptr_eq(f, &flag)) {
+            jobs.remove(&j);
+        }
     }
     let (info, output) = ran??;
     let id = state.id();
-    lock(&state.results).insert(id, output);
+    if !state.keep_result(page, id, output) {
+        return Err(PAGE_GONE.into());
+    }
     let mut info = info;
     if let Some(map) = info.as_object_mut() {
         map.insert("id".into(), id.into());
     }
     Ok(info)
+}
+
+/// What a load or slice answers when the page that asked for it reloaded before it ended; nothing is kept.
+const PAGE_GONE: &str = "the page reloaded; nothing was kept";
+
+/// Called by the page once as it starts, before its first model loads: lets go of every mesh and result an earlier page
+/// left behind, since a reload forgets their ids and nothing would release them until the app quits.
+#[tauri::command]
+pub fn slicer_page_start(state: State<'_, Slicer>) {
+    state.page_start();
 }
 
 /// Stops the slice running as `job`, if it still is. Its result is not kept.
@@ -1239,6 +1347,73 @@ mod tests {
         assert!(info["layerCount"].as_u64().unwrap_or(0) > 10);
         assert!(String::from_utf8_lossy(&out.gcode).contains("G1"));
         assert!(!out.sxpv.is_empty());
+    }
+
+    /// A model loaded the way `load_mesh` keeps it, for the page load `page`.
+    fn load_for(state: &Slicer, page: u32, name: &str) -> (u32, std::sync::Weak<Mesh>) {
+        let id = state.id();
+        let mesh = Mesh::load(&cube_stl(20.0, 20.0, 10.0), name).expect("the test mesh loads");
+        assert!(state.keep_mesh(page, id, mesh));
+        let weak = Arc::downgrade(lock(&state.meshes).get(&id).expect("kept"));
+        (id, weak)
+    }
+
+    #[test]
+    fn a_page_reload_lets_go_of_the_meshes_and_slices_the_page_before_it_held() {
+        let state = Slicer::default();
+        let page = state.page.load(Ordering::SeqCst);
+        let (cube, mesh) = load_for(&state, page, "cube.stl");
+        // A slice of it, kept as the slice command keeps one, with its session.
+        let request = plate(
+            serde_json::json!({ "id": "a", "name": "cube", "mesh": cube, "transform": at(100.0, 100.0, 0.0) }),
+        );
+        let (_, output) = run_kept(&state, &request, false).expect("it slices");
+        let slice = state.id();
+        assert!(state.keep_result(page, slice, output));
+        assert_eq!(kept_count(&state), 1);
+        assert!(state.gcode_bytes(slice, 0, 2).is_ok());
+        // The page reloads and starts again: it no longer knows either id, so the shell lets go of both, and of the
+        // session made from the mesh. Nothing else holds the mesh: it is freed.
+        state.page_start();
+        assert!(lock(&state.meshes).is_empty());
+        assert!(lock(&state.results).is_empty());
+        assert!(lock(&state.kept.hashes).is_empty());
+        assert_eq!(kept_count(&state), 0);
+        assert!(mesh.upgrade().is_none(), "the mesh is still held somewhere");
+        assert!(state.gcode_bytes(slice, 0, 2).is_err());
+        // The new page's ids never repeat the old ones.
+        assert!(state.id() > slice);
+    }
+
+    #[test]
+    fn a_load_or_slice_the_page_before_a_reload_asked_for_is_not_kept() {
+        let state = Slicer::default();
+        let before = state.page.load(Ordering::SeqCst);
+        state.page_start();
+        // Both end after the reload: neither is kept, so nothing is left that no page can name.
+        let mesh = Mesh::load(&cube_stl(20.0, 20.0, 10.0), "late.stl").expect("the test mesh loads");
+        assert!(!state.keep_mesh(before, state.id(), mesh));
+        let late = Output {
+            gcode: b"G1".to_vec(),
+            sxpv: vec![1, 2, 3],
+        };
+        assert!(!state.keep_result(before, state.id(), late));
+        assert!(lock(&state.meshes).is_empty());
+        assert!(lock(&state.results).is_empty());
+        // The new page's own are kept.
+        let now = state.page.load(Ordering::SeqCst);
+        let (id, _) = load_for(&state, now, "cube.stl");
+        assert!(lock(&state.meshes).contains_key(&id));
+    }
+
+    #[test]
+    fn a_reload_stops_the_slices_the_page_before_it_started() {
+        let state = Slicer::default();
+        let running = Arc::new(AtomicBool::new(false));
+        lock(&state.jobs).insert(1, running.clone());
+        state.page_start();
+        assert!(running.load(Ordering::Relaxed));
+        assert!(lock(&state.jobs).is_empty());
     }
 
     #[test]

@@ -204,6 +204,11 @@ fn connection(app: &AppHandle, stream: TcpStream, token: &str, port: u16) {
 
 fn health(app: &AppHandle) -> Value {
     let relay = app.state::<Relay>();
+    let held = app.state::<crate::slicing::Slicer>().held();
+    #[cfg(feature = "pilot")]
+    let streams = Some(crate::llm::streams_len());
+    #[cfg(not(feature = "pilot"))]
+    let streams: Option<usize> = None;
     json!({
         "app": crate::brand::get().name,
         "version": app.package_info().version.to_string(),
@@ -215,6 +220,18 @@ fn health(app: &AppHandle) -> Value {
         // The keychain items this build keeps its credentials under (names only), so a run can check that they
         // are its own and not the installed app's.
         "keychain": crate::keychain::keychain_names(),
+        // What the shell holds for the page, to tell a leak from work in progress: meshes and slice results (count
+        // and bytes), the prepared sessions kept, calls waiting for the page, and model streams running (null in a
+        // build without mimir).
+        "memory": {
+            "meshes_len": held.meshes_len,
+            "meshes_bytes": held.meshes_bytes,
+            "results_len": held.results_len,
+            "results_bytes": held.results_bytes,
+            "kept_sessions": held.kept_sessions,
+            "pending_len": lock(&relay.pending).len(),
+            "streams_len": streams,
+        },
     })
 }
 

@@ -88,7 +88,20 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+let pageStart: Promise<void> | null = null
+
+/**
+ * Tells the shell this page has started, once per page load and before its first model (createDesktopHost). A reload
+ * forgets every mesh and slice id the page before it held, so the shell lets go of them; nothing else could. Loads
+ * wait for it, so the page's first model is never one it lets go of.
+ */
+export function startSlicerPage(): Promise<void> {
+  pageStart ??= invoke('slicer_page_start').then(() => undefined, () => undefined)
+  return pageStart
+}
+
 async function load(bytes: Uint8Array, name: string): Promise<MeshHandle> {
+  if (pageStart) await pageStart
   // Header values take only Latin-1, so the name goes percent-encoded; the shell decodes it.
   const info = parseMeshInfo(await invoke('load_mesh', bytes, { headers: { 'x-sx-name': encodeURIComponent(name) } }))
   return {

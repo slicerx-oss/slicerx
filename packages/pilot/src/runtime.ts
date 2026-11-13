@@ -1705,8 +1705,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         if (model !== shown) switched(model)
         shown = model
       }
-      // reasoning an earlier run signed against another system prompt, tool set or model leaves before this request;
-      // a local model's request is not touched (sent is a copy cut to fit, and local models sign nothing)
+      // reasoning an earlier run signed against another system prompt, tool set or model leaves before this request, and
+      // so does this run's own once its system prompt or tools change (pilot.load_tools on a capped chat); a local
+      // model's request is not touched (sent is a copy cut to fit, and local models sign nothing)
       const bound = local ? undefined : bindingKey(model, tier, messages, toolDefs)
       if (bound) unbindOldReasoning(messages, runStart, bound)
       const req = {

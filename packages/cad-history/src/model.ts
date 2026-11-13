@@ -180,6 +180,11 @@ export interface StepTilt {
   toward: Vec3
   /** The point it turns about when another step's lean carries it; its own foot when absent. */
   about?: Vec3
+  /**
+   * When it is an added part carried by a step of separate pieces (uprights in a row): the feet of those pieces. Each
+   * piece of this step turns about the one it stands over, the nearest across `up`, in place of `about`.
+   */
+  feet?: Vec3[]
 }
 
 export interface History {

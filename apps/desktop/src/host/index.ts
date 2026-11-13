@@ -8,11 +8,13 @@ import type { Host } from '@slicerx/contracts'
 import { createWebHost } from '@slicerx/web/host'
 import { createTauriFiles } from './files'
 import { createTauriLlm } from './llm'
-import { createTauriSlicer } from './slicer'
+import { createTauriSlicer, startSlicerPage } from './slicer'
 import { createTauriThemes } from './themes'
 
 /** `startEngine`: see createTauriFiles. */
 export async function createDesktopHost(startEngine?: (fileName: string) => void): Promise<Host> {
+  // First: the shell lets go of what a page before this one (a reload) loaded and sliced.
+  void startSlicerPage()
   const host = await createWebHost({
     kind: 'desktop',
     slicer: createTauriSlicer(),

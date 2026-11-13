@@ -204,6 +204,7 @@ fn main() {
             geom_host::geom_end,
             #[cfg(feature = "native-geom")]
             geom_host::geom_engine,
+            slicing::slicer_page_start,
             files::open_files,
             files::read_file,
             files::read_beside,
