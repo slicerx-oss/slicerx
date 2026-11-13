@@ -102,6 +102,12 @@ export function toolsetOf(tool: SetTool): Toolset {
   }
 }
 
+/**
+ * Words that ask for a rail: a rail, railing or handrail, a guardrail (not "the guardrails of" or "for" something, a
+ * limit), a fence, balustrade or banister. turnSet reads them as shaping words too.
+ */
+export const RAIL_WORDS = /\b(?:(?:hand)?rail(?:ing)?s?|guardrails?(?!\s+(?:of|for)\b)|fences?|balustrades?|banisters?)\b/i
+
 /** Words in a request that say which toolsets it needs. */
 const NEEDS: readonly [Toolset, RegExp][] = [
   ['cad', /\b(design|model|part|sketch|extrude|fillet|chamfer|hole|bracket|hook|box|lid|gear|thread|build|make|draw|cad)\w*/i],
@@ -112,7 +118,7 @@ const NEEDS: readonly [Toolset, RegExp][] = [
   ['project', /\b(project|plate|open|file|export|save|stl|3mf|step|paint|colou?r|recolou?r)\w*/i],
   ['kb', /\b(why|how|which|recommend|best|troubleshoot|problem|issue|string|warp|clog|look up|source|material)\w*/i],
   ['mesh', /\b(mesh|repair|hollow|emboss|cut|split|paint|color|colour)\w*/i],
-  ['cad_more', /\b(rail|railing|fence|balustrade|banister)s?\b/i],
+  ['cad_more', RAIL_WORDS],
   ['calibration', /\bcalibrat\w*/i],
   ['fleets', /\b(fleet|farm|schedule|overnight|tonight)\w*/i],
   ['theme', /\b(theme|look|dark mode|light mode)\b/i],
