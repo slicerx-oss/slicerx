@@ -41,6 +41,18 @@ the suite on half the shards (six desktop, two phone), every test still included
 change: `e2e` and `rust-tests` pass when what they gather was not needed. When to add the label is in CONTRIBUTING.md,
 "What CI runs".
 
+A pull request without `full-ci` runs only what its change needs. `scripts/ci/pr-scope.mjs`, called from the detect
+job, decides. The `rust`, `wasm` and `desktop-bridge` jobs run when the change touches a Cargo crate the job builds, a
+file those crates read from outside their own folder (found from the string paths in their `.rs` files), the Cargo
+files, `rust-toolchain.toml`, `.cargo/`, `rustfmt.toml`, `ci.yml` or `scripts/ci`. `wasm` also runs for a non-test file
+the web build reads, and whenever a browser job needs its modules. A skipped `wasm` counts as passed. `rust` starts and
+skips its steps, so `rust (ubuntu-latest)` still reports. The `web` job tests the packages the change touches, the
+packages that depend on them (pnpm's `...[base]` filter; a change to test files alone leaves the dependents out) and the
+packages that read their files by path. A changed file outside every workspace package tests them all. Lint, typecheck
+and `pnpm test:scripts` always cover the whole tree, and the engine build and Chromium install happen only when a
+tested package needs them. The merge queue, a push to main and `full-ci` run every job and test every package
+(`scripts/ci/pr-scope.test.mjs` checks these rules against the tree and the workflow).
+
 The `replay` job runs the app and MCP test files that replay recorded geometry engine replies (`useGeomEngine`) with no
 engine built (`scripts/ci/replay-fixtures.sh`, `SX_GEOM_REPLAY=1`). The `web` job builds the engine and runs those tests
 live, so only `replay` reads the recordings: a change to the engine calls a test makes needs its fixture recorded again

@@ -125,6 +125,10 @@ jobs:
       smoke: ${{ steps.f.outputs.smoke }}
       brep: ${{ steps.f.outputs.brep }}
       desktop_geom: ${{ steps.f.outputs.desktop_geom }}
+      rust_changed: ${{ steps.f.outputs.rust_changed }}
+      wasm_changed: ${{ steps.f.outputs.wasm_changed }}
+      bridge_changed: ${{ steps.f.outputs.bridge_changed }}
+      web_tests: ${{ steps.f.outputs.web_tests }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -191,6 +195,22 @@ jobs:
           desktop_geom=$brep
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && printf '%s\n' "$changed" | grep -qE '^(apps/desktop/src-tauri/|apps/desktop/src/host/geom-native\.ts$|packages/app/src/geom/)'; then desktop_geom=true; fi
           echo "desktop_geom=$desktop_geom" >> "$GITHUB_OUTPUT"
+          # A pull request without full-ci runs the rust, wasm and desktop-bridge jobs only when its change touches what
+          # they build or read, and the web job tests only the packages it touches (web_tests=changed; any file outside
+          # every workspace package tests them all). scripts/ci/pr-scope.mjs says which, from the crates, the packages
+          # and the paths their sources read. The merge queue, a push, a run by hand and full-ci run everything, and so
+          # does a pull request when the script fails. The rust job still reports its required matrix name when skipped
+          # here: it starts and skips its steps.
+          scope=$(printf 'rust=true\nwasm=true\nbridge=true\nweb=all')
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$FULL_CI" != true ]; then
+            if out=$(node scripts/ci/pr-scope.mjs jobs HEAD^1 HEAD); then scope=$out
+            else echo "::warning title=Pull request scope::scripts/ci/pr-scope.mjs failed, so every job runs"; fi
+          fi
+          printf '%s\n' "$scope" | sed -n -E 's/^(rust|wasm|bridge)=/\1_changed=/p; s/^web=/web_tests=/p' >> "$GITHUB_OUTPUT"
+          for job in rust:rust wasm:wasm bridge:desktop-bridge; do
+            if printf '%s\n' "$scope" | grep -qx "${job%%:*}=false"; then echo "::notice title=Skipped on this pull request::nothing the ${job#*:} job builds or reads changed; the merge queue runs it"; fi
+          done
+          if printf '%s\n' "$scope" | grep -qx 'web=changed'; then echo "::notice title=Web tests scoped::the web job tests the packages this change touches, their dependents and their readers; the merge queue tests them all"; fi
       # A push to main whose commit already passed the merge queue: the queue merges by rebase, so the pushed commit is
       # the exact tree a merge_group run of this workflow tested and passed. That push skips brep and the Linux jobs the
       # queue ran on it (web, wasm, licenses, rust on ubuntu-latest) and runs what only a push runs: rust on macOS and
@@ -232,6 +252,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          # a pull request checks out its merge commit, whose first parent is the base it merges into (the scope step)
+          fetch-depth: 2
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -243,35 +266,72 @@ jobs:
       # One retry per failing test; one that passes only on the retry is flaky (scripts/ci/README.md, "Flaky tests"):
       # the reporter annotates it, and the next step fails the job unless scripts/ci/flaky.d lists it.
       - run: bash scripts/ci/flaky-check.sh lint
+      # Which packages' tests run. A pull request whose change stays inside workspace packages (detect's web_tests)
+      # tests those packages, the packages that depend on them (pnpm's "...[base]" filter; a change to test files only
+      # leaves the dependents out) and the packages that read their files by path (scripts/ci/pr-scope.mjs). Lint,
+      # typecheck and the scripts' tests always cover everything, and the merge queue tests every package. The engine
+      # and Chromium are set up only when a package tested here needs them.
+      - id: scope
+        env:
+          WEB_TESTS: ${{ needs.detect.outputs.web_tests }}
+        run: |
+          # A change inside workspace packages always names at least one, so an empty list is a fault, never a result:
+          # like a failed script, it tests every package.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$WEB_TESTS" = changed ] && out=$(node scripts/ci/pr-scope.mjs web HEAD^1) \
+              && printf '%s\n' "$out" | grep -q '^packages=[^[:space:]]'; then
+            printf '%s\nall=false\n' "$out" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$WEB_TESTS" = changed ]; then echo "::warning title=Web test scope::scripts/ci/pr-scope.mjs failed or named no package, so every package is tested"; fi
+            printf 'all=true\nengine=true\nchromium=true\n' >> "$GITHUB_OUTPUT"
+          fi
       # Both geometry engine modules (git-ignored) for the app and pilot tests that run the real engine. On CI a missing
       # module fails those tests instead of skipping them (wasmBuilt in packages/app/test/geom-engine.ts). Built here,
       # not downloaded from the wasm job, so this job does not wait for that one.
-      - run: eval "$SX_TOOLCHAIN_INSTALL"
-      - uses: Swatinem/rust-cache@v2
+      - if: steps.scope.outputs.engine == 'true'
+        run: eval "$SX_TOOLCHAIN_INSTALL"
+      - if: steps.scope.outputs.engine == 'true'
+        uses: Swatinem/rust-cache@v2
         with:
           key: geom
-      - run: sh packages/geom/wasm/scripts/build.sh
+      - if: steps.scope.outputs.engine == 'true'
+        run: sh packages/geom/wasm/scripts/build.sh
       # Chromium for the unit tests that lay out in a real browser (packages/ui setting-row-browser.test.tsx).
-      - id: pw
+      - if: steps.scope.outputs.chromium == 'true'
+        id: pw
         run: |
           echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
           echo "image=${ImageOS:-none}-${ImageVersion:-none}" >> "$GITHUB_OUTPUT"
           echo "os=${ImageOS:-none}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - if: steps.scope.outputs.chromium == 'true'
+        uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       # the system packages Chromium needs, as .deb files per runner image, so a warm cache installs them with no
       # package mirror (scripts/ci/playwright-chromium.sh); the apt-seed workflow fills it from a self-hosted runner
-      - uses: actions/cache@v4
+      - if: steps.scope.outputs.chromium == 'true'
+        uses: actions/cache@v4
         with:
           path: ~/.cache/sx-apt/playwright
           key: apt-playwright-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
           restore-keys: apt-playwright-${{ steps.pw.outputs.os }}-
-      - run: bash scripts/ci/playwright-chromium.sh
-      - run: pnpm -r exec bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
+      - if: steps.scope.outputs.chromium == 'true'
+        run: bash scripts/ci/playwright-chromium.sh
+      - run: |
+          set -f
+          filters=()
+          for p in $PACKAGES; do filters+=(--filter "$p"); done
+          if [ "$ALL" != false ] || [ ${#filters[@]} -eq 0 ]; then
+            if [ "$ALL" = false ]; then echo "::warning title=Web test scope::no package named, so every package is tested"; fi
+            pnpm -r exec bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
+            exit
+          fi
+          echo "testing: $PACKAGES"
+          pnpm "${filters[@]}" exec bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
+          ALL: ${{ steps.scope.outputs.all }}
+          PACKAGES: ${{ steps.scope.outputs.packages }}
       - if: always()
         run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
         env:
@@ -317,9 +377,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
-      # also on Linux after a push the merge queue already tested (detect's queued): it reports passed in seconds
+      # also on Linux after a push the merge queue already tested (detect's queued), and on a pull request that changes
+      # nothing the job builds or reads (detect's rust_changed): it reports passed in seconds. Never a job-level skip for
+      # those, which would report plain "rust" and leave the required "rust (ubuntu-latest)" missing.
       DUP: >-
-        ${{ needs.detect.result == 'skipped' || (needs.detect.outputs.queued == 'true' && matrix.os == 'ubuntu-latest') }}
+        ${{ needs.detect.result == 'skipped' || (needs.detect.outputs.queued == 'true' && matrix.os == 'ubuntu-latest') || needs.detect.outputs.rust_changed == 'false' }}
       FULL_TESTS: ${{ github.event_name == 'push' }}
     steps:
       - if: env.DUP != 'true'
@@ -730,8 +792,9 @@ jobs:
   # release workflow proves release binaries do not carry it (apps/desktop/release/check-agent-bridge.mjs).
   desktop-bridge:
     needs: detect
-    # not a required check; the queue runs only what main requires
-    if: needs.detect.outputs.rust == 'true' && github.event_name != 'merge_group'
+    # not a required check; the queue runs only what main requires. A pull request runs it when its change touches the
+    # shell's crate, a crate it builds or a file they read (detect's bridge_changed).
+    if: needs.detect.outputs.rust == 'true' && github.event_name != 'merge_group' && needs.detect.outputs.bridge_changed != 'false'
     # on main, a newer push's job replaces one still waiting (the concurrency comment at the top)
     concurrency:
       group: ${{ github.event_name == 'push' && format('ci-push-desktop-bridge-{0}', matrix.os) || format('ci-desktop-bridge-{0}-{1}', github.run_id, matrix.os) }}
@@ -774,9 +837,12 @@ jobs:
 
   # The engine's WASM module, its size reported against 1444 KB gzip without failing (build-wasm.sh), then the web
   # bundle's size gate (apps/web/scripts/bundle-size.mjs runs at the end of its build).
+  # A pull request runs it when its change touches the two wasm crates, a crate they build, a file they read or a
+  # non-test file the web build reads (detect's wasm_changed), and always when a browser job needs its modules. When it
+  # is skipped, the required check "wasm" counts as passed, as devkit and pgtap do on a pull request.
   wasm:
     needs: detect
-    if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.queued != 'true'
+    if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.queued != 'true' && (needs.detect.outputs.wasm_changed != 'false' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
