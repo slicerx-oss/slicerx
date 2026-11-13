@@ -15,7 +15,7 @@
 # have a known problem and get only Update now or Quit.
 # Before anything is built or published, the commit must have every CI check in scripts/ci/required-checks.txt green
 # (scripts/ci/require-green.sh). SX_PUBLISH_CHECK_ONLY=1 reports that and stops. SX_PUBLISH_ALLOW_RED=1 overrides it
-# for an owner-approved emergency and prints a loud warning.
+# for an approved emergency and prints a loud warning.
 set -eu
 [ $# -eq 4 ] || [ $# -eq 5 ] || { echo "usage: publish.sh <version> <installers dir> <notes.md> <commit> [min version]" >&2; exit 2; }
 version=$1 dir=$2 notes=$3 min=${5:-}
@@ -25,7 +25,7 @@ commit=$(git -C "$repo" rev-parse --verify "$4^{commit}")
 slug=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 tag=desktop-v$version
 # A red main blocks every release bump: the commit must have every required CI check green (scripts/ci/required-checks.txt).
-# SX_PUBLISH_CHECK_ONLY=1 only reports that and stops; SX_PUBLISH_ALLOW_RED=1 is the owner-approved emergency override.
+# SX_PUBLISH_CHECK_ONLY=1 only reports that and stops; SX_PUBLISH_ALLOW_RED=1 is the approved emergency override.
 if [ "${SX_PUBLISH_CHECK_ONLY:-}" = 1 ]; then bash "$repo/scripts/ci/require-green.sh" --dry-run "$commit" "$slug"; exit $?; fi
 bash "$repo/scripts/ci/require-green.sh" "$commit" "$slug" || exit 1
 git -C "$repo" fetch -q --tags

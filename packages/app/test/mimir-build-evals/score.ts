@@ -898,8 +898,8 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   out.bedFit = { pass: fit.fits, detail: `${fit.sizeMm.join(' by ')} mm` }
   // each size is read on the largest assembly along it: the part must reach it, and no body or assembly may pass it
   const groups = assemblySizes(run.parts)
-  // a hinged lid printed open beside its box is held to the box's height closed, the lid on top (owner, 2026-11-12,
-  // the hinged-box case only): the box's height and the lid's added
+  // a hinged lid printed open beside its box is held to the box's height closed, the lid on top (the
+  // hinged-box case only): the box's height and the lid's added
   const closed = c.lid ? closedHeight(run.parts) : null
   const side = (axis: SizeCheck['axis']): number => (axis === 'z' && closed !== null ? closed : Math.max(0, ...groups.map((g) => sideOf(g, axis))))
   const off = c.sizes.filter((s) => {

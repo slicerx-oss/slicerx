@@ -64,7 +64,7 @@ describe('the scripted mounting plate', () => {
   })
 
   it('a late Not yet on a plan that went ahead changes nothing; the plate is built', async () => {
-    // at its default size the plan is approved as shown with nobody asked (owner, 2026-11-12): a Not yet sent after
+    // at its default size the plan is approved as shown with nobody asked: a Not yet sent after
     // it is no answer the run takes
     const events = await run('Make a mounting plate', 'change')
     expect(events.find((e) => e.type === 'ask_answered')).toMatchObject({ auto: true })

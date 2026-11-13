@@ -72,7 +72,7 @@
 @keyframes mimir-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes mimir-fade { from { opacity: 0; } to { opacity: 1; } }
 :root[data-motion="reduced"] .mimir-lookup { animation-name: mimir-fade; }
-/* The dimension sheet (owner pick B, a drawing): while a sheet waits the view becomes a drawing sheet with four views,
+/* The dimension sheet, a drawing: while a sheet waits the view becomes a drawing sheet with four views,
    and a flat panel docked on the right lists the sizes by callout number. The caption and the timeline stay over the
    drawing; the view's menus give way, and the timeline and lookups stop at the panel. */
 .studio, .mimir-chat { --callout-fill: light-dark(#2d2f3d, #1d1e27); }

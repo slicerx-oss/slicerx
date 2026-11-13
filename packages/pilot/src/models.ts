@@ -65,7 +65,7 @@ function ownKeyRouting(config: Partial<Pick<PilotConfig, 'provider' | 'billing' 
 
 /**
  * The model id for a tier. A pinned choice wins. `models` are the ChatGPT plan's tiers (the
- * owner's pick from the plan listing is in pilot.config.example.json). On an API key, billed
+ * chosen ones from the plan listing are in pilot.config.example.json). On an API key, billed
  * per token, one model does everything (`config.model`, a small one) unless the person chose
  * Auto, which uses the tiers too. The edition's routing names those models for the person's
  * own key: base for the one model and huginn, step for muninn.

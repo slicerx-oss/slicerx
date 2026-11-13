@@ -321,7 +321,7 @@ describe('a hinge or pin plan states how it prints', () => {
   it('refuses the recorded hinged box, its lid in place and laid 10 mm apart, takes the infinity cube, and refuses one that says both', async () => {
     // both name their pieces in printInPlace (their 11-09 captures' plans). The box lays its lid 10 mm apart: a lid that
     // prints in place prints on its hinge, so it is refused with what to plan instead, and taken with the lid open on
-    // the hinge axis (option a, owner 2026-11-12). The cube's pieces lie flat joined by their hinges, with a gap between
+    // the hinge axis. The cube's pieces lie flat joined by their hinges, with a gap between
     // the cubes, which lays nothing apart
     const recorded = JSON.parse(readFileSync(new URL('./fixtures/open-layout-plans.json', import.meta.url), 'utf8')) as Record<string, PlanInput>
     const box = recorded['hinge-box']!

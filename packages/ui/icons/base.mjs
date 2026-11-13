@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The approved base icon set: 68 icons on a 24px grid for a 1.75 stroke, round caps and joins,
 // currentColor, no fills except small dots. This file is the source of truth; icon-paths.ts is generated from it.
-// Redraws need the owner's go: printer, send-to-printer and spool were redrawn for the Slice redesign (2026-10-08).
+// Redraws need a design review: printer, send-to-printer and spool were redrawn for the Slice redesign (2026-10-08).
 
 export const BASE_ICON_GROUPS = {
   "Workspace": [

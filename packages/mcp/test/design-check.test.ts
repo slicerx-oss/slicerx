@@ -68,7 +68,7 @@ describe('designCheck', () => {
     expect(failed(designCheck(dented, { ...built, holes: Array.from({ length: 12 }, () => ({ diameterMm: 1 })), recesses: [] }, 0.4))).toContain('dents')
   })
 
-  // a color band planned as a feature, met by paint (owner approved 2026-11-12): a vase with a white band under its rim
+  // a color band planned as a feature, met by paint: a vase with a white band under its rim
   const banded: PartPlan = {
     planId: 'vase-1',
     part: 'Vase',

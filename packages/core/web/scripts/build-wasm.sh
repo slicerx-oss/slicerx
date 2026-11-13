@@ -50,8 +50,8 @@ fi
 gz=$(node -e 'console.log(require("node:zlib").gzipSync(require("node:fs").readFileSync(process.argv[1]), { level: 9 }).length)' "$pkg/sx_wasm.wasm")
 echo "pkg/sx_wasm.wasm: $(wc -c < "$pkg/sx_wasm.wasm") bytes, $gz gzip"
 # 1444 KB (1,478,656 B) is a reference size only. The browser no longer slices and the CAD-only web build doesn't
-# ship this module, so its size is reported, never a failure (owner, 2026-10-12). The reference is the module's size
-# on 2026-11-11 (1,460,974 B) plus about 17 KB, so the report shows growth from there (owner, 2026-11-11; it was
+# ship this module, so its size is reported, never a failure. The reference is the module's size
+# on 2026-11-11 (1,460,974 B) plus about 17 KB, so the report shows growth from there (it was
 # 1056 KB before). The geom module and the startup shell keep their blocking budgets in apps/web/scripts/bundle-size.mjs.
 ref=$((1444 * 1024))
 echo "build-wasm: $gz bytes gzip, $((gz - ref)) against the 1444 KB reference"
