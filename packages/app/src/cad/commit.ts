@@ -6,9 +6,10 @@
 import { withPlaced, type History } from '@slicerx/cad-history'
 import { get, set, type PlateEntry } from '../state/store'
 import { designColors, madeDesign, resolveSlots } from '../filament/slots'
+import { withSlotOverrides } from './history/slot-steps'
 
 /** What a modeling job makes: the geometry and, when it changes them, the history, kept dimensions, colors and placement. */
-export type Made = Pick<PlateEntry, 'handle' | 'parts'> & Partial<Pick<PlateEntry, 'history' | 'dimensions' | 'colors' | 'transform' | 'paint'>>
+export type Made = Pick<PlateEntry, 'handle' | 'parts'> & Partial<Pick<PlateEntry, 'history' | 'dimensions' | 'colors' | 'transform' | 'paint' | 'slotOverrides'>>
 
 /**
  * A job's history with the landing moves the object has as the job writes (History.placed): a design host may have
@@ -31,7 +32,9 @@ export function commitMade(objectId: string, made: (latest: PlateEntry) => Made,
     if (latest.history?.exact && !o.exactReplay) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
     done = true
     const { instanceOf: _was, paint, ...rest } = latest
-    const next: PlateEntry = { ...rest, ...(o.keepPaint && paint ? { paint } : {}), ...made(latest) }
+    const m = made(latest)
+    // a job that sets the plate's own filaments sets all of them; an empty record leaves none
+    const next: PlateEntry = withSlotOverrides({ ...rest, ...(o.keepPaint && paint ? { paint } : {}), ...m }, m.slotOverrides ?? null)
     return { plate: s.plate.map((p) => (p.id === objectId ? next : o.others?.has(p.id) ? { ...p, ...o.others.get(p.id) } : p)) }
   })
   return done

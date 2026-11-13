@@ -24,6 +24,7 @@ import { paintOf } from './paint'
 import { toolError } from '../op-preview'
 import { stepNumber } from './step-number'
 import { followBodies } from '../project-sketch'
+import { overridesAfterSlotSteps, withSlotOverrides } from './slot-steps'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -147,7 +148,9 @@ export async function applyHistory(host: Loader, objectId: string, next: History
       // the landing moves are the object's as it is now (a landing elsewhere may have moved it while this ran), plus
       // this commit's own
       const placed = moved ? moved.placed : latest.history?.placed
-      return { handle, parts, history: withPlaced(history, placed), colors: partColors(latest, parts, history, brandAccent()), ...(paint ? { paint } : {}), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
+      // a step that sets a part's filament clears the plate's own for it, and undoing one puts that back (slot-steps.ts)
+      const own = overridesAfterSlotSteps(latest, latest.history, history, parts.map((p) => p.name))
+      return { handle, parts, history: withPlaced(history, placed), colors: partColors(withSlotOverrides(latest, own), parts, history, brandAccent()), ...(own ? { slotOverrides: own } : {}), ...(paint ? { paint } : {}), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
     }, { exactReplay: next.exact === true })
     if (!(step ? step.write(write) : write())) throw abortError()
     committed?.(r.status)
