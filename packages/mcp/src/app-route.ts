@@ -48,6 +48,7 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.emboss',
   'geom.build',
   'geom.subtract',
+  'geom.rail',
   // reads the app's plans (the mimir tab's) and its design
   'design.check',
   // puts a client plan where the app's design.check reads it

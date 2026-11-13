@@ -227,6 +227,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
       'feature',
       'model',
     ] },
+  'geom.rail': { tokens: 643, description: true, fields: ['design', 'face', 'feature', 'height_mm', 'join', 'part', 'path', 'path.closed', 'path.points', 'spacing_mm'] },
   'geom.repair': { tokens: 228, description: true, fields: ['design', 'feature', 'max_hole_edges', 'model', 'part'] },
   'geom.revolve': { tokens: 1115, description: true, fields: [
       'axis',

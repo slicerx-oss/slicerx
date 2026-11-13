@@ -166,6 +166,7 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.emboss': 'edit',
   'geom.build': 'edit',
   'geom.subtract': 'edit',
+  'geom.rail': 'edit',
   // a built part checked against a plan the mimir tab made
   'design.check': 'read',
   // a client's own plan kept for design.check, beside the tab's (never in place of one); no card, nothing on the plate changes

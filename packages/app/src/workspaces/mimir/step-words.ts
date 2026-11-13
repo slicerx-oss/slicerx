@@ -37,6 +37,7 @@ const WORDS: Record<string, Words | null> = {
   'geom.array': { doing: 'Repeating the feature', done: 'Repeated the feature' },
   'geom.build': { doing: 'Adding to the part', done: 'Added to the part' },
   'geom.subtract': { doing: 'Cutting into the part', done: 'Cut into the part' },
+  'geom.rail': { doing: 'Adding the rail', done: 'Added the rail' },
   'geom.cut': { doing: 'Cutting the part', done: 'Cut the part' },
   'geom.split': { doing: 'Splitting the part', done: 'Split the part' },
   'design.edit_step': { doing: 'Changing a step', done: 'Changed a step' },
