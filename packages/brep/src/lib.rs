@@ -70,6 +70,8 @@ mod kernel;
 #[path = "stand_in.rs"]
 mod kernel;
 #[cfg(feature = "typed")]
+mod readback;
+#[cfg(feature = "typed")]
 mod save;
 #[cfg(all(test, feature = "typed"))]
 mod saved;
