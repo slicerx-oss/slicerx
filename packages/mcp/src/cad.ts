@@ -16,6 +16,7 @@ import { notClosedWords, partClosure, type Closure } from './closure'
 import { partBoxes, roundTenth, sunkNote, sunkParts } from './sunk'
 import { movedStep } from './step-reshape'
 import { seatNew } from './seat'
+import { withArcDipNote } from './arc-dip'
 import { type LoftSection, withThinNote } from './section-width'
 import { gapMm, gapSentence, nozzleOr } from './design-check'
 import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
@@ -1065,7 +1066,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.12.3',
+    version: '1.13.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1101,8 +1102,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
         // exact is not read here: the step is added, and the design's own replay decides whether its body is exact
         const out = await seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name))
-        // a body's sections under two nozzle lines are named, never refused; a cut or a thickened shell has its own reading
-        return i.operation === 'cut' || th ? out : withThinNote(out, profiles as LoftSection[], nozzleOr(deps.nozzleMm?.()))
+        // a body's sections under two nozzle lines, and arcs that dip under their section, are named, never refused; a
+        // cut or a thickened shell has its own reading
+        return i.operation === 'cut' || th ? out : withArcDipNote(withThinNote(out, profiles as LoftSection[], nozzleOr(deps.nozzleMm?.())), profiles as LoftSection[])
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
       const profiles = i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, plane(f.frame)))
