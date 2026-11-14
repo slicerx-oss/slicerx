@@ -133,9 +133,9 @@ async function* replay(first: IteratorResult<Uint8Array>, rest: AsyncIterator<Ui
 }
 
 /** Error text safe to show: no headers, no bodies beyond a short provider message. */
-export function errorText(e: unknown): string {
+export function errorText(e: unknown, max = 300): string {
   const msg = e instanceof Error ? e.message : String(e)
-  return msg.replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-...').slice(0, 300)
+  return msg.replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-...').slice(0, max)
 }
 
 /** mimir cloud's refusal code on a transport error, when it is a plain word. */
