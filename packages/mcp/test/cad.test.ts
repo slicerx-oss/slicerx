@@ -244,14 +244,19 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
       expect(out.output.exact).toEqual({ made: false, why: 'This build has no exact kernel.' })
       expect(out.summary).toBe('Lofted through 2 profiles, without an exact solid')
     }
-    // through a circle the solid is not made yet, in a build with the kernel or without
+    // a square to a circle is made exact too, in a build with the kernel; without it the loft says why
     const circle = { type: 'circle', center: [0, 0], diameterMm: 10 }
     const round = await h.call('slicerx_geom_loft', { exact: true, profiles: [{ loops: [square] }, { frame: { origin: [0, 0, 30], normal: [0, 0, 1] }, loops: [circle] }] })
     expect(round.isError, JSON.stringify(round.content)).toBeFalsy()
-    const none = data<{ output: Out }>(round).output
-    expect(none.exact?.made).toBe(false)
-    expect(none.exact?.why).toMatch(/\.$/)
-    expect(none.watertight).toBe(true)
+    const both = data<{ output: Out }>(round).output
+    if (out.output.bodySmb !== undefined) {
+      expect(both.exact).toBeUndefined()
+      expect(both.bodySmb).toMatch(/\/\/sx-brep fnv1a64 [0-9a-f]{16}\n$/)
+      expect(data<{ summary: string }>(round).summary).toBe('Lofted through 2 profiles, with its exact solid')
+    } else {
+      expect(both.exact).toEqual({ made: false, why: 'This build has no exact kernel.' })
+    }
+    expect(both.watertight).toBe(true)
   })
 
   it('sweeps a circle round a quarter arc into an STL, and refuses a bend too tight for it', async () => {

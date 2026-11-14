@@ -1026,7 +1026,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.12.2',
+    version: '1.12.3',
     source: 'command',
     permission: 'slice',
     description:

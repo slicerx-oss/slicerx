@@ -11,7 +11,7 @@
 )]
 mod common;
 
-use common::{farthest_from, mesh_loft_keeps_corners, rounded, sha256};
+use common::{farthest_from, held_to_its_drawing, mesh_loft_keeps_corners, rounded, sha256};
 use serde_json::{Value, json};
 use std::f64::consts::TAU;
 use std::fmt::Write as _;
@@ -606,22 +606,10 @@ fn profiles_this_does_not_cover_answer_as_before_and_say_what_is_covered() {
         return;
     }
     let start = table::count();
-    let covered = "An exact loft is made only through profiles of straight lines and splines, or one whole circle or ellipse on every profile, for now; these have arcs.";
-    let square = json!({ "points": [[-10, -10], [10, -10], [10, 10], [-10, 10]] });
-    let cases = [
-        (
-            json!({ "profiles": [level(0.0, &rounded(40.0, 24.0, 6.0)), level(20.0, &rounded(30.0, 20.0, 4.0))] }),
-            covered.to_string(),
-        ),
-        (
-            json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &square)], "smooth": true }),
-            covered.to_string(),
-        ),
-        (
-            json!({ "profiles": ring_of_circles(), "closed": true }),
-            "A closed loft through circles or ellipses is not made exact yet.".to_string(),
-        ),
-    ];
+    let cases = [(
+        json!({ "profiles": ring_of_circles(), "closed": true }),
+        "A closed loft through arcs, circles or ellipses is not made exact yet.".to_string(),
+    )];
     for (mut request, why) in cases {
         let plain = op("sketch.loft", &request);
         request["exact"] = json!(true);
@@ -630,6 +618,33 @@ fn profiles_this_does_not_cover_answer_as_before_and_say_what_is_covered() {
         assert_eq!(reply["exact"], json!({ "made": false, "why": why }));
         assert!(reply.get("body").is_none() && reply.get("bodySmb").is_none());
         assert_eq!(without(&asked, &printed(&reply, "exact")), plain);
+    }
+    // rounded rectangles, and a circle to a square, are made exact now: the loft's own reply plus its solid as text,
+    // each profile held to its true curves
+    let square = json!({ "points": [[-10, -10], [10, -10], [10, 10], [-10, 10]] });
+    let made = [
+        (
+            "rounded rectangles",
+            json!({ "profiles": [level(0.0, &rounded(40.0, 24.0, 6.0)), level(20.0, &rounded(30.0, 20.0, 4.0))] }),
+        ),
+        (
+            "smooth, a circle to a square",
+            json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &square)], "smooth": true }),
+        ),
+    ];
+    for (name, mut request) in made {
+        let plain = op("sketch.loft", &request);
+        request["exact"] = json!(true);
+        request["save"] = json!(true);
+        let asked = op("sketch.loft", &request);
+        let reply: Value = serde_json::from_str(&asked).unwrap();
+        assert!(
+            reply.get("exact").is_none() && reply["bodySmb"].is_string(),
+            "{name}: {}",
+            reply["exact"]
+        );
+        assert_eq!(without(&asked, &printed(&reply, "bodySmb")), plain, "{name}");
+        held_to_its_drawing(name, &request);
     }
     assert_eq!(table::count(), start);
 }
