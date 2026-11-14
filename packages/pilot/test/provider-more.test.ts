@@ -232,6 +232,21 @@ describe('Anthropic adapter', () => {
       ['content_block_stop', { type: 'content_block_stop', index: 0 }],
     ]))))
     expect((empty.find((e) => e.type === 'tool_call') as { call: { arguments: string } }).call.arguments).toBe('{}')
+    expect((empty.find((e) => e.type === 'tool_call') as { call: { incomplete?: true } }).call.incomplete).toBeUndefined()
+    // a call the output limit cut mid-way is marked incomplete, whether its block stopped or was left open
+    const cutCalls = await collect(adapter.parse(chunks(sse([
+      ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'a', name: 'kb__search', input: {} } }],
+      ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"query": "pe' } }],
+      ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+      ['content_block_start', { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'b', name: 'kb__search', input: {} } }],
+      ['content_block_delta', { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"query": "ab' } }],
+      ['message_delta', { type: 'message_delta', delta: { stop_reason: 'max_tokens' }, usage: { output_tokens: 3 } }],
+    ]))))
+    expect(cutCalls.flatMap((e) => (e.type === 'tool_call' ? [e.call] : []))).toEqual([
+      { id: 'a', name: 'kb.search', arguments: '{}', incomplete: true },
+      { id: 'b', name: 'kb.search', arguments: '{}', incomplete: true },
+    ])
+    expect((cutCalls.at(-1) as { raw: { id?: string; input?: unknown }[] }).raw.map((b) => [b.id, b.input])).toEqual([['a', {}], ['b', {}]])
     const err = await collect(adapter.parse(chunks(sse([['error', { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }]]))))
     expect(err.find((e) => e.type === 'error')).toEqual({ type: 'error', message: 'Overloaded', retryable: true })
     expect((err.at(-1) as { stop: string }).stop).toBe('error')
