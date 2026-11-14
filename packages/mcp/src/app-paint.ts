@@ -29,7 +29,7 @@ export function appPaintTools(link: AppLinkCaller | undefined, appName: string):
     description: `Preview color paint from an object's texture in ${appName}'s shown plate without changing it: the texture the object was opened with (an OBJ opened together with its MTL and images, or a 3MF with textures). Each bit of surface gets the filament nearest the texture's color there (mode nearest), or filament colors are picked from the texture (mode palette, only when no filament color is set by hand or by the printer); the filament with the most area becomes each part's own. Returns a preview id, the filaments used with their areas in mm2, the paint regions and notes. Apply it with app_paint_apply (one toolbar Undo step) and read it back with app_paint.`,
     run: (i) => call('paint.from_texture', i),
   }), defineTool({
-    name: 'app.paint_apply', version: '1.0.0', source: 'command', permission: 'slice', input: appPaintApplyInput,
+    name: 'app.paint_apply', version: '1.1.0', source: 'command', permission: 'slice', input: appPaintApplyInput,
     description: `Apply this client's live paint preview in ${appName}. Refuses if the project changed or another plate is shown. One toolbar Undo step, including enabling painted fuzzy skin when needed. Returns actual paint read-back. Refuses locked objects and active edits or slices.`,
     run: (i) => call('paint.apply', i),
   }), defineTool({

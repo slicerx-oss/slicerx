@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { bareFaces } from '@slicerx/cad-history'
-import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, storedTarget } from '@slicerx/mcp/toolset'
+import { bareFaces, stepName, type PaintTarget } from '@slicerx/cad-history'
+import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, RefusedPreviews, storedTarget } from '@slicerx/mcp/toolset'
 import { geom } from '../geom/client'
 import { slotCount } from '../filament/slots'
 import { history, inStep } from '../plate/history'
@@ -18,6 +18,8 @@ type States = { state: number; areaMm2: number; triangles: number; regionCount: 
 type Preview = { client: string; object: string; plate: string; revision: string; layer: PaintLayerName; edits: StrokeEdits[]; result: Awaited<ReturnType<typeof regions>>; texture?: { plan: import('../plate/texture-paint').TexturePlan; changed: boolean; palette?: string[] } }
 const previews = new Map<string, Preview>()
 let sequence = 0
+// each client's last paint preview refused since one went through or was applied, for an apply of the id it never got
+const refused = new RefusedPreviews()
 
 function target(name: string): PlateEntry {
   const exact = get().plate.find((e) => e.id === name)
@@ -66,6 +68,19 @@ export async function previewPaint(args: Record<string, unknown>, client: LinkCl
   const parsed = appPaintPreviewInput.safeParse(args)
   if (!parsed.success) throw new LinkError('invalid_input', parsed.error.message)
   const i = parsed.data
+  let asked = i.target as PaintTarget
+  try {
+    const out = await previewOn(i, client, (t) => (asked = t))
+    refused.clear(client.id)
+    return out
+  } catch (e) {
+    refused.refused(client.id, stepName({ params: { op: 'paint', layer: i.layer, state: i.state, target: asked } }), e)
+    throw e
+  }
+}
+
+/** The preview `i` asks for; `took` hears its target once it is read. */
+async function previewOn(i: ReturnType<typeof appPaintPreviewInput.parse>, client: LinkClient, took: (t: PaintTarget) => void) {
   if ((i.layer === 'seam' || i.layer === 'support') && i.state > 2 || i.layer === 'fuzzy' && i.state > 1) throw new LinkError('invalid_input', 'The state is outside this paint layer')
   const before = stamp()
   const e = target(i.object)
@@ -75,6 +90,7 @@ export async function previewPaint(args: Record<string, unknown>, client: LinkCl
   let selected: ReturnType<typeof storedTarget>
   try { selected = storedTarget(i.target) }
   catch (error) { throw new LinkError('invalid_input', error instanceof Error ? error.message : String(error)) }
+  took(selected)
   // a height band's edge lands on its height, as the server's paint.preview picks it, so a thin band prints only its layers
   const maxDepth = i.max_depth ?? (selected.kind === 'height' ? bandDepth(i.part === undefined ? e.parts : [e.parts[i.part]!], e.transform) : undefined)
   const paint: PaintData = { ...e.paint }
@@ -103,6 +119,8 @@ export async function previewPaint(args: Record<string, unknown>, client: LinkCl
 export async function previewFromTexture(args: Record<string, unknown>, client: LinkClient) {
   const parsed = appPaintFromTextureInput.safeParse(args)
   if (!parsed.success) throw new LinkError('invalid_input', parsed.error.message)
+  // a texture preview has no step to name, so an apply after it says what it said before
+  refused.clear(client.id)
   const tex = await import('../plate/texture-paint')
   const before = stamp()
   const e = target(parsed.data.object)
@@ -136,7 +154,7 @@ export async function applyPaint(args: Record<string, unknown>, client: LinkClie
   const parsed = appPaintApplyInput.safeParse(args)
   if (!parsed.success) throw new LinkError('invalid_input', parsed.error.message)
   const pv = previews.get(parsed.data.preview)
-  if (!pv || pv.client !== client.id) throw new LinkError('not_found', 'No paint preview for this client; preview again')
+  if (!pv || pv.client !== client.id) throw new LinkError('not_found', refused.neverMade(client.id, parsed.data.preview, 'No paint preview for this client; preview again'))
   unchanged(pv)
   const e = target(pv.object)
   await editable(e)
@@ -150,6 +168,7 @@ export async function applyPaint(args: Record<string, unknown>, client: LinkClie
   if (pv.texture) (await import('../plate/texture-paint')).applyTexturePlans([pv.texture.plan], pv.texture.palette)
   else inStep({}, () => { for (const edit of pv.edits) commitStroke(edit) })
   previews.delete(parsed.data.preview)
+  refused.clear(client.id)
   if (pv.edits.length && !pv.texture) toast(`${client.name} painted ${e.name}.`, 'info', { label: 'Undo', run: () => void history().undo() })
   const changed = pv.texture ? pv.texture.changed : pv.edits.length > 0
   return { summary: `Paint ${changed ? 'applied to' : 'unchanged on'} ${e.name}`, output: { ...stamp(), ...pv.result, objectSettings: objectOverrides(get(), target(e.id)), changed } }

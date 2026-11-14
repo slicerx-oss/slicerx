@@ -13,6 +13,7 @@ import { z } from 'zod'
 import { designArg, designSummary, faceAt, featureArg, withFeature, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import { bandDepth, layerArg, paintState, targetArg, storedTarget } from './paint-target'
+import { RefusedPreviews } from './paint-refused'
 
 export { BAND_EDGE_MM, bandDepth } from './paint-target'
 
@@ -122,6 +123,8 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
   const engine = (op: string, request: unknown) => designs.call(op, request)
   const previews = new Map<string, Preview>()
   let seq = 0
+  // the last paint preview refused since one went through or was applied, for an apply of the id it never got
+  const refused = new RefusedPreviews()
 
   /** A picture of the design with `layerPaint` drawn on its parts; the PNG only when asked. */
   async function picture(d: Design, layer: PaintLayer, layerPaint: (part: number) => Texts | undefined, view: string, focus: { min: V3; max: V3 } | undefined, size: number | undefined, image: boolean, parts: readonly HistoryMesh[] = d.parts) {
@@ -161,99 +164,116 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
     // a local model's form leaves out whole, which only the cloud follow-up guidance asks for
     localInput: previewInput.omit({ whole: true }),
     async run(i, ctx) {
-      const d = designs.get(i.design)
-      let target = storedTarget(i.target)
-      let took = ''
-      let part = i.part ?? -1
-      if (target.kind === 'seed') {
-        // The seed's face, kept by its key as push steps keep theirs, and the part it is on.
-        const at = faceAt(d, target.point)
-        part = at.part
-        target = { ...target, ...(at.key ? { faceKey: at.key } : {}) }
-      }
-      if (part >= d.parts.length) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
-      const parts = part === -1 ? d.parts.map((_, k) => k) : [part]
-      // a color asked for on a part already painted in bands goes on one band, the one the person most likely means
-      if (i.layer === 'color' && target.kind === 'part' && !i.whole) {
-        // a part with any band: a state of its own, or the asked color over part of it (the rest its own filament)
-        const banded = (await regions(d, 'color')).filter((r) => parts.includes(r.part) && r.states.some((s) => s.state !== i.state || s.triangles < d.parts[r.part]!.indices.length / 3))
-        // one part with bands painted by height: the person picks the band on a one-tap question
-        const picked = banded.length === 1 && parts.length === 1 && ctx?.ask ? await pickBand(d, parts[0]!, i.state, ctx.ask) : null
-        if (picked) {
-          target = picked.target
-          took = picked.label
-        } else if (banded.length) {
-          const said = banded.map((r) => {
-            const bands = r.states.map((s) => `filament ${s.state} over ${Math.round(s.areaMm2)} mm2`)
-            return `${d.parts[r.part]!.name} is painted in bands: ${bands.join(', ')}, and the rest in its own filament`
-          })
-          throw new ToolInputError(`target: ${said.join('; ')}. Painting the whole part would cover every band: paint the band the person most likely means with a height target (below the band line, such as {"kind":"height","below":4}) and say which band you took; if two bands fit equally, ask with two choices`)
-        }
-      }
-      // a height band's edge lands on its height (the step keeps the depth, so a replay paints the same)
-      const maxDepth = i.max_depth ?? (target.kind === 'height' ? bandDepth(parts.map((k) => d.parts[k]!), d.transform) : undefined)
-      const params: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target, ...(maxDepth !== undefined ? { maxDepth } : {}) }
-      const expected: Record<number, Texts> = {}
-      const rows: { part: number; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[]; faces?: PaintedFace[] }[] = []
-      // a height band or a direction on an exact design: the step's own replay, whose kernel splits the faces the band's
-      // edges cross, and which paints a direction on whole faces
-      const after = (target.kind === 'height' || target.kind === 'direction') && d.history.exact && designs.trial ? await designs.trial(d, part, params) : undefined
-      if (after) {
-        const band = target.kind === 'height' ? bandOf(target) : undefined
-        for (const k of parts) {
-          const p = after[k]
-          if (!p) continue
-          const texts = p.paint?.[i.layer] ?? {}
-          expected[k] = texts
-          // a band's faces by height; a direction's, the faces of the triangles the step painted anew (it splits none)
-          const was = d.parts[k]?.paint?.[i.layer] ?? {}
-          const ids = band ? bandFaceIds(p, d.transform, band) : new Set(Array.from(p.faces?.ids ?? []).filter((_, t) => texts[t] !== was[t]))
-          const tris = Array.from(p.faces?.ids ?? []).filter((id) => ids.has(id)).length
-          const faces = facesOf(p, i.layer, ids)
-          const r = (await engine('paint.regions', { mesh: meshOf(p), transform: d.transform, paint: texts })) as { states: { state: number; regionCount: number; regions: Region[] }[] }
-          const st = r.states.find((x) => x.state === i.state)
-          const area = Math.round(faces.reduce((a, f) => a + f.areaMm2, 0) * 100) / 100
-          if (tris) rows.push({ part: k, changedTriangles: tris, selectedAreaMm2: area, regionCount: st?.regionCount ?? 0, regions: st?.regions ?? [], faces })
-        }
-      }
-      for (const k of after ? [] : parts) {
-        const p = d.parts[k]!
-        const before = p.paint?.[i.layer]
-        const { faceKey: _key, ...asked } = target as PaintTarget & { faceKey?: number }
-        const r = (await engine('paint.select', { mesh: meshOf(p), transform: d.transform, paint: before ?? {}, state: i.state, target: asked, ...(maxDepth !== undefined ? { maxDepth } : {}) })) as { changed: Record<string, string>; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[] }
-        expected[k] = merged(before, r.changed)
-        if (r.changedTriangles || r.selectedAreaMm2) rows.push({ part: k, changedTriangles: r.changedTriangles, selectedAreaMm2: r.selectedAreaMm2, regionCount: r.regionCount, regions: r.regions })
-      }
-      if (!rows.some((r) => r.changedTriangles)) throw new ToolInputError('The target paints nothing new on this design; try another target, part or state.')
-      const id = `p${++seq}`
-      previews.set(id, { id, design: d.id, steps: d.history.steps.length, last: d.history.steps.at(-1)?.id, part, params, expected, feature: i.feature })
-      if (previews.size > 32) previews.delete(previews.keys().next().value!)
-      const focus = boundsOf(rows.flatMap((r) => r.regions))
-      const pic = await picture(d, i.layer, (k) => expected[k] ?? (after ?? d.parts)[k]?.paint?.[i.layer], i.view, i.view === 'fit' ? focus : undefined, i.size, i.image, after)
-      const area = Math.round(rows.reduce((a, r) => a + r.selectedAreaMm2, 0) * 100) / 100
-      return {
-        summary: `${took ? `The person picked ${took.toLowerCase()}. ` : ''}Preview ${id}: ${stepName({ params })}, ${area} mm2 on ${rows.length} part${rows.length === 1 ? '' : 's'}. Apply with slicerx_paint_apply.`,
-        output: { preview: id, step: stepName({ params }), areaMm2: area, parts: rows, picture: pic.summary },
-        ...(pic.images ? { images: pic.images } : {}),
+      // the step as far as it was worked out, to name a refused preview by
+      let named: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target: i.target as PaintTarget }
+      try {
+        const out = await previewOn(i, ctx, (p) => (named = p))
+        refused.clear('')
+        return out
+      } catch (e) {
+        refused.refused('', stepName({ params: named }), e)
+        throw e
       }
     },
   })
 
+  /** The preview `i` asks for; `step` hears the step as it is worked out. */
+  async function previewOn(i: z.infer<typeof previewInput>, ctx: ToolContext | undefined, step: (p: Extract<StepParams, { op: 'paint' }>) => void) {
+    const d = designs.get(i.design)
+    let target = storedTarget(i.target)
+    step({ op: 'paint', layer: i.layer, state: i.state, target })
+    let took = ''
+    let part = i.part ?? -1
+    if (target.kind === 'seed') {
+      // The seed's face, kept by its key as push steps keep theirs, and the part it is on.
+      const at = faceAt(d, target.point)
+      part = at.part
+      target = { ...target, ...(at.key ? { faceKey: at.key } : {}) }
+    }
+    if (part >= d.parts.length) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+    const parts = part === -1 ? d.parts.map((_, k) => k) : [part]
+    // a color asked for on a part already painted in bands goes on one band, the one the person most likely means
+    if (i.layer === 'color' && target.kind === 'part' && !i.whole) {
+      // a part with any band: a state of its own, or the asked color over part of it (the rest its own filament)
+      const banded = (await regions(d, 'color')).filter((r) => parts.includes(r.part) && r.states.some((s) => s.state !== i.state || s.triangles < d.parts[r.part]!.indices.length / 3))
+      // one part with bands painted by height: the person picks the band on a one-tap question
+      const picked = banded.length === 1 && parts.length === 1 && ctx?.ask ? await pickBand(d, parts[0]!, i.state, ctx.ask) : null
+      if (picked) {
+        target = picked.target
+        took = picked.label
+      } else if (banded.length) {
+        const said = banded.map((r) => {
+          const bands = r.states.map((s) => `filament ${s.state} over ${Math.round(s.areaMm2)} mm2`)
+          return `${d.parts[r.part]!.name} is painted in bands: ${bands.join(', ')}, and the rest in its own filament`
+        })
+        throw new ToolInputError(`target: ${said.join('; ')}. Painting the whole part would cover every band: paint the band the person most likely means with a height target (below the band line, such as {"kind":"height","below":4}) and say which band you took; if two bands fit equally, ask with two choices`)
+      }
+    }
+    // a height band's edge lands on its height (the step keeps the depth, so a replay paints the same)
+    const maxDepth = i.max_depth ?? (target.kind === 'height' ? bandDepth(parts.map((k) => d.parts[k]!), d.transform) : undefined)
+    const params: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target, ...(maxDepth !== undefined ? { maxDepth } : {}) }
+    step(params)
+    const expected: Record<number, Texts> = {}
+    const rows: { part: number; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[]; faces?: PaintedFace[] }[] = []
+    // a height band or a direction on an exact design: the step's own replay, whose kernel splits the faces the band's
+    // edges cross, and which paints a direction on whole faces
+    const after = (target.kind === 'height' || target.kind === 'direction') && d.history.exact && designs.trial ? await designs.trial(d, part, params) : undefined
+    if (after) {
+      const band = target.kind === 'height' ? bandOf(target) : undefined
+      for (const k of parts) {
+        const p = after[k]
+        if (!p) continue
+        const texts = p.paint?.[i.layer] ?? {}
+        expected[k] = texts
+        // a band's faces by height; a direction's, the faces of the triangles the step painted anew (it splits none)
+        const was = d.parts[k]?.paint?.[i.layer] ?? {}
+        const ids = band ? bandFaceIds(p, d.transform, band) : new Set(Array.from(p.faces?.ids ?? []).filter((_, t) => texts[t] !== was[t]))
+        const tris = Array.from(p.faces?.ids ?? []).filter((id) => ids.has(id)).length
+        const faces = facesOf(p, i.layer, ids)
+        const r = (await engine('paint.regions', { mesh: meshOf(p), transform: d.transform, paint: texts })) as { states: { state: number; regionCount: number; regions: Region[] }[] }
+        const st = r.states.find((x) => x.state === i.state)
+        const area = Math.round(faces.reduce((a, f) => a + f.areaMm2, 0) * 100) / 100
+        if (tris) rows.push({ part: k, changedTriangles: tris, selectedAreaMm2: area, regionCount: st?.regionCount ?? 0, regions: st?.regions ?? [], faces })
+      }
+    }
+    for (const k of after ? [] : parts) {
+      const p = d.parts[k]!
+      const before = p.paint?.[i.layer]
+      const { faceKey: _key, ...asked } = target as PaintTarget & { faceKey?: number }
+      const r = (await engine('paint.select', { mesh: meshOf(p), transform: d.transform, paint: before ?? {}, state: i.state, target: asked, ...(maxDepth !== undefined ? { maxDepth } : {}) })) as { changed: Record<string, string>; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[] }
+      expected[k] = merged(before, r.changed)
+      if (r.changedTriangles || r.selectedAreaMm2) rows.push({ part: k, changedTriangles: r.changedTriangles, selectedAreaMm2: r.selectedAreaMm2, regionCount: r.regionCount, regions: r.regions })
+    }
+    if (!rows.some((r) => r.changedTriangles)) throw new ToolInputError('The target paints nothing new on this design; try another target, part or state.')
+    const id = `p${++seq}`
+    previews.set(id, { id, design: d.id, steps: d.history.steps.length, last: d.history.steps.at(-1)?.id, part, params, expected, feature: i.feature })
+    if (previews.size > 32) previews.delete(previews.keys().next().value!)
+    const focus = boundsOf(rows.flatMap((r) => r.regions))
+    const pic = await picture(d, i.layer, (k) => expected[k] ?? (after ?? d.parts)[k]?.paint?.[i.layer], i.view, i.view === 'fit' ? focus : undefined, i.size, i.image, after)
+    const area = Math.round(rows.reduce((a, r) => a + r.selectedAreaMm2, 0) * 100) / 100
+    return {
+      summary: `${took ? `The person picked ${took.toLowerCase()}. ` : ''}Preview ${id}: ${stepName({ params })}, ${area} mm2 on ${rows.length} part${rows.length === 1 ? '' : 's'}. Apply with slicerx_paint_apply.`,
+      output: { preview: id, step: stepName({ params }), areaMm2: area, parts: rows, picture: pic.summary },
+      ...(pic.images ? { images: pic.images } : {}),
+    }
+  }
+
   const apply = defineTool({
     name: 'paint.apply',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description: "Apply a paint preview as a design step (it replays, saves and undoes like any step). Refused if the design changed since; preview again. Returns the paint read back.",
     input: z.object({ preview: z.string().min(1).describe('The preview id from slicerx_paint_preview'), feature: featureArg }),
     async run(i) {
       const pv = previews.get(i.preview)
-      if (!pv) throw new ToolInputError(`preview: no preview ${i.preview}; make one with slicerx_paint_preview`)
+      if (!pv) throw new ToolInputError(refused.neverMade('', i.preview, `preview: no preview ${i.preview}; make one with slicerx_paint_preview`))
       const d = designs.get(pv.design)
       if (d.history.steps.length !== pv.steps || d.history.steps.at(-1)?.id !== pv.last) throw new ToolInputError('The design changed since this preview; preview again.')
       // the feature given here, else the one the preview was given
       const s = await designs.add(d, pv.part, pv.params, undefined, withFeature(i.feature?.trim() ? i.feature : pv.feature))
       previews.delete(pv.id)
+      refused.clear('')
       // What replay painted is what the preview showed.
       const off = Object.entries(pv.expected).filter(([k, t]) => !sameTexts(d.parts[Number(k)]?.paint?.[pv.params.layer], t)).map(([k]) => Number(k))
       const read = await regions(d, pv.params.layer)

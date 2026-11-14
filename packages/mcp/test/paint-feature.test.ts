@@ -105,9 +105,9 @@ describe('a paint step tagged with its plan feature', () => {
     expect(data<{ output: { steps: unknown[] } }>(await h.call('slicerx_design_steps', { design })).output.steps).toEqual([])
   })
 
-  it('is paint.apply 1.4.0, which takes feature, and paint.preview 1.5.0, which takes it for the apply', () => {
+  it('is paint.apply 1.5.0, which takes feature, and paint.preview 1.5.0, which takes it for the apply', () => {
     const t = paintTools(NO_ENGINE_HOST).find((x) => x.name === 'paint.apply')!
-    expect(t.version).toBe('1.4.0')
+    expect(t.version).toBe('1.5.0')
     const pv = paintTools(NO_ENGINE_HOST).find((x) => x.name === 'paint.preview')!
     expect(pv.version).toBe('1.5.0')
     expect(pv.input.parse({ design: 'd1', layer: 'color', state: 2, target: { kind: 'part' }, feature: 'Hull paint' })).toMatchObject({ feature: 'Hull paint' })
