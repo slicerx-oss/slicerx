@@ -213,12 +213,12 @@ pub fn farthest_from(points: &[V3], positions: &[V3], triangles: &[[u32; 3]], ce
 }
 
 /// Whether the mesh loft is the reference an exact loft of `profiles` is held to. The mesh loft flattens every
-/// section into a ring of points and joins the rings point for point by count. Where a section is straight lines
-/// alone, or one whole circle or ellipse, that keeps each corner on the corners of the sections beside it (or there
-/// is no corner), so its sides are the loft's own. Where a section mixes corners with curves, the curves flatten to
-/// different counts on different sections and the mesh loft joins a corner of one section to a point along the curve
-/// of the next, so its side leans off the corners between sections. There the exact loft is held to the drawing: the
-/// sections as drawn at their stations, and its corner rails, which join the drawn corners as the loft defines them.
+/// section into a ring of points. Where a section is straight lines alone, or one whole circle or ellipse, it joins
+/// the rings point for point by count, which keeps each corner on the corners of the sections beside it (or there is
+/// no corner), so its sides are the loft's own. Where a section mixes corners with curves, it joins them where their
+/// pieces meet and spreads each section's own points between, so its sides follow the loft's only as closely as those
+/// points do. There the exact loft is held to the drawing: the sections as drawn at their stations, and its corner
+/// rails, which join the drawn corners as the loft defines them.
 pub fn mesh_loft_keeps_corners(profiles: &Value) -> bool {
     profiles.as_array().unwrap().iter().all(|p| {
         p["loops"].as_array().unwrap().iter().all(|lp| {

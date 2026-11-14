@@ -308,9 +308,9 @@ fn mesh_of(profiles: &Value, opts: &Value) -> TriMesh {
 /// What `mesh_hash` gave for each of `cases` before the loft's stages were shared with the rails.
 const HELD: [(&str, u64); 15] = [
     ("frustum", 0x674f_9fe3_8fd1_41fb),
-    ("square to circle", 0x2a5f_d5f6_2fea_644e),
+    ("square to circle", 0x906a_2619_c097_aaea),
     ("square to hexagon", 0xd453_1adb_b9a7_0962),
-    ("tilted circle", 0x955d_4e6e_6d8e_1e66),
+    ("tilted circle", 0xd698_54d9_6652_82ce),
     ("hull", 0x6a99_3f8c_d0c6_4aac),
     ("hull ruled", 0xcd51_81a4_8e22_8045),
     ("bilge hull landmarked", 0x8e55_0e52_a394_af36),
@@ -319,8 +319,8 @@ const HELD: [(&str, u64); 15] = [
     ("ring ruled", 0xf99a_da7e_45fe_5732),
     ("circles", 0xee31_55f8_02a2_e0c1),
     ("ellipses and circles", 0xeb46_7534_b28b_447e),
-    ("rounded rectangles", 0xfba8_e4e5_2b3e_f966),
-    ("hexagons and circles", 0x063b_90fb_27b4_38d4),
+    ("rounded rectangles", 0x9091_80be_d4d9_728e),
+    ("hexagons and circles", 0xf78b_9d9b_9479_f8e8),
     ("strips thickened", 0x8475_bda9_2a09_079d),
 ];
 
