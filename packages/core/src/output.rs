@@ -316,6 +316,16 @@ pub(crate) struct SupportAreas {
 }
 
 impl SupportAreas {
+    /// The island that holds `p`, by its index in `islands`.
+    pub(crate) fn island_at(&self, p: Point) -> Option<usize> {
+        use i_overlay::i_float::int::point::IntPoint;
+        let q = IntPoint::new(p.x, p.y);
+        self.islands.iter().position(|shape| {
+            shape.first().is_some_and(|c| crate::perimeters::point_in(c, q))
+                && !shape.iter().skip(1).any(|h| crate::perimeters::point_in(h, q))
+        })
+    }
+
     /// Whether the straight move from `a` to `b` stays inside one island.
     pub(crate) fn holds(&self, a: Point, b: Point) -> bool {
         use i_overlay::i_float::int::point::IntPoint;

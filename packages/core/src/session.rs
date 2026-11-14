@@ -7076,6 +7076,7 @@ impl SliceSession {
             first_layer_width: cfg.first_layer_support_width(),
             gap_xy_first_layer: s.object_first_layer_gap,
             brim,
+            footprints: self.object_footprints(),
             vertical_points: self
                 .painted_supports
                 .iter()
@@ -7106,6 +7107,27 @@ impl SliceSession {
             raft_expansion: cfg.raw_number("raft_expansion", 1.5),
         };
         crate::organic::plan(&inp)
+    }
+
+    /// Each object's footprint on the bed (its hull, internal units) when this session slices several objects
+    /// together, in plate order; empty for a session of one object.
+    fn object_footprints(&self) -> Vec<Shapes> {
+        let mut objects = self.part_object.clone();
+        objects.sort_unstable();
+        objects.dedup();
+        if objects.len() < 2 {
+            return Vec::new();
+        }
+        objects
+            .iter()
+            .filter_map(|&k| self.objects.get(usize::from(k)))
+            .filter(|f| f.hull.len() >= 3)
+            .map(|f| {
+                vec![vec![
+                    f.hull.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect(),
+                ]]
+            })
+            .collect()
     }
 
     /// The paths of an organic layer, with the contact loops and support ironing of the top contact

@@ -14,16 +14,18 @@
 //!   objects share, or inside two objects that overlap, always goes to the same one;
 //! - a cut adds a point on the segment: the same line, the same extrusion, no travel;
 //! - skirt, prime tower and custom paths belong to no object; a brim to the object it goes round, none when it
-//!   goes round several; support to the object above it (the first layer up where an object comes within the
-//!   support's margin of the middle of the path's box), else the nearest object on its own layer, else the nearest
-//!   on any layer up, however far: every support path carries an object's label;
+//!   goes round several; support to the object right above the middle of the path's box, else to the object its
+//!   support island holds up (the one most points of the island's outline lie right under), so the lines at an
+//!   island's edge go with the rest of it; else to the object above it (the first layer up where an object comes
+//!   within the support's margin of the middle of the path's box), else the nearest object on its own layer, else
+//!   the nearest on any layer up, however far: every support path carries an object's label;
 //! - a support path whose box reaches under two objects (tree support under two shelves, merged on the first
 //!   layers) is cut like a wall where it passes from under one object to under another: a point takes the first
 //!   object up whose slice holds it. A stretch under no object takes the object of the nearer stretch under one,
 //!   along the path (round it, for a loop), so skipping one object never leaves half of the other's loop.
 
 use crate::geom::{Point, SCALE};
-use crate::output::{Feature, LayerPaths, PathInfo};
+use crate::output::{Feature, LayerPaths, PathInfo, SupportAreas};
 use crate::perimeters::Shapes;
 use crate::preview::OBJECT_NONE;
 
@@ -191,6 +193,9 @@ pub(crate) fn assign(
     let owner_at = |p: Point| holder(here, p).unwrap_or(OBJECT_NONE);
     // What a support path on this layer can lie under ([`Reach`]), worked out for the first one that asks.
     let mut reach: Option<Reach> = None;
+    // The support islands of the layer and, once asked, the object each holds up.
+    let islands = l.support_areas.as_deref();
+    let mut island_owners: Vec<Option<u16>> = vec![None; islands.map_or(0, |a| a.islands.len())];
     for p in &old_paths {
         let range = p.start as usize..p.end as usize;
         let pts = old_points.get(range.clone()).unwrap_or_default();
@@ -212,7 +217,13 @@ pub(crate) fn assign(
         if !by_place(p.feature) {
             let owner = match p.feature {
                 Feature::Brim => brim_owner(here, pts),
-                Feature::Support | Feature::SupportInterface => support_owner(here, pts, above),
+                Feature::Support | Feature::SupportInterface => support_owner(
+                    here,
+                    pts,
+                    above,
+                    reach.get_or_insert_with(|| Reach::new(above)),
+                    islands.map(|a| (a, &mut island_owners)),
+                ),
                 _ => OBJECT_NONE,
             };
             let two = matches!(p.feature, Feature::Support | Feature::SupportInterface)
@@ -738,15 +749,81 @@ fn support_owner(
     here: &[ObjectSlice],
     pts: &[Point],
     above: &dyn Fn(usize) -> Option<std::sync::Arc<Slices>>,
+    reach: &Reach,
+    islands: Option<(&SupportAreas, &mut Vec<Option<u16>>)>,
 ) -> u16 {
     let Some([x0, y0, x1, y1]) = bbox(pts) else {
         return OBJECT_NONE;
     };
-    support_owner_at(
-        here,
-        Point::new(i32::midpoint(x0, x1), i32::midpoint(y0, y1)),
-        above,
-    )
+    let mid = Point::new(i32::midpoint(x0, x1), i32::midpoint(y0, y1));
+    // Right under an object: that object.
+    let under = reach.under_at(mid, OBJECT_NONE);
+    if under != OBJECT_NONE {
+        return under;
+    }
+    // Under none: the object its island holds up, so the short lines and loops at an island's edge (the first
+    // layer's growth, a branch's side) go with the rest of it rather than with a neighbor that comes close there.
+    // The island is the one the path runs in, found at the middle of one of its segments (the middle of its box
+    // can fall outside an island that is not convex).
+    let on_path = |k: usize| {
+        let (a, b) = (pts.get(k)?, pts.get(k + 1)?);
+        Some(Point::new(i32::midpoint(a.x, b.x), i32::midpoint(a.y, b.y)))
+    };
+    let step = pts.len().div_ceil(ISLAND_SAMPLES).max(1);
+    if let Some((areas, owners)) = islands
+        && let Some(i) = (0..pts.len().saturating_sub(1))
+            .step_by(step)
+            .filter_map(on_path)
+            .find_map(|q| areas.island_at(q))
+        && let Some(slot) = owners.get_mut(i)
+    {
+        return *slot.get_or_insert_with(|| {
+            let ring = areas
+                .islands
+                .get(i)
+                .and_then(|sh| sh.first())
+                .map_or(&[][..], Vec::as_slice);
+            island_owner(here, ring, above, reach).unwrap_or_else(|| support_owner_at(here, mid, above))
+        });
+    }
+    support_owner_at(here, mid, above)
+}
+
+/// How many points of an island's outline [`island_owner`] looks at.
+const ISLAND_SAMPLES: usize = 16;
+
+/// The object a support island holds up, from its outline (`ring`): of points spread along it, the most lie
+/// right under that object (the first in plate order on a tie). An island under none of them: the object
+/// [`support_owner_at`] finds at the middle of its box. None for an empty outline.
+fn island_owner(
+    here: &[ObjectSlice],
+    ring: &[i_overlay::i_float::int::point::IntPoint<i32>],
+    above: &dyn Fn(usize) -> Option<std::sync::Arc<Slices>>,
+    reach: &Reach,
+) -> Option<u16> {
+    let step = ring.len().div_ceil(ISLAND_SAMPLES).max(1);
+    let mut counts: Vec<(u16, usize)> = Vec::new();
+    for q in ring.iter().step_by(step) {
+        let o = reach.under_at(Point::new(q.x, q.y), OBJECT_NONE);
+        if o == OBJECT_NONE {
+            continue;
+        }
+        match counts.iter_mut().find(|(k, _)| *k == o) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((o, 1)),
+        }
+    }
+    counts.sort_by_key(|&(o, _)| o);
+    if let Some(&(o, _)) = counts.iter().rev().max_by_key(|&&(_, n)| n) {
+        return Some(o);
+    }
+    let xs = ring.iter().map(|q| q.x);
+    let ys = ring.iter().map(|q| q.y);
+    let mid = Point::new(
+        i32::midpoint(xs.clone().min()?, xs.max()?),
+        i32::midpoint(ys.clone().min()?, ys.max()?),
+    );
+    Some(support_owner_at(here, mid, above))
 }
 
 /// The object support at `mid` holds up: the first one up from this layer within the support's margin of it,
