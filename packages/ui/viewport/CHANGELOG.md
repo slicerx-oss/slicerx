@@ -15,6 +15,7 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ### Changed
 
+- Two faces of a part with the engine's normals and face ids shade smooth or hard along each stretch of the edges they share at once: smooth where the angle between them, averaged along the stretch by length, is under the crease angle. A stretch ends where the faces part by more than twice the crease angle (80 degrees), which stays hard. A join whose angle wanders around 40 degrees, such as a hull's chine near the bow or its keel, now shades and draws its edge line whole one way instead of in dashes. `creasedArrays` takes the face ids as an optional fifth argument, and the mesh worker's crease job carries them with the normals.
 - The Snapmaker J1 no longer plays the H2D's purge chute switch, and the Snapmaker Artisan plays no tool change until its mechanism is checked.
 
 ## [0.2.8] - 2026-11-08

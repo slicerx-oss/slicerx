@@ -192,8 +192,9 @@ describe('edges of the exact hull of a real design', () => {
     expect(corners.length).toBeGreaterThan(200)
     expect(smooth.filter(([key]) => drawn.has(key))).toEqual([])
     expect(corners.filter(([key]) => !drawn.has(key))).toEqual([])
-    // every line on the hull is a corner of it: the joins at 23 degrees take none
-    expect(out.length / 6).toBe(356)
+    // every line on the hull is a corner of it: the joins at 23 degrees take none, and neither does the bow of each chine,
+    // at 39.5 to 40.7 degrees where the rest of the chine is under 40 (crease-runs.test.ts)
+    expect(out.length / 6).toBe(340)
   })
 })
 

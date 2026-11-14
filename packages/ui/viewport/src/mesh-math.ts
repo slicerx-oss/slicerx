@@ -116,8 +116,14 @@ export function allExact(normals: Int16Array | undefined, triangles: number): bo
  * the exact normals within `creaseDeg` of its own, so a fold under the angle shades smooth as on a mesh part and one
  * over it stays hard. Inside a face every corner of a vertex has the same normal, kept bit for bit. The other
  * triangles crease as above. With no triangle exact the result is the same as without them.
+ *
+ * With `faceIds` (each triangle's face of the solid), two faces are smooth or hard along each run of the edges they
+ * share at once: smooth when the angle between their exact normals, averaged along the run by length, is under
+ * `creaseDeg`. A run ends where the faces part by more than twice that angle, a real fold that stays hard. A join
+ * whose angle wanders across the crease angle then shades whole one way instead of switching from vertex to vertex.
+ * Faces that meet only at a point keep the angle at that point.
  */
-export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: number, normals?: Int16Array): CreasedArrays {
+export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: number, normals?: Int16Array, faceIds?: ArrayLike<number>): CreasedArrays {
   const nt = Math.floor(I.length / 3)
   const nv = Math.floor(P.length / 3)
   const { exact } = exactTriangles(normals, nt)
@@ -170,6 +176,7 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
   // the exact triangles' areas, taken once: each is read by every corner of its three vertices
   const area = new Float64Array(exact ? nt : 0)
   for (let t = 0; exact && t < nt; t++) if (exact[t] === 1) area[t] = Math.hypot(u(3 * t), u(3 * t + 1), u(3 * t + 2))
+  const smooth = exact && faceIds && faceIds.length === nt ? smoothJoins(P, I, faceIds, exact, un, w, nw, cosA) : null
   for (let t = 0; t < nt; t++) {
     const tx = f(3 * t), ty = f(3 * t + 1), tz = f(3 * t + 2)
     const supplied = exact !== null && exact[t] === 1
@@ -197,7 +204,9 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
           if (exact![g] !== 1) continue
           const cx = un[3 * c]!, cy = un[3 * c + 1]!, cz = un[3 * c + 2]!
           if (normals![2 * c] !== normals![own] || normals![2 * c + 1] !== normals![own + 1]) {
-            if (cx * gx + cy * gy + cz * gz < cosA) continue
+            // two faces sharing edges go by their whole join; anything else by the angle here
+            const join = smooth?.(pairKey(faceIds![t] ?? 0, faceIds![g] ?? 0), wi)
+            if (join === undefined ? cx * gx + cy * gy + cz * gz < cosA : !join) continue
             same = false
           }
           const a = area[g]!
@@ -240,6 +249,89 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
   return { position: pos.done(), normal: nrm.done(), index }
 }
 
+/** One key for two faces, whichever comes first. */
+const pairKey = (a: number, b: number): number => (a < b ? a * 0x200000 + b : b * 0x200000 + a)
+
+/**
+ * Whether two faces shade smooth where they meet at a welded vertex, decided once for each run of their join: the edges
+ * they share, split at any vertex where their exact normals part by more than twice the crease angle (a real fold, which
+ * stays hard there). A run is smooth when the angle between the normals at both ends of its edges, averaged by the
+ * edges' lengths, is under the crease angle (`cosA` its cosine). Only edges between vertices with corners of two or more
+ * faces are read, both triangles exact. Gives undefined where two faces share no run at that vertex.
+ */
+function smoothJoins(P: Float32Array, I: ArrayLike<number>, faceIds: ArrayLike<number>, exact: Uint8Array, un: Float64Array, w: (k: number) => number, nw: number, cosA: number): (pair: number, v: number) => boolean | undefined {
+  const nt = Math.floor(I.length / 3)
+  // welded vertices with corners of more than one face: the only ends a join can have
+  const first = new Int32Array(nw).fill(-1)
+  const multi = new Uint8Array(nw)
+  for (let k = 0; k < 3 * nt; k++) {
+    const v = w(k)
+    const f = faceIds[(k / 3) | 0] ?? 0
+    if (first[v]! < 0) first[v] = f
+    else if (first[v] !== f) multi[v] = 1
+  }
+  const next = (c: number): number => 3 * ((c / 3) | 0) + ((c % 3) + 1) % 3
+  const deg = (a: number, b: number): number => Math.acos(Math.max(-1, Math.min(1, un[3 * a]! * un[3 * b]! + un[3 * a + 1]! * un[3 * b + 1]! + un[3 * a + 2]! * un[3 * b + 2]!)))
+  // a fold: past twice the crease angle, where a join is a real edge whatever the rest of it does
+  const fold = 2 * Math.acos(cosA)
+  // per pair of faces, each join vertex's run, joined as the edges come (union by parent)
+  const runs = new Map<number, Map<number, number>>()
+  const parent: number[] = []
+  const sums: [number, number][] = []
+  const root = (r: number): number => {
+    while (parent[r] !== r) r = parent[r] = parent[parent[r]!]!
+    return r
+  }
+  const runOf = (pair: number, v: number): number => {
+    const at = runs.get(pair) ?? runs.set(pair, new Map()).get(pair)!
+    let r = at.get(v)
+    if (r === undefined) {
+      r = parent.length
+      parent.push(r)
+      sums.push([0, 0])
+      at.set(v, r)
+    }
+    return root(r)
+  }
+  // each edge between join ends, by its welded ends (lower first): the corner that runs along it first
+  const held = new Map<number, number>()
+  for (let c = 0; c < 3 * nt; c++) {
+    const t = (c / 3) | 0
+    if (exact[t] !== 1) continue
+    const a = w(c), b = w(next(c))
+    if (a === b || multi[a] !== 1 || multi[b] !== 1) continue
+    const key = a < b ? a * nw + b : b * nw + a
+    const o = held.get(key)
+    if (o === undefined) {
+      held.set(key, c)
+      continue
+    }
+    held.delete(key)
+    const fa = faceIds[t] ?? 0, fb = faceIds[(o / 3) | 0] ?? 0
+    if (fa === fb) continue
+    // corner c runs a -> b and corner o runs b -> a: at a, c and the end of o; at b, the end of c and o
+    const atA = deg(c, next(o)), atB = deg(next(c), o)
+    if (atA > fold || atB > fold) continue
+    const pair = pairKey(fa, fb)
+    const ra = runOf(pair, a), rb = runOf(pair, b)
+    const r = ra === rb ? ra : (parent[rb] = ra)
+    if (r !== rb) {
+      sums[ra]![0] += sums[rb]![0]
+      sums[ra]![1] += sums[rb]![1]
+    }
+    const i0 = (I[c] ?? 0) * 3, i1 = (I[next(c)] ?? 0) * 3
+    const len = Math.hypot((P[i1] ?? 0) - (P[i0] ?? 0), (P[i1 + 1] ?? 0) - (P[i0 + 1] ?? 0), (P[i1 + 2] ?? 0) - (P[i0 + 2] ?? 0))
+    sums[ra]![0] += ((atA + atB) / 2) * len
+    sums[ra]![1] += len
+  }
+  return (pair, v) => {
+    const r = runs.get(pair)?.get(v)
+    if (r === undefined) return undefined
+    const [sum, len] = sums[root(r)]!
+    return len > 0 ? Math.cos(sum / len) > cosA : undefined
+  }
+}
+
 /** The crease angle parts are shaded with (creasedArrays): two faces that meet under it shade as one surface. */
 export const CREASE_DEG = 40
 
@@ -275,7 +367,7 @@ export function featureEdges(P: Float32Array, I: ArrayLike<number> | null, thres
   // short of them at most (mesh parts carry face ids too, and keep the fold angle)
   const faces = exact && exact.faceIds.length === nt && exactTriangles(exact.normals, nt).count > 0 ? exact : null
   // the part as it is shaded: a join between faces is an edge only where its two sides are shaded apart
-  const shaded = faces ? creasedArrays(P, I ?? Uint32Array.from({ length: 3 * nt }, (_, k) => k), CREASE_DEG, faces.normals) : null
+  const shaded = faces ? creasedArrays(P, I ?? Uint32Array.from({ length: 3 * nt }, (_, k) => k), CREASE_DEG, faces.normals, faces.faceIds) : null
   const breakDot = Math.cos((Math.PI / 180) * SHADE_BREAK_DEG)
   // EdgesGeometry's precision: four decimals.
   const { map: wmap, count: nw } = weldVertices(P, 1e4)
