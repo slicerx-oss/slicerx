@@ -160,11 +160,37 @@ function engineShaped(text: string): boolean {
 }
 
 /**
+ * An edit of a step that the design kept although a step no longer builds, as design.edit_step says it ("Edited step
+ * 6, ...: moved by [11, 0, 3.2] mm; step 6 broke: The shape stops 3.2 mm short of the part."). The broken step's
+ * reason is carried when it is already plain (a join or cut that misses the part, the time limit); otherwise the line
+ * says only that the step no longer builds.
+ */
+const KEPT_EDIT = /^Edited step \d+, .*; step (\d+) broke: (.*)$/s
+
+function keptEdit(summary: string): { title: string; shown: string; hint: string; raw: string } | undefined {
+  const m = KEPT_EDIT.exec(summary.trim())
+  if (!m) return undefined
+  const [, step, why] = m as unknown as [string, string, string]
+  const reason = why.trim().replace(/[.\s]+$/, '')
+  const plain = reason && (MISSED.test(reason) || isGeomStuck(reason)) ? reason.charAt(0).toLowerCase() + reason.slice(1) : ''
+  return {
+    title: 'Edit kept, a step broke',
+    shown: `The edit was made, but step ${step} no longer builds${plain ? `: ${plain}` : ''}. Edit it again, or edit it back.`,
+    hint: `The edit is kept in the design, with step ${step} broken. Fix that step or edit this one again from where it is now; it was not refused, so do not send the opposite change to undo it. ${NEVER_QUOTE}`,
+    raw: summary,
+  }
+}
+
+/**
  * The plain line, retry hint and the engine's own text for a failed step's text, or undefined when it is no engine
  * refusal. `tool` is the tool that failed: text from a tool that does not model is left alone unless only the engine
  * could have written it, so a printer's or the slicer's own sentences keep their words.
  */
 export function plainEngine(summary: string, tool?: string): { title: string; shown: string; hint: string; raw: string } | undefined {
+  // an edit the design kept with a step broken is no refusal, whatever the broken step's reason says, so it is read
+  // before the reason groups and never shown in their words
+  const kept = keptEdit(summary)
+  if (kept) return kept
   // the hosts' time limit says it plainly already, naming the step, even passed on inside another sentence
   if (isGeomStuck(summary)) return undefined
   // so does a join or cut that misses the part, with how far short it stops
