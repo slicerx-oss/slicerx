@@ -122,7 +122,7 @@ describe('design.lookup_sizes asks for a few published sizes', () => {
     const config = { ...DEFAULT_CONFIG, provider: 'anthropic', model: 'claude-haiku-5-5', models: { huginn: 'claude-haiku-5-5', muninn: 'claude-haiku-5-5' }, billing: 'key' as const }
     for await (const _ of createPilot({ host, config, policy: DEFAULT_POLICY, builtins: false, tools: [tool] }).run('s1', 'look its sizes up')) void _
     const out = outs[0]!.output as { found: { size: string; mm: number }[]; missing: string[]; sources: { title: string; url: string }[] }
-    return { out, searched, ctx: ctxs[0]! }
+    return { out, searched, ctx: ctxs[0]!, card: outs[0]!.lookup, summary: outs[0]!.summary }
   }
   /** The recorded stream's sizes, read from its answer. */
   const FOUND = [['Overall length', 125700], ['Width (across)', 12600], ['Tower height above the roof', 17526]]
@@ -132,21 +132,31 @@ describe('design.lookup_sizes asks for a few published sizes', () => {
   /** The recorded stream with none of its answer's parts citing a page. */
   const UNCITED = STREAM.split('\n\n').filter((e) => !e.includes('"citations_delta"')).join('\n\n')
 
-  it('reads the recorded stream end to end through the provider, the web search and the tool: the page it cites first, then the pages its searches returned', async () => {
-    const { out, searched } = await lookupThrough(STREAM)
+  it('reads the recorded stream end to end through the provider, the web search and the tool: its sources are the pages its answer cites', async () => {
+    const { out, searched, card } = await lookupThrough(STREAM)
     expect(searched.length).toBe(1)
     expect(out.found.map((f) => [f.size, f.mm])).toEqual(FOUND)
     expect(out.missing).toEqual(['Wall height to the roof', 'Tower diameter'])
-    // the cited page once, though two parts cite it, then each other page once
-    expect(out.sources).toEqual([CITED, ...PAGES.filter((p) => p !== CITED)])
+    // the cited page once, though two parts cite it, and none of the pages the searches returned that it does not cite
+    expect(out.sources).toEqual([CITED])
+    expect(card?.source).toEqual(CITED)
   })
 
-  it('takes the pages its searches returned as the sources when the answer cites none, and keeps its sizes as found', async () => {
-    expect(UNCITED).not.toContain('citations_delta')
-    expect(UNCITED).toContain('"web_search_tool_result"')
-    const { out } = await lookupThrough(UNCITED)
-    expect(out.sources).toEqual(PAGES)
+  /** The uncited stream with its searches' first result a page about something else. */
+  const OTHER_FIRST = UNCITED.replaceAll('"title":"Tower facts"', '"title":"Harbor crane facts"').replaceAll('https://example.org/tower-facts', 'https://example.org/harbor-crane-facts')
+
+  it('links no page when the answer cites none, though its searches returned some, and keeps its sizes as looked up', async () => {
+    expect(OTHER_FIRST).not.toContain('citations_delta')
+    expect(OTHER_FIRST).toContain('"web_search_tool_result"')
+    expect(OTHER_FIRST).toContain('"title":"Harbor crane facts"')
+    const { out, card, summary } = await lookupThrough(OTHER_FIRST)
+    // the searches ran, so the sizes count as looked up
     expect(out.found.map((f) => [f.size, f.mm])).toEqual(FOUND)
+    expect(summary).toBe('lookup_1: found 3 of 5 sizes; no source gave Wall height to the roof, Tower diameter')
+    // but no page the answer did not cite is shown: the first result is about something else
+    expect(out.sources).toEqual([])
+    expect(card?.fields.length).toBeGreaterThan(0)
+    expect(card?.source).toBeUndefined()
   })
 
   it('keeps no sources, and no found sizes, from an answer that ran no search', async () => {
