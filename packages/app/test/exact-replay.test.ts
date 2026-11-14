@@ -269,16 +269,57 @@ it('sends slots, rounded rectangles and sketches to the kernel as lines and arcs
   expect(f.sent[0]!.req['polygons']).toEqual([
     { outer: { start: [1, 2], segments: [{ to: [5, 2] }, { to: [1, 2], center: [3, 2], sweepDeg: 180 }] }, holes: [{ center: [3, 2.5], diameterMm: 1 }] },
   ])
-  // one the engine finds a problem in runs on the mesh, which says what it is
+  // one the kernel cannot take though its check finds nothing wrong runs on the mesh
   clearReplayCache()
   const g = engine()
-  const broken = async (op: string, req: unknown) => {
-    if (op === 'sketch.curves') throw new Error('Loop 1 is open.')
-    return g.call(op, req)
+  const spline = async (op: string, req: unknown) => {
+    if (op === 'sketch.curves') throw new Error('sketch: splines go on the mesh path for now')
+    return op === 'sketch.check' ? { issues: [], polygons: [] } : g.call(op, req)
   }
-  const r = await replayHistory(broken, { history: history(sketched), exact: true })
+  const r = await replayHistory(spline, { history: history(sketched), exact: true })
   expect(g.ops()).toEqual(['shape.extrude'])
   expect(r.status[0]).toEqual({ state: 'done' })
+})
+
+it('says what is wrong with a sketch before saying an exact design does not support it', async () => {
+  const CROSS = 'sketch: Loop 2 crosses loop 1 (segment 1 of loop 2 meets segment 2 of loop 1).'
+  const SPLINE = 'sketch: splines go on the mesh path for now'
+  const square = { points: [[0, 0], [10, 0], [10, 10], [0, 10]] }
+  const sketch = (loops: unknown[]) => step('sketch-1', { ...box.params, shape: { type: 'sketch', loops } } as StepParams)
+  // an engine whose sketch check answers as sx-geom's does: the issues it finds, the first of them the curves' error
+  const checked = (why?: string) => {
+    const e = engine()
+    const call = async (op: string, req: unknown) => {
+      if (op === 'sketch.curves' && why) throw new Error(why)
+      if (op === 'sketch.curves') return [{ outer: { points: square.points }, holes: [] }]
+      if (op === 'sketch.check') return { issues: why === CROSS ? [{ kind: 'loopsCross', message: CROSS.slice('sketch: '.length) }] : [], polygons: [] }
+      return e.call(op, req)
+    }
+    return { call, ops: e.ops }
+  }
+  const strict = (s: Step): History => ({ ...history(s), exact: true })
+  // loops that cross: the sketch's own sentence, as the mesh path gives it, in a design that must stay exact or not,
+  // and neither the kernel nor the mesh is asked
+  const crossing = sketch([square, { type: 'circle', center: [10, 5], diameterMm: 4 }])
+  for (const h of [strict(crossing), history(crossing)]) {
+    clearReplayCache()
+    const x = checked(CROSS)
+    const r = await replayHistory(x.call, { history: h, exact: true })
+    expect(r.status[0]).toEqual({ state: 'broken', message: CROSS })
+    expect(x.ops()).toEqual([])
+  }
+  // a sketch with nothing wrong goes to the kernel
+  clearReplayCache()
+  const ok = checked()
+  const done = await replayHistory(ok.call, { history: strict(sketch([square])), exact: true })
+  expect(done.status[0]).toEqual({ state: 'done' })
+  expect(ok.ops()).toEqual(['brep.extrude', 'brep.tessellate'])
+  // one with nothing wrong that the kernel cannot take yet is refused as before
+  clearReplayCache()
+  const no = checked(SPLINE)
+  const refused = await replayHistory(no.call, { history: strict(sketch([{ type: 'spline', points: square.points }])), exact: true })
+  expect(refused.status[0]).toEqual({ state: 'broken', message: 'Exact replay does not support shape.extrude for this part. The mesh path was not used.' })
+  expect(no.ops()).toEqual([])
 })
 
 it('intersects a part with several others, as the mesh does, and breaks the step when nothing is left', async () => {
