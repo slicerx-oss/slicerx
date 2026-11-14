@@ -99,7 +99,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     // a hint only: a paint step it cannot name is left out rather than failing the check
     paintUntagged: d.history.steps.flatMap((s) => (!s.suppressed && s.params?.op === 'paint' && !s.feature?.trim() ? hintName(s) : [])),
     lofts: loftSections(shaping as unknown as Parameters<typeof loftSections>[0]),
-    featureHeights: featureHeights(d.history.steps, shaping),
+    featureHeights: featureHeights(d, shaping),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     ...(world.length > 1 ? { partBoxes: world.map((w, k) => partBox(w, d.parts[k]!)) } : {}),
     watertight,
@@ -233,15 +233,20 @@ function reach(meshes: readonly Mesh[], names: readonly string[]): NonNullable<B
 
 /**
  * Each tagged feature's height range over the steps tagged with it that rangeOf can read from their own numbers, loose
- * when any of them gives only a bound; a merged array reads the part it copies from the shaping steps before it. A
- * feature none of whose steps has a range has none, and is not read.
+ * when any of them gives only a bound; a merged array reads the part it copies from the steps before it as replay
+ * walked them (turned-off ones included, none after a broken step) and numbers them. A feature none of whose steps has
+ * a range has none, and is not read.
  */
-function featureHeights(all: readonly Step[], shaping: readonly Step[]): Record<string, { lo: number; hi: number; loose?: true }> {
+function featureHeights(d: HostDesign, shaping: readonly Step[]): Record<string, { lo: number; hi: number; loose?: true }> {
+  const all = d.history.steps
   const byId = new Map(all.map((s) => [s.id, s]))
+  // replay stops at a broken step, and every step after it is skipped
+  const stop = all.findIndex((_, i) => d.status[i]?.state === 'broken' || d.status[i]?.state === 'skipped')
+  const walked = stop < 0 ? all : all.slice(0, stop)
   const out: Record<string, { lo: number; hi: number; loose?: true }> = {}
   for (const s of shaping) {
     const tag = s.feature?.trim().toLowerCase()
-    const r = tag ? rangeOf(s, (id) => byId.get(id), shaping) : null
+    const r = tag ? rangeOf(s, (id) => byId.get(id), walked, d.history.base.length) : null
     if (!tag || !r) continue
     const was = out[tag]
     const loose = r.loose || was?.loose
