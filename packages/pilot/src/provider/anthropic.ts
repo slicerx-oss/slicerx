@@ -98,6 +98,22 @@ function messageList(req: LlmRequest): { system: string; messages: Obj[] } {
   return { system: system.join('\n\n'), messages }
 }
 
+/**
+ * The pages a reply's web searches returned, each once by url, in the order returned: the web_search_tool_result
+ * blocks of its `done` raw content. A search that failed returns an error in place of its list, and gives none.
+ */
+export function searchedPages(raw: readonly unknown[] | undefined): { url: string; title: string }[] {
+  const pages: { url: string; title: string }[] = []
+  for (const b of raw ?? []) {
+    if (!isObj(b) || b['type'] !== 'web_search_tool_result' || !Array.isArray(b['content'])) continue
+    for (const r of b['content']) {
+      const url = isObj(r) && r['type'] === 'web_search_result' ? str(r['url']) : ''
+      if (url && !pages.some((p) => p.url === url)) pages.push({ url, title: str((r as Obj)['title']) })
+    }
+  }
+  return pages
+}
+
 // No maxTools: the Messages API documents no limit on the number of tools in a request.
 export function createAnthropicAdapter(): LlmAdapter {
   return {
