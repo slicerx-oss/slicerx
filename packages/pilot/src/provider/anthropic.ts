@@ -34,6 +34,16 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
+/** Whether a tool call's streamed arguments are whole JSON; a reply cut off at the output limit leaves them mid-way. */
+function wholeJson(text: string): boolean {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function parseArgs(text: string): unknown {
   try {
     const v: unknown = JSON.parse(text || '{}')
@@ -136,6 +146,8 @@ export function createAnthropicAdapter(): LlmAdapter {
     async *parse(body: AsyncIterable<Uint8Array>): AsyncIterable<LlmEvent> {
       const blocks = new Map<number, Obj>()
       const partial = new Map<number, string>()
+      // tool_use blocks that have not stopped yet: one the output limit cut off may never get its stop
+      const open = new Set<number>()
       let sawCall = false
       let stop: LlmStop = 'end'
       let inputTokens = 0
@@ -179,6 +191,7 @@ export function createAnthropicAdapter(): LlmAdapter {
             }
             blocks.set(index, b)
             partial.set(index, '')
+            if (b['type'] === 'tool_use') open.add(index)
             break
           }
           case 'content_block_delta': {
@@ -218,8 +231,9 @@ export function createAnthropicAdapter(): LlmAdapter {
               const input = json ? parseArgs(json) : isObj(b['input']) ? b['input'] : {}
               b['input'] = input
               if (b['type'] === 'tool_use') {
+                open.delete(index)
                 sawCall = true
-                yield { type: 'tool_call', call: { id: str(b['id']), name: decodeToolName(str(b['name'])), arguments: JSON.stringify(input) } }
+                yield { type: 'tool_call', call: { id: str(b['id']), name: decodeToolName(str(b['name'])), arguments: JSON.stringify(input), ...(json && !wholeJson(json) ? { incomplete: true as const } : {}) } }
               }
             }
             break
@@ -246,6 +260,14 @@ export function createAnthropicAdapter(): LlmAdapter {
           default:
             break
         }
+      }
+      // a tool_use the stream never stopped is still in raw, so it is a call too: marked incomplete, it is answered, not run
+      for (const index of [...open].sort((a, b) => a - b)) {
+        const b = blocks.get(index)
+        if (!b) continue
+        b['input'] = {}
+        sawCall = true
+        yield { type: 'tool_call', call: { id: str(b['id']), name: decodeToolName(str(b['name'])), arguments: '{}', incomplete: true } }
       }
       if (stop === 'end' && sawCall) stop = 'tool_calls'
       yield { type: 'usage', inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, ...(webSearches === undefined ? {} : { webSearches }) }

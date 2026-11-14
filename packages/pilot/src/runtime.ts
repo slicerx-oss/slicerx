@@ -1792,8 +1792,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         nudged = true
         continue
       }
-      // A cut-off tool call carries arguments that end mid-way: it is answered as such, not run.
-      const clipped = cut && toolCalls.length > 0 ? toolCalls[toolCalls.length - 1] : undefined
+      // A cut-off tool call carries arguments that end mid-way: it is answered as such, not run. The adapter marks the
+      // calls whose arguments never completed, and the complete ones before them run; with no mark, the last call is
+      // the one the limit cut.
+      const marked = toolCalls.filter((c) => c.incomplete)
+      const clipped = new Set(marked.length > 0 ? marked : cut ? toolCalls.slice(-1) : [])
       const assistant: LlmMessage = { role: 'assistant', content: text }
       if (toolCalls.length && !wrap) assistant.toolCalls = toolCalls
       if (raw?.length && !wrap) {
@@ -1844,7 +1847,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: false, skipped: true, message: 'Skipped because the run was canceled.' }) })
           continue
         }
-        if (call === clipped) {
+        if (clipped.has(call)) {
           watch({ type: 'tool_call', callId: call.id, tool: call.name, source: findTool(call.name)?.source ?? 'command', input: call.arguments })
           watch({ type: 'tool_result', callId: call.id, ok: false, summary: 'Cut off at the output limit before the call was complete' })
           messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: false, error: CLIPPED_NOTE }) })

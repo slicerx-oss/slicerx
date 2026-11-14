@@ -24,6 +24,8 @@ export interface LlmToolCall {
   name: string
   /** Raw JSON text as the model produced it; validated before use. */
   arguments: string
+  /** The reply was cut off at the output limit before these arguments were complete; the call never runs. */
+  incomplete?: true
 }
 
 export type LlmMessage =
