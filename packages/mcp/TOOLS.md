@@ -24,7 +24,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_model_push` | 1.0.0 |  |  | read | Read Push and pull as the person has it open in SlicerX's Model: open (false while it is not), the picked face (object, part, a point "at" on it, its outward normal, and how thick the body is behind it), the Distance box as typed and the distance it reads as (mm), and the operation that makes (pull: Pull out adds material; cut: a negative distance cuts; through: the cut opens a hole). |
 | `slicerx_app_model_push_set` | 1.0.0 |  |  | read | Type a distance into the Distance box of the Push and pull the person has open in SlicerX's Model, as the person would: positive pulls the face out, negative cuts. |
 | `slicerx_app_paint` | 1.0.0 |  |  | read | Read an object's color, seam, support or fuzzy paint in SlicerX's shown plate. |
-| `slicerx_app_paint_apply` | 1.0.0 |  |  | slice | Apply this client's live paint preview in SlicerX. |
+| `slicerx_app_paint_apply` | 1.1.0 |  |  | slice | Apply this client's live paint preview in SlicerX. |
 | `slicerx_app_paint_clear` | 1.0.0 |  |  | slice | Clear one object's paint layer on SlicerX's shown plate, as Clear layer in the paint panel. |
 | `slicerx_app_paint_from_texture` | 1.0.0 |  |  | read | Preview color paint from an object's texture in SlicerX's shown plate without changing it: the texture the object was opened with (an OBJ opened together with its MTL and images, or a 3MF with textures). |
 | `slicerx_app_paint_preview` | 1.1.0 |  |  | read | Preview paint on an object in SlicerX's shown plate without changing it. |
@@ -193,7 +193,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_orient` | 1.4.0 |  |  | slice | Find the rotation with the least support (support volume and overhang area beyond the support angle) and good bed contact for an object, and apply it when apply is true. |
 | `slicerx_orientation_search` | 1.0.0 |  |  | slice | Choose how to lay a part on the bed by slicing each candidate orientation: the six axis orientations, plus 45 degree tilts when asked. |
 | `slicerx_overnight_readiness` | 1.0.0 |  |  | read | Pre-flight for a long unattended print on one printer. |
-| `slicerx_paint_apply` | 1.4.0 |  |  | slice | Apply a paint preview as a design step (it replays, saves and undoes like any step). |
+| `slicerx_paint_apply` | 1.5.0 |  |  | slice | Apply a paint preview as a design step (it replays, saves and undoes like any step). |
 | `slicerx_paint_preview` | 1.5.0 |  |  | read | See what painting a design would do, without changing it: the triangles, area and connected regions a target paints on each part, and a picture framed on them (the PNG only with image: true). |
 | `slicerx_paint_regions` | 1.2.0 |  |  | read | Read a design's paint back: for one layer, each part's painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. |
 | `slicerx_partner_devices` | 1.0.0 | Partner phones | printers | read, ungated | Read the partner phones the SlicerX hub answers away from home: phone apps from other companies that the person paired in Settings, Printer bridge, Devices, each under its app's name. |
