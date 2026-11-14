@@ -1244,14 +1244,15 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       break
     }
   }
-  // the parts that are meshes, read before the kept bodies are meshed too
-  const meshIndices = parts.flatMap((x, i) => (meshPart(x) ? [i] : []))
+  // the parts that are meshes, read before the kept bodies are meshed too; asked for exact lofts alone, a shape is
+  // made on the mesh, so only a solid counts
+  const meshIndices = parts.flatMap((x, i) => (meshPart(x) || (!req.exact && !x.smb && x.body === undefined) ? [i] : []))
   // the result's meshes, made now for kept bodies
   parts = await meshedAll(call, parts)
   if (before) before = await meshedAll(call, before)
   const made = madeAfter(steps, keys, status, parts)
   // the solids stay in the cache here: the caller gets meshes, and a project or an undo step never holds one
-  return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}), ...(found.quiet.length ? { exactLoftsQuiet: found.quiet } : {}), ...(req.exact ? { meshParts: meshIndices } : {}) }
+  return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}), ...(found.quiet.length ? { exactLoftsQuiet: found.quiet } : {}), ...(req.exact || req.exactLofts ? { meshParts: meshIndices } : {}) }
 }
 
 /**

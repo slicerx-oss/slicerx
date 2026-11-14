@@ -269,8 +269,8 @@ export interface ReplayResult {
   madeBy?: Record<number, string>
   /** Steps the exact kernel failed on in this replay, which ran on the mesh instead (exact.ts). */
   exactFellBack?: string[]
-  /** On a replay with exact solids: the parts that are meshes, by index, beside the exact ones (an added mesh part,
-   * or a part a step took to the mesh). */
+  /** On a replay with exact solids or exact lofts: the parts that are meshes, by index, beside the exact ones (an added
+   * mesh part, a part a step took to the mesh, or a loft the engine made no body for). */
   meshParts?: number[]
   /**
    * New-body lofts asked exact by `exactLofts` alone that the engine made no body for, which are today's mesh lofts
