@@ -81,7 +81,8 @@ function chat(steps: Step[], tools: PilotTool<never>[], designs = false) {
   const { models: _tiers, ...base } = DEFAULT_CONFIG
   // the design tab: the runtime reads it from design.new being offered
   const offered = designs ? [...tools, tool('design.new', 'cad')] : tools
-  const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-5-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: offered })
+  // a Claude model without tool search, so a capped chat picks its toolsets by kind
+  const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-4-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: offered })
   const say = async (message: string): Promise<LlmHttpRequest[]> => {
     const at = llm.sent.length
     for await (const _ of pilot.run('s1', message)) void _

@@ -13,6 +13,18 @@ import type { LlmAdapter, LlmEvent, LlmRequest, LlmStop } from './types'
 const DEFAULT_BASE = 'https://api.anthropic.com'
 const BUDGET = { low: 2048, medium: 8192, high: 16000 } as const
 const EPHEMERAL = { type: 'ephemeral' } as const
+/** The tool search tool a `toolSearch` request carries, never deferred. */
+export const TOOL_SEARCH_TOOL = { type: 'tool_search_tool_bm25_20251119', name: 'tool_search_tool_bm25' } as const
+/** The beta that takes tool_addition and tool_removal blocks by reference in a system message. */
+export const TOOL_CHANGES_BETA = 'mid-conversation-tool-changes-2026-07-01'
+
+/**
+ * Models that take tool search and tool changes in a mid-chat system message both, so a chat on one can send its whole
+ * catalog once and change it only by appending.
+ */
+export function toolSearchModel(model: string): boolean {
+  return /^claude-(fable|mythos)-5(-|$)|^claude-(opus-5|sonnet-5-5|haiku-5-5|opus-4-8)(-|$)/.test(model)
+}
 
 /** Models that think adaptively and take `output_config.effort`; `budget_tokens` is a 400 on them. */
 export function adaptiveThinking(model: string): boolean {
@@ -83,6 +95,13 @@ function messageList(req: LlmRequest): { system: string; messages: Obj[] } {
         if (blocks.length > 0) messages.push({ role: 'assistant', content: blocks })
         break
       }
+      case 'tools': {
+        // tool changes go only with a tool search request; elsewhere the chat's tools are sent as they are
+        if (!req.toolSearch || m.add.length + m.remove.length === 0) break
+        const ref = (name: string) => ({ type: 'tool_reference', name: encodeToolName(name) })
+        messages.push({ role: 'system', content: [...m.add.map((n) => ({ type: 'tool_addition', tool: ref(n) })), ...m.remove.map((n) => ({ type: 'tool_removal', tool: ref(n) }))] })
+        break
+      }
       case 'tool': {
         const content = m.images?.length
           ? [{ type: 'text', text: m.content }, ...m.images.map((i) => ({ type: 'image', source: { type: 'base64', media_type: i.mime, data: i.data } }))]
@@ -120,10 +139,13 @@ export function createAnthropicAdapter(): LlmAdapter {
     id: 'anthropic',
     build(req: LlmRequest, opts?: { baseUrl?: string }): LlmHttpRequest {
       const { system, messages } = messageList(req)
-      const tools: Obj[] = req.tools.map((t) => ({ name: encodeToolName(t.name), description: t.description, input_schema: t.parameters }))
-      // the tools and the system prompt are the same every turn, so they are read from the cache after the first
-      const lastTool = tools[tools.length - 1]
+      const search = req.toolSearch === true
+      const tools: Obj[] = req.tools.map((t) => ({ name: encodeToolName(t.name), description: t.description, input_schema: t.parameters, ...(search && t.deferred ? { defer_loading: true } : {}) }))
+      // the tools and the system prompt are the same every turn, so they are read from the cache after the first; the
+      // point goes on the last tool that loads, as a deferred one takes none
+      const lastTool = tools.findLast((t) => t['defer_loading'] !== true)
       if (lastTool) lastTool['cache_control'] = { ...EPHEMERAL }
+      if (search) tools.push({ ...TOOL_SEARCH_TOOL })
       if (req.webSearch) tools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 3 })
       const adaptive = adaptiveThinking(req.model)
       // current models think adaptively and take an effort; older ones a token budget
@@ -161,7 +183,7 @@ export function createAnthropicAdapter(): LlmAdapter {
         provider: 'anthropic',
         url: `${base}/v1/messages`,
         method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+        headers: { 'content-type': 'application/json', accept: 'text/event-stream', ...(messages.some((m) => m['role'] === 'system') ? { 'anthropic-beta': TOOL_CHANGES_BETA } : {}) },
         body: JSON.stringify(body),
       }
     },
@@ -271,6 +293,10 @@ export function createAnthropicAdapter(): LlmAdapter {
             break
           }
           case 'message_stop':
+            break
+          // mimir cloud's own event, ahead of the provider's: its proxy takes tool search requests
+          case 'mimir':
+            if (ev['tool_search'] === true) yield { type: 'tool_search' }
             break
           case 'error': {
             const e = isObj(ev['error']) ? ev['error'] : {}

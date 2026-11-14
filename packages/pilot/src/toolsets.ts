@@ -17,6 +17,9 @@
 // which take the printer as an argument, so they stay four whatever the fleet's size. A turn of the same kind as the
 // last sends the last list again, and while an approved plan is being built every turn is a design turn. A turn that
 // is none of these alone is mixed: it picks as before, with the safety tools always in.
+//
+// A Claude model with tool search picks nothing here: its chat sends the whole catalog on every request, most of it
+// deferred (tool-search.ts). The cap and the per-turn pick stay for every other model and provider.
 import type { PilotContext } from '@slicerx/contracts'
 import { z } from 'zod'
 import { onEveryLocalTurn, toolGroupOf, type ToolSurface } from './surfaces'
