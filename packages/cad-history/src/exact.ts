@@ -466,15 +466,20 @@ export function tessellated(t: Tessellated): Pick<ExactPart, 'positions' | 'indi
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 
-/** The step's transform as a frame when it only turns and moves (the kernel's ops are rigid), else null. */
-export function rigidFrame(m: Mat4): { origin: Vec3; u: Vec3; normal: Vec3 } | null {
+/** How a transform keeps shapes: 1 when it only turns and moves, -1 when it mirrors as well, 0 when it stretches. */
+function handOf(m: Mat4): 1 | -1 | 0 {
   const x: Vec3 = [m[0]!, m[1]!, m[2]!]
   const y: Vec3 = [m[4]!, m[5]!, m[6]!]
   const z: Vec3 = [m[8]!, m[9]!, m[10]!]
   const near = (a: number, b: number) => Math.abs(a - b) < 1e-9
-  if (!(near(dot(x, x), 1) && near(dot(y, y), 1) && near(dot(z, z), 1) && near(dot(x, y), 0) && near(dot(y, z), 0) && near(dot(x, z), 0))) return null
-  if (dot(cross(x, y), z) < 0) return null
-  return { origin: [m[12]!, m[13]!, m[14]!], u: x, normal: z }
+  if (!(near(dot(x, x), 1) && near(dot(y, y), 1) && near(dot(z, z), 1) && near(dot(x, y), 0) && near(dot(y, z), 0) && near(dot(x, z), 0))) return 0
+  return dot(cross(x, y), z) < 0 ? -1 : 1
+}
+
+/** The step's transform as a frame when it only turns and moves (the kernel's ops are rigid), else null. */
+export function rigidFrame(m: Mat4): { origin: Vec3; u: Vec3; normal: Vec3 } | null {
+  if (handOf(m) !== 1) return null
+  return { origin: [m[12]!, m[13]!, m[14]!], u: [m[0]!, m[1]!, m[2]!], normal: [m[8]!, m[9]!, m[10]!] }
 }
 
 /** A piece of a kernel loop: a line to `to`, or an arc to it around `center` (sweep counterclockwise positive). */
@@ -776,8 +781,11 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
   const p = s.params
   let parts = given
   const frame = rigidFrame(s.transform)
-  if (!frame) return null
-  const solid = (b: ExactPart | undefined) => (b?.body !== undefined ? b.body : b?.smb ? { smb: b.smb } : null)
+  // a join or cut mirrored where it sits (a mirror of steps) goes to the kernel as its outline in the mirrored frame:
+  // the kernel's v is normal x u, so the outline flips in v there, as for a frame given the other way round
+  const mirrored = p.op === 'shape.extrude' && (p.spec.operation ?? 'new') !== 'new' && handOf(s.transform) === -1
+  if (!frame && !mirrored) return null
+  const solid =(b: ExactPart | undefined) => (b?.body !== undefined ? b.body : b?.smb ? { smb: b.smb } : null)
   // kept bodies come back by number with their faces' keys, text ones as text
   const kept = solids.keep ? { withKeys: true } : { save: true }
   const reply = (r: unknown, k = 'body') => bodyOf(solids, r, k)

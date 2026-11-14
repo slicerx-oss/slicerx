@@ -16,6 +16,7 @@ import { notClosedWords, partClosure, type Closure } from './closure'
 import { partBoxes, roundTenth, sunkNote, sunkParts } from './sunk'
 import { movedStep } from './step-reshape'
 import { seatNew } from './seat'
+import { withArcDipNote } from './arc-dip'
 import { type LoftSection, withThinNote } from './section-width'
 import { gapMm, gapSentence, nozzleOr } from './design-check'
 import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
@@ -23,6 +24,7 @@ import type { PlanRegistry } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, featureArg, withFeature, faceAt, item, movedPaint, partAt, partsAt, pieceNameFor, pieceNameNote, replayChange, stepOut, type Design } from './design-tools'
 import { ToolInputError } from './errors'
+import { mirroredAxis, mirroredConstraints, mirroredLoops, mirroredPlacement, mirroredPoints } from './sketch-mirror'
 import type { AppLinkCaller } from './app-route'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
@@ -57,6 +59,48 @@ export function frameFor(origin: V3, normal: V3, u?: V3): { origin: V3; normal: 
   if (!uu) uu = Math.abs(w[2]) > 0.9 ? (unit([1 - w[0] * w[0], -w[0] * w[1], -w[0] * w[2]]) ?? [1, 0, 0]) : (unit(cross([0, 0, 1], w)) ?? [1, 0, 0])
   const z0 = (a: V3): V3 => a.map((c) => c + 0) as V3
   return { origin, normal: z0(w), u: z0(uu), v: z0(cross(w, uu)) }
+}
+
+/** How far from square a frame given with its v may be: the cosine between two of its axes. */
+export const FRAME_TOLERANCE = 1e-4
+
+const vecText = (a: V3): string => `[${a.map((c) => Math.round(c * 1e4) / 1e4 + 0).join(', ')}]`
+
+/**
+ * A sketch plane as a client gives it, as the engine reads it (v = normal x u, sx-geom FaceFrame::checked), and
+ * whether the v given runs the other way, so what is drawn on it is mirrored in v to land where that frame puts it
+ * (sketch-mirror.ts). Each axis is scaled to 1 long, as before; a v given must be square to u and the normal, or a
+ * refusal says which are not and by how much. With v and no u, u is v x normal.
+ */
+export function givenFrame(f: { origin: V3; normal: V3; u?: V3 | undefined; v?: V3 | undefined }): { frame: { origin: V3; normal: V3; u: V3; v: V3 }; mirrored: boolean } {
+  // a v or u of no length says no direction, so it is read as not given, as before
+  const v = f.v && unit(f.v)
+  const w = unit(f.normal)
+  if (!v || !w) return { frame: frameFor(f.origin, f.normal, f.u), mirrored: false }
+  const given = f.u && unit(f.u)
+  const u = given ?? cross(v, w)
+  const axes: [string, V3][] = [...(given ? [['u', u] as [string, V3]] : []), ['v', v], ['normal', w]]
+  const off: string[] = []
+  for (let i = 0; i < axes.length; i++)
+    for (let j = i + 1; j < axes.length; j++) {
+      const [[ka, a], [kb, b]] = [axes[i]!, axes[j]!]
+      const c = dot(a, b)
+      if (Math.abs(c) > FRAME_TOLERANCE) off.push(`${ka} and ${kb} meet at ${Math.round((Math.acos(Math.max(-1, Math.min(1, c))) * 180_000) / Math.PI) / 1000} degrees`)
+    }
+  if (off.length) throw new ToolInputError(`frame: with v given, u, v and normal must be at right angles to each other, within ${FRAME_TOLERANCE}; here ${off.join(', ')}. Fix them, or leave v out and v is normal × u.`)
+  const frame = frameFor(f.origin, f.normal, u)
+  return { frame, mirrored: dot(frame.v, v) < 0 }
+}
+
+/** Why a frame that mirrors what is drawn on it cannot take this (text or artwork would read backwards), or null. */
+export function mirroredRefusal(f: { origin: V3; normal: V3; u?: V3 | undefined; v?: V3 | undefined }, what: string): string {
+  const w = unit(f.normal)!
+  return `frame: v ${vecText(f.v!)} runs against normal × u (${vecText(givenFrame(f).frame.v)} here), so this plane is seen from behind and ${what} would read backwards. Keep v and give u as v × normal (${vecText(cross(unit(f.v!)!, w))}), or leave v out.`
+}
+
+/** The note a step drawn on a mirroring frame ends with, filled in from that frame. */
+export function mirroredNote(f: { v?: V3 | undefined }): string {
+  return `The frame's v ${vecText(f.v!)} runs opposite normal × u, so the sketch was mirrored onto the step's frame and each point stays where this frame put it.`
 }
 
 /**
@@ -159,10 +203,10 @@ export function triangleAt(tris: Tri[], at: V3, normal?: V3): number {
   return first.i
 }
 
-/** Where the line through `at` along unit `dir` crosses the triangles: how far along it, and the face's outward normal. */
-function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3 }[] {
-  const out: { s: number; n: V3 }[] = []
-  for (const t of tris) {
+/** Where the line through `at` along unit `dir` crosses the triangles: how far along it, the face's outward normal, and the triangle. */
+function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3; i: number }[] {
+  const out: { s: number; n: V3; i: number }[] = []
+  for (const [i, t] of tris.entries()) {
     if (!(t.area > 0)) continue
     const [a, b, c] = t.p
     const e1 = sub(b, a)
@@ -177,7 +221,7 @@ function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3 }[]
     const r = cross(q, e1)
     const v = dot(dir, r) / det
     if (v < -1e-9 || u + v > 1 + 1e-9) continue
-    out.push({ s: dot(e2, r) / det, n: t.n })
+    out.push({ s: dot(e2, r) / det, n: t.n, i })
   }
   return out
 }
@@ -186,6 +230,34 @@ function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3 }[]
 const HOLE_OVERLAP_MM = 0.05
 /** The entry face holds the hole's circle when the face there is this close to the entry's plane, mm. */
 const HOLE_FLAT_MM = 0.01
+/** How far off the part a hole's point may be and still be taken onto it along its normal, mm. */
+const HOLE_ONTO_MM = 1
+/** How far outside a curved face a hole's cut starts, so its end never only touches the face it goes into, mm. */
+const HOLE_CLEAR_MM = 0.05
+
+/** Where the line through `at` along `normal` meets the part nearest `at`, within HOLE_ONTO_MM, on a face facing that way. */
+function ontoPart(tris: readonly Tri[], at: V3, normal: V3): { at: V3; mm: number } | undefined {
+  const n = unit(normal)
+  if (!n) return undefined
+  const hit = lineHits(tris, at, n)
+    .filter((h) => Math.abs(h.s) <= HOLE_ONTO_MM && dot(h.n, n) >= Math.cos(Math.PI / 6))
+    .reduce<{ s: number } | undefined>((x, y) => (!x || Math.abs(y.s) < Math.abs(x.s) ? y : x), undefined)
+  return hit && { at: at.map((c, k) => c + n[k]! * hit.s) as V3, mm: Math.abs(hit.s) }
+}
+
+/** The refusal for a hole's point off the parts: the point of their surface nearest it, and how far. */
+function offPart(parts: readonly (readonly Tri[])[], at: V3): ToolInputError {
+  const r3 = (c: number) => Math.round(c * 1000) / 1000 || 0
+  let best: { q: V3; gap: number } | undefined
+  for (const tris of parts) for (const t of tris) {
+    if (!(t.area > 0)) continue
+    const q = closest(at, t.p)
+    const gap = len(sub(at, q))
+    if (!best || gap < best.gap) best = { q, gap }
+  }
+  const where = best ? `; the surface nearest it is at (${best.q.map(r3).join(', ')}), ${r3(best.gap)} mm away` : ''
+  return new ToolInputError(`at: no face within ${NEAR_MM} mm of (${at.join(', ')})${where}; give a point on the face the hole starts at`)
+}
 
 /**
  * Where a new hole goes into a part, from a point on its axis line and the axis (either way round), or from a point on
@@ -194,13 +266,22 @@ const HOLE_FLAT_MM = 0.01
  * `into`, the way into the material there; and `wallMm`, how far the material runs that way (through the wall the hole
  * starts in). Anything else is refused with what is there.
  */
-function newHolePath(tris: readonly Tri[], at: V3, axis: V3 | undefined, normal: V3 | undefined, radiusMm: number): { entry: V3; into: V3; wallMm: number } {
+function newHolePath(tris: readonly Tri[], typed: V3, axis: V3 | undefined, normal: V3 | undefined, radiusMm: number, curvedAt?: (triangle: number) => boolean | undefined): { entry: V3; into: V3; wallMm: number; curved: boolean; onto?: number } {
   const r3 = (c: number) => Math.round(c * 1000) / 1000 || 0
   const mm = (v: V3) => v.map(r3).join(', ')
   const notFlat = (p: V3) => new ToolInputError(`center: the face at (${mm(p)}) is not flat across the hole's ${r3(radiusMm * 2)} mm circle (it runs off the face or onto a round one); a hole starts on a flat face, such as the top of a boss`)
   let a: V3 | undefined
+  let at = typed
+  let onto: number | undefined
   if (axis) a = unit(axis)
   else {
+    // a point a little off the part, as a curved side's point often is, goes onto it along its normal
+    if (!tris.some((t) => t.area > 0 && distance(at, t.p) <= NEAR_MM)) {
+      const on = normal && ontoPart(tris, at, normal)
+      if (!on) throw offPart([tris], at)
+      at = on.at
+      onto = on.mm
+    }
     try {
       a = tris[triangleAt([...tris], at, normal)]!.n
     } catch (e) {
@@ -230,7 +311,9 @@ function newHolePath(tris: readonly Tri[], at: V3, axis: V3 | undefined, normal:
     const near = lineHits(tris, q, into).reduce<{ s: number; n: V3 } | null>((x, y) => (!x || Math.abs(y.s) < Math.abs(x.s) ? y : x), null)
     if (!near || Math.abs(near.s) > HOLE_FLAT_MM || dot(near.n, first.n) < 0.9999) throw notFlat(entry)
   }
-  return { entry, into, wallMm: exit.d }
+  // a curved entry: the face says so, or the facets under the circle lean off each other
+  const curved = curvedAt?.(first.i) ?? tris.some((t) => t.area > 0 && distance(entry, t.p) <= radiusMm && dot(t.n, first.n) > 0.5 && dot(t.n, first.n) < 1 - 1e-9)
+  return { entry, into, wallMm: exit.d, curved, ...(onto === undefined ? {} : { onto }) }
 }
 
 const faceRef = z
@@ -265,9 +348,10 @@ function parsedAt<T extends z.ZodType>(schema: T, v: unknown, field: string): z.
   throw new ToolInputError(`${at.path.map(String).join('.')}: ${at.message}`)
 }
 
-const frameSchema = z
-  .object({ origin: vec3, normal: vec3, u: vec3.optional(), v: vec3.optional() })
-  .describe('Sketch plane: the "frame" of slicerx_geom_face_pick, or {"origin":[x,y,z],"normal":[x,y,z]} for any plane. Shape and sketch coordinates are [u, v] in it. Absent: the bed (origin 0,0,0, normal +Z, u along +X)')
+const frameShape = z.object({ origin: vec3, normal: vec3, u: vec3.optional(), v: vec3.optional() })
+const frameSchema = frameShape.describe('Sketch plane: the "frame" of slicerx_geom_face_pick, or {"origin":[x,y,z],"normal":[x,y,z]} for any plane. Shape and sketch coordinates are [u, v] in it; v is normal × u unless given. Absent: the bed (origin 0,0,0, normal +Z, u along +X)')
+// a local model's frame text is as it was before v was kept, which only cloud turns are told
+const localFrameSchema = frameShape.describe('Sketch plane: the "frame" of slicerx_geom_face_pick, or {"origin":[x,y,z],"normal":[x,y,z]} for any plane. Shape and sketch coordinates are [u, v] in it. Absent: the bed (origin 0,0,0, normal +Z, u along +X)')
 
 const segment = z
   .object({
@@ -655,8 +739,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     if (!face.at) throw new ToolInputError('face: give "at" (a point on the face) or "triangle"')
     return { ...faceAt(d, face.at, face.normal), at: face.at }
   }
-  const plane = (f: z.infer<typeof frameSchema> | undefined): Record<string, unknown> => (f ? { frame: frameFor(f.origin, f.normal, f.u) } : {})
-  const frameOf = (f: z.infer<typeof frameSchema> | undefined): FaceFrame | undefined => (f ? frameFor(f.origin, f.normal, f.u) : undefined)
+  // a frame as the engine reads it; a caller that draws on a frame mirroring what is on it mirrors its sketch (sided)
+  const frameOf = (f: Frame | undefined): FaceFrame | undefined => (f ? givenFrame(f).frame : undefined)
+  const plane = (f: Frame | undefined): Record<string, unknown> => (f ? { frame: frameOf(f) } : {})
+  const sided = (f: Frame | undefined): boolean => (f ? givenFrame(f).mirrored : false)
+  /** A sketch's loops as the engine reads them on its frame: mirrored in v when the frame given mirrors them. */
+  const onFrame = <T>(f: Frame | undefined, loops: readonly T[]): T[] => (sided(f) ? mirroredLoops(loops) : [...loops])
+  // the summary of a step drawn on a mirroring frame, with the note that says so
+  const noted = <T extends { summary: string }>(f: Frame | undefined, out: T): T => (f && sided(f) ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${mirroredNote(f)}` } : out)
   // a finished sketch of the design timeline, in the frame of the design it is used on: only the app keeps them
   const finished = (id: string, design: string) => {
     const host = deps.designs
@@ -889,7 +979,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.12.3',
+    version: '1.12.4',
     source: 'command',
     permission: 'slice',
     description:
@@ -919,15 +1009,20 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.sketch !== undefined && (i.shape || i.frame)) throw new ToolInputError('sketch: the sketch gives the shape and plane; leave shape and frame out')
       const f = i.frame
       if (i.shape?.type === 'sketch') splinesOk(i.shape.loops)
+      // on a frame that mirrors what is drawn on it, the shape and its placement are mirrored onto the engine's frame
+      const flipped = sided(f)
+      if (flipped && (i.shape?.type === 'text' || i.shape?.type === 'svg')) throw new ToolInputError(mirroredRefusal(f!, i.shape.type === 'text' ? 'the text' : 'the artwork'))
+      const shapeIn = flipped && i.shape?.type === 'sketch' ? { ...i.shape, loops: mirroredLoops(i.shape.loops) } : i.shape
+      const placementIn = flipped && i.shape ? mirroredPlacement(i.shape.type, i.placement) : i.placement
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
         const k = i.sketch !== undefined ? finished(i.sketch, d.id) : null
         const frame = k ? k.frame : frameOf(f)
-        const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
+        const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : shapeIn
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
         const piece = newPiece(d, i)
-        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: piece ?? i.name, slot: i.slot })
+        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: placementIn, spec, name: piece ?? i.name, slot: i.slot })
         const on = i.operation === 'join' ? (part ?? 0) : -1
         const before = on >= 0 ? partBoxes(d) : []
         const n = d.parts.length
@@ -951,35 +1046,37 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const out = await seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name))
         const lifted = liftable.map((s) => `${d.parts[s.part]!.name} ${roundTenth(s.depthMm)} mm`).join(', ')
         const said = [lifted ? `Lifted ${lifted} onto the new top of ${d.parts[on]!.name}, at the steps that made them` : '', on >= 0 ? sunkNote(d, on, sunk) : ''].filter(Boolean).join('. ')
-        return said ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${said}` } : out
+        return noted(f, said ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${said}` } : out)
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch extrudes on a design; give its id as design')
       if (!i.shape) throw new ToolInputError('shape: give the shape to extrude')
-      const out = await call('shape.extrude', { shape: i.shape, ...plane(f), ...(i.placement ? { placement: i.placement } : {}), spec, ...(await target(i.target, i.operation)) })
-      return { summary: `${verb} a ${i.shape.type} ${i.distance_mm} mm`, output: out }
+      const out = await call('shape.extrude', { shape: shapeIn, ...plane(f), ...(placementIn ? { placement: placementIn } : {}), spec, ...(await target(i.target, i.operation)) })
+      return noted(f, { summary: `${verb} a ${i.shape.type} ${i.distance_mm} mm`, output: out })
     },
   })
 
+  const revolveInput = z.object({
+    loops: loops.optional(),
+    sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id instead of loops and frame'),
+    frame: frameSchema.optional(),
+    axis: z.object({ point: vec2, direction: vec2 }).describe('The axis in the sketch plane, [u, v]'),
+    angle_deg: z.number().positive().max(360).default(360),
+    operation,
+    target: modelArg.optional(),
+    design: designArg.optional(),
+    feature: featureArg,
+    part: partArg,
+    name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
+    slot: slotArg,
+  })
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.10.1',
+    version: '1.10.2',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
-    input: z.object({
-      loops: loops.optional(),
-      sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id instead of loops and frame'),
-      frame: frameSchema.optional(),
-      axis: z.object({ point: vec2, direction: vec2 }).describe('The axis in the sketch plane, [u, v]'),
-      angle_deg: z.number().positive().max(360).default(360),
-      operation,
-      target: modelArg.optional(),
-      design: designArg.optional(),
-      feature: featureArg,
-      part: partArg,
-      name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
-      slot: slotArg,
-    }),
+    input: revolveInput,
+    localInput: revolveInput.extend({ frame: localFrameSchema.optional() }),
     async run(i) {
       slotOk(i)
       if (i.sketch !== undefined && (i.loops || i.frame)) throw new ToolInputError('sketch: the sketch gives the loops and plane; leave loops and frame out')
@@ -989,18 +1086,20 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const part = targetPart(d, i.target, i.part)
         const k = i.sketch !== undefined ? finished(i.sketch, d.id) : null
         const frame = k ? k.frame : frameOf(i.frame)
-        const drawn = k ? k.loops : i.loops
+        const drawn = k ? k.loops : i.loops && onFrame(i.frame, i.loops)
+        const axis = k || !sided(i.frame) ? i.axis : mirroredAxis(i.axis)
         if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
         const piece = newPiece(d, i)
-        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: piece ?? i.name, slot: i.slot })
+        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis, angleDeg: i.angle_deg, operation: i.operation, name: piece ?? i.name, slot: i.slot })
         const n = d.parts.length
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
-        return seated(d, i.operation, n, pieceNamed(stepOut(d, 'Revolved'), piece, i.name))
+        return noted(i.frame, await seated(d, i.operation, n, pieceNamed(stepOut(d, 'Revolved'), piece, i.name)))
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch revolves on a design; give its id as design')
       if (!i.loops) throw new ToolInputError('loops: give the loops to revolve')
-      const out = await call('sketch.revolve', { loops: i.loops, ...plane(i.frame), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, ...(await target(i.target, i.operation)) })
-      return { summary: `Revolved the sketch ${i.angle_deg} degrees`, output: out }
+      const flipped = sided(i.frame)
+      const out = await call('sketch.revolve', { loops: onFrame(i.frame, i.loops), ...plane(i.frame), axis: flipped ? mirroredAxis(i.axis) : i.axis, angleDeg: i.angle_deg, operation: i.operation, ...(await target(i.target, i.operation)) })
+      return noted(i.frame, { summary: `Revolved the sketch ${i.angle_deg} degrees`, output: out })
     },
   })
 
@@ -1016,7 +1115,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   // checked in the tool (parsedAt), so each build turn carries only the short schema below
   const thickenShape = z.object({ thicknessMm: z.number().positive().max(1000), side: z.enum(['outward', 'inward', 'center']).optional() })
   const thicken = z.unknown().describe('{thicknessMm, side: outward|inward|center}: sides as a shell; open profiles need it')
-  const profileOut = (f: z.infer<typeof profileShape>, frame: unknown) => ({ ...(frame as object), loops: f.loops, ...(f.open ? { open: true } : {}), ...(f.landmarks?.length ? { landmarks: f.landmarks } : {}) })
+  // a profile on a frame that mirrors what is drawn on it has its loops and landmarks mirrored onto the engine's frame
+  const profileOut = (f: z.infer<typeof profileShape>, frame: unknown) => {
+    const m = sided(f.frame)
+    const marks = f.landmarks?.length ? (m ? mirroredPoints(f.landmarks) : f.landmarks) : undefined
+    return { ...(frame as object), loops: onFrame(f.frame, f.loops), ...(f.open ? { open: true } : {}), ...(marks ? { landmarks: marks } : {}) }
+  }
   const loftProfile = z
     .object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).min(1).max(256), open: z.boolean().optional(), landmarks: z.array(z.unknown()).optional() })
     .superRefine((p, ctx) => {
@@ -1026,7 +1130,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.12.2',
+    version: '1.13.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -1055,22 +1159,26 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const profiles = i.sketches ? i.sketches.map((id) => finished(id, d.id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
+        const given = i.profiles?.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`))
+        const profiles = i.sketches ? i.sketches.map((id) => finished(id, d.id)).map((k) => ({ frame: k.frame, loops: k.loops })) : given!.map((f) => profileOut(f, { frame: frameOf(f.frame) }))
         const piece = newPiece(d, i)
         const params: StepParams = loftParams({ profiles, ...loftOpts, operation: i.operation, name: piece ?? i.name, slot: i.slot })
         const n = d.parts.length
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
         // exact is not read here: the step is added, and the design's own replay decides whether its body is exact
         const out = await seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name))
-        // a body's sections under two nozzle lines are named, never refused; a cut or a thickened shell has its own reading
-        return i.operation === 'cut' || th ? out : withThinNote(out, profiles as LoftSection[], nozzleOr(deps.nozzleMm?.()))
+        // a body's sections under two nozzle lines, and arcs that dip under their section, are named, never refused; a
+        // cut or a thickened shell has its own reading
+        const flippedAt = given?.find((f) => sided(f.frame))?.frame
+        return noted(flippedAt, i.operation === 'cut' || th ? out : withArcDipNote(withThinNote(out, profiles as LoftSection[], nozzleOr(deps.nozzleMm?.())), profiles as LoftSection[]))
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
-      const profiles = i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, plane(f.frame)))
+      const given = i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`))
+      const profiles = given.map((f) => profileOut(f, plane(f.frame)))
       // each call is a run of the engine of its own, so the exact body comes back as text (bodySmb), not as a number
       const out = await call('sketch.loft', { profiles, ...loftOpts, ...(i.exact ? { exact: true, save: true } : {}), operation: i.operation, ...(await target(i.target, i.operation)) })
       const made = !i.exact ? '' : typeof out['bodySmb'] === 'string' ? ', with its exact solid' : ', without an exact solid'
-      return { summary: `${verb} through ${profiles.length} profiles${made}`, output: out }
+      return noted(given.find((f) => sided(f.frame))?.frame, { summary: `${verb} through ${profiles.length} profiles${made}`, output: out })
     },
   })
 
@@ -1085,7 +1193,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.11.1',
+    version: '1.11.2',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale, twist_deg and end_profile taper, turn and reshape it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
@@ -1124,14 +1232,16 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const end = i.end_profile as { frame?: unknown; open?: unknown } | undefined
       if (end && typeof end === 'object' && 'frame' in end) throw new ToolInputError("end_profile.frame: the end loop is drawn on the profile's own plane; leave its frame out")
       const last = end === undefined ? undefined : parsedAt(typeof end === 'object' && end.open === true ? openSweepEnd : sweepEnd, end, 'end_profile')
-      const morph = last ? { endProfile: { loops: last.loops as SketchLoop[], ...(last.open ? { open: true } : {}) } } : {}
+      // the end loop is on the profile's plane, so it is mirrored with the profile
+      const morph = last ? { endProfile: { loops: onFrame(prof?.frame, last.loops as SketchLoop[]), ...(last.open ? { open: true } : {}) } } : {}
       const pth = i.path ? parsedAt(sweepPath, i.path, 'path') : undefined
       if (pth?.smooth && !pth.points) throw new ToolInputError('path.smooth: smooth is for a path of points; draw a spline for a smooth path on a plane')
       const smooth = pth?.smooth ? { smooth: true } : {}
       const pf = prof?.frame
       const qf = pth?.frame
-      const profileLoops = prof?.loops as SketchLoop[] | undefined
-      const pathLoops = pth?.loops as SketchLoop[] | undefined
+      const profileLoops = prof && onFrame(pf, prof.loops as SketchLoop[])
+      const pathLoops = pth?.loops && onFrame(qf, pth.loops as SketchLoop[])
+      const flippedAt = sided(pf) ? pf : sided(qf) ? qf : undefined
       const points = pth?.points
       const firstPath = pathLoops?.[0]
       const pathStart = points?.[0] ?? (firstPath ? loopStart(frameOf(qf), firstPath) : undefined)
@@ -1148,50 +1258,55 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const params: StepParams = sweepParams({ profile, path, thicken: th, ...law, ...morph, operation: i.operation, name: piece ?? i.name, slot: i.slot })
         const n = d.parts.length
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
-        return seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name))
+        return noted(flippedAt, await seated(d, i.operation, n, pieceNamed(stepOut(d, verb), piece, i.name)))
       }
       if (i.profile_sketch || i.path_sketch) throw new ToolInputError(`${i.profile_sketch ? 'profile_sketch' : 'path_sketch'}: finished sketches sweep on a design; give its id as design`)
       const path = points ? { points, ...smooth } : { ...plane(qf), loops: pathLoops }
       const out = await call('sketch.sweep', { profile: { ...plane(pf), loops: profileLoops, ...(prof?.open ? { open: true } : {}) }, path, ...(th ? { thicken: th } : {}), ...law, ...morph, operation: i.operation, ...(await target(i.target, i.operation)) })
-      return { summary: `${verb} the profile along the path`, output: out }
+      return noted(flippedAt, { summary: `${verb} the profile along the path`, output: out })
     },
   })
 
   const sketch = defineTool({
     name: 'design.sketch',
-    version: '1.4.0',
+    version: '1.4.1',
     source: 'command',
     permission: 'slice',
     description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. With design, the frame is in that design's own coordinates, as its other tools take them. Without, it is in the plate's while no design was moved onto the bed; after that it is the only design's, or name the design.`,
     input: z.object({ loops: loopsRef, frame: frameRef.optional(), constraints: z.array(loopConstraint).max(8192).optional(), design: designArg.optional().describe("The design the sketch is drawn for: its frame is in that design's coordinates") }),
     async run(i) {
-      const loopsIn = i.loops
+      // on a frame that mirrors what is drawn on it, the loops and their angles are mirrored onto the engine's frame
+      const flipped = sided(i.frame)
+      const loopsIn = onFrame(i.frame, i.loops)
       splinesOk(loopsIn)
+      const followed = flipped ? (i.constraints ?? []).findIndex((c) => c.type === 'angle' && c.expr !== undefined) : -1
+      if (followed >= 0) throw new ToolInputError(`constraints.${followed}.expr: the frame's v runs against normal × u, so the sketch is mirrored onto v = normal × u and its angles turn the other way, which an angle that follows a value cannot do. Give the angle as a number, or v as normal × u.`)
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
+      const constraintsIn = flipped && i.constraints ? mirroredConstraints(i.constraints) : i.constraints
       // the design it is drawn for, or why there is none to pick, before anything is checked or solved
       const forId = sketchFor(i.design)
       await splinesDraw(loopsIn)
       const frame = frameOf(i.frame)
-      if (!i.constraints?.length) {
+      if (!constraintsIn?.length) {
         const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: loopsIn }), forId)
-        return { summary: `${k.name} is in the timeline${splines(loopsIn)}`, output: { id: k.id, name: k.name, loops: k.loops.length } }
+        return noted(i.frame, { summary: `${k.name} is in the timeline${splines(loopsIn)}`, output: { id: k.id, name: k.name, loops: k.loops.length } })
       }
       if (!host.settleSketch) throw new ToolInputError('constraints: this host cannot solve sketches; leave them out')
-      const solved = await host.settleSketch(plain({ loops: loopsIn, constraints: i.constraints as unknown as SketchConstraint[] }))
+      const solved = await host.settleSketch(plain({ loops: loopsIn, constraints: constraintsIn as unknown as SketchConstraint[] }))
       if (solved.status === 'conflict' || solved.status === 'failed') throw new ToolInputError(`constraints: they conflict (${solved.status}), so the sketch was not added; slicerx_geom_sketch_solve names the clashing ones`)
       // the solve moves spline points: two on one spot, or one dragged far, is refused here too
       await splinesDraw(solved.loops)
       const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: solved.loops, constraints: solved.constraints }), forId)
       const driven = solved.constraints.flatMap((c, n) => ('driven' in c && c.driven ? [n] : []))
       const head = solved.dof === 0 ? 'fully defined' : `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
-      return { summary: `${k.name} is in the timeline${splines(loopsIn)}, ${head}${driven.length ? `; dimensions ${JSON.stringify(driven)} are driven` : ''}`, output: { id: k.id, name: k.name, loops: k.loops, dof: solved.dof, driven } }
+      return noted(i.frame, { summary: `${k.name} is in the timeline${splines(loopsIn)}, ${head}${driven.length ? `; dimensions ${JSON.stringify(driven)} are driven` : ''}`, output: { id: k.id, name: k.name, loops: k.loops, dof: solved.dof, driven } })
     },
   })
 
   const sketchSvg = defineTool({
     name: 'design.sketch_svg',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
     description: `Turn SVG artwork into a finished sketch in the open project's design timeline, as Import SVG in the sketch tool does: each closed path of a filled or stroked shape becomes a loop of lines, arcs, circles and splines (holes stay loops inside, transforms apply), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. Open strokes, text and images are left out and named in warnings. Returns the sketch id, its loops as stored, how many of each curve, the size, and the sketch check (holes, area, any crossings).`,
@@ -1215,6 +1330,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         if (sent > SVG_ARGS) ctx.addIssue({ code: 'custom', path: ['svg'], message: `This SVG comes to ${kb(sent)} once sent to the app, and the app link takes ${kb(SVG_ARGS)}. Simplify it in a vector editor (fewer points, no embedded images, fonts, metadata or long text), or split it and import each part with its own center.` })
       }),
     async run(i) {
+      if (sided(i.frame)) throw new ToolInputError(mirroredRefusal(i.frame!, 'the artwork'))
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
       // the design it is drawn for, named or the only one there is once one was moved onto the bed, first: the default
@@ -1305,7 +1421,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const traceImage = defineTool({
     name: 'design.trace_image',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
     description: `Trace a PNG or JPEG into a finished sketch in the open project's design timeline, as Trace image in the sketch tool does: the inside (dark or light areas, opaque areas, or picked colors) is found, specks are cleaned away, and its edges become loops of lines, arcs, circles and splines (holes stay loops inside), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. The image is traced on this server, so it may be large; the loops then go to the timeline as slicerx_design_sketch sends them. Use dry_run to tune the settings first, and preview_image to see the loops over the image. Returns the sketch id, its loops, how many of each curve, the size, what was cleaned away, and the sketch check.`,
@@ -1338,6 +1454,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         if (args.mode === 'color' && !args.colors) ctx.addIssue({ code: 'custom', path: ['colors'], message: 'mode color needs colors' })
       }),
     async run(i, ctx) {
+      if (sided(i.frame)) throw new ToolInputError(mirroredRefusal(i.frame!, 'the trace'))
       const bytes = 'path' in i.image ? readImage(i.image.path) : Buffer.from(i.image.base64, 'base64')
       if (bytes.length > IMAGE_BYTES) throw imageTooLarge(bytes.length)
       if (bytes.length === 0) throw new ToolInputError('image: the file is empty. Pass a PNG or JPEG as {path} or {base64}.')
@@ -2135,11 +2252,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeMake = defineTool({
     name: 'geom.hole',
-    version: '2.0.1',
+    version: '2.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Make a new round hole in a model or a design, a circle on the face it starts at cut into it: diameter_mm across, through the wall it starts in or depth_mm deep, with a counterbore or a countersink at its entry. Give "center", its center on the flat face it starts at (or any point on its axis line), and "axis", the hole\'s axis either way round (left out, square to the face at center); or "face", a point on that face, for a hole square to it. The whole circle, and the head\'s, must sit on that flat face. To change a hole already there, use geom.hole_edit; a hole already on that axis is refused. Returns the hole as made (center, axis, diameterMm, depthMm, kind through or blind, head). With "design" it adds a cut step, and a second one for a counterbore or a countersink; with a model it writes the new STL.',
+      'Make a new round hole in a model or a design, a circle on the face it starts at cut into it: diameter_mm across, through the wall it starts in or depth_mm deep, with a counterbore or a countersink at its entry. Give "center", its center on the flat face it starts at (or any point on its axis line), and "axis", the hole\'s axis either way round (left out, square to the face at center); or "face", a point on that face, for a hole square to it; a face point up to 1 mm off the part goes onto it along its normal, and the hole goes square into the surface there. The whole circle, and the head\'s, must sit on that flat face. To change a hole already there, use geom.hole_edit; a hole already on that axis is refused. Returns the hole as made (center, axis, diameterMm, depthMm, kind through or blind, head). With "design" it adds a cut step, and a second one for a counterbore or a countersink; with a model it writes the new STL.',
     localDescription:
       'Make a new round hole of diameter_mm in a model or a design, through the wall it starts in or depth_mm deep, with a counterbore or countersink at its entry. Give center (its center on the flat face it starts at) and axis, or face (a point on that face). To change a hole already there, use geom.hole_edit. More: kb.search "make a hole".',
     input: z.object({
@@ -2186,10 +2303,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         throw new ToolInputError(`center: a ${r3(h.diameterMm)} mm hole is on that axis already, entering at (${h.entry.map(r3).join(', ')}); to change it, use geom.hole_edit`)
       }
       // where the hole goes, and the cut that makes it: a circle on the entry face cut into it, as Extrude with Cut does
-      const placed = async (tris: readonly Tri[], find: (req: Record<string, unknown>) => Promise<FoundHole>) => {
+      const placed = async (tris: readonly Tri[], find: (req: Record<string, unknown>) => Promise<FoundHole>, curvedAt?: (triangle: number) => boolean | undefined) => {
         let p: ReturnType<typeof newHolePath>
         try {
-          p = newHolePath(tris, at, axis, normal, radius)
+          p = newHolePath(tris, at, axis, normal, radius, curvedAt)
         } catch (e) {
           if (axis) await already(find, at, axis)
           throw e
@@ -2202,7 +2319,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           frame: frameFor(p.entry, p.into.map((c) => -c) as V3),
           shape: { type: 'circle' as const, diameterMm },
           placement: { center: [0, 0] as [number, number] },
-          spec: { distanceMm, extent: 'oneSide' as const, operation: 'cut' as const, ...(taperDeg ? { taperDeg } : {}) },
+          // on a curved face the cut starts a little outside it, so its end does not only touch the face
+          spec: { distanceMm, ...(p.curved ? { extent: 'twoSides' as const, distance2Mm: HOLE_CLEAR_MM } : { extent: 'oneSide' as const }), operation: 'cut' as const, ...(taperDeg ? { taperDeg } : {}) },
         })
         // to a ten-thousandth of a mm, so a depth read from float32 positions reads as typed in the history
         const cut = circle(i.diameter_mm, Math.round((through ? deep + HOLE_OVERLAP_MM : deep) * 1e4) / 1e4)
@@ -2219,6 +2337,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       }
       const headLabel = head ? `${headName === 'counterbore' ? 'Counterbore' : 'Countersink'} ${Math.round(head.diameter_mm * 100) / 100} mm` : ''
       const verb = (through: boolean) => `Made a ${r3(i.diameter_mm)} mm ${through ? 'through' : 'blind'} hole${head ? ` with a ${headName}` : ''}`
+      // the hole starts where the point's normal meets the part, when the point was off it
+      const ontoNote = (p: { entry: V3; onto?: number }) => (p.onto === undefined ? '' : `; (${at.join(', ')}) is ${r3(p.onto)} mm off the surface, so the hole starts where its direction meets the surface, at (${p.entry.map(r3).join(', ')})`)
+      const ontoOut = (p: { entry: V3; onto?: number }) => (p.onto === undefined ? {} : { onto: { from: at, to: p.entry.map(r3), mm: r3(p.onto) } })
       const plainHole = (h: FoundHole) => ({ ...readHole(h), head: 'none' })
       const onAxis = (h: FoundHole) => ({ at: h.entry, axis: h.axis })
       if (i.design) {
@@ -2238,10 +2359,21 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           }
           part = first.k
         }
-        part ??= faceAt(d, at, normal).part
+        if (part === undefined) {
+          try {
+            part = faceAt(d, at, normal).part
+          } catch (e) {
+            // a point a little off every part goes onto the one its normal meets first
+            const near = normal && tris.map((t, k) => ({ k, on: ontoPart(t, at, normal) })).filter((x) => x.on).sort((x, y) => x.on!.mm - y.on!.mm)[0]
+            if (!near) throw e instanceof ToolInputError && /^at: no face/.test(e.message) ? offPart(tris, at) : e
+            part = near.k
+          }
+        }
         const k = part
         const find = findIn(k)
-        const p = await placed(tris[k]!, find)
+        const faces = d.parts[k]?.faces
+        const kind = (t: number): string | undefined => (faces?.table[faces.ids[t] ?? -1] as { kind?: unknown } | undefined)?.kind as string | undefined
+        const p = await placed(tris[k]!, find, (t) => { const s = kind(t); return s === undefined ? undefined : s !== 'plane' })
         const host = designs()
         const steps = d.history.steps.length
         const redo = d.redo
@@ -2260,7 +2392,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         let made: Record<string, unknown> | null = null
         if (hole) made = p.headCut ? await find(onAxis(hole)).then((shaft) => readMade(hole, shaft, i), () => null) : plainHole(hole)
         const out = stepOut(d, verb(p.through))
-        return { summary: made ? out.summary : `${out.summary}; the hole was cut but not read back`, output: { ...out.output, part: k, hole: made } }
+        return { summary: `${made ? out.summary : `${out.summary}; the hole was cut but not read back`}${ontoNote(p)}`, output: { ...out.output, part: k, hole: made, ...ontoOut(p) } }
       }
       const stlPath = await path(i.model!)
       const find = (mesh: string, req: Record<string, unknown>) => findHole((r) => call('hole.find', r), { mesh: { stlPath: mesh }, ...req })
@@ -2276,7 +2408,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           made = headed && hole ? await find(headed, onAxis(hole)).then((shaft) => readMade(hole, shaft, i), () => null) : null
         } else made = hole && plainHole(hole)
       }
-      return { summary: made ? verb(p.through) : `${verb(p.through)}; the hole was cut but not read back`, output: { ...out, hole: made } }
+      return { summary: `${made ? verb(p.through) : `${verb(p.through)}; the hole was cut but not read back`}${ontoNote(p)}`, output: { ...out, hole: made, ...ontoOut(p) } }
     },
   })
 

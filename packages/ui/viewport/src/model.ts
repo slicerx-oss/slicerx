@@ -14,7 +14,7 @@ import {
   type Material,
 } from 'three'
 import type { FilamentFinish, ViewportObject, ViewportPart } from './types'
-import { allExact, creasedArrays, featureEdges, smoothNormals, type CreasedArrays } from './mesh-math'
+import { allExact, creasedArrays, CREASE_DEG, featureEdges, smoothNormals, type CreasedArrays } from './mesh-math'
 import type { MeshBuildPool } from './mesh-pool'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
@@ -22,7 +22,6 @@ import type { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 
 export { featureEdges, weldVertices } from './mesh-math'
 
-const CREASE_DEG = 40
 const EDGE_DEG = 38
 
 export interface PartEntry {
@@ -115,10 +114,11 @@ function release(part: PartEntry): void {
 /**
  * Indexed geometry whose normals average only faces within CREASE_DEG of each other (creasedArrays in mesh-math.ts),
  * except triangles with exact corner normals in `N`, which keep those inside each face of the solid and average them
- * only across a fold under CREASE_DEG. Triangle t of the result is triangle t of the input.
+ * only across a fold under CREASE_DEG; with each triangle's face id in `F`, a join between two faces shades smooth or
+ * hard along its whole length. Triangle t of the result is triangle t of the input.
  */
-export function creasedGeometry(P: Float32Array, I: ArrayLike<number>, N?: Int16Array): BufferGeometry {
-  return creasedMesh(creasedArrays(P, I, CREASE_DEG, N))
+export function creasedGeometry(P: Float32Array, I: ArrayLike<number>, N?: Int16Array, F?: ArrayLike<number>): BufferGeometry {
+  return creasedMesh(creasedArrays(P, I, CREASE_DEG, N, F))
 }
 
 /** A mesh geometry from creased arrays, with its bounds. */
@@ -132,8 +132,13 @@ function creasedMesh(a: CreasedArrays): BufferGeometry {
   return out
 }
 
+/** The part's edges: by its faces when it has exact normals and face ids (featureEdges), by the fold angle otherwise. */
+function partEdges(part: ViewportPart): Float32Array {
+  return featureEdges(part.positions, part.indices, EDGE_DEG, part.normals && part.faceIds ? { normals: part.normals, faceIds: part.faceIds } : undefined)
+}
+
 function edgeGeometry(part: ViewportPart): BufferGeometry {
-  return edgeLines(featureEdges(part.positions, part.indices, EDGE_DEG))
+  return edgeLines(partEdges(part))
 }
 
 function edgeLines(positions: Float32Array): BufferGeometry {
@@ -214,7 +219,7 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
         positions: p.positions,
         indices: p.indices,
         normals: p.normals ?? null,
-        mesh: big && !meshFinal ? standInGeometry(p.positions, p.indices) : creasedGeometry(p.positions, p.indices, p.normals),
+        mesh: big && !meshFinal ? standInGeometry(p.positions, p.indices) : creasedGeometry(p.positions, p.indices, p.normals, p.faceIds),
         edges: big ? edgeLines(new Float32Array(0)) : edgeGeometry(p),
         wide: null,
         users: new Set(),
@@ -277,7 +282,7 @@ async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuil
   // every copy gone before its turn came: nothing to make (release told each one)
   if (s.gone) return
   try {
-    const [c, e] = await Promise.all([meshFinal ? null : async.pool.crease(p.positions, p.indices, CREASE_DEG, p.normals), async.pool.edges(p.positions, p.indices, EDGE_DEG)])
+    const [c, e] = await Promise.all([meshFinal ? null : async.pool.crease(p.positions, p.indices, CREASE_DEG, p.normals, p.faceIds), async.pool.edges(p.positions, p.indices, EDGE_DEG, p.normals, p.faceIds)])
     mesh = c ? creasedMesh(c) : null
     edges = e
   } catch {
@@ -288,11 +293,11 @@ async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuil
     return
   }
   if (!meshFinal) {
-    mesh ??= creasedGeometry(p.positions, p.indices, p.normals)
+    mesh ??= creasedGeometry(p.positions, p.indices, p.normals, p.faceIds)
     s.mesh.dispose()
     s.mesh = mesh
   }
-  edges ??= featureEdges(p.positions, p.indices, EDGE_DEG)
+  edges ??= partEdges(p)
   s.edges.dispose()
   s.edges = edgeLines(edges)
   // the CAD look's wide edges, made from the stand-in's (no) edges while it showed

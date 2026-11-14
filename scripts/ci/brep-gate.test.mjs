@@ -90,7 +90,7 @@ test('the Linux job runs the same build and tests as the other systems', () => {
     'cargo clippy -p sx-brep --release --all-targets --features routine-probe,typed -- -D warnings',
     'cargo test -p sx-brep --release --features routine-probe,typed',
     'cargo clippy -p sx-geom --release --features brep --tests -- -D warnings',
-    'cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft --test exact_handover',
+    'cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft --test exact_loft_curved --test exact_loft_arcs --test exact_handover',
   ]) {
     assert.ok(linux.includes(`- run: ${cmd}`), `brep-linux runs ${cmd}`)
     assert.ok(job('brep').includes(cmd), `brep runs ${cmd}`)

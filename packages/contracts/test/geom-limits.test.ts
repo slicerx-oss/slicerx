@@ -121,6 +121,7 @@ describe('geometry time limits', () => {
   it('classes the app worker and history replay steps', () => {
     expect(geomOpClass('engine.core')).toBe('quick')
     expect(geomOpClass('history.replay')).toBe('model')
+    expect(geomOpClass('history.release')).toBe('quick')
     expect(geomOpClass('array.merged')).toBe('model')
     expect(geomOpClass('plane.cut')).toBe('mesh')
     expect(geomOpClass('paint')).toBe('mesh')

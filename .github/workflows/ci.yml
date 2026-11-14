@@ -968,7 +968,7 @@ jobs:
       - run: cargo test -p sx-brep --release --features routine-probe,typed
       # the exact solid ops through sx-geom's JSON and CLI, against exact values and the mesh path
       - run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
-      - run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft --test exact_handover
+      - run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft --test exact_loft_curved --test exact_loft_arcs --test exact_handover
 
   # The required result for the B-rep build, under the name branch protection and scripts/ci/required-checks.txt list
   # (the name says Linux, but on a pull request it also covers macOS and Windows). Passes when the path filter in detect
@@ -1043,7 +1043,7 @@ jobs:
       - if: runner.os != 'Windows'
         run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
       - if: runner.os != 'Windows'
-        run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft --test exact_handover
+        run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft --test exact_loft_curved --test exact_loft_arcs --test exact_handover
       # Windows runs both in one cargo call. Two calls build sx-brep twice (the second with other feature unification), and
       # each build compiles the kernel from scratch, about 42 minutes apiece: with the 90 minute limit that timed out 3 of 4
       # runs. One call compiles it once. The --test list is every test target of packages/brep and of packages/geom's
@@ -1054,7 +1054,7 @@ jobs:
           cargo test -p sx-brep -p sx-geom --release --features sx-brep/routine-probe,sx-brep/typed,sx-geom/brep
           --lib --test face_identity --test input_limits --test kernel --test kernel_detection --test routines --test solids
           --test typed_bodies --test typed_mesh --test typed_stitch --test typed_save --test typed_handover
-          --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft --test exact_handover
+          --test brep_parity --test brep_input --test brep_free --test exact_table --test exact_loft --test exact_loft_curved --test exact_loft_arcs --test exact_handover
       - if: failure()
         run: |
           msg="The B-rep build or tests failed on $RUNNER_OS. On a pull request this fails the required check brep (ubuntu-latest)."

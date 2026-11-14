@@ -4,9 +4,16 @@
 // are from the rails' own surface, and the body kept in the engine's table. Empty without the brep feature, so a
 // workspace test run that names every test target passes over it.
 #![cfg(feature = "brep")]
+#[allow(
+    dead_code,
+    reason = "each test file uses its own share of what they have in common"
+)]
 mod common;
 
-use common::{farthest_off_its_faces, off_its_face, sampled, volume_near};
+use common::{
+    farthest_from, farthest_off_its_faces, held_to_its_drawing, mesh_loft_keeps_corners, off_its_face,
+    rounded, sampled, sha256, volume_near,
+};
 use serde_json::{Value, json};
 use std::f64::consts::TAU;
 use sx_brep::{Surface, Tessellation};
@@ -383,12 +390,10 @@ fn what_cannot_be_made_exact_is_refused_and_nothing_is_kept() {
         ),
         "loft: profile 2 is a closed spline, which has no corners to match its pieces between"
     );
-    assert_eq!(
-        refused(
-            &json!([level(0.0, &circle(20.0)), level(20.0, &circle(24.0))]),
-            &json!({})
-        ),
-        "loft: an exact loft is made only through profiles of straight lines and splines for now; these have an arc, a circle or an ellipse"
+    // a rounded rectangle to a smaller one is made exact now, each held to its true arcs
+    held_to_its_drawing(
+        "rounded rectangles",
+        &json!({ "profiles": [level(0.0, &rounded(30.0, 20.0, 4.0)), level(20.0, &rounded(24.0, 16.0, 3.0))] }),
     );
     assert_eq!(
         refused(&hull(), &json!({ "thicken": { "thicknessMm": 1 } })),
@@ -614,10 +619,6 @@ fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
     let target = json!({ "positions": [0, 0, 0, 30, 0, 0, 0, 30, 0, 0, 0, 30], "indices": [0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2] });
     let cases = [
         (
-            json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &circle(24.0))] }),
-            "An exact loft is made only through profiles of straight lines and splines for now; these have an arc, a circle or an ellipse.",
-        ),
-        (
             json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &spline)] }),
             "Profile 2 is a closed spline, which has no corners to match its pieces between.",
         ),
@@ -642,6 +643,20 @@ fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
             (plain, asked) => panic!("{why}: {plain:?} without the ask and {asked:?} with it"),
         }
     }
+    // rounded rectangles are made exact now: the loft's own reply plus its solid as text, held to its true arcs
+    let mut request = json!({ "profiles": [level(0.0, &rounded(30.0, 20.0, 4.0)), level(20.0, &rounded(24.0, 16.0, 3.0))] });
+    let plain = op("sketch.loft", &request);
+    request["exact"] = json!(true);
+    request["save"] = json!(true);
+    let asked = op("sketch.loft", &request);
+    let reply: Value = serde_json::from_str(&asked).unwrap();
+    assert!(
+        reply.get("exact").is_none() && reply["bodySmb"].is_string(),
+        "{}",
+        reply["exact"]
+    );
+    assert_eq!(without(&asked, &printed(&reply, "bodySmb")), plain);
+    held_to_its_drawing("rounded rectangles", &request);
     assert_eq!(table::count(), start);
 }
 
@@ -776,15 +791,6 @@ fn request_parts(request: &Value) -> (Vec<Profile>, Options) {
     parsed(&request["profiles"], &opts)
 }
 
-fn sha256(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    use std::fmt::Write;
-    Sha256::digest(bytes).iter().fold(String::new(), |mut hex, b| {
-        let _ = write!(hex, "{b:02x}");
-        hex
-    })
-}
-
 #[test]
 fn the_mesh_loft_of_spline_sections_is_the_same_to_the_byte() {
     // the replies before spline pieces were matched, recorded from the code the change starts from
@@ -840,77 +846,6 @@ fn drawn_section(section: &Value, per: usize) -> Vec<V3> {
     flat.iter()
         .map(|p| vec3::add(origin, vec3::add(vec3::scale(u, p[0]), vec3::scale(v, p[1]))))
         .collect()
-}
-
-/// The farthest any of `points` is from the triangles `triangles` over `positions`. The triangles are filed in a
-/// grid of `cell` mm, and the cells are searched outward from each point until no unsearched cell could hold a
-/// nearer triangle.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    reason = "grid cells of a body a few hundred mm across"
-)]
-fn farthest_from(points: &[V3], positions: &[V3], triangles: &[[u32; 3]], cell: f64) -> f64 {
-    use std::collections::HashMap;
-    let key = |p: V3| p.map(|c| (c / cell).floor() as i64);
-    let mut grid: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
-    for (i, t) in triangles.iter().enumerate() {
-        let corners = t.map(|v| positions[v as usize]);
-        let (lo, hi) = (
-            key([0, 1, 2].map(|a| corners.iter().map(|c| c[a]).fold(f64::INFINITY, f64::min))),
-            key([0, 1, 2].map(|a| corners.iter().map(|c| c[a]).fold(f64::NEG_INFINITY, f64::max))),
-        );
-        for x in lo[0]..=hi[0] {
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    grid.entry([x, y, z]).or_default().push(i);
-                }
-            }
-        }
-    }
-    let near = |p: V3| -> f64 {
-        let at = key(p);
-        let mut best = f64::INFINITY;
-        for r in 0_i64..1000 {
-            for x in -r..=r {
-                for y in -r..=r {
-                    for z in -r..=r {
-                        if x.abs().max(y.abs()).max(z.abs()) != r {
-                            continue;
-                        }
-                        for &i in grid.get(&[at[0] + x, at[1] + y, at[2] + z]).into_iter().flatten() {
-                            let [a, b, c] = triangles[i].map(|v| positions[v as usize]);
-                            let q = sx_geom::hollow::closest_point_on_triangle(p, a, b, c);
-                            best = best.min(vec3::len(vec3::sub(q, p)));
-                        }
-                    }
-                }
-            }
-            // any triangle not yet searched is more than r cells away
-            if best <= r as f64 * cell {
-                break;
-            }
-        }
-        best
-    };
-    points.iter().map(|&p| near(p)).fold(0.0, f64::max)
-}
-
-/// Whether the mesh loft is the reference an exact loft of `profiles` is held to. The mesh loft flattens every
-/// section into a ring of points and joins the rings point for point by count. Where a section is straight lines
-/// alone, or one whole circle or ellipse, that keeps each corner on the corners of the sections beside it (or there
-/// is no corner), so its sides are the loft's own. Where a section mixes corners with curves, the curves flatten to
-/// different counts on different sections and the mesh loft joins a corner of one section to a point along the curve
-/// of the next, so its side leans off the corners between sections. There the exact loft is held to the drawing: the
-/// sections as drawn at their stations, and its corner rails, which join the drawn corners as the loft defines them.
-fn mesh_loft_keeps_corners(profiles: &Value) -> bool {
-    profiles.as_array().unwrap().iter().all(|p| {
-        p["loops"].as_array().unwrap().iter().all(|lp| {
-            let kind = lp["type"].as_str().unwrap_or("path");
-            let segments = lp["segments"].as_array().map_or(&[][..], Vec::as_slice);
-            matches!(kind, "circle" | "ellipse") || segments.iter().all(|s| s["type"] == "line")
-        })
-    })
 }
 
 /// The farthest any of `points` is from the nearest of a body's edges, by each edge's own curve.

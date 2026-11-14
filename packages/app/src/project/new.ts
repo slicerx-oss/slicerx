@@ -6,7 +6,7 @@ import { history } from '../plate/history'
 import { cancelSlice } from '../state/actions'
 import { get, set } from '../state/store'
 import { freshVary } from '../lib/sleipnir-default'
-import { forgetWaiting } from '../cad/waiting'
+import { forgetWaiting, releaseKeptBodies } from '../cad/waiting'
 import { confirmDiscard, markClean } from './unsaved'
 
 export function clearProject(): void {
@@ -71,6 +71,8 @@ export function clearProject(): void {
     resume: null,
   })
   history().clear()
+  // The solids the designs' replays kept go with them: no undo can bring those designs back now.
+  releaseKeptBodies()
   markClean()
 }
 

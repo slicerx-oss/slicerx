@@ -4,13 +4,17 @@
 //!
 //! The faces are where [`super::rails`] says the loft's sides are. A piece that is a straight line on every profile
 //! is a ruled face between its first and last rails, so a straight run such as a deck stays flat. A piece that is a
-//! spline on every profile is skinned across all of its rails. An open loft's first and last profiles are flat
-//! faces, bounded by the straight pieces' lines and, along each skinned side, by the curve that side ends on as the
-//! kernel reads it off its own surface ([`sx_brep::skin_ends`]); a closed one has none, since its rails come back onto
-//! the first profile and the faces meet there. The kernel joins the faces into one solid, which is read back before
-//! it is kept: closed, one manifold solid, with a volume, and its edges on the curves its faces were given.
+//! spline on every profile is skinned across all of its rails, and so is one with an arc of a circle or an ellipse on
+//! any profile and a line or an arc on each of the others, or one whole circle or ellipse, which goes across every
+//! rail and back onto the first. An open loft's first and last profiles are flat faces, bounded by the straight
+//! pieces' lines and, along each skinned side, by the curve that side ends on as the kernel reads it off its own
+//! surface ([`sx_brep::skin_ends`]); a closed one has none, since its rails come back onto the first profile and the
+//! faces meet there. The kernel joins the faces into one solid, which is read back before it is kept: closed, one
+//! manifold solid, with a volume, and its edges on the curves its faces were given.
 //!
-//! Profiles with arcs, circles or ellipses are refused for now.
+//! Each skinned side is held to the drawing: at every profile it comes within [`DRAWN_MM`] of the profile as drawn
+//! (a line there as the straight line it is), or its rails are doubled, or the loft is refused. A closed loft through
+//! arcs, circles or ellipses is refused for now.
 
 use super::{Curve, Density, Match, Options, Profile, Rails};
 use crate::error::{Error, Result};
@@ -96,11 +100,13 @@ fn sheets(rails: &Rails) -> Result<(Vec<Sheet>, Vec<Part>, f64)> {
             "open profiles make a surface, and an exact loft is a solid; close the profiles",
         ));
     }
+    // a piece curved on any profile is skinned like a spline piece and held to its true curves there; a closed ring
+    // through arcs is not made yet
     let round = |c: &Curve| matches!(c, Curve::Arc { .. } | Curve::Ellipse { .. });
-    if rails.pieces.iter().any(|p| p.curves.iter().any(round)) {
+    if rails.wrap.is_some() && rails.pieces.iter().any(|p| p.curves.iter().any(round)) {
         return Err(Error::geometry(
             "loft",
-            "an exact loft is made only through profiles of straight lines and splines for now; these have an arc, a circle or an ellipse",
+            "a closed loft through arcs, circles or ellipses is not made exact yet",
         ));
     }
     let mut out = Vec::with_capacity(rails.pieces.len() + 2);
@@ -122,12 +128,15 @@ fn sheets(rails: &Rails) -> Result<(Vec<Sheet>, Vec<Part>, f64)> {
             for (k, station) in stations.iter().enumerate() {
                 // a closed loft's last station is its first section again
                 let (ring, curve) = (&rails.rings[k % count], &piece.curves[k % count]);
-                let Some(spans) = curve.spline_spans() else {
-                    return Err(Error::geometry(
-                        "loft",
-                        "a spline piece is a spline on every profile",
-                    ));
-                };
+                // a line paired with curves on other profiles is drawn as the straight cubic between its ends
+                let spans = curve.drawn_spans().unwrap_or_else(|| {
+                    let (a, b) = (
+                        ring.flat[piece.first],
+                        ring.flat[(piece.first + piece.stretches) % n],
+                    );
+                    let at = |t: f64| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+                    vec![[a, at(1.0 / 3.0), at(2.0 / 3.0), b]]
+                });
                 let drawn = Path::Cubics(
                     spans
                         .iter()
