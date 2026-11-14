@@ -1,0 +1,222 @@
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-haiku-5-5","id":"msg_01ExampleLookupStream00","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":2972,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":8,"service_tier":"standard","inference_geo":"global","speed":"standard"},"diagnostics":null}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}         }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"c2lnbmF0dXJlLW9uZQ=="}            }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0  }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"server_tool_use","id":"srvtoolu_01Example0001","name":"web_search","input":{}}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"query"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\": \"the"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" stone "}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"tower l"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"ength w"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"idth wa"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"ll heig"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"ht roof"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"}"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}       }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1         }
+
+event: content_block_start
+data: {"type":"content_block_start","index":2,"content_block":{"type":"server_tool_use","id":"srvtoolu_01Example0002","name":"web_search","input":{}}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":""}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"query"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\": \"the"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":" stone "}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"tower s"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"pire he"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"ight ab"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"ove the"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":" roof d"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"iameter"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":" wing l"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"ength\"}"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":""}       }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":2}
+
+event: content_block_start
+data: {"type":"content_block_start","index":3,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_01Example0001","content":[{"type":"web_search_result","title":"Tower facts","url":"https://example.org/tower-facts","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower history","url":"https://example.org/tower-history","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":"March 1, 2024"},{"type":"web_search_result","title":"Tower plans","url":"https://example.org/tower-plans","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower overview","url":"https://example.org/tower-overview","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower wiki","url":"https://example.org/tower-wiki","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":"March 1, 2024"},{"type":"web_search_result","title":"Tower annex","url":"https://example.org/tower-annex","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower guide","url":"https://example.org/tower-guide","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower notes","url":"https://example.org/tower-notes","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower survey","url":"https://example.org/tower-survey","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null}],"caller":{"type":"direct"}}      }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":3     }
+
+event: content_block_start
+data: {"type":"content_block_start","index":4,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_01Example0002","content":[{"type":"web_search_result","title":"Tower wiki","url":"https://example.org/tower-wiki","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":"March 1, 2024"},{"type":"web_search_result","title":"Tower spire","url":"https://example.org/tower-spire","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":"March 1, 2024"},{"type":"web_search_result","title":"Tower heights","url":"https://example.org/tower-heights","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower archive","url":"https://example.org/tower-archive","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":"March 1, 2024"},{"type":"web_search_result","title":"Tower guide","url":"https://example.org/tower-guide","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower drawings","url":"https://example.org/tower-drawings","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":"March 1, 2024"},{"type":"web_search_result","title":"Tower records","url":"https://example.org/tower-records","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower models","url":"https://example.org/tower-models","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null},{"type":"web_search_result","title":"Tower gallery","url":"https://example.org/tower-gallery","encrypted_content":"ZXhhbXBsZSBwYWdl","page_age":null}],"caller":{"type":"direct"}}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":4            }
+
+event: content_block_start
+data: {"type":"content_block_start","index":5,"content_block":{"type":"thinking","thinking":"","signature":""}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":5,"delta":{"type":"thinking_delta","thinking":""}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":5,"delta":{"type":"signature_delta","signature":"c2lnbmF0dXJlLXR3bw=="}          }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":5          }
+
+event: content_block_start
+data: {"type":"content_block_start","index":6,"content_block":{"type":"text","text":""}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":"size"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":": 412 ft 6"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":" in (125.7 m"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":")"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":" "}   }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":6 }
+
+event: content_block_start
+data: {"type":"content_block_start","index":7,"content_block":{"citations":[],"type":"text","text":""}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"The tower stands at one end of the roof. Its sizes are listed in the table below.","url":"https://example.org/tower-overview","title":"Tower overview","encrypted_index":"ZXhhbXBsZSBpbmRleA=="}}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"Length: 412 ft "}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"6 in (125.7 "}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"m) overall"}   }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":7        }
+
+event: content_block_start
+data: {"type":"content_block_start","index":8,"content_block":{"type":"text","text":""}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":8,"delta":{"type":"text_delta","text":"\nsize: 41"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":8,"delta":{"type":"text_delta","text":" ft 6 in ("}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":8,"delta":{"type":"text_delta","text":"12.6 m) "}     }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":8  }
+
+event: content_block_start
+data: {"type":"content_block_start","index":9,"content_block":{"citations":[],"type":"text","text":""}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":9,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"The tower stands at one end of the roof. Its sizes are listed in the table below.","url":"https://example.org/tower-overview","title":"Tower overview","encrypted_index":"ZXhhbXBsZSBpbmRleA=="}}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":9,"delta":{"type":"text_delta","text":"Width: 41"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":9,"delta":{"type":"text_delta","text":" ft 6 in ("}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":9,"delta":{"type":"text_delta","text":"12.6 m)"}  }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":9         }
+
+event: content_block_start
+data: {"type":"content_block_start","index":10,"content_block":{"type":"text","text":""}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":"\nsize:"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":" not"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":" found\nsize: 57"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":".5 ft "}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":10   }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":21188,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1467,"output_tokens_details":{"thinking_tokens":1196},"server_tool_use":{"web_search_requests":2,"web_fetch_requests":0}}}
+
+event: message_stop
+data: {"type":"message_stop"    }
+

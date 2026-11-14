@@ -3,7 +3,8 @@
 // design.lookup_sizes: mimir looks a real thing's sizes up on the web before it plans a display model of it. The web
 // answer comes back one size per line ("Tower height: 227 m"); each is read here into mm, kept under a lookup id for
 // the chat, and shown to the person as a lookup card. design.plan then holds each real size it is given with that id to
-// the figure the lookup found (plan-detail.ts), so a planned size times the scale cannot stand in for a real one.
+// the figure the lookup found (plan-detail.ts), so a planned size times the scale cannot stand in for a real one. An
+// answer that cites no page finds nothing: its sizes are from memory, as when no source gave them.
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 
@@ -216,7 +217,7 @@ export const LOOKUP_UNAVAILABLE = 'Web lookup is not available here, so give the
 export function lookupSizesTool(store: LookupStore): PilotTool<never> {
   return defineTool({
     name: 'design.lookup_sizes',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'web',
     permission: 'read',
     description: LOOKUP_SIZES_DESCRIPTION,
@@ -229,8 +230,9 @@ export function lookupSizesTool(store: LookupStore): PilotTool<never> {
       if (!ctx.web) return { ok: false, summary: LOOKUP_UNAVAILABLE }
       const query = `${i.subject}: ${i.sizes.join('; ')}`
       const res = await ctx.web(query, ctx.signal, 'sizes')
-      const { found, missing } = readSizes(res.text, i.sizes)
       const sources = res.citations.filter((c) => !!c.url).map((c) => ({ title: c.title, url: c.url! }))
+      // an answer that cites no page was not read off the web, so its sizes are from memory: none is kept as found
+      const { found, missing } = sources.length ? readSizes(res.text, i.sizes) : { found: [], missing: [...i.sizes] }
       const kept = store.add({ session: ctx.sessionId, subject: i.subject, asked: [...i.sizes], found, missing, sources })
       const first = sources[0]
       const rows = found.slice(0, CARD_ROWS).map((f): [string, string] => [f.size.slice(0, 32), f.said.slice(0, 80)])

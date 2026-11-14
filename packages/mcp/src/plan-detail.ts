@@ -357,8 +357,17 @@ function askedAndMissing(src: RealSources, names: readonly string[]): boolean {
 }
 
 /**
+ * Whether a real size gives the lookupId of a lookup that read no page and asked for it: its answer cited no source, so
+ * the size is from memory, as one a lookup asked for and no source gave.
+ */
+function fromUnreadLookup(r: RealEntry, size: string, src: RealSources): boolean {
+  const l = r.lookup !== undefined && !src.client ? src.lookup(r.lookup) : undefined
+  return !!l && !l.sources.length && l.missing.some((m) => sameSize(m, size))
+}
+
+/**
  * The figure a real size is held to. Without `src`, its own mm. With a lookupId, the size that lookup found within
- * REAL_MATCH of its mm; with stated words, the length in them within REAL_MATCH (and the words must be the person's,
+ * REAL_MATCH of its mm (a lookup that read no page holds it to nothing: it is from memory); with stated words, the length in them within REAL_MATCH (and the words must be the person's,
  * where their messages can be read); with a source page, its mm on a client's plan (the card's form has no source). A size with none of these is
  * unsourced where a lookup can run, unless a lookup asked for it and no source gave it;
  * otherwise it is taken from memory as given (realMemoryNote says so on the plan).
@@ -369,6 +378,7 @@ function realFigure(r: RealEntry, size: string, src: RealSources | undefined): {
   if (r.lookup !== undefined) {
     const l = src.client ? undefined : src.lookup(r.lookup)
     if (!l) return { problem: UNKNOWN_LOOKUP(r.lookup) }
+    if (fromUnreadLookup(r, size, src)) return { mm }
     const hit = l.found.filter((x) => Math.abs(x.mm - mm) <= mm * REAL_MATCH).sort((a, b) => Math.abs(a.mm - mm) - Math.abs(b.mm - mm))[0]
     return hit ? { mm: hit.mm } : { problem: NOT_FOUND_IN_LOOKUP(size, mm, l) }
   }
@@ -387,15 +397,16 @@ function realFigure(r: RealEntry, size: string, src: RealSources | undefined): {
 
 /**
  * The assumption design.plan adds for real sizes taken from memory: where no lookup can run, or where a lookup asked
- * for them and no source gave them. Null when every real size has a lookup, the person's words or a source.
+ * for them and no source gave them (a lookup whose answer cited no page among them). Null when every real size has a lookup, the person's words or a source.
  */
 export function realMemoryNote(plan: DetailPlan, src: RealSources): string | null {
   const feature = (n: string) => plan.features.find((x) => x.name.trim().toLowerCase() === n.trim().toLowerCase())
   const memory = (plan.real ?? []).flatMap((r) => {
-    if (r.lookup !== undefined || r.stated !== undefined || r.source !== undefined) return []
+    if (r.stated !== undefined || r.source !== undefined) return []
     const f = feature(r.feature ?? '')
     const key = f && Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === (r.size ?? '').trim().toLowerCase())
-    return f && key ? [`${f.name} ${key}`] : []
+    if (!f || !key) return []
+    return r.lookup === undefined || fromUnreadLookup(r, `${f.name} ${key}`, src) ? [`${f.name} ${key}`] : []
   })
   if (!memory.length) return null
   return src.client ? MEMORY_CLIENT(memory) : src.canLookUp ? MEMORY_AFTER_LOOKUP(memory) : MEMORY_NO_WEB(memory)
