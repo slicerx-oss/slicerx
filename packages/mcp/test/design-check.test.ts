@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import { designNamed, loftParams, type Design as HostDesign, type DesignHost, type Step, type StepParams, type Vec3 } from '@slicerx/cad-history'
+import { deckOf, designNamed, loftParams, type Design as HostDesign, type DesignHost, type Step, type StepParams, type Vec3 } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
 import { minWall as creativeWall } from '../evals/creative/mesh-checks'
@@ -1420,9 +1420,17 @@ describe('a stacked part on a hull with a sheer', () => {
     loops: [{ start: [-w!, top!], segments: [{ type: 'line', to: [w!, top!] }, { type: 'arc', to: [b!, lo!], through: [tw!, tz!] }, { type: 'line', to: [-b!, lo!] }, { type: 'arc', to: [-w!, top!], through: [-tw!, tz!] }] }],
   }))
 
-  async function hull(name: string, profiles: unknown[], parts: { feature: string; shape: Record<string, unknown>; at: number[]; from: number; up: number; height: number }[]) {
+  type Part = { feature: string; shape: Record<string, unknown>; at: number[]; from: number; up: number; height: number }
+  // the hull the engine made in the last hull(), as its loft reply gave it
+  let lofted: { positions: number[]; indices: number[] } | undefined
+  async function hull(name: string, profiles: unknown[], parts: Part[]) {
     const plans = createPlanRegistry()
-    const h = await connect({ geomEngine: engine, plans })
+    const geomEngine = async (op: string, request: unknown) => {
+      const out = await engine(op, request)
+      if (op === 'sketch.loft') lofted = (out as { mesh: { positions: number[]; indices: number[] } }).mesh
+      return out
+    }
+    const h = await connect({ geomEngine, plans })
     const ok = async <T,>(tool: string, args: Record<string, unknown>): Promise<T> => {
       const r = await h.call(tool, args)
       expect(r.isError, `${tool}: ${text(r)}`).toBeFalsy()
@@ -1444,6 +1452,27 @@ describe('a stacked part on a hull with a sheer', () => {
   it('passes a deckhouse seated on the 16 mm deck under it, though the deck rises to 19 mm at the far end', async () => {
     // the deckhouse runs from x 50 to 170, over the deck's 16 mm stretch; the 19 mm is at x 215, under none of it
     expect(stands(await hull('Hull', sheer(RISING), [lower(15.9, 4.1)]))).toMatchObject({ got: '1 stacked part on its support', pass: true })
+    // the deck read from the steps (deckOf) follows the hull the engine made: its top across the beam at each x, on
+    // every edge that crosses there, within 0.002 mm of it from end to end (it was 0.0008), where straight lines
+    // between the sections are up to 0.16 mm off
+    const top = (x: number): number => {
+      const [p, t] = [lofted!.positions, lofted!.indices]
+      let z = -Infinity
+      for (let i = 0; i < t.length; i += 3)
+        for (const [a, b] of [[t[i]!, t[i + 1]!], [t[i + 1]!, t[i + 2]!], [t[i + 2]!, t[i]!]]) {
+          const [xa, xb] = [p[3 * a!]!, p[3 * b!]!]
+          if ((xa - x) * (xb - x) <= 0 && xa !== xb) z = Math.max(z, p[3 * a! + 2]! + ((x - xa) / (xb - xa)) * (p[3 * b! + 2]! - p[3 * a! + 2]!))
+        }
+      return z
+    }
+    const deck = deckOf(steps(sheer(RISING), [])[0]!)!
+    const along = (x: number): number => {
+      const k = deck.at.findIndex((q) => q[0] >= x)
+      const [a, b] = [deck.at[k - 1]!, deck.at[k]!]
+      return a[1] + ((b[1] - a[1]) * (x - a[0])) / (b[0] - a[0])
+    }
+    const off = Array.from({ length: 429 }, (_, i) => 0.5 + i / 2).map((x) => Math.abs(along(x) - top(x)))
+    expect(Math.max(...off)).toBeLessThan(0.002)
   })
 
   it('passes decks seated on the 16 mm midship deck line of a hull whose bow rises to 17.8 mm', async () => {
@@ -1456,12 +1485,12 @@ describe('a stacked part on a hull with a sheer', () => {
 
   // The same hulls as steps, made from the same stations as the tools make them, and read as design.check reads them
   // (featureHeights, then stackItem), with no engine: the deck and the footprint are read from the steps alone.
-  const steps = (profiles: unknown[], parts: ReturnType<typeof lower>[]): Step[] => [
+  const steps = (profiles: unknown[], parts: Part[]): Step[] => [
     { id: 'hull', part: 0, transform: [...IDENTITY], feature: 'Hull', params: loftParams({ profiles: (profiles as { frame: { origin: Vec3; normal: Vec3; u: Vec3 }; loops: unknown[] }[]).map((p) => ({ frame: frameFor(p.frame.origin, p.frame.normal, p.frame.u), loops: p.loops })), smooth: true, operation: 'new', name: 'Hull' }) },
     ...parts.map((p, k): Step => ({ id: `part-${k}`, part: 0, transform: [...IDENTITY], feature: p.feature, params: JSON.parse(JSON.stringify({ op: 'shape.extrude', frame: frameFor([0, 0, p.from], [0, 0, 1]), shape: p.shape, placement: { center: p.at }, spec: { distanceMm: p.up, extent: 'oneSide', operation: 'join' } })) as StepParams })),
   ]
   const heights = (all: Step[]) => featureHeights({ history: { base: [], steps: all }, status: all.map(() => ({ state: 'ok' })) } as unknown as HostDesign, all)
-  const plan = (parts: ReturnType<typeof lower>[]) => ({ detail: 'display' as const, features: [{ name: 'Hull', sizes: {} }, ...parts.map((p) => ({ name: p.feature, sizes: { height: p.height }, on: 'Hull' }))] })
+  const plan = (parts: Part[]) => ({ detail: 'display' as const, features: [{ name: 'Hull', sizes: {} }, ...parts.map((p) => ({ name: p.feature, sizes: { height: p.height }, on: 'Hull' }))] })
 
   it('still fails a deckhouse sunk 3 mm into the deck under it', () => {
     const parts = [lower(13, 7)]
@@ -1469,6 +1498,13 @@ describe('a stacked part on a hull with a sheer', () => {
       got: 'Lower deckhouse stands on Hull, but its base is 3 mm below its top, so 4 mm of it shows of a planned 4.1 mm; build it from the top of Hull',
       pass: false,
     })
+  })
+
+  it('reads the deck between sections along the smooth loft, so a foremast seated on it passes', () => {
+    // the first run's foremast, 2 mm round at x 180 from 16.2 mm: between the sections at x 150 and 185 the loft's deck
+    // is 16.33 mm at x 179, where a straight line between them gives 16.41 and read it 0.21 mm sunk
+    const parts = [{ feature: 'Foremast', shape: { type: 'circle', diameterMm: 2 }, at: [180, 0], from: 16.2, up: 33.8, height: 33.8 }]
+    expect(stackItem(plan(parts), heights(steps(sheer(RISING), parts)))).toMatchObject({ got: '1 stacked part on its support', pass: true })
   })
 
   it('reads a flat deck as it always has: one top for the whole hull, and no deck or footprint in the body', () => {

@@ -746,7 +746,10 @@ export function rangeOf(s: Step, stepById?: (id: string) => Step | undefined, hi
   }
 }
 
-/** A support's top along its length, world mm: each section's highest point, by where it stands on x or y, in order. */
+/**
+ * A support's top along its length, world mm: each section's highest point, by where it stands on x or y, in order,
+ * and on a smooth loft the points between them that its top follows (deckCurve).
+ */
 export interface Deck {
   axis: 'x' | 'y'
   at: [number, number][]
@@ -754,18 +757,22 @@ export interface Deck {
 
 /**
  * The top along its length of a loft through upright sections that each stand across x or y, read from the step's own
- * numbers as rangeOf reads its height: each section's highest point and where along the axis it stands, in order. Null
- * for a cut, for sections that lean or that do not run one way along the axis, and for a loft whose sections' tops are
- * all one height, as its top is then its highest point everywhere.
+ * numbers as rangeOf reads its height: each section's highest point and where along the axis it stands, in order, and
+ * on an open smooth loft whose sections each have their highest point at the same drawn point, the curve the loft
+ * runs that point along between them (deckCurve). Null for a cut, for sections that lean or that do not run one way
+ * along the axis, and for a loft whose sections' tops are all one height, as its top is then its highest point
+ * everywhere.
  */
 export function deckOf(s: Step): Deck | null {
   const p = s.params
   if (p.op !== 'sketch.loft' || p.operation === 'cut') return null
   const inv = invert(s.transform)
-  const sections = p.profiles.map((pr) => {
+  // each section's points in the step's own frame, as the engine is given them
+  const drawn = p.profiles.map((pr) => {
     const f = pr.frame ?? BED_FRAME
-    return pr.loops.filter((l) => !l.construction).flatMap((l) => rangePoints(l).map((q) => point(inv, [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * (q[0] ?? 0) + f.v[k]! * (q[1] ?? 0)))))
+    return pr.loops.filter((l) => !l.construction).flatMap((l) => rangePoints(l).map((q): Vec3 => [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * (q[0] ?? 0) + f.v[k]! * (q[1] ?? 0)) as Vec3))
   })
+  const sections = drawn.map((pts) => pts.map((q) => point(inv, q)))
   if (sections.length < 2 || sections.some((pts) => !pts.length)) return null
   for (const k of [0, 1] as const) {
     const at = sections.map((pts) => [pts[0]![k], Math.max(...pts.map((q) => q[2]))] as [number, number])
@@ -775,9 +782,70 @@ export function deckOf(s: Step): Deck | null {
     if (!rises && !at.every((a, i) => i === 0 || a[0] < at[i - 1]![0])) return null
     const tops = at.map((a) => a[1])
     if (Math.max(...tops) - Math.min(...tops) <= 1e-9) return null
-    return { axis: k === 0 ? 'x' : 'y', at: rises ? at : at.reverse() }
+    // the highest drawn point of each section, when it is the same one on all
+    const top = sections.map((pts, i) => pts.findIndex((q) => q[2] === at[i]![1]))
+    const f = p.profiles[0]!.frame ?? BED_FRAME
+    const curve = p.smooth && !p.closed && top.every((t, i) => t === top[0] && drawn[i]!.length === drawn[0]!.length)
+      ? deckCurve(drawn.map((pts, i) => pts[top[i]!]!), [f.u, f.v, f.normal]).map((q) => point(inv, q)).map((q) => [q[k], q[2]] as [number, number])
+      : at
+    return { axis: k === 0 ? 'x' : 'y', at: rises ? curve : curve.reverse() }
   }
   return null
+}
+
+// The engine's smooth loft (packages/geom/src/sketch_loft.rs: span_curves, kept_span, span, knot, steps and
+// SMOOTH_TOL_MM), for one point of each section. The deck test in packages/mcp/test/design-check.test.ts holds this
+// against the engine's own hull, so a change to either shows there.
+const SMOOTH_TOL_MM = 0.005
+const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+const knot = (a: Vec3, b: Vec3): number => Math.max(Math.sqrt(Math.sqrt(dot(sub(b, a), sub(b, a)))), 1e-12)
+
+/** The cubic Bezier the loft runs a point along from `p1` to `p2`, held so it does not run past them (kept_span). */
+function keptSpan(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, axes: readonly Vec3[]): Vec3[] {
+  const [h0, h1, h2] = [knot(p0, p1), knot(p1, p2), knot(p2, p3)]
+  // the centripetal Catmull-Rom slopes at the ends (span), per knot step
+  const s1 = [0, 1, 2].map((i) => (p2[i]! - p1[i]! + h1 * ((p1[i]! - p0[i]!) / h0 - (p2[i]! - p0[i]!) / (h0 + h1))) / h1) as Vec3
+  const s2 = [0, 1, 2].map((i) => (p2[i]! - p1[i]! + h1 * ((p3[i]! - p2[i]!) / h2 - (p3[i]! - p1[i]!) / (h1 + h2))) / h1) as Vec3
+  const held = (da: number, db: number, ha: number, hb: number, s: number): number => {
+    if (Math.abs(da) <= SMOOTH_TOL_MM || Math.abs(db) <= SMOOTH_TOL_MM) return 0
+    const [a, b] = [da / ha, db / hb]
+    const most = 3 * Math.min(Math.abs(a), Math.abs(b))
+    if (a * b > 0) return Math.min(Math.max(s * Math.sign(a), 0), most) * Math.sign(a)
+    const r = Math.min(ha, hb) / Math.max(ha, hb)
+    return Math.min(Math.max(s, -most * r * r), most * r * r)
+  }
+  const [m1, m2]: [Vec3, Vec3] = [[0, 0, 0], [0, 0, 0]]
+  for (const e of axes) {
+    const [d0, d1, d2] = [dot(sub(p1, p0), e), dot(sub(p2, p1), e), dot(sub(p3, p2), e)]
+    const [a, b] = [held(d0, d1, h0, h1, dot(s1, e)) * h1, held(d1, d2, h1, h2, dot(s2, e)) * h1]
+    for (const i of [0, 1, 2]) [m1[i], m2[i]] = [m1[i]! + e[i]! * a, m2[i]! + e[i]! * b]
+  }
+  return [p1, p1.map((v, i) => v + m1[i]! / 3) as Vec3, p2.map((v, i) => v - m2[i]! / 3) as Vec3, p2]
+}
+
+/**
+ * The points an open smooth loft runs one point of each section through, in the step's own frame: each span's curve
+ * (keptSpan, held along the first section's axes, its ends mirrored from their neighbors as span_curves does) cut
+ * into as many pieces as keep it within SMOOTH_TOL_MM (steps).
+ */
+function deckCurve(pts: readonly Vec3[], axes: readonly Vec3[]): Vec3[] {
+  const n = pts.length
+  const pt = (k: number): Vec3 => (k < 0 ? sub(pts[0]!, sub(pts[1]!, pts[0]!)) : k >= n ? sub(pts[n - 1]!, sub(pts[n - 2]!, pts[n - 1]!)) : pts[k]!)
+  const out: Vec3[] = []
+  for (let k = 0; k + 1 < n; k++) {
+    const b = keptSpan(pt(k - 1), pt(k), pt(k + 1), pt(k + 2), axes)
+    const dd = (i: number, j: number, l: number): number => {
+      const d = [0, 1, 2].map((c) => b[i]![c]! - 2 * b[j]![c]! + b[l]![c]!) as Vec3
+      return Math.sqrt(dot(d, d))
+    }
+    const m = Math.max(Math.ceil(Math.sqrt((6 * Math.max(dd(0, 1, 2), dd(1, 2, 3))) / (8 * SMOOTH_TOL_MM))), 1)
+    for (let j = 0; j < m; j++) {
+      const [t, u] = [j / m, 1 - j / m]
+      const w = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t]
+      out.push([0, 1, 2].map((c) => b.reduce((sum, q, i) => sum + q[c]! * w[i]!, 0)) as Vec3)
+    }
+  }
+  return [...out, pts[n - 1]!]
 }
 
 /** Where a part stands across the bed, world mm: its lowest and highest x and y. */
