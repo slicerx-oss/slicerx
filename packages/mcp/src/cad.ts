@@ -480,7 +480,12 @@ const shape = z
 
 const operation = z.enum(['new', 'join', 'cut']).default('new').describe('new: a separate body; join: add to target; cut: remove from target')
 /** The filament a new body prints in, as geom.build takes it. */
-const slotArg = z.number().int().min(1).max(32).optional().describe('Filament of a new part on a design, from 1')
+const slotArg = z.number().int().min(1).max(32).optional().describe("Filament of a new part on a design, from 1. One past the project's last filament adds a filament: only for a color the person asked for")
+/**
+ * A tool's input with slotArg, and its local form, which keeps the short slot text: the local rows of the tools that
+ * take a slot have no room for the filament sentence (packages/pilot/src/local-tools.ts).
+ */
+const slotted = <S extends z.ZodRawShape>(input: z.ZodObject<S>) => ({ input, localInput: input.extend({ slot: slotArg.describe('Filament of a new part on a design, from 1') }) })
 
 /** A filament slot names a new body on a design: a join or a cut changes a part that keeps its own filament. */
 function slotOk(i: { slot?: number | undefined; design?: string | undefined; operation: string }): void {
@@ -979,12 +984,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.12.4',
+    version: '1.12.5',
     source: 'command',
     permission: 'slice',
     description:
       'Extrude a shape on the bed, a plane or a picked face as a new body, joined to a target or cut from it: with "design" a step (join and cut work on "part"), with a model an STL with volume, bounds and watertightness.',
-    input: z.object({
+    ...slotted(z.object({
       shape: shape.optional(),
       sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id instead of shape and frame'),
       frame: frameRef.optional(),
@@ -1001,7 +1006,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       part: partArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
       slot: slotArg,
-    }),
+    })),
     async run(i) {
       slotOk(i)
       const spec = { distanceMm: i.distance_mm, extent: i.extent, operation: i.operation, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}), ...(i.flip !== undefined ? { flip: i.flip } : {}), ...(i.taper_deg !== undefined ? { taperDeg: i.taper_deg } : {}) }
@@ -1071,12 +1076,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   })
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.10.2',
+    version: '1.10.3',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
     input: revolveInput,
-    localInput: revolveInput.extend({ frame: localFrameSchema.optional() }),
+    localInput: slotted(revolveInput).localInput.extend({ frame: localFrameSchema.optional() }),
     async run(i) {
       slotOk(i)
       if (i.sketch !== undefined && (i.loops || i.frame)) throw new ToolInputError('sketch: the sketch gives the loops and plane; leave loops and frame out')
@@ -1130,12 +1135,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.13.1',
+    version: '1.13.2',
     source: 'command',
     permission: 'slice',
     description:
       'Loft a solid through 2 to 64 profiles in order, each on its own plane, as a new body, joined to or cut from a target; neighbors must not touch or cross each other\'s plane. thicken makes it hollow with open ends (a tapered stem, a vase).',
-    input: z.object({
+    ...slotted(z.object({
       profiles: z.array(loftProfile).min(2).max(64).optional().describe('In loft order; no frame is the bed'),
       smooth: z.boolean().optional().describe('Curved sides through the sections; a section may have arcs and splines, and its straight segments stay straight'),
       closed: z.boolean().optional().describe('Last joins first'),
@@ -1149,7 +1154,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       part: partArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
       slot: slotArg,
-    }),
+    })),
     async run(i) {
       slotOk(i)
       if (!i.profiles === !i.sketches) throw new ToolInputError(i.profiles ? 'sketches: give profiles or sketches, not both' : 'profiles: give 2 or more profiles, or finished sketch ids as sketches')
@@ -1193,11 +1198,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.11.2',
+    version: '1.11.3',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale, twist_deg and end_profile taper, turn and reshape it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
-    input: z.object({
+    ...slotted(z.object({
       profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()), open: z.boolean().optional() }).optional().describe("Loops (inner ones are holes) and frame as revolve takes; plane across the path's start; open: open chain"),
       path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional(), smooth: z.boolean().optional() }).optional().describe('Open chain (frame, loops) or points; smooth: curve through points'),
       profile_sketch: z.string().optional(),
@@ -1214,7 +1219,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       part: z.number().int().min(0).optional(),
       name: z.string().optional(),
       slot: slotArg,
-    }),
+    })),
     async run(i) {
       slotOk(i)
       if (!i.profile === !i.profile_sketch) throw new ToolInputError(i.profile ? 'profile_sketch: give profile or profile_sketch, not both' : 'profile: give the profile, or a finished sketch id as profile_sketch')

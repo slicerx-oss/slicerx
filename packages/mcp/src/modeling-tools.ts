@@ -401,20 +401,26 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   const solidsHelp =
     'Solids as sx-geom objects with a "type": {"type":"box","min":[x,y,z],"max":[x,y,z]}, {"type":"cylinder","origin":[x,y,z],"axis":[x,y,z],"diameterMm":d,"heightMm":h}, or {"type":"prism","points":[[x,y],...],"origin":[...],"axis":[...],"heightMm":h}. Keys are camelCase, in mm.'
 
+  const BUILD_SLOT = z.number().int().min(1).max(32).optional()
+  /** geom.build's input, and its local form with today's short slot text. */
+  const builtSlot = <S extends z.ZodRawShape>(input: z.ZodObject<S>) => ({ input, localInput: input.extend({ slot: BUILD_SLOT.describe('With a design: the filament slot of the new part, from 1') }) })
+  const BUILD_TEXT = `Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`
   const build = defineTool({
     name: 'geom.build',
-    version: '1.7.1',
+    version: '1.7.2',
     source: 'command',
     permission: 'slice',
-    description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,
-    input: z.object({
+    description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Never for an opening in a part (a window, vent or slot): that is a cut, with geom.extrude or geom.hole. ${BUILD_TEXT}`,
+    // a local model's form keeps today's text: geom.build's local row has no room for the opening and filament sentences
+    localDescription: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. ${BUILD_TEXT}`,
+    ...builtSlot(z.object({
       solids: z.array(solid).min(1).max(64),
       subtract: z.array(solid).max(64).optional().describe('Convex cutters removed from every solid: box, cylinder, prism or countersink'),
       design: designArg.optional(),
       feature: featureArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part'),
-      slot: z.number().int().min(1).max(32).optional().describe('With a design: the filament slot of the new part, from 1'),
-    }),
+      slot: BUILD_SLOT.describe("With a design: the new part's filament slot, from 1 (default 1). A slot past the project's last filament adds a filament: give one only for a color the person asked for"),
+    })),
     async run(i) {
       if (i.design) {
         const [ds, d] = designOf(i.design)

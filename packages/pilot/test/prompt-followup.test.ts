@@ -30,6 +30,10 @@ describe('the line for a follow-up on a built design', () => {
     expect(FOLLOWUP_LINE).toContain('The reply to a follow-up ends with what changed, in a few words: never a question, and no offer to slice or print')
   })
 
+  it('keeps a detail added on its part\'s filament unless the person asked for color', () => {
+    expect(FOLLOWUP_LINE).toContain('A detail added goes on the filament of the part it sits on: never add a filament or set a color the person did not ask for.')
+  })
+
   it('ends a reply to a request of several things on which were done and which were not', () => {
     expect(FOLLOWUP_LINE).toContain('When the request asks for several things, the reply ends by saying which were done and which were not.')
   })

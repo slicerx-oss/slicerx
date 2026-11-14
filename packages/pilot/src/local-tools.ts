@@ -121,7 +121,7 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
       'steps',
     ] },
   'geom.boolean': { tokens: 287, fields: ['design', 'feature', 'model', 'part', 'with[]', 'with_parts'] },
-  'geom.build': { tokens: 319, description: true, fields: ['design', 'feature', 'name', 'slot', 'subtract'] },
+  'geom.build': { tokens: 319, fields: ['design', 'feature', 'name', 'slot', 'subtract'] },
   'geom.chamfer': { tokens: 385, fields: ['feature', 'part'] },
   'geom.cut': { tokens: 446, description: true, fields: ['connector', 'design', 'feature', 'keep', 'model', 'part', 'plane', 'plane.at'] },
   'geom.edge_pick': { tokens: 434, fields: ['face', 'face.at', 'face.normal', 'face.part', 'face.topology', 'face.triangle'] },
