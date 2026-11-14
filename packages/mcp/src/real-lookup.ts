@@ -4,7 +4,8 @@
 // answer comes back one size per line ("Tower height: 227 m"); each is read here into mm, kept under a lookup id for
 // the chat, and shown to the person as a lookup card. design.plan then holds each real size it is given with that id to
 // the figure the lookup found (plan-detail.ts), so a planned size times the scale cannot stand in for a real one. An
-// answer that ran no search finds nothing: its sizes are from memory, as when no source gave them.
+// answer that ran no search finds nothing: its sizes are from memory, as when no source gave them. Its sources are the
+// pages its answer cites; a search that ran with none cited keeps its sizes, and the card links no page.
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 
@@ -15,7 +16,7 @@ export interface FoundSize {
   said: string
 }
 
-/** A size lookup kept for its chat: what was asked, what was found, what no source gave, and the pages. */
+/** A size lookup kept for its chat: what was asked, what was found, what no source gave, the pages its answer cites, and whether a search ran. */
 export interface SizeLookup {
   id: string
   session: string
@@ -24,6 +25,7 @@ export interface SizeLookup {
   found: FoundSize[]
   missing: string[]
   sources: { title: string; url: string }[]
+  searched: boolean
 }
 
 /** The most lookups a store keeps; the oldest goes first. */
@@ -50,9 +52,14 @@ export function createLookupStore() {
     of(session: string): SizeLookup[] {
       return [...kept.values()].filter((l) => l.session === session)
     },
-    /** A lookup's first source page, by id in any chat (design.check's reply names it). */
-    source(id: string): { title: string; url: string } | undefined {
-      return kept.get(id.trim())?.sources[0]
+    /**
+     * By id in any chat, a lookup whose search ran, with the first page its answer cites (design.check's reply names
+     * it); undefined for a lookup that ran no search, whose sizes are from memory.
+     */
+    source(id: string): { page?: { title: string; url: string } } | undefined {
+      const l = kept.get(id.trim())
+      if (!l?.searched) return undefined
+      return l.sources[0] ? { page: l.sources[0] } : {}
     },
     clear(): void {
       kept.clear()
@@ -231,16 +238,18 @@ export function lookupSizesTool(store: LookupStore): PilotTool<never> {
       const query = `${i.subject}: ${i.sizes.join('; ')}`
       const res = await ctx.web(query, ctx.signal, 'sizes')
       const sources = res.citations.filter((c) => !!c.url).map((c) => ({ title: c.title, url: c.url! }))
-      // the sources are the pages the search read; an answer with none ran no search, so its sizes are from memory: none is kept as found
-      const { found, missing } = sources.length ? readSizes(res.text, i.sizes) : { found: [], missing: [...i.sizes] }
-      const kept = store.add({ session: ctx.sessionId, subject: i.subject, asked: [...i.sizes], found, missing, sources })
+      // an answer that ran no search was not read off the web, so its sizes are from memory: none is kept as found
+      const searched = res.searched ?? sources.length > 0
+      const { found, missing } = searched ? readSizes(res.text, i.sizes) : { found: [], missing: [...i.sizes] }
+      const kept = store.add({ session: ctx.sessionId, subject: i.subject, asked: [...i.sizes], found, missing, sources, searched })
       const first = sources[0]
       const rows = found.slice(0, CARD_ROWS).map((f): [string, string] => [f.size.slice(0, 32), f.said.slice(0, 80)])
       return {
         summary: `${kept.id}: found ${found.length} of ${i.sizes.length} sizes${missing.length ? `; no source gave ${missing.join(', ')}` : ''}`,
         output: { lookupId: kept.id, subject: i.subject, found, missing, sources },
         untrusted: true,
-        ...(first && rows.length ? { lookup: { title: i.subject.slice(0, 60), fields: rows, source: { title: first.title.slice(0, 80), url: first.url } } } : {}),
+        // the card links only a page the answer cites
+        ...(rows.length ? { lookup: { title: i.subject.slice(0, 60), fields: rows, ...(first ? { source: { title: first.title.slice(0, 80), url: first.url } } : {}) } } : {}),
         citations: res.citations,
       }
     },

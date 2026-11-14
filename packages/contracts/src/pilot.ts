@@ -238,7 +238,8 @@ export interface PilotLookup {
   title: string
   /** Label and value rows, such as ["Trim plate", "150.4 x 110.4 mm"]. */
   fields: [string, string][]
-  source: { title: string; url: string }
+  /** The page it came from; left out when no page is cited. */
+  source?: { title: string; url: string }
 }
 
 /** Where a dimension's value came from. A guess stays marked until the person confirms it. */

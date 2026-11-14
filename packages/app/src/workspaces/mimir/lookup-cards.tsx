@@ -77,7 +77,7 @@ export function LookupCards() {
               </div>
             ))}
           </dl>
-          {safeUrl(l.source.url) ? (
+          {!l.source ? null : safeUrl(l.source.url) ? (
             <a className="mimir-lookup-s" href={safeUrl(l.source.url)!} target="_blank" rel="noreferrer noopener">
               {l.source.title}
             </a>

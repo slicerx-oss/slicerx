@@ -388,7 +388,7 @@ export interface DesignToolOptions {
   /** The project's filament colors as #rrggbb, slot 1 first, so design.check can read a painted color band's color. */
   filamentColors?: (() => readonly string[]) | undefined
   /** A size lookup's first source page by its lookupId (the mimir tab's design.lookup_sizes), for design.check's reply. */
-  lookupSource?: ((id: string) => { title: string; url: string } | undefined) | undefined
+  lookupSource?: ((id: string) => { page?: { title: string; url: string } } | undefined) | undefined
   /**
    * Whether design.new makes an exact design when it is not given `exact`; read only there. Off when absent, so a
    * design is a mesh one unless asked. `exact` given either way wins.
@@ -1154,15 +1154,16 @@ const CLIENT_REAL =
 
 /**
  * Where a display plan's real sizes came from, as design.check's reply says it: the sizes taken from memory by name, or
- * the page its lookup read (a lookup that read no page counts as from memory). Empty when the plan has no real sizes, or gives them from the person's words only.
+ * the page its lookup's answer cites (a lookup that ran no search counts as from memory; one whose answer cites no page
+ * names none). Empty when the plan has no real sizes, or gives them from the person's words only.
  */
-export function realSaid(real: readonly RealEntry[] | undefined, source?: (id: string) => { title: string } | undefined): string {
+export function realSaid(real: readonly RealEntry[] | undefined, source?: (id: string) => { page?: { title: string } } | undefined): string {
   const list = real ?? []
-  // a lookupId whose lookup read no page (no source to name) is from memory too
+  // a lookupId whose lookup ran no search is from memory too
   const memory = list.filter((r) => r.stated === undefined && r.source === undefined && (r.lookup === undefined || (source !== undefined && !source(r.lookup)))).map((r) => `${r.feature} ${r.size}`)
   if (memory.length) return `, say ${memory.length > 1 ? `${memory.slice(0, -1).join(', ')} and ${memory.at(-1)!}` : memory[0]!} ${memory.length === 1 ? 'is' : 'are'} from memory, not looked up,`
   const looked = list.find((r) => r.lookup !== undefined)
-  const page = looked?.lookup !== undefined ? source?.(looked.lookup) : list.find((r) => r.source)?.source
+  const page = looked?.lookup !== undefined ? source?.(looked.lookup)?.page : list.find((r) => r.source)?.source
   return page ? `, say its real sizes were looked up on ${page.title},` : ''
 }
 
