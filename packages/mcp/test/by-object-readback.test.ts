@@ -112,6 +112,21 @@ function ledgeStl(): Buffer {
   return out
 }
 
+/** Two 15 x 20 x 10 mm blocks of one model, side by side in x with a 10 mm gap between them. */
+function splitPegStl(): Buffer {
+  const a = boxStl(15, 20, 10)
+  const b = boxStl(15, 20, 10)
+  for (let t = 0; t < 12; t++) {
+    for (let k = 0; k < 3; k++) {
+      const o = 84 + t * 50 + 12 + k * 12
+      b.writeFloatLE(b.readFloatLE(o) + 25, o)
+    }
+  }
+  const out = Buffer.concat([a, b.subarray(84)])
+  out.writeUInt32LE(24, 80)
+  return out
+}
+
 /** The two boxes 30 mm apart, by object, on `printer` with `changes`: inside any Bambu Lab radius, clear of the head. */
 async function twoApart(h: Harness, printer: string, changes: Record<string, unknown>): Promise<void> {
   await twoBoxes(h, printer, { print_sequence: 'by object', ...changes })
@@ -147,14 +162,16 @@ describe.skipIf(noSx())('a by-object refusal from sx', () => {
   it('names two copies of one model that enter a keep-out zone by their own ids', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     try {
-      writeFileSync(join(h.dir, 'peg.stl'), boxStl(20, 20, 10))
+      writeFileSync(join(h.dir, 'peg.stl'), splitPegStl())
       await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
       await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'peg.stl') })
       await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'peg.stl') })
-      await call(h, 'slicerx_project_move', { object: 'obj-1', x: 100, y: 128 })
-      await call(h, 'slicerx_project_move', { object: 'obj-2', x: 160, y: 128 })
-      // an A1 style nozzle wrap check zone over the whole bed
-      await call(h, 'slicerx_project_set_overrides', { changes: { skirt_loops: 0, brim_type: 'no_brim', head_wrap_detect_zone: ['0x0', '256x0', '256x256', '0x256'] } })
+      // one copy behind the other, each with its gap at x 123 to 133
+      await call(h, 'slicerx_project_move', { object: 'obj-1', x: 128, y: 90 })
+      await call(h, 'slicerx_project_move', { object: 'obj-2', x: 128, y: 166 })
+      // a band excluded from front to back in both gaps (x 126 to 130) with no travel lift: each copy's travels from
+      // one of its blocks to the other cross it
+      await call(h, 'slicerx_project_set_overrides', { changes: { skirt_loops: 0, brim_type: 'no_brim', bed_exclude_area: ['126x0', '130x0', '130x256', '126x256'], z_hop: 0 } })
       const ids = (await call<Shown>(h, 'slicerx_project_show')).output.plates[0]!.placements.map((p) => p.id)
       expect(ids).toHaveLength(2)
       const r = await h.call('slicerx_slice')
