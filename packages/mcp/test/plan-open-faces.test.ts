@@ -39,7 +39,7 @@ function tools() {
 describe('design.put_plan openFaces', () => {
   it('is 1.6.0, and says in its description and schema what openFaces is', () => {
     const { put } = tools()
-    expect(put.version).toBe('1.7.0')
+    expect(put.version).toBe('1.8.0')
     expect(put.description).toContain('its open faces in openFaces')
     expect(partPlanSchema.shape.openFaces.description).toContain('[{ "piece": "Pen cup", "faces": ["top"] }]')
   })

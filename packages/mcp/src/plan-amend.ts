@@ -3,9 +3,10 @@
 // A build that finds a planned size it cannot keep asks to change the approved plan: design.plan with amends shows
 // the person the plan with the changed sizes, the old value beside each, and the build's reason, and waits for Go, as
 // a new plan does; design.put_plan with amends changes a client's own plan. An amend changes sizes and may add
-// features, keeping every planned one; a build's amend comes once per fix round, never after the round is over, and
-// never buys a second round: the plan keeps its failed checks under the same planId, and its revision goes up by one. A
-// change the person asked for (asked) goes in with no card and is not held to the fix round (tab-tools.ts).
+// features, keeping every planned one, and gives every other field as the plan has it (amendDropProblem); a build's
+// amend comes once per fix round, never after the round is over, and never buys a second round: the plan keeps its
+// failed checks under the same planId, and its revision goes up by one. A change the person asked for (asked) goes in
+// with no card and is not held to the fix round (tab-tools.ts).
 import type { PartPlan, PlanEntry, PlanOrigin } from './design-check'
 
 /** The longest reason an amend takes. */
@@ -82,6 +83,47 @@ function keptFeatures(old: Sized, next: Sized): number[] | null {
   return at
 }
 
+/**
+ * The plan's fields an amend leaves as they are (amendedSizes keeps the plan's own): one the amend gives otherwise is
+ * refused. The assumptions and questions are left out, since the card adds lines of its own to them and an amend may
+ * say them again in other words; they stay as they are too.
+ */
+const KEPT_FIELDS = ['printInPlace', 'detail', 'curved', 'flat', 'proportions', 'repeats', 'colors', 'scale', 'real', 'tiers'] as const
+
+/** A value with its object keys in order, and a scale as its number N, so the same value written another way is the same. */
+function canonical(v: unknown, key?: string): unknown {
+  if (key === 'scale' && typeof v === 'string') return Number(v.split(':').pop())
+  if (Array.isArray(v)) return v.map((x) => canonical(x))
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, x]) => [k, canonical(x)]))
+  return v
+}
+const same = (a: unknown, b: unknown, key?: string): boolean => JSON.stringify(canonical(a, key)) === JSON.stringify(canonical(b, key))
+
+/**
+ * What an amend (amendShapeProblem says it is one) changes that amendedSizes would not keep, or null: a planned
+ * feature's on, a row of holes' recess, or a plan field among KEPT_FIELDS that it gives otherwise. A field it leaves
+ * out of the plan stays as it is; on and recess are given with their feature or row, as its kinds are. Without this,
+ * the change would be dropped while the amend reports the plan changed.
+ */
+export function amendDropProblem(old: Sized, next: Sized): string | null {
+  const only = 'an amend changes sizes only'
+  for (const o of old.features) {
+    const f = next.features.find((x) => x.name === o.name)
+    if (f && (f.on ?? '') !== (o.on ?? '')) return `features: ${only}; ${o.name} ${o.on ? `keeps on: ${JSON.stringify(o.on)}` : 'takes no on'}`
+  }
+  for (const [i, h] of (old.holes ?? []).entries()) {
+    const n = next.holes?.[i]
+    if (n && (n.recess ?? false) !== (h.recess ?? false)) return `holes: ${only}; ${h.name} ${h.recess ? 'keeps recess: true' : 'takes no recess'}`
+  }
+  const o = old as unknown as Record<string, unknown>
+  const n = next as unknown as Record<string, unknown>
+  for (const k of KEPT_FIELDS) {
+    if (n[k] === undefined || same(n[k], o[k], k)) continue
+    return `${k}: ${only}; ${o[k] === undefined ? `leave out ${k}` : `the plan keeps ${k}: ${JSON.stringify(o[k])}`}`
+  }
+  return null
+}
+
 /** The features `next` adds to `old` (amendShapeProblem says it is an amend), by name, in order. */
 export function amendAdded(old: Sized, next: Sized): string[] {
   const names = new Set(old.features.map((f) => f.name))
@@ -96,7 +138,10 @@ export function amendKinds(old: Sized, next: Sized): string[] {
   })
 }
 
-/** `old` with the sizes of `next` and the features it adds (amendShapeProblem says it is an amend): its assumptions and questions stay as they are. */
+/**
+ * `old` with the sizes of `next` and the features it adds (amendShapeProblem says it is an amend, amendDropProblem that
+ * it changes nothing this leaves out): its assumptions and questions, and every other field, stay as they are.
+ */
 export function amendedSizes<P extends PartPlan>(old: P, next: Sized): P {
   const out = structuredClone(old)
   const was = new Map(out.features.map((f) => [f.name, f]))

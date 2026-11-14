@@ -285,9 +285,9 @@ describe('designCheck', () => {
     expect(designCheck({ ...bracket, features: bracket.features.map((f) => ({ ...f, kinds: { width: 'count' as const } })) }, built, 0.4)).toEqual(designCheck(bracket, built, 0.4))
   })
 
-  it('design.plan is 1.13.0 and tells the model to give a kind for each count and angle, locally too', () => {
+  it('design.plan is 1.14.0 and tells the model to give a kind for each count and angle, locally too', () => {
     const t = createCardPlans(createPlanRegistry()).planTool()
-    expect(t.version).toBe('1.13.0')
+    expect(t.version).toBe('1.14.0')
     expect(t.description).toMatch(/kinds/)
     expect(t.localDescription).toMatch(/kinds/)
   })
@@ -1671,7 +1671,7 @@ describe('design.put_plan', () => {
 
   it('is 1.5.0, keeps the kinds of each size, drops an empty kinds map, and refuses kinds that name no size', async () => {
     const { plans, run, set } = tools([boxDesign('d1', 'Spacer')])
-    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.7.0')
+    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.8.0')
     const features = [{ name: 'Wheel', sizes: { spokes: 5, rake: 12 }, kinds: { spokes: 'count', rake: 'angle' } }, { name: 'Rim', sizes: { width: 8 }, kinds: {} }]
     await run('design.put_plan', { plan: { ...boxPlan, planId: 'kinds-1', features } })
     expect(plans.get('kinds-1')!.plan.features).toEqual([features[0], { name: 'Rim', sizes: { width: 8 } }])
