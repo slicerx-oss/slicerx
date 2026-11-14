@@ -215,8 +215,9 @@ pub fn wrap_check_zone(cfg: &PrintConfig) -> Option<Vec<[f64; 2]>> {
 
 /// Every zone the printer keeps clear: the excluded areas (`bed_exclude_area`) and the nozzle wrap check corner
 /// (`head_wrap_detect_zone`). The brim and the skirt are cut to the bed less these, and the tower stays out of them. A
-/// path that enters one is refused: an object's by the collision check, which walks the same zones, and any other by
-/// the safety preflight (which refuses every path in an excluded area).
+/// path that enters an excluded area is refused: an object's by the collision check, which walks the same zones, and
+/// any other by the safety preflight (which refuses every path in an excluded area). In the wrap check corner only a
+/// skirt is refused: an object's own paths and travels may go there, and the printer then skips its check.
 pub fn keep_out_zones(cfg: &PrintConfig) -> Vec<Vec<[f64; 2]>> {
     let mut zones = exclude_zones(cfg);
     zones.extend(wrap_check_zone(cfg));
@@ -498,9 +499,8 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     }
                 }
                 for z in zones {
-                    // In the wrap check corner the collision check refuses the paths of an object, and the
-                    // `--allow-collisions` the user asks for lifts that: here only the skirt, which belongs to no
-                    // object and that check leaves out.
+                    // In the wrap check corner only the skirt is held: an object may print there, and the printer
+                    // then skips its check (`in_head_wrap_detect_zone`).
                     if z.wrap && p.feature != Feature::Skirt {
                         continue;
                     }

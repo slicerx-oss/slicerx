@@ -145,7 +145,8 @@ pub(crate) fn add_written_travels(hits: &mut Hits, objects: u32, travels: &[Writ
 }
 
 /// The crossings and keep-out moves of `out`'s layers. Owners are the plate's objects (`out.objects`), then the prime
-/// tower; zone `k` is obstacle `objects + 1 + k`. `crossings` is off for a plate printed by object, whose objects do not
+/// tower; zone `k` is obstacle `objects + 1 + k`. Only the excluded areas count: no path or travel is held to the nozzle
+/// wrap check corner. `crossings` is off for a plate printed by object, whose objects do not
 /// share layers. A travel meets a zone when it runs into it or passes within `clearance` of it (the nozzle's width),
 /// and counts for the object it leaves, unless `router` takes it round the zone or over it, as the G-code does.
 pub(crate) fn check(
@@ -157,9 +158,15 @@ pub(crate) fn check(
 ) -> Hits {
     let mut hits = Hits::default();
     let n = u32::try_from(out.objects.len()).unwrap_or(u32::MAX);
+    // The nozzle wrap check corner is the printer's to skip, not a keep-out for the plate's own paths: a plate in it
+    // prints, and the printer leaves that check out (`in_head_wrap_detect_zone`). Its box is empty, so nothing meets it.
     let mut boxes = Vec::with_capacity(zones.len());
-    for (_, z) in zones {
-        boxes.push(bounds(z, 0.0));
+    for (kind, z) in zones {
+        boxes.push(if *kind == ZONE_WRAP_CHECK {
+            bounds(&[], 0.0)
+        } else {
+            bounds(z, 0.0)
+        });
     }
     let clearance = clearance.max(0.0);
     // Objects whose footprints, with room for a brim and support around them, stand apart cannot cross; only a prime
@@ -854,6 +861,38 @@ mod tests {
         assert_eq!(
             (hits.0[0].kind, hits.0[0].mover, hits.0[0].obstacle),
             (Kind::KeepOut, 0, 3)
+        );
+    }
+
+    #[test]
+    fn a_path_or_travel_in_the_wrap_check_corner_is_not_a_hit() {
+        // The same object a at (5, 5) as above, in a nozzle wrap check corner instead of an excluded area: the plate
+        // may print there, and the printer skips its check.
+        let out = layer((5.0, 5.0), (100.0, 50.0), [(150.0, 40.0), (150.0, 90.0)]);
+        let corner = vec![(
+            ZONE_WRAP_CHECK,
+            vec![[0.0, 0.0], [18.0, 0.0], [18.0, 28.0], [0.0, 28.0]],
+        )];
+        assert!(check(&out, &corner, false, 0.4, None).is_empty());
+        // The travel from a to b through the corner is no hit either.
+        let corner = vec![(
+            ZONE_WRAP_CHECK,
+            vec![[70.0, 35.0], [80.0, 35.0], [80.0, 45.0], [70.0, 45.0]],
+        )];
+        assert!(check(&two_walls(), &corner, false, 0.4, None).is_empty());
+        // An excluded area after it keeps its place: zone 1, obstacle 4.
+        let mut both = corner;
+        both.push((
+            ZONE_EXCLUSION,
+            vec![[70.0, 35.0], [80.0, 35.0], [80.0, 45.0], [70.0, 45.0]],
+        ));
+        let hits = check(&two_walls(), &both, false, 0.4, None);
+        assert_eq!(
+            hits.0
+                .iter()
+                .map(|h| (h.kind, h.mover, h.obstacle))
+                .collect::<Vec<_>>(),
+            [(Kind::KeepOut, 0, 4)]
         );
     }
 

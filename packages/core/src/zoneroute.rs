@@ -13,7 +13,9 @@
 //!
 //! A way round counts only when every leg of it stays on the bed and clear of every zone. The G-code writer and
 //! the collision check ask the same router, so a travel the writer routes is never reported, and one it cannot
-//! route always is.
+//! route always is, except in the nozzle wrap check corner, which is never reported. On a plate whose first layer
+//! is in that corner the printer skips its check there, and the corner is not routed round at all
+//! ([`Router::of_plate`]).
 
 use crate::fm::Fm as _;
 use crate::perimeters::Shapes;
@@ -40,6 +42,9 @@ pub(crate) enum Route {
 /// The zones, the bed and the lift of one set of settings.
 pub(crate) struct Router {
     zones: Vec<Vec<Pt>>,
+    /// The place in `zones` of the nozzle wrap check corner, when it is one of them: travels go round it, but one
+    /// written through it anyway is not reported ([`Self::enters`]).
+    wrap: Option<usize>,
     bed: Vec<Pt>,
     clearance: f64,
     lift: f64,
@@ -147,15 +152,27 @@ fn length(a: Pt, pts: &[Pt]) -> f64 {
 impl Router {
     /// The router of `cfg`'s zones, or None when it has none.
     pub(crate) fn of(cfg: &crate::config::PrintConfig) -> Option<Self> {
-        let zones: Vec<Vec<Pt>> = crate::collide::plate::zones(cfg)
+        Self::of_plate(cfg, false)
+    }
+
+    /// The router of `cfg`'s zones for a plate, or None when it has none. On a plate whose first layer is in the
+    /// nozzle wrap check corner (`in_wrap_corner`, [`crate::customgcode::in_head_wrap_detect_zone`]) the printer
+    /// skips that check, so the corner is left out and travels go to and through it straight. The corner is the
+    /// last zone, so the excluded areas keep their places in [`crate::collide::plate::zones`].
+    pub(crate) fn of_plate(cfg: &crate::config::PrintConfig, in_wrap_corner: bool) -> Option<Self> {
+        let kept: Vec<(u8, Vec<Pt>)> = crate::collide::plate::zones(cfg)
             .into_iter()
-            .map(|(_, z)| z)
+            .filter(|(kind, _)| !(in_wrap_corner && *kind == crate::collide::plate::ZONE_WRAP_CHECK))
             .collect();
-        if zones.is_empty() {
+        if kept.is_empty() {
             return None;
         }
+        let wrap = kept
+            .iter()
+            .position(|(kind, _)| *kind == crate::collide::plate::ZONE_WRAP_CHECK);
         Some(Self {
-            zones,
+            zones: kept.into_iter().map(|(_, z)| z).collect(),
+            wrap,
             bed: cfg.printable_area.clone(),
             clearance: cfg.nozzle_diameter.max(0.0),
             lift: cfg.z_hop.max(0.0),
@@ -190,11 +207,13 @@ impl Router {
     }
 
     /// The first zone (its place in [`crate::collide::plate::zones`]) the leg `a`-`b` runs into, more than the edge
-    /// tolerance inside it, and a point of the leg in it. A leg that only passes beside a zone is clear here.
+    /// tolerance inside it, and a point of the leg in it. A leg that only passes beside a zone is clear here, and so
+    /// is one into the nozzle wrap check corner, which holds no path or travel of the plate to it.
     pub(crate) fn enters(&self, a: Pt, b: Pt) -> Option<(usize, Pt)> {
         self.zones
             .iter()
             .enumerate()
+            .filter(|(k, _)| Some(*k) != self.wrap)
             .find_map(|(k, z)| crate::preflight::segment_reaches(z, a, b, true, EDGE_TOL_MM).map(|p| (k, p)))
     }
 
@@ -319,6 +338,7 @@ mod tests {
     fn router(zones: Vec<Vec<Pt>>, lift: f64) -> Router {
         Router {
             zones,
+            wrap: None,
             bed: vec![[0.0, 0.0], [256.0, 0.0], [256.0, 256.0], [0.0, 256.0]],
             clearance: 0.4,
             lift,
@@ -417,5 +437,46 @@ mod tests {
             panic!()
         };
         on_bed_and_clear(&r, a, &way);
+    }
+
+    /// The A1's settings: its bed, an excluded corner of our own at the front left, and the nozzle wrap check corner.
+    fn a1_like() -> crate::config::PrintConfig {
+        crate::config::PrintConfig::from_value(&serde_json::json!({
+            "printable_area": ["0x0", "256x0", "256x256", "0x256"],
+            "bed_exclude_area": ["0x0", "18x0", "18x28", "0x28"],
+            "head_wrap_detect_zone": ["226x224", "256x224", "256x256", "226x256"],
+            "nozzle_diameter": [0.4],
+            "z_hop": [0.4],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_plate_in_the_wrap_check_corner_travels_through_it_straight() {
+        // Two walls of a box in the corner: from (230, 230) to (250, 250), all inside it.
+        let (a, b) = ([230.0, 230.0], [250.0, 250.0]);
+        let kept = Router::of(&a1_like()).unwrap();
+        assert_ne!(
+            kept.route(a, b, 1.0),
+            Route::Clear,
+            "a plate outside the corner keeps it"
+        );
+        let free = Router::of_plate(&a1_like(), true).unwrap();
+        assert_eq!(free.route(a, b, 1.0), Route::Clear);
+        assert_eq!(free.route([128.0, 128.0], a, 1.0), Route::Clear);
+        // The excluded area is still gone round, and keeps its place (zone 0).
+        assert!(matches!(
+            free.route([5.0, 40.0], [30.0, 5.0], 1.0),
+            Route::Around(_)
+        ));
+        assert_eq!(free.enters([5.0, 5.0], [10.0, 10.0]).map(|(k, _)| k), Some(0));
+    }
+
+    #[test]
+    fn a_travel_written_into_the_wrap_check_corner_is_not_noted() {
+        // Outside the corner the router still goes round it, but a travel written into it is not reported.
+        let r = Router::of(&a1_like()).unwrap();
+        assert_eq!(r.enters([128.0, 128.0], [240.0, 240.0]), None);
+        assert_eq!(r.enters([5.0, 5.0], [10.0, 10.0]).map(|(k, _)| k), Some(0));
     }
 }

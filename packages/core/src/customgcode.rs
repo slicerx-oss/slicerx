@@ -776,6 +776,57 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
     c
 }
 
+/// Whether the plate's first layer meets the nozzle wrap check corner (`head_wrap_detect_zone`): any part of the
+/// first layer's outlines crossing or lying inside it. The templates read it as `in_head_wrap_detect_zone`, and on a
+/// plate where it holds the printer skips that check, so its travels need not go round the corner
+/// ([`crate::zoneroute::Router::of_plate`]).
+pub(crate) fn in_head_wrap_detect_zone(cfg: &PrintConfig, out: &SliceOutput) -> bool {
+    // The zone's corners; none given means no overlap.
+    let zone: Vec<[f64; 2]> = match cfg.raw.get("head_wrap_detect_zone") {
+        Some(serde_json::Value::Array(a)) => a
+            .iter()
+            .filter_map(|p| {
+                let xy: Vec<f64> = match p {
+                    serde_json::Value::Array(v) => v.iter().filter_map(serde_json::Value::as_f64).collect(),
+                    serde_json::Value::String(t) => {
+                        t.split('x').filter_map(|v| v.trim().parse().ok()).collect()
+                    }
+                    _ => Vec::new(),
+                };
+                Some([*xy.first()?, *xy.get(1)?])
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    zone.len() >= 3 && {
+        // The first layer's outlines against the zone polygon: whether any part of the layer's projection crosses
+        // or lies inside the zone.
+        let ring = |p: &[[f64; 2]]| -> Vec<i_overlay::i_float::int::point::IntPoint<i32>> {
+            p.iter()
+                .map(|q| {
+                    let pt = crate::geom::Point::from_mm(q[0], q[1]);
+                    i_overlay::i_float::int::point::IntPoint::new(pt.x, pt.y)
+                })
+                .collect()
+        };
+        let zone_shape: crate::perimeters::Shapes = vec![vec![ring(&zone)]];
+        let layer: crate::perimeters::Shapes = out
+            .first_layer_info
+            .rings
+            .iter()
+            .map(|r| {
+                vec![ring(
+                    &r.iter()
+                        .map(|q| [f64::from(q[0]), f64::from(q[1])])
+                        .collect::<Vec<_>>(),
+                )]
+            })
+            .collect();
+        let layer = crate::perimeters::union_all(&[&layer]);
+        !crate::perimeters::intersection(&layer, &zone_shape).is_empty()
+    }
+}
+
 /// Renders the template under `key`, or None when the profile has none.
 pub(crate) fn render(cfg: &PrintConfig, ctx: &Context<'_>, key: &str) -> Result<Option<String>, String> {
     let Some(t) = text(cfg, key) else { return Ok(None) };
@@ -1154,51 +1205,11 @@ fn plate_vars(c: &mut Context<'_>, cfg: &PrintConfig, out: &SliceOutput, tools: 
             n(f64::midpoint(first[1], first[3])),
         ]),
     );
-    // The head wrap detection zone, as a box over the zone's corners; none given means no overlap.
-    let zone: Vec<[f64; 2]> = match cfg.raw.get("head_wrap_detect_zone") {
-        Some(serde_json::Value::Array(a)) => a
-            .iter()
-            .filter_map(|p| {
-                let xy: Vec<f64> = match p {
-                    serde_json::Value::Array(v) => v.iter().filter_map(serde_json::Value::as_f64).collect(),
-                    serde_json::Value::String(t) => {
-                        t.split('x').filter_map(|v| v.trim().parse().ok()).collect()
-                    }
-                    _ => Vec::new(),
-                };
-                Some([*xy.first()?, *xy.get(1)?])
-            })
-            .collect(),
-        _ => Vec::new(),
-    };
-    let hit = zone.len() >= 3 && {
-        // The first layer's outlines against the zone polygon (Orca: `intersection_pl`, whether any part of
-        // the layer's projection crosses or lies inside the zone).
-        let ring = |p: &[[f64; 2]]| -> Vec<i_overlay::i_float::int::point::IntPoint<i32>> {
-            p.iter()
-                .map(|q| {
-                    let pt = crate::geom::Point::from_mm(q[0], q[1]);
-                    i_overlay::i_float::int::point::IntPoint::new(pt.x, pt.y)
-                })
-                .collect()
-        };
-        let zone_shape: crate::perimeters::Shapes = vec![vec![ring(&zone)]];
-        let layer: crate::perimeters::Shapes = out
-            .first_layer_info
-            .rings
-            .iter()
-            .map(|r| {
-                vec![ring(
-                    &r.iter()
-                        .map(|q| [f64::from(q[0]), f64::from(q[1])])
-                        .collect::<Vec<_>>(),
-                )]
-            })
-            .collect();
-        let layer = crate::perimeters::union_all(&[&layer]);
-        !crate::perimeters::intersection(&layer, &zone_shape).is_empty()
-    };
-    put(c, "in_head_wrap_detect_zone", Value::Bool(hit));
+    put(
+        c,
+        "in_head_wrap_detect_zone",
+        Value::Bool(in_head_wrap_detect_zone(cfg, out)),
+    );
     // Timelapse safe position: none picked, so the default (0, 0).
     put(c, "timelapse_pos_x", n(0.0));
     put(c, "timelapse_pos_y", n(0.0));

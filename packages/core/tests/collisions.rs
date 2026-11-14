@@ -1232,27 +1232,49 @@ fn a_zone_across_the_bed_is_lifted_over_or_still_reported() {
 }
 
 #[test]
-fn a_print_in_the_a1_wrap_check_corner_is_a_keep_out_hit() {
+fn a_print_in_the_a1_wrap_check_corner_is_no_keep_out_hit() {
+    // An object in the nozzle wrap check corner prints there: the printer skips its check on such a plate
+    // (`in_head_wrap_detect_zone`), so neither its paths nor its travels into the corner are a collision.
     let zone = json!({"head_wrap_detect_zone": ["226x224", "256x224", "256x256", "226x256"], "printable_area": ["0x0", "256x0", "256x256", "0x256"]});
-    let corner = run(
-        &[("box", block(15.0, 15.0, 4.0), 235.0, 235.0)],
-        zone.clone(),
-        json!({}),
-    );
-    let c = &corner.report.collisions[0];
-    assert_eq!(
-        (c.kind, c.hit_id.as_str(), c.object_id.as_str()),
-        (Kind::KeepOut, "wrap-check-zone", "box")
-    );
-    assert!(
-        corner
-            .report
-            .collision_fixes
-            .iter()
-            .any(|f| f.kind == FixKind::MoveObject && f.object_id.as_deref() == Some("box"))
-    );
+    // Wholly in the corner by layer and by object, and across its edge (220 to 235).
+    for (at, sequence) in [(235.0, "by layer"), (235.0, "by object"), (220.0, "by layer")] {
+        let mut settings = zone.clone();
+        settings["print_sequence"] = json!(sequence);
+        let corner = run(
+            &[
+                ("box", block(15.0, 15.0, 4.0), at, at),
+                ("away", block(15.0, 15.0, 4.0), 100.0, 100.0),
+            ],
+            settings,
+            json!({}),
+        );
+        assert!(
+            !corner.report.collisions.iter().any(|c| c.kind == Kind::KeepOut),
+            "{at} {sequence}: {:?}",
+            kinds(&corner)
+        );
+        assert!(
+            !corner
+                .report
+                .collision_fixes
+                .iter()
+                .any(|f| f.kind == FixKind::MoveObject && f.object_id.as_deref() == Some("box")),
+            "{at} {sequence}"
+        );
+    }
     let away = run(&[("box", block(15.0, 15.0, 4.0), 100.0, 100.0)], zone, json!({}));
     assert!(away.report.collisions.is_empty());
+}
+
+#[test]
+fn a_print_in_an_excluded_area_at_the_a1_corner_is_still_blocked() {
+    // The same box and corner as an excluded area (`bed_exclude_area`): the safety preflight blocks it, as before.
+    let zone = json!({"bed_exclude_area": ["226x224", "256x224", "256x256", "226x256"], "printable_area": ["0x0", "256x0", "256x256", "0x256"]});
+    let (req, load) = request(&[("box", block(15.0, 15.0, 4.0), 235.0, 235.0)], zone, json!({}));
+    let Err(sx_core::Error::Blocked(why)) = common::run_request(&req, &load) else {
+        panic!("not blocked")
+    };
+    assert!(why.contains("toolpaths enter an excluded bed area"), "{why}");
 }
 
 /// A collision as the result JSON writes it, for the fields a reader picks the struck part and its region by.
@@ -1374,14 +1396,36 @@ fn crossing_paths_strike_the_later_object_and_box_every_crossing() {
 
 #[test]
 fn a_keep_out_hit_strikes_the_object_printing_in_the_zone() {
-    let zone = json!({"head_wrap_detect_zone": ["226x224", "256x224", "256x256", "226x256"], "printable_area": ["0x0", "256x0", "256x256", "0x256"]});
-    let r = run(&[("box", block(15.0, 15.0, 4.0), 235.0, 235.0)], zone, json!({}));
-    let c = &r.report.collisions[0];
-    assert_eq!(written(c)["damagedId"], "box", "{}", written(c));
-    let [lo, hi] = contact(c);
-    // Inside the corner and the box both.
-    assert!(lo[0] >= 226.0 - 0.5 && hi[0] <= 250.0 + 0.5, "{lo:?} {hi:?}");
-    assert!(lo[1] >= 224.0 - 0.5 && hi[1] <= 250.0 + 0.5, "{lo:?} {hi:?}");
+    // A band excluded from edge to edge, a box on each side and no travel lift: the travels across it are hits of the
+    // box each one leaves, boxed where they cross the band.
+    let band = json!({
+        "bed_exclude_area": [[0, 100], [256, 100], [256, 110], [0, 110]],
+        "printable_area": [[0, 0], [256, 0], [256, 256], [0, 256]],
+        "print_sequence": "by layer",
+        "z_hop": 0,
+    });
+    let r = run(
+        &[
+            ("below", block(10.0, 10.0, 1.0), 50.0, 80.0),
+            ("above", block(10.0, 10.0, 1.0), 50.0, 120.0),
+        ],
+        band,
+        json!({}),
+    );
+    let hits: Vec<_> = r
+        .report
+        .collisions
+        .iter()
+        .filter(|c| c.kind == Kind::KeepOut)
+        .collect();
+    assert!(!hits.is_empty(), "{:?}", kinds(&r));
+    for c in hits {
+        assert_eq!(written(c)["damagedId"], c.object_id.as_str(), "{}", written(c));
+        let [lo, hi] = contact(c);
+        // In the band, between the boxes.
+        assert!(lo[0] >= 50.0 - 0.5 && hi[0] <= 60.0 + 0.5, "{lo:?} {hi:?}");
+        assert!(lo[1] >= 100.0 - 0.5 && hi[1] <= 110.0 + 0.5, "{lo:?} {hi:?}");
+    }
 }
 
 #[test]
