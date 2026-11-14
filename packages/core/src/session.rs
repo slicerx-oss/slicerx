@@ -2287,7 +2287,7 @@ impl SliceSession {
             session.vase = Some(crate::spiral::base_layers(config, plan.count(), |i| plan.top(i)));
         }
         session.tower_rows0 = session.unsaved_rows(config);
-        session.keep_tower_for_purges(config, any_top)?;
+        session.keep_tower_for_purges(config, any_top, stop)?;
         session.plan_support_tools(config)?;
         session.plan_feature_tools(config)?;
         session.plan_painted_tools(config, stop)?;
@@ -2411,8 +2411,14 @@ impl SliceSession {
 
     /// Changes between layers skip the tower when the new filament's infill can take the flush. Where
     /// that estimate falls short, the tower must reach that layer so no change purges less than the
-    /// flush matrix asks (a printer without a chute has nowhere else to put it).
-    fn keep_tower_for_purges(&mut self, config: &PrintConfig, any_top: Option<u32>) -> Result<(), Error> {
+    /// flush matrix asks (a printer without a chute has nowhere else to put it). The layers it reads are cut one at a
+    /// time, painted ones too, so it ends with [`Error::Cancelled`] once `stop` says so, within a layer's paint.
+    fn keep_tower_for_purges(
+        &mut self,
+        config: &PrintConfig,
+        any_top: Option<u32>,
+        stop: crate::paint::Stop<'_>,
+    ) -> Result<(), Error> {
         let Some(last) = any_top.filter(|_| self.tool_count > 1) else {
             return Ok(());
         };
@@ -2421,8 +2427,13 @@ impl SliceSession {
         }
         let fam = Families::new(config);
         let micros = Micros::default();
+        let latch = crate::paint::Latch::new(stop);
+        let stop: crate::paint::Stop<'_> = &|| latch.said();
         let mut top = self.tower_top;
         for l in self.tower_top.map_or(0, |t| t + 1)..=last {
+            if stop() {
+                return Err(Error::Cancelled);
+            }
             let ended = l
                 .checked_sub(1)
                 .and_then(|p| self.tool_order.get(p as usize))
@@ -2439,7 +2450,11 @@ impl SliceSession {
             if need <= 0.5 {
                 continue;
             }
-            let room = self.purge_room(config, fam, &micros, l, to);
+            let room = self.purge_room(config, fam, &micros, l, to, stop);
+            // A layer cut once the run was canceled may lack its paint: its room is no answer.
+            if stop() {
+                return Err(Error::Cancelled);
+            }
             // The room is an estimate: it has to beat the flush by a quarter, or the tower stays.
             if need * 1.25 > room + 0.5 {
                 top = Some(l);
@@ -2453,9 +2468,17 @@ impl SliceSession {
     }
 
     /// What filament `to`'s infill (and objects, with `flush_into_objects`) on layer `l` can take up of a change's
-    /// flush, mm3, estimated from the layer's regions.
-    fn purge_room(&self, config: &PrintConfig, fam: Families, micros: &Micros, l: u32, to: u8) -> f64 {
-        let regions = self.layer_regions(l, fam, micros);
+    /// flush, mm3, estimated from the layer's regions (cut until `stop` says so, see [`Self::layer_regions_until`]).
+    fn purge_room(
+        &self,
+        config: &PrintConfig,
+        fam: Families,
+        micros: &Micros,
+        l: u32,
+        to: u8,
+        stop: crate::paint::Stop<'_>,
+    ) -> f64 {
+        let regions = self.layer_regions_until(l, fam, micros, false, stop);
         let shapes: Vec<&Shapes> = regions
             .regions
             .iter()
@@ -3344,7 +3367,7 @@ impl SliceSession {
             },
         );
         self.place_tower(config)?;
-        self.keep_tower_for_purges(config, any_top)
+        self.keep_tower_for_purges(config, any_top, crate::paint::GO_ON)
     }
 
     /// The prime tower as placed (shape and corner), for settings `cfg`.
@@ -4297,7 +4320,7 @@ impl SliceSession {
                 {
                     if let Some(l) = p.and_then(|p| s.object_layer(p)) {
                         let c = self.object_config(k, config)?;
-                        room += s.purge_room(&c, fam, &micros, l, to);
+                        room += s.purge_room(&c, fam, &micros, l, to, crate::paint::GO_ON);
                     }
                 }
                 if need * 1.25 > room + 0.5 {
@@ -8312,15 +8335,8 @@ impl SliceSession {
         {
             return Some(std::sync::Arc::clone(r));
         }
-        // The first stop holds, so no layer cut after it is kept, whatever `asked` says later.
-        let said = std::sync::atomic::AtomicBool::new(false);
-        let latched = || {
-            if !said.load(Ordering::Relaxed) && asked() {
-                said.store(true, Ordering::Relaxed);
-            }
-            said.load(Ordering::Relaxed)
-        };
-        let stop: crate::paint::Stop<'_> = &latched;
+        let latch = crate::paint::Latch::new(asked);
+        let stop: crate::paint::Stop<'_> = &|| latch.said();
         // Every layer below reads the interlocking beams, which plan in parallel: planned here first, not
         // inside the layer jobs (the rule in `par`).
         self.interlocked(fam, fam, micros);
