@@ -7,7 +7,8 @@
 //!   the bottom contacts within `support_interface_bottom_layers` below it are closed, smoothed outward and cut
 //!   from the base as interface; roofs placed with the tips at the same height join them;
 //! - `generate_raft_base` without a raft: the first base layer grows by `raft_first_layer_expansion` in steps
-//!   that stay `support_object_first_layer_gap` clear of the part, and leaves the brim alone;
+//!   that stay `support_object_first_layer_gap` clear of the part, and leaves the brim alone; on a plate of
+//!   several objects it also stays `support_object_xy_distance` clear of every other object's footprint;
 //! - `generate_support_layers`: the interface number of each layer, which turns the interface lines;
 //! - everything clipped to the bed.
 
@@ -64,6 +65,83 @@ fn rings_union(r: &[geo::Ring]) -> Shapes {
 /// Orca's `closing` with square joins: grown by `d1`, shrunk by `d2`.
 fn closing(s: &Shapes, d1: f64, d2: f64) -> Shapes {
     geo::offset(&geo::offset(s, d1, Join::Square), -d2, Join::Square)
+}
+
+/// The first layer's growth on a plate of several objects: each island of `raft` grows as one plate would grow it,
+/// but stays `support_object_xy_distance` clear of the footprint of every object it does not stand under. An
+/// island stands under the object whose footprint it overlaps most (the nearest when it overlaps none), so a
+/// branch that leans out of its own object's footprint still grows freely there. Islands with no other footprint
+/// within reach grow together, as before.
+fn grow_apart(
+    raft: Shapes,
+    trimming: &Shapes,
+    inp: &OrganicIn<'_>,
+    inflate: f64,
+    grow: &dyn Fn(Shapes, &Shapes) -> Shapes,
+) -> Shapes {
+    let gap = geo::sc(inp.raw.xy_distance) as f64;
+    let boxes: Vec<Option<[i64; 4]>> = inp.footprints.iter().map(geo::bbox).collect();
+    let apart = |a: &[i64; 4], b: &[i64; 4], d: i64| {
+        a[0] > b[2] + d || b[0] > a[2] + d || a[1] > b[3] + d || b[1] > a[3] + d
+    };
+    let box_dist2 = |a: &[i64; 4], b: &[i64; 4]| {
+        let dx = (a[0] - b[2]).max(b[0] - a[2]).max(0);
+        let dy = (a[1] - b[3]).max(b[1] - a[3]).max(0);
+        dx * dx + dy * dy
+    };
+    let reach = (inflate + gap) as i64 + 1;
+    let mut free: Shapes = Vec::new();
+    let mut out: Shapes = Vec::new();
+    for island in raft {
+        let island = vec![island];
+        let Some(ib) = geo::bbox(&island) else {
+            continue;
+        };
+        let near: Vec<usize> = boxes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.is_some_and(|b| !apart(&ib, &b, reach)))
+            .map(|(k, _)| k)
+            .collect();
+        let overlap = |k: usize| {
+            boxes[k]
+                .filter(|b| !apart(&ib, b, 0))
+                .map_or(0.0, |_| geo::area(&geo::inter(&island, &inp.footprints[k])))
+        };
+        let own = near
+            .iter()
+            .map(|&k| (k, overlap(k)))
+            .filter(|&(_, a)| a > 0.0)
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(k, _)| k)
+            .or_else(|| {
+                boxes
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(k, b)| b.map(|b| (k, box_dist2(&ib, &b))))
+                    .min_by_key(|&(_, d)| d)
+                    .map(|(k, _)| k)
+            });
+        let others: Vec<&Shapes> = near
+            .iter()
+            .filter(|&&k| Some(k) != own)
+            .map(|&k| &inp.footprints[k])
+            .collect();
+        if others.is_empty() {
+            free.extend(island);
+            continue;
+        }
+        let keep_out = geo::offset(
+            &crate::perimeters::union_all(&others),
+            gap,
+            Join::Round(geo::sc(0.01) as f64),
+        );
+        out.extend(grow(island, &geo::union2(trimming, &keep_out)));
+    }
+    if !free.is_empty() {
+        out.extend(grow(free, trimming));
+    }
+    geo::union(&out)
 }
 
 /// From the drawn branches and the placed roofs to the organic layers of every support layer.
@@ -257,16 +335,24 @@ pub(crate) fn finish(
             Join::Square,
         );
         let inflate = (geo::sc(inp.first_layer_expansion) as f64 - geo::sc(EPS) as f64).max(0.0);
-        let mut raft = std::mem::take(&mut base[0]);
-        if inflate > 1.0 {
-            let nsteps = 5.max((inflate / geo::sc(inp.first_layer_width) as f64).ceil() as i64);
-            let step = inflate / nsteps as f64;
-            for _ in 0..nsteps {
-                raft = geo::diff(&geo::offset(&raft, step, Join::Miter(3.0)), &trimming);
+        let grow = |mut raft: Shapes, trimming: &Shapes| -> Shapes {
+            if inflate > 1.0 {
+                let nsteps = 5.max((inflate / geo::sc(inp.first_layer_width) as f64).ceil() as i64);
+                let step = inflate / nsteps as f64;
+                for _ in 0..nsteps {
+                    raft = geo::diff(&geo::offset(&raft, step, Join::Miter(3.0)), trimming);
+                }
+                raft
+            } else {
+                geo::diff(&raft, trimming)
             }
+        };
+        let raft = std::mem::take(&mut base[0]);
+        let mut raft = if inp.footprints.len() < 2 || inflate <= 1.0 {
+            grow(raft, &trimming)
         } else {
-            raft = geo::diff(&raft, &trimming);
-        }
+            grow_apart(raft, &trimming, inp, inflate, &grow)
+        };
         if !interface_polygons.is_empty() {
             raft = geo::diff(&raft, &interface_polygons);
         }
