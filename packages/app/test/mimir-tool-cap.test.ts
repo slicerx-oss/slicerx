@@ -203,6 +203,26 @@ describe('no mimir tab request carries more than 128 tools', () => {
     }
   }, 60_000)
 
+  it('sends the trending models command on a design turn only when it asks for the library or what is trending', async () => {
+    const off = await registerApp('desktop')
+    try {
+      const build = toolNames((await turn('desktop', NEUTRAL, 'mimir cloud', TURNS[0]!)).req)
+      expect(build).not.toContain('app__library_trending')
+      // a print turn still sends it with the rest of core
+      expect(toolNames((await turn('desktop', NEUTRAL, 'mimir cloud', TURNS[4]!)).req)).toContain('app__library_trending')
+      for (const t of [
+        { kind: 'trending', message: 'Show me the models trending this week' },
+        { kind: 'trending after a build', before: 'A 30 mm cube with a fillet', message: 'What models are trending in the library?' },
+      ]) {
+        const names = toolNames((await turn('desktop', NEUTRAL, 'mimir cloud', t)).req)
+        expect(names.length, t.kind).toBe(CAP)
+        expect(names, t.kind).toContain('app__library_trending')
+      }
+    } finally {
+      off()
+    }
+  }, 60_000)
+
   it('sends the part rename only on a part rename ask, and keeps every tool a capped build or print turn sent', async () => {
     const off = await registerApp('desktop')
     try {
