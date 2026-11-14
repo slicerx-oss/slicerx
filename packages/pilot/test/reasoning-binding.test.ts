@@ -82,6 +82,10 @@ function replies(r: LlmHttpRequest | undefined): string[] {
 const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown as PrinterHost
 const NO_APPROVALS = { register: async () => undefined, grant: async () => undefined, deny: async () => undefined } as unknown as ApprovalHost
 const CLOUD = { ...DEFAULT_CONFIG, provider: 'mimir-cloud', model: 'claude-haiku-5-5', baseUrl: BASE, billing: 'key' as const, webSearch: false }
+/** A Claude model without tool search: its chat sends the tools each turn picks, so the list can change (toolsets.ts). */
+const PICKED = { ...CLOUD, model: 'claude-haiku-4-5' }
+/** A person's own key on the Messages API, which takes tool search from a chat's first request (tool-search.ts). */
+const SEARCHING = { ...CLOUD, provider: 'anthropic' }
 
 const tool = (name: string, toolset?: Toolset): PilotTool<never> =>
   defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: `${name} for the test`, ...(toolset ? { toolset } : {}), input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
@@ -114,8 +118,8 @@ function unboundReasoning(sent: LlmHttpRequest[], said: Reply[]): string[] {
   return sent.flatMap((r, n) => reasoning(r).filter((w) => prefixOf(signedFor.get(w)) !== prefixOf(r)).map((w) => `request ${n} carries ${w}`))
 }
 
-function chat(t: LlmTransport, tools: PilotTool<never>[], hasDesign: () => boolean = () => false) {
-  const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: t }, config: CLOUD, policy: DEFAULT_POLICY, builtins: false, tools, hasDesign })
+function chat(t: LlmTransport, tools: PilotTool<never>[], hasDesign: () => boolean = () => false, config: typeof CLOUD = CLOUD) {
+  const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: t }, config, policy: DEFAULT_POLICY, builtins: false, tools, hasDesign })
   return async (message: string): Promise<void> => {
     for await (const _e of pilot.run('ses_1', message)) void _e
   }
@@ -143,7 +147,7 @@ describe('signed reasoning across runs', () => {
       { think: 'b1', calls: ['part.look'] },
       { think: 'b2', text: 'Yes, at 65 C for 8 hours.' },
     ])
-    const say = chat(t, [look])
+    const say = chat(t, [look], undefined, PICKED)
     await say('Can the AMS 2 Pro dry nylon?')
     expect(reasoning(sent[1])).toEqual(['a1'])
     // the turn sets offer a changed tool on the next run, as a swap of toolsets does
@@ -157,6 +161,23 @@ describe('signed reasoning across runs', () => {
     expect(replies(sent[2])).toContain('Yes, at up to 65 C.')
     // this run's own reasoning goes back through its tool loop
     expect(reasoning(sent[3])).toEqual(['b1'])
+  })
+
+  it('a follow-up on a model with tool search sends each tool as first sent, so the first run keeps its reasoning', async () => {
+    const look = tool('part.look')
+    const { t, sent } = proxy([
+      { think: 'a1', calls: ['part.look'] },
+      { think: 'a2', text: 'Yes, at up to 65 C.' },
+      { think: 'b1', text: 'Yes, at 65 C for 8 hours.' },
+    ])
+    const say = chat(t, [look], undefined, SEARCHING)
+    await say('Can the AMS 2 Pro dry nylon?')
+    ;(look as { description: string }).description = 'part.look, now with the side view'
+    await say('And can it dry PETG?')
+    expect(sent).toHaveLength(3)
+    expect(parsed(sent[2]).tools).toEqual(parsed(sent[0]).tools)
+    expect(parsed(sent[2]).tools?.find((x) => x.name === 'part__look')?.description).toBe('part.look for the test')
+    expect(reasoning(sent[2])).toEqual(['a1', 'a2'])
   })
 
   it('a follow-up on another model drops the reasoning before it, and dropped reasoning never comes back', async () => {
@@ -188,7 +209,7 @@ describe('signed reasoning when pilot.load_tools changes the tools in the middle
       { think: 'b3', text: 'Done, it is switched.' },
     ]
     const { t, sent } = proxy(said)
-    const say = chat(t, overLimit())
+    const say = chat(t, overLimit(), undefined, PICKED)
     await say('Make me a bracket')
     await say('And then?')
     expect(sent).toHaveLength(4)

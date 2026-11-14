@@ -42,11 +42,19 @@ export type LlmMessage =
       bound?: string
     }
   | { role: 'tool'; callId: string; content: string; images?: LlmImage[] }
+  /**
+   * The app offering (`add`) or withdrawing (`remove`) tools of the chat's catalog by name, mid-chat, on a request that
+   * sends the whole catalog through tool search. It carries no words (`content` is always empty); providers without
+   * tool search skip it.
+   */
+  | { role: 'tools'; content: ''; add: string[]; remove: string[] }
 
 export interface LlmToolDef {
   name: string
   description: string
   parameters: JsonSchema
+  /** Left out of the model's context until a tool search finds it (`toolSearch` requests only). */
+  deferred?: boolean
 }
 
 export interface LlmRequest {
@@ -63,6 +71,11 @@ export interface LlmRequest {
   thinking?: false
   /** Enable the provider's hosted web search tool for this request. */
   webSearch?: boolean
+  /**
+   * The request sends the chat's whole tool catalog with the provider's tool search tool, most of it deferred, and its
+   * `tools` messages (LlmMessage) as tool changes. Only a client with `toolSearch` takes it.
+   */
+  toolSearch?: boolean
   /** The pilot session this turn belongs to; mimir cloud files a shared session under it. */
   session?: string
   /** The tier the runtime picked for this turn. mimir cloud asks its proxy for the stronger model on muninn. */
@@ -83,6 +96,11 @@ export type LlmEvent =
   | { type: 'error'; message: string; retryable: boolean; code?: string }
   /** The model that answered, when the reply names it (mimir cloud's `x-sx-model`). Comes before the reply's text. */
   | { type: 'model'; model: string }
+  /**
+   * mimir cloud's proxy takes a request that sends the whole tool catalog through tool search (its `mimir` stream event,
+   * supabase/functions/mimir/handler.ts). The transport client keeps it (LlmClient.toolSearch) and passes it on no further.
+   */
+  | { type: 'tool_search' }
 
 /** Builds one HTTP request and parses its SSE body. Never sees a key. */
 export interface LlmAdapter {
@@ -98,5 +116,10 @@ export interface LlmClient {
   provider: string
   /** The adapter's tool limit (LlmAdapter.maxTools); unset has none. */
   maxTools?: number
+  /**
+   * The provider runs a tool search over deferred tools and takes tool changes mid-chat (LlmRequest.toolSearch). It can
+   * turn true while the client runs: mimir cloud's proxy says so in its replies.
+   */
+  readonly toolSearch?: boolean
   stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent>
 }
