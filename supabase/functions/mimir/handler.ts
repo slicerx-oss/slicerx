@@ -11,7 +11,8 @@
 //   POST forget          deletes saved chats (the same)
 // The model: the base model (Haiku 5.5) unless the client sends x-sx-tier: step and the edition
 // allows a step-up (mimir_turn_model, 0028); a step-up turn the daily caps refuse goes on the base
-// model instead. The model the turn used comes back in x-sx-model.
+// model instead. The model the turn used comes back in x-sx-model, and the stream opens with
+// TOOL_SEARCH_EVENT, which tells the app this proxy takes a whole tool catalog through tool search.
 // Saved chats: a call is saved when the edition saves by default (alpha: SlicerX) or the
 // client sends x-sx-share: 1, never with x-sx-share: 0. x-sx-session and x-sx-version file it; without
 // them it goes under one key per install and Melbourne day.
@@ -21,6 +22,15 @@ import { MAX_BODY_BYTES, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
 import { capRefusal, errorId, installRef, logLine, type MimirCode, PAUSED, providerPaused } from './errors.ts'
 import { type Jwks, verifySession } from './jwt.ts'
+
+/**
+ * The first event of every stream this proxy relays, ahead of the provider's own: it takes a request that sends the
+ * whole tool catalog through tool search (shape.ts), so an app may send one from its next chat on. An app keeps the
+ * per-turn pick until it reads this, so it works with a proxy deployed before or after it. In the stream rather than a
+ * header because the desktop app's transport passes on no response header but x-sx-model; a client that knows no such
+ * event skips it, as the Messages API's clients skip any event they do not know.
+ */
+export const TOOL_SEARCH_EVENT = 'event: mimir\ndata: {"type":"mimir","tool_search":true}\n\n'
 
 export interface Env {
   supabaseUrl: string
@@ -240,7 +250,8 @@ async function messages(req: Request, env: Env): Promise<Response> {
   } catch {
     return fail(400, 'invalid_request', 'The body is not JSON.')
   }
-  const s = shape(raw)
+  // the client's betas pass only where shape allows them (BETAS); every other provider header is ours
+  const s = shape(raw, MODEL, req.headers.get('anthropic-beta'))
   if (!s.ok) return fail(400, 'invalid_request', s.error)
   if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
   // picked once the request is known to be good, so a refused one never reaches the database. A
@@ -259,7 +270,7 @@ async function messages(req: Request, env: Env): Promise<Response> {
   // The count is the model's own (s.body carries m), made at most once per model.
   const reserveAt = async (m: string): Promise<string | null> => {
     let exact: number | null | undefined
-    const count = async () => (exact === undefined ? (exact = await countTokens(env, s.body, who.key)) : exact)
+    const count = async () => (exact === undefined ? (exact = await countTokens(env, s.body, who.key, s.betas)) : exact)
     const first = s.documents > 0 ? await count() : s.promptEstimate
     if (first === null) return null
     try {
@@ -337,7 +348,7 @@ async function messages(req: Request, env: Env): Promise<Response> {
   try {
     up = await (env.fetch ?? fetch)(`${env.upstream}/v1/messages`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': who.key, 'anthropic-version': '2023-06-01' },
+      headers: { 'content-type': 'application/json', 'x-api-key': who.key, 'anthropic-version': '2023-06-01', ...betaHeader(s.betas) },
       body: JSON.stringify(marked(s.body, await installMark(tok))),
     })
   } catch (e) {
@@ -369,6 +380,9 @@ async function messages(req: Request, env: Env): Promise<Response> {
 
   const enc = new TextEncoder()
   const pass = new TransformStream<Uint8Array, Uint8Array>({
+    start(ctl) {
+      ctl.enqueue(enc.encode(TOOL_SEARCH_EVENT))
+    },
     transform(chunk, ctl) {
       const out = tap.push(chunk)
       if (out) ctl.enqueue(enc.encode(out))
@@ -426,7 +440,10 @@ export function withoutThinking(messages: unknown): { messages: unknown; bytes: 
 // The prompt's token count from the provider, or null when it cannot say. Thinking blocks
 // are counted a token a byte instead, signature and all: the signature carries the whole
 // thinking, so that never undercounts.
-async function countTokens(env: Env, body: Obj, key: string): Promise<number | null> {
+// the provider's beta header for the betas shape passed, or none
+const betaHeader = (betas: readonly string[]): Record<string, string> => (betas.length ? { 'anthropic-beta': betas.join(',') } : {})
+
+async function countTokens(env: Env, body: Obj, key: string, betas: readonly string[]): Promise<number | null> {
   const { model, system, tools, tool_choice } = body
   const { messages, bytes } = withoutThinking(body['messages'])
   // with its blocks gone, the thinking setting would ask for them back
@@ -434,7 +451,7 @@ async function countTokens(env: Env, body: Obj, key: string): Promise<number | n
   try {
     const res = await (env.fetch ?? fetch)(`${env.upstream}/v1/messages/count_tokens`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', ...betaHeader(betas) },
       body: JSON.stringify({ model, system, messages, tools, tool_choice, thinking }),
     })
     if (!res.ok) {
@@ -450,7 +467,7 @@ async function countTokens(env: Env, body: Obj, key: string): Promise<number | n
 
 // The pages a browser may call from: only the web app. The desktop and other clients send no Origin.
 const ORIGINS = new Set(['https://slicerx.app'])
-const ALLOW_HEADERS = 'content-type, accept, authorization, x-sx-install, x-sx-share, x-sx-session, x-sx-version, x-sx-tier'
+const ALLOW_HEADERS = 'content-type, accept, authorization, anthropic-beta, x-sx-install, x-sx-share, x-sx-session, x-sx-version, x-sx-tier'
 // response headers the web app's script may read
 const EXPOSE_HEADERS = 'x-sx-model'
 
