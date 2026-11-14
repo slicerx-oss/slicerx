@@ -383,6 +383,21 @@ export const SLOW_DOWN_WAIT_MS = 20_000
 export const NETWORK_RETRY_MS = 2_000
 /** What the run says when the connection dropped twice in a row: plain words, nothing of the transport's. */
 export const NETWORK_LINE = 'The connection to the model dropped twice in a row, so nothing was done this time. Send the message again.'
+
+/** What a size lookup asks the web search for: each size on its own line, in a form design.lookup_sizes reads. */
+export const WEB_SIZES_LINE = 'Find the real sizes asked for, using web search. Answer one size per line as "size: number unit", with the figure a source gives in m, cm, mm, ft or in, and "size: not found" when no source gives it. No other text.'
+
+/** Every request the person made in `messages`, in order: their own words, for a size they stated. */
+function requestsOf(messages: readonly LlmMessage[]): string[] {
+  const out: string[] = []
+  for (const m of messages) {
+    if (m.role !== 'user' || typeof m.content !== 'string') continue
+    const at = m.content.indexOf('User request:')
+    if (at >= 0) out.push(m.content.slice(at + 'User request:'.length).trim())
+  }
+  return out
+}
+
 /** The person's words for the run that starts at `runStart`: the last request before it, or '' when there is none. */
 function requestOf(messages: readonly LlmMessage[], runStart: number): string {
   for (let k = runStart - 1; k >= 0; k--) {
@@ -697,6 +712,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
   const sheets = new Map<string, (values: Record<string, number> | null, said?: string) => void>()
   const lastSheet = new Map<string, PilotSheet>()
+  // each chat's requests so far, read by a tool that checks a size the person stated (ToolContext.said)
+  const personSaid = new Map<string, string[]>()
   // Sheets and question cards that went ahead with nobody asked, the newest few: an answer given on one after is no
   // error, and changes nothing (a size changed after goes through a follow-up)
   const wentAhead = new Set<string>()
@@ -941,13 +958,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { loads: pluginLoads(manifests, printers), tools: made }
   }
 
-  const web: WebLookup | undefined = opts.config.webSearch === false || opts.toolGroups?.web === false ? undefined : async (query, signal) => {
+  const web: WebLookup | undefined = opts.config.webSearch === false || opts.toolGroups?.web === false ? undefined : async (query, signal, ask) => {
     const citations: Citation[] = []
     let text = ''
     const req = {
       model: modelFor(opts.config, HUGINN),
       messages: [
-        { role: 'system' as const, content: 'Answer the 3D printing question using web search. Be brief and factual (under 120 words). Prefer manufacturer documentation and well known community guides.' },
+        { role: 'system' as const, content: ask === 'sizes' ? WEB_SIZES_LINE : 'Answer the 3D printing question using web search. Be brief and factual (under 120 words). Prefer manufacturer documentation and well known community guides.' },
         { role: 'user' as const, content: query },
       ],
       tools: [],
@@ -1284,6 +1301,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       })
     if (opts.sheetDesign) ctx.sheetDesign = opts.sheetDesign
     ctx.currentDesign = () => runPart.get(sessionId)?.findLast((p) => p.body)?.id
+    ctx.said = () => personSaid.get(sessionId) ?? []
     ctx.bindSheet = (design, binds) => {
       const sheet = lastSheet.get(sessionId)
       if (!sheet) return false
@@ -1422,6 +1440,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // this run's messages start here: an approved plan is read from them, or from the earlier run that approved it
     // when the person asks to go on with it (plan-left.ts)
     const runStart = messages.length
+    personSaid.set(sessionId, requestsOf(messages))
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()

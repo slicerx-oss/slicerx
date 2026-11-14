@@ -92,8 +92,8 @@ function tab() {
 }
 
 describe('design.plan with amends, for a field an amend does not keep', () => {
-  it('is 1.15.1', () => {
-    expect(tab().version).toBe('1.15.1')
+  it('is 1.16.0', () => {
+    expect(tab().version).toBe('1.16.0')
   })
 
   it('refuses an amend that only moves the row onto another feature, as no size differs', async () => {
@@ -172,11 +172,11 @@ describe('design.put_plan with amends, for a field an amend does not keep', () =
   const mine = { planId: 'liner-1', ...kept } as unknown as PartPlan
   const moved = { ...mine, ...row((r) => onDeck(spaced(r))) } as PartPlan
 
-  it('is 1.8.0, refuses the moved row naming on, and keeps the plan as it was', async () => {
+  it('is 1.9.0, refuses the moved row naming on, and keeps the plan as it was', async () => {
     const plans = createPlanRegistry()
     const set = designToolset(host, {}, { plans, nozzleMm: () => 0.4 })
     const put = set.find((t) => t.name === 'design.put_plan')!
-    expect(put.version).toBe('1.8.0')
+    expect(put.version).toBe('1.9.0')
     plans.put(structuredClone(mine), 'd1', 'client')
     const run = (input: unknown) => put.run(put.input.parse(input) as never, { context: { machine } } as unknown as ToolContext)
     await expect(run({ plan: moved, amends: 'liner-1', reason })).rejects.toThrow('features: an amend changes sizes only; Funnel array keeps on: "Funnel"')
@@ -190,15 +190,21 @@ describe('design.put_plan with amends, for a field an amend does not keep', () =
   })
 
   it('refuses it over the MCP server as a client sees it, and the next size amend reads back from 21 mm as revision 2', async () => {
+    // a client's plan gives a source with each real size; this one leaves its real sizes out, as the client form
+    // dropped them before it took any
+    const bare = (p: PartPlan): PartPlan => {
+      const { real: _r, ...rest } = p
+      return rest as PartPlan
+    }
     const h = await connect({ geomEngine: async () => ({ mesh: { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 5], indices: [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3] } }) })
     const design = data<{ output: { design: string } }>(await h.call('slicerx_design_new', { name: 'Titanic' })).output.design
-    const put = await h.call('slicerx_design_put_plan', { plan: mine, design })
+    const put = await h.call('slicerx_design_put_plan', { plan: bare(mine), design })
     expect(put.isError, text(put)).toBeFalsy()
-    const bad = await h.call('slicerx_design_put_plan', { plan: moved, amends: 'liner-1', reason })
+    const bad = await h.call('slicerx_design_put_plan', { plan: bare(moved), amends: 'liner-1', reason })
     expect(bad.isError).toBe(true)
     expect(text(bad)).toContain('features: an amend changes sizes only; Funnel array keeps on: "Funnel"')
     // the refused amend changed nothing and used no amend: a size amend is still taken, from the approved 21 mm
-    const ok = await h.call('slicerx_design_put_plan', { plan: { ...mine, ...row(spaced) }, amends: 'liner-1', reason: 'The funnels sit 22 mm apart.' })
+    const ok = await h.call('slicerx_design_put_plan', { plan: bare({ ...mine, ...row(spaced) } as PartPlan), amends: 'liner-1', reason: 'The funnels sit 22 mm apart.' })
     expect(ok.isError, text(ok)).toBeFalsy()
     expect(data<{ output: { revision: number; changes: unknown[] } }>(ok).output).toMatchObject({ revision: 2, changes: [{ where: 'feature', feature: 'Funnel array', size: 'spacing', from: 21, to: 22 }] })
   })

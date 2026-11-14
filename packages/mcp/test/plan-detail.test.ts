@@ -380,7 +380,7 @@ function tab(local = false) {
 describe('design.plan with a detail level', () => {
   it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.15.1')
+    expect(t.tool.version).toBe('1.16.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
@@ -434,11 +434,12 @@ describe('design.plan with a detail level', () => {
     await expect(tab(false).run(local)).rejects.toThrow('curved, flat:')
   })
 
-  it('leaves the level out of design.put_plan', () => {
+  it('leaves the level out of design.put_plan, which takes a real thing\'s scale and real sizes', () => {
     const put = designToolset({} as DesignHost, {}, { plans: createPlanRegistry() }).find((t) => t.name === 'design.put_plan')!
     const planShape = (put.input as unknown as { shape: { plan: { shape: Record<string, unknown> } } }).shape.plan.shape
     expect(Object.keys(planShape)).not.toContain('detail')
-    for (const k of ['colors', 'scale', 'real', 'tiers']) expect(Object.keys(planShape)).not.toContain(k)
+    for (const k of ['colors', 'tiers']) expect(Object.keys(planShape)).not.toContain(k)
+    for (const k of ['scale', 'real']) expect(Object.keys(planShape)).toContain(k)
     expect(Object.keys(partPlanSchema.shape)).toContain('detail')
   })
 })

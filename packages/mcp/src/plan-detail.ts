@@ -12,6 +12,7 @@
 // change along its length in both directions across it (sectionsProblem), so one shape stretched along a length fails.
 import { loopPoints } from '@slicerx/cad-history'
 import { z } from 'zod'
+import { lengthsIn, type SizeLookup } from './real-lookup'
 
 export const DETAIL_LEVELS = ['basic', 'display', 'fine'] as const
 export type DetailLevel = (typeof DETAIL_LEVELS)[number]
@@ -47,6 +48,25 @@ const text = (max: number) => z.string().trim().min(1).max(max)
  */
 export const SCALE_SLACK = 1.35
 
+/** One real size as mimir gives it on the card: the feature size it sets, its mm, and its lookupId or the person's words. */
+const REAL_ENTRY = z.object({
+  feature: text(60).optional(),
+  size: text(40).optional(),
+  mm: z.number().positive().optional(),
+  lookup: text(40).optional().describe('The lookupId design.lookup_sizes returned with this size'),
+  stated: text(300).optional().describe("The person's own words that give this size, quoted from their message, in place of a lookup"),
+})
+
+/** A list of real sizes, each field checked by the refine, so a local model's shorter list can leave the whole field out (tab-tools.ts). */
+const realList = <T extends z.ZodType<{ feature?: string | undefined; size?: string | undefined; mm?: number | undefined }>>(entry: T) =>
+  z
+    .array(entry.refine((r) => r.feature !== undefined && r.size !== undefined && r.mm !== undefined, 'each real size gives feature, size and mm'))
+    .max(40)
+    .optional()
+
+/** The card's real sizes: the shared list without a source page, which only a client's own plan gives (design.put_plan). */
+export const cardRealField = (describe: string) => realList(REAL_ENTRY).describe(describe)
+
 /** The plan fields the detail level adds; each is optional in the shared plan, and the card's input asks for detail. */
 export const planDetailFields = {
   detail: z
@@ -65,17 +85,43 @@ export const planDetailFields = {
     .union([z.number().positive(), z.string().trim().regex(/^(1\s*:\s*)?\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
     .optional()
     .describe('Display and fine: N of the scale 1:N against the real thing, such as 25 ("1:25" is taken too)'),
-  real: z
-    // each field checked by the refine, so a local model's shorter list can leave the whole field out (tab-tools.ts)
-    .array(z.object({ feature: text(60).optional(), size: text(40).optional(), mm: z.number().positive().optional() }).refine((r) => r.feature !== undefined && r.size !== undefined && r.mm !== undefined, 'each real size gives feature, size and mm'))
-    .max(40)
-    .optional()
-    .describe('Display and fine: the real sizes the lookup or the stated source gives, in mm at full size, each tied to the feature size it sets, such as {"feature": "Body", "size": "length", "mm": 4200}: the main body\'s and each part\'s it gives; with 2 or more levels, each one\'s length; for a patterned repeat, its part\'s height and spacing. Each is held to scale. An empty list when it gives none'),
+  real: realList(REAL_ENTRY.extend({ source: z.object({ title: text(120), url: z.url({ protocol: /^https?$/ }) }).optional().describe("A client's plan: the page the size came from") }))
+    .describe('Display and fine: the real sizes design.lookup_sizes found, in mm at full size, each tied to the feature size it sets with its lookupId, such as {"feature": "Body", "size": "length", "mm": 4200, "lookup": "lookup_1"}: the main body\'s and each part\'s; with 2 or more levels, each one\'s length; for a patterned repeat, its part\'s height and spacing. Each is held to scale against the size the lookup found. An empty list for a made-up thing'),
   tiers: z
     .record(text(60), z.array(text(60)).min(1).max(12))
     .optional()
     .describe('Display and fine: each flat-sided main body\'s levels from the bottom up, each a planned feature, such as {"Tower": ["Lower story", "Upper story"]}: a body the real thing builds in steps or stories lists each level, a single block only itself'),
 }
+
+/** A real size as the plan gives it: the feature size it sets, in mm at full size, and where it came from. */
+export interface RealEntry {
+  feature?: string | undefined
+  size?: string | undefined
+  mm?: number | undefined
+  lookup?: string | undefined
+  stated?: string | undefined
+  source?: { title: string; url: string } | undefined
+}
+
+/**
+ * Where a plan's real sizes may come from, as design.plan or design.put_plan sees it. Left out (a plan read on its own),
+ * real sizes are held to scale as given.
+ */
+export interface RealSources {
+  /** A web lookup can run where the plan is made: mimir with web search, so a size with no lookupId is refused. */
+  canLookUp: boolean
+  /** The lookup with this id made in this chat. */
+  lookup(id: string): SizeLookup | undefined
+  /** Every lookup made in this chat. */
+  lookups(): readonly SizeLookup[]
+  /** The person's requests in this chat, which a stated size quotes; absent where none can be read. */
+  said?: readonly string[] | undefined
+  /** A client's own plan (design.put_plan): each size gives its source page or the person's words. */
+  client?: boolean
+}
+
+/** How close a real size's mm sits to the figure its lookup or the person's words give, as a share. */
+export const REAL_MATCH = 0.01
 
 /** A plan as the detail rules read it. */
 interface DetailPlan {
@@ -87,7 +133,7 @@ interface DetailPlan {
   repeats?: readonly string[] | undefined
   colors?: Readonly<Record<string, string>> | undefined
   scale?: number | string | undefined
-  real?: readonly { feature?: string | undefined; size?: string | undefined; mm?: number | undefined }[] | undefined
+  real?: readonly RealEntry[] | undefined
   tiers?: Readonly<Record<string, readonly string[]>> | undefined
   assumptions?: readonly string[] | undefined
   overall?: { x: number; y: number; z: number } | undefined
@@ -154,7 +200,7 @@ const CURVED_HOW = (floor: number): string =>
  * level and leaves out curved, flat, proportions, repeats, colors, scale, real, tiers and personSize) is held only to
  * what that form can say: its feature count for the level.
  */
-export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: string | undefined }, opts: { local?: boolean } = {}): string | null {
+export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: string | undefined }, opts: { local?: boolean; real?: RealSources } = {}): string | null {
   const level = plan.detail
   if (!level || level === 'basic') return null
   if (opts.local) {
@@ -203,7 +249,7 @@ export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: stri
     for (const n of [...(plan.curved ?? []), ...(plan.flat ?? [])])
       if (feature(n) && !colored.has(n.trim().toLowerCase())) problems.push(`colors: say what color ${n} is`)
   }
-  problems.push(...scaleProblems(plan, feature), ...massProblems(plan, feature), ...tierProblems(plan, feature))
+  problems.push(...scaleProblems(plan, feature, opts.real), ...massProblems(plan, feature), ...tierProblems(plan, feature))
   // no size from the person: a display model is sized to the printer it prints on, not to a scale it picked itself
   if (bed && !plan.personSize) {
     const b = bed.bed
@@ -233,9 +279,11 @@ const r1 = (v: number): number => Math.round(v * 10) / 10
 /**
  * Each real size against its planned size at scale (proportions from the source): a planned size more than SCALE_SLACK
  * times its real size at scale, either way, is refused with the size the real one gives. Real sizes need a scale, and
- * a plan whose source gave sizes lists the main body's among them, so the scale is anchored on the thing itself.
+ * a plan whose source gave sizes lists the main body's among them, so the scale is anchored on the thing itself. With
+ * `src`, each real size is held to the figure it came from (realFigure): the size its lookup found, or the one the
+ * person's words give, so a planned size times the scale cannot stand in for a real one.
  */
-function scaleProblems(plan: DetailPlan, feature: FeatureOf): string[] {
+function scaleProblems(plan: DetailPlan, feature: FeatureOf, src?: RealSources): string[] {
   if (plan.real === undefined) return ['real: list the real sizes the lookup or the stated source gives (the main body\'s length, and each part it gives a size for), each with the feature size it sets, so the plan is held to them at scale; an empty list when it gives none']
   if (!plan.real.length) return []
   const n = typeof plan.scale === 'string' ? Number(plan.scale.split(':').pop()) : plan.scale
@@ -243,8 +291,9 @@ function scaleProblems(plan: DetailPlan, feature: FeatureOf): string[] {
   const out: string[] = []
   const bodies = new Set([...(plan.curved ?? []), ...(plan.flat ?? [])].map((b) => b.trim().toLowerCase()))
   if (bodies.size && !plan.real.some((r) => bodies.has((r.feature ?? '').trim().toLowerCase()))) out.push('real: give a main body\'s real size too (its length), so the scale is set by the thing itself')
+  const unsourced: string[] = []
   for (const r of plan.real) {
-    const [name, size, mm] = [r.feature ?? '', r.size ?? '', r.mm ?? 0]
+    const [name, size] = [r.feature ?? '', r.size ?? '']
     const f = feature(name)
     if (!f) {
       out.push(`real: ${name} is not a planned feature`)
@@ -255,14 +304,120 @@ function scaleProblems(plan: DetailPlan, feature: FeatureOf): string[] {
       out.push(`real: ${f.name} has no size named ${size}; tie the real size to one of its sizes (${Object.keys(f.sizes).join(', ')})`)
       continue
     }
+    const fig = realFigure(r, `${f.name} ${key}`, src)
+    if ('problem' in fig) {
+      out.push(fig.problem)
+      continue
+    }
+    if ('unsourced' in fig) {
+      unsourced.push(`${f.name} ${key}`)
+      continue
+    }
+    const mm = fig.mm
     const want = mm / n
     const got = f.sizes[key]!
     if (want > 0 && (got > want * SCALE_SLACK || got < want / SCALE_SLACK))
       out.push(`${f.name} ${key} is ${r1(got)} mm, ${r1(got / want)} times the ${r1(want)} mm its real ${r1(mm)} mm gives at 1:${n}; size it from the real one`)
   }
-  const unheld = unheldProblem(plan, feature)
+  if (unsourced.length) out.push(src?.client ? CLIENT_UNSOURCED(unsourced) : NO_LOOKUP_ID(unsourced))
+  const unheld = unheldProblem(plan, feature, src)
   if (unheld) out.push(unheld)
   return out
+}
+
+/** "A, B and C". */
+const andList = (xs: readonly string[]): string => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)!}` : xs[0]!)
+
+/** R1: real sizes with no lookupId where a lookup can run. The owner approves this wording. */
+export const NO_LOOKUP_ID = (sizes: readonly string[]): string => {
+  const one = sizes.length === 1
+  return `real: ${andList(sizes)} ${one ? 'has' : 'have'} no lookupId, so ${one ? 'it is' : 'they are'} not from a lookup; call design.lookup_sizes first, then give each found size with its lookupId, or name a size the lookup did not find in assumptions as "real: ${sizes.at(-1)!} not given by the source"`
+}
+/** R2: a lookupId that is no lookup in this chat. */
+export const UNKNOWN_LOOKUP = (id: string): string => `real: ${id} is not a lookup in this chat; give the lookupId design.lookup_sizes returned`
+/** The most found sizes R3 lists. */
+const FOUND_LISTED = 6
+/** R3: a real size its lookup found nothing within REAL_MATCH of. */
+export const NOT_FOUND_IN_LOOKUP = (size: string, mm: number, l: SizeLookup): string =>
+  `real: ${size} is ${r1(mm)} mm, but ${l.id} found no size within 1% of that (${l.found.length ? `it found ${l.found.slice(0, FOUND_LISTED).map((x) => `${x.size} ${r1(x.mm)} mm`).join(', ')}` : 'it found no sizes'}); give the size it found`
+/** R4: a size called not given by the source that no lookup asked for. */
+export const NOT_ASKED = (sizes: readonly string[]): string =>
+  `real: ${andList(sizes)} ${sizes.length === 1 ? 'was' : 'were'} not asked for in any lookup, so the source has not been read for ${sizes.length === 1 ? 'it' : 'them'}; ask design.lookup_sizes for ${sizes.length === 1 ? 'it' : 'them'} first`
+/** A stated size the person's words do not give. */
+export const NOT_STATED = (size: string, mm: number, stated: string): string => `real: ${size} is ${r1(mm)} mm, but "${stated}" gives no size within 1% of that; give the size the person's words give, in mm`
+/** Stated words that are not the person's. */
+export const NOT_SAID = (stated: string): string => `real: "${stated}" is not in the person's messages in this chat; quote their own words in stated, or look the size up with design.lookup_sizes`
+/** A client's real sizes with neither a source page nor the person's words. */
+export const CLIENT_UNSOURCED = (sizes: readonly string[]): string =>
+  `real: ${andList(sizes)} ${sizes.length === 1 ? 'gives' : 'give'} no source; give the page each came from as source {"title", "url"}, or the person's words that give it as stated`
+
+/** A name and a lookup's size name read as the same size: each word of one in the other, either way. */
+const sameSize = (a: string, b: string): boolean => within(a, b) || within(b, a)
+
+/** Whether a lookup in this chat asked for `size` ("Main tower height") and no source gave it. */
+function askedAndMissing(src: RealSources, names: readonly string[]): boolean {
+  return src.lookups().some((l) => l.missing.some((m) => names.some((n) => sameSize(m, n))))
+}
+
+/**
+ * The figure a real size is held to. Without `src`, its own mm. With a lookupId, the size that lookup found within
+ * REAL_MATCH of its mm; with stated words, the length in them within REAL_MATCH (and the words must be the person's,
+ * where their messages can be read); with a source page, its mm on a client's plan (the card's form has no source). A size with none of these is
+ * unsourced where a lookup can run, unless a lookup asked for it and no source gave it, or the client must give one;
+ * otherwise it is taken from memory as given (realMemoryNote says so on the plan).
+ */
+function realFigure(r: RealEntry, size: string, src: RealSources | undefined): { mm: number } | { problem: string } | { unsourced: true } {
+  const mm = r.mm ?? 0
+  if (!src) return { mm }
+  if (r.lookup !== undefined) {
+    const l = src.client ? undefined : src.lookup(r.lookup)
+    if (!l) return { problem: UNKNOWN_LOOKUP(r.lookup) }
+    const hit = l.found.filter((x) => Math.abs(x.mm - mm) <= mm * REAL_MATCH).sort((a, b) => Math.abs(a.mm - mm) - Math.abs(b.mm - mm))[0]
+    return hit ? { mm: hit.mm } : { problem: NOT_FOUND_IN_LOOKUP(size, mm, l) }
+  }
+  if (r.stated !== undefined) {
+    const words = r.stated.trim()
+    const squash = (t: string): string => t.toLowerCase().replace(/\s+/g, ' ').trim()
+    if (src.said && !src.said.some((m) => squash(m).includes(squash(words)))) return { problem: NOT_SAID(words) }
+    const hit = lengthsIn(words).find((x) => Math.abs(x.mm - mm) <= mm * REAL_MATCH)
+    return hit ? { mm: hit.mm } : { problem: NOT_STATED(size, mm, words) }
+  }
+  if (src.client) return r.source !== undefined ? { mm } : { unsourced: true }
+  if (src.canLookUp && !askedAndMissing(src, [size])) return { unsourced: true }
+  return { mm }
+}
+
+/**
+ * The assumption design.plan adds for real sizes taken from memory: where no lookup can run, or where a lookup asked
+ * for them and no source gave them. Null when every real size has a lookup, the person's words or a source.
+ */
+export function realMemoryNote(plan: DetailPlan, src: RealSources): string | null {
+  if (src.client) return null
+  const feature = (n: string) => plan.features.find((x) => x.name.trim().toLowerCase() === n.trim().toLowerCase())
+  const memory = (plan.real ?? []).flatMap((r) => {
+    if (r.lookup !== undefined || r.stated !== undefined || r.source !== undefined) return []
+    const f = feature(r.feature ?? '')
+    const key = f && Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === (r.size ?? '').trim().toLowerCase())
+    return f && key ? [`${f.name} ${key}`] : []
+  })
+  if (!memory.length) return null
+  return src.canLookUp ? MEMORY_AFTER_LOOKUP(memory) : MEMORY_NO_WEB(memory)
+}
+
+/** The Assumed line where no web lookup can run. The owner approves this wording. */
+export const MEMORY_NO_WEB = (sizes: readonly string[]): string => `real: not looked up, as no web lookup can run here; ${andList(sizes)} ${sizes.length === 1 ? 'is' : 'are'} from memory`
+/** The Assumed line for sizes a lookup asked for and no source gave. */
+export const MEMORY_AFTER_LOOKUP = (sizes: readonly string[]): string => `real: ${andList(sizes)} ${sizes.length === 1 ? 'is' : 'are'} from memory, as the lookup found no source for ${sizes.length === 1 ? 'it' : 'them'}`
+
+/**
+ * A client plan's real sizes against its planned sizes at scale (design.put_plan): each size its source page or the
+ * person's words, and the plan held to them as design.plan holds a display plan. Null when they hold.
+ */
+export function realSizeProblem(plan: DetailPlan, src: RealSources): string | null {
+  if (!plan.real?.length) return null
+  const feature = (n: string) => plan.features.find((x) => x.name.trim().toLowerCase() === n.trim().toLowerCase())
+  const problems = scaleProblems(plan, feature, src)
+  return problems.length ? problems.join('. ') : null
 }
 
 /** A size's name read as a repeat's spacing: how far apart its copies stand. */
@@ -307,7 +462,7 @@ interface Held {
  * its pattern, and the pattern's spacing). A size the
  * source does not give is named in assumptions as NOT_GIVEN says, and the check takes it. Null when each is held.
  */
-function unheldProblem(plan: DetailPlan, feature: FeatureOf): string | null {
+function unheldProblem(plan: DetailPlan, feature: FeatureOf, src?: RealSources): string | null {
   const isPattern = (f: DetailPlan['features'][number]): boolean => PATTERN.test(f.kind ?? '') || PATTERN.test(f.name)
   const keyOf = (f: DetailPlan['features'][number], ...res: RegExp[]): [string, RegExp] | null => {
     for (const re of res) {
@@ -374,8 +529,10 @@ function unheldProblem(plan: DetailPlan, feature: FeatureOf): string | null {
     const sizes = [m[2]!, m[3]].filter((s): s is string => !!s).map((s) => s.toLowerCase())
     return w.held.names.some((n) => stem(n) === stem(m[1]!)) && sizes.some((s) => s === w.held.key.trim().toLowerCase() || w.held.re.test(s))
   }
+  // where a lookup can run, "not given by the source" stands only for a size a lookup asked for and found no source for
+  const unread = src?.canLookUp && !src.client ? want.filter((w) => !given(w) && notes.some((n) => said(w, n)) && !askedAndMissing(src, w.held.names.map((n) => `${n} ${w.held.key}`))) : []
   const missing = want.filter((w) => !given(w) && !notes.some((n) => said(w, n)))
-  if (!missing.length) return null
+  if (!missing.length) return unread.length ? NOT_ASKED(unread.map((w) => `${w.held.feature} ${w.held.key}`)) : null
   const ways = new Set(missing.map((w) => w.what))
   const rep = [ways.has('height') && 'height', ways.has('spacing') && 'spacing'].filter(Boolean).join(' and ')
   const lengths = missing.filter((w) => w.what === 'length')
@@ -388,7 +545,8 @@ function unheldProblem(plan: DetailPlan, feature: FeatureOf): string | null {
   const stray = notes.find((n) => !want.some((w) => said(w, n)))
   const one = missing.length === 1
   const fix = stray ? `; the assumption "${stray.trim()}" does not name ${one ? 'it' : 'one of them'} as the check reads it, so write it as ${example}` : `; for a size the source does not give, say so in assumptions as ${example}`
-  return `real: ${held.join(' and ')} ${held.length > 1 || rep.includes(' and ') ? 'are' : 'is'} held to scale too, so give the real ${list}, ${one ? 'tied to that size' : 'each tied to its size'}${fix}`
+  const ask = `real: ${held.join(' and ')} ${held.length > 1 || rep.includes(' and ') ? 'are' : 'is'} held to scale too, so give the real ${list}, ${one ? 'tied to that size' : 'each tied to its size'}${fix}`
+  return unread.length ? `${ask}. ${NOT_ASKED(unread.map((w) => `${w.held.feature} ${w.held.key}`))}` : ask
 }
 
 /** A size's name read as the main way it measures across: a width, a length or a height. */
@@ -637,7 +795,7 @@ export const DETAIL_WORKED_SHAPE =
   'A plan of this shape passes on the first try: a stepped body is one main body in flat, keyed in tiers by its own name, its levels in order, each its own feature at least 3 mm tall, stacked; a detail that repeats is listed in repeats and planned as two features, one that builds it once and one with kind array (or pattern) and its count as a size'
 
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, with the detail its size can carry: anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror. ' + DETAIL_WORKED_SHAPE
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: look the real sizes up with design.lookup_sizes first and give each in real with its lookupId, and a part more than about a third off its looked-up size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, with the detail its size can carry: anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror. ' + DETAIL_WORKED_SHAPE
 
 /** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
 export interface LoftSections {

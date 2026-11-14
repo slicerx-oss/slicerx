@@ -53,8 +53,12 @@ export interface ToolHost {
   localNetwork?: () => Promise<boolean>
 }
 
+/**
+ * A web search answered in a few lines with its sources. `ask` 'sizes' asks for a real thing's sizes, one per line as
+ * "size: number unit" (design.lookup_sizes); left out, the answer is a short reply to a 3D printing question.
+ */
 export interface WebLookup {
-  (query: string, signal?: AbortSignal): Promise<{ text: string; citations: Citation[] }>
+  (query: string, signal?: AbortSignal, ask?: 'sizes'): Promise<{ text: string; citations: Citation[] }>
 }
 
 /** The choice id of a question the person dismissed. Choice ids are never empty, so it cannot be a real pick. */
@@ -89,6 +93,8 @@ export interface ToolContext {
   project?: PilotProject
   kb: KnowledgeBase
   web?: WebLookup
+  /** The person's own words in this chat, each request in order; absent outside the runtime (an MCP client). */
+  said?(): readonly string[]
   progress(line: string, fraction?: number): void
   /**
    * Asks the person a question with fixed answers and waits for the answer: the picked choice id, or `ASK_DISMISSED`

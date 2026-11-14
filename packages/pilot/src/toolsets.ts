@@ -155,6 +155,12 @@ export const LIBRARY_WORDS = /\b(?:trending|library|vault)\b/i
 const DESIGN_ASKED_BY: readonly [RegExp, readonly string[]][] = [[LIBRARY_WORDS, ['app.library_trending']]]
 const DESIGN_ASKED: ReadonlySet<string> = new Set(DESIGN_ASKED_BY.flatMap(([, names]) => names))
 
+/**
+ * Design tools a capped slicing or printer turn holds back unless the chat called them: they only serve planning a new
+ * model (a real thing's sizes looked up for its plan), so they take no room from what those turns send.
+ */
+const PLANNING_ONLY: ReadonlySet<string> = new Set(['design.lookup_sizes'])
+
 /** The more design tools, and the core tools a design turn holds back, that `message` asks for by their words. */
 export function askedTools(message: string): Set<string> {
   return new Set([...ASKED_BY, ...DESIGN_ASKED_BY].filter(([words]) => words.test(message)).flatMap(([, names]) => names))
@@ -438,7 +444,9 @@ export function stickyCapTools<T extends SetTool>(
   opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; loaded?: ReadonlySet<Toolset>; state: Readonly<StickyToolsets>; kind?: TurnKind; asked?: ReadonlySet<string> },
 ): { tools: T[]; sets: Toolset[]; report: ToolCapReport | null } {
   // a design turn holds back the core tools its words did not ask for and the chat never called (DESIGN_ASKED)
-  const tools = opts.kind === 'design' && all.length > (opts.cap ?? Infinity) ? all.filter((t) => !DESIGN_ASKED.has(t.name) || opts.asked?.has(t.name) || opts.called.has(t.name)) : all
+  // and a slicing or printer turn holds back the planning tools the chat never called (PLANNING_ONLY)
+  const held = all.length <= (opts.cap ?? Infinity) ? null : opts.kind === 'design' ? DESIGN_ASKED : opts.kind === 'slicing' || opts.kind === 'printer' ? PLANNING_ONLY : null
+  const tools = held ? all.filter((t) => !held.has(t.name) || opts.asked?.has(t.name) || opts.called.has(t.name)) : all
   const bySet = new Map<Toolset, T[]>()
   for (const t of tools) {
     const set = toolsetOf(t)
