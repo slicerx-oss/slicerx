@@ -157,6 +157,8 @@ export interface ViewportPart {
    * crease angle (creasedArrays); the rest crease as usual.
    */
   normals?: Int16Array
+  /** Each triangle's face of the solid (MeshFaces.ids); with `normals`, edges follow the faces. New ones come with new `normals`. */
+  faceIds?: Uint32Array
 }
 
 export interface ViewportObject {

@@ -52,9 +52,14 @@ export class MeshBuildPool {
     })
   }
 
-  /** The feature edges of a part (featureEdges), as line segment positions. */
-  edges(positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number): Promise<Float32Array> {
-    return this.run('edges', positions, indices, deg).then((r) => {
+  /**
+   * The feature edges of a part (featureEdges), as line segment positions; with its packed exact corner normals and
+   * face ids, by its faces. Copied to the worker, as the other arrays.
+   */
+  edges(positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number, normals?: Int16Array, faceIds?: Uint32Array): Promise<Float32Array> {
+    // the worker reads them only together, so neither goes alone
+    const both = normals !== undefined && faceIds !== undefined
+    return this.run('edges', positions, indices, deg, both ? normals : undefined, both ? faceIds : undefined).then((r) => {
       if (!r.edges) throw new Error('the mesh worker sent no edges')
       return r.edges
     })
@@ -70,7 +75,7 @@ export class MeshBuildPool {
     for (const s of this.slots.splice(0)) this.fail(s, 'the viewport was disposed')
   }
 
-  private run(kind: MeshBuildRequest['kind'], positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number, normals?: Int16Array): Promise<MeshBuildReply & { ok: true }> {
+  private run(kind: MeshBuildRequest['kind'], positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number, normals?: Int16Array, faceIds?: Uint32Array): Promise<MeshBuildReply & { ok: true }> {
     if (this.disposed) return Promise.reject(new Error('the viewport was disposed'))
     let slot: Slot
     try {
@@ -83,7 +88,7 @@ export class MeshBuildPool {
       this.waits.set(id, { slot, resolve, reject })
       slot.jobs.add(id)
       try {
-        slot.worker.postMessage(normals ? { id, kind, positions, indices, deg, normals } : { id, kind, positions, indices, deg })
+        slot.worker.postMessage({ id, kind, positions, indices, deg, ...(normals ? { normals } : {}), ...(faceIds ? { faceIds } : {}) })
       } catch (e) {
         this.waits.delete(id)
         slot.jobs.delete(id)

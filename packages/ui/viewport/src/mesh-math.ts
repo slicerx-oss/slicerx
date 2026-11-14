@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The mesh math behind a model's look, on plain typed arrays and with no three.js, so it runs the same on the page and in
-// a worker (mesh-worker.ts): welding, creased normals, feature edges and the quick smooth normals.
+// a worker (mesh-worker.ts): welding, creased normals, feature edges (on an exact part, where the shading breaks between
+// the kernel's faces) and the quick smooth normals.
 import { exactTriangle, unpackNormal } from '@slicerx/contracts'
 
 /**
@@ -239,15 +240,43 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
   return { position: pos.done(), normal: nrm.done(), index }
 }
 
+/** The crease angle parts are shaded with (creasedArrays): two faces that meet under it shade as one surface. */
+export const CREASE_DEG = 40
+
+/**
+ * On an exact part, the least angle between the normals the two sides of a join between faces are shaded with that
+ * draws it: under it they light the same (the packed normals and float rounding part them by far less).
+ */
+export const SHADE_BREAK_DEG = 1
+
+/** An exact part's faces for its edges: the packed corner normals (MeshPart.normals) and each triangle's face id. */
+export interface ExactFaces {
+  normals: Int16Array
+  faceIds: ArrayLike<number>
+}
+
 /**
  * The feature edges of a mesh: every edge whose two faces meet at more than `thresholdDeg`, and every edge with no
  * matching opposite edge (open borders). The same edges as three's EdgesGeometry, which keys each edge by a string
  * and runs to gigabytes of strings on a mesh of millions of triangles; here vertices weld to integer ids and the edges
  * of each lowest vertex are paired in a small list.
+ *
+ * With `exact`, a part from the geometry engine (a face id for every triangle, a packed normal buffer of six numbers
+ * per triangle with at least one triangle exact) draws an edge between two triangles only where they are on different
+ * faces of the solid and the shading breaks there: the normals the part is shaded with (creasedArrays at CREASE_DEG)
+ * part by more than SHADE_BREAK_DEG at either end of it. So never inside a face, and not along a join the shading
+ * smooths over, such as a fillet's tangent edge or the join between two pieces of a smooth loft. Open borders draw as
+ * above. Any other part, or `exact` with a face id short or normals of other triangles, gets the rule above unchanged.
  */
-export function featureEdges(P: Float32Array, I: ArrayLike<number> | null, thresholdDeg: number): Float32Array {
+export function featureEdges(P: Float32Array, I: ArrayLike<number> | null, thresholdDeg: number, exact?: ExactFaces): Float32Array {
   const nt = Math.floor((I ? I.length : P.length / 3) / 3)
   const vtx = (k: number): number => (I ? (I[k] ?? 0) : k)
+  // the kernel's faces decide when every triangle has one and the kernel gave the part its normals, a few triangles
+  // short of them at most (mesh parts carry face ids too, and keep the fold angle)
+  const faces = exact && exact.faceIds.length === nt && exactTriangles(exact.normals, nt).count > 0 ? exact : null
+  // the part as it is shaded: a join between faces is an edge only where its two sides are shaded apart
+  const shaded = faces ? creasedArrays(P, I ?? Uint32Array.from({ length: 3 * nt }, (_, k) => k), CREASE_DEG, faces.normals) : null
+  const breakDot = Math.cos((Math.PI / 180) * SHADE_BREAK_DEG)
   // EdgesGeometry's precision: four decimals.
   const { map: wmap, count: nw } = weldVertices(P, 1e4)
   const wid = (k: number): number => wmap[vtx(k)] ?? 0
@@ -291,6 +320,18 @@ export function featureEdges(P: Float32Array, I: ArrayLike<number> | null, thres
     out[1] = l > 0 ? y / l : 0
     out[2] = l > 0 ? z / l : 0
   }
+  // the shaded normals of corners x and y, which sit at one point, are apart by more than SHADE_BREAK_DEG
+  const apart = (x: number, y: number): boolean => {
+    const a = 3 * shaded!.index[x]!
+    const b = 3 * shaded!.index[y]!
+    const N = shaded!.normal
+    return N[a]! * N[b]! + N[a + 1]! * N[b + 1]! + N[a + 2]! * N[b + 2]! < breakDot
+  }
+  const next = (c: number): number => 3 * ((c / 3) | 0) + ((c % 3) + 1) % 3
+  // corner ca runs a -> b in its triangle and cb runs b -> a in its own: drawn when the faces differ and the shading
+  // breaks at a (ca's own corner and the end of cb) or at b (the end of ca and cb's own corner)
+  const exactFold = (ca: number, cb: number): boolean =>
+    faces!.faceIds[(ca / 3) | 0] !== faces!.faceIds[(cb / 3) | 0] && (apart(ca, next(cb)) || apart(next(ca), cb))
   const out = new Floats(1024)
   const push = (k: number): void => {
     const t = (k / 3) | 0
@@ -317,9 +358,13 @@ export function featureEdges(P: Float32Array, I: ArrayLike<number> | null, thres
       const rev = -key - 1
       const ri = keys.indexOf(rev)
       if (ri >= 0 && held[ri]! >= 0) {
-        normal((corner[e]! / 3) | 0, n0)
-        normal((held[ri]! / 3) | 0, n1)
-        if (n0[0]! * n1[0]! + n0[1]! * n1[1]! + n0[2]! * n1[2]! <= thresholdDot) push(corner[e]!)
+        if (faces) {
+          if (exactFold(corner[e]!, held[ri]!)) push(corner[e]!)
+        } else {
+          normal((corner[e]! / 3) | 0, n0)
+          normal((held[ri]! / 3) | 0, n1)
+          if (n0[0]! * n1[0]! + n0[1]! * n1[1]! + n0[2]! * n1[2]! <= thresholdDot) push(corner[e]!)
+        }
         held[ri] = -1
       } else if (keys.indexOf(key) < 0) {
         keys.push(key)
