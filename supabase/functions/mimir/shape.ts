@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // What mimir may send through the proxy. The request is rebuilt from an allowlist, never
 // forwarded as is: the model is the one the proxy picked for the turn, the reply and web searches are capped, thinking is
-// adaptive unless the client turns it off or the call is small (thinkingFor), only the app's own tools and web search
-// pass, and cache points sit on the tools and system prompt so every turn after the first reads them from the cache.
+// adaptive unless the client turns it off or the call is small (thinkingFor), only the app's own tools, web search and
+// tool search pass, and cache points sit on the tools and system prompt so every turn after the first reads them from
+// the cache.
 
 // the base model, for every turn the edition does not step up (migrations/0028_mimir_step_up.sql)
 export const MODEL = 'claude-haiku-5-5'
@@ -12,7 +13,22 @@ export const MAX_SEARCHES = 3
 // a conversation may carry up to 15 MB of the person's pictures and PDFs (20 MB as base64), plus its text
 export const MAX_BODY_BYTES = 24_000_000
 const MAX_MESSAGES = 400
-const MAX_TOOLS = 128
+// the app's whole catalog goes on every request, most of it deferred behind tool search: the
+// desktop tab offers about 300 tools with a busy fleet and every connector, so this leaves room
+// to grow. The provider takes up to 10,000 deferred tools.
+export const MAX_TOOLS = 512
+// the tools that load up front, the old limit, so a request without tool search costs no more
+export const MAX_LOADED_TOOLS = 128
+// the betas a client may ask for: offering or withdrawing a tool mid-chat by reference. Tool search
+// itself needs none. Any other beta is dropped.
+export const TOOL_CHANGES_BETA = 'mid-conversation-tool-changes-2026-07-01'
+export const BETAS: readonly string[] = [TOOL_CHANGES_BETA]
+// the two tool search tools, each by its one name
+const SEARCH_TOOLS: Record<string, string> = {
+  tool_search_tool_bm25_20251119: 'tool_search_tool_bm25',
+  tool_search_tool_regex_20251119: 'tool_search_tool_regex',
+}
+const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/
 const MAX_BREAKPOINTS = 4
 // the most one image can cost on Haiku 5.5's vision tier, in tokens, kept as the worst case for a
 // step-up turn too
@@ -26,7 +42,7 @@ const CONTEXT_TOKENS = 1_000_000
 type Obj = Record<string, unknown>
 export type Shaped =
   /** `documents`: the request carries a PDF, whose cost bytes can't bound, so it is counted exactly before the call. */
-  | { ok: true; body: Obj; promptEstimate: number; maxOutput: number; maxSearches: number; documents: number }
+  | { ok: true; body: Obj; promptEstimate: number; maxOutput: number; maxSearches: number; documents: number; betas: string[] }
   | { ok: false; error: string }
 
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -91,6 +107,12 @@ function documentBlock(b: Obj): Obj {
   return out
 }
 
+// a tool a search found, named in a tool result
+function toolReference(b: Obj): Obj {
+  if (typeof b['tool_name'] !== 'string' || !TOOL_NAME.test(b['tool_name'])) refuse('a tool reference needs a tool name')
+  return { type: 'tool_reference', tool_name: b['tool_name'] }
+}
+
 function toolResultContent(c: unknown): unknown {
   if (typeof c === 'string') return c
   if (!Array.isArray(c)) refuse('bad tool result')
@@ -98,7 +120,8 @@ function toolResultContent(c: unknown): unknown {
     if (!isObj(x)) return refuse('bad tool result')
     if (x['type'] === 'text') return textBlock(x)
     if (x['type'] === 'image') return imageBlock(x)
-    return refuse('tool results hold text and images only')
+    if (x['type'] === 'tool_reference') return toolReference(x)
+    return refuse('tool results hold text, images and tool references only')
   })
 }
 
@@ -121,7 +144,7 @@ function block(b: unknown, role: string): Obj {
   }
   // replayed history from earlier turns, passed back unchanged as the API requires, except
   // that cache points anywhere in it go back to the plain 5-minute form
-  if (role === 'assistant' && (t === 'thinking' || t === 'redacted_thinking' || t === 'server_tool_use' || t === 'web_search_tool_result')) {
+  if (role === 'assistant' && (t === 'thinking' || t === 'redacted_thinking' || t === 'server_tool_use' || t === 'web_search_tool_result' || t === 'tool_search_tool_result')) {
     const out = withoutCachePoints(structuredClone(b)) as Obj
     cachePoint(b, out)
     return out
@@ -129,9 +152,26 @@ function block(b: unknown, role: string): Obj {
   return refuse(`content of type ${String(t)} is not allowed`)
 }
 
+// a system message that offers or withdraws tools the request already declares, by name; free
+// text there would read as our own instructions, so it never passes
+function toolChange(m: Obj): Obj {
+  const c = m['content']
+  if (!Array.isArray(c) || c.length === 0) return refuse('a system message only adds or withdraws tools')
+  return {
+    role: 'system',
+    content: c.map((b) => {
+      if (!isObj(b) || (b['type'] !== 'tool_addition' && b['type'] !== 'tool_removal')) return refuse('a system message only adds or withdraws tools')
+      const tool = b['tool']
+      if (!isObj(tool) || tool['type'] !== 'tool_reference' || typeof tool['name'] !== 'string' || !TOOL_NAME.test(tool['name'])) return refuse('a tool change names a tool')
+      return { type: b['type'], tool: { type: 'tool_reference', name: tool['name'] } }
+    }),
+  }
+}
+
 function messages(raw: unknown): Obj[] {
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_MESSAGES) refuse('messages must be a list of 1 to 400')
   return (raw as unknown[]).map((m) => {
+    if (isObj(m) && m['role'] === 'system') return toolChange(m)
     if (!isObj(m) || (m['role'] !== 'user' && m['role'] !== 'assistant')) return refuse('each message is from the user or the assistant')
     const role = m['role'] as string
     const c = m['content']
@@ -179,10 +219,15 @@ function inputSchema(raw: Obj): Obj {
 
 function tools(raw: unknown): { list: Obj[]; searches: number } {
   if (raw === undefined) return { list: [], searches: 0 }
-  if (!Array.isArray(raw) || raw.length > MAX_TOOLS) return refuse('tools must be a list of at most 128')
+  if (!Array.isArray(raw) || raw.length > MAX_TOOLS) return refuse(`tools must be a list of at most ${MAX_TOOLS}`)
   let searches = 0
   const list = raw.map((t) => {
     if (!isObj(t)) return refuse('bad tool')
+    if (typeof t['type'] === 'string' && Object.hasOwn(SEARCH_TOOLS, t['type'])) {
+      // never deferred, and no cache point: the proxy places that on the last tool that loads
+      if (t['name'] !== SEARCH_TOOLS[t['type']]) return refuse(`tool ${t['type']} goes by its own name`)
+      return { type: t['type'], name: t['name'] }
+    }
     if (typeof t['type'] === 'string' && t['type'] !== 'custom') {
       if (!t['type'].startsWith('web_search_')) return refuse(`tool ${t['type']} is not allowed`)
       // every web search tool counts toward the one limit
@@ -192,14 +237,18 @@ function tools(raw: unknown): { list: Obj[]; searches: number } {
       searches += uses
       return { type: 'web_search_20250305', name: 'web_search', max_uses: uses }
     }
-    if (typeof t['name'] !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(t['name'])) return refuse('bad tool name')
+    if (typeof t['name'] !== 'string' || !TOOL_NAME.test(t['name'])) return refuse('bad tool name')
     if (!isObj(t['input_schema'])) return refuse('a tool needs an input schema')
     const out: Obj = { name: t['name'], input_schema: inputSchema(t['input_schema'] as Obj) }
     if (typeof t['description'] === 'string') out['description'] = t['description']
     if (t['strict'] === true) out['strict'] = true
-    cachePoint(t, out)
+    // a deferred tool loads only when a search finds it, and the provider refuses a cache point on one
+    if (t['defer_loading'] === true) out['defer_loading'] = true
+    else cachePoint(t, out)
     return out
   })
+  const loaded = list.filter((t) => t['defer_loading'] !== true && !(typeof t['type'] === 'string' && Object.hasOwn(SEARCH_TOOLS, t['type']))).length
+  if (loaded > MAX_LOADED_TOOLS) refuse(`at most ${MAX_LOADED_TOOLS} tools load up front; defer the rest behind tool search`)
   return { list, searches }
 }
 
@@ -230,7 +279,7 @@ function* cached(body: Obj): Generator<Obj> {
 function placeCache(body: Obj): void {
   const tl = (body['tools'] as Obj[] | undefined) ?? []
   const sys = (body['system'] as Obj[] | undefined) ?? []
-  const lastTool = [...tl].reverse().find((t) => t['type'] === undefined)
+  const lastTool = [...tl].reverse().find((t) => t['type'] === undefined && t['defer_loading'] !== true)
   if (lastTool && !tl.some((t) => t['cache_control'])) lastTool['cache_control'] = { ...EPHEMERAL }
   const lastSys = sys[sys.length - 1]
   if (lastSys && !sys.some((b) => b['cache_control'])) lastSys['cache_control'] = { ...EPHEMERAL }
@@ -276,7 +325,6 @@ export function worstInput(prompt: number, maxOutput: number, searches: number):
   return (searches + 1) * Math.min(prompt + maxOutput + searches * SEARCH_RESULT_TOKENS, CONTEXT_TOKENS)
 }
 
-/** `model`: the turn's model, which the proxy picked (never the client's `model` field). */
 /** The efforts a client may ask for; anything else is medium. */
 const EFFORTS = new Set(['low', 'medium', 'high'])
 /** Under this many output tokens a call the client did not ask to think goes without thinking, so it is not all thinking. */
@@ -302,7 +350,17 @@ export function thinkingFor(model: string, thinking: unknown, outputConfig: unkn
   return { thinking: { type: 'adaptive' }, output_config: { effort: asked } }
 }
 
-export function shape(raw: unknown, model: string = MODEL): Shaped {
+/** The betas the client asked for (its `anthropic-beta` header) that the proxy passes, in BETAS order. */
+function betasOf(header: string | null | undefined): string[] {
+  const asked = new Set((header ?? '').split(',').map((b) => b.trim()))
+  return BETAS.filter((b) => asked.has(b))
+}
+
+/**
+ * `model`: the turn's model, which the proxy picked (never the client's `model` field). `betas`: the client's
+ * `anthropic-beta` header.
+ */
+export function shape(raw: unknown, model: string = MODEL, betas?: string | null): Shaped {
   try {
     if (!isObj(raw)) refuse('the body must be a JSON object')
     const r = raw as Obj
@@ -319,7 +377,7 @@ export function shape(raw: unknown, model: string = MODEL): Shaped {
     }
     Object.assign(body, thinkingFor(model, r['thinking'], r['output_config'], maxOutput))
     placeCache(body)
-    return { ok: true, body, promptEstimate: estimate(body), maxOutput, maxSearches: t.searches, documents: documentsIn(body) }
+    return { ok: true, body, promptEstimate: estimate(body), maxOutput, maxSearches: t.searches, documents: documentsIn(body), betas: betasOf(betas) }
   } catch (e) {
     if (e instanceof Refused) return { ok: false, error: e.message }
     throw e
