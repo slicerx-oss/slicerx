@@ -116,7 +116,7 @@ export interface RealSources {
   lookups(): readonly SizeLookup[]
   /** The person's requests in this chat, which a stated size quotes; absent where none can be read. */
   said?: readonly string[] | undefined
-  /** A client's own plan (design.put_plan): each size gives its source page or the person's words. */
+  /** A client's own plan (design.put_plan): a size may give its source page; one with no page or words is from memory. */
   client?: boolean
 }
 
@@ -263,7 +263,7 @@ export function detailProblem(plan: DetailPlan, bed?: { bed: Bed; printer?: stri
         )
     }
   }
-  if (!plan.proportions?.trim()) problems.push(`proportions: say where the proportions come from, a lookup (web.lookup) or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"`)
+  if (!plan.proportions?.trim()) problems.push(`proportions: say where the proportions come from, a lookup (${opts.real && !opts.real.client ? 'design.lookup_sizes' : 'web.lookup'}) or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"`)
   if (plan.repeats === undefined) problems.push('repeats: list the real object\'s repeated details (windows, wheels, slats, vents), or give an empty list when it has none')
   else if (plan.repeats.length && !plan.features.some((f) => PATTERN.test(f.kind ?? '') || PATTERN.test(f.name)))
     problems.push(`repeats: ${plan.repeats.join(', ')} repeat on the real object, so plan at least one detail pass that builds one and patterns it (kind array or pattern)`)
@@ -319,7 +319,7 @@ function scaleProblems(plan: DetailPlan, feature: FeatureOf, src?: RealSources):
     if (want > 0 && (got > want * SCALE_SLACK || got < want / SCALE_SLACK))
       out.push(`${f.name} ${key} is ${r1(got)} mm, ${r1(got / want)} times the ${r1(want)} mm its real ${r1(mm)} mm gives at 1:${n}; size it from the real one`)
   }
-  if (unsourced.length) out.push(src?.client ? CLIENT_UNSOURCED(unsourced) : NO_LOOKUP_ID(unsourced))
+  if (unsourced.length) out.push(NO_LOOKUP_ID(unsourced))
   const unheld = unheldProblem(plan, feature, src)
   if (unheld) out.push(unheld)
   return out
@@ -347,9 +347,6 @@ export const NOT_ASKED = (sizes: readonly string[]): string =>
 export const NOT_STATED = (size: string, mm: number, stated: string): string => `real: ${size} is ${r1(mm)} mm, but "${stated}" gives no size within 1% of that; give the size the person's words give, in mm`
 /** Stated words that are not the person's. */
 export const NOT_SAID = (stated: string): string => `real: "${stated}" is not in the person's messages in this chat; quote their own words in stated, or look the size up with design.lookup_sizes`
-/** A client's real sizes with neither a source page nor the person's words. */
-export const CLIENT_UNSOURCED = (sizes: readonly string[]): string =>
-  `real: ${andList(sizes)} ${sizes.length === 1 ? 'gives' : 'give'} no source; give the page each came from as source {"title", "url"}, or the person's words that give it as stated`
 
 /** A name and a lookup's size name read as the same size: each word of one in the other, either way. */
 const sameSize = (a: string, b: string): boolean => within(a, b) || within(b, a)
@@ -363,7 +360,7 @@ function askedAndMissing(src: RealSources, names: readonly string[]): boolean {
  * The figure a real size is held to. Without `src`, its own mm. With a lookupId, the size that lookup found within
  * REAL_MATCH of its mm; with stated words, the length in them within REAL_MATCH (and the words must be the person's,
  * where their messages can be read); with a source page, its mm on a client's plan (the card's form has no source). A size with none of these is
- * unsourced where a lookup can run, unless a lookup asked for it and no source gave it, or the client must give one;
+ * unsourced where a lookup can run, unless a lookup asked for it and no source gave it;
  * otherwise it is taken from memory as given (realMemoryNote says so on the plan).
  */
 function realFigure(r: RealEntry, size: string, src: RealSources | undefined): { mm: number } | { problem: string } | { unsourced: true } {
@@ -382,7 +379,8 @@ function realFigure(r: RealEntry, size: string, src: RealSources | undefined): {
     const hit = lengthsIn(words).find((x) => Math.abs(x.mm - mm) <= mm * REAL_MATCH)
     return hit ? { mm: hit.mm } : { problem: NOT_STATED(size, mm, words) }
   }
-  if (src.client) return r.source !== undefined ? { mm } : { unsourced: true }
+  // a client's size with no page or words is its own, from memory: many clients have no web search
+  if (src.client) return { mm }
   if (src.canLookUp && !askedAndMissing(src, [size])) return { unsourced: true }
   return { mm }
 }
@@ -392,7 +390,6 @@ function realFigure(r: RealEntry, size: string, src: RealSources | undefined): {
  * for them and no source gave them. Null when every real size has a lookup, the person's words or a source.
  */
 export function realMemoryNote(plan: DetailPlan, src: RealSources): string | null {
-  if (src.client) return null
   const feature = (n: string) => plan.features.find((x) => x.name.trim().toLowerCase() === n.trim().toLowerCase())
   const memory = (plan.real ?? []).flatMap((r) => {
     if (r.lookup !== undefined || r.stated !== undefined || r.source !== undefined) return []
@@ -401,11 +398,13 @@ export function realMemoryNote(plan: DetailPlan, src: RealSources): string | nul
     return f && key ? [`${f.name} ${key}`] : []
   })
   if (!memory.length) return null
-  return src.canLookUp ? MEMORY_AFTER_LOOKUP(memory) : MEMORY_NO_WEB(memory)
+  return src.client ? MEMORY_CLIENT(memory) : src.canLookUp ? MEMORY_AFTER_LOOKUP(memory) : MEMORY_NO_WEB(memory)
 }
 
 /** The Assumed line where no web lookup can run. The owner approves this wording. */
 export const MEMORY_NO_WEB = (sizes: readonly string[]): string => `real: not looked up, as no web lookup can run here; ${andList(sizes)} ${sizes.length === 1 ? 'is' : 'are'} from memory`
+/** The assumption design.put_plan adds for a client's real sizes with no source page or words. */
+export const MEMORY_CLIENT = (sizes: readonly string[]): string => `real: no source given; ${andList(sizes)} ${sizes.length === 1 ? 'is' : 'are'} from memory`
 /** The Assumed line for sizes a lookup asked for and no source gave. */
 export const MEMORY_AFTER_LOOKUP = (sizes: readonly string[]): string => `real: ${andList(sizes)} ${sizes.length === 1 ? 'is' : 'are'} from memory, as the lookup found no source for ${sizes.length === 1 ? 'it' : 'them'}`
 
