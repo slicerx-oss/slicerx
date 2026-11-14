@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // What mimir may send through the proxy. The request is rebuilt from an allowlist, never
 // forwarded as is: the model is the one the proxy picked for the turn, the reply and web searches are capped, thinking is
-// adaptive, only the app's own tools and web search pass, and cache points sit on the
-// tools and system prompt so every turn after the first reads them from the cache.
+// adaptive unless the client turns it off or the call is small (thinkingFor), only the app's own tools and web search
+// pass, and cache points sit on the tools and system prompt so every turn after the first reads them from the cache.
 
 // the base model, for every turn the edition does not step up (migrations/0028_mimir_step_up.sql)
 export const MODEL = 'claude-haiku-5-5'
@@ -277,6 +277,31 @@ export function worstInput(prompt: number, maxOutput: number, searches: number):
 }
 
 /** `model`: the turn's model, which the proxy picked (never the client's `model` field). */
+/** The efforts a client may ask for; anything else is medium. */
+const EFFORTS = new Set(['low', 'medium', 'high'])
+/** Under this many output tokens a call the client did not ask to think goes without thinking, so it is not all thinking. */
+export const SMALL_OUTPUT = 4000
+
+/**
+ * The thinking and effort for the routed model. A client that leaves thinking out gets adaptive thinking at its effort
+ * (low, medium or high; medium otherwise), as every turn did before, unless its output limit is under SMALL_OUTPUT. A
+ * client that sends {type: "disabled"}, or a small call that asks for no thinking, gets the model's own form of no
+ * thinking, never a shape the model refuses: Haiku 5.5 takes disabled; Sonnet 5.5 takes between_tools alone; Opus 5.5
+ * cannot turn thinking off, so it stays adaptive at effort low; any other model stays adaptive. A client that asks to
+ * think (enabled, adaptive) gets adaptive.
+ */
+export function thinkingFor(model: string, thinking: unknown, outputConfig: unknown, maxOutput: number): Obj {
+  const asked = isObj(outputConfig) && typeof outputConfig['effort'] === 'string' && EFFORTS.has(outputConfig['effort']) ? outputConfig['effort'] : 'medium'
+  const type = isObj(thinking) ? thinking['type'] : undefined
+  const off = type === 'disabled' || (thinking === undefined && maxOutput < SMALL_OUTPUT)
+  if (off) {
+    if (/^claude-haiku-5-5(-|$)/.test(model)) return { thinking: { type: 'disabled' }, output_config: { effort: asked } }
+    if (/^claude-sonnet-5-5(-|$)/.test(model)) return { thinking: { type: 'between_tools' }, output_config: { effort: asked } }
+    if (/^claude-opus-5-5(-|$)/.test(model)) return { thinking: { type: 'adaptive' }, output_config: { effort: 'low' } }
+  }
+  return { thinking: { type: 'adaptive' }, output_config: { effort: asked } }
+}
+
 export function shape(raw: unknown, model: string = MODEL): Shaped {
   try {
     if (!isObj(raw)) refuse('the body must be a JSON object')
@@ -292,8 +317,7 @@ export function shape(raw: unknown, model: string = MODEL): Shaped {
       const choice = toolChoice(r['tool_choice'])
       if (choice) body['tool_choice'] = choice
     }
-    body['thinking'] = { type: 'adaptive' }
-    body['output_config'] = { effort: 'medium' }
+    Object.assign(body, thinkingFor(model, r['thinking'], r['output_config'], maxOutput))
     placeCache(body)
     return { ok: true, body, promptEstimate: estimate(body), maxOutput, maxSearches: t.searches, documents: documentsIn(body) }
   } catch (e) {
