@@ -2,10 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // An opened project stays on Slice plate: no auto slice right after the open, whatever the plate's size, so the view
 // does not switch to the toolpaths and the right pane stays as it was. A later edit auto-slices under the setting.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host, SliceRequest } from '@slicerx/contracts'
 import { AUTO_SLICE_DELAY_MS, startAutoSlice } from '../src/state/auto-slice'
-import { cancelSlice } from '../src/state/actions'
+import { cancelSlice, loadSliceRun } from '../src/state/actions'
 import { autoSliceFields } from '../src/state/auto-slice-mode'
 import { get, set } from '../src/state/store'
 
@@ -30,6 +30,10 @@ function host() {
   } as unknown as Host
   return { h, requests }
 }
+
+// The first import of the slice code (loadSliceRun) takes about 0.9 s in a test run, against the 1 s wait for a later
+// edit's slice to start, so it is loaded before the tests.
+beforeAll(() => loadSliceRun())
 
 beforeEach(() => {
   vi.useFakeTimers()

@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The designs a design host keeps waiting for their first body, and where each waits (cad/design-host.ts). Shared with
 // every reader: where a body stands (sketch-place.ts), and the timeline, which keeps a sketch drawn for a waiting design
-// while the design has no body (plate/timeline.ts).
+// while the design has no body (plate/timeline.ts). Also how a cleared plate's kept solids are freed (releaseKeptBodies),
+// so clearing a project does not load the geometry client and the history code it brings.
 import type { Mat4 } from '@slicerx/cad-history'
 
 const waiting = new Map<string, Mat4>()
@@ -43,3 +44,18 @@ export function waitingAt(id: string): Mat4 | undefined {
 
 /** Whether design `id` waits for its first body. */
 export const waits = (id: string): boolean => waiting.has(id)
+
+/** How kept solids are freed: set by the geometry client when it loads (geom/client.ts, releaseKept). */
+let release: () => unknown = () => undefined
+
+export function setKeptBodiesRelease(f: () => unknown): void {
+  release = f
+}
+
+/**
+ * Frees the solids the replays of a cleared plate kept, where they were kept. Before the geometry client loads no
+ * provider is set and no replay ran, so nothing is kept and nothing loads for it.
+ */
+export function releaseKeptBodies(): void {
+  release()
+}
