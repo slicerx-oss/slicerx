@@ -6,7 +6,8 @@ import { z } from 'zod'
 import { bakeMesh, checkedTextFit, direction, groupId, invert, keepsArrayOf, MAX_STEPS_REPEATED, multiply, point, repeatProblem, stepName, stepPatternProblem, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
 import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, replayChange, stepIndex, stepOut, type Design, type PiecePlans } from './design-tools'
-import { frameFor } from './cad'
+import { givenFrame, mirroredNote } from './cad'
+import { mirroredPoints } from './sketch-mirror'
 import { insetOutline, railLayout } from './rail'
 import { ToolInputError } from './errors'
 import { boxIn, boxOf, placeNote, solidBox, solidsInPlace, solidsNote, undercut } from './feature-place'
@@ -476,17 +477,21 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   /** How far a rail's posts sink into what they stand on, mm, so they are never exactly on its top. */
   const RAIL_SINK_MM = 0.05
-  const railInput = z.object({
-    design: designArg,
-    feature: featureArg,
-    path: z
+  // a local model's path frame has no v, as before v was kept, which only cloud turns are told; the tool takes v from either
+  const railPath = <F extends z.ZodTypeAny>(frame: F) =>
+    z
       .object({
-        frame: z.object({ origin: vec3, normal: vec3, u: vec3.optional() }).optional().describe('The plane the rail stands on, its normal up the posts; absent: the bed'),
+        frame: frame.optional().describe('The plane the rail stands on, its normal up the posts; absent: the bed'),
         points: z.array(z.tuple([z.number(), z.number()])).min(2).max(512).describe('[u, v] in the plane, mm'),
         closed: z.boolean().default(false).describe('Back to the first point: a rail all round'),
       })
       .optional()
-      .describe('The line the rail follows'),
+      .describe('The line the rail follows')
+  const railFrame = z.object({ origin: vec3, normal: vec3, u: vec3.optional() })
+  const railInput = z.object({
+    design: designArg,
+    feature: featureArg,
+    path: railPath(railFrame.extend({ v: vec3.optional() })),
     face: z
       .object({ point: vec3.describe('A point on the face, mm'), normal: vec3.optional() })
       .optional()
@@ -504,12 +509,13 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   })
   const rail = defineTool({
     name: 'geom.rail',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
       'Add a rail (a railing or fence) to a design: round posts at every corner of a line and spread evenly between, and a flat top bar on them, as two steps of one call. The line is path (points on a plane, closed for a rail all round) or face (all round the outer edge of a flat face). Posts and bar are at least twice the nozzle, so they print, and the bar is a little wider than the posts; the posts sink 0.05 mm into what they stand on. A new part of its own by default (name, slot), or joined to the part. The reply gives the posts, their spacing, the length and the sizes used.',
     input: railInput,
+    localInput: railInput.extend({ path: railPath(railFrame) }),
     async run(i) {
       if (!i.path === !i.face) throw new ToolInputError(i.path ? 'face: give path or face, not both' : 'path: give the line the rail follows as path, or a flat face as face')
       if (i.inset_mm !== undefined && !i.face) throw new ToolInputError('inset_mm: the inset is from a face\'s edge; give face, or leave inset_mm out')
@@ -543,8 +549,10 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         closed = true
       } else {
         const f = i.path!.frame
-        frame = f ? frameFor(f.origin, f.normal, f.u) : { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
-        points = i.path!.points
+        const g = f ? givenFrame(f) : null
+        frame = g ? g.frame : { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+        // on a frame that mirrors what is drawn on it, the path is mirrored onto the engine's frame (sketch-mirror.ts)
+        points = g?.mirrored ? mirroredPoints(i.path!.points) : i.path!.points
         closed = i.path!.closed
       }
       if (i.join && on === undefined) throw new ToolInputError('part: a joined rail needs the part it joins; give part')
@@ -572,7 +580,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
       const facts = { part: target, posts: lay.posts.length, cornerPosts: lay.cornerPosts, spacingMm: lay.spacingMm, lengthMm: lay.lengthMm, closed, heightMm: i.height_mm, postMm, barMm, barHeightMm }
       const k = d.history.steps.length
       return {
-        summary: `Railed: steps ${k - 1} and ${k}, ${lay.posts.length} posts (${lay.cornerPosts} on corners) at most ${Math.round(lay.spacingMm * 100) / 100} mm apart along ${Math.round(lay.lengthMm * 10) / 10} mm, ${i.height_mm} mm tall, ${i.join ? `joined to ${d.parts[target]?.name ?? `part ${target}`}` : `a new part, ${d.parts[target]?.name ?? 'Rail'}`}; ${RAIL_UNDO_NOTE}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`,
+        summary: `Railed: steps ${k - 1} and ${k}, ${lay.posts.length} posts (${lay.cornerPosts} on corners) at most ${Math.round(lay.spacingMm * 100) / 100} mm apart along ${Math.round(lay.lengthMm * 10) / 10} mm, ${i.height_mm} mm tall, ${i.join ? `joined to ${d.parts[target]?.name ?? `part ${target}`}` : `a new part, ${d.parts[target]?.name ?? 'Rail'}`}; ${RAIL_UNDO_NOTE}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}${i.path?.frame && givenFrame(i.path.frame).mirrored ? `. ${mirroredNote(i.path.frame)}` : ''}`,
         output: { ...designSummary(d), rail: facts },
       }
     },
