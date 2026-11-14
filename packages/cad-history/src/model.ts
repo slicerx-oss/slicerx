@@ -746,6 +746,88 @@ export function rangeOf(s: Step, stepById?: (id: string) => Step | undefined, hi
   }
 }
 
+/** A support's top along its length, world mm: each section's highest point, by where it stands on x or y, in order. */
+export interface Deck {
+  axis: 'x' | 'y'
+  at: [number, number][]
+}
+
+/**
+ * The top along its length of a loft through upright sections that each stand across x or y, read from the step's own
+ * numbers as rangeOf reads its height: each section's highest point and where along the axis it stands, in order. Null
+ * for a cut, for sections that lean or that do not run one way along the axis, and for a loft whose sections' tops are
+ * all one height, as its top is then its highest point everywhere.
+ */
+export function deckOf(s: Step): Deck | null {
+  const p = s.params
+  if (p.op !== 'sketch.loft' || p.operation === 'cut') return null
+  const inv = invert(s.transform)
+  const sections = p.profiles.map((pr) => {
+    const f = pr.frame ?? BED_FRAME
+    return pr.loops.filter((l) => !l.construction).flatMap((l) => rangePoints(l).map((q) => point(inv, [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * (q[0] ?? 0) + f.v[k]! * (q[1] ?? 0)))))
+  })
+  if (sections.length < 2 || sections.some((pts) => !pts.length)) return null
+  for (const k of [0, 1] as const) {
+    const at = sections.map((pts) => [pts[0]![k], Math.max(...pts.map((q) => q[2]))] as [number, number])
+    // each section upright across the axis, at one place along it
+    if (!sections.every((pts, i) => pts.every((q) => Math.abs(q[k] - at[i]![0]) <= 1e-9))) continue
+    const rises = at.every((a, i) => i === 0 || a[0] > at[i - 1]![0])
+    if (!rises && !at.every((a, i) => i === 0 || a[0] < at[i - 1]![0])) return null
+    const tops = at.map((a) => a[1])
+    if (Math.max(...tops) - Math.min(...tops) <= 1e-9) return null
+    return { axis: k === 0 ? 'x' : 'y', at: rises ? at : at.reverse() }
+  }
+  return null
+}
+
+/** Where a part stands across the bed, world mm: its lowest and highest x and y. */
+export interface Footprint {
+  x: [number, number]
+  y: [number, number]
+}
+
+/** Half a shape's size along its placement's x and y, turned by its rotation, or the radius of a round one; null for text. */
+function halfSize(shape: Shape | FreeShape, deg: number): { w: number; h: number } | { r: number } | null {
+  // no turn reads the sizes as they are, with no rounding from a sine or cosine
+  const [c, n] = deg % 360 === 0 ? [1, 0] : [Math.abs(Math.cos((deg * Math.PI) / 180)), Math.abs(Math.sin((deg * Math.PI) / 180))]
+  const box = (a: number, b: number) => ({ w: c * a + n * b, h: n * a + c * b })
+  switch (shape.type) {
+    case 'rectangle':
+      return box(shape.widthMm / 2, shape.heightMm / 2)
+    case 'slot':
+      return box(shape.lengthMm / 2, shape.widthMm / 2)
+    case 'ellipse': {
+      const [a, b] = [shape.widthMm / 2, shape.heightMm / 2]
+      return { w: Math.hypot(a * c, b * n), h: Math.hypot(a * n, b * c) }
+    }
+    case 'circle':
+      return { r: shape.diameterMm / 2 }
+    case 'polygon':
+      return { r: shape.fit === 'circumscribed' ? shape.diameterMm / 2 / Math.cos(Math.PI / shape.sides) : shape.diameterMm / 2 }
+    default:
+      return null
+  }
+}
+
+/**
+ * Where an extrude that rises straight up stands across the bed, from the step's own numbers: its shape's reach about
+ * its placement, on its frame, at the step's transform. Null for a cut, for an extrude that does not rise straight up
+ * (rangeOf reads none), for one with copies, and for text, sketch and artwork outlines.
+ */
+export function footOf(s: Step): Footprint | null {
+  const p = s.params
+  if (p.op !== 'shape.extrude' || p.pattern || !rangeOf(s)) return null
+  const f = p.frame ?? BED_FRAME
+  const half = halfSize(p.shape, p.placement?.rotationDeg ?? 0)
+  if (!half || !f.u || !f.v) return null
+  const inv = invert(s.transform)
+  const c = p.placement?.center ?? [0, 0]
+  const at = point(inv, [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * c[0] + f.v[k]! * c[1]))
+  const [u, v] = [direction(inv, f.u), direction(inv, f.v)]
+  const reach = (k: 0 | 1): number => ('r' in half ? half.r * Math.hypot(u[k], v[k]) : Math.abs(u[k]) * half.w + Math.abs(v[k]) * half.h)
+  return { x: [at[0] - reach(0), at[0] + reach(0)], y: [at[1] - reach(1), at[1] + reach(1)] }
+}
+
 /** The points a step refers to, world at its transform, for following an earlier cap. Two per edge, `a` then `b`. */
 export function refPoints(p: StepParams): Vec3[] {
   if (p.op === 'face.push') return [p.at]

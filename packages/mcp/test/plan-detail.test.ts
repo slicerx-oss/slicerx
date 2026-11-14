@@ -242,6 +242,24 @@ describe('detailProblem: the rules are about the object', () => {
     expect([STANDS_OFF, STANDS_FLOATS, STANDS_HEIGHT_OFF, STANDS_BASE_OFF].every((f) => typeof f === 'function')).toBe(true)
   })
 
+  it('reads a deck that rises along its length under the part: the part is held to the lowest of the deck beneath it', () => {
+    // the stage 1 hull: its top at each section, along x, and the parts on it, each with its own footprint
+    const deck = { axis: 'x' as const, at: [[0, 17.5], [10, 17], [30, 16.5], [70, 16], [150, 16], [185, 16.5], [205, 17.5], [215, 19]] as [number, number][] }
+    const hull = { lo: 0, hi: 19, deck }
+    const plan = { detail: 'display' as const, features: [{ name: 'Hull', sizes: {} }, { name: 'Lower deckhouse', sizes: { height: 4.1 }, on: 'Hull' }, { name: 'Aft deckhouse', sizes: { height: 3.1 }, on: 'Hull' }, { name: 'Mainmast', sizes: { height: 27.1 }, on: 'Hull' }] }
+    const lower = (lo: number) => ({ lo, hi: 20, foot: { x: [50, 170] as [number, number], y: [-8.5, 8.5] as [number, number] } })
+    // from x 50 to 170 the deck is 16 mm at its lowest, so a base at 15.9 is seated and one at 13 is sunk 3 mm
+    expect(stackItem({ ...plan, features: plan.features.slice(0, 2) }, { hull, 'lower deckhouse': lower(15.9) })).toMatchObject({ pass: true, got: '1 stacked part on its support' })
+    expect(stackItem({ ...plan, features: plan.features.slice(0, 2) }, { hull, 'lower deckhouse': lower(13) })!.got).toBe('Lower deckhouse stands on Hull, but its base is 3 mm below its top, so 4 mm of it shows of a planned 4.1 mm; build it from the top of Hull')
+    // from x 35 to 52 the deck has begun to rise: between its sections at x 30 and 70 it is 16.23 mm at x 52 and higher
+    // aft, so a base at 15.9 is sunk into it everywhere; a mast at 18.9 floats over the 16.4 mm deck at x 38
+    const r = stackItem(plan, { hull, 'lower deckhouse': lower(15.9), 'aft deckhouse': { lo: 15.9, hi: 19, foot: { x: [35, 52], y: [-7, 7] } }, mainmast: { lo: 18.9, hi: 46, foot: { x: [37, 39], y: [-1, 1] } } })!
+    expect(r.got).toBe('Aft deckhouse stands on Hull, but its base is 0.33 mm below its top, so 2.77 mm of it shows of a planned 3.1 mm; build it from the top of Hull; Mainmast stands on Hull, but its base is 2.51 mm above its top, so it floats; build it from the top of Hull')
+    // a part past the deck's ends, or with no footprint, is read against the support's highest point, as before
+    expect(stackItem({ ...plan, features: plan.features.slice(0, 2) }, { hull, 'lower deckhouse': { lo: 15.9, hi: 20 } })!.got).toBe('Lower deckhouse stands on Hull, but its base is 3.1 mm below its top, so 1 mm of it shows of a planned 4.1 mm; build it from the top of Hull')
+    expect(stackItem({ ...plan, features: plan.features.slice(0, 2) }, { hull, 'lower deckhouse': { lo: 18.9, hi: 23, foot: { x: [220, 240], y: [-1, 1] } } })).toMatchObject({ pass: true })
+  })
+
   it('reads no pair with a loose range on either side, since a bound for a top makes a part placed right look sunk or floating', () => {
     const plan = { detail: 'display' as const, features: [{ name: 'Rail', sizes: { height: 2 } }, { name: 'Post', sizes: { height: 10 }, on: 'Rail' }, { name: 'Deck', sizes: { height: 3 } }, { name: 'Arch', sizes: { height: 8 }, on: 'Deck' }] }
     // a post on a swept rail, and a swept arch on an extruded deck: both a bound, so neither pair is read

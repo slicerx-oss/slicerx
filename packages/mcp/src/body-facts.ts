@@ -7,7 +7,7 @@
 // from each facet inward to the far side, through a grid of the facets, within a budget, skipping slivers and ledges
 // a join leaves), when asked, the hook on its upright stem (hook-lip.ts) and, when asked, the floor of a part that holds
 // something (holder-floor.ts), and for a plan with recess rows, its blind openings on any face (recesses.ts).
-import { bakeMesh, rangeOf, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh, type Step } from '@slicerx/cad-history'
+import { bakeMesh, deckOf, footOf, rangeOf, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh, type Step } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import { colorWord, colorWordHex } from '@slicerx/pilot'
 import { partNamed, type BodyFacts, type PartBox, type FitLimits, type FloorFacts, type PaintedRegion } from './design-check'
@@ -15,7 +15,7 @@ import { fitFacts } from './fit-facts'
 import { looseGaps, looseText, movingParts, partsNear } from './seat'
 import { floorOpenings } from './holder-floor'
 import { hookOn, surfacePoints } from './hook-lip'
-import { loftSections } from './plan-detail'
+import { loftSections, type FeatureHeights } from './plan-detail'
 import { recessesOf } from './recesses'
 
 type V3 = [number, number, number]
@@ -235,15 +235,19 @@ function reach(meshes: readonly Mesh[], names: readonly string[]): NonNullable<B
  * Each tagged feature's height range over the steps tagged with it that rangeOf can read from their own numbers, loose
  * when any of them gives only a bound; a merged array reads the part it copies from the steps before it as replay
  * walked them (turned-off ones included, none after a broken step) and numbers them. A feature none of whose steps has
- * a range has none, and is not read.
+ * a range has none, and is not read. A feature made by one loft whose sections' tops differ (a hull whose deck rises
+ * toward its ends) also keeps its top at each section (deckOf), and then each feature whose every ranged step is an
+ * extrude that rises straight up keeps where it stands across the bed (footOf), so a part on that deck is read against
+ * the deck under it. A design with no such loft gets neither.
  */
-function featureHeights(d: HostDesign, shaping: readonly Step[]): Record<string, { lo: number; hi: number; loose?: true }> {
+export function featureHeights(d: HostDesign, shaping: readonly Step[]): Record<string, FeatureHeights[string]> {
   const all = d.history.steps
   const byId = new Map(all.map((s) => [s.id, s]))
   // replay stops at a broken step, and every step after it is skipped
   const stop = all.findIndex((_, i) => d.status[i]?.state === 'broken' || d.status[i]?.state === 'skipped')
   const walked = stop < 0 ? all : all.slice(0, stop)
   const out: Record<string, { lo: number; hi: number; loose?: true }> = {}
+  const ranged: Record<string, Step[]> = {}
   for (const s of shaping) {
     const tag = s.feature?.trim().toLowerCase()
     const r = tag ? rangeOf(s, (id) => byId.get(id), walked, d.history.base.length) : null
@@ -251,8 +255,23 @@ function featureHeights(d: HostDesign, shaping: readonly Step[]): Record<string,
     const was = out[tag]
     const loose = r.loose || was?.loose
     out[tag] = { lo: Math.min(was?.lo ?? r.lo, r.lo), hi: Math.max(was?.hi ?? r.hi, r.hi), ...(loose ? { loose: true as const } : {}) }
+    ;(ranged[tag] ??= []).push(s)
   }
-  return out
+  const decks = Object.entries(ranged).flatMap(([tag, steps]) => {
+    const deck = steps.length === 1 ? deckOf(steps[0]!) : null
+    return deck ? [[tag, deck] as const] : []
+  })
+  if (!decks.length) return out
+  const heights: Record<string, FeatureHeights[string]> = { ...out }
+  for (const [tag, deck] of decks) heights[tag] = { ...out[tag]!, deck }
+  for (const [tag, steps] of Object.entries(ranged)) {
+    const feet = steps.map((s) => footOf(s))
+    if (heights[tag]!.deck || !feet.every((f) => f)) continue
+    const x: [number, number] = [Math.min(...feet.map((f) => f!.x[0])), Math.max(...feet.map((f) => f!.x[1]))]
+    const y: [number, number] = [Math.min(...feet.map((f) => f!.y[0])), Math.max(...feet.map((f) => f!.y[1]))]
+    heights[tag] = { ...out[tag]!, foot: { x, y } }
+  }
+  return heights
 }
 
 /** A part's box in the design, with its slot, name and whether it has color paint (PartBox). */

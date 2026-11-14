@@ -6,12 +6,14 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import { designNamed, type Design as HostDesign, type DesignHost } from '@slicerx/cad-history'
+import { designNamed, loftParams, type Design as HostDesign, type DesignHost, type Step, type StepParams, type Vec3 } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
 import { minWall as creativeWall } from '../evals/creative/mesh-checks'
-import { minWall, WALL_BUDGET } from '../src/body-facts'
+import { featureHeights, minWall, WALL_BUDGET } from '../src/body-facts'
+import { frameFor } from '../src/cad'
 import { createPlanRegistry, designCheck, FIX_ROUNDS, hasHookLip, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
+import { stackItem } from '../src/plan-detail'
 import { createCardPlans } from '../src/tab-tools'
 import { designToolset, NO_ENGINE_HOST } from '../src/toolset'
 import { connect, data, text } from './helpers'
@@ -1392,6 +1394,88 @@ describe('a display plan\'s stacked parts', () => {
   it('checks nothing for a plan that names no support and has no tiers', async () => {
     const r = await ship(14.5, { tiers: undefined, features: [{ name: 'Hull', kind: 'extrude', sizes: { height: 14.5 } }, { name: 'Lower deckhouse', kind: 'extrude', sizes: { height: 3.6 } }, { name: 'Upper deckhouse', kind: 'extrude', sizes: { height: 3 } }, { name: 'Funnel 1', kind: 'extrude', sizes: { height: 15 } }] })
     expect(stands(r)).toBeUndefined()
+  })
+})
+
+describe('a stacked part on a hull with a sheer', () => {
+  // Two stage 1 ship hulls, lofted through their sections as the model built them: each deck is 16 mm amidships and
+  // rises toward an end (to 19 mm at x 215, and to 17.8 mm at the bow), and the parts on it are seated on the 16 mm deck
+  const across = { normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] }
+  const sheer = (deck: number[]) => [
+    { x: 0, pts: [[-0.8, 3], [0.8, 3], [1.275, 5.175], [1.5, 10.25], [1.5, deck[0]!], [-1.5, deck[0]!], [-1.5, 10.25], [-1.275, 5.175]] },
+    { x: 10, pts: [[-3, 1], [3, 1], [5.95, 3.4], [7, 9], [7, deck[1]!], [-7, deck[1]!], [-7, 9], [-5.95, 3.4]] },
+    { x: 30, pts: [[-5, 0], [5, 0], [8.925, 2.475], [10.5, 8.25], [10.5, deck[2]!], [-10.5, deck[2]!], [-10.5, 8.25], [-8.925, 2.475]] },
+    { x: 70, pts: [[-5.5, 0], [5.5, 0], [9.605, 2.4], [11.3, 8], [11.3, 16], [-11.3, 16], [-11.3, 8], [-9.605, 2.4]] },
+    { x: 150, pts: [[-5.5, 0], [5.5, 0], [9.605, 2.4], [11.3, 8], [11.3, 16], [-11.3, 16], [-11.3, 8], [-9.605, 2.4]] },
+    { x: 185, pts: [[-4, 0], [4, 0], [8.075, 2.475], [9.5, 8.25], [9.5, deck[3]!], [-9.5, deck[3]!], [-9.5, 8.25], [-8.075, 2.475]] },
+    { x: 205, pts: [[-1.5, 0.5], [1.5, 0.5], [4.25, 3.05], [5, 9], [5, deck[4]!], [-5, deck[4]!], [-5, 9], [-4.25, 3.05]] },
+    { x: 215, pts: [[-0.5, 3], [0.5, 3], [1.02, 5.4], [1.2, 11], [1.2, deck[5]!], [-1.2, deck[5]!], [-1.2, 11], [-1.02, 5.4]] },
+  ].map((s) => ({ frame: { origin: [s.x, 0, 0], ...across }, loops: [{ points: s.pts }] }))
+  // the first run's hull, its deck rising to 17.5 mm at x 0 and to 19 mm at x 215; flat, the same hull with its whole deck at 16 mm
+  const RISING = [17.5, 17, 16.5, 16.5, 17.5, 19]
+  const FLAT = [16, 16, 16, 16, 16, 16]
+  // the second run's hull: a deck line at 16 mm from x -75 to x 45, rising to 16.5 mm at the stern and 17.8 mm at the bow
+  const bow = [[-109, 3, 16.5, 1.8, 3, 2.95, 11.1], [-98, 7.5, 16.3, 4.5, 1.5, 7.3, 10.4], [-75, 10.5, 16, 6.3, 0, 10.3, 9.6], [-40, 11.5, 16, 6.9, 0, 11.3, 9.6], [0, 11.5, 16, 6.9, 0, 11.3, 9.6], [45, 11.2, 16, 6.7, 0, 11, 9.6], [80, 8.5, 16.8, 5.1, 0.5, 8.3, 10.3], [100, 4.5, 17.3, 2.7, 3, 4.4, 11.6], [109, 1.6, 17.8, 1, 8, 1.55, 13.9]].map(([x, w, top, b, lo, tw, tz]) => ({
+    frame: { origin: [x!, 0, 0], ...across },
+    loops: [{ start: [-w!, top!], segments: [{ type: 'line', to: [w!, top!] }, { type: 'arc', to: [b!, lo!], through: [tw!, tz!] }, { type: 'line', to: [-b!, lo!] }, { type: 'arc', to: [-w!, top!], through: [-tw!, tz!] }] }],
+  }))
+
+  async function hull(name: string, profiles: unknown[], parts: { feature: string; shape: Record<string, unknown>; at: number[]; from: number; up: number; height: number }[]) {
+    const plans = createPlanRegistry()
+    const h = await connect({ geomEngine: engine, plans })
+    const ok = async <T,>(tool: string, args: Record<string, unknown>): Promise<T> => {
+      const r = await h.call(tool, args)
+      expect(r.isError, `${tool}: ${text(r)}`).toBeFalsy()
+      return data<{ output: T }>(r).output
+    }
+    const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Titanic' })).design
+    await ok('slicerx_geom_loft', { design, profiles, smooth: true, operation: 'new', feature: name, name })
+    for (const p of parts) await ok('slicerx_geom_extrude', { design, shape: p.shape, frame: top(p.from), placement: { center: p.at }, distance_mm: p.up, extent: 'oneSide', operation: 'join', feature: p.feature })
+    plans.put({
+      planId: 'titanic-1', part: 'Titanic', units: 'mm', detail: 'display', assumptions: [], questions: [],
+      features: [{ name, kind: 'loft', sizes: { length: 215, sections: 8 } }, ...parts.map((p) => ({ name: p.feature, kind: 'extrude', sizes: { height: p.height }, on: name }))],
+    })
+    return ok<Check>('slicerx_design_check', { planId: 'titanic-1', design })
+  }
+  const stands = (r: Check) => r.items.find((i) => i.name === 'stands on')
+  // each to its top at 20 mm, as the run built it
+  const lower = (from: number, up: number) => ({ feature: 'Lower deckhouse', shape: { type: 'rectangle', widthMm: 120, heightMm: 17 }, at: [110, 0], from, up, height: 4.1 })
+
+  it('passes a deckhouse seated on the 16 mm deck under it, though the deck rises to 19 mm at the far end', async () => {
+    // the deckhouse runs from x 50 to 170, over the deck's 16 mm stretch; the 19 mm is at x 215, under none of it
+    expect(stands(await hull('Hull', sheer(RISING), [lower(15.9, 4.1)]))).toMatchObject({ got: '1 stacked part on its support', pass: true })
+  })
+
+  it('passes decks seated on the 16 mm midship deck line of a hull whose bow rises to 17.8 mm', async () => {
+    const r = await hull('Hull (loft)', bow, [
+      { feature: 'Promenade deck', shape: { type: 'rectangle', widthMm: 110, heightMm: 19, cornerRadiusMm: 2 }, at: [-5, 0], from: 15.95, up: 5.05, height: 5 },
+      { feature: 'Poop deck', shape: { type: 'rectangle', widthMm: 18, heightMm: 14 }, at: [-91, 0], from: 15.95, up: 2.05, height: 2 },
+    ])
+    expect(stands(r)).toMatchObject({ got: '2 stacked parts on their supports', pass: true })
+  })
+
+  // The same hulls as steps, made from the same stations as the tools make them, and read as design.check reads them
+  // (featureHeights, then stackItem), with no engine: the deck and the footprint are read from the steps alone.
+  const steps = (profiles: unknown[], parts: ReturnType<typeof lower>[]): Step[] => [
+    { id: 'hull', part: 0, transform: [...IDENTITY], feature: 'Hull', params: loftParams({ profiles: (profiles as { frame: { origin: Vec3; normal: Vec3; u: Vec3 }; loops: unknown[] }[]).map((p) => ({ frame: frameFor(p.frame.origin, p.frame.normal, p.frame.u), loops: p.loops })), smooth: true, operation: 'new', name: 'Hull' }) },
+    ...parts.map((p, k): Step => ({ id: `part-${k}`, part: 0, transform: [...IDENTITY], feature: p.feature, params: JSON.parse(JSON.stringify({ op: 'shape.extrude', frame: frameFor([0, 0, p.from], [0, 0, 1]), shape: p.shape, placement: { center: p.at }, spec: { distanceMm: p.up, extent: 'oneSide', operation: 'join' } })) as StepParams })),
+  ]
+  const heights = (all: Step[]) => featureHeights({ history: { base: [], steps: all }, status: all.map(() => ({ state: 'ok' })) } as unknown as HostDesign, all)
+  const plan = (parts: ReturnType<typeof lower>[]) => ({ detail: 'display' as const, features: [{ name: 'Hull', sizes: {} }, ...parts.map((p) => ({ name: p.feature, sizes: { height: p.height }, on: 'Hull' }))] })
+
+  it('still fails a deckhouse sunk 3 mm into the deck under it', () => {
+    const parts = [lower(13, 7)]
+    expect(stackItem(plan(parts), heights(steps(sheer(RISING), parts)))).toMatchObject({
+      got: 'Lower deckhouse stands on Hull, but its base is 3 mm below its top, so 4 mm of it shows of a planned 4.1 mm; build it from the top of Hull',
+      pass: false,
+    })
+  })
+
+  it('reads a flat deck as it always has: one top for the whole hull, and no deck or footprint in the body', () => {
+    const parts = [lower(15.9, 4.1)]
+    const read = heights(steps(sheer(FLAT), parts))
+    expect(stackItem(plan(parts), read)).toMatchObject({ got: '1 stacked part on its support', pass: true })
+    expect(read).toEqual({ hull: { lo: 0, hi: 16 }, 'lower deckhouse': { lo: 15.9, hi: 20 } })
   })
 })
 
