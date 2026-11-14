@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stepName, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle } from '@slicerx/contracts'
+import { storedTarget } from '@slicerx/mcp/toolset'
 import { runCall } from '../src/app-link/methods'
 import { setGeomProvider } from '../src/geom/client'
 import { history } from '../src/plate/history'
@@ -153,4 +155,38 @@ it('splits a height band deep enough that its edge lands on its height, as the s
   await preview({ target: { kind: 'height', below: 2 }, max_depth: 3 })
   await preview({ target: { kind: 'direction', direction: 'top' } })
   expect(depths()).toEqual([3, 3, undefined, undefined])
+})
+
+describe('an apply after a refused preview', () => {
+  const named = (p: Omit<Extract<StepParams, { op: 'paint' }>, 'op'>) => stepName({ params: { op: 'paint', ...p } })
+
+  it('names the refused preview, why it was refused and what to do next', async () => {
+    await expect(preview({ part: 2 })).rejects.toMatchObject({ code: 'invalid_input', message: 'The part index is outside this object' })
+    const applied = call('apply', { preview: 'paint-x' })
+    await expect(applied).rejects.toMatchObject({ code: 'not_found', message: `preview: paint-x was never made. The last paint preview, ${named({ layer: 'color', state: 1, target: storedTarget({ kind: 'part' }) })}, was refused: The part index is outside this object. Preview again, then apply.` })
+    // read back: nothing painted
+    expect((await read()).output.parts.every((p) => p.states.length === 0)).toBe(true)
+    expect(history().state().undo).toBe(0)
+  })
+
+  it('strips the replay wrapper from an exact replay refusal and points at another part or target', async () => {
+    engine.mockImplementationOnce(async () => { throw new Error('Exact replay stopped: Exact replay does not support paint for this part. The mesh path was not used. The design is unchanged.') })
+    await expect(preview({ target: { kind: 'height', below: 4 }, part: 0 })).rejects.toThrow(/Exact replay does not support paint/)
+    await expect(call('apply', { preview: 'paint-x' })).rejects.toMatchObject({ code: 'not_found', message: `preview: paint-x was never made. The last paint preview, ${named({ layer: 'color', state: 1, target: { kind: 'height', below: 4 } })}, was refused: Exact replay does not support paint for this part. Preview again on a part that supports paint, or with a different target, then apply.` })
+  })
+
+  it('says it as before once a later preview goes through, and for another client', async () => {
+    await expect(preview({ part: 2 })).rejects.toMatchObject({ code: 'invalid_input' })
+    await expect(runCall('paint.apply', { preview: 'paint-x' }, { id: 'another', name: 'Other' })).rejects.toMatchObject({ code: 'not_found', message: 'No paint preview for this client; preview again' })
+    await preview()
+    await expect(call('apply', { preview: 'paint-x' })).rejects.toMatchObject({ code: 'not_found', message: 'No paint preview for this client; preview again' })
+  })
+
+  it('says it as before once an apply goes through after the refusal', async () => {
+    const pv = (await preview()).output.preview
+    await expect(preview({ part: 2 })).rejects.toMatchObject({ code: 'invalid_input' })
+    await call('apply', { preview: pv })
+    expect((await read()).output.parts[0]!.states).toHaveLength(1)
+    await expect(call('apply', { preview: pv })).rejects.toMatchObject({ code: 'not_found', message: 'No paint preview for this client; preview again' })
+  })
 })
