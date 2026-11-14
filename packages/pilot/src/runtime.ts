@@ -45,6 +45,7 @@ import { contextMessage, systemPrompt as basePrompt, tabsLine, type PilotScope }
 import { factLine, pickFacts, type MemoryStore } from './memory/facts'
 import { fitContext, MIMIR_CONTEXT } from './context'
 import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type ToolSurface } from './surfaces'
+import { searchedPages } from './provider/anthropic'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
@@ -973,9 +974,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // a sizes answer is a few short lines: its output limit goes to them, not to thinking
       ...(ask === 'sizes' ? { thinking: false as const } : {}),
     }
+    const cite = (url: string, title: string): void => {
+      if (!citations.some((c) => c.url === url)) citations.push({ id: url, title: title || url, url, kind: 'web' })
+    }
     for await (const ev of client.stream(req, signal)) {
       if (ev.type === 'text') text += ev.delta
-      else if (ev.type === 'citation' && !citations.some((c) => c.url === ev.url)) citations.push({ id: ev.url, title: ev.title || ev.url, url: ev.url, kind: 'web' })
+      else if (ev.type === 'citation') cite(ev.url, ev.title)
+      // a sizes lookup's sources are the pages it read: those its answer cites, then the rest its searches returned
+      else if (ev.type === 'done' && ask === 'sizes') for (const p of searchedPages(ev.raw)) cite(p.url, p.title)
       else if (ev.type === 'error') throw new Error(ev.message)
     }
     return { text, citations }

@@ -4,7 +4,7 @@
 // answer comes back one size per line ("Tower height: 227 m"); each is read here into mm, kept under a lookup id for
 // the chat, and shown to the person as a lookup card. design.plan then holds each real size it is given with that id to
 // the figure the lookup found (plan-detail.ts), so a planned size times the scale cannot stand in for a real one. An
-// answer that cites no page finds nothing: its sizes are from memory, as when no source gave them.
+// answer that ran no search finds nothing: its sizes are from memory, as when no source gave them.
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 
@@ -231,7 +231,7 @@ export function lookupSizesTool(store: LookupStore): PilotTool<never> {
       const query = `${i.subject}: ${i.sizes.join('; ')}`
       const res = await ctx.web(query, ctx.signal, 'sizes')
       const sources = res.citations.filter((c) => !!c.url).map((c) => ({ title: c.title, url: c.url! }))
-      // an answer that cites no page was not read off the web, so its sizes are from memory: none is kept as found
+      // the sources are the pages the search read; an answer with none ran no search, so its sizes are from memory: none is kept as found
       const { found, missing } = sources.length ? readSizes(res.text, i.sizes) : { found: [], missing: [...i.sizes] }
       const kept = store.add({ session: ctx.sessionId, subject: i.subject, asked: [...i.sizes], found, missing, sources })
       const first = sources[0]

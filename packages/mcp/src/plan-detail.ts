@@ -357,7 +357,7 @@ function askedAndMissing(src: RealSources, names: readonly string[]): boolean {
 }
 
 /**
- * Whether a real size gives the lookupId of a lookup that read no page and asked for it: its answer cited no source, so
+ * Whether a real size gives the lookupId of a lookup that read no page and asked for it: it ran no search, so
  * the size is from memory, as one a lookup asked for and no source gave.
  */
 function fromUnreadLookup(r: RealEntry, size: string, src: RealSources): boolean {
@@ -397,7 +397,7 @@ function realFigure(r: RealEntry, size: string, src: RealSources | undefined): {
 
 /**
  * The assumption design.plan adds for real sizes taken from memory: where no lookup can run, or where a lookup asked
- * for them and no source gave them (a lookup whose answer cited no page among them). Null when every real size has a lookup, the person's words or a source.
+ * for them and no source gave them (a lookup that ran no search among them). Null when every real size has a lookup, the person's words or a source.
  */
 export function realMemoryNote(plan: DetailPlan, src: RealSources): string | null {
   const feature = (n: string) => plan.features.find((x) => x.name.trim().toLowerCase() === n.trim().toLowerCase())
