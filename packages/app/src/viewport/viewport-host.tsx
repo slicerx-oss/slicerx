@@ -184,7 +184,7 @@ export function platePayload(s: AppState, shown: ShownTower | null): ViewportPla
       name: p.name,
       transform: p.transform,
       parts: [
-        ...p.parts.map((part, i) => ({ name: part.name, positions: part.positions, indices: part.indices, ...(part.normals ? { normals: part.normals } : {}), slot: effectiveSlot(p, part), color: partColor(s, slots, effectiveSlot(p, part), p.colors[i] ?? p.colors[0] ?? brandAccent(), p.printable !== false) })),
+        ...p.parts.map((part, i) => ({ name: part.name, positions: part.positions, indices: part.indices, ...(part.normals ? { normals: part.normals } : {}), ...(part.faces ? { faceIds: part.faces.ids } : {}), slot: effectiveSlot(p, part), color: partColor(s, slots, effectiveSlot(p, part), p.colors[i] ?? p.colors[0] ?? brandAccent(), p.printable !== false) })),
         // Volumes show in place, colored by what they do.
         ...(p.volumes ?? []).map((v) => ({ name: v.name, positions: bakedVolume(v), indices: v.part.indices, color: VOLUME_COLOR[v.role] })),
       ],

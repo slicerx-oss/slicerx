@@ -14,7 +14,7 @@ import {
   type Material,
 } from 'three'
 import type { FilamentFinish, ViewportObject, ViewportPart } from './types'
-import { allExact, creasedArrays, featureEdges, smoothNormals, type CreasedArrays } from './mesh-math'
+import { allExact, creasedArrays, CREASE_DEG, featureEdges, smoothNormals, type CreasedArrays } from './mesh-math'
 import type { MeshBuildPool } from './mesh-pool'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
@@ -22,7 +22,6 @@ import type { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 
 export { featureEdges, weldVertices } from './mesh-math'
 
-const CREASE_DEG = 40
 const EDGE_DEG = 38
 
 export interface PartEntry {
@@ -132,8 +131,13 @@ function creasedMesh(a: CreasedArrays): BufferGeometry {
   return out
 }
 
+/** The part's edges: by its faces when it has exact normals and face ids (featureEdges), by the fold angle otherwise. */
+function partEdges(part: ViewportPart): Float32Array {
+  return featureEdges(part.positions, part.indices, EDGE_DEG, part.normals && part.faceIds ? { normals: part.normals, faceIds: part.faceIds } : undefined)
+}
+
 function edgeGeometry(part: ViewportPart): BufferGeometry {
-  return edgeLines(featureEdges(part.positions, part.indices, EDGE_DEG))
+  return edgeLines(partEdges(part))
 }
 
 function edgeLines(positions: Float32Array): BufferGeometry {
@@ -277,7 +281,7 @@ async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuil
   // every copy gone before its turn came: nothing to make (release told each one)
   if (s.gone) return
   try {
-    const [c, e] = await Promise.all([meshFinal ? null : async.pool.crease(p.positions, p.indices, CREASE_DEG, p.normals), async.pool.edges(p.positions, p.indices, EDGE_DEG)])
+    const [c, e] = await Promise.all([meshFinal ? null : async.pool.crease(p.positions, p.indices, CREASE_DEG, p.normals), async.pool.edges(p.positions, p.indices, EDGE_DEG, p.normals, p.faceIds)])
     mesh = c ? creasedMesh(c) : null
     edges = e
   } catch {
@@ -292,7 +296,7 @@ async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuil
     s.mesh.dispose()
     s.mesh = mesh
   }
-  edges ??= featureEdges(p.positions, p.indices, EDGE_DEG)
+  edges ??= partEdges(p)
   s.edges.dispose()
   s.edges = edgeLines(edges)
   // the CAD look's wide edges, made from the stand-in's (no) edges while it showed
