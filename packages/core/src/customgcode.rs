@@ -781,6 +781,22 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
 /// plate where it holds the printer skips that check, so its travels need not go round the corner
 /// ([`crate::zoneroute::Router::of_plate`]).
 pub(crate) fn in_head_wrap_detect_zone(cfg: &PrintConfig, out: &SliceOutput) -> bool {
+    first_layer_in_head_wrap_detect_zone(cfg, &out.first_layer_info.rings, false)
+}
+
+/// Whether the plate's whole first layer lies inside the nozzle wrap check corner, the case where its skirt may run
+/// there too (a plate only partly in the corner keeps its skirt out of it).
+pub(crate) fn wholly_in_head_wrap_detect_zone(cfg: &PrintConfig, out: &SliceOutput) -> bool {
+    first_layer_in_head_wrap_detect_zone(cfg, &out.first_layer_info.rings, true)
+}
+
+/// [`in_head_wrap_detect_zone`], or with `wholly` [`wholly_in_head_wrap_detect_zone`], for the first layer's outlines
+/// `rings` (mm), as a session reads them before its paths are cut (`FirstLayerInfo::rings`).
+pub(crate) fn first_layer_in_head_wrap_detect_zone(
+    cfg: &PrintConfig,
+    rings: &[Vec<[f32; 2]>],
+    wholly: bool,
+) -> bool {
     // The zone's corners; none given means no overlap.
     let zone: Vec<[f64; 2]> = match cfg.raw.get("head_wrap_detect_zone") {
         Some(serde_json::Value::Array(a)) => a
@@ -810,9 +826,7 @@ pub(crate) fn in_head_wrap_detect_zone(cfg: &PrintConfig, out: &SliceOutput) -> 
                 .collect()
         };
         let zone_shape: crate::perimeters::Shapes = vec![vec![ring(&zone)]];
-        let layer: crate::perimeters::Shapes = out
-            .first_layer_info
-            .rings
+        let layer: crate::perimeters::Shapes = rings
             .iter()
             .map(|r| {
                 vec![ring(
@@ -823,7 +837,11 @@ pub(crate) fn in_head_wrap_detect_zone(cfg: &PrintConfig, out: &SliceOutput) -> 
             })
             .collect();
         let layer = crate::perimeters::union_all(&[&layer]);
-        !crate::perimeters::intersection(&layer, &zone_shape).is_empty()
+        if wholly {
+            !layer.is_empty() && crate::perimeters::difference(&layer, &zone_shape).is_empty()
+        } else {
+            !crate::perimeters::intersection(&layer, &zone_shape).is_empty()
+        }
     }
 }
 
