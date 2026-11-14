@@ -44,6 +44,9 @@ describe('what a real-size lookup reads from the runtime', () => {
     const web = client.requests.filter((r) => r.webSearch)
     expect(web.length).toBe(2)
     expect(web[0]!.messages[0]).toEqual({ role: 'system', content: WEB_SIZES_LINE })
+    // each line starts with the size's own name, and the answer is not spent on thinking
+    expect(WEB_SIZES_LINE).toContain("starting with that size's name exactly as asked")
+    expect(web.every((r) => r.thinking === false)).toBe(true)
     expect(web[0]!.messages[1]).toEqual({ role: 'user', content: 'a suspension bridge: Tower height' })
   })
 })

@@ -170,6 +170,14 @@ describe('Anthropic adapter', () => {
     expect(plain['output_config']).toBeUndefined()
   })
 
+  it('turns thinking off when a request asks for none, on models that think by default too', () => {
+    for (const model of ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5']) {
+      const body = JSON.parse(adapter.build({ ...REQ, model, thinking: false }).body) as Record<string, unknown>
+      expect(body['thinking'], model).toEqual({ type: 'disabled' })
+      expect(body['output_config'], model).toBeUndefined()
+    }
+  })
+
   it('never forces a tool on models that refuse it or think by default', () => {
     for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-haiku-5-5', 'claude-opus-5']) {
       const body = JSON.parse(adapter.build({ ...REQ, model, toolChoice: 'required' }).body) as Record<string, unknown>
