@@ -66,7 +66,7 @@ describe('the scripted mimir', () => {
     const lookup = events.find((e) => e.type === 'lookup')
     expect(lookup).toMatchObject({ lookup: { title: 'Reference found', fields: expect.arrayContaining([['Trim plate', '150.4 x 110.4 mm']]) } })
     // scripted sources are examples, never real pages
-    expect(lookup?.type === 'lookup' && new URL(lookup.lookup.source.url).hostname).toBe('example.com')
+    expect(lookup?.type === 'lookup' && new URL(lookup.lookup.source!.url).hostname).toBe('example.com')
     expect(events.at(-1)).toMatchObject({ type: 'done', stopReason: 'end' })
   })
 

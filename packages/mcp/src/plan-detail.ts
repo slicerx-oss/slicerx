@@ -357,17 +357,17 @@ function askedAndMissing(src: RealSources, names: readonly string[]): boolean {
 }
 
 /**
- * Whether a real size gives the lookupId of a lookup that read no page and asked for it: it ran no search, so
+ * Whether a real size gives the lookupId of a lookup that ran no search and asked for it, so
  * the size is from memory, as one a lookup asked for and no source gave.
  */
 function fromUnreadLookup(r: RealEntry, size: string, src: RealSources): boolean {
   const l = r.lookup !== undefined && !src.client ? src.lookup(r.lookup) : undefined
-  return !!l && !l.sources.length && l.missing.some((m) => sameSize(m, size))
+  return !!l && !l.searched && l.missing.some((m) => sameSize(m, size))
 }
 
 /**
  * The figure a real size is held to. Without `src`, its own mm. With a lookupId, the size that lookup found within
- * REAL_MATCH of its mm (a lookup that read no page holds it to nothing: it is from memory); with stated words, the length in them within REAL_MATCH (and the words must be the person's,
+ * REAL_MATCH of its mm (a lookup that ran no search holds it to nothing: it is from memory); with stated words, the length in them within REAL_MATCH (and the words must be the person's,
  * where their messages can be read); with a source page, its mm on a client's plan (the card's form has no source). A size with none of these is
  * unsourced where a lookup can run, unless a lookup asked for it and no source gave it;
  * otherwise it is taken from memory as given (realMemoryNote says so on the plan).

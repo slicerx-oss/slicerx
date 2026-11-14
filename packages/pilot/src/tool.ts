@@ -54,11 +54,13 @@ export interface ToolHost {
 }
 
 /**
- * A web search answered in a few lines with its sources. `ask` 'sizes' asks for a real thing's sizes, one per line as
- * "size: number unit" (design.lookup_sizes); left out, the answer is a short reply to a 3D printing question.
+ * A web search answered in a few lines with its sources, the pages its answer cites. `ask` 'sizes' asks for a real
+ * thing's sizes, one per line as "size: number unit" (design.lookup_sizes); left out, the answer is a short reply to a
+ * 3D printing question. `searched` says whether a search ran and returned pages; left out, a search ran when the answer
+ * cites a page.
  */
 export interface WebLookup {
-  (query: string, signal?: AbortSignal, ask?: 'sizes'): Promise<{ text: string; citations: Citation[] }>
+  (query: string, signal?: AbortSignal, ask?: 'sizes'): Promise<{ text: string; citations: Citation[]; searched?: boolean }>
 }
 
 /** The choice id of a question the person dismissed. Choice ids are never empty, so it cannot be a real pick. */
