@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! A plate in the A1's nozzle wrap check corner (`head_wrap_detect_zone`, x 226 to 256, y 224 to 256): the printer
-//! skips its check there, so the stock layer template leaves its mass check block out
+//! A plate in the A1's nozzle wrap check corner (`head_wrap_detect_zone`, x 226 to 256, y 224 to 256) slices. The
+//! printer skips its check there: the stock layer template leaves its mass check block out
 //! (`{if !in_head_wrap_detect_zone}`) on every layer of such a plate, and keeps it on every layer of a plate outside
 //! the corner. Nozzle wrap detection on or off changes neither.
 
@@ -111,6 +111,31 @@ fn blocks(gcode: &str) -> Blocks {
     }
 }
 
+/// The lines that move Z (the layer changes and the travel lifts) and the retractions, the template's own aside:
+/// equal on two plates that differ only in where the box stands.
+fn lifts_and_retractions(gcode: &str) -> (usize, usize) {
+    let code = |l: &str| l.split(';').next().unwrap_or("").trim().to_owned();
+    let words = |l: &str| code(l).split_whitespace().map(str::to_owned).collect::<Vec<_>>();
+    let lifts = gcode
+        .lines()
+        .filter(|l| {
+            let w = words(l);
+            matches!(w.first().map(String::as_str), Some("G1" | "G2" | "G3"))
+                && w.iter().any(|x| x.starts_with('Z'))
+        })
+        .count();
+    let retracts = gcode
+        .lines()
+        .filter(|l| {
+            let w = words(l);
+            w.first().map(String::as_str) == Some("G1")
+                && w.iter().any(|x| x.starts_with("E-"))
+                && !w.iter().any(|x| x.starts_with('X') || x.starts_with('Y'))
+        })
+        .count();
+    (lifts, retracts)
+}
+
 /// The engine's flag for the template, `in_head_wrap_detect_zone`, read off the G-code: true on the corner plate,
 /// whose every layer leaves the mass check block out and keeps the blocks round it, false on the center plate, whose
 /// every layer has it, with the mass check itself from the fourth layer. Sliced with `--allow-collisions`, as a plate
@@ -146,6 +171,37 @@ fn the_mass_check_is_left_out_on_every_layer_of_a_plate_in_the_corner() {
                 clog_probe: 1,
             },
             "center, detection {detection}"
+        );
+    }
+}
+
+/// The corner plate slices as it stands, wrap detection on or off: no refusal, no collision with the corner and no
+/// words about it, and its G-code moves Z and retracts as the center plate's does, so its travels are not lifted
+/// over the corner it stands in.
+#[test]
+fn a_plate_in_the_corner_slices_with_detection_on_and_off() {
+    for detection in [false, true] {
+        let c = a1(detection);
+        let (out, gcode) = slice("corner", &c, CORNER, &[]);
+        let err = stderr(&out);
+        assert!(out.status.success(), "{detection}: {err}");
+        assert!(!err.contains("wrap check corner"), "{detection}: {err}");
+        let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert!(
+            !report["collisions"]
+                .as_array()
+                .is_some_and(|c| c.iter().any(|c| c["hitId"] == "wrap-check-zone")),
+            "{detection}: {}",
+            report["collisions"]
+        );
+        let words = report.to_string();
+        assert!(!words.contains("wrap check corner"), "{detection}: {words}");
+        assert_eq!(blocks(&gcode).mass_check, 0, "{detection}");
+        let (_, center) = slice("center", &c, CENTER, &[]);
+        assert_eq!(
+            lifts_and_retractions(&gcode),
+            lifts_and_retractions(&center),
+            "{detection}: the corner plate moves Z or retracts where the center plate does not"
         );
     }
 }
