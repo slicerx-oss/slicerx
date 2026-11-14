@@ -383,8 +383,41 @@ export function stackPairs(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail
   return [...pairs.values()]
 }
 
-/** A feature's height range as built, mm, by its name in lower case; `loose` when a step gave only a bound around it. */
-export type FeatureHeights = Readonly<Record<string, { lo: number; hi: number; loose?: true }>>
+/**
+ * A feature's height range as built, mm, by its name in lower case; `loose` when a step gave only a bound around it.
+ * A support whose top rises or falls along its length gives its top at each section (`deck`), and a part read against
+ * one gives where it stands across the bed (`foot`).
+ */
+export type FeatureHeights = Readonly<
+  Record<string, { lo: number; hi: number; loose?: true; deck?: { axis: 'x' | 'y'; at: readonly (readonly [number, number])[] }; foot?: { x: readonly [number, number]; y: readonly [number, number] } }>
+>
+
+/**
+ * The lowest of a deck's top from `a` to `b` along it, mm, taken straight between its sections; null when that stretch
+ * misses the deck.
+ */
+function lowestTop(deck: NonNullable<FeatureHeights[string]['deck']>, a: number, b: number): number | null {
+  const at = deck.at
+  const [lo, hi] = [Math.max(a, at[0]![0]), Math.min(b, at.at(-1)![0])]
+  if (lo > hi) return null
+  const zAt = (x: number): number => {
+    const k = Math.max(0, at.findIndex((q, i) => i > 0 && x <= q[0]) - 1)
+    const [p, q] = [at[k]!, at[k + 1] ?? at[k]!]
+    return q[0] === p[0] ? p[1] : p[1] + ((q[1] - p[1]) * (x - p[0])) / (q[0] - p[0])
+  }
+  return Math.min(zAt(lo), zAt(hi), ...at.filter(([x]) => x > lo && x < hi).map(([, z]) => z))
+}
+
+/**
+ * The top a stacked part is read against: on a support whose top rises or falls along its length, the lowest of that
+ * top under the part's footprint, where a flat base meets it with no gap; else, and for a part with no footprint or one
+ * past the deck's ends, the support's highest point.
+ */
+function topUnder(p: FeatureHeights[string], s: FeatureHeights[string]): number {
+  if (!s.deck || !p.foot) return s.hi
+  const [a, b] = s.deck.axis === 'x' ? p.foot.x : p.foot.y
+  return lowestTop(s.deck, a, b) ?? s.hi
+}
 
 /** What a stacked part's base and height say against its support's top: null when both hold. */
 function standsWrong(part: string, support: string, base: number, shows: number, planned: number | undefined): string | null {
@@ -397,8 +430,9 @@ function standsWrong(part: string, support: string, base: number, shows: number,
 
 /**
  * Each stacked part against what it stands on, from the height range of each feature as built: its base within a
- * layer of its support's top, and its planned height (a size named height) showing above that top within SCALE_SLACK,
- * or the base alone when no height is planned. A pair is read only when both features have an exact range; a plan with
+ * layer of its support's top (on a deck that rises or falls along its length, the lowest of it under the part,
+ * topUnder), and its planned height (a size named height) showing above that top within SCALE_SLACK, or the base
+ * alone when no height is planned. A pair is read only when both features have an exact range; a plan with
  * no pair read gets no item.
  */
 export function stackItem(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail'>, heights: FeatureHeights | undefined): { name: string; want: string; got: string; pass: boolean } | null {
@@ -412,7 +446,8 @@ export function stackItem(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail'
   if (!read.length) return null
   const off = read.flatMap(({ part, support, p, s }) => {
     const planned = Object.entries(plan.features.find((f) => f.name === part)?.sizes ?? {}).find(([k]) => /^height$/i.test(k.trim()))?.[1]
-    const wrong = standsWrong(part, support, p.lo - s.hi, p.hi - s.hi, planned)
+    const top = topUnder(p, s)
+    const wrong = standsWrong(part, support, p.lo - top, p.hi - top, planned)
     return wrong ? [wrong] : []
   })
   return {
