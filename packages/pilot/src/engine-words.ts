@@ -162,20 +162,48 @@ function engineShaped(text: string): boolean {
 /**
  * An edit of a step that the design kept although a step no longer builds, as design.edit_step says it ("Edited step
  * 6, ...: moved by [11, 0, 3.2] mm; step 6 broke: The shape stops 3.2 mm short of the part."). The broken step's
- * reason is carried when it is already plain (a join or cut that misses the part, the time limit); otherwise the line
- * says only that the step no longer builds.
+ * reason is carried when it is already plain (a join or cut that misses the part, the time limit); a reason one of the
+ * groups knows keeps that group's cause and what to try; otherwise the line says only that the step no longer builds.
  */
 const KEPT_EDIT = /^Edited step \d+, .*; step (\d+) broke: (.*)$/s
+
+/** The reason group for a step sent in a way its tool does not take: input shape, no cause the person can act on. */
+const SENT_WRONG = 'Step sent wrong'
+
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1)
+}
+
+/**
+ * A group's line as a kept edit's cause: its first sentence up to ", so ..." (what happened, without "it was not
+ * made"), then the rest of the line, what to try, or `again` when the group gives nothing to try.
+ */
+function causeOf(shown: string, again: string): string | undefined {
+  const end = shown.indexOf('. ')
+  const first = end < 0 ? shown.replace(/\.$/, '') : shown.slice(0, end)
+  const so = first.indexOf(', so ')
+  if (so < 0 || first.includes('{name}')) return undefined
+  const rest = end < 0 ? '' : shown.slice(end + 2).trim()
+  return `${lowerFirst(first.slice(0, so))}. ${rest || again}`
+}
 
 function keptEdit(summary: string): { title: string; shown: string; hint: string; raw: string } | undefined {
   const m = KEPT_EDIT.exec(summary.trim())
   if (!m) return undefined
   const [, step, why] = m as unknown as [string, string, string]
   const reason = why.trim().replace(/[.\s]+$/, '')
-  const plain = reason && (MISSED.test(reason) || isGeomStuck(reason)) ? reason.charAt(0).toLowerCase() + reason.slice(1) : ''
+  const again = 'Edit it again, or edit it back.'
+  let shown = `The edit was made, but step ${step} no longer builds. ${again}`
+  if (reason && (MISSED.test(reason) || isGeomStuck(reason))) shown = `The edit was made, but step ${step} no longer builds: ${lowerFirst(reason)}. ${again}`
+  else {
+    // the reason's own group, as plainEngine would pick it for a refused step
+    const group = REFUSALS.find((x) => x.test.test(reason))
+    const cause = group && group.title !== SENT_WRONG ? causeOf(group.shown, again) : undefined
+    if (cause) shown = `The edit was made, but step ${step} no longer builds: ${cause}`
+  }
   return {
     title: 'Edit kept, a step broke',
-    shown: `The edit was made, but step ${step} no longer builds${plain ? `: ${plain}` : ''}. Edit it again, or edit it back.`,
+    shown,
     hint: `The edit is kept in the design, with step ${step} broken. Fix that step or edit this one again from where it is now; it was not refused, so do not send the opposite change to undo it. ${NEVER_QUOTE}`,
     raw: summary,
   }
