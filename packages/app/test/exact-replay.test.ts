@@ -535,6 +535,31 @@ it('mirrors a boss and its row on the mesh with each boss joined once, never a s
   expect(e.ops().filter((o) => o === 'shape.extrude')).toHaveLength(7)
 })
 
+// the block's 12 triangles, each face wound outward: the surface a row along its side follows
+const blockMesh = {
+  positions: [-20, -10, 0, 20, -10, 0, 20, 10, 0, -20, 10, 0, -20, -10, 10, 20, -10, 10, 20, 10, 10, -20, 10, 10],
+  indices: [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 1, 2, 6, 1, 6, 5, 3, 0, 4, 3, 4, 7],
+}
+
+it('with kept bodies, a row along the side follows the side read from the solid, each copy cut on the kernel', async () => {
+  const sent: string[] = []
+  let n = 0
+  // a kernel that keeps its bodies: each answer is a body number with no triangles until it is tessellated
+  const call = async (op: string, request: unknown) => {
+    if (op === EXACT_OPS) return { ops: [] }
+    sent.push(op)
+    if (op === 'brep.tessellate') return { ...blockMesh, faceIds: Array.from({ length: 12 }, () => 0), faces: [{ id: 0, type: 'plane', surface: { kind: 'plane', normal: [0, 0, 1], offset: 0 }, key: 77 }] }
+    if (op === 'brep.free' || op === 'brep.count') return {}
+    if (op.startsWith('brep.')) return { body: ++n, bodyKeys: [10 + n], ...((request as R)['target'] !== undefined ? { touches: true } : {}) }
+    throw new Error(`the mesh path ran ${op}`)
+  }
+  const along = step('row-1', { op: 'pattern', steps: ['window-1'], spec: { kind: 'linear', count: 3, step: [6, 0, 0], onSurface: true } })
+  const r = await replayHistory(call, { history: history(block, sideWindow('cut'), along), exact: true }, { keepsBodies: true })
+  expect(r.status[2]).toEqual({ state: 'done', copies: { total: 3, kept: 3, missed: [] } })
+  // the block and the window, the solid tessellated for the row to read its side, then each copy on its own
+  expect(sent.slice(0, 5)).toEqual(['brep.extrude', 'brep.extrude', 'brep.tessellate', 'brep.extrude', 'brep.extrude'])
+})
+
 it('breaks a pattern whose steps are gone or cannot be repeated, in words', async () => {
   const gone = await replayHistory(engine().call, { history: history(box, hole, step('row-1', { op: 'pattern', steps: ['nope'], spec: { kind: 'linear', count: 2, step: [6, 0, 0] } })) })
   expect(gone.status[2]).toEqual({ state: 'broken', message: 'A step this pattern repeats is gone or comes after it; pick the steps again.' })
