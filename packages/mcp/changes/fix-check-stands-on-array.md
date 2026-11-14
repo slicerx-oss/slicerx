@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_design_check` 1.24.1 (from 1.24.0): the "stands on" item no longer reads an array or a pattern as standing on its `on` when that `on` is the part it copies. A plan may give an array its source part as its `on`; the copies then start where that part starts, and that part's own pair reads where they stand. Before, an array of four funnels planned on its funnel read "Funnels (array) stands on Funnel, but its base is 15.1 mm below its top", the funnel's own height, and failed the check through the fix round with nothing left to fix. An array planned on the deck its copies stand on is still held to that deck, and a funnel sunk into its deckhouse beside its array still fails.

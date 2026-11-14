@@ -476,6 +476,9 @@ const r2 = (v: number): number => Math.round(v * 100) / 100
 /** The most a stacked part's base may sit off its support's top: one layer, mm. */
 export const STAND_LAYER_MM = 0.2
 
+/** A feature that copies another: an array or a pattern. */
+const COPIES = /\b(array|pattern)\b/i
+
 /** The failure for a stacked part whose base is sunk below its support's top, with a planned height. */
 export const STANDS_OFF = (part: string, support: string, below: number, shows: number, planned: number): string =>
   `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; build it from the top of ${support}`
@@ -570,7 +573,11 @@ export function stackItem(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail'
     const [p, s] = [heights[part.trim().toLowerCase()], heights[support.trim().toLowerCase()]]
     // a loose range on either side is a bound, not the solid: a support's top read too high or too low makes a part
     // placed right look sunk or floating, and a part's own bound fails it wrongly, so the pair is not read
-    return p && s && !p.loose && !s.loose ? [{ part, support, p, s }] : []
+    if (!p || !s || p.loose || s.loose) return []
+    // an array or a pattern whose on is the part it copies starts where that part starts: its on is its source, not
+    // a support, and the source's own pair reads where the copies stand
+    const kind = plan.features.find((f) => f.name === part)?.kind ?? ''
+    return COPIES.test(kind) && Math.abs(p.lo - s.lo) <= STAND_LAYER_MM ? [] : [{ part, support, p, s }]
   })
   if (!read.length) return null
   const off = read.flatMap(({ part, support, p, s }) => {
