@@ -13,7 +13,7 @@ import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
 import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendChanges, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
+import { AMEND_REASON_MAX, amendChanges, amendDropProblem, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
 import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
 import { meshStats } from './mesh'
 import { movedStep, sizedStep } from './step-reshape'
@@ -1023,7 +1023,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'read',
     description:
@@ -1087,6 +1087,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     if (shape) throw new ToolInputError(shape)
     const changes = amendChanges(entry!.plan, given)
     if (!changes.length) throw new ToolInputError(`amends: no size differs from plan ${planId}`)
+    const dropped = amendDropProblem(entry!.plan, given)
+    if (dropped) throw new ToolInputError(dropped)
     const p = amendedSizes(entry!.plan, given)
     plans.put(p, entry!.design, 'client')
     const revision = plans.amended(planId, why.why)

@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendAdded, amendChanges, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
+import { AMEND_REASON_MAX, amendAdded, amendChanges, amendDropProblem, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
 import { type Bed, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, FEATURES_FLOOR, LONG_EXTRA, LONG_RATIO, SECTIONS_FLOOR } from './plan-detail'
 import { GAP_MARGIN_MM, jointProblem, planetsMiss, PLANETS_CANNOT_MESH, planFloors, raisedText, raisedWhy, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
 
@@ -276,7 +276,7 @@ export function createCardPlans(plans: PlanRegistry) {
   function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile; designs?: () => readonly { id: string; name: string; parts: readonly unknown[] }[]; bed?: () => Bed | undefined } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.13.0',
+      version: '1.14.0',
       source: 'command',
       permission: 'read',
       description:
@@ -376,6 +376,9 @@ export function createCardPlans(plans: PlanRegistry) {
     const shape = amendShapeProblem(was, i)
     if (shape) throw new ToolInputError(shape)
     if (!amendChanges(was, i).length && !amendAdded(was, i).length) throw new ToolInputError(`amends: no size differs from the approved plan ${planId}`)
+    // a field the amend would not keep is refused, so the plan never reads as changed with that change dropped
+    const dropped = amendDropProblem(was, i)
+    if (dropped) throw new ToolInputError(dropped)
     const revision = (entry!.revision ?? 1) + 1
     const id = amendId(planId, revision)
     // a size asked under its floor is raised as a new plan's is, with its line among the assumptions
@@ -424,6 +427,8 @@ export function createCardPlans(plans: PlanRegistry) {
     const was = entry.plan
     const shape = amendShapeProblem(was, i, { asked: true })
     if (shape) throw new ToolInputError(shape)
+    const dropped = amendDropProblem(was, i)
+    if (dropped) throw new ToolInputError(dropped)
     const { plan, raised } = raiseToFloors({ ...amendedSizes(was, i), planId }, floors)
     if (!amendChanges(was, plan).length && !amendAdded(was, plan).length && !amendKinds(was, plan).length) return { summary: 'The plan stays as approved; make the change the person asked for in the design, then add any new feature to the plan with amends and asked', output: { planId, accepted: true, revision: entry.revision ?? 1, changes: [] } satisfies PlanAnswer }
     plans.put(plan, entry.design, 'card')
