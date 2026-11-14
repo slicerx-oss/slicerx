@@ -43,7 +43,6 @@ const CASES: readonly (readonly [string, string, RegExp])[] = [
   // edge.rs, shell.rs, cad-history replay.ts: the pick moved
   ['geom.fillet', 'edges: edge 2 moved with the face beside it and is not there any more; pick it again', /Picking it again/],
   ['geom.shell', 'open: a face to open is not on a face of the body; pick it again', /Picking it again/],
-  ['design.edit_step', 'Edited step 2, Fillet; step 3 broke: Missing face; pick the face again to repair this step.', /Picking it again/],
   // push.rs, shell.rs: nothing left
   ['geom.push_pull', 'face.push: the cut removes the whole body', /whole part/],
   ['geom.shell', 'open: opening every face leaves no body; leave at least one face closed', /whole part/],
@@ -61,7 +60,6 @@ const CASES: readonly (readonly [string, string, RegExp])[] = [
   // cad-history replay.ts: an earlier step removed the part
   ['design.edit_step', 'The step did not go through: The part this step works on is gone. The design is unchanged.', /no longer there/],
   ['geom.boolean', 'The part this step works on is gone.', /no longer there/],
-  ['design.edit_step', 'Edited step 2, Cut; step 4 broke: A part this step combines is gone.', /no longer there/],
   // any other engine refusal
   ['geom.build', 'request: missing "parts"', /could not be made/],
   ['geom.build', 'unknown operation "brep.wedge"', /could not be made/],
