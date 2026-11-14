@@ -125,7 +125,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_geom_cut` | 1.4.0 |  |  | slice | Cut a model or a design part with a plane into a lower and an upper piece with flat caps. |
 | `slicerx_geom_edge_pick` | 2.0.0 |  |  | read | Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face's normal. |
 | `slicerx_geom_emboss` | 1.4.0 |  |  | slice | Raise (emboss) or cut in (deboss) text on a face of the model. |
-| `slicerx_geom_extrude` | 1.12.1 |  |  | slice | Extrude a shape on the bed, a plane or a picked face as a new body, joined to a target or cut from it: with "design" a step (join and cut work on "part"), with a model an STL with volume, bounds and watertightness. |
+| `slicerx_geom_extrude` | 1.12.2 |  |  | slice | Extrude a shape on the bed, a plane or a picked face as a new body, joined to a target or cut from it: with "design" a step (join and cut work on "part"), with a model an STL with volume, bounds and watertightness. |
 | `slicerx_geom_face_pick` | 1.3.0 |  |  | read | Pick a flat face of a model or a design: returns its sketch frame (origin, normal, u, v in mm), its outline in that frame, area and bounds. |
 | `slicerx_geom_faces` | 1.3.0 |  |  | read | List the flat faces of a model or a design, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center; for a design also its part, its face key and the step that made it. |
 | `slicerx_geom_fillet` | 1.6.0 |  |  | slice | Round straight edges on a flat face with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. |

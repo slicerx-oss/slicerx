@@ -557,8 +557,9 @@ function rounded(shape: Shape): Loop | null {
 
 /**
  * A new body's outline as the kernel's loops, in the frame, or null for one only the mesh path draws. A sketch's
- * loops come from the engine (sketch.curves), nested and exact; one it finds a problem in goes to the mesh path,
- * which says what the problem is.
+ * loops come from the engine (sketch.curves), nested and exact. A problem the sketch's own check finds (loops that
+ * cross, a loop left open) is the step's on either path, so it throws as the mesh path says it, before any "not
+ * supported"; a sketch that is fine but has no exact version yet (a spline) goes to the mesh path.
  */
 async function loops(call: Call, shape: Shape | FreeShape, placement: { center?: Vec2; rotationDeg?: number }, flipV: boolean): Promise<Profile[] | null> {
   const [cx, cy] = placement.center ?? [0, 0]
@@ -589,7 +590,10 @@ async function loops(call: Call, shape: Shape | FreeShape, placement: { center?:
   if (shape.type === 'sketch') {
     try {
       profiles = (await call('sketch.curves', { loops: shape.loops })) as Profile[]
-    } catch {
+    } catch (e) {
+      // the same check the mesh path runs on the sketch first (sx-geom sketch.rs), and the same sentence: its first issue
+      const c = (await call('sketch.check', { loops: shape.loops }).catch(() => null)) as { issues?: unknown[] } | null
+      if (c?.issues?.length) throw new ExactBroken(e instanceof Error ? e.message : String(e))
       return null
     }
   } else if (shape.type === 'circle') {
