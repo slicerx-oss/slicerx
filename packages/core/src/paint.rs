@@ -409,6 +409,31 @@ pub(crate) type Stop<'a> = &'a (dyn Fn() -> bool + Sync);
 /// A [`Stop`] that never stops.
 pub(crate) const GO_ON: Stop<'static> = &|| false;
 
+/// A [`Stop`] whose first stop holds: once `asked` has said stop, it says stop for good, so no layer cut after that is
+/// kept, whatever `asked` says later.
+pub(crate) struct Latch<'a> {
+    asked: Stop<'a>,
+    said: std::sync::atomic::AtomicBool,
+}
+
+impl<'a> Latch<'a> {
+    pub(crate) fn new(asked: Stop<'a>) -> Self {
+        Self {
+            asked,
+            said: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// True once `asked` has said stop.
+    pub(crate) fn said(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        if !self.said.load(Ordering::Relaxed) && (self.asked)() {
+            self.said.store(true, Ordering::Relaxed);
+        }
+        self.said.load(Ordering::Relaxed)
+    }
+}
+
 /// How many painted pieces a split reads between two looks at its [`Stop`].
 const STOP_PIECES: usize = 4096;
 
