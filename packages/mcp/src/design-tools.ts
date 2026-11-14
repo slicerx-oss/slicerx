@@ -15,7 +15,7 @@ import { MAX_FILAMENTS } from './filaments'
 import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
 import { AMEND_REASON_MAX, amendChanges, amendDropProblem, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
 import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
-import { realSizeProblem, type RealEntry } from './plan-detail'
+import { realMemoryNote, realSizeProblem, type RealEntry } from './plan-detail'
 import { meshStats } from './mesh'
 import { movedStep, sizedStep } from './step-reshape'
 import { carriedSteps, leanRow, tiltedStep, tiltInput, tiltProblem, type Leaning } from './step-tilt'
@@ -1059,13 +1059,15 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       if (i.reason !== undefined) throw new ToolInputError('reason: give a reason only with amends, to change a plan of yours')
       const faces = openFacesProblem(i.plan)
       if (faces) throw new ToolInputError(faces)
-      // a model of a real thing is held to its real sizes at scale, each from the page or the person's words it gives
+      // a model of a real thing is held to its real sizes at scale; a size with no page or words is from memory, and the
+      // plan says so in its assumptions
       const real = realSizeProblem(i.plan, CLIENT_SOURCES)
       if (real) throw new ToolInputError(real)
+      const memory = realMemoryNote(i.plan, CLIENT_SOURCES)
+      const p = memory && !i.plan.assumptions.includes(memory) ? { ...i.plan, assumptions: [...i.plan.assumptions, memory] } : i.plan
       // a tie names a design that exists (get refuses one that does not)
       const tied = i.design ? designs.get(i.design) : undefined
-      plans.put(i.plan, tied?.id, 'client')
-      const p = i.plan
+      plans.put(p, tied?.id, 'client')
       const holes = (p.holes ?? []).reduce((n, h) => n + (h.count ?? 1), 0)
       const open = (p.openFaces ?? []).map((o) => `${o.piece} open at the ${o.faces.join(' and ')}`)
       const shape = [plural(p.features.length, 'feature'), ...(holes ? [plural(holes, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : []), ...open].join(', ')
@@ -1142,13 +1144,13 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   return [create, open, list, steps, edit, undo, redo, partFilament, renamePart, timeline, roll, save, check, plan, getPlan] as PilotTool<never>[]
 }
 
-/** A client plan's real sizes come from the pages and words it gives; no lookup runs over MCP. */
+/** A client plan's real sizes come from the pages and words it gives, or from memory; no lookup runs over MCP. */
 const CLIENT_SOURCES = { canLookUp: false, client: true, lookup: () => undefined, lookups: () => [] } as const
 /** The client's scale, in its words. */
 const CLIENT_SCALE = 'For a model of a real thing: N of the scale 1:N its real sizes are held to, such as 25'
 /** The client's real sizes, in its words. The owner approves this wording. */
 const CLIENT_REAL =
-  'For a model of a real thing: its real sizes in mm at full size, each tied to the feature size it sets, with the page it came from as source or the person\'s words that give it as stated, such as {"feature": "Deck", "size": "length", "mm": 280000, "source": {"title": "Bridge facts", "url": "https://example.org/bridge"}}. Each is held to scale within about a third'
+  'For a model of a real thing: its real sizes in mm at full size, each tied to the feature size it sets, with the page it came from as source or the person\'s words that give it as stated (a size with neither is kept as from memory, and the plan says so in its assumptions), such as {"feature": "Deck", "size": "length", "mm": 280000, "source": {"title": "Bridge facts", "url": "https://example.org/bridge"}}. Each is held to scale within about a third'
 
 /**
  * Where a display plan's real sizes came from, as design.check's reply says it: the sizes taken from memory by name, or

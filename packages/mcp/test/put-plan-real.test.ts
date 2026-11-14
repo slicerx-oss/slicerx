@@ -44,15 +44,17 @@ describe('design.put_plan with real sizes, over the MCP server', () => {
     expect(text(none)).toContain('planId: no plan bridge-9 is kept')
   })
 
-  it('holds the planned sizes to the real ones at scale, and refuses a real size with no source', async () => {
+  it('holds the planned sizes to the real ones at scale, and keeps a real size with no source as from memory', async () => {
     const h = await connect(engine)
     const short = { ...bridge, features: bridge.features.map((f) => (f.name === 'Main tower' ? { ...f, sizes: { ...f.sizes, height: 60 } } : f)) }
     const off = await h.call('slicerx_design_put_plan', { plan: short })
     expect(off.isError).toBe(true)
     expect(text(off)).toContain('Main tower height is 60 mm, 0.5 times the 113.5 mm its real 227000 mm gives at 1:2000; size it from the real one')
-    const bare = await h.call('slicerx_design_put_plan', { plan: { ...bridge, real: bridge.real.map(({ feature, size, mm }) => ({ feature, size, mm })) } })
-    expect(bare.isError).toBe(true)
-    expect(text(bare)).toContain('real: Deck length and Main tower height give no source; give the page each came from as source {"title", "url"}, or the person\'s words that give it as stated')
+    // a client with no web search gives its real sizes from memory: kept, held to scale, and said so in its assumptions
+    const bare = await h.call('slicerx_design_put_plan', { plan: { ...bridge, planId: 'bridge-2', real: bridge.real.map(({ feature, size, mm }) => ({ feature, size, mm })) } })
+    expect(bare.isError, text(bare)).toBeFalsy()
+    const kept = data<{ output: { plan: { assumptions: string[] } } }>(await h.call('slicerx_design_get_plan', { planId: 'bridge-2' })).output.plan
+    expect(kept.assumptions).toEqual(['real: no source given; Deck length and Main tower height are from memory'])
     const misread = await h.call('slicerx_design_put_plan', { plan: { ...bridge, real: [bridge.real[0], { ...bridge.real[1], stated: 'the towers are 300 m tall' }] } })
     expect(misread.isError).toBe(true)
     expect(text(misread)).toContain('real: Main tower height is 227000 mm, but "the towers are 300 m tall" gives no size within 1% of that')

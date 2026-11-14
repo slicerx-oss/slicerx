@@ -165,6 +165,12 @@ describe('a looked-up real size', () => {
   })
 })
 
+describe('the proportions refusal on the tab', () => {
+  it('names design.lookup_sizes as the lookup to run', async () => {
+    await expect(tab().plan({ ...bridge, proportions: undefined })).rejects.toThrow('proportions: say where the proportions come from, a lookup (design.lookup_sizes) or a stated source')
+  })
+})
+
 describe('real sizes with no lookup', () => {
   it('takes them from memory where no web lookup can run, and says so in assumptions', async () => {
     const t = tab({ web: false })
