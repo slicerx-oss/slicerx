@@ -51,6 +51,71 @@ test('thinking is adaptive whatever the client asks', () => {
   assertEquals(s.body['output_config'], { effort: 'medium' })
 })
 
+test('a client that leaves thinking out keeps adaptive thinking at effort medium, on every model', () => {
+  for (const model of [MODEL, SONNET, 'claude-opus-5-5', 'claude-fable-5-1']) {
+    const s = shape(base(), model)
+    assert(s.ok)
+    assertEquals(s.body['thinking'], { type: 'adaptive' }, model)
+    assertEquals(s.body['output_config'], { effort: 'medium' }, model)
+  }
+})
+
+test('a client no-thinking ask is mapped to a form each routed model takes', () => {
+  const off = (model: string, extra: Obj = {}) => {
+    const s = shape(base({ thinking: { type: 'disabled' }, ...extra }), model)
+    assert(s.ok)
+    return s.body
+  }
+  // Haiku 5.5 turns thinking off, at an effort of high or below
+  assertEquals(off(MODEL)['thinking'], { type: 'disabled' })
+  assertEquals(off(MODEL)['output_config'], { effort: 'medium' })
+  // Sonnet 5.5 never takes disabled: it thinks only between tool calls, with nothing else in thinking
+  for (const effort of ['low', 'medium', 'high']) {
+    const b = off(SONNET, { output_config: { effort } })
+    assertEquals(b['thinking'], { type: 'between_tools' })
+    assertEquals(b['output_config'], { effort })
+  }
+  // Opus 5.5 cannot turn thinking off: adaptive, at effort low
+  const opus = off('claude-opus-5-5', { output_config: { effort: 'high' } })
+  assertEquals(opus['thinking'], { type: 'adaptive' })
+  assertEquals(opus['output_config'], { effort: 'low' })
+  // any other model keeps the safe default
+  assertEquals(off('claude-fable-5-1')['thinking'], { type: 'adaptive' })
+  // no shape the models refuse: no disabled on Sonnet or Opus, between_tools only on Sonnet, never a budget
+  for (const model of [MODEL, SONNET, 'claude-opus-5-5', 'claude-fable-5-1']) {
+    const b = off(model, { max_tokens: 1200 })
+    const t = b['thinking'] as Obj
+    if (model !== MODEL) assert(t['type'] !== 'disabled', model)
+    if (model !== SONNET) assert(t['type'] !== 'between_tools', model)
+    assertEquals(Object.keys(t), ['type'], model)
+    assert(['low', 'medium', 'high'].includes((b['output_config'] as Obj)['effort'] as string), model)
+  }
+})
+
+test('a small call that did not ask to think goes without thinking, per model', () => {
+  const small = (model: string, extra: Obj = {}) => {
+    const s = shape(base({ max_tokens: 1200, ...extra }), model)
+    assert(s.ok)
+    return s.body
+  }
+  assertEquals(small(MODEL)['thinking'], { type: 'disabled' })
+  assertEquals(small(SONNET)['thinking'], { type: 'between_tools' })
+  assertEquals(small('claude-opus-5-5')['thinking'], { type: 'adaptive' })
+  assertEquals(small('claude-opus-5-5')['output_config'], { effort: 'low' })
+  // asked to think, it thinks; at 4000 or more it is not small
+  assertEquals(small(MODEL, { thinking: { type: 'adaptive' } })['thinking'], { type: 'adaptive' })
+  assertEquals(small(MODEL, { max_tokens: 4000 })['thinking'], { type: 'adaptive' })
+  assertEquals(small(MODEL, { max_tokens: 3999 })['thinking'], { type: 'disabled' })
+})
+
+test('a client effort passes only from low, medium and high', () => {
+  const effort = (e: unknown) => (ok(base({ output_config: { effort: e } })).body['output_config'] as Obj)['effort']
+  assertEquals(effort('low'), 'low')
+  assertEquals(effort('high'), 'high')
+  for (const e of ['max', 'xhigh', 'none', 3, undefined]) assertEquals(effort(e), 'medium', String(e))
+  assertEquals(ok(base({ output_config: 'high' })).body['output_config'], { effort: 'medium' })
+})
+
 test('fields outside the allowlist are dropped', () => {
   const s = ok(base({ fallbacks: 'default', mcp_servers: [{ url: 'https://x' }], container: 'c', temperature: 1, metadata: { user_id: 'x' } }))
   for (const k of ['fallbacks', 'mcp_servers', 'container', 'temperature', 'metadata']) assert(!(k in s.body), k)
