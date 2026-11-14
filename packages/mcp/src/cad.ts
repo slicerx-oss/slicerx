@@ -235,6 +235,22 @@ const HOLE_ONTO_MM = 1
 /** How far outside a curved face a hole's cut starts, so its end never only touches the face it goes into, mm. */
 const HOLE_CLEAR_MM = 0.05
 
+/** Two crossings of a hole's line this close along it are at one depth, mm. */
+const HOLE_SAME_DEPTH_MM = 1e-6
+
+/**
+ * Where a hole's line leaves the material: the nearest of `hits` (along unit `a`) past the entry at `entryS`, going
+ * `into`, as how far past it and the face there. A face square to the axis at that depth wins over a slanted one
+ * meeting it on the same edge, which can be nearer by rounding alone.
+ */
+export function holeExit(hits: readonly { s: number; n: V3 }[], entryS: number, a: V3, into: V3): { d: number; n: V3 } | undefined {
+  const way = dot(a, into)
+  const past = hits.map((h) => ({ d: (h.s - entryS) * way, n: h.n })).filter((h) => h.d > HOLE_SAME_DEPTH_MM).sort((x, y) => x.d - y.d)
+  const near = past[0]
+  if (!near) return undefined
+  return past.find((h) => h.d - near.d <= HOLE_SAME_DEPTH_MM && dot(h.n, into) >= 0.9999) ?? near
+}
+
 /** Where the line through `at` along `normal` meets the part nearest `at`, within HOLE_ONTO_MM, on a face facing that way. */
 function ontoPart(tris: readonly Tri[], at: V3, normal: V3): { at: V3; mm: number } | undefined {
   const n = unit(normal)
@@ -299,8 +315,7 @@ function newHolePath(tris: readonly Tri[], typed: V3, axis: V3 | undefined, norm
   const off = (Math.acos(Math.min(1, Math.abs(dot(first.n, a)))) * 180) / Math.PI
   if (off > 1) throw new ToolInputError(`axis: the face the hole starts on at (${mm(entry)}) is ${Math.round(off)} degrees off square to the axis; a hole goes square into a flat face`)
   const into = (dot(first.n, a) < 0 ? a : a.map((c) => -c)) as V3
-  const way = dot(a, into)
-  const exit = hits.map((h) => ({ d: (h.s - first.s) * way, n: h.n })).filter((h) => h.d > 1e-6).sort((x, y) => x.d - y.d)[0]
+  const exit = holeExit(hits, first.s, a, into)
   if (!exit || dot(exit.n, into) <= 0) throw new ToolInputError(`center: the part is not closed along the hole's axis from (${mm(entry)})`)
   // the whole circle on the entry face: a hole that runs off it, or onto a round face, is refused
   const u = unit(cross(into, Math.abs(into[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1]))!
@@ -2257,7 +2272,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeMake = defineTool({
     name: 'geom.hole',
-    version: '2.1.0',
+    version: '2.1.1',
     source: 'command',
     permission: 'slice',
     description:
