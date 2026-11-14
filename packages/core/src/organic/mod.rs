@@ -140,6 +140,10 @@ pub(crate) struct OrganicIn<'a> {
     pub(crate) gap_xy_first_layer: f64,
     /// The area the brim covers on the first layer, which the first support layer stays out of.
     pub(crate) brim: Option<Shapes>,
+    /// Each object's footprint on the bed when the session slices several objects together, else empty. The first
+    /// support layer grows toward no object but its own: it keeps `support_object_xy_distance` from the footprint
+    /// of every other object, so it never reaches under a neighbor.
+    pub(crate) footprints: Vec<Shapes>,
     /// Centers of the vertical facets painted as support enforcers, mm (plate coordinates).
     pub(crate) vertical_points: Vec<[f64; 3]>,
     /// The tops of the raft layers under the object (none without a raft), mm.
