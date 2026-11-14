@@ -142,9 +142,22 @@ const ASKED_BY: readonly [RegExp, readonly string[]][] = [
   [RENAME_PART_WORDS, ['design.rename_part']],
 ]
 
-/** The more design tools `message` asks for by their words. */
+/**
+ * Words that ask for the Vault's trending models: "what's trending this week", "open the library", "show the vault".
+ */
+export const LIBRARY_WORDS = /\b(?:trending|library|vault)\b/i
+
+/**
+ * Core tools a capped design turn sends only when its words ask for them (askedTools) or the chat called them. In the
+ * recorded build turns the trending models command went on every request and was never called, so on a design turn
+ * its place goes to the design tools; any other turn still sends it with core.
+ */
+const DESIGN_ASKED_BY: readonly [RegExp, readonly string[]][] = [[LIBRARY_WORDS, ['app.library_trending']]]
+const DESIGN_ASKED: ReadonlySet<string> = new Set(DESIGN_ASKED_BY.flatMap(([, names]) => names))
+
+/** The more design tools, and the core tools a design turn holds back, that `message` asks for by their words. */
 export function askedTools(message: string): Set<string> {
-  return new Set(ASKED_BY.filter(([words]) => words.test(message)).flatMap(([, names]) => names))
+  return new Set([...ASKED_BY, ...DESIGN_ASKED_BY].filter(([words]) => words.test(message)).flatMap(([, names]) => names))
 }
 
 /** Words in a request that say which toolsets it needs. */
@@ -421,9 +434,11 @@ export function stickyToolsets(): StickyToolsets {
  * already called. The same inputs give the same list, in the tools' own order.
  */
 export function stickyCapTools<T extends SetTool>(
-  tools: readonly T[],
+  all: readonly T[],
   opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; loaded?: ReadonlySet<Toolset>; state: Readonly<StickyToolsets>; kind?: TurnKind; asked?: ReadonlySet<string> },
 ): { tools: T[]; sets: Toolset[]; report: ToolCapReport | null } {
+  // a design turn holds back the core tools its words did not ask for and the chat never called (DESIGN_ASKED)
+  const tools = opts.kind === 'design' && all.length > (opts.cap ?? Infinity) ? all.filter((t) => !DESIGN_ASKED.has(t.name) || opts.asked?.has(t.name) || opts.called.has(t.name)) : all
   const bySet = new Map<Toolset, T[]>()
   for (const t of tools) {
     const set = toolsetOf(t)
@@ -507,7 +522,7 @@ export function stickyCapTools<T extends SetTool>(
     return n > 0 ? [{ toolset: s, sent: n, of: members.length }] : []
   })
   const sent = tools.filter((t) => keep.has(t))
-  return { tools: sent, sets, report: { cap, offered: tools.length, sent: sent.length + 1, toolsets: sets, leftOut, partial, loader: LOAD_TOOLS_TOOL } }
+  return { tools: sent, sets, report: { cap, offered: all.length, sent: sent.length + 1, toolsets: sets, leftOut, partial, loader: LOAD_TOOLS_TOOL } }
 }
 
 /**

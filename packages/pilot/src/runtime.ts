@@ -1604,9 +1604,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         const strayCall = pick !== null && turn.some((t) => called.has(t.name) && !pick!.names.has(t.name))
         if (!pick || want.size || strayCall) {
           const protect = new Set<Toolset>([...chatSets.lastCalled, ...calledSets(), ...loaded])
-          // the last list again only while it still has every tool it named and, unless a build is going on (its list holds
-          // and pilot.load_tools brings in more), every toolset this message asks for
-          const covers = (r: NonNullable<StickyToolsets['lastPick']>): boolean => [...r.names].every((n) => turn.some((t) => t.name === n)) && (building || [...needs].every((s) => r.sets.includes(s) || !turn.some((t) => toolsetOf(t) === s)))
+          // the last list again only while it still has every tool it named, every tool this message asks for by its words,
+          // and, unless a build is going on (its list holds and pilot.load_tools brings in more), every toolset this message
+          // asks for
+          const covers = (r: NonNullable<StickyToolsets['lastPick']>): boolean =>
+            [...r.names].every((n) => turn.some((t) => t.name === n)) &&
+            [...(wordsAsk ?? [])].every((n) => r.names.has(n) || !turn.some((t) => t.name === n)) &&
+            (building || [...needs].every((s) => r.sets.includes(s) || !turn.some((t) => toolsetOf(t) === s)))
           const again: StickyToolsets['lastPick'] = reuse && !want.size && !strayCall && covers(reuse) ? reuse : undefined
           reuse = undefined
           const got: { tools: AnyTool[]; sets: Toolset[]; report: ToolCapReport | null } = again ? { tools: turn.filter((t) => again.names.has(t.name)), sets: again.sets, report: again.report } : stickyCapTools(turn, { cap: client.maxTools, needs, called, protect, loaded, state: chatSets, ...(kind ? { kind } : {}), ...(wordsAsk ? { asked: wordsAsk } : {}) })
