@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_geom_loft` 1.12.3 (from 1.12.2) makes an exact loft through profiles drawn with arcs, such as rounded rectangles or hull sections of lines and arcs, also where a piece is an arc on some profiles and a straight line on others. Each side stays within 0.01 mm of the profiles as drawn, arcs as their true arcs. Before, such a loft was refused with "An exact loft is made only through profiles of straight lines and splines for now; these have an arc, a circle or an ellipse." A closed loft through arcs, circles or ellipses is still refused, with "A closed loft through arcs, circles or ellipses is not made exact yet."

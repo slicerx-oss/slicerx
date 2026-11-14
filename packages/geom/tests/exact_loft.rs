@@ -4,11 +4,15 @@
 // are from the rails' own surface, and the body kept in the engine's table. Empty without the brep feature, so a
 // workspace test run that names every test target passes over it.
 #![cfg(feature = "brep")]
+#[allow(
+    dead_code,
+    reason = "each test file uses its own share of what they have in common"
+)]
 mod common;
 
 use common::{
-    farthest_from, farthest_off_its_faces, mesh_loft_keeps_corners, off_its_face, rounded, sampled, sha256,
-    volume_near,
+    farthest_from, farthest_off_its_faces, held_to_its_drawing, mesh_loft_keeps_corners, off_its_face,
+    rounded, sampled, sha256, volume_near,
 };
 use serde_json::{Value, json};
 use std::f64::consts::TAU;
@@ -386,15 +390,10 @@ fn what_cannot_be_made_exact_is_refused_and_nothing_is_kept() {
         ),
         "loft: profile 2 is a closed spline, which has no corners to match its pieces between"
     );
-    assert_eq!(
-        refused(
-            &json!([
-                level(0.0, &rounded(30.0, 20.0, 4.0)),
-                level(20.0, &rounded(24.0, 16.0, 3.0))
-            ]),
-            &json!({})
-        ),
-        "loft: an exact loft is made only through profiles of straight lines and splines, or one whole circle or ellipse on every profile, for now; these have arcs"
+    // a rounded rectangle to a smaller one is made exact now, each held to its true arcs
+    held_to_its_drawing(
+        "rounded rectangles",
+        &json!({ "profiles": [level(0.0, &rounded(30.0, 20.0, 4.0)), level(20.0, &rounded(24.0, 16.0, 3.0))] }),
     );
     assert_eq!(
         refused(&hull(), &json!({ "thicken": { "thicknessMm": 1 } })),
@@ -620,10 +619,6 @@ fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
     let target = json!({ "positions": [0, 0, 0, 30, 0, 0, 0, 30, 0, 0, 0, 30], "indices": [0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2] });
     let cases = [
         (
-            json!({ "profiles": [level(0.0, &rounded(30.0, 20.0, 4.0)), level(20.0, &rounded(24.0, 16.0, 3.0))] }),
-            "An exact loft is made only through profiles of straight lines and splines, or one whole circle or ellipse on every profile, for now; these have arcs.",
-        ),
-        (
             json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &spline)] }),
             "Profile 2 is a closed spline, which has no corners to match its pieces between.",
         ),
@@ -648,6 +643,20 @@ fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
             (plain, asked) => panic!("{why}: {plain:?} without the ask and {asked:?} with it"),
         }
     }
+    // rounded rectangles are made exact now: the loft's own reply plus its solid as text, held to its true arcs
+    let mut request = json!({ "profiles": [level(0.0, &rounded(30.0, 20.0, 4.0)), level(20.0, &rounded(24.0, 16.0, 3.0))] });
+    let plain = op("sketch.loft", &request);
+    request["exact"] = json!(true);
+    request["save"] = json!(true);
+    let asked = op("sketch.loft", &request);
+    let reply: Value = serde_json::from_str(&asked).unwrap();
+    assert!(
+        reply.get("exact").is_none() && reply["bodySmb"].is_string(),
+        "{}",
+        reply["exact"]
+    );
+    assert_eq!(without(&asked, &printed(&reply, "bodySmb")), plain);
+    held_to_its_drawing("rounded rectangles", &request);
     assert_eq!(table::count(), start);
 }
 
