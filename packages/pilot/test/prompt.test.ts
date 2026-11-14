@@ -319,6 +319,9 @@ describe('the lines for a body lofted through sections', () => {
     expect(LOFT_BODY_LINES[0]).toContain('where the real thing is round, a section of straight segments only lofts as flat facets')
     expect(LOFT_BODY_LINES[0]).toContain('and a curved side beside it stays curved')
     expect(LOFT_BODY_LINES[1]).toContain("Make the loft the part's first step")
+    expect(LOFT_BODY_LINES[2]).toContain('Its height is measured from the top of the piece it stands on, the same on the sheet and in the plan: the sheet row names that piece ("Chimney height above the roof"), and the build goes from that top up to that height.')
+    expect(LOFT_BODY_LINES[4]).toContain('An opening (a window, vent or slot, round or square) is cut into the face it belongs to, never built as a raised block on it')
+    expect(LOFT_BODY_LINES[4]).toContain('A refused cut is fixed, not replaced: read why it was refused, correct its plane, side, placement or depth, and cut again; raised parts stand in for openings only when the person asked for raised detail.')
     expect(LOFT_BODY_LINES[6]).toContain('Plan one filament and no paint steps unless the person asks for color')
     expect(LOFT_BODY_LINES[7]).toBe('- A symmetric body is drawn with symmetric sections.')
     // general: no subject words and no colors

@@ -194,7 +194,7 @@ function solidOf(x: SolidIn): PilotSheetSolid {
 
 const dim = z.object({
   key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
-  label: z.string().min(1).max(60),
+  label: z.string().min(1).max(60).describe('Name what a height is measured from: the bed for an overall height, otherwise the part the plan stands it on ("Chimney height above the roof"). Never a bare "height above".'),
   value: num,
   unit: z.enum(['mm', 'deg', '%']),
   kind: z.enum(SIZE_KINDS).optional(),
@@ -257,7 +257,7 @@ const unplacedRow = (d: { label: string }, n: number): string => `row ${n + 1} (
 export function sheetTool(): PilotTool<never> {
   return defineTool({
     name: 'pilot.sheet',
-    version: '1.4.0',
+    version: '1.4.1',
     source: 'command',
     permission: 'read',
     description:

@@ -432,7 +432,7 @@ describe('pilot.sheet', () => {
     expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: dims('count') }).success).toBe(true)
     expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: [{ key: 'width', label: 'Width', value: 4, unit: 'mm', source: 'guess' }] }).success).toBe(true)
     for (const bad of ['deg', 'number', 2]) expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: dims(bad) }).success, String(bad)).toBe(false)
-    expect(sheetTool().version).toBe('1.4.0')
+    expect(sheetTool().version).toBe('1.4.1')
     const seen: string[] = []
     const p = pilot([
       { calls: [{ name: 'pilot.sheet', args: { title: 'Odd sizes', fits: true, views: ['front'], dims: [{ ...dims('count')[0], at: { a: [0, 0, 0], b: [10, 0, 0], off: [0, 0, 5] } }, { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', kind: 'length', source: 'guess', at: { a: [0, 0, 0], b: [0, 10, 0], off: [0, 0, 5] } }], part: PART } }] },
@@ -536,5 +536,14 @@ describe('pilot.sheet', () => {
     const events = await play([{ calls: [{ name: 'pilot.sheet_bind', args: { design: 'obj_1', binds: [{ key: 'a', step: 1 }] } }] }])
     expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
     expect(events.some((e) => e.type === 'sheet_bound')).toBe(false)
+  })
+})
+
+describe('a sheet row label', () => {
+  it('says a height names what it is measured from, for cloud models only', () => {
+    const label = (spec: { inputSchema: unknown }) => (spec.inputSchema as { properties: { dims: { items: { properties: { label: { description?: string } } } } } }).properties.dims.items.properties.label.description
+    expect(label(toolSpec(sheetTool()))).toBe('Name what a height is measured from: the bed for an overall height, otherwise the part the plan stands it on ("Chimney height above the roof"). Never a bare "height above".')
+    // a local model's form keeps only the listed fields' words (local-tools.ts), and the label is not one of them
+    expect(label({ inputSchema: localToolDef(sheetTool()).parameters })).toBeUndefined()
   })
 })
