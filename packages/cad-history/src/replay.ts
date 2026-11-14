@@ -882,9 +882,13 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
   const notes: string[] = []
   const toWorld = s.transform
   const fromWorld = invert(s.transform)
+  // a step that an inner pattern repeated here also repeats (a hole and its row, mirrored together) runs once in each
+  // copy, with that pattern: run on its own as well, the copy would cut or join it twice in the same place
+  const inner = new Set(live.flatMap((x) => (x.params.op === 'pattern' ? x.params.steps : [])))
+  const runs = live.filter((x) => !inner.has(x.id))
   // one cut or join repeated on an exact solid is made in one kernel call with every copy's tool, not one per copy;
   // a row that follows a surface turns its copies, and runs copy by copy
-  const only = live.length === 1 ? live[0]! : undefined
+  const only = runs.length === 1 ? runs[0]! : undefined
   const target = parts[s.part]
   const follows = p.spec.kind === 'linear' && !!p.spec.onSurface
   if (exact && only && !follows && only.params.op !== 'pattern' && target && (target.smb || target.body !== undefined || target.primitive)) {
@@ -943,6 +947,7 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
     const before = out
     let miss = false
     for (const [j, x] of live.entries()) {
+      if (inner.has(x.id)) continue
       const copy: Step = { id: `${s.id}#${k + 2}.${j + 1}`, part: x.part, transform: multiply(x.transform, back), params: copyParams(x.params) }
       try {
         if (x.params.op === 'pattern') {

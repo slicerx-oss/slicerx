@@ -1,0 +1,4 @@
+### Fixed
+
+- `slicerx_geom_mirror` 1.6.2 (from 1.6.1) with `steps` mirrors a cut or join together with the row it is repeated in, such as a porthole and its row, named as both steps or as their feature. On exact solids each mirrored cut or join now goes to the kernel as one of its own. Before, it ran on the part's mesh and was often refused with "Copy 2: boolean: the result is unsafe at mesh storage precision (collapsed triangles)". On a mesh part the mirrored detail is now made once in its copy. Before, it was made a second time in the same place, and a join was refused with "Copy 2: The shape is already inside the part, so nothing changed."
+- `slicerx_geom_array` 1.9.2 (from 1.9.1) with `steps` that name a detail and a pattern that already repeats it makes the detail once in each copy, the same way.
