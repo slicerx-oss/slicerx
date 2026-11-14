@@ -27,7 +27,7 @@ const pod: PlanInput = {
   flat: ['Canopy'],
   proportions: 'lookup: a 6 m capsule, 2.2 m wide, scaled 1:40',
   scale: 40,
-  real: [{ feature: 'Lower shell', size: 'length', mm: 6000 }, { feature: 'Canopy', size: 'length', mm: 2000 }],
+  real: [{ feature: 'Lower shell', size: 'length', mm: 6000 }, { feature: 'Canopy', size: 'length', mm: 2000 }, { feature: 'Canopy cap', size: 'length', mm: 2160 }, { feature: 'Vents', size: 'diameter', mm: 120 }, { feature: 'Vents', size: 'pitch', mm: 320 }],
   tiers: { Canopy: ['Canopy', 'Canopy cap'] },
   repeats: ['vents', 'studs'],
   colors: { 'Lower shell': 'red', 'Upper shell': 'white', 'Floor': 'tan', 'Canopy': 'white', 'Canopy cap': 'blue', 'Studs': 'white', 'Antenna': 'brown', 'Fin': 'yellow' },
@@ -208,7 +208,7 @@ describe('detailProblem: the rules are about the object', () => {
   })
 
   it('refuses a level whose on names another feature than the level before it, and takes one that agrees or names none', () => {
-    const stacked = (on?: string): PlanInput => ({ ...house, flat: ['Walls'], tiers: { Walls: ['Walls', 'Roof'] }, features: house.features.map((f) => (f.name === 'Roof' ? { ...f, sizes: { width: 96, depth: 76, height: 30 }, ...(on ? { on } : {}) } : f)) })
+    const stacked = (on?: string): PlanInput => ({ ...house, flat: ['Walls'], tiers: { Walls: ['Walls', 'Roof'] }, real: [...house.real!, { feature: 'Roof', size: 'width', mm: 9600 }], features: house.features.map((f) => (f.name === 'Roof' ? { ...f, sizes: { width: 96, depth: 76, height: 30 }, ...(on ? { on } : {}) } : f)) })
     expect(TIER_ON_DISAGREES('Roof', 'Chimney', 'Walls', 'Walls')).toBe('on: Roof stands on Chimney, but the tiers of Walls put it on Walls; name Walls in its on, or take it out of the tier list')
     expect(detailProblem(stacked('Chimney'))).toContain('on: Roof stands on Chimney, but the tiers of Walls put it on Walls; name Walls in its on, or take it out of the tier list. ')
     expect(detailProblem(stacked('Walls'))).toBeNull()
@@ -276,7 +276,7 @@ describe('detailProblem: the rules are about the object', () => {
       tiers: { Storeys: ['Ground floor', 'Upper floor'], Roof: ['Roof'] },
       features: [...house.features.filter((f) => f.name !== 'Walls'), { name: 'Ground floor', kind: 'extrude', sizes: { width: 100, depth: 80, height: 28 } }, { name: 'Upper floor', kind: 'extrude', sizes: { width: 100, depth: 80, height: 27 } }],
       colors: undefined,
-      real: [{ feature: 'Ground floor', size: 'width', mm: 10000 }],
+      real: [{ feature: 'Ground floor', size: 'width', mm: 10000 }, { feature: 'Upper floor', size: 'width', mm: 10000 }],
     }
     // the sentences, word for word, for several levels and for one; the refusal's join gives each its one period
     expect(TIER_GROUP_KEY('Deck houses', ['Lower deck house', 'Middle deck house', 'Boat deck'])).toBe('tiers: Deck houses is not a planned feature but a name over Lower deck house, Middle deck house and Boat deck. If they are levels of one body, key them by the lowest, the body flat lists: tiers: {"Lower deck house":["Lower deck house","Middle deck house","Boat deck"]}, with only Lower deck house in flat. If they are separate bodies, give each its own list: {"Lower deck house":["Lower deck house"],"Middle deck house":["Middle deck house"],"Boat deck":["Boat deck"]}')
@@ -294,6 +294,60 @@ describe('detailProblem: the rules are about the object', () => {
     expect(detailProblem({ ...stories, tiers: { 'Ground floor': ['Ground floor'], 'Upper floor': ['Upper floor'], Roof: ['Roof'] } })).toBeNull()
     // a key over a name that is no feature either keeps the plain refusal
     expect(detailProblem({ ...stories, tiers: { Storeys: ['Ground floor', 'Attic'], Roof: ['Roof'] } })).toContain('tiers: Storeys is not a planned feature. ')
+  })
+
+  it('asks a plan with real sizes for each level\'s length and a patterned repeat\'s height and spacing, or a note that the source does not give one', () => {
+    // a liner plan as a build sent it: the hull's real length and beam only, two levels, four funnels in an array
+    const liner: PlanInput = {
+      part: 'Titanic ocean liner, 1:1230 display model',
+      units: 'mm',
+      detail: 'display',
+      curved: ['Hull (loft)'],
+      flat: ['Promenade deck'],
+      tiers: { 'Promenade deck': ['Promenade deck', 'Boat deck'] },
+      repeats: ['Funnels'],
+      proportions: 'stated source: 269 m long, 28 m beam, four funnels, two masts, scaled 1:1230 to fill the P1S bed',
+      scale: '1230',
+      real: [{ feature: 'Hull (loft)', size: 'length', mm: 269000 }, { feature: 'Hull (loft)', size: 'width', mm: 28000 }],
+      overall: { x: 218, y: 23, z: 46 },
+      assumptions: ['Bow points to +X, keel on the bed at Z 0, one filament, no color', 'Funnels are 9 x 7 mm ovals; masts are 1.6 mm pins'],
+      questions: [],
+      printInPlace: false,
+      features: [
+        { name: 'Hull (loft)', kind: 'loft', sizes: { length: 218, width: 23, height: 16, sections: 8 }, kinds: { sections: 'count' } },
+        { name: 'Promenade deck', kind: 'extrude', sizes: { length: 110, width: 19, height: 5 }, on: 'Hull (loft)' },
+        { name: 'Boat deck', kind: 'extrude', sizes: { length: 90, width: 15, height: 3 }, on: 'Promenade deck' },
+        { name: 'Bridge', kind: 'extrude', sizes: { length: 10, width: 17, height: 4 }, on: 'Promenade deck' },
+        { name: 'Forecastle', kind: 'extrude', sizes: { length: 20, width: 12, height: 2 }, on: 'Hull (loft)' },
+        { name: 'Poop deck', kind: 'extrude', sizes: { length: 18, width: 14, height: 2 }, on: 'Hull (loft)' },
+        { name: 'Funnel', kind: 'extrude', sizes: { length: 9, width: 7, height: 22 }, on: 'Boat deck' },
+        { name: 'Funnels (array)', kind: 'array', sizes: { count: 4, spacing: 19 }, kinds: { count: 'count' }, on: 'Boat deck' },
+        { name: 'Foremast', kind: 'extrude', sizes: { diameter: 1.6, height: 22 }, on: 'Forecastle' },
+        { name: 'Mainmast', kind: 'extrude', sizes: { diameter: 1.6, height: 14 }, on: 'Poop deck' },
+      ],
+    }
+    const bed = { bed: { x: 256, y: 256, z: 256 }, printer: 'Bambu Lab P1S' }
+    const decks = [{ feature: 'Promenade deck', size: 'length', mm: 150000 }, { feature: 'Boat deck', size: 'length', mm: 130000 }]
+    const funnel = { feature: 'Funnel', size: 'height', mm: 22000 }
+    const spacing = { feature: 'Funnels (array)', size: 'spacing', mm: 22000 }
+    const real = (...more: { feature: string; size: string; mm: number }[]): PlanInput => ({ ...liner, real: [...liner.real!, ...more] })
+    const noted = (plan: PlanInput, ...notes: string[]): PlanInput => ({ ...plan, assumptions: [...plan.assumptions!, ...notes] })
+    // the sentences, word for word: all four missing, one of a repeat, and a note that does not read as one
+    expect(detailProblem(liner, bed)).toContain('. real: a level\'s length and a repeated part\'s height and spacing are held to scale too, so give the real Promenade deck length, Boat deck length, Funnel height and Funnels (array) spacing, each tied to its size; for a size the source does not give, say so in assumptions as "real: Funnels (array) spacing not given by the source". ')
+    expect(detailProblem(real(...decks, funnel), bed)).toContain('. real: a repeated part\'s spacing is held to scale too, so give the real Funnels (array) spacing, tied to that size; for a size the source does not give, say so in assumptions as "real: Funnels (array) spacing not given by the source". ')
+    expect(detailProblem(real(...decks, spacing), bed)).toContain('. real: a repeated part\'s height is held to scale too, so give the real Funnel height, tied to that size; for a size the source does not give, say so in assumptions as "real: Funnel height not given by the source". ')
+    expect(detailProblem(real(funnel, spacing), bed)).toContain('. real: a level\'s length is held to scale too, so give the real Promenade deck length and Boat deck length, each tied to its size; for a size the source does not give, say so in assumptions as "real: Boat deck length not given by the source". ')
+    expect(detailProblem(noted(real(...decks, funnel), 'real: funnel spacing is unknown'), bed)).toContain('. real: a repeated part\'s spacing is held to scale too, so give the real Funnels (array) spacing, tied to that size; the assumption "real: funnel spacing is unknown" does not name it as the check reads it, so write it as "real: Funnels (array) spacing not given by the source". ')
+    // each size given, or named as not given (one note can name a height and a spacing), passes; so does a plan with no
+    // real sizes at all, a made-up thing
+    expect(detailProblem(real(...decks, funnel, spacing), bed)).toBeNull()
+    expect(detailProblem(noted(real(...decks, funnel), 'real: Funnels spacing not given by the source'), bed)).toBeNull()
+    expect(detailProblem(noted(liner, 'real: Promenade deck length not given by the source', 'real: Boat deck length not given by the source', 'real: Funnels height and spacing not given by the source'), bed)).toBeNull()
+    expect(detailProblem({ ...liner, real: [] }, bed)).toBeNull()
+    // a single block is not held, so with one level only the funnels are asked for
+    const one = detailProblem({ ...liner, tiers: { 'Promenade deck': ['Promenade deck'] } }, bed)!
+    expect(one).toContain('so give the real Funnel height and Funnels (array) spacing, each tied to its size')
+    expect(one).not.toContain('Promenade deck length')
   })
 
   it('shows a plan shape that passes on the first try, in the help every refusal and the description carry', () => {

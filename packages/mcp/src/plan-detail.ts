@@ -70,7 +70,7 @@ export const planDetailFields = {
     .array(z.object({ feature: text(60).optional(), size: text(40).optional(), mm: z.number().positive().optional() }).refine((r) => r.feature !== undefined && r.size !== undefined && r.mm !== undefined, 'each real size gives feature, size and mm'))
     .max(40)
     .optional()
-    .describe('Display and fine: the real sizes the lookup or the stated source gives, in mm at full size, each tied to the feature size it sets, such as {"feature": "Body", "size": "length", "mm": 4200}: the main body\'s and each part\'s it gives. Each is held to scale. An empty list when it gives none'),
+    .describe('Display and fine: the real sizes the lookup or the stated source gives, in mm at full size, each tied to the feature size it sets, such as {"feature": "Body", "size": "length", "mm": 4200}: the main body\'s and each part\'s it gives; with 2 or more levels, each one\'s length; for a patterned repeat, its part\'s height and spacing. Each is held to scale. An empty list when it gives none'),
   tiers: z
     .record(text(60), z.array(text(60)).min(1).max(12))
     .optional()
@@ -89,6 +89,7 @@ interface DetailPlan {
   scale?: number | string | undefined
   real?: readonly { feature?: string | undefined; size?: string | undefined; mm?: number | undefined }[] | undefined
   tiers?: Readonly<Record<string, readonly string[]>> | undefined
+  assumptions?: readonly string[] | undefined
   overall?: { x: number; y: number; z: number } | undefined
   /** The person's words gave the size: the plan keeps it, and the bed fill does not apply. */
   personSize?: boolean | undefined
@@ -259,7 +260,135 @@ function scaleProblems(plan: DetailPlan, feature: FeatureOf): string[] {
     if (want > 0 && (got > want * SCALE_SLACK || got < want / SCALE_SLACK))
       out.push(`${f.name} ${key} is ${r1(got)} mm, ${r1(got / want)} times the ${r1(want)} mm its real ${r1(mm)} mm gives at 1:${n}; size it from the real one`)
   }
+  const unheld = unheldProblem(plan, feature)
+  if (unheld) out.push(unheld)
   return out
+}
+
+/** A size's name read as a repeat's spacing: how far apart its copies stand. */
+const SPACING = /^(spacing|pitch|step|gap|apart)\b/i
+const ROUND = /^(diameter|d)$/i
+/** A repeated part's height: how tall it stands, not how deep it is. */
+const TALL = /^(height|tall)$/i
+
+/** A name as the unheld check matches it: lower case, no parentheses, no array or pattern word, each word singular. */
+const stem = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && !/^(array|pattern|patterned)$/.test(w))
+    .map((w) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w))
+    .join(' ')
+
+/** Whether each word of a's stem is a word of b's: "Funnels" in "Funnel array", "Window" in "Window row". */
+const within = (a: string, b: string): boolean => {
+  const [x, y] = [stem(a).split(' ').filter(Boolean), new Set(stem(b).split(' '))]
+  return x.length > 0 && x.every((w) => y.has(w))
+}
+
+/**
+ * An assumption that says a size the source does not give: "real: Funnels spacing not given by the source", or two
+ * sizes at once ("Funnel height and spacing"). The name is a planned feature or a name in repeats.
+ */
+const NOT_GIVEN = /^\s*real\s*:\s*(.+?)\s+([a-z]+)(?:\s+and\s+([a-z]+))?\s+not given by the source\b/i
+
+/** One size the check holds to a real one: the feature that carries it, its size key, and the names a note may use. */
+interface Held {
+  feature: string
+  key: string
+  re: RegExp
+  names: string[]
+}
+
+/**
+ * The sizes a source's real list leaves unheld that set how the thing reads: each level of a tier list of two or more
+ * levels (its length) and each repeat built as a pattern with a spacing (its part's height, on the part built once or
+ * its pattern, and the pattern's spacing). A size the
+ * source does not give is named in assumptions as NOT_GIVEN says, and the check takes it. Null when each is held.
+ */
+function unheldProblem(plan: DetailPlan, feature: FeatureOf): string | null {
+  const isPattern = (f: DetailPlan['features'][number]): boolean => PATTERN.test(f.kind ?? '') || PATTERN.test(f.name)
+  const keyOf = (f: DetailPlan['features'][number], ...res: RegExp[]): [string, RegExp] | null => {
+    for (const re of res) {
+      const k = Object.keys(f.sizes).find((s) => re.test(s.trim()))
+      if (k) return [k, re]
+    }
+    return null
+  }
+  // a main body or a level is never the part a pattern repeats
+  const bodies = new Set([...(plan.curved ?? []), ...(plan.flat ?? []), ...Object.keys(plan.tiers ?? {}), ...Object.values(plan.tiers ?? {}).flat()].map((b) => b.trim().toLowerCase()))
+  const want: { held: Held; group: string[]; what: 'length' | 'height' | 'spacing' }[] = []
+  const seen = new Set<string>()
+  const add = (f: DetailPlan['features'][number] | undefined, res: RegExp[], what: 'length' | 'height' | 'spacing', group: string[], names: string[]): void => {
+    if (!f) return
+    const k = keyOf(f, ...res)
+    if (!k || seen.has(`${f.name.toLowerCase()}\0${what}`)) return
+    seen.add(`${f.name.toLowerCase()}\0${what}`)
+    want.push({ held: { feature: f.name, key: k[0], re: k[1], names: [f.name, ...names] }, group, what })
+  }
+  // each level of a tier list of two or more levels, keyed by a planned body or by a name over them; a single block
+  // is not held, and a level that is no feature is asked for by tierProblems
+  for (const levels of Object.values(plan.tiers ?? {}))
+    for (const l of levels.length > 1 ? levels : []) {
+      const f = feature(l)
+      add(f, [LENGTH, WIDTH], 'length', f ? [f.name] : [], [])
+    }
+  // each repeat built as a pattern with a spacing, by the features whose names hold its name ("Funnels" holds "Funnel"
+  // and "Funnels (array)"): the pattern and the part it builds once; a repeat whose name no feature holds takes the
+  // patterns no repeat names, and a repeat with no pattern (a mirrored pair) is not asked for anything
+  const repeats = plan.repeats ?? []
+  const claimed = new Set<DetailPlan['features'][number]>()
+  const groups: { label: string; matched: number; patterns: DetailPlan['features'][number][] }[] = repeats.map((r) => {
+    const s = stem(r)
+    const matched = plan.features.filter((f) => s && !bodies.has(f.name.trim().toLowerCase()) && within(r, f.name))
+    matched.forEach((f) => claimed.add(f))
+    return { label: r, matched: matched.length, patterns: matched.filter(isPattern) }
+  })
+  const spaced = (f: DetailPlan['features'][number]): boolean => isPattern(f) && !!keyOf(f, SPACING)
+  const loose = plan.features.filter((f) => isPattern(f) && !claimed.has(f))
+  const part = (f: DetailPlan['features'][number]): boolean => !isPattern(f) && !bodies.has(f.name.trim().toLowerCase())
+  for (const g of groups) {
+    const pats = (g.matched ? g.patterns : loose).filter(spaced)
+    for (const p of pats) {
+      // the part a pattern builds once: the pattern itself when it carries the part's own height (an array cut of
+      // vents), else the part its name holds, else the part planned just before it
+      const at = plan.features.indexOf(p)
+      const once = keyOf(p, TALL, ROUND) ? p : (plan.features.find((f) => part(f) && within(f.name, p.name)) ?? plan.features.slice(0, at).reverse().find(part))
+      const group = [...new Set([p, once].filter((f): f is NonNullable<typeof f> => !!f).map((f) => f.name))]
+      add(once ?? p, [TALL, ROUND], 'height', group, [g.label, ...group])
+      add(p, [SPACING], 'spacing', group, [g.label, ...group])
+    }
+  }
+  if (!want.length) return null
+  // a real entry for any feature of its group, the same way, holds a size: a repeat's height on its pattern counts
+  const given = (w: (typeof want)[number]): boolean =>
+    (plan.real ?? []).some((r) => {
+      const f = feature(r.feature ?? '')
+      return !!f && w.group.concat(w.held.feature).some((g) => g.trim().toLowerCase() === f.name.trim().toLowerCase()) && Object.keys(f.sizes).some((k) => k.trim().toLowerCase() === (r.size ?? '').trim().toLowerCase() && w.held.re.test(k.trim()))
+    })
+  const notes = (plan.assumptions ?? []).filter((a) => /^\s*real\s*:/i.test(a))
+  const said = (w: (typeof want)[number], note: string): boolean => {
+    const m = NOT_GIVEN.exec(note)
+    if (!m) return false
+    const sizes = [m[2]!, m[3]].filter((s): s is string => !!s).map((s) => s.toLowerCase())
+    return w.held.names.some((n) => stem(n) === stem(m[1]!)) && sizes.some((s) => s === w.held.key.trim().toLowerCase() || w.held.re.test(s))
+  }
+  const missing = want.filter((w) => !given(w) && !notes.some((n) => said(w, n)))
+  if (!missing.length) return null
+  const ways = new Set(missing.map((w) => w.what))
+  const rep = [ways.has('height') && 'height', ways.has('spacing') && 'spacing'].filter(Boolean).join(' and ')
+  const lengths = missing.filter((w) => w.what === 'length')
+  const level = lengths.every((w) => LENGTH.test(w.held.key.trim())) ? 'length' : lengths.every((w) => !LENGTH.test(w.held.key.trim())) ? 'size across' : 'length or size across'
+  const held = [ways.has('length') && `a level's ${level}`, rep && `a repeated part's ${rep}`].filter(Boolean) as string[]
+  const sizes = missing.map((w) => `${w.held.feature} ${w.held.key}`)
+  const list = sizes.length > 1 ? `${sizes.slice(0, -1).join(', ')} and ${sizes.at(-1)!}` : sizes[0]!
+  const last = missing.at(-1)!
+  const example = `"real: ${last.held.feature} ${last.held.key} not given by the source"`
+  const stray = notes.find((n) => !want.some((w) => said(w, n)))
+  const one = missing.length === 1
+  const fix = stray ? `; the assumption "${stray.trim()}" does not name ${one ? 'it' : 'one of them'} as the check reads it, so write it as ${example}` : `; for a size the source does not give, say so in assumptions as ${example}`
+  return `real: ${held.join(' and ')} ${held.length > 1 || rep.includes(' and ') ? 'are' : 'is'} held to scale too, so give the real ${list}, ${one ? 'tied to that size' : 'each tied to its size'}${fix}`
 }
 
 /** A size's name read as the main way it measures across: a width, a length or a height. */
