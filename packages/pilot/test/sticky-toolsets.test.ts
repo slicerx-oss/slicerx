@@ -732,3 +732,42 @@ describe('a paint ask in a capped design chat', () => {
     expect(turnNeeds('Make me a 30 mm cube').has('project')).toBe(false)
   })
 })
+
+describe('words that ask for a held-back tool on a capped design chat', () => {
+  /** A design chat over the limit with the more design tools and the trending models command, whose model builds once and stops. */
+  function chat() {
+    const named = (name: string): PilotTool<never> =>
+      defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
+    const sets: [string, Toolset, number][] = [['core.t', 'core', 10], ['geom.t', 'cad', 59], ['settings.t', 'settings', 30], ['printer.t', 'printers', 26], ['mesh.t', 'mesh', 1]]
+    const tools = [named('design.new'), ...sets.flatMap(([prefix, set, n]) => Array.from({ length: n }, (_, i) => tool(`${prefix}${i}`, set))), ...['project.info', 'geom.rail', 'design.part_filament', 'design.rename_part', 'app.library_trending'].map(named)]
+    const sent: LlmHttpRequest[] = []
+    const llm = {
+      available: async () => true,
+      async *stream(req: LlmHttpRequest) {
+        sent.push(req)
+        const body = JSON.parse(req.body) as { messages: { role: string; content: unknown }[] }
+        yield wire('mimir-cloud', JSON.stringify(body.messages.at(-1)?.content ?? '').includes('tool_result') ? { text: 'Done.' } : { call: 'geom.t0' })
+      },
+    } as unknown as LlmTransport
+    const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
+    const { models: _tiers, ...base } = DEFAULT_CONFIG
+    const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-5-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools, hasDesign: () => true })
+    return async (message: string): Promise<string[][]> => {
+      const at = sent.length
+      for await (const _ of pilot.run('s1', message)) void _
+      return sent.slice(at).map(toolsOf)
+    }
+  }
+
+  it('sends the trending command on a design turn that asks for it right after a build, and the same list again after', async () => {
+    const say = chat()
+    const build = (await say('Make me a 30 mm cube with a fillet')).at(-1)!
+    expect(build).not.toContain('app.library_trending')
+    // the same kind of turn would send the build's list again; its words ask for a tool that list lacks, so it is picked anew
+    const trending = (await say('What models are trending this week?'))[0]!
+    expect(trending.filter((n) => !build.includes(n))).toEqual(['app.library_trending'])
+    expect(build.filter((n) => !trending.includes(n))).toHaveLength(1)
+    // a design turn after it that asks for nothing new sends that list again, byte for byte
+    expect((await say('Make the base thicker'))[0]).toEqual(trending)
+  })
+})

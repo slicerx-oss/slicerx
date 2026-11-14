@@ -217,6 +217,31 @@ describe('no mimir tab request carries more than 128 tools', () => {
     }
   }, 60_000)
 
+  it('sends what main sent on a rail, a part rename, or a slice with a design change after a build, but for the lookup in and the trending command out', async () => {
+    const off = await registerApp('desktop')
+    try {
+      // what main c0afa7726 sent on these turns (fixtures/capped-tools-mixed-main.json)
+      const main = JSON.parse(readFileSync(new URL('./fixtures/capped-tools-mixed-main.json', import.meta.url), 'utf8')) as Record<string, string[]>
+      const MIXED = [
+        { kind: 'rail after a build', before: 'A 30 mm cube with a fillet', message: 'Add a railing all round the top', asked: 'geom__rail' },
+        { kind: 'rename after a build', before: 'A 30 mm cube with a fillet', message: 'call that part the base', asked: 'design__rename_part' },
+        { kind: 'slice and a design change', before: 'A 30 mm cube with a fillet', message: 'Make the base thicker and slice the plate' },
+      ]
+      for (const mode of ['mimir cloud', 'openai key'] as Mode[])
+        for (const t of MIXED) {
+          const key = `${t.kind}, ${mode}`
+          const names = toolNames((await turn('desktop', NEUTRAL, mode, t)).req)
+          const was = new Set(main[key])
+          expect(names.length, key).toBe(CAP)
+          expect(names.filter((n) => !was.has(n)), `${key}: added`).toEqual(['design__lookup_sizes'])
+          expect([...was].filter((n) => !names.includes(n)), `${key}: removed`).toEqual(['app__library_trending'])
+          if (t.asked) expect(names, key).toContain(t.asked)
+        }
+    } finally {
+      off()
+    }
+  }, 60_000)
+
   it('sends the trending models command on a design turn only when it asks for the library or what is trending', async () => {
     const off = await registerApp('desktop')
     try {
