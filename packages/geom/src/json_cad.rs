@@ -192,6 +192,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         #[cfg(feature = "cad")]
         "sketch.loft" => sketch_loft_op(req, enc, files),
         #[cfg(feature = "cad")]
+        "sketch.loft.rings" => sketch_loft_rings_op(req),
+        #[cfg(feature = "cad")]
         "sketch.sweep" => sketch_sweep_op(req, enc, files),
         #[cfg(feature = "cad")]
         "sketch.snaps" => sketch_snaps_op(req, files),
@@ -517,13 +519,18 @@ fn sketch_revolve_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result
 }
 
 #[cfg(feature = "cad")]
-fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
-    let profiles: Vec<sketch_loft::Profile> = field(req, "profiles")?;
-    let opts = sketch_loft::Options {
+fn loft_options(req: &Value) -> Result<sketch_loft::Options> {
+    Ok(sketch_loft::Options {
         smooth: field_or_default(req, "smooth")?,
         closed: field_or_default(req, "closed")?,
         thicken: field_or_default(req, "thicken")?,
-    };
+    })
+}
+
+#[cfg(feature = "cad")]
+fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
+    let profiles: Vec<sketch_loft::Profile> = field(req, "profiles")?;
+    let opts = loft_options(req)?;
     let op: face::Operation = field_or_default(req, "operation")?;
     let target = match req.get("target") {
         None | Some(Value::Null) => None,
@@ -567,6 +574,54 @@ fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Va
         }
     }
     Ok(v)
+}
+
+/// The rings `sketch.loft` lofts through for the same request, one per profile in loft order, point `i` of every ring
+/// on rail `i`: the mesh loft's (`route` "mesh"), or with `exact` the rails the exact body is made on (`route`
+/// "exact"). When the exact body would not be made, the mesh loft's rings with `exact` as `sketch.loft` gives it.
+/// Makes no mesh, keeps no body and ignores `operation` and `target`.
+#[cfg(feature = "cad")]
+fn sketch_loft_rings_op(req: &Value) -> Result<Value> {
+    let profiles: Vec<sketch_loft::Profile> = field(req, "profiles")?;
+    let opts = loft_options(req)?;
+    // the mesh loft's rings first, so a refusal is the loft's own
+    let mesh = sketch_loft::matched_rings(&profiles, &opts)?;
+    let asked: bool = field_or_default(req, "exact")?;
+    #[cfg(feature = "brep")]
+    let built = asked.then(|| loft_built_rails(&profiles, &opts));
+    #[cfg(not(feature = "brep"))]
+    let built: Option<std::result::Result<sketch_loft::Rails, String>> =
+        asked.then(|| Err(NO_KERNEL.to_owned()));
+    Ok(match built {
+        Some(Ok(rails)) => {
+            let rings: Vec<Vec<crate::vec3::V3>> = rails.rings.into_iter().map(|r| r.points).collect();
+            json!({ "rings": rings, "wrap": rails.wrap, "closedRings": rails.ring_closed, "route": "exact" })
+        }
+        Some(Err(why)) => {
+            let mut v = rings_reply(&mesh);
+            insert(&mut v, "exact", json!({ "made": false, "why": why }));
+            v
+        }
+        None => rings_reply(&mesh),
+    })
+}
+
+/// The mesh loft's rings as `sketch.loft.rings` answers them.
+#[cfg(feature = "cad")]
+fn rings_reply(m: &sketch_loft::Matched) -> Value {
+    json!({ "rings": m.rings, "wrap": m.wrap, "closedRings": m.ring_closed, "route": "mesh" })
+}
+
+/// The rails an exact loft is made on, or why it would not be made, worded as `sketch.loft` words it.
+#[cfg(all(feature = "cad", feature = "brep"))]
+fn loft_built_rails(
+    profiles: &[sketch_loft::Profile],
+    opts: &sketch_loft::Options,
+) -> std::result::Result<sketch_loft::Rails, String> {
+    if !sx_brep::KERNEL {
+        return Err(NO_KERNEL.to_owned());
+    }
+    sketch_loft::exact::built_rails(profiles, opts).map_err(|e| sentence(&e))
 }
 
 /// What a build without the kernel answers a loft asked to be exact.
