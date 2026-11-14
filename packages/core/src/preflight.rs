@@ -217,7 +217,8 @@ pub fn wrap_check_zone(cfg: &PrintConfig) -> Option<Vec<[f64; 2]>> {
 /// (`head_wrap_detect_zone`). The brim and the skirt are cut to the bed less these, and the tower stays out of them. A
 /// path that enters an excluded area is refused: an object's by the collision check, which walks the same zones, and
 /// any other by the safety preflight (which refuses every path in an excluded area). In the wrap check corner only a
-/// skirt is refused: an object's own paths and travels may go there, and the printer then skips its check.
+/// skirt is refused, unless the plate's first layer lies wholly inside it: an object's own paths and travels may go
+/// there, and the printer then skips its check.
 pub fn keep_out_zones(cfg: &PrintConfig) -> Vec<Vec<[f64; 2]>> {
     let mut zones = exclude_zones(cfg);
     zones.extend(wrap_check_zone(cfg));
@@ -424,13 +425,19 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     let mut zone_wrap = false;
     let mut tall_owner: Option<usize> = None;
     let mut bed_cache: Vec<BedCache> = Vec::new();
+    let wrap_free = !base.print_by_object() && crate::customgcode::wholly_in_head_wrap_detect_zone(base, out);
     for l in &out.layers {
         if !bed_cache.iter().any(|(k, ..)| *k == l.cfg) {
             let c = out.config_at(base, l.cfg);
             let poly = c.printable_area.clone();
             let bb = bounds(&poly);
             let rect = is_axis_rect(&poly);
-            let zones = zone_list(c);
+            let mut zones = zone_list(c);
+            // A plate whose first layer lies wholly in the nozzle wrap check corner keeps nothing out of it, its
+            // skirt included: the printer skips its check there.
+            if wrap_free {
+                zones.retain(|z| !z.wrap);
+            }
             let skirt_tol = if crate::firmware::bambu_printer(c, c.gcode_flavor) {
                 BAMBU_SKIRT_EDGE_TOL_MM
             } else {

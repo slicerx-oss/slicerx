@@ -2636,6 +2636,20 @@ impl SliceSession {
         self.vase.is_none().then_some(&self.cache)
     }
 
+    /// Whether this session's whole first layer lies inside the nozzle wrap check corner
+    /// ([`crate::customgcode::wholly_in_head_wrap_detect_zone`]), so its skirt may run there. False, with no work, on
+    /// a printer without the corner, and on a plate printed by object, whose skirts keep out of the corner as before
+    /// (the safety preflight judges the plate as a whole).
+    fn first_layer_in_wrap_corner(&self, config: &PrintConfig) -> bool {
+        !config.print_by_object()
+            && crate::preflight::wrap_check_zone(config).is_some()
+            && crate::customgcode::first_layer_in_head_wrap_detect_zone(
+                config,
+                &self.first_layer_info(config).rings,
+                true,
+            )
+    }
+
     pub(crate) fn first_layer_info(&self, config: &PrintConfig) -> crate::output::FirstLayerInfo {
         let tag = settings_tag(config);
         let locked = || {
@@ -4015,7 +4029,14 @@ impl SliceSession {
         let plan = std::sync::Arc::new(PlateSkirt {
             hulls: groups.into_iter().map(|g| g.1).collect(),
             tools: usize::from(self.tool_count),
-            room: skirt_room(&first),
+            room: skirt_room(
+                &first,
+                self.first_layer_in_wrap_corner(config)
+                    && self
+                        .followers
+                        .iter()
+                        .all(|f| f.first_layer_in_wrap_corner(config)),
+            ),
             first,
         });
         let mut turns = turns.into_iter();
@@ -4987,7 +5008,7 @@ impl SliceSession {
                 regions: vec![(tool, area)],
                 ..LayerRegions::default()
             };
-            let room = skirt_room(config);
+            let room = skirt_room(config, self.first_layer_in_wrap_corner(config));
             skirt_loops(
                 (outer_points_of(&here), false),
                 &[],
@@ -12602,7 +12623,7 @@ impl SliceSession {
             let skirt_cfg = one.map_or(cfg, |o| &o.first);
             let points = one.map_or_else(|| outer_points_of(here), |o| o.points.clone());
             // A skirt near the bed's edge or a keep-out zone is cut to the bed rather than run off it, as the brim is.
-            let room = skirt_room(skirt_cfg);
+            let room = skirt_room(skirt_cfg, self.first_layer_in_wrap_corner(skirt_cfg));
             let skirt = skirt_loops(
                 (points, one.is_some()),
                 &skirt_extra,
@@ -13923,9 +13944,10 @@ fn skirt_loops(
 
 /// Where a skirt's centerline may run: the bed less its keep-out zones (`bed_exclude_area`, the nozzle wrap check
 /// corner), half a skirt line spacing in from their edges so the bead stays on the bed, the way the brim is cut to
-/// it. None when the settings name no printable area.
-fn skirt_room(cfg: &PrintConfig) -> Option<Shapes> {
-    crate::brim::Bed::of(cfg).map(|bed| bed.room(mm(skirt_spacing_mm(cfg)) / 2))
+/// it. None when the settings name no printable area. On a plate whose first layer lies wholly in the nozzle wrap check
+/// corner (`in_wrap_corner`) the skirt may run in that corner, as the printer skips its check there.
+fn skirt_room(cfg: &PrintConfig, in_wrap_corner: bool) -> Option<Shapes> {
+    crate::brim::Bed::of_plate(cfg, in_wrap_corner).map(|bed| bed.room(mm(skirt_spacing_mm(cfg)) / 2))
 }
 
 /// What the brim of object `k` of a plate sliced in sessions of their own keeps clear of (`NearBrims`), from each
