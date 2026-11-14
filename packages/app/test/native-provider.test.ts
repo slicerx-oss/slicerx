@@ -15,9 +15,14 @@ import { decodeFrame, encodeFrame, EngineEnded, nativeProvider, type NativeEngin
 import { withStep } from '../src/cad/history/record'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { liveEngine, wasmGeom } from './geom-engine'
+import { designToolset } from '@slicerx/mcp/toolset'
+import { appDesignHost } from '../src/cad/design-host'
+import { forgetWaiting } from '../src/cad/waiting'
+import { get, set } from '../src/state/store'
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
   setGeomProvider(null)
   clearReplayCache()
 })
@@ -479,6 +484,74 @@ describe("native provider: a solid's triangles", () => {
   })
 })
 
+// --- a design tool's answer on the native provider: whether the body its replay made is exact
+
+/** A 20 by 10 mm block's section at height z, in the bed's directions. */
+const blockAt = (z: number) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [{ points: [[-10, -5], [10, -5], [10, 5], [-10, 5]] }] })
+/** A section with an arc beside a spline at height z, which the kernel does not loft exactly yet. */
+const curvedAt = (z: number) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [{ start: [-10, -5], segments: [{ type: 'line', to: [10, -5] }, { type: 'arc', to: [10, 5], center: [10, 0], sweepDeg: 180 }, { type: 'spline', points: [[0, 8]], to: [-10, 5] }, { type: 'line', to: [-10, -5] }] }] })
+
+/** The design tools on the app's design host, with the geometry calls going to `p`, run as a client calls them. */
+function toolsOnPlate(p: ReturnType<typeof nativeProvider>) {
+  setGeomProvider(p)
+  forgetWaiting()
+  set({ plate: [], selection: null, selectedIds: [], historyEdit: null, bed: { ...get().bed, widthMm: 256, depthMm: 256, heightMm: 256 } })
+  const handle = (name: string) => ({ id: name, hash: name, name, triangles: 2, bboxMm: [10, 10, 20] as [number, number, number], openEdges: 0, parts: [] })
+  const tools = new Map(designToolset(appDesignHost({ loadParts: async (name: string, _parts: MeshPart[]) => handle(name) }), {}, {}).map((t) => [t.name, t]))
+  return async (name: string, input: Record<string, unknown>): Promise<{ summary: string; output: Record<string, unknown> }> => {
+    const tool = tools.get(name)!
+    const out = await tool.run(tool.input.parse(input) as never, {} as never)
+    return { summary: out.summary, output: out.output as Record<string, unknown> }
+  }
+}
+
+describe("native provider: a design tool's answer", () => {
+  const why = 'These sections have curved sides, which an exact loft cannot follow yet.'
+  /** A stand-in that lofts an exact body (`made`) or today's mesh loft with the engine's sentence. */
+  const lofting = (made: boolean) =>
+    standIn((op) => {
+      if (op === 'exact.ops') return { ops: ['sketch.loft'] }
+      if (op === 'sketch.loft' && made) return { mesh: { positions: [], indices: [] }, report: { watertight: true }, body: FIRST, bodyKeys: [7, 8] }
+      if (op === 'sketch.loft') return { mesh: { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 20], indices: [0, 1, 2, 0, 1, 3] }, report: { watertight: true }, exact: { made: false, why } }
+      if (op === 'brep.tessellate') return { frame: answerFrame({ id: 1, result: solidAnswer() }, solidBuffers().buffers) }
+      if (op === 'brep.free') return { freed: true }
+      throw new Error(`unexpected ${op}`)
+    })
+  const loft = async (made: boolean) => {
+    const run = toolsOnPlate(nativeProvider(lofting(made).engine))
+    const design = String((await run('design.new', { name: 'Block' })).output['design'])
+    return run('geom.loft', { design, profiles: [blockAt(0), blockAt(15)], operation: 'new' })
+  }
+
+  it('says exact when the replay made the lofted body an exact solid', async () => {
+    const out = await loft(true)
+    expect(out.output['exact']).toBe(true)
+    expect((out.output['parts'] as Record<string, unknown>[]).map((p) => 'mesh' in p)).toEqual([false])
+  })
+
+  it('says not exact when the engine made no body, with no note, as before', async () => {
+    const out = await loft(false)
+    expect(out.output['exact']).toBe(false)
+    expect((out.output['parts'] as Record<string, unknown>[]).map((p) => 'mesh' in p)).toEqual([false])
+    expect(out.summary).not.toContain(why.replace(/\.$/, ''))
+  })
+
+  it("says not exact with the engine's sentence when exact solids are asked for too", async () => {
+    set({ settingsMode: 'developer' })
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'sx.exactSolids' ? '1' : null), setItem: () => {}, removeItem: () => {} })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const out = await loft(false)
+      expect(out.output['exact']).toBe(false)
+      expect(out.summary).toContain(why.replace(/\.$/, ''))
+      expect((out.output['lastStep'] as { note?: string }).note).toBe(why)
+    } finally {
+      set({ settingsMode: 'simple' })
+      vi.restoreAllMocks()
+    }
+  })
+})
+
 // --- the real engine in a process of its own
 
 const serveBin = process.env['SLICERX_GEOM_SERVE_BIN']
@@ -722,7 +795,7 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
     const engine = processEngine()
     const p = nativeProvider(engine)
     type Part = { indices: ArrayLike<number>; normals?: Int16Array; faces?: { keys?: number[] } }
-    type Out = { parts: Part[]; status: unknown[]; exactFellBack?: string[]; exactLoftsQuiet?: { step: string; why: string }[] }
+    type Out = { parts: Part[]; status: unknown[]; exactFellBack?: string[]; exactLoftsQuiet?: { step: string; why: string }[]; meshParts?: number[] }
     const level = (z: number, loops: unknown[]) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops })
     const loft = (id: string, loops: unknown[]) => ({ id, part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'sketch.loft', profiles: [level(0, loops), level(15, loops)], operation: 'new', name: 'Block' } })
     try {
@@ -733,6 +806,7 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
       expect(block.exactLoftsQuiet).toBeUndefined()
       expect(block.parts[0]!.normals).toHaveLength(block.parts[0]!.indices.length * 2)
       expect(block.parts[0]!.faces!.keys).toHaveLength(6)
+      expect(block.meshParts).toEqual([])
       // one whole circle on every profile lofts exact too: its side and two caps
       const round = await p.call<Out>('history.replay', { history: { version: HISTORY_VERSION, base: [], steps: [loft('loft-2', [{ type: 'circle', center: [0, 0], diameterMm: 10 }])] } })
       expect(round.status).toEqual([{ state: 'done' }])
@@ -740,6 +814,7 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
       expect(round.exactLoftsQuiet).toBeUndefined()
       expect(round.parts[0]!.normals).toHaveLength(round.parts[0]!.indices.length * 2)
       expect(round.parts[0]!.faces!.keys).toHaveLength(3)
+      expect(round.meshParts).toEqual([])
       // a section with an arc beside a spline, which the kernel does not loft exactly yet: today's mesh loft, no note,
       // the engine's reason kept quietly
       const slotted = { start: [-10, -5], segments: [{ type: 'line', to: [10, -5] }, { type: 'arc', to: [10, 5], center: [10, 0], sweepDeg: 180 }, { type: 'spline', points: [[0, 8]], to: [-10, 5] }, { type: 'line', to: [-10, -5] }] }
@@ -750,6 +825,20 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
       expect(curved.exactLoftsQuiet![0]!.step).toBe('loft-3')
       expect(curved.exactLoftsQuiet![0]!.why.length).toBeGreaterThan(0)
       expect('normals' in curved.parts[0]!).toBe(false)
+      expect(curved.meshParts).toEqual([0])
+    } finally {
+      await engine.end()
+    }
+  }, 120_000)
+
+  it.skipIf(process.env['SX_NATIVE_KERNEL'] !== '1')("says in a loft's answer whether the body it made is exact", async () => {
+    const engine = processEngine()
+    try {
+      const run = toolsOnPlate(nativeProvider(engine))
+      const block = String((await run('design.new', { name: 'Block' })).output['design'])
+      expect((await run('geom.loft', { design: block, profiles: [blockAt(0), blockAt(15)], operation: 'new' })).output['exact']).toBe(true)
+      const curved = String((await run('design.new', { name: 'Curved' })).output['design'])
+      expect((await run('geom.loft', { design: curved, profiles: [curvedAt(0), curvedAt(15)], operation: 'new' })).output['exact']).toBe(false)
     } finally {
       await engine.end()
     }

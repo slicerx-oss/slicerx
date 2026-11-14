@@ -78,10 +78,11 @@ export function appDesignHost(loader: Loader): AppDesignHost {
   // The step statuses of the last replay this host ran of each design, by the history it wrote: a step's answer reads
   // its note and a pattern's copies from them, as the server's own designs do. A history written any other way (a
   // person's edit) has only what the saved steps keep.
-  const ran = new WeakMap<History, StepStatus[]>()
-  const remember = (id: string, status: StepStatus[]) => {
+  // The parts that replay made as meshes go with them, so an answer says whether the body is exact.
+  const ran = new WeakMap<History, { status: StepStatus[]; meshParts?: number[] }>()
+  const remember = (id: string, status: StepStatus[], meshParts?: number[]) => {
     const h = get().plate.find((p) => p.id === id)?.history
-    if (h) ran.set(h, status)
+    if (h) ran.set(h, { status, ...(meshParts ? { meshParts } : {}) })
   }
   // Designs with no body yet, by id: their history and where the object stands on the plate. Their first step puts
   // them on the plate under the same id. Where each waits is shared, so a sketch drawn for it reads the same anywhere.
@@ -91,6 +92,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
 
   const fromEntry = (e: PlateEntry): Design => {
     const history: History = e.history ?? { version: HISTORY_VERSION, base: e.parts, steps: [] }
+    const last = e.history && ran.get(e.history)
     return {
       id: e.id,
       name: e.name,
@@ -99,8 +101,9 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       ...(history.placed ? { placed: [...history.placed] as [number, number] } : {}),
       // each part with its paint, so the paint tools paint over what is there and read it back
       parts: withPaint(e),
-      status: (e.history && ran.get(e.history)) ?? history.steps.map((s) => (s.broken !== undefined ? { state: 'broken', message: s.broken } : s.note ? { state: 'done', note: s.note } : { state: 'done' })),
+      status: last ? last.status : history.steps.map((s) => (s.broken !== undefined ? { state: 'broken', message: s.broken } : s.note ? { state: 'done', note: s.note } : { state: 'done' })),
       madeBy: {},
+      ...(last && last.meshParts ? { meshParts: last.meshParts } : {}),
       redo: redo.get(e.id) ?? [],
     }
   }
@@ -192,7 +195,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       let landed: Landed | undefined
       if (d.history.steps.length) {
         const after = afterEdit(d.id)
-        await applyHistory(loader, d.id, d.history, undefined, guard, (status) => remember(d.id, status), after.land)
+        await applyHistory(loader, d.id, d.history, undefined, guard, (status, meshParts) => remember(d.id, status, meshParts), after.land)
         landed = after.landed()
       } else {
         // Every step undone: the object goes back to its base parts, or off the plate while it has none. It waits
@@ -313,8 +316,8 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     const next = appendStep(d.history, step)
     let committed: DesignCommit | undefined
     // the replay's own statuses go with the history it wrote, before anything reads the design back
-    const capture = (status: StepStatus[]) => {
-      remember(d.id, status)
+    const capture = (status: StepStatus[], meshParts?: number[]) => {
+      remember(d.id, status, meshParts)
       if (receipt) take()
     }
     const take = () => {
@@ -350,7 +353,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
    * reason when `need` fails. Returns how the body landed when it was built off the bed: the move joins the history's
    * landing moves, and so does the move of any design moved over to make room for it.
    */
-  async function place(id: string, name: string, history: History, transform: Mat4, need?: string, guard?: () => void, committed?: (status: StepStatus[]) => void): Promise<Landed | undefined> {
+  async function place(id: string, name: string, history: History, transform: Mat4, need?: string, guard?: () => void, committed?: (status: StepStatus[], meshParts?: number[]) => void): Promise<Landed | undefined> {
     guard?.()
     // built for the project the plate holds as this starts: a new project, or one opened in its place, meanwhile gets
     // no body from it
@@ -416,8 +419,8 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       const moves: RoomMove[] = applied.map((a) => ({ design: a.id, name: a.name, ...landShift(a.from, a.to) }))
       moved = { ...moved, room: moves }
     }
-    remember(id, r.status)
-    committed?.(r.status)
+    remember(id, r.status, r.meshParts)
+    committed?.(r.status, r.meshParts)
     markStale()
     return moved
   }

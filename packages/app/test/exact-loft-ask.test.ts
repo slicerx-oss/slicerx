@@ -387,6 +387,17 @@ describe('exact lofts alone, as the native engine asks by default', () => {
     expect(s.parts).toEqual(await meshLoft(loft()))
   })
 
+  it('names the parts that are meshes: not a body it made, but a mesh loft and an added shape', async () => {
+    expect((await replayHistory(engine().call, lofts(loft()), kept)).meshParts).toEqual([])
+    clearReplayCache()
+    expect((await replayHistory(engine({ made: false }).call, lofts(loft()), kept)).meshParts).toEqual([0])
+    clearReplayCache()
+    // a shape is made as a solid only on a replay with exact solids
+    const box: HistoryMesh = { name: 'Box', slot: 1, positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2], primitive: { type: 'box', sizeMm: [10, 10, 10], frame: { origin: [0, 0, 0], u: [1, 0, 0], normal: [0, 0, 1] } } }
+    const r = await replayHistory(engine().call, { history: { version: 1, base: [box], steps: [{ ...loft(), part: 1 }] }, exactLofts: true }, kept)
+    expect(r.meshParts).toEqual([0])
+  })
+
   it('is kept apart in the cache from a replay without it, both ways', async () => {
     const e = engine()
     const plain = await replayHistory(e.call, { history: history(loft()) }, kept)

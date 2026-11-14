@@ -267,11 +267,17 @@ function notesLine(notes: readonly string[]): string {
 
 /** What a client reads back after every change: the parts with their sizes and volumes, and the last step. */
 export function designSummary(d: Design): Record<string, unknown> {
+  // exact: a design that must stay exact, or one whose replay made every part an exact solid (a lofted body on an
+  // engine that makes them, meshParts); the mesh parts are named only beside an exact one
+  const strict = d.history.exact === true
+  const meshed = d.meshParts ?? (strict ? [] : d.parts.map((_, i) => i))
+  const exact = strict || (d.parts.length > 0 && meshed.length === 0)
+  const named = strict || meshed.length < d.parts.length ? meshed : []
   const parts = d.parts.map((p, i) => {
     const s = meshStats(soup([bakeMesh(p, d.transform)]))
     const paint = p.paint
     const painted = paint ? Object.fromEntries(Object.entries(paint).map(([k, v]) => [k, Object.keys(v ?? {}).length])) : undefined
-    return { index: i, name: p.name, slot: p.slot, triangles: s.triangles, minMm: s.minMm, sizeMm: s.bboxMm, volumeMm3: r3(s.volumeMm3), ...(painted ? { paintedTriangles: painted } : {}), ...(d.meshParts?.includes(i) ? { mesh: true } : {}) }
+    return { index: i, name: p.name, slot: p.slot, triangles: s.triangles, minMm: s.minMm, sizeMm: s.bboxMm, volumeMm3: r3(s.volumeMm3), ...(painted ? { paintedTriangles: painted } : {}), ...(named.includes(i) ? { mesh: true } : {}) }
   })
   const all = d.parts.length ? meshStats(soup(d.parts.map((p) => bakeMesh(p, d.transform)))) : null
   const forms = partForms(d)
@@ -279,7 +285,7 @@ export function designSummary(d: Design): Record<string, unknown> {
   return {
     design: d.id,
     name: d.name,
-    exact: d.history.exact === true,
+    exact,
     steps: d.history.steps.length,
     ...(last ? { lastStep: last } : {}),
     ...(all ? { minMm: all.minMm, sizeMm: all.bboxMm } : {}),

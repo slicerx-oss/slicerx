@@ -105,7 +105,7 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * commit, not the ones `next` started with.
  * `step`, when given, is the undo step the result lands in (plate/history.ts newStep).
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: (status: StepStatus[]) => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => (Pick<PlateEntry, 'landedAt'> & { transform: Mat4; placed: [number, number] | undefined }) | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: (status: StepStatus[], meshParts?: number[]) => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => (Pick<PlateEntry, 'landedAt'> & { transform: Mat4; placed: [number, number] | undefined }) | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
@@ -161,7 +161,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     // the part picked for settings follows its rename
     const scope = renamedScope(get().scopePart, objectId, renamedParts(before, parts.map((p) => p.name)))
     if (scope !== get().scopePart) set({ scopePart: scope })
-    committed?.(r.status)
+    committed?.(r.status, r.meshParts)
     markStale()
     // sketches that project from this body find it again, and the bodies drawn on them follow
     await followBodies(host, [objectId])
