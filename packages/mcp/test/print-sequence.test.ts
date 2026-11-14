@@ -20,12 +20,20 @@ interface Box {
   w: number
   d: number
   h: number
+  /** A gap this wide (mm) down the middle in x, which makes the box two blocks of one object. */
+  gap?: number
 }
 
 function boxMesh(b: Box, id: number): string {
   const v: [number, number, number][] = []
-  for (let i = 0; i < 8; i++) v.push([i & 1 ? b.w / 2 : -b.w / 2, i & 2 ? b.d / 2 : -b.d / 2, i & 4 ? b.h : 0])
-  const faces = [[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7], [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]]
+  const faces: number[][] = []
+  const gap = b.gap ?? 0
+  const blocks: [number, number][] = gap > 0 ? [[-b.w / 2, -gap / 2], [gap / 2, b.w / 2]] : [[-b.w / 2, b.w / 2]]
+  for (const [x0, x1] of blocks) {
+    const at = v.length
+    for (let i = 0; i < 8; i++) v.push([i & 1 ? x1 : x0, i & 2 ? b.d / 2 : -b.d / 2, i & 4 ? b.h : 0])
+    for (const f of [[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7], [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]]) faces.push(f.map((k) => k + at))
+  }
   return `<object id="${id}" name="${b.name}" type="model"><mesh><vertices>${v.map(([x, y, z]) => `<vertex x="${x}" y="${y}" z="${z}"/>`).join('')}</vertices><triangles>${faces.map(([a, c, e]) => `<triangle v1="${a}" v2="${c}" v3="${e}"/>`).join('')}</triangles></mesh></object>`
 }
 
@@ -340,17 +348,19 @@ describe.skipIf(noSx())('print by object with the real sx CLI', { timeout: sxTim
 
   it('refuses a path into a keep-out zone with collision, in words for a person, and slices it with allow_collisions', async () => {
     const h = await connect({ engine: 'sx', sxBin })
-    const file = project(join(h.dir, 'keep-out.3mf'), [{ name: 'Cube A', x: 128, y: 128, w: 20, d: 20, h: 8 }])
-    // an A1 style nozzle wrap check corner over the cube; with no skirt this checks the object's own paths (a skirt in a zone is refused at the preflight, see keep_out_zones.rs)
-    const overrides = { head_wrap_detect_zone: ['0x0', '256x0', '256x256', '0x256'], skirt_loops: 0 }
+    // one object of two 15 mm blocks with a 10 mm gap between them (x 108 to 123 and 133 to 148 on the plate), and a
+    // band excluded from front to back in the gap (x 126 to 130) with no travel lift: the object's travels from one
+    // block to the other cross it. With no skirt or brim nothing else does.
+    const file = project(join(h.dir, 'keep-out.3mf'), [{ name: 'Cube A', x: 128, y: 128, w: 40, d: 20, h: 8, gap: 10 }])
+    const overrides = { bed_exclude_area: ['126x0', '130x0', '130x256', '126x256'], z_hop: 0, skirt_loops: 0, brim_type: 'no_brim' }
     const r = await h.call('slicerx_slice_file', { model: file, profiles: A1, overrides })
     expect(r.isError, text(r)).toBe(true)
     const e = data<Err & { error: { details?: { collisions?: { kind: string; object?: string }[]; allow_collisions?: boolean } } }>(r).error
     expect(e.code).toBe('collision')
     // sx names a project sliced from its file after the file
-    expect(e.message).toMatch(/^Keep-out\.3mf prints into the nozzle wrap check corner on layers? 1/)
+    expect(e.message).toMatch(/^Keep-out\.3mf prints into the exclusion area on layers? 1/)
     expect(e.message).not.toMatch(/--allow-collisions|sx exited|sx slice/)
-    expect(e.details?.collisions?.[0]).toMatchObject({ kind: 'keep_out', zone: 'the nozzle wrap check corner', object: 'keep-out.3mf' })
+    expect(e.details?.collisions?.[0]).toMatchObject({ kind: 'keep_out', zone: 'the exclusion area', object: 'keep-out.3mf' })
     // and the engine's id for the object, which the words name after the file
     expect((e.details?.collisions?.[0] as { engine_objects?: string[] } | undefined)?.engine_objects).toEqual([expect.stringMatching(/^o0(-1)?$/)])
     expect(e.details?.allow_collisions).toBe(true)

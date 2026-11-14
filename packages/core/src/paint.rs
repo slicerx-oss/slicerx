@@ -401,6 +401,45 @@ impl Facets {
     }
 }
 
+/// Read while a layer's paint is cut: true once the run is canceled ([`crate::Progress::cancelled`]). A split told to
+/// stop ends early with an answer nobody may keep, so whoever passes one throws the layer away once it has said stop.
+/// What the split keeps in [`Cache`] is only ever worked out whole.
+pub(crate) type Stop<'a> = &'a (dyn Fn() -> bool + Sync);
+
+/// A [`Stop`] that never stops.
+pub(crate) const GO_ON: Stop<'static> = &|| false;
+
+/// A [`Stop`] whose first stop holds: once `asked` has said stop, it says stop for good, so no layer cut after that is
+/// kept, whatever `asked` says later.
+pub(crate) struct Latch<'a> {
+    asked: Stop<'a>,
+    said: std::sync::atomic::AtomicBool,
+}
+
+impl<'a> Latch<'a> {
+    pub(crate) fn new(asked: Stop<'a>) -> Self {
+        Self {
+            asked,
+            said: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// True once `asked` has said stop.
+    pub(crate) fn said(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        if !self.said.load(Ordering::Relaxed) && (self.asked)() {
+            self.said.store(true, Ordering::Relaxed);
+        }
+        self.said.load(Ordering::Relaxed)
+    }
+}
+
+/// How many painted pieces a split reads between two looks at its [`Stop`].
+const STOP_PIECES: usize = 4096;
+
+/// How many grid rows [`banded`] makes between two looks at its [`Stop`].
+const STOP_ROWS: usize = 64;
+
 /// What a part needs to split its outline on one layer.
 pub(crate) struct LayerPaint<'a> {
     pub(crate) default_slot: u8,
@@ -423,6 +462,8 @@ pub(crate) struct LayerPaint<'a> {
     /// The session's cache, the part's index in it and how the part is cut: each painted face is worked out once
     /// for all the shell layers that read it (`Cache::face`).
     pub(crate) memo: Option<(&'a Cache, usize, CutKey)>,
+    /// Read between the split's steps; once it says stop, the split ends early (see [`Stop`]).
+    pub(crate) stop: Stop<'a>,
 }
 
 /// Islands and holes of a painted layer's regions smaller than this, square units (0.1 mm2), are specks the
@@ -1468,14 +1509,20 @@ impl Band {
 /// exactly only in a band of one cell around where any of them changes sign (every cell of a 2 by 2 square whose signs
 /// differ, the only cells whose values [`contour`] reads), and in the grid's two outer rings, where [`contour`] counts
 /// the outermost ring as outside. `cols`: each color's sources; `painted`: the painted ones among them, by index;
-/// `limit`: the depth limit's steps.
+/// `limit`: the depth limit's steps. `None` once `stop` says so.
 #[allow(
     clippy::indexing_slicing,
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     reason = "rows and columns stay inside the grid"
 )]
-fn banded(g: &Grid, cols: &[(u8, CellBits)], painted: &[usize], limit: &[u16]) -> Band {
+fn banded(
+    g: &Grid,
+    cols: &[(u8, CellBits)],
+    painted: &[usize],
+    limit: &[u16],
+    stop: Stop<'_>,
+) -> Option<Band> {
     let (nx, ny, n) = (g.nx, g.ny, g.len());
     // A column with no source: the column pass gives the same values for every such column.
     let empty_column = {
@@ -1515,6 +1562,9 @@ fn banded(g: &Grid, cols: &[(u8, CellBits)], painted: &[usize], limit: &[u16]) -
         }
     };
     for (iy, &no_source) in empty_column.iter().enumerate() {
+        if iy % STOP_ROWS == STOP_ROWS - 1 && stop() {
+            return None;
+        }
         for (t, (_, sources)) in cols.iter().enumerate() {
             for ix in 0..nx {
                 if below[t][ix] == iy {
@@ -1584,7 +1634,7 @@ fn banded(g: &Grid, cols: &[(u8, CellBits)], painted: &[usize], limit: &[u16]) -
     if ny > 0 {
         keep(&mut band, &prev, &band_prev, ny - 1);
     }
-    band
+    Some(band)
 }
 
 /// A layer's fields in full grids, for a layer past the band's limits ([`takes_band`]): a distance grid per color, then
@@ -1649,11 +1699,11 @@ impl LayerPaint<'_> {
     /// cut by the layer plane, reaching to the nearest wall of another color and, under an
     /// unpainted top or bottom surface, only as deep as the taper allows) and from painted top and
     /// bottom surfaces, flat or sloped (the area they expose, drawn in a little more on each layer
-    /// below or above).
+    /// below or above). Once `stop` says so, it ends early with the outline unsplit.
     pub(crate) fn split(&self) -> Vec<(u8, Shapes)> {
         let d = self.default_slot;
         let whole = || vec![(d, self.shapes.clone())];
-        if self.shapes.is_empty() || self.facets.iter().all(|f| f.is_empty()) {
+        if self.shapes.is_empty() || self.facets.iter().all(|f| f.is_empty()) || (self.stop)() {
             return whole();
         }
         // Painted walls cut by the plane, and painted flat faces near this layer.
@@ -1662,7 +1712,10 @@ impl LayerPaint<'_> {
         let bottom_shell = self.below.len();
         // Flat painted faces near this layer.
         let mut flat_tris: BTreeMap<FlatKey, Vec<Vec<IntPoint<i32>>>> = BTreeMap::new();
-        for (tri, state) in self.facets.iter().flat_map(|f| f.iter()) {
+        for (i, (tri, state)) in self.facets.iter().flat_map(|f| f.iter()).enumerate() {
+            if i % STOP_PIECES == STOP_PIECES - 1 && (self.stop)() {
+                return whole();
+            }
             let (tri, state) = (&tri, &state);
             let [a, b, c] = *tri;
             let Some(nz) = unit_nz(tri) else {
@@ -1757,10 +1810,16 @@ impl LayerPaint<'_> {
         }
         for shapes in painted_surfaces.iter_mut().flatten() {
             if !shapes.is_empty() {
+                if (self.stop)() {
+                    return whole();
+                }
                 *shapes = perimeters::offset(&perimeters::union_all(&[&*shapes]), crate::geom::mm(CELL));
             }
         }
         for ((state, top, s), tris) in flat_tris {
+            if (self.stop)() {
+                return whole();
+            }
             let mut work = || {
                 let mut face =
                     perimeters::union_all(&[&tris.iter().map(|r| vec![r.clone()]).collect::<Shapes>()]);
@@ -1840,7 +1899,14 @@ impl LayerPaint<'_> {
         }
         let mut colored: Vec<(u8, Shapes)> = Vec::new();
         if !walls.is_empty() {
+            if (self.stop)() {
+                return whole();
+            }
             colored = self.voronoi(&walls, &painted_surfaces);
+            // A voronoi that was told to stop gives no colors, which is no answer either.
+            if (self.stop)() {
+                return whole();
+            }
         }
         // Painted tops and bottoms win over the colors of the walls.
         if !taken.is_empty() {
@@ -1928,7 +1994,8 @@ impl LayerPaint<'_> {
 
     /// Regions painted on the walls: each cell of the layer takes the color of the nearest wall
     /// (painted or not), within the depth an unpainted top or bottom surface allows. `surfaces` holds,
-    /// per direction (below, above) and shell layer, where the surface exposed there is painted.
+    /// per direction (below, above) and shell layer, where the surface exposed there is painted. Nothing once `stop`
+    /// says so.
     #[allow(
         clippy::indexing_slicing,
         reason = "outline point indexes are taken modulo the point count"
@@ -1966,6 +2033,10 @@ impl LayerPaint<'_> {
         let band = takes_band(g.ny, colors);
         let top = grid_bytes(g.nx, g.ny, colors, shells, painted_surface, band).saturating_add(near_bytes);
         let mut held = GRIDS.hold(top, grid_cap);
+        // A layer may have waited for the others' grids above.
+        if (self.stop)() {
+            return Vec::new();
+        }
         // Sources: the outline, each stretch in the color painted on it (paint off the outline does not count),
         // with short runs absorbed and short painted gaps closed, loop by loop.
         // Painted segments by the grid cells they pass through, for looking up the ones near a point.
@@ -2022,6 +2093,9 @@ impl LayerPaint<'_> {
             }
             best.1
         };
+        if (self.stop)() {
+            return Vec::new();
+        }
         let (absorb, close) = self.run_limits();
         let mut sources: BTreeMap<u8, CellBits> = BTreeMap::new();
         // Painted walls away from the outline (where parts of one object meet inside it) are sources as they
@@ -2054,6 +2128,9 @@ impl LayerPaint<'_> {
             }
         }
         for ring in self.shapes.iter().flatten() {
+            if (self.stop)() {
+                return Vec::new();
+            }
             // Points every half cell around the loop, each with its color and the length it stands for.
             let mut pts: Vec<(f64, f64)> = Vec::new();
             let n = ring.len();
@@ -2106,10 +2183,18 @@ impl LayerPaint<'_> {
             return Vec::new();
         }
         let states: Vec<u8> = painted.iter().map(|&t| cols[t].0).collect();
+        if (self.stop)() {
+            return Vec::new();
+        }
         let limit = self.depth_steps(&g, surfaces);
+        if (self.stop)() {
+            return Vec::new();
+        }
         let mut out = Vec::new();
         if band {
-            let kept = banded(&g, &cols, &painted, &limit);
+            let Some(kept) = banded(&g, &cols, &painted, &limit, self.stop) else {
+                return Vec::new();
+            };
             // The same layer in full grids, for the tests to hold the band to.
             #[cfg(test)]
             let full = full_fields(&g, &cols, &painted, &limit);
@@ -2121,6 +2206,9 @@ impl LayerPaint<'_> {
                     .saturating_sub(top),
             );
             for (j, state) in states.iter().enumerate() {
+                if (self.stop)() {
+                    return Vec::new();
+                }
                 let shapes = traced(&g, &|c| kept.value(j, c));
                 if !shapes.is_empty() {
                     out.push((*state, shapes));
@@ -2141,6 +2229,9 @@ impl LayerPaint<'_> {
             let fields = full_fields(&g, &cols, &painted, &limit);
             drop((cols, limit));
             for (state, field) in states.iter().zip(&fields) {
+                if (self.stop)() {
+                    return Vec::new();
+                }
                 let shapes = traced(&g, &|c| field.get(c).copied());
                 if !shapes.is_empty() {
                     out.push((*state, shapes));
@@ -2511,6 +2602,7 @@ mod tests {
             step: 7_970,
             small: 1_050,
             memo: None,
+            stop: GO_ON,
         };
         let parts = ctx.split();
         let colored = parts.iter().find(|(s, _)| *s == 2).map(|(_, s)| s).unwrap();
@@ -2559,6 +2651,7 @@ mod tests {
                 step: 7_970,
                 small: 1_050,
                 memo: None,
+                stop: GO_ON,
             }
             .split()
         };
@@ -2624,6 +2717,7 @@ mod tests {
             step: 7_970,
             small: 1_050,
             memo: None,
+            stop: GO_ON,
         };
         let parts = ctx.split();
         let colored = parts
@@ -2664,6 +2758,7 @@ mod tests {
                 step: 7_970,
                 small: 1_050,
                 memo: None,
+                stop: GO_ON,
             }
             .split()
         };
@@ -2714,6 +2809,7 @@ mod tests {
                 step: 0,
                 small,
                 memo: None,
+                stop: GO_ON,
             }
             .run_limits()
         };
@@ -2751,6 +2847,7 @@ mod tests {
                 step: 7_970,
                 small: 1_050,
                 memo: None,
+                stop: GO_ON,
             }
             .split()
         };
@@ -2898,6 +2995,7 @@ mod tests {
             step: 7_970,
             small: 1_050,
             memo: None,
+            stop: GO_ON,
         }
         .split();
         let plain = parts.iter().find(|(s, _)| *s == 1).map(|(_, s)| s).unwrap();
@@ -2934,6 +3032,7 @@ mod tests {
                 step: 7_970,
                 small: 1_050,
                 memo: None,
+                stop: GO_ON,
             };
             let parts = ctx.split();
             let area = |slot| {
@@ -3201,6 +3300,7 @@ mod tests {
             step: 7_970,
             small: 1_050,
             memo: None,
+            stop: GO_ON,
         }
         .split()
     }

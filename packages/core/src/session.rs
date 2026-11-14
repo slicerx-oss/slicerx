@@ -1261,18 +1261,20 @@ impl SliceSession {
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
     ) -> Result<Self> {
-        Self::with_plan(plate, config, tops, ranges, true)
+        Self::with_plan(plate, config, tops, ranges, true, crate::paint::GO_ON)
     }
 
     /// [`Self::with_options`], where `by_ranges` false keeps `layer_height` when no tops are given. A request that
     /// turns sleipnir on and gets no plan from it slices that way, as the app does, which plans by ranges only with
-    /// sleipnir off.
+    /// sleipnir off. Ends with [`Error::Cancelled`] once `stop` says so while the painted layers are cut
+    /// (`plan_painted_tools`).
     pub(crate) fn with_plan(
         plate: &Plate,
         config: &PrintConfig,
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
         by_ranges: bool,
+        stop: crate::paint::Stop<'_>,
     ) -> Result<Self> {
         use crate::layers::RangeTops;
         // A range's layer height plans the layers below; the rest of its settings change by height.
@@ -1295,7 +1297,7 @@ impl SliceSession {
             RangeTops::Tops(t) => Some(t.as_slice()),
             _ => tops,
         };
-        let mut session = par::slice(|| Self::build(plate, config, tops, &own))?;
+        let mut session = par::slice(|| Self::build(plate, config, tops, &own, stop))?;
         if asked && !planned {
             session.push_warning(SliceWarning {
                 code: WarningCode::UnsupportedSetting,
@@ -1320,6 +1322,7 @@ impl SliceSession {
         config: &PrintConfig,
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
+        stop: crate::paint::Stop<'_>,
     ) -> Result<Self> {
         // The settings by height a project file gives an object (`Mesh::height_ranges`) are that object's, ahead
         // of the caller's own ranges, so the caller's win where they overlap.
@@ -1379,11 +1382,11 @@ impl SliceSession {
             None
         };
         let Some(map) = map else {
-            return Self::build_plate(plate, config, tops, ranges);
+            return Self::build_plate(plate, config, tops, ranges, stop);
         };
         let mut mapped = map.apply(config);
         let _ = mapped.refresh_variants()?;
-        let mut session = Self::build_plate(plate, &mapped, tops, ranges)?;
+        let mut session = Self::build_plate(plate, &mapped, tops, ranges, stop)?;
         for f in &mut session.followers {
             f.nozzle_map = Some(map.clone());
         }
@@ -1435,18 +1438,20 @@ impl SliceSession {
         config: &PrintConfig,
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
+        stop: crate::paint::Stop<'_>,
     ) -> Result<Self> {
         let fz = crate::compensate::shrinkage(plate, config).map_or(1.0, |[_, _, fz]| fz);
         match tops {
             Some(t) if config.layer_tops_exact && !config.layer_tops_sliced && (fz - 1.0).abs() > 1e-12 => {
                 let (stretched, warning) = stretch_tops(t, fz, config);
-                let mut session = Self::build_scaled(plate, config, Some(stretched.as_slice()), ranges)?;
+                let mut session =
+                    Self::build_scaled(plate, config, Some(stretched.as_slice()), ranges, stop)?;
                 if let Some(w) = warning {
                     session.push_warning(w);
                 }
                 Ok(session)
             }
-            _ => Self::build_scaled(plate, config, tops, ranges),
+            _ => Self::build_scaled(plate, config, tops, ranges, stop),
         }
     }
 
@@ -1456,6 +1461,7 @@ impl SliceSession {
         config: &PrintConfig,
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
+        stop: crate::paint::Stop<'_>,
     ) -> Result<Self> {
         // Filament shrinkage compensation scales every object (about its own center, from the bed).
         let shrunk: Plate;
@@ -1523,7 +1529,7 @@ impl SliceSession {
                 (true, Some(o)) => object_ranges(ranges, &o.id, false),
                 _ => ranges.to_vec(),
             };
-            return Self::build_one(plate, config, tops, &own, false);
+            return Self::build_one(plate, config, tops, &own, false, stop);
         }
         config.check()?;
         let interleaved = !config.print_by_object();
@@ -1599,6 +1605,7 @@ impl SliceSession {
                 &own_ranges,
                 interleaved,
                 hull_of(obj),
+                stop,
             )?;
             one.plate_index = plate_index_of(obj);
             if nozzle.is_some() {
@@ -1635,7 +1642,7 @@ impl SliceSession {
                 .iter()
                 .any(|s| s.tool_count > 1 || s.tower_top.is_some() || s.vase.is_some() || s.raft.is_some())
         {
-            return Self::build_one(plate, config, tops, ranges, false);
+            return Self::build_one(plate, config, tops, ranges, false, stop);
         }
         let own_bounds: Vec<[f64; 4]> = subs.iter().map(|s| s.bounds).collect();
         // Each object's session sees only its own enforcers; the plate has none only when no object has any.
@@ -1788,7 +1795,17 @@ impl SliceSession {
     pub(crate) fn whole_plate(&self) -> Option<&SliceSession> {
         let w = self.whole_plate.as_ref()?;
         w.session
-            .once(|| Self::build_one(&w.plate, &w.config, w.tops.as_deref(), &[], false).ok())
+            .once(|| {
+                Self::build_one(
+                    &w.plate,
+                    &w.config,
+                    w.tops.as_deref(),
+                    &[],
+                    false,
+                    crate::paint::GO_ON,
+                )
+                .ok()
+            })
             .as_ref()
     }
 
@@ -1798,8 +1815,9 @@ impl SliceSession {
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
         interleaved: bool,
+        stop: crate::paint::Stop<'_>,
     ) -> Result<Self> {
-        Self::build_one_with(plate, config, tops, ranges, interleaved, None)
+        Self::build_one_with(plate, config, tops, ranges, interleaved, None, stop)
     }
 
     /// [`Self::build_one`] with the plate's footprints when they are known already (`firmware::footprints`): the
@@ -1811,6 +1829,7 @@ impl SliceSession {
         ranges: &[HeightRange],
         interleaved: bool,
         hulls: Option<Vec<crate::output::ObjectFootprint>>,
+        stop: crate::paint::Stop<'_>,
     ) -> Result<Self> {
         config.check()?;
         // Worked out once here, for the prime tower's placement and the session's objects.
@@ -2268,10 +2287,10 @@ impl SliceSession {
             session.vase = Some(crate::spiral::base_layers(config, plan.count(), |i| plan.top(i)));
         }
         session.tower_rows0 = session.unsaved_rows(config);
-        session.keep_tower_for_purges(config, any_top)?;
+        session.keep_tower_for_purges(config, any_top, stop)?;
         session.plan_support_tools(config)?;
         session.plan_feature_tools(config)?;
-        session.plan_painted_tools(config);
+        session.plan_painted_tools(config, stop)?;
         session.replan_tools(config)?;
         session.draft_hull = session.draft_shield_hull(config);
         session.skirt_groups = session.skirt_groups(config);
@@ -2392,8 +2411,14 @@ impl SliceSession {
 
     /// Changes between layers skip the tower when the new filament's infill can take the flush. Where
     /// that estimate falls short, the tower must reach that layer so no change purges less than the
-    /// flush matrix asks (a printer without a chute has nowhere else to put it).
-    fn keep_tower_for_purges(&mut self, config: &PrintConfig, any_top: Option<u32>) -> Result<(), Error> {
+    /// flush matrix asks (a printer without a chute has nowhere else to put it). The layers it reads are cut one at a
+    /// time, painted ones too, so it ends with [`Error::Cancelled`] once `stop` says so, within a layer's paint.
+    fn keep_tower_for_purges(
+        &mut self,
+        config: &PrintConfig,
+        any_top: Option<u32>,
+        stop: crate::paint::Stop<'_>,
+    ) -> Result<(), Error> {
         let Some(last) = any_top.filter(|_| self.tool_count > 1) else {
             return Ok(());
         };
@@ -2402,8 +2427,13 @@ impl SliceSession {
         }
         let fam = Families::new(config);
         let micros = Micros::default();
+        let latch = crate::paint::Latch::new(stop);
+        let stop: crate::paint::Stop<'_> = &|| latch.said();
         let mut top = self.tower_top;
         for l in self.tower_top.map_or(0, |t| t + 1)..=last {
+            if stop() {
+                return Err(Error::Cancelled);
+            }
             let ended = l
                 .checked_sub(1)
                 .and_then(|p| self.tool_order.get(p as usize))
@@ -2420,7 +2450,11 @@ impl SliceSession {
             if need <= 0.5 {
                 continue;
             }
-            let room = self.purge_room(config, fam, &micros, l, to);
+            let room = self.purge_room(config, fam, &micros, l, to, stop);
+            // A layer cut once the run was canceled may lack its paint: its room is no answer.
+            if stop() {
+                return Err(Error::Cancelled);
+            }
             // The room is an estimate: it has to beat the flush by a quarter, or the tower stays.
             if need * 1.25 > room + 0.5 {
                 top = Some(l);
@@ -2434,9 +2468,17 @@ impl SliceSession {
     }
 
     /// What filament `to`'s infill (and objects, with `flush_into_objects`) on layer `l` can take up of a change's
-    /// flush, mm3, estimated from the layer's regions.
-    fn purge_room(&self, config: &PrintConfig, fam: Families, micros: &Micros, l: u32, to: u8) -> f64 {
-        let regions = self.layer_regions(l, fam, micros);
+    /// flush, mm3, estimated from the layer's regions (cut until `stop` says so, see [`Self::layer_regions_until`]).
+    fn purge_room(
+        &self,
+        config: &PrintConfig,
+        fam: Families,
+        micros: &Micros,
+        l: u32,
+        to: u8,
+        stop: crate::paint::Stop<'_>,
+    ) -> f64 {
+        let regions = self.layer_regions_until(l, fam, micros, false, stop);
         let shapes: Vec<&Shapes> = regions
             .regions
             .iter()
@@ -2634,6 +2676,20 @@ impl SliceSession {
     /// The shared per-layer memo, when neighbors do not depend on the layer asking (not in spiral mode).
     fn cache_for_walls(&self) -> Option<&crate::shells::Cache> {
         self.vase.is_none().then_some(&self.cache)
+    }
+
+    /// Whether this session's whole first layer lies inside the nozzle wrap check corner
+    /// ([`crate::customgcode::wholly_in_head_wrap_detect_zone`]), so its skirt may run there. False, with no work, on
+    /// a printer without the corner, and on a plate printed by object, whose skirts keep out of the corner as before
+    /// (the safety preflight judges the plate as a whole).
+    fn first_layer_in_wrap_corner(&self, config: &PrintConfig) -> bool {
+        !config.print_by_object()
+            && crate::preflight::wrap_check_zone(config).is_some()
+            && crate::customgcode::first_layer_in_head_wrap_detect_zone(
+                config,
+                &self.first_layer_info(config).rings,
+                true,
+            )
     }
 
     pub(crate) fn first_layer_info(&self, config: &PrintConfig) -> crate::output::FirstLayerInfo {
@@ -3311,7 +3367,7 @@ impl SliceSession {
             },
         );
         self.place_tower(config)?;
-        self.keep_tower_for_purges(config, any_top)
+        self.keep_tower_for_purges(config, any_top, crate::paint::GO_ON)
     }
 
     /// The prime tower as placed (shape and corner), for settings `cfg`.
@@ -3764,12 +3820,16 @@ impl SliceSession {
     /// segmentation). From the parts alone, a part claims its filament on every layer between its lowest and
     /// highest point and a painted triangle its color on every layer it spans, so layers looked like they
     /// change filament when they do not, and the prime tower was sized for purges that never happen. The
-    /// slice takes the cut regions over (`whole_regions`, `take_whole`).
-    fn plan_painted_tools(&mut self, config: &PrintConfig) {
+    /// slice takes the cut regions over (`whole_regions`, `take_whole`). Cutting the painted layers is the dearest
+    /// part of a painted slice, so it ends with [`Error::Cancelled`] once `stop` says so, within a layer's paint.
+    fn plan_painted_tools(&mut self, config: &PrintConfig, stop: crate::paint::Stop<'_>) -> Result<()> {
         if !self.used_tools.is_empty() || self.slots.len() < 2 {
-            return;
+            return Ok(());
         }
-        let regions = self.whole_regions(Families::new(config), &Micros::default());
+        let fam = Families::new(config);
+        let Some(regions) = self.whole_regions_until(fam, &Micros::default(), None, stop) else {
+            return Err(Error::Cancelled);
+        };
         let own: Vec<Vec<u8>> = regions
             .iter()
             .map(|r| {
@@ -3799,6 +3859,7 @@ impl SliceSession {
             })
             .collect();
         self.object_tools = own;
+        Ok(())
     }
 
     /// Merges the print layers of the objects printed layer by layer, by height, when some object
@@ -4015,7 +4076,14 @@ impl SliceSession {
         let plan = std::sync::Arc::new(PlateSkirt {
             hulls: groups.into_iter().map(|g| g.1).collect(),
             tools: usize::from(self.tool_count),
-            room: skirt_room(&first),
+            room: skirt_room(
+                &first,
+                self.first_layer_in_wrap_corner(config)
+                    && self
+                        .followers
+                        .iter()
+                        .all(|f| f.first_layer_in_wrap_corner(config)),
+            ),
             first,
         });
         let mut turns = turns.into_iter();
@@ -4252,7 +4320,7 @@ impl SliceSession {
                 {
                     if let Some(l) = p.and_then(|p| s.object_layer(p)) {
                         let c = self.object_config(k, config)?;
-                        room += s.purge_room(&c, fam, &micros, l, to);
+                        room += s.purge_room(&c, fam, &micros, l, to, crate::paint::GO_ON);
                     }
                 }
                 if need * 1.25 > room + 0.5 {
@@ -4987,7 +5055,7 @@ impl SliceSession {
                 regions: vec![(tool, area)],
                 ..LayerRegions::default()
             };
-            let room = skirt_room(config);
+            let room = skirt_room(config, self.first_layer_in_wrap_corner(config));
             skirt_loops(
                 (outer_points_of(&here), false),
                 &[],
@@ -5665,6 +5733,7 @@ impl SliceSession {
                 step: 0,
                 small: 0,
                 memo: None,
+                stop: crate::paint::GO_ON,
             };
             pieces.extend(
                 ctx.split()
@@ -8247,19 +8316,37 @@ impl SliceSession {
         micros: &Micros,
         progress: Option<&dyn Progress>,
     ) -> std::sync::Arc<Vec<LayerRegions>> {
+        self.whole_regions_until(fam, micros, progress, crate::paint::GO_ON)
+            .unwrap_or_default()
+    }
+
+    /// [`Self::whole_regions_with`], ended once `asked` says so (between layers and inside a layer's paint): `None`
+    /// then, and the session keeps none of the layers cut.
+    fn whole_regions_until(
+        &self,
+        fam: Families,
+        micros: &Micros,
+        progress: Option<&dyn Progress>,
+        asked: crate::paint::Stop<'_>,
+    ) -> Option<std::sync::Arc<Vec<LayerRegions>>> {
         if let Ok(g) = self.whole.0.lock()
             && let Some((f, r)) = g.as_ref()
             && *f == fam
         {
-            return std::sync::Arc::clone(r);
+            return Some(std::sync::Arc::clone(r));
         }
+        let latch = crate::paint::Latch::new(asked);
+        let stop: crate::paint::Stop<'_> = &|| latch.said();
         // Every layer below reads the interlocking beams, which plan in parallel: planned here first, not
         // inside the layer jobs (the rule in `par`).
         self.interlocked(fam, fam, micros);
         let n = self.plan.count();
         let done = std::sync::atomic::AtomicUsize::new(0);
         let all = std::sync::Arc::new(par::map_range(0..n, |l| {
-            let r = self.layer_regions(l, fam, micros);
+            if stop() {
+                return LayerRegions::default();
+            }
+            let r = self.layer_regions_until(l, fam, micros, false, stop);
             if let Some(p) = progress {
                 let d = done.fetch_add(1, Ordering::Relaxed) + 1;
                 #[allow(clippy::cast_precision_loss, reason = "a progress fraction")]
@@ -8271,10 +8358,13 @@ impl SliceSession {
             }
             r
         }));
+        if stop() {
+            return None;
+        }
         if let Ok(mut g) = self.whole.0.lock() {
             *g = Some((fam, std::sync::Arc::clone(&all)));
         }
-        all
+        Some(all)
     }
 
     /// The regions [`Self::whole_regions`] cut with `fam`, one slot per layer, given up by the session. A plate
@@ -8321,6 +8411,19 @@ impl SliceSession {
 
     /// The slices of the layer before beam interlocking (`base`), or the regions the layer prints.
     fn layer_regions_with(&self, layer: u32, fam: Families, micros: &Micros, base: bool) -> LayerRegions {
+        self.layer_regions_until(layer, fam, micros, base, crate::paint::GO_ON)
+    }
+
+    /// [`Self::layer_regions_with`], its paint cut until `stop` says so: a layer cut once it has said stop may lack
+    /// its paint, and is thrown away.
+    fn layer_regions_until(
+        &self,
+        layer: u32,
+        fam: Families,
+        micros: &Micros,
+        base: bool,
+        stop: crate::paint::Stop<'_>,
+    ) -> LayerRegions {
         if !base && let Some(r) = self.kept_regions(layer, fam) {
             return r;
         }
@@ -8405,6 +8508,7 @@ impl SliceSession {
                 step: fam.paint_step,
                 small: fam.paint_small,
                 memo: Some((&self.paint, self.parts.len() + o, cut)),
+                stop,
             };
             let split = ctx.split();
             let mut free: Vec<Shapes> = Vec::new();
@@ -12602,7 +12706,7 @@ impl SliceSession {
             let skirt_cfg = one.map_or(cfg, |o| &o.first);
             let points = one.map_or_else(|| outer_points_of(here), |o| o.points.clone());
             // A skirt near the bed's edge or a keep-out zone is cut to the bed rather than run off it, as the brim is.
-            let room = skirt_room(skirt_cfg);
+            let room = skirt_room(skirt_cfg, self.first_layer_in_wrap_corner(skirt_cfg));
             let skirt = skirt_loops(
                 (points, one.is_some()),
                 &skirt_extra,
@@ -13923,9 +14027,10 @@ fn skirt_loops(
 
 /// Where a skirt's centerline may run: the bed less its keep-out zones (`bed_exclude_area`, the nozzle wrap check
 /// corner), half a skirt line spacing in from their edges so the bead stays on the bed, the way the brim is cut to
-/// it. None when the settings name no printable area.
-fn skirt_room(cfg: &PrintConfig) -> Option<Shapes> {
-    crate::brim::Bed::of(cfg).map(|bed| bed.room(mm(skirt_spacing_mm(cfg)) / 2))
+/// it. None when the settings name no printable area. On a plate whose first layer lies wholly in the nozzle wrap check
+/// corner (`in_wrap_corner`) the skirt may run in that corner, as the printer skips its check there.
+fn skirt_room(cfg: &PrintConfig, in_wrap_corner: bool) -> Option<Shapes> {
+    crate::brim::Bed::of_plate(cfg, in_wrap_corner).map(|bed| bed.room(mm(skirt_spacing_mm(cfg)) / 2))
 }
 
 /// What the brim of object `k` of a plate sliced in sessions of their own keeps clear of (`NearBrims`), from each

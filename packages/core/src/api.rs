@@ -1931,7 +1931,8 @@ fn build_session_with(
     config: &PrintConfig,
     progress: &dyn Progress,
 ) -> Result<SliceSession> {
-    let (mut session, planned) = plan_session(req, plate, config)?;
+    // The session's plan cuts the painted layers, the dearest part of a painted slice: a cancel stops that too.
+    let (mut session, planned) = plan_session(req, plate, config, &|| progress.cancelled())?;
     if progress.cancelled() {
         return Err(Error::Cancelled);
     }
@@ -1995,8 +1996,14 @@ fn build_session_with(
 
 /// The session of `plate` with its layers planned as a slice of `req` plans them: the request's layer tops, else
 /// sleipnir's when its config asks for smart layer heights, else the height ranges', with the request's tool changes
-/// on top ([`with_tool_changes`]). True with it when sleipnir planned them.
-fn plan_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) -> Result<(SliceSession, bool)> {
+/// on top ([`with_tool_changes`]). True with it when sleipnir planned them. Ends with [`Error::Cancelled`] once `stop`
+/// says so while the painted layers are cut.
+fn plan_session(
+    req: &SliceRequest,
+    plate: &Plate,
+    config: &PrintConfig,
+    stop: crate::paint::Stop<'_>,
+) -> Result<(SliceSession, bool)> {
     let ranges: Vec<HeightRange> = req
         .options
         .height_ranges
@@ -2020,11 +2027,11 @@ fn plan_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) -> Resu
     let (smart, planned): (Option<()>, Option<Vec<f64>>) = (None, None);
     let tops = req.options.layer_tops_mm.as_deref().or(planned.as_deref());
     // With sleipnir on, a plan that fails keeps `layer_height`; the ranges' layer heights plan only with it off.
-    let mut session = SliceSession::with_plan(plate, config, tops, &ranges, smart.is_none())?;
+    let mut session = SliceSession::with_plan(plate, config, tops, &ranges, smart.is_none(), stop)?;
     if let Some(changes) = req.options.tool_changes.as_deref().filter(|c| !c.is_empty()) {
         session = with_tool_changes(session, config, changes, |extra| {
             let all: Vec<HeightRange> = ranges.iter().cloned().chain(extra.iter().cloned()).collect();
-            SliceSession::with_plan(plate, config, tops, &all, smart.is_none())
+            SliceSession::with_plan(plate, config, tops, &all, smart.is_none(), stop)
         })?;
     }
     Ok((session, planned.is_some()))
@@ -2229,7 +2236,7 @@ pub fn check_plate_counted(
     if stop() {
         return Err(Error::Cancelled);
     }
-    let (session, _) = plan_session(req, &plate, &config)?;
+    let (session, _) = plan_session(req, &plate, &config, stop)?;
     if stop() {
         return Err(Error::Cancelled);
     }
@@ -3530,7 +3537,7 @@ mod tests {
         let plate = build_plate(&req, &|_| Ok(mesh.clone())).unwrap();
         let lone = plate.objects[0].settings.clone();
         let (config, _) = with_lone_settings(config, issues, &lone, None).unwrap();
-        let (session, _) = plan_session(&req, &plate, &config).unwrap();
+        let (session, _) = plan_session(&req, &plate, &config, crate::paint::GO_ON).unwrap();
         assert_eq!(session.layer_tops().len(), 50);
         assert_eq!((session.tool_after(24), session.tool_after(25)), (2, 4));
         assert!(

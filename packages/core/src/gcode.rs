@@ -1664,6 +1664,9 @@ struct Shared<'c> {
     /// On a printer whose hotends are its tools ([`crate::nozzles::hotend_tools`]): per filament (0-based), the
     /// layer index and path index of the last path it prints, or none when it prints nothing. Empty on other printers.
     last_use: Vec<Option<(u32, usize)>>,
+    /// Whether the plate's first layer is in the nozzle wrap check corner
+    /// ([`crate::customgcode::in_head_wrap_detect_zone`]), worked out once.
+    wrap_corner: std::sync::OnceLock<bool>,
 }
 
 impl<'c> Shared<'c> {
@@ -1688,7 +1691,15 @@ impl<'c> Shared<'c> {
             } else {
                 Vec::new()
             },
+            wrap_corner: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Whether the plate's first layer is in the nozzle wrap check corner, as the templates read it.
+    fn in_wrap_corner(&self) -> bool {
+        *self
+            .wrap_corner
+            .once(|| crate::customgcode::in_head_wrap_detect_zone(self.base, self.out))
     }
 
     /// A copy of `customgcode::context(base, out)`.
@@ -2691,8 +2702,9 @@ fn emit_layer(
         ));
     }
     blocks.retain(|(_, t)| !t.is_empty());
-    // The printer's keep-out zones, which travels go round (zoneroute.rs) and lifts keep out of.
-    let zone_router = crate::zoneroute::Router::of(c);
+    // The printer's keep-out zones, which travels go round (zoneroute.rs) and lifts keep out of; not the nozzle wrap
+    // check corner on a plate whose first layer is in it.
+    let zone_router = crate::zoneroute::Router::of_plate(c, shared.in_wrap_corner());
     // Acceleration and jerk last written in this layer (0: not yet), and the lines that set them. A layer change that
     // wiped left the wipe's acceleration in effect, unless its G-code after the retraction may set one of its own.
     let after_sets = (!deferred && crate::motion::sets_accel(&after))
