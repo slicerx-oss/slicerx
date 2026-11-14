@@ -148,9 +148,9 @@ const ASKED_BY: readonly [RegExp, readonly string[]][] = [
 export const LIBRARY_WORDS = /\b(?:trending|library|vault)\b/i
 
 /**
- * Core tools a capped design turn sends only when its words ask for them (askedTools) or the chat called them. In the
- * recorded build turns the trending models command went on every request and was never called, so on a design turn
- * its place goes to the design tools; any other turn still sends it with core.
+ * Core tools a capped design turn, or a mixed one that changes a design, sends only when its words ask for them
+ * (askedTools) or the chat called them. In the recorded build turns the trending models command went on every request
+ * and was never called, so on those turns its place goes to the design tools; any other turn still sends it with core.
  */
 const DESIGN_ASKED_BY: readonly [RegExp, readonly string[]][] = [[LIBRARY_WORDS, ['app.library_trending']]]
 const DESIGN_ASKED: ReadonlySet<string> = new Set(DESIGN_ASKED_BY.flatMap(([, names]) => names))
@@ -445,7 +445,9 @@ export function stickyCapTools<T extends SetTool>(
 ): { tools: T[]; sets: Toolset[]; report: ToolCapReport | null } {
   // a design turn holds back the core tools its words did not ask for and the chat never called (DESIGN_ASKED)
   // and a slicing or printer turn holds back the planning tools the chat never called (PLANNING_ONLY)
-  const held = all.length <= (opts.cap ?? Infinity) ? null : opts.kind === 'design' ? DESIGN_ASKED : opts.kind === 'slicing' || opts.kind === 'printer' ? PLANNING_ONLY : null
+  // (a mixed turn that changes a design too holds back what a design turn does)
+  const designs = opts.kind === 'design' || (opts.kind === 'mixed' && opts.needs.has('cad'))
+  const held = all.length <= (opts.cap ?? Infinity) ? null : designs ? DESIGN_ASKED : opts.kind === 'slicing' || opts.kind === 'printer' ? PLANNING_ONLY : null
   const tools = held ? all.filter((t) => !held.has(t.name) || opts.asked?.has(t.name) || opts.called.has(t.name)) : all
   const bySet = new Map<Toolset, T[]>()
   for (const t of tools) {
