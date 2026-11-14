@@ -194,7 +194,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const mirror = defineTool({
     name: 'geom.mirror',
-    version: '1.6.1',
+    version: '1.6.2',
     source: 'command',
     permission: 'slice',
     description:
@@ -227,7 +227,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   const ARRAY_TEXT = 'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy.'
   const array = defineTool({
     name: 'geom.array',
-    version: '1.9.1',
+    version: '1.9.2',
     source: 'command',
     permission: 'slice',
     description:

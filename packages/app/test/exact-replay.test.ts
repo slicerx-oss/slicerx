@@ -487,6 +487,54 @@ it('mirrors a box cutter on the mesh, as a box the kernel takes has no mirrored 
   expect(mesh[0]!.req['mesh']).toMatchObject({ transform: [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1] })
 })
 
+// a window cut 1 mm into the side at y -10 of a 40 x 20 x 10 mm block, its center 1 mm up the side, a row of three
+// 6 mm apart, and both mirrored to the side at y 10 in one step
+const block = step('block-1', { op: 'shape.extrude', frame: { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, spec: { distanceMm: 10, operation: 'new' } })
+const sideWindow = (op: 'cut' | 'join') => step('window-1', { op: 'shape.extrude', frame: { origin: [-10, -10, 5], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, shape: { type: 'rectangle', widthMm: 2, heightMm: 1 }, placement: { center: [0, 1] }, spec: { distanceMm: 1, operation: op } })
+const windowRow = step('row-1', { op: 'pattern', steps: ['window-1'], spec: { kind: 'linear', count: 3, step: [6, 0, 0] } })
+const mirrorBoth = step('both-1', { op: 'pattern', steps: ['window-1', 'row-1'], spec: { kind: 'mirror', plane: { point: [0, 0, 0], normal: [0, 1, 0] } } })
+/** The stand-in engine, with the kernel saying each join or cut reached the part and the mesh path that it touched it. */
+function touching() {
+  const e = engine()
+  const call = async (op: string, request: unknown) => {
+    const r = (await e.call(op, request)) as R
+    return op === 'brep.extrude' ? { ...r, touches: true } : op === 'shape.extrude' ? { ...r, report: { touches: true } } : r
+  }
+  return { ...e, call }
+}
+
+it('mirrors a window and its row on the kernel, the mirror image cut as its outline flipped in the mirrored frame, each window once', async () => {
+  const e = touching()
+  const r = await replayHistory(e.call, { history: history(block, sideWindow('cut'), windowRow, mirrorBoth), exact: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+  expect(r.exactFellBack).toBeUndefined()
+  // nothing on the mesh: the block, the window, its row in one call, then the mirrored window and its mirrored row
+  expect(e.ops().filter((o) => !o.startsWith('brep.'))).toEqual([])
+  // as sent, a mirror's -0 read as 0
+  const extrudes = e.sent.filter((s) => s.op === 'brep.extrude').map((s) => JSON.parse(JSON.stringify(s.req)) as R)
+  expect(extrudes).toHaveLength(5)
+  const [, window, row, mirrored, mirroredRow] = extrudes
+  expect(window!['frame']).toEqual({ origin: [-10, -10, 5], u: [1, 0, 0], normal: [0, -1, 0] })
+  expect(window!['polygons']).toEqual([{ outer: { points: [[-1, 0.5], [1, 0.5], [1, 1.5], [-1, 1.5]] }, holes: [] }])
+  expect((row!['polygons'] as unknown[]).length).toBe(2)
+  // reflected through y = 0: the frame faces +y, so its v (normal x u) runs down the side, and the window's center,
+  // 1 mm up, is at v -1, still counterclockwise in the frame
+  expect(mirrored!['frame']).toEqual({ origin: [-10, 10, 5], u: [1, 0, 0], normal: [0, 1, 0] })
+  expect(mirrored!['polygons']).toEqual([{ outer: { points: [[-1, -1.5], [1, -1.5], [1, -0.5], [-1, -0.5]] }, holes: [] }])
+  expect([mirrored!['fromMm'], mirrored!['toMm']]).toEqual([window!['fromMm'], window!['toMm']])
+  // the mirrored row's two copies, 6 and 12 mm along, in one call
+  expect(mirroredRow!['frame']).toEqual(mirrored!['frame'])
+  expect((mirroredRow!['polygons'] as { outer: { points: number[][] } }[]).map((q) => q.outer.points[0])).toEqual([[5, -1.5], [11, -1.5]])
+})
+
+it('mirrors a boss and its row on the mesh with each boss joined once, never a second time inside the first', async () => {
+  const e = touching()
+  const r = await replayHistory(e.call, { history: history(block, sideWindow('join'), windowRow, mirrorBoth) })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+  // the block, the boss, its two copies, then the mirrored boss and its mirrored two
+  expect(e.ops().filter((o) => o === 'shape.extrude')).toHaveLength(7)
+})
+
 it('breaks a pattern whose steps are gone or cannot be repeated, in words', async () => {
   const gone = await replayHistory(engine().call, { history: history(box, hole, step('row-1', { op: 'pattern', steps: ['nope'], spec: { kind: 'linear', count: 2, step: [6, 0, 0] } })) })
   expect(gone.status[2]).toEqual({ state: 'broken', message: 'A step this pattern repeats is gone or comes after it; pick the steps again.' })
