@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_slice_file` with the sx engine slices a project plate whose objects all carry the same object settings (a per-object brim or extruder set alike on every object, as Bambu Studio projects often have) as `sx slice` does: the shared settings become the plate's and the plate slices as one, so tree support under one object keeps its distance from the objects beside it. Before, each object sliced on its own, its support could run over a neighbor's first-layer wall, and the plate was refused with a `path_conflict` that `sx slice` did not report. Objects whose settings differ still slice each with its own.

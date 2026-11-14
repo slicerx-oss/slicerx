@@ -2223,9 +2223,9 @@ pub fn check_plate_counted(
     let stop: &(dyn Fn() -> bool + Sync) = &latched;
     let timer = crate::platform::Timer::start();
     let (config, issues) = request_config_checked(req)?;
-    let plate = build_plate(req, meshes)?;
-    let (lone, lone_nozzle) = lone_of(&plate, &config)?;
-    let (config, _) = with_lone_settings(config, issues, &lone, lone_nozzle)?;
+    let mut plate = build_plate(req, meshes)?;
+    let (shared, lone_nozzle) = plate_settings_of(&mut plate, &config)?;
+    let (config, _) = with_plate_settings(config, issues, &shared, lone_nozzle)?;
     if stop() {
         return Err(Error::Cancelled);
     }
@@ -2664,8 +2664,9 @@ impl Held<'_> {
 /// with ([`run_prepared`]) while [`session_key`] stays the same.
 pub struct Prepared {
     session: SliceSession,
-    /// A lone object's own settings, which are the plate's (see [`with_lone_settings`]); null otherwise.
-    lone_settings: serde_json::Value,
+    /// The objects' own settings that are the plate's: a lone object's, or those every object carries alike (see
+    /// [`plate_settings_of`]); null otherwise.
+    plate_settings: serde_json::Value,
     /// The extruder whose nozzle a lone object prints with when it is not the first one's size.
     lone_nozzle: Option<usize>,
     /// Each object's own settings from its file and the request, by name, with the extruder whose nozzle it prints
@@ -2712,18 +2713,13 @@ pub fn prepare_with(
 ) -> Result<Prepared> {
     progress.report(Stage::Layers, 0.0);
     let (config, issues) = request_config_checked(req)?;
-    let plate = build_plate(req, meshes)?;
+    let mut plate = build_plate(req, meshes)?;
     if progress.cancelled() {
         return Err(Error::Cancelled);
     }
     progress.report(Stage::Layers, LAYERS_PLATE);
-    let (lone_settings, lone_nozzle) = lone_of(&plate, &config)?;
-    let (config, _) = with_lone_settings(config, issues, &lone_settings, lone_nozzle)?;
-    let session = build_session_with(req, &plate, &config, progress)?;
-    if progress.cancelled() {
-        return Err(Error::Cancelled);
-    }
-    progress.report(Stage::Layers, LAYERS_SESSION);
+    // Each object's own settings, read before any that are the plate's go into its config: a value the engine cannot
+    // use is still named with its object.
     let object_settings = plate
         .objects
         .iter()
@@ -2736,30 +2732,38 @@ pub fn prepare_with(
             ))
         })
         .collect::<Result<_>>()?;
+    let (plate_settings, lone_nozzle) = plate_settings_of(&mut plate, &config)?;
+    let (config, _) = with_plate_settings(config, issues, &plate_settings, lone_nozzle)?;
+    let session = build_session_with(req, &plate, &config, progress)?;
+    if progress.cancelled() {
+        return Err(Error::Cancelled);
+    }
+    progress.report(Stage::Layers, LAYERS_SESSION);
     Ok(Prepared {
         session,
-        lone_settings,
+        plate_settings,
         lone_nozzle,
         object_settings,
     })
 }
 
-/// The request's config ([`request_config_checked`]) with a lone object's own settings (from its project file) over
-/// it: they are the plate's, so they set what the plate prints with, layer heights and support included. Several
-/// objects each slice with their own (see `SliceSession`).
-fn with_lone_settings(
+/// The request's config ([`request_config_checked`]) with the objects' own settings that are the plate's
+/// ([`plate_settings_of`]: a lone object's, or those every object carries alike, from their project file and the
+/// request) over it: they set what the plate prints with, layer heights and support included. Objects whose settings
+/// differ each slice with their own (see `SliceSession`).
+fn with_plate_settings(
     mut config: PrintConfig,
     mut config_issues: Vec<crate::preflight::Issue>,
-    lone_settings: &serde_json::Value,
+    plate_settings: &serde_json::Value,
     lone_nozzle: Option<usize>,
 ) -> Result<(PrintConfig, Vec<crate::preflight::Issue>)> {
     // A lone object on a nozzle of another size than the first prints the plate with that nozzle's settings.
     if let Some(e) = lone_nozzle {
         config = config.for_nozzle(e)?;
     }
-    if !lone_settings.is_null() {
+    if !plate_settings.is_null() {
         // As the request's own settings go in: a value the engine cannot use leaves that setting as the config has it.
-        config.apply_value_lenient(lone_settings)?;
+        config.apply_value_lenient(plate_settings)?;
         let limits = config.limits;
         let issues = crate::preflight::clamp_config(&mut config, &limits);
         if crate::preflight::blocks(&issues) {
@@ -2770,13 +2774,33 @@ fn with_lone_settings(
     Ok((config, config_issues))
 }
 
-/// A lone object's own settings and the extruder whose nozzle it prints with when not the first one's size; null and
-/// none when the plate has several objects.
-fn lone_of(plate: &Plate, config: &PrintConfig) -> Result<(serde_json::Value, Option<usize>)> {
-    Ok(match plate.objects.as_slice() {
-        [o] => (o.settings.clone(), crate::session::object_nozzle(o, config)?),
-        _ => (serde_json::Value::Null, None),
-    })
+/// The objects' own settings that are the plate's, with the extruder whose nozzle a lone object prints with when not
+/// the first one's size: a lone object's settings, or the settings every object of the plate carries alike. Those go
+/// into the plate's config, as `sx slice` folds the settings a project's objects share into the plate's, and each
+/// object's are cleared, so the plate slices as one: one session plans every object's support, keeping it clear of
+/// the objects beside it. Null and none when the objects' settings differ (each then slices with its own, see
+/// `SliceSession`), when none carries any, or when an object prints with a nozzle of another size than the first
+/// (its session takes that nozzle's settings before its own).
+fn plate_settings_of(plate: &mut Plate, config: &PrintConfig) -> Result<(serde_json::Value, Option<usize>)> {
+    if let [o] = plate.objects.as_slice() {
+        return Ok((o.settings.clone(), crate::session::object_nozzle(o, config)?));
+    }
+    let Some(first) = plate.objects.first().filter(|o| !o.settings.is_null()) else {
+        return Ok((serde_json::Value::Null, None));
+    };
+    if plate.objects.iter().any(|o| o.settings != first.settings) {
+        return Ok((serde_json::Value::Null, None));
+    }
+    for o in &plate.objects {
+        if crate::session::object_nozzle(o, config)?.is_some() {
+            return Ok((serde_json::Value::Null, None));
+        }
+    }
+    let shared = first.settings.clone();
+    for o in &mut plate.objects {
+        o.settings = serde_json::Value::Null;
+    }
+    Ok((shared, None))
 }
 
 /// The values in objects' own settings (`(name, settings, nozzle)` each) that the engine cannot use over `config`
@@ -2848,10 +2872,10 @@ fn run_prepared_timed(
             reason: config_report.lines().join("; "),
         });
     }
-    let (mut config, mut config_issues) = with_lone_settings(
+    let (mut config, mut config_issues) = with_plate_settings(
         config,
         config_issues,
-        &held.get().lone_settings,
+        &held.get().plate_settings,
         held.get().lone_nozzle,
     )?;
     let session = &held.get().session;
@@ -3529,7 +3553,7 @@ mod tests {
         let (config, issues) = request_config_checked(&req).unwrap();
         let plate = build_plate(&req, &|_| Ok(mesh.clone())).unwrap();
         let lone = plate.objects[0].settings.clone();
-        let (config, _) = with_lone_settings(config, issues, &lone, None).unwrap();
+        let (config, _) = with_plate_settings(config, issues, &lone, None).unwrap();
         let (session, _) = plan_session(&req, &plate, &config).unwrap();
         assert_eq!(session.layer_tops().len(), 50);
         assert_eq!((session.tool_after(24), session.tool_after(25)), (2, 4));
