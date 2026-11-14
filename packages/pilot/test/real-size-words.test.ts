@@ -46,6 +46,9 @@ describe('what a real-size lookup reads from the runtime', () => {
     expect(web[0]!.messages[0]).toEqual({ role: 'system', content: WEB_SIZES_LINE })
     // each line starts with the size's own name, and the answer is not spent on thinking
     expect(WEB_SIZES_LINE).toContain("starting with that size's name exactly as asked")
+    expect(WEB_SIZES_LINE.startsWith('Find the real sizes asked for, using web search. ')).toBe(true)
+    // its example figure is a neutral one, not a real thing's size
+    expect(WEB_SIZES_LINE).toContain('such as "Overall length: 42.5 m"')
     expect(web.every((r) => r.thinking === false)).toBe(true)
     expect(web[0]!.messages[1]).toEqual({ role: 'user', content: 'a suspension bridge: Tower height' })
   })

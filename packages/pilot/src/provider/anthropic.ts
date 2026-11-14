@@ -126,11 +126,17 @@ export function createAnthropicAdapter(): LlmAdapter {
         body['thinking'] = { type: 'adaptive' }
         body['output_config'] = { effort: req.reasoning }
       }
+      // no thinking asked for: said outright, since current models think when the field is left out
+      const off = req.thinking === false
+      if (off) {
+        body['thinking'] = { type: 'disabled' }
+        delete body['output_config']
+      }
       if (tools.length > 0) {
         body['tools'] = tools
         // forced tool use is not allowed together with thinking, and some models refuse it outright
         const choice = req.toolChoice ?? 'auto'
-        const thinking = budget > 0 || (adaptive && Boolean(req.reasoning)) || thinksByDefault(req.model)
+        const thinking = !off && (budget > 0 || (adaptive && Boolean(req.reasoning)) || thinksByDefault(req.model))
         const forced = choice === 'required' && !thinking && !noForcedTools(req.model)
         body['tool_choice'] = choice === 'none' ? { type: 'none' } : forced ? { type: 'any' } : { type: 'auto' }
       }

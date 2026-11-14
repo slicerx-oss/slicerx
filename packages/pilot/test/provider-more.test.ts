@@ -64,6 +64,15 @@ describe('mimir cloud', () => {
     expect(JSON.parse(sent[0]?.body ?? '{}')).toMatchObject({ model: 'claude-haiku-5-5', stream: true })
   })
 
+  it('sends a no-thinking request to the proxy with thinking disabled in its body', async () => {
+    const { t, sent } = transport()
+    await collect(createTransportClient(t, 'mimir-cloud', { baseUrl: BASE }).stream({ ...REQ, model: 'claude-haiku-5-5', webSearch: true, maxOutputTokens: 1200, thinking: false }))
+    const body = JSON.parse(sent[0]?.body ?? '{}') as Record<string, unknown>
+    expect(body['thinking']).toEqual({ type: 'disabled' })
+    expect(body['output_config']).toBeUndefined()
+    expect(body['max_tokens']).toBe(1200)
+  })
+
   it('says no with saving off, and leaves out a session or version the proxy would not take', async () => {
     const cases = [
       [{ on: false, version: '0.2.0' }, 'ses_1', { 'x-sx-share': '0' }],
