@@ -6,6 +6,7 @@
 import { withTooBig } from '@slicerx/cad-history'
 import type { FaceSurface, MeshPart } from '@slicerx/contracts'
 import { geomCallLimitMs, geomStuckMessage } from '@slicerx/contracts/geom-limits'
+import { setKeptBodiesRelease } from '../cad/waiting'
 import type { LoadError } from './modules'
 import { workerAnswered, workerEnded, workerStarted } from './worker-memory'
 
@@ -108,7 +109,7 @@ export function endIdleGeomWorker(): boolean {
   return endIfIdle?.() ?? true
 }
 
-/** Whether the app's own geometry worker runs now (releaseKeptBodies). */
+/** Whether the app's own geometry worker runs now (releaseKept). */
 let ownRunning: () => boolean = () => false
 
 /**
@@ -117,7 +118,7 @@ let ownRunning: () => boolean = () => false
  * provider that runs replays itself (runsJobs, the native engine) keeps them on the page and asks its engine only to
  * free bodies it holds. Any other provider runs no replay and is not asked.
  */
-export function releaseKeptBodies(): Promise<void> {
+function releaseKept(): Promise<void> {
   const p = provider
   if (p === null || (p === own ? !ownRunning() : p.runsJobs !== true)) return Promise.resolve()
   return p.call('history.release', {}).then(
@@ -125,6 +126,9 @@ export function releaseKeptBodies(): Promise<void> {
     () => undefined,
   )
 }
+
+// a cleared plate asks for it through cad/waiting.ts, so clearing does not load this module
+setKeptBodiesRelease(releaseKept)
 
 /** A call for the worker. `gate`: it can be canceled, so the worker asks before it runs it (worker-loop.ts). */
 interface Call {
