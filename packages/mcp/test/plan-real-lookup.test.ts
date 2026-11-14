@@ -47,7 +47,7 @@ const bridge: PlanInput = {
 type Web = NonNullable<ToolContext['web']>
 
 /** The tab's tools over a fresh card, with a web lookup that answers `answer` (none when `web` is false). */
-function tab(opts: { web?: false; answer?: string; said?: string[]; citations?: Awaited<ReturnType<Web>>['citations'] } = {}) {
+function tab(opts: { web?: false; answer?: string; said?: string[]; citations?: Awaited<ReturnType<Web>>['citations']; searched?: boolean } = {}) {
   const card = createCardPlans(createPlanRegistry())
   const tools = tabToolset({ list: () => [], get: () => undefined } as unknown as DesignHost, card, { nozzleMm: () => machine.nozzle, newPlanId: () => 'plan_1' })
   const plan = tools.find((t) => t.name === 'design.plan')!
@@ -56,7 +56,7 @@ function tab(opts: { web?: false; answer?: string; said?: string[]; citations?: 
   const queries: string[] = []
   const web: Web = async (query) => {
     queries.push(query)
-    return { text: opts.answer ?? '', citations: opts.citations ?? [{ id: 'https://example.org/bridge', title: 'Bridge facts', url: 'https://example.org/bridge', kind: 'web' }] }
+    return { text: opts.answer ?? '', citations: opts.citations ?? [{ id: 'https://example.org/bridge', title: 'Bridge facts', url: 'https://example.org/bridge', kind: 'web' }], ...(opts.searched !== undefined ? { searched: opts.searched } : {}) }
   }
   const ctx = {
     sessionId: 's1',
@@ -74,6 +74,7 @@ function tab(opts: { web?: false; answer?: string; said?: string[]; citations?: 
     queries,
     plan: (input: unknown) => plan.run(plan.input.parse(input) as never, ctx),
     lookup: (input: unknown) => lookup!.run(lookup!.input.parse(input) as never, ctx),
+    lookupSource: (id: string) => card.lookups.source(id),
   }
 }
 
@@ -222,6 +223,19 @@ describe('a lookup whose web answer cites no page', () => {
     expect(realSaid(real, () => undefined)).toBe(', say Tower height, Merlon height and Merlons (array) spacing are from memory, not looked up,')
   })
 
+  it('holds a plan to the figures of a lookup whose search ran, and names no page, when its answer cites none', async () => {
+    const t = tab({ answer: TOWER_ANSWER, citations: [], searched: true })
+    const out = await t.lookup({ subject: 'a stone tower', sizes: TOWER_SIZES })
+    expect(out.output).toEqual({ lookupId: 'lookup_1', subject: 'a stone tower', found: expect.any(Array), missing: [], sources: [] })
+    expect(out.summary).toBe('lookup_1: found 3 of 3 sizes')
+    expect(out.lookup?.source).toBeUndefined()
+    const real = tower.real!.map((r) => ({ ...r, lookup: 'lookup_1' }))
+    expect((await t.plan(withReal(tower, real))).ok).not.toBe(false)
+    expect(t.shown[0]!.assumptions).toEqual([])
+    // design.check's reply says neither that they are from memory nor a page the answer did not cite
+    expect(realSaid(real, (id) => t.lookupSource(id))).toBe('')
+  })
+
   it('holds the same answer to its figures once it cites a page', async () => {
     const t = tab({ answer: TOWER_ANSWER })
     const id = ((await t.lookup({ subject: 'a stone tower', sizes: TOWER_SIZES })).output as { lookupId: string }).lookupId
@@ -300,7 +314,7 @@ describe('design.lookup_sizes', () => {
 
 describe("design.check's reply on where the real sizes came from", () => {
   it('names the sizes from memory, or the page the lookup read', () => {
-    const src = (id: string) => (id === 'lookup_1' ? { title: 'Bridge facts' } : undefined)
+    const src = (id: string) => (id === 'lookup_1' ? { page: { title: 'Bridge facts' } } : undefined)
     expect(realSaid(bridge.real, src)).toBe(', say Deck length, Main tower height and Towers (array) spacing are from memory, not looked up,')
     expect(realSaid(bridge.real!.map((r) => ({ ...r, lookup: 'lookup_1' })), src)).toBe(', say its real sizes were looked up on Bridge facts,')
     expect(realSaid(bridge.real!.map((r) => ({ ...r, stated: 'the deck is 280 m long' })), src)).toBe('')
