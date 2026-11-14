@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { packNormals, unpackNormal } from '@slicerx/contracts'
 import { weldVertices, type CreasedArrays } from '../src/mesh-math'
 import { creasedGeometry } from '../src/model'
+import { digest } from './exact-normals-meshes'
 
 /** The arrays of the geometry a part draws with (creasedGeometry, at the app's own crease angle). */
 function drawn(P: Float32Array, I: Uint32Array, N?: Int16Array): CreasedArrays {
@@ -233,5 +234,11 @@ describe('the exact hull of a real design', () => {
       kept++
     }
     expect(kept).toBeGreaterThan(I.length / 4)
+  })
+
+  // the arrays this hull drew with before each triangle's area was taken once (307bbc6a4), the same bit for bit
+  it('draws the same arrays as before, bit for bit, on both routes', () => {
+    expect(digest(exact.position, exact.normal, exact.index)).toBe('10632/10632/12624:e7c8cef6')
+    expect(digest(mesh.position, mesh.normal, mesh.index)).toBe('10752/10752/12624:d1f88311')
   })
 })
