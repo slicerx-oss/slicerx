@@ -1154,11 +1154,12 @@ const CLIENT_REAL =
 
 /**
  * Where a display plan's real sizes came from, as design.check's reply says it: the sizes taken from memory by name, or
- * the page its lookup read. Empty when the plan has no real sizes, or gives them from the person's words only.
+ * the page its lookup read (a lookup that read no page counts as from memory). Empty when the plan has no real sizes, or gives them from the person's words only.
  */
 export function realSaid(real: readonly RealEntry[] | undefined, source?: (id: string) => { title: string } | undefined): string {
   const list = real ?? []
-  const memory = list.filter((r) => r.lookup === undefined && r.stated === undefined && r.source === undefined).map((r) => `${r.feature} ${r.size}`)
+  // a lookupId whose lookup read no page (no source to name) is from memory too
+  const memory = list.filter((r) => r.stated === undefined && r.source === undefined && (r.lookup === undefined || (source !== undefined && !source(r.lookup)))).map((r) => `${r.feature} ${r.size}`)
   if (memory.length) return `, say ${memory.length > 1 ? `${memory.slice(0, -1).join(', ')} and ${memory.at(-1)!}` : memory[0]!} ${memory.length === 1 ? 'is' : 'are'} from memory, not looked up,`
   const looked = list.find((r) => r.lookup !== undefined)
   const page = looked?.lookup !== undefined ? source?.(looked.lookup) : list.find((r) => r.source)?.source

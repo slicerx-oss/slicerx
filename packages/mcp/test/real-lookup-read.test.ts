@@ -10,11 +10,17 @@ import { describe, expect, it } from 'vitest'
 import { readSizes } from '../src/real-lookup'
 import { createPlanRegistry } from '../src/design-check'
 import { createCardPlans, tabToolset } from '../src/toolset'
+import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PrinterHost } from '@slicerx/contracts'
 import type { DesignHost } from '@slicerx/cad-history'
-import type { ToolContext } from '@slicerx/pilot'
+import { createPilot, DEFAULT_CONFIG, type PilotTool, type ToolContext } from '@slicerx/pilot'
 
 /** A recorded sizes answer (mimir cloud, the base model with web search): every line labeled "size", cut off at the output limit. */
 const RECORDED = readFileSync(new URL('./fixtures/size-lookup-answer.txt', import.meta.url), 'utf8')
+/**
+ * The provider stream that answer came in, made neutral: every event and block as recorded (two web searches, their two
+ * result blocks of 18 pages, the answer's text in parts, two of them citing a page), with invented pages, queries and figures.
+ */
+const STREAM = readFileSync(new URL('./fixtures/size-lookup-stream.sse', import.meta.url), 'utf8')
 /** The sizes that request asked for, in its order. */
 const ASKED = ['Overall length', 'Width (across)', 'Wall height to the roof', 'Tower height above the roof', 'Tower diameter', 'Spire height above ground', 'Wing length']
 
@@ -70,9 +76,9 @@ describe('reading a sizes answer', () => {
 describe('design.lookup_sizes asks for a few published sizes', () => {
   const lookup = () => tabToolset({ list: () => [], get: () => undefined } as unknown as DesignHost, createCardPlans(createPlanRegistry()), { nozzleMm: () => 0.4 }).find((t) => t.name === 'design.lookup_sizes')!
 
-  it('is 1.1.0, takes at most 5 sizes, and says to derive the rest of the proportions from them', () => {
+  it('is 1.1.1, takes at most 5 sizes, and says to derive the rest of the proportions from them', () => {
     const t = lookup()
-    expect(t.version).toBe('1.1.0')
+    expect(t.version).toBe('1.1.1')
     expect(t.input.safeParse({ subject: 'a suspension bridge', sizes: ['a b', 'c d', 'e f', 'g h', 'i j'] }).success).toBe(true)
     expect(t.input.safeParse({ subject: 'a suspension bridge', sizes: ['a b', 'c d', 'e f', 'g h', 'i j', 'k l'] }).success).toBe(false)
     expect(t.description).toContain('at most 5 sizes sources commonly publish')
@@ -87,10 +93,37 @@ describe('design.lookup_sizes asks for a few published sizes', () => {
     expect(out.lookup).toBeUndefined()
   })
 
-  it('reads the recorded answer end to end through the tool', async () => {
+  it('reads the recorded stream end to end through the provider, the web search and the tool, with the page it cites as its source', async () => {
+    const enc = new TextEncoder()
+    const event = (d: { type: string }): string => `event: ${d.type}\ndata: ${JSON.stringify(d)}\n\n`
+    const reply = (blocks: { type: string }[], deltas: { type: string }[], stop: string): Uint8Array =>
+      enc.encode([{ type: 'message_start', message: { usage: { input_tokens: 1, output_tokens: 1 } } }, ...blocks.map((b) => ({ type: 'content_block_start', index: 0, content_block: b })), ...deltas.map((d) => ({ type: 'content_block_delta', index: 0, delta: d })), { type: 'content_block_stop', index: 0 }, { type: 'message_delta', delta: { stop_reason: stop }, usage: { output_tokens: 1 } }, { type: 'message_stop' }].map(event).join(''))
+    const asked = { subject: 'the subject', sizes: ASKED.slice(0, 5) }
+    const searched: string[] = []
+    let turn = 0
+    // the chat's turns call the tool, then end; the web search gets the recorded stream
+    const llm: LlmTransport = {
+      available: async () => true,
+      async *stream(req) {
+        const body = JSON.parse(req.body) as { tools?: { type?: string }[]; messages: { content: unknown }[] }
+        if (body.tools?.some((x) => x.type === 'web_search_20250305')) {
+          searched.push(JSON.stringify(body.messages))
+          yield enc.encode(STREAM)
+        } else if (turn++ === 0) yield reply([{ type: 'tool_use', id: 'tu1', name: 'design__lookup_sizes', input: {} } as { type: string }], [{ type: 'input_json_delta', partial_json: JSON.stringify(asked) } as { type: string }], 'tool_use')
+        else yield reply([{ type: 'text', text: '' } as { type: string }], [{ type: 'text_delta', text: 'Done.' } as { type: string }], 'end_turn')
+      },
+    }
     const t = lookup()
-    const ctx = { sessionId: 's1', web: async () => ({ text: RECORDED, citations: [] }) } as unknown as ToolContext
-    const out = await t.run(t.input.parse({ subject: 'the subject', sizes: ASKED.slice(0, 5) }) as never, ctx)
-    expect((out.output as { found: { size: string; mm: number }[] }).found.map((f) => [f.size, f.mm])).toEqual([['Overall length', 125700], ['Width (across)', 12600], ['Tower height above the roof', 17526]])
+    const outs: Awaited<ReturnType<typeof t.run>>[] = []
+    const tool = { ...t, run: async (i: never, ctx: ToolContext) => { const out = await t.run(i, ctx); outs.push(out); return out } } as unknown as PilotTool<never>
+    const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
+    const config = { ...DEFAULT_CONFIG, provider: 'anthropic', model: 'claude-haiku-5-5', models: { huginn: 'claude-haiku-5-5', muninn: 'claude-haiku-5-5' }, billing: 'key' as const }
+    for await (const _ of createPilot({ host, config, policy: DEFAULT_POLICY, builtins: false, tools: [tool] }).run('s1', 'look its sizes up')) void _
+    expect(searched.length).toBe(1)
+    const out = outs[0]!.output as { found: { size: string; mm: number }[]; missing: string[]; sources: { title: string; url: string }[] }
+    expect(out.found.map((f) => [f.size, f.mm])).toEqual([['Overall length', 125700], ['Width (across)', 12600], ['Tower height above the roof', 17526]])
+    expect(out.missing).toEqual(['Wall height to the roof', 'Tower diameter'])
+    // the page the answer cites, once though two parts cite it; the 18 pages the searches returned are not each a source
+    expect(out.sources).toEqual([{ title: 'Tower overview', url: 'https://example.org/tower-overview' }])
   })
 })
