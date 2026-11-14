@@ -166,6 +166,9 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
   // the exact corners' normals, unpacked once: each is read by every corner of its vertex
   const un = new Float64Array(exact ? nt * 9 : 0)
   for (let t = 0; exact && t < nt; t++) if (exact[t] === 1) for (let j = 0; j < 3; j++) unpackNormal(normals!, 6 * t + 2 * j, un, 9 * t + 3 * j)
+  // the exact triangles' areas, taken once: each is read by every corner of its three vertices
+  const area = new Float64Array(exact ? nt : 0)
+  for (let t = 0; exact && t < nt; t++) if (exact[t] === 1) area[t] = Math.hypot(u(3 * t), u(3 * t + 1), u(3 * t + 2))
   for (let t = 0; t < nt; t++) {
     const tx = f(3 * t), ty = f(3 * t + 1), tz = f(3 * t + 2)
     const supplied = exact !== null && exact[t] === 1
@@ -179,10 +182,15 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
         const own = 6 * t + 2 * j
         const gx = un[3 * (3 * t + j)]!, gy = un[3 * (3 * t + j) + 1]!, gz = un[3 * (3 * t + j) + 2]!
         // the exact corners here within the angle, weighted by their triangles' areas; the same packed normal as this
-        // corner's everywhere (inside a face) keeps it as it is
+        // corner's everywhere (inside a face) keeps it as it is, so that is checked first
         let x = 0, y = 0, z = 0
         let same = true
-        for (let k = cnt[wi] ?? 0; k < end; k++) {
+        let other = false
+        for (let k = cnt[wi] ?? 0; k < end && !other; k++) {
+          const c = lst[k] ?? 0
+          other = exact![(c / 3) | 0] === 1 && (normals![2 * c] !== normals![own] || normals![2 * c + 1] !== normals![own + 1])
+        }
+        for (let k = other ? (cnt[wi] ?? 0) : end; k < end; k++) {
           const c = lst[k] ?? 0
           const g = (c / 3) | 0
           if (exact![g] !== 1) continue
@@ -191,8 +199,8 @@ export function creasedArrays(P: Float32Array, I: ArrayLike<number>, creaseDeg: 
             if (cx * gx + cy * gy + cz * gz < cosA) continue
             same = false
           }
-          const area = Math.hypot(u(3 * g), u(3 * g + 1), u(3 * g + 2))
-          x += cx * area; y += cy * area; z += cz * area
+          const a = area[g]!
+          x += cx * a; y += cy * a; z += cz * a
         }
         if (same) {
           nx = Math.fround(gx); ny = Math.fround(gy); nz = Math.fround(gz)
