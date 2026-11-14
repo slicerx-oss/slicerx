@@ -793,19 +793,19 @@ fn request_parts(request: &Value) -> (Vec<Profile>, Options) {
 
 #[test]
 fn the_mesh_loft_of_spline_sections_is_the_same_to_the_byte() {
-    // the replies before spline pieces were matched, recorded from the code the change starts from
+    // the replies with each corner matched where the pieces meet, recorded from the mesh loft that matches them
     let circle = json!({ "type": "circle", "center": [0, 0], "diameterMm": 20.0 });
     let spline = json!({ "type": "spline", "points": [[10, 0], [0, 8], [-10, 0], [0, -8]] });
     for (name, request, want) in [
         (
             "D sections",
             spline_loft("dSections"),
-            "4bd25dd36c211d3cc0f592fac23df379ac2bc67208ec653707157ba609b97f9a",
+            "0b8d9d61ffa66e017a683d225fcc1d654dc194e985b86913d9a887d665ab49ae",
         ),
         (
             "hull of 18 sections",
             spline_loft("hull18"),
-            "938b933be5b10ea85366f0692fb991bf554380f7b74d5764715450762a95f5df",
+            "1c2f6e72b548ba957d161b6037eb771bfe24957b85bdb55db010c12724e0b8b1",
         ),
         (
             "circle to a closed spline",
@@ -864,6 +864,7 @@ fn farthest_from_edges(points: &[V3], edges: &[sx_brep::Edge<'_>]) -> f64 {
 /// How far the exact body of a loft is from its mesh loft, each way.
 struct Measured {
     body_to_mesh: f64,
+    mesh_to_body: f64,
 }
 
 /// Every corner rail of `rails` runs from drawn corner to drawn corner of `sections`, and the body's deck edges lie
@@ -1021,7 +1022,10 @@ fn spline_loft_checked(name: &str, request: &Value) -> Measured {
     if mesh_loft_keeps_corners(&request["profiles"]) {
         assert!(body_to_mesh <= 0.01 && mesh_to_body <= 0.01, "{name}");
     }
-    Measured { body_to_mesh }
+    Measured {
+        body_to_mesh,
+        mesh_to_body,
+    }
 }
 
 #[test]
@@ -1031,18 +1035,24 @@ fn d_sections_loft_into_a_solid_held_to_their_drawing() {
     }
     let mut request = spline_loft("dSections");
     assert!(!mesh_loft_keeps_corners(&request["profiles"]));
-    let straight = spline_loft_checked("D sections, straight", &request);
-    // A record of the mesh loft missing the corners, as measured on 2026-11-12: it joins station 2's deck corner
-    // (8, 0, 12) to points on station 1's spline, so the body's deck edge, which runs corner to corner, is this far
-    // from it between the stations. A later piece makes the mesh loft keep corners; then this becomes the normal
-    // rule, within 0.01 mm both ways.
-    assert!(
-        (0.70..=0.76).contains(&straight.body_to_mesh),
-        "the mesh loft misses the corners by {} mm, not about 0.729",
-        straight.body_to_mesh
-    );
-    request["smooth"] = json!(true);
-    spline_loft_checked("D sections, smooth", &request);
+    // the mesh loft matches each corner where the pieces meet, so it stays within 0.01 mm of the body both ways
+    for smooth in [false, true] {
+        request["smooth"] = json!(smooth);
+        let m = spline_loft_checked(
+            if smooth {
+                "D sections, smooth"
+            } else {
+                "D sections, straight"
+            },
+            &request,
+        );
+        assert!(
+            m.body_to_mesh <= 0.01 && m.mesh_to_body <= 0.01,
+            "the mesh loft is {} mm from the body and the body {} mm from it",
+            m.mesh_to_body,
+            m.body_to_mesh
+        );
+    }
 }
 
 #[test]

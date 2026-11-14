@@ -81,7 +81,9 @@ pub(crate) struct Section {
 
 /// The solid through `profiles` in order: ruled sides from each profile to the next and flat caps on the first and
 /// last. Each profile is one closed loop without holes. The rings are matched point to point with each ring's own
-/// corners kept, turned to wind the same way along the loft and rotated to the least twist.
+/// corners kept, turned to wind the same way along the loft and rotated to the least twist. Profiles with an arc, an
+/// ellipse or a spline and no landmarks of their own are matched where their pieces meet, as [`rails`] matches them, so
+/// a corner meets the same corner at every profile.
 pub fn loft(profiles: &[Profile]) -> Result<TriMesh> {
     loft_with(profiles, &Options::default())
 }
@@ -182,9 +184,15 @@ fn lined_up(profiles: &[Profile], opts: &Options) -> Result<LinedUp> {
     for (k, p) in profiles.iter().enumerate() {
         rings.push((frame_of(p)?, ring_of(k, p)?));
     }
-    let marked = landmarked(profiles)?;
-    // the rings, and whether every one's way came from its landmarks
-    let (flats, set): (Vec<Vec<V2>>, bool) = if marked {
+    let own = landmarked(profiles)?;
+    // curved profiles with no landmarks are matched at the places their pieces meet, as landmarks
+    let implied = if own || open {
+        None
+    } else {
+        piece_marks(profiles, opts)
+    };
+    // the rings by landmarks, and whether every one's way came from them
+    let by_marks = |profiles: &[Profile]| -> Result<(Vec<Vec<V2>>, bool)> {
         // which way each plane faces along the loft, and each profile's middle, from its points as drawn
         let centers: Vec<V3> = rings
             .iter()
@@ -196,10 +204,29 @@ fn lined_up(profiles: &[Profile], opts: &Options) -> Result<LinedUp> {
             .zip(&way)
             .map(|((f, _), a)| toward(f.w, *a))
             .collect();
-        by_landmarks(profiles, &rings, open, &facing, &centers)?
-    } else {
+        by_landmarks(profiles, &rings, open, &facing, &centers)
+    };
+    let by_count = || {
         let n = rings.iter().map(|(_, r)| r.len()).max().unwrap_or(0);
-        (rings.iter().map(|(_, r)| resample(r, n, !open)).collect(), false)
+        rings
+            .iter()
+            .map(|(_, r)| resample(r, n, !open))
+            .collect::<Vec<Vec<V2>>>()
+    };
+    // implied places that do not take as landmarks leave the rings matched by count, as before
+    let (flats, set, marked) = match (own, implied) {
+        (true, _) => {
+            let (f, set) = by_marks(profiles)?;
+            (f, set, true)
+        }
+        (false, Some((marked, pieces))) => match by_marks(&marked) {
+            Ok((mut f, set)) => {
+                onto_arcs(&mut f, &pieces);
+                (f, set, true)
+            }
+            Err(_) => (by_count(), false, false),
+        },
+        (false, None) => (by_count(), false, false),
     };
     let mut sections: Vec<Section> = rings
         .iter()
@@ -338,8 +365,8 @@ pub enum Match {
 /// corners land on it, by how far along it they are, at the least twist or at the landmarks), and `density` sets how
 /// many rails each piece gets. Places along an ellipse go by the angle that maps it to a circle, not by its true
 /// length; places along a spline go by its length. These rails are
-/// not the mesh loft's: it matches flattened points by count, so its sides lean where profiles flatten to different
-/// counts. Profiles that cannot be matched this way come back as [`Match::Unmatched`].
+/// not the mesh loft's point for point: the mesh loft matches at the same places where pieces meet and spreads its own
+/// flattened points between them. Profiles that cannot be matched this way come back as [`Match::Unmatched`].
 ///
 /// Refuses what the mesh loft refuses, in the same words, except a body that runs into itself, which is not looked
 /// for here.
@@ -414,6 +441,92 @@ pub fn rails(profiles: &[Profile], opts: &Options, density: &Density) -> Result<
         wrap,
         smooth: opts.smooth,
     }))
+}
+
+/// Curved closed `profiles` with the places their pieces meet as landmarks: where [`rails`] matches them piece to
+/// piece, each corner to the same corner, so the mesh loft's points stay on the same piece at every profile instead
+/// of being matched by count, which runs a corner across a side where profiles flatten to different counts. None when
+/// every profile is straight (count matching keeps their corners), when they match as one piece or cannot be matched
+/// piece to piece, or when the places do not take as landmarks; those are matched by count as before.
+fn piece_marks(profiles: &[Profile], opts: &Options) -> Option<(Vec<Profile>, Vec<Piece>)> {
+    let curved = profiles
+        .iter()
+        .any(|p| p.loops.iter().any(|l| !l.construction && !straight(l)));
+    if !curved {
+        return None;
+    }
+    // one place a piece is all the matching needs
+    let fewest = Density {
+        arc_step_deg: 360.0,
+        least: 1,
+    };
+    let m = pieces::matched(profiles, opts.closed, &fewest).ok()?;
+    if !(2..=MAX_LANDMARKS).contains(&m.pieces.len()) {
+        return None;
+    }
+    // each place at the profile's own nearest point within a chord of it, so a circle split where another
+    // profile's corner lands keeps the points it was flattened to (the points a body drawn from the same circle has)
+    let mut marked = Vec::with_capacity(profiles.len());
+    for (k, (p, flat)) in profiles.iter().zip(&m.flats).enumerate() {
+        let own = ring_of(k, p).ok()?;
+        let landmarks = m.pieces.iter().map(|c| snapped(flat[c.first], &own)).collect();
+        marked.push(Profile {
+            landmarks,
+            ..p.clone()
+        });
+    }
+    Some((marked, m.pieces))
+}
+
+/// `p`, or the point of `ring` nearest it when that is within the shorter chord beside that point: a place halfway
+/// along a chord, where another profile's corner lands on a circle, goes to one end of it.
+fn snapped(p: V2, ring: &[V2]) -> V2 {
+    let n = ring.len();
+    let d = |a: V2, b: V2| (a[0] - b[0]).m_hypot(a[1] - b[1]);
+    let Some((i, near)) = ring
+        .iter()
+        .enumerate()
+        .map(|(i, &q)| (i, d(p, q)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+    else {
+        return p;
+    };
+    let chord = d(ring[i], ring[(i + 1) % n]).min(d(ring[i], ring[(i + n - 1) % n]));
+    if near <= chord { ring[i] } else { p }
+}
+
+/// Puts each ring point that lies on one of its profile's arcs (within twice `SMOOTH_TOL_MM` of its circle and inside
+/// its sweep, short of its ends) back onto that circle. Points spread evenly along a flattened arc land on its chords; on the circle, a
+/// ring with at least as many points on an arc as it was flattened to keeps within the flattening's tolerance.
+fn onto_arcs(flats: &mut [Vec<V2>], pieces: &[Piece]) {
+    for (k, ring) in flats.iter_mut().enumerate() {
+        for p in ring.iter_mut() {
+            for piece in pieces {
+                let Some(&Curve::Arc {
+                    center,
+                    radius,
+                    from,
+                    sweep,
+                }) = piece.curves.get(k)
+                else {
+                    continue;
+                };
+                let (dx, dy) = (p[0] - center[0], p[1] - center[1]);
+                let r = dx.m_hypot(dy);
+                if r <= 0.0 || (r - radius).abs() > 2.0 * SMOOTH_TOL_MM {
+                    continue;
+                }
+                // how far around from the arc's start, the way it turns
+                let turned = ((dy.m_atan2(dx) - from) * sweep.signum()).rem_euclid(std::f64::consts::TAU);
+                // an arc's ends are its drawn points, met by the pieces beside it: they stay as drawn
+                if turned < 1e-9 || turned > sweep.abs() - 1e-9 {
+                    continue;
+                }
+                *p = [center[0] + dx * radius / r, center[1] + dy * radius / r];
+                break;
+            }
+        }
+    }
 }
 
 /// Whether a loop is drawn with straight lines alone.

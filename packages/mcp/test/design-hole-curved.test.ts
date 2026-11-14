@@ -49,7 +49,7 @@ async function hull(h: Client, exact: boolean): Promise<string> {
 }
 
 const geom = useGeomEngine('design-hole-curved-replies')
-// these numbers follow today's mesh loft, which folds this side; they move when the mesh loft fix lands
+// these numbers follow the mesh loft, within 0.002 mm of the exact route below
 
 describe('a hole on a curved side of a design', () => {
   it('goes onto the side from a point a little off it, square to the surface there, and says where it moved', async () => {
@@ -57,9 +57,9 @@ describe('a hole on a curved side of a design', () => {
     const d = await hull(h, false)
     const r = await h.call('slicerx_geom_hole', porthole(d, 40))
     expect(r.isError, text(r)).toBeFalsy()
-    expect(text(r)).toContain('; (40, -11, 10) is 0.243 mm off the surface, so the hole starts where its direction meets the surface, at (40, -10.757, 10)')
+    expect(text(r)).toContain('; (40, -11, 10) is 0.226 mm off the surface, so the hole starts where its direction meets the surface, at (40, -10.774, 10)')
     const out = data<{ output: { onto: { from: number[]; to: number[]; mm: number }; lastStep: { op: string } } }>(r).output
-    expect(out.onto).toEqual({ from: [40, -11, 10], to: [40, -10.757, 10], mm: 0.243 })
+    expect(out.onto).toEqual({ from: [40, -11, 10], to: [40, -10.774, 10], mm: 0.226 })
     expect(out.lastStep.op).toBe('shape.extrude')
   }, 120_000)
 
@@ -68,7 +68,7 @@ describe('a hole on a curved side of a design', () => {
     const d = await hull(h, false)
     const r = await h.call('slicerx_geom_hole', porthole(d, 20))
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('at: no face within 0.02 mm of (20, -11, 10); the surface nearest it is at (20.063, -9.768, 9.617), 1.292 mm away; give a point on the face the hole starts at')
+    expect(text(r)).toContain('at: no face within 0.02 mm of (20, -11, 10); the surface nearest it is at (20.192, -9.62, 10), 1.393 mm away; give a point on the face the hole starts at')
     const steps = data<{ output: { steps: unknown[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
     expect(steps).toHaveLength(1)
   }, 120_000)
