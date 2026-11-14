@@ -12,11 +12,6 @@ import type { FilamentList } from './tab-filaments'
 
 /** The picture's long side, px. */
 export const LOOK_PX = 512
-/**
- * The least share of the whole-model view, in percent of the pixels the model covers before or after, that a follow-up
- * change has to move for a person to see it at that view. Below it, the change is strengthened once before the reply.
- */
-export const VISIBLE_FLOOR_PCT = 2
 /** How far two pixels' colors may differ (summed over red, green and blue) and still read as the same. */
 const SAME_COLOR = 60
 
@@ -225,7 +220,7 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
   const looked = new Map<string, Drawn>()
   return defineTool({
     name: 'design.look',
-    version: '1.1.1',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     title: 'Look at the model',
@@ -287,10 +282,9 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
         const share = a && b ? await changedShare(a, b) : null
         if (share === null || !b) return { ok: false, summary: 'The change could not be measured' }
         const pct = Math.round(share * 10) / 10
-        const below = share < VISIBLE_FLOOR_PCT
         return {
-          summary: `Looked at the model again: ${pct}% of the whole-model view changed since the look before the change${below ? `, under the ${VISIBLE_FLOOR_PCT}% a person sees at that view` : ''}`,
-          output: { design: d.id, visiblePct: pct, floorPct: VISIBLE_FLOOR_PCT, belowFloor: below, px: LOOK_PX },
+          summary: `Looked at the model again: ${pct}% of the whole-model view changed since the look before the change`,
+          output: { design: d.id, visiblePct: pct, px: LOOK_PX },
           images: [{ mime: 'image/png' as const, data: b }],
         }
       }

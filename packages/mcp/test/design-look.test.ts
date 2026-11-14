@@ -6,7 +6,7 @@
 import { surfaceTools } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { headlessDesignHost } from '../evals/creative/design-host'
-import { LOOK_PX, VISIBLE_FLOOR_PCT } from '../src/look'
+import { LOOK_PX } from '../src/look'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../src/toolset'
 import { useGeomEngine } from './geom-engine'
 
@@ -45,18 +45,15 @@ describe('design.look', () => {
     expect((await run('design.look', { design: d, compare: true })).ok).toBe(false)
     await run('design.look', { design: d })
     const top = (x: number, y: number) => ({ origin: [x, y, 12], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] })
-    // a 1 mm knob on the top: under the floor
+    // a 1 mm knob on the top
     await run('geom.extrude', { design: d, part: 0, operation: 'join', frame: top(40, 0), shape: { type: 'rectangle', widthMm: 1, heightMm: 1 }, distance_mm: 0.5 })
     const small = await run('design.look', { design: d, compare: true })
-    const s1 = small.output as { visiblePct: number; floorPct: number; belowFloor: boolean }
-    expect(s1.floorPct).toBe(VISIBLE_FLOOR_PCT)
-    expect(s1.belowFloor).toBe(true)
-    expect(small.summary).toMatch(/^Looked at the model again: [\d.]+% of the whole-model view changed since the look before the change, under the 2% a person sees at that view$/)
+    const s1 = small.output as { visiblePct: number }
+    expect(small.summary).toMatch(/^Looked at the model again: [\d.]+% of the whole-model view changed since the look before the change$/)
     expect(small.images).toHaveLength(1)
-    // a block 30 mm long and 10 mm tall: well over it, measured against the same first look
+    // a block 30 mm long and 10 mm tall, measured against the same first look
     await run('geom.extrude', { design: d, part: 0, operation: 'join', frame: top(40, 0), shape: { type: 'rectangle', widthMm: 30, heightMm: 12 }, distance_mm: 10 })
-    const big = (await run('design.look', { design: d, compare: true })).output as { visiblePct: number; belowFloor: boolean }
-    expect(big.belowFloor).toBe(false)
+    const big = (await run('design.look', { design: d, compare: true })).output as { visiblePct: number }
     expect(big.visiblePct).toBeGreaterThan(s1.visiblePct + 5)
   })
 
