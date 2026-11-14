@@ -347,6 +347,18 @@ function carryPaint(before: readonly Flat[], after: Flat[], from: readonly numbe
   return { parts, dropped }
 }
 
+/** carryPaint for a step on every part, which keeps each part in its place: each part's paint stays its own. */
+function carryEach(before: readonly Flat[], after: Flat[]): { parts: Flat[]; dropped: boolean } {
+  let dropped = false
+  const parts = after.map((x, i) => {
+    if (x === before[i] || !before[i]) return x
+    const c = carryPaint([before[i]!], [x], [0])
+    dropped ||= c.dropped
+    return c.parts[0]!
+  })
+  return { parts, dropped }
+}
+
 const meshedAll = (call: EngineCall, parts: Flat[]): Promise<Flat[]> => (parts.some((p) => p.unmeshed) ? Promise.all(parts.map((p) => meshed(call, p))) : Promise.resolve(parts))
 
 /** A list as the engine's mesh steps read it: a typed array from a tessellation is copied to a plain list here only. */
@@ -482,6 +494,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   const reads = s.part === -1 ? parts : [parts[s.part], ...(p.op === 'boolean' ? p.with.map((i) => parts[i]) : [])]
   const newBody = makesBody(p)
   const onMesh = exact && !newBody && reads.length > 0 && reads.every((x) => !!x && meshPart(x))
+  // the mesh parts a cut on every part still has to cut once its exact parts are cut on the kernel
+  let meshRest: number[] | undefined
   if (exact && !onMesh && (parts.some((x) => x.smb || x.body !== undefined || x.primitive) || p.op === 'shape.extrude')) {
     let big: string | undefined
     const done = await exactStep(
@@ -508,10 +522,15 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       },
     )
     if (done) {
-      const carried = carryPaint(parts, done, [s.part, ...(p.op === 'boolean' ? p.with : [])])
+      const every = s.part === -1 && p.op === 'subtract'
+      const carried = every ? carryEach(parts, done) : carryPaint(parts, done, [s.part, ...(p.op === 'boolean' ? p.with : [])])
       if (carried.dropped) found.notes[s.id] = PAINT_DROPPED
       if (big) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${big}` : big
-      return carried.parts
+      // a cut on every part made on the exact parts goes on to the mesh parts beside them, on the mesh below
+      const rest = every ? carried.parts.flatMap((x, i) => (!x.smb && x.body === undefined ? [i] : [])) : []
+      if (!rest.length) return carried.parts
+      parts = carried.parts
+      meshRest = rest
     }
   }
   // A new body lofted where the engine makes exact lofts itself is asked for as one. The op takes no transform, so
@@ -571,11 +590,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     }
   }
   // paint keeps a solid when it covers whole faces (below), so a design that must stay exact takes it
-  if (strict && !onMesh && p.op !== 'paint') throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
-  const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]
+  if (strict && !onMesh && !meshRest && p.op !== 'paint') throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
+  const targets = meshRest ?? (s.part === -1 ? parts.map((_, i) => i) : [s.part])
   // the mesh path works on meshes: the kept bodies of the parts it reads are tessellated now, and every other part
   // keeps its solid untouched; a new body or an added part reads none
-  const meshes = p.op === 'parts.add' || newBody ? [] : reads
+  const meshes = p.op === 'parts.add' || newBody ? [] : meshRest ? meshRest.map((i) => parts[i]) : reads
   parts = meshes.some((x) => x?.unmeshed) ? await Promise.all(parts.map((x) => (meshes.includes(x) ? meshed(engine, x) : x))) : parts
   const out = parts.slice()
   const item = (f: Flat) => ({ mesh: meshOf(f), transform: s.transform })
@@ -891,7 +910,10 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
   const only = runs.length === 1 ? runs[0]! : undefined
   const target = parts[s.part]
   const follows = p.spec.kind === 'linear' && !!p.spec.onSurface
-  if (exact && only && !follows && only.params.op !== 'pattern' && target && (target.smb || target.body !== undefined || target.primitive)) {
+  const solidOr = (x: Flat | undefined) => !!x && (!!x.smb || x.body !== undefined || !!x.primitive)
+  // a pattern of a cut on every part goes in one call per exact part; the mesh parts beside them run copy by copy
+  const every = s.part === -1 && only?.params.op === 'subtract'
+  if (exact && only && !follows && only.params.op !== 'pattern' && (every ? parts.some(solidOr) : solidOr(target))) {
     const moves = stepCopyMoves(p.spec).map((move) => multiply(fromWorld, multiply(move, toWorld)))
     const salted: EngineCall = (op, r) => call(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
     const copies = moves.map((_, k) => k + 2)
@@ -907,15 +929,49 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
       left = copies
       done = null
     }
+    let after = done ? (every ? carryEach(parts, done) : carryPaint(parts, done, [s.part])) : { parts, dropped: false }
+    const notes: string[] = []
+    if (done && every) {
+      // the mesh parts beside the exact ones, copy by copy as the mesh path cuts them: a copy missed when it missed
+      // every part, on the kernel (an engine that does not say has it reach) and on the mesh alike
+      const rest = after.parts.flatMap((x, i) => (!x.smb && x.body === undefined ? [i] : []))
+      if (rest.length) {
+        const kernel = new Set(left ?? [])
+        const missedHere: number[] = []
+        let mesh = rest.map((i) => after.parts[i]!)
+        for (const [k, move] of stepCopyMoves(p.spec).entries()) {
+          const back = invert(multiply(fromWorld, multiply(move, toWorld)))
+          const copy: Step = { id: `${s.id}#${k + 2}.1`, part: -1, transform: multiply(only.transform, back), params: copyParams(only.params) }
+          try {
+            mesh = await runStep(call, copy, mesh, fonts, moved, gone, found, exact, solids, strict)
+          } catch (e) {
+            if ((e as { name?: string }).name === 'AbortError') throw e
+            if (!missed(e)) throw new Broken(`Copy ${k + 2}: ${e instanceof Error ? e.message : String(e)}`)
+            if (kernel.has(k + 2)) missedHere.push(k + 2)
+          } finally {
+            const note = found.notes[copy.id]
+            if (note && note !== EXACT_FELL_BACK && !notes.includes(note)) notes.push(note)
+            delete found.notes[copy.id]
+            delete found.keys[copy.id]
+            delete moved[copy.id]
+            gone.delete(copy.id)
+          }
+        }
+        const merged = after.parts.slice()
+        rest.forEach((i, j) => (merged[i] = mesh[j]!))
+        after = { parts: merged, dropped: after.dropped }
+        left = missedHere
+      }
+    }
     const landed = copiesLanded(copies, left, inCopy)
     if (landed.broken) throw new Missed(landed.broken)
     // every copy missed inside a copy of an outer pattern: the parts stay as they are, and the note says so
     if (done || left === copies) {
-      const carried = done ? carryPaint(parts, done, [s.part]) : { parts, dropped: false }
-      if (carried.dropped) found.notes[s.id] = PAINT_DROPPED
+      if (after.dropped) found.notes[s.id] = PAINT_DROPPED
       if (inCopy === undefined) keptCopies(found, s.id, moves.length + 1, landed.missed)
-      if (landed.note) found.notes[s.id] = found.notes[s.id] ? `${landed.note} ${found.notes[s.id]}` : landed.note
-      return carried.parts
+      const said = [landed.note, ...notes, found.notes[s.id]].filter((x): x is string => !!x)
+      if (said.length) found.notes[s.id] = said.join(' ')
+      return after.parts
     }
   }
   let out = parts

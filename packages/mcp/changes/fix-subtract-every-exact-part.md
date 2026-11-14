@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_geom_subtract` 1.3.2 with no `part`, on a design with exact parts, cuts each exact part on the exact kernel with the same cutters, and keeps a part the cutters miss as it is. Mesh parts beside them are cut on the mesh, as before. Before, the cut was refused on a design that must stay exact ("Exact replay does not support subtract for this part"), and elsewhere the exact parts were cut on the mesh and were no longer exact from that step on. A row or mirror of such a cut on exact parts is made the same way. When the cutters miss every part, the step is refused with "The shape no longer reaches the part", as on the mesh.

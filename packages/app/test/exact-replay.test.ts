@@ -570,3 +570,151 @@ it('breaks a pattern whose steps are gone or cannot be repeated, in words', asyn
   const off = await replayHistory(engine().call, { history: history(box, { ...hole, suppressed: true }, step('row-1', { op: 'pattern', steps: ['hole-1'], spec: { kind: 'linear', count: 2, step: [6, 0, 0] } })) })
   expect(off.status[2]).toEqual({ state: 'done', note: 'The steps this pattern repeats are turned off, so it repeats nothing.' })
 })
+
+// a cut on every part (part -1), as geom.subtract with no part stores it, on two exact bodies
+const onPart = (id: string, part: number) => ({ ...step(id, box.params), part })
+const holeAll: Step = { ...step('hole-all', hole.params), part: -1 }
+/** The stand-in engine, with the kernel saying its cutters all missed the bodies named in `miss`. */
+function missing(miss: string[]) {
+  const e = engine()
+  const call = async (op: string, request: unknown) => {
+    const r = (await e.call(op, request)) as R
+    const b = (request as R)['body'] as { smb?: string } | undefined
+    return op === 'brep.subtract' && b?.smb && miss.includes(b.smb) ? { ...r, missed: [0] } : r
+  }
+  return { ...e, call }
+}
+
+it('cuts every part on the kernel for a step on every part, with the same cutters and frame, in a design that must stay exact too', async () => {
+  for (const strict of [false, true]) {
+    clearReplayCache()
+    const e = engine()
+    const r = await replayHistory(e.call, { history: { ...history(onPart('a', 0), onPart('b', 1), holeAll), ...(strict ? { exact: true } : {}) }, exact: true })
+    expect(r.status).toEqual([{ state: 'done' }, { state: 'done' }, { state: 'done' }])
+    expect(r.exactFellBack).toBeUndefined()
+    // nothing on the mesh: one subtract for each part's solid
+    expect(e.ops().filter((o) => !o.startsWith('brep.'))).toEqual([])
+    const subtracts = e.sent.filter((s) => s.op === 'brep.subtract')
+    expect(subtracts.map((s) => s.req['body'])).toEqual([{ smb: 'extrude-1' }, { smb: 'extrude-2' }])
+    expect(subtracts.map((s) => s.req['solids'])).toEqual([hole.params, hole.params].map((p) => (p as { solids: unknown }).solids))
+    expect(subtracts.map((s) => s.req['frame'])).toEqual([0, 0].map(() => ({ origin: [0, 0, 0], u: [1, 0, 0], normal: [0, 0, 1] })))
+    expect(subtracts.map((s) => s.req['keySalt'])).toEqual([stepSalt('hole-all'), stepSalt('hole-all')])
+  }
+})
+
+it('keeps a part the cutters all miss as it is on a step on every part, and breaks the step when they miss every part', async () => {
+  const cutB = { ...cut, id: 'cut-b', part: 1 }
+  const e = missing(['extrude-2'])
+  const r = await replayHistory(e.call, { history: { ...history(onPart('a', 0), onPart('b', 1), holeAll, cutB), exact: true }, exact: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+  // the kernel answers a miss with an unchanged copy and every cutter in `missed`: the part keeps the body it had
+  expect(e.sent.filter((s) => s.op === 'brep.cut').map((s) => s.req['body'])).toEqual([{ smb: 'extrude-2' }])
+  clearReplayCache()
+  const all = missing(['extrude-1', 'extrude-2'])
+  const none = await replayHistory(all.call, { history: { ...history(onPart('a', 0), onPart('b', 1), holeAll), exact: true }, exact: true })
+  expect(none.status[2]).toEqual({ state: 'broken', message: 'The shape no longer reaches the part.' })
+})
+
+it('with kept bodies, a part the cutters all miss keeps its body by number, and the unchanged copy is freed', async () => {
+  const e = keeper()
+  const call = async (op: string, request: unknown) => {
+    const r = (await e.call(op, request)) as R
+    return op === 'brep.subtract' && (request as R)['body'] === 2 ? { ...r, missed: [0] } : r
+  }
+  const filletB = { ...fillet2, id: 'fillet-b', part: 1 }
+  clearReplayCache()
+  e.freed.length = 0
+  const r = await replayHistory(call, { history: history(onPart('a', 0), onPart('b', 1), holeAll, filletB), exact: true }, { keepsBodies: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+  expect(e.sent.filter((s) => s.op === 'brep.subtract').map((s) => s.req['body'])).toEqual([1, 2])
+  // body 4 is the miss's copy of body 2: the fillet works on body 2, and nothing holds 4
+  expect(e.sent.find((s) => s.op === 'brep.fillet')!.req['body']).toBe(2)
+  expect(e.freed).toContain(4)
+})
+
+it('cuts the exact parts on the kernel and a mesh part beside them on the mesh, for a step on every part', async () => {
+  const base: History['base'] = [{ name: 'Imported', slot: 1, ...tri }]
+  for (const strict of [false, true]) {
+    clearReplayCache()
+    const e = engine()
+    const r = await replayHistory(e.call, { history: { version: 1, base, steps: [onPart('b', 1), holeAll], ...(strict ? { exact: true } : {}) }, exact: true })
+    // the exact part stays exact, and the mesh part was never one: no note either way
+    expect(r.status).toEqual([{ state: 'done' }, { state: 'done' }])
+    expect(e.ops()).toEqual(['brep.extrude', 'brep.tessellate', 'brep.subtract', 'brep.tessellate', 'subtract'])
+    expect(e.sent[2]!.req['body']).toEqual({ smb: 'extrude-1' })
+    expect((e.sent[4]!.req['mesh'] as { mesh: unknown }).mesh).toEqual(tri)
+    expect(r.meshParts).toEqual([0])
+  }
+})
+
+// a mesh part beside an exact body, for the patterns of a cut on every part
+const meshBase: History['base'] = [{ name: 'Imported', slot: 1, ...tri }]
+const meshOps = (ops: string[]) => ({ kernel: ops.filter((o) => o === 'brep.subtract').length, mesh: ops.filter((o) => o === 'subtract').length })
+
+it('repeats a cut on every part along a row in one kernel call per exact part, with the mesh part beside it cut copy by copy', async () => {
+  const row: Step = { ...step('row-1', { op: 'pattern', steps: ['hole-all'], spec: { kind: 'linear', count: 3, step: [6, 0, 0] } }), part: -1 }
+  const e = engine()
+  const r = await replayHistory(e.call, { history: { ...history(onPart('a', 0), onPart('b', 1), holeAll, row), exact: true }, exact: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+  expect(e.ops().filter((o) => !o.startsWith('brep.'))).toEqual([])
+  const subtracts = e.sent.filter((s) => s.op === 'brep.subtract')
+  // the cut on each part, then each part with both copies' cylinders at once
+  expect(subtracts).toHaveLength(4)
+  expect(subtracts.slice(2).map((s) => (s.req['solids'] as { origin: number[] }[]).map((c) => c.origin))).toEqual([[[6, 0, 0], [12, 0, 0]], [[6, 0, 0], [12, 0, 0]]])
+  expect(subtracts.slice(2).map((s) => s.req['keySalt'])).toEqual([stepSalt('row-1'), stepSalt('row-1')])
+  for (const strict of [false, true]) {
+    clearReplayCache()
+    const f = engine()
+    const mixed = await replayHistory(f.call, { history: { version: 1, base: meshBase, steps: [onPart('b', 1), holeAll, row], ...(strict ? { exact: true } : {}) }, exact: true })
+    // the exact part stays exact: the cut and both copies on the kernel, two calls; the mesh part's cut and copies on the mesh
+    expect(mixed.status).toEqual([{ state: 'done' }, { state: 'done' }, { state: 'done', copies: { kept: 3, missed: [], total: 3 } }])
+    expect(meshOps(f.ops())).toEqual({ kernel: 2, mesh: 3 })
+    expect(mixed.meshParts).toEqual([0])
+    // each mesh copy moved by its step along the row
+    expect(f.sent.filter((s) => s.op === 'subtract').map((s) => (s.req['mesh'] as { transform: number[] }).transform[12])).toEqual([0, -6, -12])
+  }
+})
+
+it('leaves out a copy of a row of cuts on every part only when it misses every part, on the kernel and on the mesh', async () => {
+  const row: Step = { ...step('row-1', { op: 'pattern', steps: ['hole-all'], spec: { kind: 'linear', count: 3, step: [6, 0, 0] } }), part: -1 }
+  // the kernel says the row's copy 3 (its second cutter) missed the exact part; `meshMiss` has the mesh miss copy 3 too
+  const run = async (meshMiss: boolean) => {
+    clearReplayCache()
+    const e = engine()
+    const call = async (op: string, request: unknown) => {
+      const req = request as R
+      const r = (await e.call(op, request)) as R
+      if (op === 'brep.subtract' && (req['solids'] as unknown[]).length === 2) return { ...r, missed: [1] }
+      if (op === 'subtract' && meshMiss && (req['mesh'] as { transform: number[] }).transform[12] === -12) return { ...r, removedVolumeMm3: 0 }
+      return r
+    }
+    return replayHistory(call, { history: { version: 1, base: meshBase, steps: [onPart('b', 1), holeAll, row] }, exact: true })
+  }
+  expect((await run(false)).status[2]).toEqual({ state: 'done', copies: { kept: 3, missed: [], total: 3 } })
+  expect((await run(true)).status[2]).toMatchObject({ state: 'done', note: 'Copy 3 did not reach the part and was left out.', copies: { missed: [3], total: 3 } })
+})
+
+it('mirrors a cut on every part in one kernel call per exact part, with the mesh part beside it cut on the mesh', async () => {
+  const both: Step = { ...step('both-1', { op: 'pattern', steps: ['hole-all'], spec: { kind: 'mirror', plane: { point: [5, 0, 0], normal: [1, 0, 0] } } }), part: -1 }
+  const e = engine()
+  const r = await replayHistory(e.call, { history: { ...history(onPart('a', 0), onPart('b', 1), holeAll, both), exact: true }, exact: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+  expect(e.ops().filter((o) => !o.startsWith('brep.'))).toEqual([])
+  const subtracts = e.sent.filter((s) => s.op === 'brep.subtract')
+  // the cut on each part, then each part with the mirrored cylinder, reflected through x = 5
+  expect(subtracts).toHaveLength(4)
+  expect(subtracts.slice(2).map((s) => s.req['solids'])).toMatchObject([0, 1].map(() => [{ type: 'cylinder', origin: [10, 0, 0], diameterMm: 4, heightMm: 5 }]))
+  expect(subtracts.slice(2).map((s) => s.req['keySalt'])).toEqual([stepSalt('both-1'), stepSalt('both-1')])
+  for (const strict of [false, true]) {
+    clearReplayCache()
+    const f = engine()
+    const mixed = await replayHistory(f.call, { history: { version: 1, base: meshBase, steps: [onPart('b', 1), holeAll, both], ...(strict ? { exact: true } : {}) }, exact: true })
+    // the exact part stays exact, with no note: the mirrored cylinder goes to the kernel, and the mesh part's mirror image
+    // is cut on the mesh, reflected through x = 5 as the engine applies it to the part
+    expect(mixed.status).toEqual([{ state: 'done' }, { state: 'done' }, { state: 'done', copies: { kept: 2, missed: [], total: 2 } }])
+    expect(meshOps(f.ops())).toEqual({ kernel: 2, mesh: 2 })
+    expect(f.sent.filter((s) => s.op === 'brep.subtract')[1]!.req['solids']).toMatchObject([{ type: 'cylinder', origin: [10, 0, 0] }])
+    expect(f.sent.filter((s) => s.op === 'subtract')[1]!.req['mesh']).toMatchObject({ transform: [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1] })
+    expect(mixed.meshParts).toEqual([0])
+  }
+})

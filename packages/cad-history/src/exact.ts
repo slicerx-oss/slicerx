@@ -797,7 +797,8 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
     // the parts the step works on that Add shape made, and still fit the shape, start as the kernel's solid of it;
     // not a sphere yet, whose triangles at the mesh's resolution take the kernel over 20 ms
     const used = new Set([s.part, ...(p.op === 'boolean' ? p.with : [])])
-    parts = await Promise.all(parts.map(async (x, i) => (used.has(i) && x.primitive && x.primitive.type !== 'sphere' && solid(x) === null && fits(x.primitive, x.positions, x.indices) ? part(x, await call('brep.primitive', { ...x.primitive, ...kept })) : x)))
+    const every = s.part === -1 && p.op === 'subtract'
+    parts = await Promise.all(parts.map(async (x, i) => ((every || used.has(i)) && x.primitive && x.primitive.type !== 'sphere' && solid(x) === null && fits(x.primitive, x.positions, x.indices) ? part(x, await call('brep.primitive', { ...x.primitive, ...kept })) : x)))
     const target = parts[s.part]
     const out = parts.slice()
     switch (p.op) {
@@ -866,17 +867,32 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         return out
       }
       case 'subtract': {
-        const b = solid(target)
-        if (b === null || !target) return null
+        // on every part (-1): each part with a solid is cut with the same cutters; a mesh part beside them is left
+        // for the mesh path (runStep, or a pattern's copies of it)
+        const on = every ? parts.flatMap((x, i) => (solid(x) === null ? [] : [i])) : [s.part]
+        if (!on.length || on.some((i) => solid(parts[i]) === null)) return null
         let cutters: SolidSpec[] = p.solids
         if (copies) {
           const moved = copies.flatMap((m) => p.solids.map((x) => movedSolid(x, s.transform, m)))
           if (moved.some((x) => x === null)) return null
           cutters = moved as SolidSpec[]
         }
-        const r = await call('brep.subtract', { body: b, solids: cutters, frame, ...kept })
-        if (copies) missed?.(missedCopies(r, p.solids.length, copies.length))
-        out[s.part] = await part(target, r)
+        const left: (number[] | null)[] = []
+        let reached = false
+        for (const i of on) {
+          const r = await call('brep.subtract', { body: solid(parts[i]), solids: cutters, frame, ...kept })
+          if (copies) left.push(missedCopies(r, p.solids.length, copies.length))
+          const made = await part(parts[i]!, r)
+          // cutters that all miss a part come back as an unchanged copy with every cutter in `missed`: on every part,
+          // that part is kept as it is (a body cut away whole has no faces, and is not a miss)
+          if (every && missedCopies(r, cutters.length, 1)?.length && (made.unmeshed?.length || made.indices.length)) continue
+          reached = true
+          out[i] = made
+        }
+        // a copy missed when it missed every part; unknown when any reply does not say
+        if (copies) missed?.(left.some((m) => m === null) ? null : (left[0] as number[]).filter((j) => left.every((m) => m!.includes(j))))
+        // every part missed, with no mesh part left to cut: the step reaches nothing, as on the mesh
+        if (every && !copies && !reached && on.length === parts.length) throw new ExactMissed('The shape no longer reaches the part.')
         return out
       }
       case 'boolean': {
