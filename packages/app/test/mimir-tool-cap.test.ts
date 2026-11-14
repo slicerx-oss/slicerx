@@ -203,6 +203,20 @@ describe('no mimir tab request carries more than 128 tools', () => {
     }
   }, 60_000)
 
+  it('sends the real-size lookup on a design turn, and holds it back on a print turn', async () => {
+    const off = await registerApp('desktop')
+    try {
+      for (const mode of ['mimir cloud', 'openai key'] as Mode[]) {
+        expect(toolNames((await turn('desktop', NEUTRAL, mode, TURNS[0]!)).req), `build turn, ${mode}`).toContain('design__lookup_sizes')
+        expect(toolNames((await turn('desktop', NEUTRAL, mode, TURNS[4]!)).req), `print turn, ${mode}`).not.toContain('design__lookup_sizes')
+      }
+      // a local model plans without real sizes, so it is not offered the lookup
+      expect(toolNames((await turn('desktop', NEUTRAL, 'local', TURNS[0]!)).req)).not.toContain('design__lookup_sizes')
+    } finally {
+      off()
+    }
+  }, 60_000)
+
   it('sends the trending models command on a design turn only when it asks for the library or what is trending', async () => {
     const off = await registerApp('desktop')
     try {

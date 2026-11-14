@@ -6,7 +6,7 @@
 import { assistantText } from '@slicerx/contracts'
 import { mimirTabTools } from '@slicerx/mcp/toolset'
 import { DEFAULT_CONFIG, createPilot, createScriptedClient, isRuntimeNote, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
-import { planTool } from './plan-tool'
+import { lookupTool, planTool } from './plan-tool'
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type Pilot, type PrinterHost, type SessionStore } from '@slicerx/contracts'
 
 export interface MimirScript {
@@ -89,7 +89,7 @@ const NO_LLM = {} as LlmTransport
  * design toolset's design.put_plan and design.trace_image (@slicerx/mcp tab-tools.ts, which the creative eval uses too).
  */
 export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
-  return mimirTabTools(planTool(), extra)
+  return mimirTabTools(planTool(), extra, lookupTool())
 }
 
 /** The scripted stub's huginn and muninn: the stub, never a real model's id. */

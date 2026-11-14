@@ -15,6 +15,7 @@ import { MAX_FILAMENTS } from './filaments'
 import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
 import { AMEND_REASON_MAX, amendChanges, amendDropProblem, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
 import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
+import { realSizeProblem, type RealEntry } from './plan-detail'
 import { meshStats } from './mesh'
 import { movedStep, sizedStep } from './step-reshape'
 import { carriedSteps, leanRow, tiltedStep, tiltInput, tiltProblem, type Leaning } from './step-tilt'
@@ -386,6 +387,8 @@ export interface DesignToolOptions {
   cardSide?: boolean | undefined
   /** The project's filament colors as #rrggbb, slot 1 first, so design.check can read a painted color band's color. */
   filamentColors?: (() => readonly string[]) | undefined
+  /** A size lookup's first source page by its lookupId (the mimir tab's design.lookup_sizes), for design.check's reply. */
+  lookupSource?: ((id: string) => { title: string; url: string } | undefined) | undefined
   /**
    * Whether design.new makes an exact design when it is not given `exact`; read only there. Off when absent, so a
    * design is a mesh one unless asked. `exact` given either way wins.
@@ -939,7 +942,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.24.3',
+    version: '1.25.0',
     source: 'command',
     permission: 'read',
     description:
@@ -1011,7 +1014,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           const printer = ctx?.context?.machine?.printer
           // a note on its looks (a small part that hardly shows) is said too, or the reply would skip it
           const notes = result.notes?.length ? `. ${NOTES_SAY(result.notes)}` : ''
-          return { summary: `${summary}. In the reply, give its size (${long} mm long, ${Math.round(Math.min(b.x, b.y))} mm wide and ${Math.round(b.z)} mm tall, fits ${printer ? `the ${printer}` : 'the bed'}) and offer a resize as a follow-up: half size, or a length the person types${notes}`, output }
+          const real = realSaid((entry.plan as { real?: readonly RealEntry[] }).real, opts.lookupSource)
+          return { summary: `${summary}. In the reply, give its size (${long} mm long, ${Math.round(Math.min(b.x, b.y))} mm wide and ${Math.round(b.z)} mm tall, fits ${printer ? `the ${printer}` : 'the bed'})${real} and offer a resize as a follow-up: half size, or a length the person types${notes}`, output }
         }
         return { summary, output }
       }
@@ -1037,13 +1041,13 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.8.0',
+    version: '1.9.0',
     source: 'command',
     permission: 'read',
     description:
       'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and, when a piece is meant to be open (the top of a cup, holder or vase), its open faces in openFaces: the piece (the part name, or a piece printInPlace names) and its faces as it prints (top, bottom, front, back, left or right, each once, never all six). Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with, and underFloors: each size under the smallest this printer makes (a gap on each side between pieces, held to the side by side gap unless the pieces print in place, with pin and bore when it runs around a pin; a wall or pin under two nozzle lines; a hole under the nozzle), with the floor and why, and unstated when a plan with a hinge or a pin piece does not say whether it prints assembled on its hinge (printInPlace) or laid apart (an assumption), or says both. The plan is kept as given; put it again with the floor to build to it. Once its part is built, a size the build cannot keep is changed with amends (its planId) and reason (why, required): sizes only, once per fix round and never after the stop result; the plan keeps its design and fix round, and the result gives its revision and each change.',
     input: z.object({
-      plan: partPlanSchema.omit({ detail: true, curved: true, flat: true, proportions: true, repeats: true, colors: true, scale: true, real: true, tiers: true }).extend({ assumptions: assumptionsInput }).describe('The part plan: planId, part, units, features, optional overall, holes, printInPlace and openFaces, assumptions and questions'),
+      plan: partPlanSchema.omit({ detail: true, curved: true, flat: true, proportions: true, repeats: true, colors: true, tiers: true }).extend({ assumptions: assumptionsInput, scale: partPlanSchema.shape.scale.describe(CLIENT_SCALE), real: partPlanSchema.shape.real.describe(CLIENT_REAL) }).describe('The part plan: planId, part, units, features, optional overall, holes, printInPlace and openFaces, assumptions and questions'),
       design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
       amends: z.string().trim().min(1).max(64).optional().describe("To change your built plan's sizes: its planId, the same as plan.planId; once per fix round"),
       reason: z.string().max(AMEND_REASON_MAX).optional().describe('With amends: why the build changes the plan'),
@@ -1055,6 +1059,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       if (i.reason !== undefined) throw new ToolInputError('reason: give a reason only with amends, to change a plan of yours')
       const faces = openFacesProblem(i.plan)
       if (faces) throw new ToolInputError(faces)
+      // a model of a real thing is held to its real sizes at scale, each from the page or the person's words it gives
+      const real = realSizeProblem(i.plan, CLIENT_SOURCES)
+      if (real) throw new ToolInputError(real)
       // a tie names a design that exists (get refuses one that does not)
       const tied = i.design ? designs.get(i.design) : undefined
       plans.put(i.plan, tied?.id, 'client')
@@ -1078,8 +1085,27 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           holes,
           ...(unstated ? { unstated } : {}),
           ...(p.openFaces ? { openFaces: p.openFaces } : {}),
+          ...(p.real?.length ? { scale: p.scale, real: p.real } : {}),
           underFloors: under.map(underOut),
         },
+      }
+    },
+  })
+
+  // A client reads a kept plan back: its own, or one the person made on the mimir tab's card, as design.check holds it.
+  const getPlan = defineTool({
+    name: 'design.get_plan',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: 'Read a kept part plan by its planId, as slicerx_design_check holds the part to it: its features and sizes, its real sizes with where each came from, the design it is tied to, and its revision.',
+    input: z.object({ planId: z.string().trim().min(1).max(64).describe('The planId of a plan kept by slicerx_design_put_plan or made on the mimir tab') }),
+    async run(i) {
+      const entry = plans.get(i.planId)
+      if (!entry) throw new ToolInputError(`planId: no plan ${i.planId} is kept`)
+      return {
+        summary: `Plan ${i.planId} for ${entry.plan.part}: ${plural(entry.plan.features.length, 'feature')}${entry.plan.real?.length ? `, ${plural(entry.plan.real.length, 'real size')}` : ''}${entry.design ? `, tied to ${entry.design}` : ''}`,
+        output: { plan: entry.plan, origin: entry.origin, ...(entry.design ? { design: entry.design } : {}), ...(entry.revision ? { revision: entry.revision } : {}) },
       }
     },
   })
@@ -1113,7 +1139,28 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     }
   }
 
-  return [create, open, list, steps, edit, undo, redo, partFilament, renamePart, timeline, roll, save, check, plan] as PilotTool<never>[]
+  return [create, open, list, steps, edit, undo, redo, partFilament, renamePart, timeline, roll, save, check, plan, getPlan] as PilotTool<never>[]
+}
+
+/** A client plan's real sizes come from the pages and words it gives; no lookup runs over MCP. */
+const CLIENT_SOURCES = { canLookUp: false, client: true, lookup: () => undefined, lookups: () => [] } as const
+/** The client's scale, in its words. */
+const CLIENT_SCALE = 'For a model of a real thing: N of the scale 1:N its real sizes are held to, such as 25'
+/** The client's real sizes, in its words. The owner approves this wording. */
+const CLIENT_REAL =
+  'For a model of a real thing: its real sizes in mm at full size, each tied to the feature size it sets, with the page it came from as source or the person\'s words that give it as stated, such as {"feature": "Deck", "size": "length", "mm": 280000, "source": {"title": "Bridge facts", "url": "https://example.org/bridge"}}. Each is held to scale within about a third'
+
+/**
+ * Where a display plan's real sizes came from, as design.check's reply says it: the sizes taken from memory by name, or
+ * the page its lookup read. Empty when the plan has no real sizes, or gives them from the person's words only.
+ */
+export function realSaid(real: readonly RealEntry[] | undefined, source?: (id: string) => { title: string } | undefined): string {
+  const list = real ?? []
+  const memory = list.filter((r) => r.lookup === undefined && r.stated === undefined && r.source === undefined).map((r) => `${r.feature} ${r.size}`)
+  if (memory.length) return `, say ${memory.length > 1 ? `${memory.slice(0, -1).join(', ')} and ${memory.at(-1)!}` : memory[0]!} ${memory.length === 1 ? 'is' : 'are'} from memory, not looked up,`
+  const looked = list.find((r) => r.lookup !== undefined)
+  const page = looked?.lookup !== undefined ? source?.(looked.lookup) : list.find((r) => r.source)?.source
+  return page ? `, say its real sizes were looked up on ${page.title},` : ''
 }
 
 /** Sizes under the printer's floors in the result's words, for a plan kept as the client gave it. */
