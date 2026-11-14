@@ -78,6 +78,15 @@ describe('design.lookup_sizes asks for a few published sizes', () => {
     expect(t.description).toContain('at most 5 sizes sources commonly publish')
   })
 
+  it('keeps no found sizes, and shows no card, when the web answer cites no page', async () => {
+    const t = lookup()
+    const ctx = { sessionId: 's1', web: async () => ({ text: 'Tower height: 30 m\nBase width: 8 m', citations: [] }) } as unknown as ToolContext
+    const out = await t.run(t.input.parse({ subject: 'a stone tower', sizes: ['Tower height', 'Base width'] }) as never, ctx)
+    expect(out.output).toEqual({ lookupId: 'lookup_1', subject: 'a stone tower', found: [], missing: ['Tower height', 'Base width'], sources: [] })
+    expect(out.summary).toBe('lookup_1: found 0 of 2 sizes; no source gave Tower height, Base width')
+    expect(out.lookup).toBeUndefined()
+  })
+
   it('reads the recorded answer end to end through the tool', async () => {
     const t = lookup()
     const ctx = { sessionId: 's1', web: async () => ({ text: RECORDED, citations: [] }) } as unknown as ToolContext

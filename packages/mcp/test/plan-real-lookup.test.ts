@@ -47,7 +47,7 @@ const bridge: PlanInput = {
 type Web = NonNullable<ToolContext['web']>
 
 /** The tab's tools over a fresh card, with a web lookup that answers `answer` (none when `web` is false). */
-function tab(opts: { web?: false; answer?: string; said?: string[] } = {}) {
+function tab(opts: { web?: false; answer?: string; said?: string[]; citations?: Awaited<ReturnType<Web>>['citations'] } = {}) {
   const card = createCardPlans(createPlanRegistry())
   const tools = tabToolset({ list: () => [], get: () => undefined } as unknown as DesignHost, card, { nozzleMm: () => machine.nozzle, newPlanId: () => 'plan_1' })
   const plan = tools.find((t) => t.name === 'design.plan')!
@@ -56,7 +56,7 @@ function tab(opts: { web?: false; answer?: string; said?: string[] } = {}) {
   const queries: string[] = []
   const web: Web = async (query) => {
     queries.push(query)
-    return { text: opts.answer ?? '', citations: [{ id: 'https://example.org/bridge', title: 'Bridge facts', url: 'https://example.org/bridge', kind: 'web' }] }
+    return { text: opts.answer ?? '', citations: opts.citations ?? [{ id: 'https://example.org/bridge', title: 'Bridge facts', url: 'https://example.org/bridge', kind: 'web' }] }
   }
   const ctx = {
     sessionId: 's1',
@@ -162,6 +162,71 @@ describe('a looked-up real size', () => {
     const out = await t.plan(bridge)
     expect(out.ok).not.toBe(false)
     expect(t.shown[0]!.assumptions).toEqual(['real: Deck length, Main tower height and Towers (array) spacing are from memory, as the lookup found no source for them'])
+  })
+})
+
+/** A stone tower at display detail, 1:200: a flat body, merlons patterned around its top. */
+const tower: PlanInput = {
+  personSize: true,
+  part: 'Stone tower',
+  units: 'mm',
+  detail: 'display',
+  flat: ['Tower'],
+  tiers: { Tower: ['Tower'] },
+  proportions: 'lookup: tower 30 m tall, merlons 2 m tall and 2 m apart, scaled 1:200',
+  scale: 200,
+  repeats: ['merlons'],
+  real: [
+    { feature: 'Tower', size: 'height', mm: 30000 },
+    { feature: 'Merlon', size: 'height', mm: 2000 },
+    { feature: 'Merlons (array)', size: 'spacing', mm: 2000 },
+  ],
+  features: [
+    { name: 'Tower', kind: 'extrude', sizes: { length: 40, width: 40, height: 150 } },
+    { name: 'Merlon', kind: 'extrude', sizes: { width: 4, depth: 4, height: 10 } },
+    { name: 'Merlons (array)', kind: 'array', sizes: { count: 8, spacing: 10 }, kinds: { count: 'count' } },
+    { name: 'Door', kind: 'extrude', sizes: { width: 8, depth: 2, height: 14 } },
+    { name: 'Base', kind: 'extrude', sizes: { length: 40, width: 40, height: 6 } },
+    { name: 'Ledge', kind: 'extrude', sizes: { length: 40, width: 40, height: 2 } },
+    { name: 'Roof ring', kind: 'extrude', sizes: { length: 40, width: 40, height: 3 } },
+    { name: 'Steps', kind: 'extrude', sizes: { length: 10, width: 6, height: 3 } },
+  ],
+  assumptions: [],
+  questions: [],
+}
+
+/** The tower's sizes in a web answer, and the names the lookup asks for them by. */
+const TOWER_ANSWER = 'Tower height: 30 m\nMerlon height: 2 m\nMerlons spacing: 2 m'
+const TOWER_SIZES = ['Tower height', 'Merlon height', 'Merlons spacing']
+
+describe('a lookup whose web answer cites no page', () => {
+  // the answer gives sizes, but nothing was read on the web to give them, so they are from memory
+  it('keeps none of its sizes as found, and the plan takes them from memory and says so', async () => {
+    const t = tab({ answer: TOWER_ANSWER, citations: [] })
+    const out = await t.lookup({ subject: 'a stone tower', sizes: TOWER_SIZES })
+    expect(out.output).toEqual({ lookupId: 'lookup_1', subject: 'a stone tower', found: [], missing: TOWER_SIZES, sources: [] })
+    expect(out.summary).toBe('lookup_1: found 0 of 3 sizes; no source gave Tower height, Merlon height, Merlons spacing')
+    expect(out.lookup).toBeUndefined()
+    expect((await t.plan(tower)).ok).not.toBe(false)
+    expect(t.shown[0]!.assumptions).toEqual(['real: Tower height, Merlon height and Merlons (array) spacing are from memory, as the lookup found no source for them'])
+  })
+
+  it('does not hold a plan that gives its lookupId to those sizes as found ones, but takes them from memory', async () => {
+    const t = tab({ answer: TOWER_ANSWER, citations: [] })
+    const id = ((await t.lookup({ subject: 'a stone tower', sizes: TOWER_SIZES })).output as { lookupId: string }).lookupId
+    const real = tower.real!.map((r) => ({ ...r, lookup: id }))
+    expect((await t.plan(withReal(tower, real))).ok).not.toBe(false)
+    expect(t.shown[0]!.real).toEqual(real)
+    expect(t.shown[0]!.assumptions).toEqual(['real: Tower height, Merlon height and Merlons (array) spacing are from memory, as the lookup found no source for them'])
+    // design.check's reply names them as from memory too, since the lookup read no page
+    expect(realSaid(real, () => undefined)).toBe(', say Tower height, Merlon height and Merlons (array) spacing are from memory, not looked up,')
+  })
+
+  it('holds the same answer to its figures once it cites a page', async () => {
+    const t = tab({ answer: TOWER_ANSWER })
+    const id = ((await t.lookup({ subject: 'a stone tower', sizes: TOWER_SIZES })).output as { lookupId: string }).lookupId
+    expect((await t.plan(withReal(tower, tower.real!.map((r) => ({ ...r, lookup: id }))))).ok).not.toBe(false)
+    expect(t.shown[0]!.assumptions).toEqual([])
   })
 })
 
