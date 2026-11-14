@@ -479,21 +479,33 @@ export const STAND_LAYER_MM = 0.2
 /** A feature that copies another: an array or a pattern. */
 const COPIES = /\b(array|pattern)\b/i
 
+/**
+ * The top a stacked part is read against (topUnder): its height, mm, and whether it is the lowest of a deck under the
+ * part or the support's highest point.
+ */
+export interface TopRead {
+  z: number
+  under: boolean
+}
+
+/** The support a failure names, with the height of the top the part was read against, so the fix needs no reading. */
+const supportTop = (support: string, top: TopRead): string => `${support}, whose ${top.under ? 'lowest point under it' : 'highest point'} is at z ${r2(top.z)} mm`
+
 /** The failure for a stacked part whose base is sunk below its support's top, with a planned height. */
-export const STANDS_OFF = (part: string, support: string, below: number, shows: number, planned: number): string =>
-  `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; build it from the top of ${support}`
+export const STANDS_OFF = (part: string, support: string, below: number, shows: number, planned: number, top: TopRead): string =>
+  `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; build it from the top of ${supportTop(support, top)}`
 
 /** The failure for a stacked part whose base floats above its support's top, planned height or not. */
-export const STANDS_FLOATS = (part: string, support: string, above: number): string =>
-  `${part} stands on ${support}, but its base is ${r2(above)} mm above its top, so it floats; build it from the top of ${support}`
+export const STANDS_FLOATS = (part: string, support: string, above: number, top: TopRead): string =>
+  `${part} stands on ${support}, but its base is ${r2(above)} mm above its top, so it floats; build it from the top of ${supportTop(support, top)}`
 
 /** The failure for a stacked part on its support's top whose planned height does not show above it. */
-export const STANDS_HEIGHT_OFF = (part: string, support: string, shows: number, planned: number): string =>
-  `${part} stands on ${support}, but ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; make it ${r2(planned)} mm tall above the top of ${support}`
+export const STANDS_HEIGHT_OFF = (part: string, support: string, shows: number, planned: number, top: TopRead): string =>
+  `${part} stands on ${support}, but ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; make it ${r2(planned)} mm tall above the top of ${supportTop(support, top)}`
 
 /** The failure for a stacked part with no planned height whose base is sunk below its support's top. */
-export const STANDS_BASE_OFF = (part: string, support: string, below: number): string =>
-  `${part} stands on ${support}, but its base is ${r2(below)} mm below its top; build it from the top of ${support}`
+export const STANDS_BASE_OFF = (part: string, support: string, below: number, top: TopRead): string =>
+  `${part} stands on ${support}, but its base is ${r2(below)} mm below its top; build it from the top of ${supportTop(support, top)}`
 
 /**
  * The stacking pairs a plan says, each a feature and the planned feature it stands on: each on that names a planned
@@ -545,19 +557,20 @@ function lowestTop(deck: NonNullable<FeatureHeights[string]['deck']>, a: number,
  * top under the part's footprint, where a flat base meets it with no gap; else, and for a part with no footprint or one
  * past the deck's ends, the support's highest point.
  */
-function topUnder(p: FeatureHeights[string], s: FeatureHeights[string]): number {
-  if (!s.deck || !p.foot) return s.hi
+function topUnder(p: FeatureHeights[string], s: FeatureHeights[string]): TopRead {
+  if (!s.deck || !p.foot) return { z: s.hi, under: false }
   const [a, b] = s.deck.axis === 'x' ? p.foot.x : p.foot.y
-  return lowestTop(s.deck, a, b) ?? s.hi
+  const z = lowestTop(s.deck, a, b)
+  return z === null ? { z: s.hi, under: false } : { z, under: true }
 }
 
 /** What a stacked part's base and height say against its support's top: null when both hold. */
-function standsWrong(part: string, support: string, base: number, shows: number, planned: number | undefined): string | null {
-  if (base > STAND_LAYER_MM + 1e-6) return STANDS_FLOATS(part, support, base)
+function standsWrong(part: string, support: string, base: number, shows: number, planned: number | undefined, top: TopRead): string | null {
+  if (base > STAND_LAYER_MM + 1e-6) return STANDS_FLOATS(part, support, base, top)
   // no height planned: only the base is held, as the plan says nothing of how much should show
-  if (base < -STAND_LAYER_MM - 1e-6) return planned === undefined ? STANDS_BASE_OFF(part, support, -base) : STANDS_OFF(part, support, -base, shows, planned)
+  if (base < -STAND_LAYER_MM - 1e-6) return planned === undefined ? STANDS_BASE_OFF(part, support, -base, top) : STANDS_OFF(part, support, -base, shows, planned, top)
   if (planned === undefined || (shows >= planned / SCALE_SLACK && shows <= planned * SCALE_SLACK)) return null
-  return STANDS_HEIGHT_OFF(part, support, shows, planned)
+  return STANDS_HEIGHT_OFF(part, support, shows, planned, top)
 }
 
 /**
@@ -583,7 +596,8 @@ export function stackItem(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail'
   const off = read.flatMap(({ part, support, p, s }) => {
     const planned = Object.entries(plan.features.find((f) => f.name === part)?.sizes ?? {}).find(([k]) => /^height$/i.test(k.trim()))?.[1]
     const top = topUnder(p, s)
-    const wrong = standsWrong(part, support, p.lo - top, p.hi - top, planned)
+    // the height the failure names is the one the part was measured against, so the two never disagree
+    const wrong = standsWrong(part, support, p.lo - top.z, p.hi - top.z, planned, top)
     return wrong ? [wrong] : []
   })
   return {

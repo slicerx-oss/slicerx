@@ -1345,7 +1345,7 @@ describe('a display plan\'s stacked parts', () => {
   it('fails a funnel built from the hull\'s deck, 6.65 mm under the top of the deckhouse it stands on', async () => {
     const item = stands(await ship(14.5, {}))!
     expect(item.pass).toBe(false)
-    expect(item.got).toBe('Funnel 1 stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse')
+    expect(item.got).toBe('Funnel 1 stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse, whose highest point is at z 21.15 mm')
   })
 
   it('passes a funnel built from the top of its deckhouse, and the upper deckhouse its tiers put on the lower one', async () => {
@@ -1366,7 +1366,7 @@ describe('a display plan\'s stacked parts', () => {
     })
     expect(stands(await ship(21.1, planned(21.1), 'Funnels (4)'))).toMatchObject({ got: '2 stacked parts on their supports', pass: true })
     expect(stands(await ship(14.5, planned(14.5), 'Funnels (4)'))).toMatchObject({
-      got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse',
+      got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse, whose highest point is at z 21.15 mm',
       pass: false,
     })
   })
@@ -1384,7 +1384,7 @@ describe('a display plan\'s stacked parts', () => {
     const row = { kind: 'linear', count: 4, step: [8, 0, 0] }
     expect(stands(await ship(21.1, planned(21.1), 'Funnels (4)', row))).toMatchObject({ got: '2 stacked parts on their supports', pass: true })
     expect(stands(await ship(14.5, planned(14.5), 'Funnels (4)', row))).toMatchObject({
-      got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse',
+      got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse, whose highest point is at z 21.15 mm',
       pass: false,
     })
     // a ring about an upright axis keeps the funnel's height, so the ring stands where the funnel does
@@ -1495,7 +1495,7 @@ describe('a stacked part on a hull with a sheer', () => {
   it('still fails a deckhouse sunk 3 mm into the deck under it', () => {
     const parts = [lower(13, 7)]
     expect(stackItem(plan(parts), heights(steps(sheer(RISING), parts)))).toMatchObject({
-      got: 'Lower deckhouse stands on Hull, but its base is 3 mm below its top, so 4 mm of it shows of a planned 4.1 mm; build it from the top of Hull',
+      got: 'Lower deckhouse stands on Hull, but its base is 3 mm below its top, so 4 mm of it shows of a planned 4.1 mm; build it from the top of Hull, whose lowest point under it is at z 16 mm',
       pass: false,
     })
   })
