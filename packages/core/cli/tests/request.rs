@@ -429,29 +429,30 @@ fn a_3mf_plate_slices_as_its_objects() {
 }
 
 /// Paths into a zone the printer keeps clear are the plate's own, in any print order: refused in their own words,
-/// not as a by-object clearance.
+/// not as a by-object clearance. Here the travels between the cube and the table cross an excluded band from edge to
+/// edge of the bed, with no travel lift to clear it.
 #[test]
 fn keep_out_paths_are_refused_in_their_own_words() {
     let mut req: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(fixture("features-request.json")).unwrap()).unwrap();
     req["meshes"]["c"] = serde_json::Value::String(fixture("cube.stl"));
     req["meshes"]["t"] = serde_json::Value::String(fixture("table.stl"));
-    // an A1 style nozzle wrap check corner over the cube
-    req["config"]["head_wrap_detect_zone"] = serde_json::json!(["80x95", "115x95", "115x125", "80x125"]);
-    // the object's own paths: a skirt there is refused by the safety preflight (tests/keep_out_zones.rs)
+    req["config"]["printable_area"] = serde_json::json!(["0x0", "256x0", "256x256", "0x256"]);
+    req["config"]["bed_exclude_area"] = serde_json::json!(["140x0", "145x0", "145x256", "140x256"]);
+    req["config"]["z_hop"] = serde_json::json!([0]);
     req["config"]["skirt_loops"] = serde_json::json!(0);
     let dir = temp_dir(format!("sx-cli-keep-out-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("request.json");
     std::fs::write(&path, req.to_string()).unwrap();
     let out = sx().args(["slice", "--request"]).arg(&path).output().unwrap();
-    assert_eq!(out.status.code(), Some(3));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "{err}");
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["collisions"][0]["kind"], "keep_out", "{v}");
-    assert_eq!(v["collisions"][0]["hitId"], "wrap-check-zone", "{v}");
-    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(v["collisions"][0]["hitId"], "exclusion-area", "{v}");
     assert!(
-        err.contains("A print path or travel enters the nozzle wrap check corner: c1 on layers 1 to"),
+        err.contains("A print path or travel enters the exclusion area: "),
         "{err}"
     );
     assert!(!err.contains("printing by object"), "{err}");
@@ -462,6 +463,34 @@ fn keep_out_paths_are_refused_in_their_own_words() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+/// An object in an A1 style nozzle wrap check corner prints there with no refusal and no words about the corner: the
+/// printer skips its check on such a plate.
+#[test]
+fn an_object_in_the_wrap_check_corner_is_not_refused() {
+    let mut req: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture("features-request.json")).unwrap()).unwrap();
+    req["meshes"]["c"] = serde_json::Value::String(fixture("cube.stl"));
+    req["meshes"]["t"] = serde_json::Value::String(fixture("table.stl"));
+    // the corner over the cube
+    req["config"]["head_wrap_detect_zone"] = serde_json::json!(["80x95", "115x95", "115x125", "80x125"]);
+    req["config"]["skirt_loops"] = serde_json::json!(0);
+    let dir = temp_dir(format!("sx-cli-wrap-corner-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("request.json");
+    std::fs::write(&path, req.to_string()).unwrap();
+    let out = sx().args(["slice", "--request"]).arg(&path).output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(!err.contains("wrap check corner"), "{err}");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        !v["collisions"]
+            .as_array()
+            .is_some_and(|c| c.iter().any(|c| c["hitId"] == "wrap-check-zone")),
+        "{v}"
+    );
 }
 
 /// An ASCII STL of a box from `lo` to `hi`, mm.
