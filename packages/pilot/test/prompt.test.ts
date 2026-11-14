@@ -314,7 +314,10 @@ describe('the lines for a body lofted through sections', () => {
       expect(l).not.toContain('\n')
     }
     expect(LOFT_BODY_LINES[0]).toContain('is one geom.loft through sections, not a stack of extrudes')
-    expect(LOFT_BODY_LINES[0]).toContain('draw it as one straight segment in every section')
+    expect(LOFT_BODY_LINES[0]).toContain('pass smooth: true in that geom.loft')
+    expect(LOFT_BODY_LINES[0]).toContain('a rounded turn from a side into the bottom too')
+    expect(LOFT_BODY_LINES[0]).toContain('where the real thing is round, a section of straight segments only lofts as flat facets')
+    expect(LOFT_BODY_LINES[0]).toContain('and a curved side beside it stays curved')
     expect(LOFT_BODY_LINES[1]).toContain("Make the loft the part's first step")
     expect(LOFT_BODY_LINES[6]).toContain('Plan one filament and no paint steps unless the person asks for color')
     expect(LOFT_BODY_LINES[7]).toBe('- A symmetric body is drawn with symmetric sections.')
