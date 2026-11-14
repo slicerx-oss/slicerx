@@ -187,6 +187,11 @@ function causeOf(shown: string, again: string): string | undefined {
   return `${lowerFirst(first.slice(0, so))}. ${rest || again}`
 }
 
+/** Whether a failed edit's text is an edit the design kept with a step broken, rather than a refused edit. */
+export function isKeptEdit(summary: string): boolean {
+  return KEPT_EDIT.test(summary.trim())
+}
+
 function keptEdit(summary: string): { title: string; shown: string; hint: string; raw: string } | undefined {
   const m = KEPT_EDIT.exec(summary.trim())
   if (!m) return undefined
@@ -212,12 +217,13 @@ function keptEdit(summary: string): { title: string; shown: string; hint: string
 /**
  * The plain line, retry hint and the engine's own text for a failed step's text, or undefined when it is no engine
  * refusal. `tool` is the tool that failed: text from a tool that does not model is left alone unless only the engine
- * could have written it, so a printer's or the slicer's own sentences keep their words.
+ * could have written it, so a printer's or the slicer's own sentences keep their words. `kept: false` reads a kept edit
+ * as a refusal, for a caller that has put the edit back, so the design is as it was.
  */
-export function plainEngine(summary: string, tool?: string): { title: string; shown: string; hint: string; raw: string } | undefined {
+export function plainEngine(summary: string, tool?: string, { kept: readKept = true }: { kept?: boolean } = {}): { title: string; shown: string; hint: string; raw: string } | undefined {
   // an edit the design kept with a step broken is no refusal, whatever the broken step's reason says, so it is read
   // before the reason groups and never shown in their words
-  const kept = keptEdit(summary)
+  const kept = readKept ? keptEdit(summary) : undefined
   if (kept) return kept
   // the hosts' time limit says it plainly already, naming the step, even passed on inside another sentence
   if (isGeomStuck(summary)) return undefined

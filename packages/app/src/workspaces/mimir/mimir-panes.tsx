@@ -283,7 +283,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     setSheetActions({
       confirm: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve(),
       cancel: (sheetId) => pilot.answerSheet?.(sheetId, null) ?? Promise.resolve(),
-      drive: (bound, key, value) => editRow(tabTools(), bound, key, value),
+      drive: (bound, key, value, before) => editRow(tabTools(), bound, key, value, before),
     })
     return () => setSheetActions(null)
   }, [pilot])

@@ -17,8 +17,8 @@ export interface ShownSheet {
 export interface SheetActions {
   confirm(sheetId: string, values: Record<string, number>): Promise<void>
   cancel(sheetId: string): Promise<void>
-  /** Edits the steps a built sheet's row is tied to. */
-  drive(bound: { design: string; binds: PilotSheetBind[] }, key: string, value: number): Promise<{ ok: boolean; summary: string; detail?: string }>
+  /** Edits the steps a built sheet's row is tied to; `before` is the row's size before the edit, which a kept but broken edit is put back to, and `value` is what the row shows after a failed edit when that is not `before`. */
+  drive(bound: { design: string; binds: PilotSheetBind[] }, key: string, value: number, before?: number): Promise<{ ok: boolean; summary: string; detail?: string; value?: number }>
 }
 
 export interface SheetUiState {

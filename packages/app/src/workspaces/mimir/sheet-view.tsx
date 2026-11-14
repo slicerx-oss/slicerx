@@ -372,8 +372,9 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
     if (!actions || !bound) return
     const before = valueOf(d)
     setLive(d.key, v)
-    const out = await actions.drive(bound, d.key, v)
-    if (!out.ok) setLive(d.key, before)
+    const out = await actions.drive(bound, d.key, v, before)
+    // a failed edit shows the old size, which the design holds again, unless the edit could not be put back
+    if (!out.ok) setLive(d.key, out.value ?? before)
     // the engine's own words for a refused edit go to the dev log; the note says it plainly
     if (!out.ok && out.detail) console.info(`sheet edit refused: ${out.detail}`)
     setNote({ ok: out.ok, text: out.summary })
