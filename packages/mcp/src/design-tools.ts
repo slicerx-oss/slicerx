@@ -627,7 +627,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.8.0',
+    version: '1.8.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -664,7 +664,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       }
       if (i.section) {
         if (s.params.op !== 'sketch.loft') throw new ToolInputError('section: only a loft is edited by its sections; change this step by size, move or value')
-        const r = sectionEdited(s, i.section)
+        // on the step as this edit has changed it so far, so a size given with it is kept
+        const r = sectionEdited(next, i.section)
         if (typeof r === 'string') throw new ToolInputError(r)
         const { bind: _bind, ...unbound } = next
         next = { ...unbound, params: r.params }
@@ -679,7 +680,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       if (i.value !== undefined) {
         const most = EDIT_MAX[s.params.op]
         if (most !== undefined && Math.abs(i.value) > most) throw new ToolInputError(`value: at most ${most} for this step, as its tool takes`)
-        const p = withNumber(s.params, i.value)
+        // on the step as this edit has changed it so far, so a move, size or tilt given with it is kept
+        const p = withNumber(next.params, i.value)
         if (typeof p === 'string') throw new ToolInputError(`value: ${p}`)
         const { bind: _bind, ...unbound } = next
         next = { ...unbound, params: p }
