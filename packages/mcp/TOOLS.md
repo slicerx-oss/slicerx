@@ -117,7 +117,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_fit_check` | 1.0.0 |  |  | read | Check whether a designed gap will fuse, bind, press fit or slide at the layer height, line width and material, and suggest the gap to model instead. |
 | `slicerx_fleet_overview` | 1.0.0 |  |  | read | Status of every printer in one call: state, current job with progress and time left, loaded filament per slot with what is left, and printer messages. |
 | `slicerx_gcode_inspect` | 1.0.0 |  |  | read | Explain what a G-code file will do: layers, temperatures, typical and peak print speed, volumetric flow (checked against the filament limit), retraction count and length, fan, and time by feature from ;TYPE: or FEATURE comments. |
-| `slicerx_geom_array` | 1.9.2 |  |  | slice | Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. |
+| `slicerx_geom_array` | 1.9.3 |  |  | slice | Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. |
 | `slicerx_geom_boolean` | 1.3.2 |  |  | slice | Union, subtract or intersect closed bodies. |
 | `slicerx_geom_build` | 1.7.2 |  |  | slice | Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. |
 | `slicerx_geom_calibration_model` | 1.0.0 |  |  | slice | Generate a calibration print: temperature tower, flow pads, pressure advance, retraction, max volumetric speed, tolerance plate, shrinkage L, or the feature piece (a small print with a bridge, an overhang, a thin wall, a hole and text). |

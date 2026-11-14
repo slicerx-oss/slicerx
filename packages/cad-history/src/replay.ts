@@ -926,8 +926,10 @@ async function patternStep(call: EngineCall, s: Step, earlier: readonly Step[], 
   if (p.spec.kind === 'linear' && p.spec.onSurface) {
     const anchor = live.map((x) => anchorOf(x.params)).find((a) => a !== null)
     if (!anchor) throw new Broken('A row follows a surface from a cut or a shape on a face; the steps it repeats have no place on the part to start from.')
-    const part = parts[s.part]
-    if (!part) throw new Broken('The part this pattern works on is gone.')
+    const given = parts[s.part]
+    if (!given) throw new Broken('The part this pattern works on is gone.')
+    // a body the engine keeps has no triangles until it is tessellated, and the row finds its side on them
+    const part = await meshed(call, given)
     const world = bakeMesh({ name: part.name, slot: part.slot, positions: part.positions, indices: part.indices }, s.transform)
     const follow = surfaceMoves(moves, anchor, Array.from(world.positions), Array.from(part.indices))
     if (!Array.isArray(follow)) throw new Broken(`Copy ${follow.copy}: ${follow.why}`)
