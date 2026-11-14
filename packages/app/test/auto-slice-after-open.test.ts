@@ -33,7 +33,12 @@ function host() {
 
 // The first import of the slice code (loadSliceRun) takes about 0.9 s in a test run, against the 1 s wait for a later
 // edit's slice to start, so it is loaded before the tests.
-beforeAll(() => loadSliceRun())
+// The slice also waits for the printer profile, whose first load (printer-base, the settings) takes about 0.4 s.
+beforeAll(async () => {
+  await loadSliceRun()
+  await import('../src/workspaces/prepare/printer-base')
+  await (await import('../src/state/profile-sync')).profileReady()
+})
 
 beforeEach(() => {
   vi.useFakeTimers()
