@@ -120,6 +120,17 @@ describe('the tab paints a design', () => {
     for (const n of ['paint.preview', 'paint.apply', 'paint.regions']) expect(tools.has(n)).toBe(true)
   })
 
+  // A height band (a red bottom, a black funnel top) paints on the triangles of a design that is not strict, and is
+  // refused on a strict one until the engine can split faces. mimir starts its designs by name only, so it relies on
+  // design.new making a design that is not strict.
+  it('starts a design that is not strict when mimir names it only, so a height band paints', async () => {
+    const made = (await call('design.new', { name: 'Hull' })) as { output: { exact?: boolean } }
+    expect(
+      made.output.exact ?? false,
+      "the mimir tab's design.new now makes a strict (exact only) design when given just a name; a height band is refused on a strict design, so mimir's paint by height (a red bottom, black funnel tops) stops working",
+    ).toBe(false)
+  })
+
   it('paints one hull body red below the waterline with a white band, and its funnel a black cap', async () => {
     const design = await paintedBoat()
     // one object, two parts in their own filaments, and the paint on the plate object the viewport and slice read
