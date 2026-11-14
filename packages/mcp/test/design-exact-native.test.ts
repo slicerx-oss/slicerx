@@ -190,3 +190,35 @@ it.skipIf(!exact || noSx())(`replays an exact bracket hole edit through a later 
   const listed = await ok<{ designs: unknown[] }>('slicerx_design_list', {})
   expect(listed.designs).toHaveLength(2)
 }, 120000)
+
+it.skipIf(!exact)(`cuts every exact part of a design that must stay exact when geom.subtract names no part, and keeps a part the cutters miss${skipped}`, async () => {
+  vi.stubEnv('SX_BREP_DEV', '1')
+  const calls: string[] = []
+  const native = geomEngine(bin!, 20000)
+  const h = await connect({ geomEngine: async (op, request) => { calls.push(op); return native(op, request) } })
+  interface Summary { exact: boolean; steps: number; parts: { sizeMm: number[]; volumeMm3: number }[] }
+  const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+    const r = await h.call(name, args)
+    expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+    return data<{ output: Summary }>(r).output
+  }
+  const d = (await ok('slicerx_design_new', { name: 'Two blocks', exact: true }) as unknown as { design: string }).design
+  await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [15, 5] }, distance_mm: 3 })
+  await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 10, heightMm: 10 }, placement: { center: [60, 5] }, distance_mm: 3 })
+  calls.length = 0
+  // a row of two 4 mm holes through the first block only: the second block is missed and kept as it is
+  const holes = [5, 25].map((x) => ({ type: 'cylinder', origin: [x, 5, -1], axis: [0, 0, 1], diameterMm: 4, heightMm: 5 }))
+  const cut = await ok('slicerx_geom_subtract', { design: d, solids: holes })
+  expect(cut.exact).toBe(true)
+  expect(calls.filter((op) => op === 'brep.subtract')).toHaveLength(2)
+  expect(calls).not.toContain('subtract')
+  expect(cut.parts).toHaveLength(2)
+  // the round holes are faceted only when tessellated, so the volume is within the tessellation's chord of the true one
+  expect(Math.abs(cut.parts[0]!.volumeMm3 - (900 - 2 * Math.PI * 4 * 3))).toBeLessThan(0.5)
+  expect(cut.parts[1]).toMatchObject({ sizeMm: [10, 10, 3], volumeMm3: 300 })
+  // cutters that miss every part: the step is refused, and the design is as it was
+  const missed = await h.call('slicerx_geom_subtract', { design: d, solids: [{ type: 'cylinder', origin: [200, 200, -1], axis: [0, 0, 1], diameterMm: 4, heightMm: 5 }] })
+  expect(missed.isError).toBe(true)
+  expect(text(missed)).toContain('The shape no longer reaches the part')
+  expect((await ok('slicerx_design_steps', { design: d }) as unknown as { steps: unknown[] }).steps).toHaveLength(3)
+}, 40000)
