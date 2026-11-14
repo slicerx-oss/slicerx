@@ -20,9 +20,11 @@ const ADAPTERS: Record<string, () => LlmAdapter> = {
 export const MIMIR_CLOUD = 'mimir-cloud'
 
 /**
- * The most tools mimir cloud's proxy takes in one request (supabase/functions/mimir/shape.ts, MAX_TOOLS); it refuses a
- * longer list. The desktop app's tab offers more than that (the design tools, slicing, printers, the app's commands, a
- * command per printer and the connectors' tools), so over it a turn sends the tools it needs first (toolsets.ts).
+ * The most tools that load up front in one mimir cloud request (supabase/functions/mimir/shape.ts, MAX_LOADED_TOOLS);
+ * it refuses more. The desktop app's tab offers more than that (the design tools, slicing, printers, the app's
+ * commands, a command per printer and the connectors' tools). Once the proxy has said it takes tool search, a new chat
+ * on a model with it sends them all, most deferred (tool-search.ts); until then, and on any other model, a turn sends
+ * the tools it needs first (toolsets.ts).
  */
 export const MIMIR_CLOUD_MAX_TOOLS = 128
 
@@ -75,6 +77,13 @@ export function adapterFor(provider: string): LlmAdapter {
 }
 
 /** Joins an adapter with the host transport. The transport adds the key; this code never sees it. */
+/**
+ * The transports whose mimir cloud proxy said it takes a request that sends the whole tool catalog through tool search
+ * (the `mimir` event its streams open with, supabase/functions/mimir/handler.ts). Kept per transport, so a chat runtime
+ * made again on the same host knows it at once.
+ */
+const searchingProxies = new WeakSet<LlmTransport>()
+
 export function createTransportClient(transport: LlmTransport, provider: string, opts: { baseUrl?: string; share?: () => CloudShare } = {}): LlmClient {
   const adapter = adapterFor(provider)
   const cloud = provider === MIMIR_CLOUD
@@ -86,8 +95,13 @@ export function createTransportClient(transport: LlmTransport, provider: string,
   }
   return {
     provider,
-    // the proxy's own limit, though the Messages API it speaks has none
+    // the proxy's own limit, though the Messages API it speaks has none; a tool search request carries more, deferred
     ...(cloud ? { maxTools: MIMIR_CLOUD_MAX_TOOLS } : adapter.maxTools === undefined ? {} : { maxTools: adapter.maxTools }),
+    // the Messages API searches deferred tools; through mimir cloud only once its proxy has said it passes them, so an
+    // app that reaches a proxy deployed before tool search keeps the per-turn pick
+    get toolSearch(): boolean {
+      return adapter.id === 'anthropic' && (!cloud || searchingProxies.has(transport))
+    },
     async *stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent> {
       let http = adapter.build(req, opts.baseUrl === undefined ? {} : { baseUrl: opts.baseUrl })
       if (cloud) http = { ...http, provider: MIMIR_CLOUD, headers: { ...http.headers, ...cloudHeaders(opts.share?.(), req.session, req.tier) } }
@@ -102,7 +116,8 @@ export function createTransportClient(transport: LlmTransport, provider: string,
       }
       try {
         if (!cloud) {
-          yield* adapter.parse(body)
+          // only mimir cloud's proxy says it takes tool search
+          for await (const ev of adapter.parse(body)) if (ev.type !== 'tool_search') yield ev
           return
         }
         // the transport reads the headers before the first chunk, so the model that answered is known before any text
@@ -110,7 +125,10 @@ export function createTransportClient(transport: LlmTransport, provider: string,
         const first = await it.next()
         const model = cloudModel(headers)
         if (model) yield { type: 'model', model }
-        yield* adapter.parse(replay(first, it))
+        for await (const ev of adapter.parse(replay(first, it))) {
+          if (ev.type === 'tool_search') searchingProxies.add(transport)
+          else yield ev
+        }
       } catch (e) {
         if (signal?.aborted) throw e
         yield failure(e)

@@ -12,6 +12,7 @@ export { fitContext, messageTokens, MIMIR_CONTEXT, REPLY_RESERVE, toolsTokens } 
 export { describedPaths, keepDescriptions } from './local-schema'
 export { LOCAL_BUILD_CAP, LOCAL_TOOLS, type LocalTool } from './local-tools'
 export { PLAN_SEED_NOTE, planSeed, type StandingPlan } from './plan-left'
+export { catalogStep, SEARCH_CORE, type ToolCatalog } from './tool-search'
 export { capLine, capTools, LOAD_TOOLS_TOOL, LOADABLE_TOOLSETS, loadFits, loadToolsTool, KIND_SETS, MAX_PINNED, pinnedFor, SAFETY_TOOLS, SEND_TOOLS, stickyCapTools, stickyToolsets, TOOLSET_LABELS, TOOLSET_PRIORITY, TOOLSET_WORDS, toolsetOf, turnKind, turnNeeds, type StickyToolsets, type ToolCapReport, type TurnKind } from './toolsets'
 export { applyToolGroups, toolGroupOf, TOOL_GROUPS, type ToolGroup, type ToolGroups } from './surfaces'
 export { editionToolGroups, modelingCommands, tabLimits, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain, type TabOptions, type TabParts } from './tab-options'

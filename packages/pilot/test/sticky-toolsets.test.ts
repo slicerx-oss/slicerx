@@ -98,7 +98,9 @@ const inSet = (names: string[], prefix: string): number => names.filter((n) => n
 function setup(kind: Kind, steps: Step[] = [], tools = manyTools(), extra: Partial<Parameters<typeof createPilot>[0]> = {}) {
   const llm = provider(kind, steps)
   const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
-  const model = kind === 'anthropic' || kind === 'mimir-cloud' ? 'claude-haiku-5-5' : kind === 'openai' ? 'gpt-5.6-luna' : 'qwen3:8b'
+  // a Claude model without tool search, so a capped chat picks its toolsets (a model with it sends its whole catalog,
+  // tool-search.test.ts)
+  const model = kind === 'anthropic' || kind === 'mimir-cloud' ? 'claude-haiku-4-5' : kind === 'openai' ? 'gpt-5.6-luna' : 'qwen3:8b'
   const { models: _tiers, ...base } = DEFAULT_CONFIG
   const pilot = createPilot({ host, config: { ...base, provider: kind, model, maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools, ...extra })
   const say = async (message: string, session = 's1'): Promise<LlmHttpRequest[]> => {
@@ -701,7 +703,7 @@ describe('a paint ask in a capped design chat', () => {
     const llm = painter()
     const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
     const { models: _tiers, ...base } = DEFAULT_CONFIG
-    const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-5-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: designChat() })
+    const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-4-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: designChat() })
     const say = async (message: string): Promise<{ sent: LlmHttpRequest[]; calls: string[] }> => {
       const at = llm.sent.length
       const calls: string[] = []

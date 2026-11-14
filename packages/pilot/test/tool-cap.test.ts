@@ -98,7 +98,8 @@ function setup(kind: Kind, steps: { call?: string; text?: string }[] = [], tools
   const llm = provider(kind, steps)
   const lines: string[] = []
   const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
-  const model = kind === 'anthropic' || kind === 'mimir-cloud' ? 'claude-haiku-5-5' : kind === 'openai' ? 'gpt-5.6-luna' : 'qwen3:8b'
+  // a Claude model without tool search, so mimir cloud's chat is capped (a model with it: tool-search.test.ts)
+  const model = kind === 'anthropic' || kind === 'mimir-cloud' ? 'claude-haiku-4-5' : kind === 'openai' ? 'gpt-5.6-luna' : 'qwen3:8b'
   // one model for every tier, so the log names it
   const { models: _tiers, ...base } = DEFAULT_CONFIG
   const pilot = createPilot({ host, config: { ...base, provider: kind, model, maxSteps: 4 }, policy: DEFAULT_POLICY, builtins: false, tools, log: (line) => lines.push(line) })
@@ -186,9 +187,9 @@ describe('the tool cap on OpenAI-style providers', () => {
 })
 
 describe('the tool cap on mimir cloud', () => {
-  it('is the limit the proxy refuses above (supabase/functions/mimir/shape.ts)', () => {
+  it('is the limit the proxy refuses above for tools that load up front (supabase/functions/mimir/shape.ts)', () => {
     const shape = readFileSync(new URL('../../../supabase/functions/mimir/shape.ts', import.meta.url), 'utf8')
-    expect(Number(/const MAX_TOOLS = (\d+)/.exec(shape)?.[1])).toBe(MIMIR_CLOUD_MAX_TOOLS)
+    expect(Number(/const MAX_LOADED_TOOLS = (\d+)/.exec(shape)?.[1])).toBe(MIMIR_CLOUD_MAX_TOOLS)
     expect(MIMIR_CLOUD_MAX_TOOLS).toBe(128)
     const llm = provider('mimir-cloud')
     expect(createTransportClient(llm, 'mimir-cloud').maxTools).toBe(MIMIR_CLOUD_MAX_TOOLS)

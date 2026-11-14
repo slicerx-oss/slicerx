@@ -61,6 +61,8 @@ import { planToDiff } from './tools/settings'
 import { PLAN_SEED_NOTE } from './plan-left'
 import { chatRoute, HUGINN, INPUT_REFUSAL_FAILS, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Route, type Tier } from './models'
 import { bindingKey, unbindOldReasoning } from './reasoning-binding'
+import { toolSearchModel } from './provider/anthropic'
+import { catalogStep, loadedDefs, type ToolCatalog } from './tool-search'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
 import { firstLineNames, keepsNote, keepsNotice, keptRows, lostFeatures, type KeptRow } from './turn-keeps'
 import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
@@ -857,6 +859,30 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const caps = new Map<string, ToolCapReport>()
   // a cloud model's capped chats: what each keeps between requests (a load pilot.load_tools asks for lives only in its turn)
   const sticky = new Map<string, StickyToolsets>()
+  /** Each chat's tool catalog on a model with tool search (tool-search.ts): declared once, only ever appended to. */
+  const catalogs = new Map<string, ToolCatalog>()
+  /**
+   * Whether each chat sends its tool catalog (tool-search.ts) or the per-turn pick, fixed at its first request. mimir
+   * cloud's proxy says it takes tool search only in its replies, so the chat that first hears it keeps the pick it
+   * started with, and no chat's tool list changes shape partway through; the next chat sends the catalog.
+   */
+  const searchChats = new Map<string, boolean>()
+  /**
+   * Each chat's last tool change (a `tools` message) and the catalog before it, until a reply follows it. A change no
+   * reply followed (the request failed, or the step was asked again) leaves the chat, so nothing but an assistant turn
+   * ever comes after one, as the provider requires.
+   */
+  const changes = new Map<string, { at: number; before: ToolCatalog }>()
+  /** Takes out the chat's last tool change when no reply followed it, and puts its catalog back. */
+  const dropUnanswered = (sessionId: string, messages: LlmMessage[]): void => {
+    const c = changes.get(sessionId)
+    if (!c) return
+    if (messages[c.at]?.role === 'tools' && messages[c.at + 1]?.role !== 'assistant') {
+      messages.splice(c.at, 1)
+      catalogs.set(sessionId, c.before)
+    }
+    changes.delete(sessionId)
+  }
   // one book per print run host, so a runtime made again keeps the runs; a started print's watch logs how it ended to
   // the chat's session, whether or not the chat is on screen
   const runBook = opts.printRun ? runBookFor(opts.printRun, now, { printers: opts.host.printers, log: (sessionId, e) => void log(sessionId, e) }) : null
@@ -1111,10 +1137,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { kind: 'run', token }
   }
 
-  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, stops: TurnStops, loader?: AnyTool): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
+  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, stops: TurnStops, loader?: AnyTool, live?: ReadonlySet<string>): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
     // pilot.load_tools is not one of the offered tools: only a capped request carries it, made for that step, and a
-    // call to it from a step that did not carry it is an unknown tool
-    const tool = findTool(call.name) ?? (call.name === LOAD_TOOLS_TOOL ? loader : undefined)
+    // call to it from a step that did not carry it is an unknown tool; so is a tool of the catalog that was withdrawn
+    // (`live`, tool-search.ts)
+    const tool = (live && !live.has(call.name) ? undefined : findTool(call.name)) ?? (call.name === LOAD_TOOLS_TOOL ? loader : undefined)
     if (!tool) {
       emit({ type: 'tool_call', callId: call.id, tool: call.name, source: 'command', input: call.arguments })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Unknown tool ${call.name}` })
@@ -1622,7 +1649,34 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const turn = local ? localTurnTools(surface, offered, { needs, called }) : offered
       let capped: { tools: AnyTool[]; report: ToolCapReport | null }
       let visible: AnyTool[]
-      if (chatSets) {
+      // a cloud model with tool search gets the chat's whole catalog instead, the same on every request (tool-search.ts)
+      const canSearch = !local && client.toolSearch === true && toolSearchModel(modelFor(opts.config, tier))
+      if (!searchChats.has(sessionId)) searchChats.set(sessionId, canSearch)
+      const searching = canSearch && searchChats.get(sessionId) === true
+      let catalog: ToolCatalog | undefined
+      if (searching) {
+        dropUnanswered(sessionId, messages)
+        const before = catalogs.get(sessionId)
+        const next = catalogStep(before, turn.map((t) => ({ name: t.name, def: () => {
+          const s = toolSpec(t)
+          return { name: s.name, description: s.description, parameters: s.inputSchema }
+        } })))
+        const last = messages[messages.length - 1]?.role
+        if (before && next.add.length + next.remove.length > 0) {
+          // a change goes right after the person's words or a tool's answer, the only places the provider takes one; it
+          // waits for the next step otherwise
+          if (last === 'user' || last === 'tool') {
+            messages.push({ role: 'tools', content: '', add: next.add, remove: next.remove })
+            changes.set(sessionId, { at: messages.length - 1, before })
+            catalogs.set(sessionId, next.catalog)
+          }
+        } else catalogs.set(sessionId, next.catalog)
+        catalog = catalogs.get(sessionId)!
+        const live = catalog.live
+        capped = { tools: turn.filter((t) => live.has(t.name)), report: null }
+        visible = capped.tools
+        loader = undefined
+      } else if (chatSets) {
         const want = queued
         queued = new Set()
         for (const s of want) loaded.add(s)
@@ -1663,7 +1717,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         loader = undefined
       }
       // a local model gets each tool's local form (tool.ts): its short description and a schema without empty keywords
-      const toolDefs = local ? visible.map((t) => localToolDef(t)) : visible.map((t) => toolSpec(t)).map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
+      const toolDefs = catalog ? catalog.defs : local ? visible.map((t) => localToolDef(t)) : visible.map((t) => toolSpec(t)).map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
       // A local model has a small context and its runner cuts an overlong prompt from the start.
       const sent = local ? fitContext(messages, toolDefs, MIMIR_CONTEXT).messages : messages
       let text = ''
@@ -1692,7 +1746,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // reasoning an earlier run signed against another system prompt, tool set or model leaves before this request, and
       // so does this run's own once its system prompt or tools change (pilot.load_tools on a capped chat); a local
       // model's request is not touched (sent is a copy cut to fit, and local models sign nothing)
-      const bound = local ? undefined : bindingKey(model, tier, messages, toolDefs)
+      // with tool search only the tools that load up front bind it: a deferred tool nothing found yet is not part of it
+      const bound = local ? undefined : bindingKey(model, tier, messages, catalog ? loadedDefs(catalog) : toolDefs)
       if (bound) unbindOldReasoning(messages, runStart, bound)
       const req = {
         model,
@@ -1701,6 +1756,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         toolChoice: stopped || wrap ? ('none' as const) : ('auto' as const),
         session: sessionId,
         tier,
+        ...(catalog ? { toolSearch: true } : {}),
         ...(opts.config.reasoning ? { reasoning: opts.config.reasoning } : {}),
       }
       try {
@@ -1913,7 +1969,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: true, summary: 'You looked at the model at the start of this turn; that picture is above and the model has not changed since, unless you changed it.' }) })
           continue
         }
-        const res = await execute(call, sessionId, context, watch, signal, citations, cards, stops, loader)
+        const res = await execute(call, sessionId, context, watch, signal, citations, cards, stops, loader, catalog?.live)
         if (call.name === 'design.new' && res.message.includes(`"code":"${SAME_PART}"`)) restartRefused = true
         stepOn(sessionId, call, res.message)
         if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || refusals >= INPUT_REFUSAL_FAILS || checkMissed)) {
@@ -2165,7 +2221,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     },
     forgetRun(sessionId: string): void {
       runBook?.forget(sessionId)
-      // the chat is over: its toolset state and capped report go with it
+      // the chat is over: its toolset state and capped report go with it (its tool catalog stays with its history)
       sticky.delete(sessionId)
       caps.delete(sessionId)
     },
