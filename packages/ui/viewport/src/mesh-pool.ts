@@ -42,11 +42,11 @@ export class MeshBuildPool {
   ) {}
 
   /**
-   * The creased geometry of a part (creasedArrays), with its packed exact corner normals when it has them. The part's
-   * arrays are copied to the worker, not moved.
+   * The creased geometry of a part (creasedArrays), with its packed exact corner normals when it has them, and its face
+   * ids with them, so each join between two faces shades whole. The part's arrays are copied to the worker, not moved.
    */
-  crease(positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number, normals?: Int16Array): Promise<CreasedArrays> {
-    return this.run('crease', positions, indices, deg, normals).then((r) => {
+  crease(positions: Float32Array, indices: Uint32Array | Uint16Array, deg: number, normals?: Int16Array, faceIds?: Uint32Array): Promise<CreasedArrays> {
+    return this.run('crease', positions, indices, deg, normals, normals !== undefined ? faceIds : undefined).then((r) => {
       if (!r.crease) throw new Error('the mesh worker sent no geometry')
       return r.crease
     })

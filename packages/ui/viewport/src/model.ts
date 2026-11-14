@@ -114,10 +114,11 @@ function release(part: PartEntry): void {
 /**
  * Indexed geometry whose normals average only faces within CREASE_DEG of each other (creasedArrays in mesh-math.ts),
  * except triangles with exact corner normals in `N`, which keep those inside each face of the solid and average them
- * only across a fold under CREASE_DEG. Triangle t of the result is triangle t of the input.
+ * only across a fold under CREASE_DEG; with each triangle's face id in `F`, a join between two faces shades smooth or
+ * hard along its whole length. Triangle t of the result is triangle t of the input.
  */
-export function creasedGeometry(P: Float32Array, I: ArrayLike<number>, N?: Int16Array): BufferGeometry {
-  return creasedMesh(creasedArrays(P, I, CREASE_DEG, N))
+export function creasedGeometry(P: Float32Array, I: ArrayLike<number>, N?: Int16Array, F?: ArrayLike<number>): BufferGeometry {
+  return creasedMesh(creasedArrays(P, I, CREASE_DEG, N, F))
 }
 
 /** A mesh geometry from creased arrays, with its bounds. */
@@ -218,7 +219,7 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
         positions: p.positions,
         indices: p.indices,
         normals: p.normals ?? null,
-        mesh: big && !meshFinal ? standInGeometry(p.positions, p.indices) : creasedGeometry(p.positions, p.indices, p.normals),
+        mesh: big && !meshFinal ? standInGeometry(p.positions, p.indices) : creasedGeometry(p.positions, p.indices, p.normals, p.faceIds),
         edges: big ? edgeLines(new Float32Array(0)) : edgeGeometry(p),
         wide: null,
         users: new Set(),
@@ -281,7 +282,7 @@ async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuil
   // every copy gone before its turn came: nothing to make (release told each one)
   if (s.gone) return
   try {
-    const [c, e] = await Promise.all([meshFinal ? null : async.pool.crease(p.positions, p.indices, CREASE_DEG, p.normals), async.pool.edges(p.positions, p.indices, EDGE_DEG, p.normals, p.faceIds)])
+    const [c, e] = await Promise.all([meshFinal ? null : async.pool.crease(p.positions, p.indices, CREASE_DEG, p.normals, p.faceIds), async.pool.edges(p.positions, p.indices, EDGE_DEG, p.normals, p.faceIds)])
     mesh = c ? creasedMesh(c) : null
     edges = e
   } catch {
@@ -292,7 +293,7 @@ async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuil
     return
   }
   if (!meshFinal) {
-    mesh ??= creasedGeometry(p.positions, p.indices, p.normals)
+    mesh ??= creasedGeometry(p.positions, p.indices, p.normals, p.faceIds)
     s.mesh.dispose()
     s.mesh = mesh
   }

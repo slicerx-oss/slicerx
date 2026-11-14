@@ -18,7 +18,7 @@ export interface MeshBuildRequest {
   deg: number
   /** The part's packed exact corner normals, unpacked here so the copy over stays 12 bytes a triangle. */
   normals?: Int16Array
-  /** Each triangle's face of the solid (edges only): with `normals`, an exact part's edges follow its faces. */
+  /** Each triangle's face of the solid: with `normals`, an exact part's edges follow its faces and each join between two faces shades whole. */
   faceIds?: Uint32Array
 }
 
@@ -30,7 +30,7 @@ export type MeshBuildReply =
 export function answerMeshBuild(req: MeshBuildRequest): { reply: MeshBuildReply; transfer: ArrayBuffer[] } {
   try {
     if (req.kind === 'crease') {
-      const crease = creasedArrays(req.positions, req.indices, req.deg, req.normals)
+      const crease = creasedArrays(req.positions, req.indices, req.deg, req.normals, req.faceIds)
       return { reply: { id: req.id, ok: true, crease }, transfer: [crease.position.buffer, crease.normal.buffer, crease.index.buffer] as ArrayBuffer[] }
     }
     const edges = featureEdges(req.positions, req.indices, req.deg, req.normals && req.faceIds ? { normals: req.normals, faceIds: req.faceIds } : undefined)
