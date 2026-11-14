@@ -306,6 +306,18 @@ export function landedNote(l: NonNullable<Design['landed']>, name = 'The part'):
   return `The part was off the bed, so it moved to the plate by (${l.dxMm}, ${l.dyMm}) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.${room}`
 }
 
+/**
+ * What a modeling tool returns for a design: the step it added, where the part landed, and the last step's note in its
+ * own words (such as why an exact step was made on the mesh), with the design as it is now.
+ */
+export function stepOut(d: Design, verb: string): { summary: string; output: Record<string, unknown> } {
+  const s = d.history.steps[d.history.steps.length - 1]
+  const note = d.status[d.status.length - 1]?.note
+  const said = `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`
+  // the landing sentence ends with its own period
+  return { summary: note ? `${said.replace(/\.$/, '')}. ${note.replace(/\.$/, '')}` : said, output: designSummary(d) }
+}
+
 function stepRow(d: Design, i: number): Record<string, unknown> {
   const s = d.history.steps[i]!
   const st = d.status[i]
