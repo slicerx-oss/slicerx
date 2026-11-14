@@ -41,7 +41,7 @@ function setup(steps: ScriptStep[]) {
     input: z.object({ design: z.string(), compare: z.boolean().optional() }),
     async run(i) {
       ran.push(i.compare ? 'compare' : 'look')
-      return { summary: 'Looked', output: i.compare ? { visiblePct: 5, floorPct: 2 } : { design: i.design } }
+      return { summary: 'Looked', output: i.compare ? { visiblePct: 5 } : { design: i.design } }
     },
   }) as PilotTool<never>
   const check = defineTool({
@@ -133,7 +133,7 @@ describe('a follow-up on a part already built', () => {
     await say('make a planter')
     ran.length = 0
     const events = await say('add a rim')
-    expect(ran).toEqual(['look', 'build d1', 'compare'])
+    expect(ran).toEqual(['look', 'build d1'])
     expect(events.filter((e) => e.type === 'sheet_answered')).toEqual([expect.objectContaining({ auto: true })])
   })
 

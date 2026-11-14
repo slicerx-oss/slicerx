@@ -5,7 +5,6 @@
 // it again while it still can, before its reply. A reply may still end without it
 // when its first line names what is missing and why. The steps come from design.steps at the start of the run and
 // when it would end; a feature is a step's plan feature, or its name when it has none.
-// The measured-change note never scales an amount the person gave or a small one they asked for.
 
 /** One step as design.steps lists it. */
 export interface KeptRow {
@@ -75,14 +74,3 @@ export function keepsNote(lost: Lost): string {
 export function keepsNotice(lost: Lost): string {
   return `Missing after this change: ${lost.removed.join(', ')}.`
 }
-
-const AMOUNT = /\b\d+(?:\.\d+)?\s*(?:mm|cm|in|inch(?:es)?|deg(?:rees?)?|°|%|percent|times)(?![a-z])|\b(?:a little|a bit|a touch|a tad|slightly|somewhat|just a)\b/i
-
-/** Whether the request gives the amount of its change, or asks for a small one: the change keeps that amount. */
-export function statesAmount(request: string): boolean {
-  return AMOUNT.test(request)
-}
-
-/** The note for a change under the floor when the person gave its amount: it stays, and the reply says it is subtle. */
-export const keptAmountNote = (pct: number, floor: number): string =>
-  `Measured: the change so far moved ${pct}% of the whole-model view, under the ${floor}% a person sees at that view. The person gave the amount, so keep it as asked: do not make it larger. If it is done, answer, say the change is subtle at the whole-model view, and offer a larger one.`

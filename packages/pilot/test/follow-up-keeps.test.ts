@@ -8,8 +8,7 @@ import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/con
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '../src/index'
-import { STRENGTHEN_NOTE } from '../src/runtime'
-import { askedToRemove, keptAmountNote, lostFeatures, statesAmount, type KeptRow } from '../src/turn-keeps'
+import { askedToRemove, lostFeatures, type KeptRow } from '../src/turn-keeps'
 
 interface Built {
   id: string
@@ -47,7 +46,7 @@ function setup(steps: ScriptStep[], shares: number[] = []) {
     if (!i.compare) return { summary: 'Looked at the model', output: { design: i.design }, images: [{ mime: 'image/png', data: 'AAAA' }] }
     const pct = shares.shift() ?? 50
     log.push(`compare ${pct}`)
-    return { summary: 'Looked at the model again', output: { design: i.design, visiblePct: pct, floorPct: 2, belowFloor: pct < 2 } }
+    return { summary: 'Looked at the model again', output: { design: i.design, visiblePct: pct } }
   })
   const check = tool('design.check', 'read', z.object({ planId: z.string() }), () => ({ summary: 'All checks pass', output: { design: 'd1', nozzleMm: 0.4, pass: true } }))
   const p = createPilot({
@@ -119,34 +118,6 @@ describe('a follow-up keeps what it did not change', () => {
     // another step making Front pole beside step 5 is no note: a second piece of one feature is a normal change
     expect(note).not.toContain('Front pole')
     expect(t.built.map((b) => `${b.feature} ${b.state}`)).toEqual(['Body done', 'Lower tier done', 'Upper tier done', 'Stacks done', 'Front pole done', 'Front pole done'])
-  })
-})
-
-describe('an amount the person gave stays', () => {
-  it.each(['rake the poles back a little', 'rake the poles back 5 degrees'])('"%s" is never made larger', async (asked) => {
-    const t = setup([...first, x('Lean'), { text: 'Raked it.' }], [0.8])
-    await t.say('make a model')
-    await t.say(asked)
-    const notes = t.notes()
-    expect(notes).toContain(keptAmountNote(0.8, 2))
-    expect(notes.some((n) => n.includes('Grow each size'))).toBe(false)
-    expect(notes).not.toContain(STRENGTHEN_NOTE(0.8, 2))
-  })
-
-  it('does not measure a step that only takes something away', async () => {
-    const t = setup([...first, undo(1), x('Front pole'), { text: 'Rebuilt the pole.' }], [9])
-    await t.say('make a model')
-    t.log.length = 0
-    await t.say('make the front pole thicker')
-    expect(t.log).toEqual(['undo Front pole', 'extrude Front pole', 'compare 9'])
-  })
-
-  it('reads amounts and small asks, and leaves a plain ask alone', () => {
-    expect(statesAmount('make it 10 mm taller')).toBe(true)
-    expect(statesAmount('turn it 15° more')).toBe(true)
-    expect(statesAmount('a bit wider please')).toBe(true)
-    expect(statesAmount('add windows on every side')).toBe(false)
-    expect(statesAmount('make 3 more')).toBe(false)
   })
 })
 
