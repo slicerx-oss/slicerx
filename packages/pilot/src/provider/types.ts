@@ -54,6 +54,11 @@ export interface LlmRequest {
   toolChoice?: 'auto' | 'none' | 'required'
   maxOutputTokens?: number
   reasoning?: 'low' | 'medium' | 'high'
+  /**
+   * false asks for no thinking at all, on models that think when the request leaves it out too: a short answer whose
+   * output limit must go to the answer (a sizes search). Left out, the model's own default holds.
+   */
+  thinking?: false
   /** Enable the provider's hosted web search tool for this request. */
   webSearch?: boolean
   /** The pilot session this turn belongs to; mimir cloud files a shared session under it. */

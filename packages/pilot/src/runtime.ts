@@ -385,7 +385,7 @@ export const NETWORK_RETRY_MS = 2_000
 export const NETWORK_LINE = 'The connection to the model dropped twice in a row, so nothing was done this time. Send the message again.'
 
 /** What a size lookup asks the web search for: each size on its own line, in a form design.lookup_sizes reads. */
-export const WEB_SIZES_LINE = 'Find the real sizes asked for, using web search. Answer one size per line as "size: number unit", with the figure a source gives in m, cm, mm, ft or in, and "size: not found" when no source gives it. No other text.'
+export const WEB_SIZES_LINE = 'Find the real sizes asked for, using web search. Answer one line per size asked, starting with that size\'s name exactly as asked, then a colon, then the figure a source gives with its unit, such as "Overall length: 42.5 m"; write "not found" after the colon when no source gives it. No other text.'
 
 /** Every request the person made in `messages`, in order: their own words, for a size they stated. */
 function requestsOf(messages: readonly LlmMessage[]): string[] {
@@ -970,6 +970,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       tools: [],
       webSearch: true,
       maxOutputTokens: 1200,
+      // a sizes answer is a few short lines: its output limit goes to them, not to thinking
+      ...(ask === 'sizes' ? { thinking: false as const } : {}),
     }
     for await (const ev of client.stream(req, signal)) {
       if (ev.type === 'text') text += ev.delta
