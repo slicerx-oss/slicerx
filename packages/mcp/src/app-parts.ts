@@ -69,10 +69,10 @@ export function appPartTools(link: AppLinkCaller | undefined, appName: string): 
     ['list', 'app.parts', 'parts.list', "Read the parts of an open object in list order: index, name, filament slot, triangles, paint layers, print settings of its own and bounds in the object's coordinates, plus its CAD history length."],
     ['clone', 'app.part_clone', 'parts.clone', 'Clone one part inside its object, as Clone part in the object list: the copy is named like "Body 2", keeps the filament, print settings and paint, sits beside the original on X (its width plus 2 mm), goes last in the list and is picked. With a CAD history it is a step, so the timeline stays editable. One toolbar Undo. Returns the new part and the parts read back.'],
     ['order', 'app.parts_order', 'parts.order', 'Put the parts of an open object in a new order, by a full order of old indices or by moving one part to an index. Order is the list order only and does not change the print. Paint, filaments and print settings stay with their parts. With a CAD history it is a step. One toolbar Undo. Returns the parts read back.'],
-    ['rename', 'app.part_rename', 'parts.rename', 'Rename one part of an open object, as Rename in the object list, such as a piece a cut or a file named "Hull top top": a name no other part has. Its filament, print settings and paint stay with it. With a CAD history it is a step. One toolbar Undo. Returns the parts read back.'],
+    ['rename', 'app.part_rename', 'parts.rename', 'Rename one part of an open object, as Rename in the object list: a name no other part has. Its filament, print settings and paint stay with it. With a CAD history it is a step. One toolbar Undo. Returns the parts read back.'],
   ] as const
   return commands.map(([input, name, method, description]) => defineTool({
-    name, version: '1.0.0', source: 'command', permission: input === 'list' ? 'read' : 'slice',
+    name, version: name === 'app.part_rename' ? '1.0.1' : '1.0.0', source: 'command', permission: input === 'list' ? 'read' : 'slice',
     description: `${description} Needs the app link${input === 'list' ? '.' : ' and an edit grant.'}`,
     input: appPartInputs[input] as z.ZodType<Record<string, unknown>>,
     ...(input === 'list' ? {} : { approval: async (i: Record<string, unknown>) => ({ title: `Change the parts of ${i['object']}?`, lines: [], actions: [] }) }),

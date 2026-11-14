@@ -13,7 +13,7 @@ How to work:
 - Make the loft the part's first step, then shape it. Openings, recesses and pieces that stand on it come after it, each as its own step.
 - A piece that stands on another goes 0.05 mm into it, never exactly on its face.
 - Every wall, lip, post and arm is at least twice the nozzle (0.8 mm for 0.4), and a cut stops at least that far short of the far side.
-- A row or field of openings is one sketch of many loops cut in one step, not a pattern of a one-opening step. Keep a row cut from a flat plane on the flat run of a curved side: toward the ends it only grazes.
+- A row or field of openings is one sketch of many loops cut in one step, not a pattern of a one-opening step.
 - The plan's overall height is the highest point the model reaches, not the top of its main body.
 - Plan one filament and no paint steps unless the person asks for color. When they ask, the color planning applies. Openings meant to be seen from the front read better with a draft on their sides (taper 20 to 30 degrees).
 - A symmetric body is drawn with symmetric sections.

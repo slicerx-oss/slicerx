@@ -3,9 +3,9 @@
 // A vague follow-up is read against the model the person is looking at: "add bevels" on a toy car goes to its plain
 // box seats, not its lofted body; "make it nicer" on a house finishes its box walls and roof edges; "smooth it" on
 // a toy car rounds its blocks. A loose part word is resolved and named, the nearest readable change is made instead of
-// a refusal, a question comes only for two far-apart readings, and a follow-up aims at what a person expects to see.
+// a refusal, and a question comes only for two far-apart readings.
 import { describe, expect, it } from 'vitest'
-import { GENEROUS_LINE, systemPrompt, VAGUE_LINE } from '../src/prompt'
+import { systemPrompt, VAGUE_LINE } from '../src/prompt'
 
 // the follow-up lines are on a turn that follows a built design
 const cloud = (has: (n: string) => boolean = () => true) => systemPrompt('cad', has, '', { cloud: true, followUp: true })
@@ -30,20 +30,10 @@ describe('the line for a vague follow-up', () => {
     expect(VAGUE_LINE).toContain('Never answer that the tools cannot do it: make the nearest change that reads right, and say so')
   })
 
-  it('aims a follow-up at what a person expects to see, editing the main body in place where that is the honest change', () => {
-    expect(GENEROUS_LINE).toContain('A follow-up aims at what the person expects to see, not the least that answers it')
-    expect(GENEROUS_LINE).toContain('windows on every face that would have them')
-    expect(GENEROUS_LINE).toContain('a full row on each side')
-    expect(GENEROUS_LINE).toContain('edit the sections of the main body in place with design.edit_step')
-  })
-
-  it('is in the cloud prompt with design.look, the generous line with design.edit_step, and in no local prompt', () => {
+  it('is in the cloud prompt with design.look, and in no local prompt', () => {
     expect(cloud().split(VAGUE_LINE)).toHaveLength(2)
-    expect(cloud().split(GENEROUS_LINE)).toHaveLength(2)
     expect(cloud((n) => n !== 'design.look')).not.toContain(VAGUE_LINE)
     expect(systemPrompt('cad', () => true)).not.toContain(VAGUE_LINE)
     expect(systemPrompt('cad', () => true, '', { cloud: true })).not.toContain(VAGUE_LINE)
-    expect(systemPrompt('cad', () => true, '', { cloud: true })).not.toContain(GENEROUS_LINE)
-    expect(systemPrompt('cad', () => true)).not.toContain(GENEROUS_LINE)
   })
 })

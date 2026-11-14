@@ -380,7 +380,7 @@ function tab(local = false) {
 describe('design.plan with a detail level', () => {
   it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.15.0')
+    expect(t.tool.version).toBe('1.15.1')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
@@ -396,7 +396,7 @@ describe('design.plan with a detail level', () => {
     const d = tab().tool.description
     expect(d).toContain('display for a model of a real thing named without sizes (the default)')
     expect(d).toContain('a flat-sided one (a house, a bookshelf) can be extruded')
-    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'a loft between two ellipses, offset for the rake, then arrayed', 'Repeated small parts are one part, then array and mirror', 'is built whole in its lightest large color, and each darker band is its own feature', 'painted by direction top', 'its levels are continuous too', 'gives its lean in degrees as a size named rake', 'Plan the features a person recognizes the real thing by', 'a bottom lifting at the ends', 'each darker band its own feature, with its color and its heights as sizes, painted on by height'])
+    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'Repeated small parts are one part, then array and mirror', 'is built whole in its lightest large color, and each darker band is its own feature', 'Plan the features a person recognizes the real thing by', 'a bottom lifting at the ends', 'each darker band its own feature, with its color and its heights as sizes, painted on by height'])
       expect(d).toContain(step)
     await expect(tab().run({ ...car, proportions: undefined })).rejects.toThrow(DETAIL_HELP)
   })
@@ -462,7 +462,7 @@ describe('sectionsProblem: a curved body changes along its length both ways acro
     expect(l!.feature).toBe('Shell')
     expect(l!.sections).toHaveLength(9)
     expect(sectionsProblem('Shell', l!)).toBe(
-      "Shell: all 9 sections span z 0 to 14 mm; only its size in y changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a top line rising toward the ends, a bottom lifting at the ends, a roof sloping down to a hood), then check again",
+      "Shell: all 9 sections span z 0 to 14 mm; only its size in y changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a bottom lifting at the ends, a roof sloping down to a hood), then check again",
     )
   })
 

@@ -281,15 +281,15 @@ const stem = (name: string): string =>
     .map((w) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w))
     .join(' ')
 
-/** Whether each word of a's stem is a word of b's: "Funnels" in "Funnel array", "Window" in "Window row". */
+/** Whether each word of a's stem is a word of b's: "Posts" in "Post array", "Window" in "Window row". */
 const within = (a: string, b: string): boolean => {
   const [x, y] = [stem(a).split(' ').filter(Boolean), new Set(stem(b).split(' '))]
   return x.length > 0 && x.every((w) => y.has(w))
 }
 
 /**
- * An assumption that says a size the source does not give: "real: Funnels spacing not given by the source", or two
- * sizes at once ("Funnel height and spacing"). The name is a planned feature or a name in repeats.
+ * An assumption that says a size the source does not give: "real: Posts spacing not given by the source", or two
+ * sizes at once ("Post height and spacing"). The name is a planned feature or a name in repeats.
  */
 const NOT_GIVEN = /^\s*real\s*:\s*(.+?)\s+([a-z]+)(?:\s+and\s+([a-z]+))?\s+not given by the source\b/i
 
@@ -334,8 +334,8 @@ function unheldProblem(plan: DetailPlan, feature: FeatureOf): string | null {
       const f = feature(l)
       add(f, [LENGTH, WIDTH], 'length', f ? [f.name] : [], [])
     }
-  // each repeat built as a pattern with a spacing, by the features whose names hold its name ("Funnels" holds "Funnel"
-  // and "Funnels (array)"): the pattern and the part it builds once; a repeat whose name no feature holds takes the
+  // each repeat built as a pattern with a spacing, by the features whose names hold its name ("Posts" holds "Post"
+  // and "Posts (array)"): the pattern and the part it builds once; a repeat whose name no feature holds takes the
   // patterns no repeat names, and a repeat with no pattern (a mirrored pair) is not asked for anything
   const repeats = plan.repeats ?? []
   const claimed = new Set<DetailPlan['features'][number]>()
@@ -623,7 +623,7 @@ export const DETAIL_WORKED_SHAPE =
   'A plan of this shape passes on the first try: a stepped body is one main body in flat, keyed in tiers by its own name, its levels in order, each its own feature at least 3 mm tall, stacked; a detail that repeats is listed in repeats and planned as two features, one that builds it once and one with kind array (or pattern) and its count as a size'
 
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a top line rising toward the ends, a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built; a band a person sees from the whole-model view is a real share of the side, not a sliver. Faces that read as their own surface from above (a flat top, a roof, a floor) may then take their own color, painted by direction top, so the top view has contrast. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature, smaller as it rises where the real one is. Where the real thing is one continuous body along most of its length, its levels are continuous too, each stepped in from the one below, and the parts standing on it stand on its top level. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. An upright the real thing leans (a chimney, a table leg, a lamp post) gives its lean in degrees as a size named rake; a tapered or raked round part is a loft between two ellipses, offset for the rake, then arrayed, its cap or band leaning with it. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, at their real count and lean (and color, when the person asks for it), with the detail its size can carry: a repeated detail the scale leaves at least two nozzle widths wide is built in rows on every side that has it (a row on a curved side follows the side), and anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror. ' + DETAIL_WORKED_SHAPE
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: give the real sizes in real, and a part more than about a third off its real size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, with the detail its size can carry: anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror. ' + DETAIL_WORKED_SHAPE
 
 /** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
 export interface LoftSections {
@@ -692,5 +692,5 @@ export function sectionsProblem(name: string, l: LoftSections): string | null {
   if (fixed < 0) return null
   const r = (v: number): number => Math.round(v * 100) / 100
   const other = fixed === p ? q : p
-  return `${name}: all ${l.sections.length} sections span ${'xyz'[fixed]} ${r(l.sections[0]!.lo[fixed]!)} to ${r(l.sections[0]!.hi[fixed]!)} mm; only its size in ${'xyz'[other]} changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a top line rising toward the ends, a bottom lifting at the ends, a roof sloping down to a hood), then check again`
+  return `${name}: all ${l.sections.length} sections span ${'xyz'[fixed]} ${r(l.sections[0]!.lo[fixed]!)} to ${r(l.sections[0]!.hi[fixed]!)} mm; only its size in ${'xyz'[other]} changes along its length, so it reads as one outline stretched out. Change the sections' top and bottom along the length as the real thing does (a bottom lifting at the ends, a roof sloping down to a hood), then check again`
 }

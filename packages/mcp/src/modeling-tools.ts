@@ -495,7 +495,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
     face: z
       .object({ point: vec3.describe('A point on the face, mm'), normal: vec3.optional() })
       .optional()
-      .describe('Instead of path: a rail all round the outer edge of this flat face (a deck, a tray floor, a shelf)'),
+      .describe('Instead of path: a rail all round the outer edge of this flat face (a tray floor, a shelf)'),
     inset_mm: z.number().min(0).max(100).optional().describe('With face: how far in from the edge the rail\'s middle runs; default half the bar, so the bar\'s outside is on the edge'),
     height_mm: z.number().positive().max(500).describe('From the plane to the top of the bar, mm'),
     spacing_mm: z.number().positive().max(500).default(3).describe('Most distance between posts, mm; a post stands at every corner and the rest are spread evenly between'),
@@ -509,7 +509,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   })
   const rail = defineTool({
     name: 'geom.rail',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
     description:
