@@ -108,6 +108,24 @@ export function endIdleGeomWorker(): boolean {
   return endIfIdle?.() ?? true
 }
 
+/** Whether the app's own geometry worker runs now (releaseKeptBodies). */
+let ownRunning: () => boolean = () => false
+
+/**
+ * Frees the solids the replays of a cleared plate kept (history.release), where the replays run and keep them. The
+ * app's own worker keeps them inside it, so with none running there are none, and none is started for the call. A
+ * provider that runs replays itself (runsJobs, the native engine) keeps them on the page and asks its engine only to
+ * free bodies it holds. Any other provider runs no replay and is not asked.
+ */
+export function releaseKeptBodies(): Promise<void> {
+  const p = provider
+  if (p === null || (p === own ? !ownRunning() : p.runsJobs !== true)) return Promise.resolve()
+  return p.call('history.release', {}).then(
+    () => undefined,
+    () => undefined,
+  )
+}
+
 /** A call for the worker. `gate`: it can be canceled, so the worker asks before it runs it (worker-loop.ts). */
 interface Call {
   id: number
@@ -234,6 +252,7 @@ function workerProvider(): GeomProvider {
       }, wait ?? ms),
     )
   }
+  ownRunning = () => worker !== null
   endIfIdle = () => {
     if (pending.size > 0) return false
     release()
