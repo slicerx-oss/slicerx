@@ -121,6 +121,8 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string?]>> = {
   'brep.save': ['model', 'Solid save'],
   'brep.load': ['model', 'Solid load'],
   'history.replay': ['model', 'History replay'],
+  // a cleared plate's kept solids freed: one free per body
+  'history.release': ['quick', 'Solid free'],
   // work over a whole mesh
   render: ['mesh', 'Render'],
   'paint.regions': ['mesh', 'Paint'],

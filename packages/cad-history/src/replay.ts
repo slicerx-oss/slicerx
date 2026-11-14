@@ -158,6 +158,8 @@ const unheld = new Set<number>()
  * is freed only when no running replay has it, by the last one to end.
  */
 const inUse = new Set<Set<number>>()
+/** How many times the cache was released (releaseReplayCache): a replay that began before the last keeps nothing. */
+let releases = 0
 
 const sizeOf = (parts: readonly Flat[]) => parts.reduce((n, p) => n + p.positions.length + p.indices.length + (p.normals?.length ?? 0) + (p.unmeshed ? BODY_NUMBERS : 0), 0)
 
@@ -213,6 +215,30 @@ export function clearReplayCache(): void {
   learnedAt.clear()
   digests = new WeakMap()
   cachedNumbers = 0
+}
+
+/**
+ * Frees the kept bodies no cached step holds and no running replay uses. One a running replay uses is freed by the
+ * last of them to end. Says how many the engine freed (one of an ended process it no longer has is not counted).
+ */
+async function freeUnheld(call: EngineCall): Promise<number> {
+  const busy = new Set([...inUse].flatMap((u) => [...u]))
+  const gone = [...unheld].filter((b) => !busy.has(b))
+  for (const b of gone) unheld.delete(b)
+  let freed = 0
+  for (const b of gone) if (((await call('brep.free', { body: b }).catch(() => null)) as { freed?: boolean } | null)?.freed === true) freed++
+  return freed
+}
+
+/**
+ * Lets every kept step go and frees the bodies they held, for a cleared plate whose designs are gone (history.release).
+ * A body a running replay uses goes when that replay ends, and a replay that began before this keeps none of what it
+ * makes, so its bodies go then too.
+ */
+export async function releaseReplayCache(call: EngineCall): Promise<{ freed: number }> {
+  releases++
+  clearReplayCache()
+  return { freed: await freeUnheld(call) }
 }
 
 /** FNV-1a over a string, continuing from `h`, as 13 base-36 digits. */
@@ -1052,23 +1078,22 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
   inUse.add(uses)
   const solids: Solids = { keep: !!((req.exact || req.exactLofts) && o.keepsBodies), lofts: !!req.exactLofts, made: (b) => (made.add(b), uses.add(b)), has: async (op) => (await (has ??= exactOps(call))).ops.has(op), limit: async () => (await (has ??= exactOps(call))).maxSolidText }
   try {
-    return await replaySteps(call, req, o, solids, (b) => uses.add(b))
+    return await replaySteps(call, req, o, solids, (b) => uses.add(b), releases)
   } finally {
     inUse.delete(uses)
     // bodies this replay made that no cached step holds, and ones whose last cached step went, but none another
     // running replay still uses: that one frees it when it ends
     for (const b of made) if (!bodyRefs.has(b)) unheld.add(b)
-    if (solids.keep) {
-      const busy = new Set([...inUse].flatMap((u) => [...u]))
-      const gone = [...unheld].filter((b) => !busy.has(b))
-      for (const b of gone) unheld.delete(b)
-      for (const b of gone) await call('brep.free', { body: b }).catch(() => {})
-    }
+    if (solids.keep) await freeUnheld(call)
   }
 }
 
-async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOptions, solids: Solids, uses: (body: number) => void): Promise<ReplayResult & { before?: HistoryMesh[] }> {
+async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOptions, solids: Solids, uses: (body: number) => void, era: number): Promise<ReplayResult & { before?: HistoryMesh[] }> {
   const { history } = req
+  // a release since this replay began let its design go: what it makes from here is not kept
+  const cacheStep: typeof remember = (key, parts, learned) => {
+    if (era === releases) remember(key, parts, learned)
+  }
   const steps = history.steps
   const status: StepStatus[] = steps.map((s) => (s.suppressed ? { state: 'suppressed' } : { state: 'skipped' }))
   const moved: Record<string, MovedFace> = {}
@@ -1124,7 +1149,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       break
     }
   }
-  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, copies: {}, fellBack: [], quiet: [] }, ran: {} })
+  cacheStep(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, copies: {}, fellBack: [], quiet: [] }, ran: {} })
   const fonts = req.fonts ?? {}
   let before: Flat[] | undefined = req.before === 0 ? history.base.map(flat) : req.before !== undefined && req.before <= start && req.before > 0 ? known(req.before - 1) : undefined
   for (let i = 0; i < start; i++) {
@@ -1137,7 +1162,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
     if (s.suppressed) {
       // turned off, it still numbers the parts as if it had run, and keeps the parts it would have taken away
       ;({ parts, numbered } = turnedOff(s, { parts, numbered }))
-      remember(keys[i]!, parts, { gone, moved, found, ran, numbered })
+      cacheStep(keys[i]!, parts, { gone, moved, found, ran, numbered })
       continue
     }
     if (o.yieldStep) await o.yieldStep(s)
@@ -1148,7 +1173,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       status[i] = doneStatus(found, s.id)
       const had = keysOf(s.params)
       if (had) ran[s.id] = [had, keysOf(withFound(s.params, found.keys[s.id]))]
-      remember(keys[i]!, parts, { gone, moved, found, ran, numbered })
+      cacheStep(keys[i]!, parts, { gone, moved, found, ran, numbered })
     } catch (e) {
       if ((e as { name?: string }).name === 'AbortError') throw e
       status[i] = { state: 'broken', message: e instanceof Error ? e.message : String(e), ...(e instanceof ExactBroken && e.cause ? { cause: e.cause } : {}) }

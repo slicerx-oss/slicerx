@@ -11,7 +11,7 @@
 // starts another. A crash in the engine ends only its process and fails the call it was running. The process also
 // ends after IDLE_MS with nothing to do, as the worker does, and with it every kernel body it held: each body number
 // the page sees names the process that made it, so a number from an ended process is never sent to the next one.
-import { clearReplayCache, replayHistory, withTooBig, type ReplayRequest } from '@slicerx/cad-history'
+import { clearReplayCache, releaseReplayCache, replayHistory, withTooBig, type ReplayRequest } from '@slicerx/cad-history'
 import { decodeFrame, encodeFrame, namesBody, ownBodies, plainArrays, rawData, rawMeshes, readBuffers, tagBodies } from '@slicerx/cad-history/served'
 import { geomCallLimitMs, geomStuckMessage } from '@slicerx/contracts/geom-limits'
 import { askFaces, CANCEL_GRACE_MS, IDLE_MS, noteCall, setGeomProvider, type GeomProvider } from './client'
@@ -277,6 +277,9 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
       // the engine is native and whole: nothing to load
       if (op === 'engine.core' || op === 'engine.full') return Promise.resolve(true as T)
       if (op === 'history.replay') return replay(request, signal) as Promise<T>
+      // the replay cache is on this page: a cleared plate's bodies are freed in the process, which is not started for
+      // them (a body of none running is answered here)
+      if (op === 'history.release') return releaseReplayCache((o, r) => engineCall(o, r)) as Promise<T>
       return engineCall(op, request, signal) as Promise<T>
     },
   }

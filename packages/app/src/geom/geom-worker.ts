@@ -7,7 +7,7 @@
 // requests still get answers meanwhile, and stops when its caller cancels. The engine is two builds (modules.ts):
 // the core loads first, the full engine the first time a call needs it. Calls named brep.<op> go to the B-rep kernel
 // (brep.ts), which loads the first time one comes.
-import { replayHistory, type ReplayRequest } from '@slicerx/cad-history'
+import { releaseReplayCache, replayHistory, type EngineCall, type ReplayRequest } from '@slicerx/cad-history'
 import { engineModules, type EngineModule } from './modules'
 import { callEngine, EngineTrap, retriesAfterTrap, transferables, type GeomExports } from './engine-call'
 import { loadBrep, type BrepModule } from './brep'
@@ -87,8 +87,13 @@ function brepKernel(): Promise<BrepModule> {
   }))
 }
 
+/** How a replay here reaches the engine: brep.<op> calls go to the kernel, the rest to the mesh engine. */
+const replayCall: EngineCall = async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : retried(o, r, () => engine.run(o, r)))
+
 const handle = workerLoop((message, transfer) => self.postMessage(message, { transfer: transfer ?? [] }), {
   async prepare(op, request) {
+    // a cleared plate's kept bodies, freed in the kernel they live in; with none kept the kernel is not loaded for it
+    if (op === 'history.release') return () => releaseReplayCache(replayCall)
     if (op.startsWith('brep.')) {
       const kernel = await brepKernel()
       return () => kernel.call(op.slice('brep.'.length), request)
@@ -109,7 +114,7 @@ const handle = workerLoop((message, transfer) => self.postMessage(message, { tra
   },
   // a replay with exact solids calls the kernel's ops too; the kernel lives in this worker, so its bodies last from
   // call to call
-  replay: (request, yieldStep) => replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : retried(o, r, () => engine.run(o, r))), request as ReplayRequest, { keepsBodies: true, yieldStep: (s) => yieldStep(replayStepOf(s)) }),
+  replay: (request, yieldStep) => replayHistory(replayCall, request as ReplayRequest, { keepsBodies: true, yieldStep: (s) => yieldStep(replayStepOf(s)) }),
   memoryBytes,
   transfer: (op, result) => (op.startsWith('brep.') || op.startsWith('engine.') ? [] : transferables(result)),
 })
