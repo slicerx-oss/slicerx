@@ -101,7 +101,7 @@ const taller = (p: PlanInput, z: number): PlanInput => ({ ...p, features: p.feat
 describe('design.plan with amends', () => {
   it('tells the model a first plan takes no reason: amends and reason are for changing an approved plan', () => {
     const plan = tabToolset(boxHost(), createCardPlans(createPlanRegistry()), { nozzleMm: () => machine.nozzle }).find((t) => t.name === 'design.plan')!
-    expect(plan.version).toBe('1.14.0')
+    expect(plan.version).toBe('1.15.0')
     const props = toolSpec(plan).inputSchema.properties as Record<string, { description?: string }>
     expect(props['amends']?.description).toMatch(/only to change a plan the person approved/i)
     expect(props['reason']?.description).toMatch(/only with amends/i)

@@ -299,7 +299,7 @@ export const TIER_GROUP_KEY = (key: string, levels: readonly string[]): string =
   const lowest = levels[0]!
   if (levels.length === 1) return `tiers: ${key} is not a planned feature but a name over ${lowest}. Key its list by ${lowest}: tiers: ${JSON.stringify({ [lowest]: [lowest] })}, with only ${lowest} in flat`
   const names = `${levels.slice(0, -1).join(', ')} and ${levels.at(-1)!}`
-  return `tiers: ${key} is not a planned feature but a name over ${names}. If they are levels of one body, key them by the lowest, the body flat lists: tiers: ${JSON.stringify({ [lowest]: levels })}, with only ${lowest} in flat. If they are separate bodies, give each its own list`
+  return `tiers: ${key} is not a planned feature but a name over ${names}. If they are levels of one body, key them by the lowest, the body flat lists: tiers: ${JSON.stringify({ [lowest]: levels })}, with only ${lowest} in flat. If they are separate bodies, give each its own list: ${JSON.stringify(Object.fromEntries(levels.map((l) => [l, [l]])))}`
 }
 
 /**

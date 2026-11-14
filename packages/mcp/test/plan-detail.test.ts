@@ -279,10 +279,10 @@ describe('detailProblem: the rules are about the object', () => {
       real: [{ feature: 'Ground floor', size: 'width', mm: 10000 }],
     }
     // the sentences, word for word, for several levels and for one; the refusal's join gives each its one period
-    expect(TIER_GROUP_KEY('Deck houses', ['Lower deck house', 'Middle deck house', 'Boat deck'])).toBe('tiers: Deck houses is not a planned feature but a name over Lower deck house, Middle deck house and Boat deck. If they are levels of one body, key them by the lowest, the body flat lists: tiers: {"Lower deck house":["Lower deck house","Middle deck house","Boat deck"]}, with only Lower deck house in flat. If they are separate bodies, give each its own list')
+    expect(TIER_GROUP_KEY('Deck houses', ['Lower deck house', 'Middle deck house', 'Boat deck'])).toBe('tiers: Deck houses is not a planned feature but a name over Lower deck house, Middle deck house and Boat deck. If they are levels of one body, key them by the lowest, the body flat lists: tiers: {"Lower deck house":["Lower deck house","Middle deck house","Boat deck"]}, with only Lower deck house in flat. If they are separate bodies, give each its own list: {"Lower deck house":["Lower deck house"],"Middle deck house":["Middle deck house"],"Boat deck":["Boat deck"]}')
     expect(TIER_GROUP_KEY('Deck houses', ['Lower deck house'])).toBe('tiers: Deck houses is not a planned feature but a name over Lower deck house. Key its list by Lower deck house: tiers: {"Lower deck house":["Lower deck house"]}, with only Lower deck house in flat')
     const problem = detailProblem(stories)!
-    expect(problem).toContain('tiers: Storeys is not a planned feature but a name over Ground floor and Upper floor. If they are levels of one body, key them by the lowest, the body flat lists: tiers: {"Ground floor":["Ground floor","Upper floor"]}, with only Ground floor in flat. If they are separate bodies, give each its own list. ')
+    expect(problem).toContain('tiers: Storeys is not a planned feature but a name over Ground floor and Upper floor. If they are levels of one body, key them by the lowest, the body flat lists: tiers: {"Ground floor":["Ground floor","Upper floor"]}, with only Ground floor in flat. If they are separate bodies, give each its own list: {"Ground floor":["Ground floor"],"Upper floor":["Upper floor"]}. ')
     const one = detailProblem({ ...stories, flat: ['Ground floor', 'Upper floor', 'Roof'], tiers: { Storeys: ['Ground floor'], 'Upper floor': ['Upper floor'], Roof: ['Roof'] } })!
     expect(one).toContain('tiers: Storeys is not a planned feature but a name over Ground floor. Key its list by Ground floor: tiers: {"Ground floor":["Ground floor"]}, with only Ground floor in flat. ')
     expect(one).not.toContain('in flat..')
@@ -326,7 +326,7 @@ function tab(local = false) {
 describe('design.plan with a detail level', () => {
   it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.14.0')
+    expect(t.tool.version).toBe('1.15.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
