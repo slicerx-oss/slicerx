@@ -51,6 +51,7 @@ const ENGINE: Record<string, GeomOpClass> = {
   'sketch.curves': 'quick',
   'sketch.revolve': 'model',
   'sketch.loft': 'model',
+  'sketch.loft.rings': 'model',
   'sketch.sweep': 'model',
   'sketch.snaps': 'quick',
   'sketch.offset': 'quick',

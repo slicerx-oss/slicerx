@@ -311,6 +311,29 @@ fn lined_up(profiles: &[Profile], opts: &Options) -> Result<LinedUp> {
     })
 }
 
+/// A mesh loft's rings as its sides join them, with no mesh made.
+#[derive(Debug, Clone)]
+pub struct Matched {
+    /// Each profile's ring in order along the loft, at the profile's plane; point `i` of every ring is on rail `i`.
+    pub rings: Vec<Vec<V3>>,
+    /// On a closed loft, how far around the first ring each rail comes back: rail `i` ends on point `i + wrap`.
+    pub wrap: Option<usize>,
+    /// Whether the rings are closed loops; else open chains.
+    pub ring_closed: bool,
+}
+
+/// The rings [`loft_with`] makes its sides from, matched and lined up as it lines them up, refused in its words.
+pub fn matched_rings(profiles: &[Profile], opts: &Options) -> Result<Matched> {
+    let LinedUp {
+        sections, wrap, open, ..
+    } = lined_up(profiles, opts)?;
+    Ok(Matched {
+        rings: sections.into_iter().map(|s| s.ring).collect(),
+        wrap,
+        ring_closed: !open,
+    })
+}
+
 /// One profile's ring as a loft's rails pass through it.
 #[derive(Debug, Clone)]
 pub struct Ring {

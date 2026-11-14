@@ -435,12 +435,22 @@ fn held(rails: &Rails, sheets: &[Sheet], parts: &[Part], mesh: &mut TriMesh) -> 
 /// that does not come within [`DRAWN_MM`] of its drawing. Whatever the mesh loft refuses is refused here in the same
 /// words.
 pub fn hold_through(profiles: &[Profile], opts: &Options, mesh: &mut TriMesh) -> Result<u32> {
+    let d = held_sheets(profiles, opts)?;
+    held(&d.rails, &d.sheets, &d.parts, mesh)
+}
+
+/// The rails [`hold_through`] makes its body on, with no body made: refused as it refuses them before the kernel
+/// joins the faces, in the same words.
+pub fn built_rails(profiles: &[Profile], opts: &Options) -> Result<Rails> {
+    held_sheets(profiles, opts).map(|d| d.rails)
+}
+
+fn held_sheets(profiles: &[Profile], opts: &Options) -> Result<Faces> {
     if opts.thicken.is_some() {
         return Err(Error::geometry(
             "loft",
             "a loft thickened into a shell is not made exact yet",
         ));
     }
-    let d = drawn_sheets(profiles, opts, &Density::default(), MOST_DOUBLINGS)?;
-    held(&d.rails, &d.sheets, &d.parts, mesh)
+    drawn_sheets(profiles, opts, &Density::default(), MOST_DOUBLINGS)
 }

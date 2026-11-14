@@ -93,6 +93,7 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string?]>> = {
   'face.push': ['model', 'Push and pull'],
   'sketch.revolve': ['model', 'Revolve'],
   'sketch.loft': ['model', 'Loft'],
+  'sketch.loft.rings': ['model', 'Loft'],
   'sketch.sweep': ['model', 'Sweep'],
   'sketch.trace': ['model', 'Image trace'],
   'edge.fillet': ['model', 'Fillet'],
