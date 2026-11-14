@@ -159,10 +159,10 @@ export function triangleAt(tris: Tri[], at: V3, normal?: V3): number {
   return first.i
 }
 
-/** Where the line through `at` along unit `dir` crosses the triangles: how far along it, and the face's outward normal. */
-function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3 }[] {
-  const out: { s: number; n: V3 }[] = []
-  for (const t of tris) {
+/** Where the line through `at` along unit `dir` crosses the triangles: how far along it, the face's outward normal, and the triangle. */
+function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3; i: number }[] {
+  const out: { s: number; n: V3; i: number }[] = []
+  for (const [i, t] of tris.entries()) {
     if (!(t.area > 0)) continue
     const [a, b, c] = t.p
     const e1 = sub(b, a)
@@ -177,7 +177,7 @@ function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3 }[]
     const r = cross(q, e1)
     const v = dot(dir, r) / det
     if (v < -1e-9 || u + v > 1 + 1e-9) continue
-    out.push({ s: dot(e2, r) / det, n: t.n })
+    out.push({ s: dot(e2, r) / det, n: t.n, i })
   }
   return out
 }
@@ -186,6 +186,34 @@ function lineHits(tris: readonly Tri[], at: V3, dir: V3): { s: number; n: V3 }[]
 const HOLE_OVERLAP_MM = 0.05
 /** The entry face holds the hole's circle when the face there is this close to the entry's plane, mm. */
 const HOLE_FLAT_MM = 0.01
+/** How far off the part a hole's point may be and still be taken onto it along its normal, mm. */
+const HOLE_ONTO_MM = 1
+/** How far outside a curved face a hole's cut starts, so its end never only touches the face it goes into, mm. */
+const HOLE_CLEAR_MM = 0.05
+
+/** Where the line through `at` along `normal` meets the part nearest `at`, within HOLE_ONTO_MM, on a face facing that way. */
+function ontoPart(tris: readonly Tri[], at: V3, normal: V3): { at: V3; mm: number } | undefined {
+  const n = unit(normal)
+  if (!n) return undefined
+  const hit = lineHits(tris, at, n)
+    .filter((h) => Math.abs(h.s) <= HOLE_ONTO_MM && dot(h.n, n) >= Math.cos(Math.PI / 6))
+    .reduce<{ s: number } | undefined>((x, y) => (!x || Math.abs(y.s) < Math.abs(x.s) ? y : x), undefined)
+  return hit && { at: at.map((c, k) => c + n[k]! * hit.s) as V3, mm: Math.abs(hit.s) }
+}
+
+/** The refusal for a hole's point off the parts: the point of their surface nearest it, and how far. */
+function offPart(parts: readonly (readonly Tri[])[], at: V3): ToolInputError {
+  const r3 = (c: number) => Math.round(c * 1000) / 1000 || 0
+  let best: { q: V3; gap: number } | undefined
+  for (const tris of parts) for (const t of tris) {
+    if (!(t.area > 0)) continue
+    const q = closest(at, t.p)
+    const gap = len(sub(at, q))
+    if (!best || gap < best.gap) best = { q, gap }
+  }
+  const where = best ? `; the surface nearest it is at (${best.q.map(r3).join(', ')}), ${r3(best.gap)} mm away` : ''
+  return new ToolInputError(`at: no face within ${NEAR_MM} mm of (${at.join(', ')})${where}; give a point on the face the hole starts at`)
+}
 
 /**
  * Where a new hole goes into a part, from a point on its axis line and the axis (either way round), or from a point on
@@ -194,13 +222,22 @@ const HOLE_FLAT_MM = 0.01
  * `into`, the way into the material there; and `wallMm`, how far the material runs that way (through the wall the hole
  * starts in). Anything else is refused with what is there.
  */
-function newHolePath(tris: readonly Tri[], at: V3, axis: V3 | undefined, normal: V3 | undefined, radiusMm: number): { entry: V3; into: V3; wallMm: number } {
+function newHolePath(tris: readonly Tri[], typed: V3, axis: V3 | undefined, normal: V3 | undefined, radiusMm: number, curvedAt?: (triangle: number) => boolean | undefined): { entry: V3; into: V3; wallMm: number; curved: boolean; onto?: number } {
   const r3 = (c: number) => Math.round(c * 1000) / 1000 || 0
   const mm = (v: V3) => v.map(r3).join(', ')
   const notFlat = (p: V3) => new ToolInputError(`center: the face at (${mm(p)}) is not flat across the hole's ${r3(radiusMm * 2)} mm circle (it runs off the face or onto a round one); a hole starts on a flat face, such as the top of a boss`)
   let a: V3 | undefined
+  let at = typed
+  let onto: number | undefined
   if (axis) a = unit(axis)
   else {
+    // a point a little off the part, as a curved side's point often is, goes onto it along its normal
+    if (!tris.some((t) => t.area > 0 && distance(at, t.p) <= NEAR_MM)) {
+      const on = normal && ontoPart(tris, at, normal)
+      if (!on) throw offPart([tris], at)
+      at = on.at
+      onto = on.mm
+    }
     try {
       a = tris[triangleAt([...tris], at, normal)]!.n
     } catch (e) {
@@ -230,7 +267,9 @@ function newHolePath(tris: readonly Tri[], at: V3, axis: V3 | undefined, normal:
     const near = lineHits(tris, q, into).reduce<{ s: number; n: V3 } | null>((x, y) => (!x || Math.abs(y.s) < Math.abs(x.s) ? y : x), null)
     if (!near || Math.abs(near.s) > HOLE_FLAT_MM || dot(near.n, first.n) < 0.9999) throw notFlat(entry)
   }
-  return { entry, into, wallMm: exit.d }
+  // a curved entry: the face says so, or the facets under the circle lean off each other
+  const curved = curvedAt?.(first.i) ?? tris.some((t) => t.area > 0 && distance(entry, t.p) <= radiusMm && dot(t.n, first.n) > 0.5 && dot(t.n, first.n) < 1 - 1e-9)
+  return { entry, into, wallMm: exit.d, curved, ...(onto === undefined ? {} : { onto }) }
 }
 
 const faceRef = z
@@ -2135,11 +2174,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeMake = defineTool({
     name: 'geom.hole',
-    version: '2.0.1',
+    version: '2.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Make a new round hole in a model or a design, a circle on the face it starts at cut into it: diameter_mm across, through the wall it starts in or depth_mm deep, with a counterbore or a countersink at its entry. Give "center", its center on the flat face it starts at (or any point on its axis line), and "axis", the hole\'s axis either way round (left out, square to the face at center); or "face", a point on that face, for a hole square to it. The whole circle, and the head\'s, must sit on that flat face. To change a hole already there, use geom.hole_edit; a hole already on that axis is refused. Returns the hole as made (center, axis, diameterMm, depthMm, kind through or blind, head). With "design" it adds a cut step, and a second one for a counterbore or a countersink; with a model it writes the new STL.',
+      'Make a new round hole in a model or a design, a circle on the face it starts at cut into it: diameter_mm across, through the wall it starts in or depth_mm deep, with a counterbore or a countersink at its entry. Give "center", its center on the flat face it starts at (or any point on its axis line), and "axis", the hole\'s axis either way round (left out, square to the face at center); or "face", a point on that face, for a hole square to it; a face point up to 1 mm off the part goes onto it along its normal, and the hole goes square into the surface there. The whole circle, and the head\'s, must sit on that flat face. To change a hole already there, use geom.hole_edit; a hole already on that axis is refused. Returns the hole as made (center, axis, diameterMm, depthMm, kind through or blind, head). With "design" it adds a cut step, and a second one for a counterbore or a countersink; with a model it writes the new STL.',
     localDescription:
       'Make a new round hole of diameter_mm in a model or a design, through the wall it starts in or depth_mm deep, with a counterbore or countersink at its entry. Give center (its center on the flat face it starts at) and axis, or face (a point on that face). To change a hole already there, use geom.hole_edit. More: kb.search "make a hole".',
     input: z.object({
@@ -2186,10 +2225,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         throw new ToolInputError(`center: a ${r3(h.diameterMm)} mm hole is on that axis already, entering at (${h.entry.map(r3).join(', ')}); to change it, use geom.hole_edit`)
       }
       // where the hole goes, and the cut that makes it: a circle on the entry face cut into it, as Extrude with Cut does
-      const placed = async (tris: readonly Tri[], find: (req: Record<string, unknown>) => Promise<FoundHole>) => {
+      const placed = async (tris: readonly Tri[], find: (req: Record<string, unknown>) => Promise<FoundHole>, curvedAt?: (triangle: number) => boolean | undefined) => {
         let p: ReturnType<typeof newHolePath>
         try {
-          p = newHolePath(tris, at, axis, normal, radius)
+          p = newHolePath(tris, at, axis, normal, radius, curvedAt)
         } catch (e) {
           if (axis) await already(find, at, axis)
           throw e
@@ -2202,7 +2241,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           frame: frameFor(p.entry, p.into.map((c) => -c) as V3),
           shape: { type: 'circle' as const, diameterMm },
           placement: { center: [0, 0] as [number, number] },
-          spec: { distanceMm, extent: 'oneSide' as const, operation: 'cut' as const, ...(taperDeg ? { taperDeg } : {}) },
+          // on a curved face the cut starts a little outside it, so its end does not only touch the face
+          spec: { distanceMm, ...(p.curved ? { extent: 'twoSides' as const, distance2Mm: HOLE_CLEAR_MM } : { extent: 'oneSide' as const }), operation: 'cut' as const, ...(taperDeg ? { taperDeg } : {}) },
         })
         // to a ten-thousandth of a mm, so a depth read from float32 positions reads as typed in the history
         const cut = circle(i.diameter_mm, Math.round((through ? deep + HOLE_OVERLAP_MM : deep) * 1e4) / 1e4)
@@ -2219,6 +2259,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       }
       const headLabel = head ? `${headName === 'counterbore' ? 'Counterbore' : 'Countersink'} ${Math.round(head.diameter_mm * 100) / 100} mm` : ''
       const verb = (through: boolean) => `Made a ${r3(i.diameter_mm)} mm ${through ? 'through' : 'blind'} hole${head ? ` with a ${headName}` : ''}`
+      // the hole starts where the point's normal meets the part, when the point was off it
+      const ontoNote = (p: { entry: V3; onto?: number }) => (p.onto === undefined ? '' : `; (${at.join(', ')}) is ${r3(p.onto)} mm off the surface, so the hole starts where its direction meets the surface, at (${p.entry.map(r3).join(', ')})`)
+      const ontoOut = (p: { entry: V3; onto?: number }) => (p.onto === undefined ? {} : { onto: { from: at, to: p.entry.map(r3), mm: r3(p.onto) } })
       const plainHole = (h: FoundHole) => ({ ...readHole(h), head: 'none' })
       const onAxis = (h: FoundHole) => ({ at: h.entry, axis: h.axis })
       if (i.design) {
@@ -2238,10 +2281,21 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           }
           part = first.k
         }
-        part ??= faceAt(d, at, normal).part
+        if (part === undefined) {
+          try {
+            part = faceAt(d, at, normal).part
+          } catch (e) {
+            // a point a little off every part goes onto the one its normal meets first
+            const near = normal && tris.map((t, k) => ({ k, on: ontoPart(t, at, normal) })).filter((x) => x.on).sort((x, y) => x.on!.mm - y.on!.mm)[0]
+            if (!near) throw e instanceof ToolInputError && /^at: no face/.test(e.message) ? offPart(tris, at) : e
+            part = near.k
+          }
+        }
         const k = part
         const find = findIn(k)
-        const p = await placed(tris[k]!, find)
+        const faces = d.parts[k]?.faces
+        const kind = (t: number): string | undefined => (faces?.table[faces.ids[t] ?? -1] as { kind?: unknown } | undefined)?.kind as string | undefined
+        const p = await placed(tris[k]!, find, (t) => { const s = kind(t); return s === undefined ? undefined : s !== 'plane' })
         const host = designs()
         const steps = d.history.steps.length
         const redo = d.redo
@@ -2260,7 +2314,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         let made: Record<string, unknown> | null = null
         if (hole) made = p.headCut ? await find(onAxis(hole)).then((shaft) => readMade(hole, shaft, i), () => null) : plainHole(hole)
         const out = stepOut(d, verb(p.through))
-        return { summary: made ? out.summary : `${out.summary}; the hole was cut but not read back`, output: { ...out.output, part: k, hole: made } }
+        return { summary: `${made ? out.summary : `${out.summary}; the hole was cut but not read back`}${ontoNote(p)}`, output: { ...out.output, part: k, hole: made, ...ontoOut(p) } }
       }
       const stlPath = await path(i.model!)
       const find = (mesh: string, req: Record<string, unknown>) => findHole((r) => call('hole.find', r), { mesh: { stlPath: mesh }, ...req })
@@ -2276,7 +2330,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           made = headed && hole ? await find(headed, onAxis(hole)).then((shaft) => readMade(hole, shaft, i), () => null) : null
         } else made = hole && plainHole(hole)
       }
-      return { summary: made ? verb(p.through) : `${verb(p.through)}; the hole was cut but not read back`, output: { ...out, hole: made } }
+      return { summary: `${made ? verb(p.through) : `${verb(p.through)}; the hole was cut but not read back`}${ontoNote(p)}`, output: { ...out, hole: made, ...ontoOut(p) } }
     },
   })
 
