@@ -5,6 +5,8 @@
 //! (`{if !in_head_wrap_detect_zone}`) on every layer of such a plate, and keeps it on every layer of a plate outside
 //! the corner. Nozzle wrap detection on or off changes neither.
 
+#![allow(clippy::disallowed_methods, reason = "test geometry, not engine output")]
+
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -204,4 +206,68 @@ fn a_plate_in_the_corner_slices_with_detection_on_and_off() {
             "{detection}: the corner plate moves Z or retracts where the center plate does not"
         );
     }
+}
+
+/// The extruding moves of the skirt, from where each starts to where it ends (X and Y).
+fn skirt_moves(gcode: &str) -> Vec<([f64; 2], [f64; 2])> {
+    let (mut on, mut at) = (false, [0.0, 0.0]);
+    let mut out = Vec::new();
+    for line in gcode.lines() {
+        if let Some(f) = line.strip_prefix("; FEATURE: ") {
+            on = f.trim() == "Skirt";
+            continue;
+        }
+        let code = line.split(';').next().unwrap_or("");
+        if !(code.starts_with("G1 ") || code.starts_with("G0 ")) {
+            continue;
+        }
+        let word = |c: char| {
+            code.split_whitespace()
+                .find_map(|w| w.strip_prefix(c).and_then(|v| v.parse::<f64>().ok()))
+        };
+        let to = [word('X').unwrap_or(at[0]), word('Y').unwrap_or(at[1])];
+        if on && word('E').is_some_and(|e| e > 0.0) && (word('X').is_some() || word('Y').is_some()) {
+            out.push((at, to));
+        }
+        at = to;
+    }
+    out
+}
+
+/// A skirt round a plate wholly in the corner prints whole, inside the corner, as it would anywhere else on the bed:
+/// the printer skips its check there, so the corner is not kept clear of it. One loop, as long as the center plate's.
+/// A part only partly in the corner keeps its skirt cut at it (`keep_out_zones.rs`).
+#[test]
+fn a_skirt_round_a_plate_in_the_corner_prints_one_whole_loop() {
+    let mut c = a1(false);
+    c["skirt_loops"] = json!(1);
+    c["skirt_height"] = json!(1);
+    let length = |m: &[([f64; 2], [f64; 2])]| {
+        m.iter()
+            .map(|(a, b)| (b[0] - a[0]).hypot(b[1] - a[1]))
+            .sum::<f64>()
+    };
+    let (out, center) = slice("skirt-center", &c, CENTER, &[]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let (out, corner) = slice("skirt-corner", &c, CORNER, &[]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        !report["warnings"].to_string().contains("skirt"),
+        "{}",
+        report["warnings"]
+    );
+    let (here, there) = (skirt_moves(&corner), skirt_moves(&center));
+    assert!(!here.is_empty(), "a skirt");
+    assert!(
+        here.iter()
+            .all(|(a, b)| [a, b].iter().all(|p| p[0] > 226.0 && p[1] > 224.0)),
+        "the skirt runs in the corner, round the box: {here:?}"
+    );
+    assert!(
+        (length(&here) - length(&there)).abs() < 0.05,
+        "corner skirt {} mm, center skirt {} mm",
+        length(&here),
+        length(&there)
+    );
 }

@@ -608,6 +608,12 @@ pub(crate) struct Bed {
 impl Bed {
     /// None when the settings name no printable area.
     pub(crate) fn of(cfg: &PrintConfig) -> Option<Self> {
+        Self::of_plate(cfg, false)
+    }
+
+    /// [`Self::of`] for a plate: one whose first layer lies wholly in the nozzle wrap check corner (`in_wrap_corner`)
+    /// keeps only the excluded areas clear, as the printer skips its check in that corner.
+    pub(crate) fn of_plate(cfg: &PrintConfig, in_wrap_corner: bool) -> Option<Self> {
         let shape = |pts: &[[f64; 2]]| -> Shapes {
             let mut ring: Ring = pts.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect();
             if area2(&ring) < 0 {
@@ -618,10 +624,12 @@ impl Bed {
         if cfg.printable_area.len() < 3 {
             return None;
         }
-        let zones: Vec<Shapes> = crate::preflight::keep_out_zones(cfg)
-            .iter()
-            .map(|z| shape(z))
-            .collect();
+        let zones = if in_wrap_corner {
+            crate::preflight::exclude_zones(cfg)
+        } else {
+            crate::preflight::keep_out_zones(cfg)
+        };
+        let zones: Vec<Shapes> = zones.iter().map(|z| shape(z)).collect();
         let zones: Vec<&Shapes> = zones.iter().collect();
         Some(Self {
             area: shape(&cfg.printable_area),
