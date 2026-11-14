@@ -5,7 +5,7 @@
 // A pick that finds no hole says what face is there, and leaves the design as it was. A new hole is geom.hole's: cut
 // square into a flat face by its center and axis or a point on the face, through the wall or to a depth, with a
 // counterbore or a countersink, and read back as made. A spot that cannot take it is refused, and nothing changes.
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { designToolset, NO_ENGINE_HOST } from '../src/toolset'
@@ -243,12 +243,14 @@ describe('a new hole cut in a design', () => {
   }, 60_000)
 })
 
-describe('the change file for the hole tools', () => {
-  it('names each tool at the version it has', () => {
-    const changes = readFileSync(join(__dirname, '..', 'changes', 'feat-geom-hole-tools.md'), 'utf8')
-    const named = [...changes.matchAll(/`slicerx_(\w+?)` (\d+\.\d+\.\d+)/g)].map(([, n, v]) => [n!, v!] as const)
+describe('the change files for the hole tools', () => {
+  // a change that moves a tool on names its new version in its own file, so the version served is named in one of them,
+  // or in CHANGELOG.md once a release has folded the files in
+  it('name each tool at the version it has', () => {
+    const dir = join(__dirname, '..', 'changes')
+    const texts = [...readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'README.md').map((f) => join(dir, f)), join(__dirname, '..', 'CHANGELOG.md')]
+    const named = texts.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/`slicerx_(\w+?)` (\d+\.\d+\.\d+)/g)].map(([, n, v]) => [n!, v!] as const))
     const tools = new Map(designToolset(NO_ENGINE_HOST).map((t) => [t.name.replace('.', '_'), t.version]))
-    expect(named.map(([n]) => n).sort()).toEqual(['geom_hole', 'geom_hole_edit'])
-    for (const [n, v] of named) expect(tools.get(n), n).toBe(v)
+    for (const n of ['geom_hole', 'geom_hole_edit']) expect(named.filter(([m]) => m === n).map(([, v]) => v), n).toContain(tools.get(n))
   })
 })

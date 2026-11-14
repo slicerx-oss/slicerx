@@ -5,7 +5,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { bakeMesh, checkedTextFit, direction, groupId, invert, keepsArrayOf, MAX_STEPS_REPEATED, multiply, point, repeatProblem, stepName, stepPatternProblem, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
-import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, replayChange, stepIndex, type Design, type PiecePlans } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, pieceNameFor, pieceNameNote, replayChange, stepIndex, stepOut, type Design, type PiecePlans } from './design-tools'
 import { frameFor } from './cad'
 import { insetOutline, railLayout } from './rail'
 import { ToolInputError } from './errors'
@@ -58,19 +58,14 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   const seatOpts = () => ({ nozzleMm: deps.nozzleMm?.(), layerHeightMm: deps.fitProfile?.().layerHeightMm, plans: deps.plans })
   /** An answer with what seating said after it, if anything. */
   const withSeat = <T extends { summary: string }>(out: T, said: string): T => (said ? { ...out, summary: `${out.summary.replace(/[.\s]+$/, '')}. ${said}` } : out)
-  const added = (d: Design, verb: string) => {
-    const s = d.history.steps[d.history.steps.length - 1]
-    return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
-  }
   /**
-   * As added, with a pattern step's note (the copies it left out, which missed the part, named) and the same as data:
-   * `copies`, how many there are, how many were kept and the numbers left out, from 1 as the note numbers them.
+   * As stepOut, whose summary names the copies a pattern step left out (its note), with the same as data: `copies`, how
+   * many there are, how many were kept and the numbers left out, from 1 as the note numbers them.
    */
   const addedPattern = (d: Design, verb: string) => {
-    const r = added(d, verb)
+    const r = stepOut(d, verb)
     const st = d.status[d.status.length - 1]
-    const withCopies = st?.copies ? { ...r, output: { ...r.output, copies: st.copies } } : r
-    return st?.note ? { ...withCopies, summary: `${r.summary}. ${st.note.replace(/\.$/, '')}` } : withCopies
+    return st?.copies ? { ...r, output: { ...r.output, copies: st.copies } } : r
   }
   /** The text laid out on the step's frame against the picked face's outline, both in that frame. */
   const textFitOn = async (ds: DesignHost, d: Design, f: { part: number; triangle: number }, frame: FaceFrame, at: V3, text: string, sizeMm: number) => {
@@ -113,7 +108,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const cut = defineTool({
     name: 'geom.cut',
-    version: '1.4.0',
+    version: '1.4.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -128,7 +123,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         if (i.name !== undefined && i.keep !== 'both') throw new ToolInputError('name: only a cut that keeps both pieces makes a new part; leave name out')
         const [ds, d] = designOf(i.design)
         await ds.add(d, i.part ?? 0, { op: 'plane.cut', plane: planeOf(i.plane), keep: i.keep, ...(i.name !== undefined ? { name: i.name } : {}) }, undefined, withFeature(i.feature))
-        return added(d, 'Cut')
+        return stepOut(d, 'Cut')
       }
       const out = await call('cut', { mesh: await meshOut(i.model!), plane: i.plane, options: i.connector ? { connector: i.connector } : {} })
       return { summary: 'Cut the model into two parts', output: out }
@@ -137,7 +132,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const split = defineTool({
     name: 'geom.split',
-    version: '1.3.0',
+    version: '1.3.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -159,7 +154,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         if (options.connector || options.allow_rotate_z) throw new ToolInputError('A design split takes the build volume and margin only; leave connector and allow_rotate_z out', 'not_supported')
         const [ds, d] = designOf(design)
         await ds.add(d, part ?? 0, { op: 'split', buildVolumeMm: options.build_volume_mm, ...(options.margin_mm !== undefined ? { marginMm: options.margin_mm } : {}) }, undefined, withFeature(feature))
-        return added(d, 'Split')
+        return stepOut(d, 'Split')
       }
       const out = await call('split', { mesh: await meshOut(model!), options })
       const parts = Array.isArray(out['parts']) ? out['parts'].length : 0
@@ -199,7 +194,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const mirror = defineTool({
     name: 'geom.mirror',
-    version: '1.6.0',
+    version: '1.6.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -216,7 +211,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
       await ds.add(d, i.part ?? 0, { op: 'mirror', plane: planeOf(i.plane), copy: i.copy }, undefined, withFeature(i.feature))
       // a mirror image a hair from another part, as its source is: the source's step moves and the image follows
       const said = i.copy ? await seatPattern(ds, d, i.part ?? 0, seatOpts()) : ''
-      return withSeat(added(d, 'Mirrored'), said)
+      return withSeat(stepOut(d, 'Mirrored'), said)
     },
   })
 
@@ -232,7 +227,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   const ARRAY_TEXT = 'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform. With steps, only those steps are repeated on their part (a row of windows, holes around a flange, from one built), as one step whose count can be edited later; the steps themselves are the first copy.'
   const array = defineTool({
     name: 'geom.array',
-    version: '1.9.0',
+    version: '1.9.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -261,7 +256,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
           await ds.add(d, i.part ?? -1, { op: 'array.merged', spec }, undefined, withFeature(i.feature))
           // copies a hair from another part, as the source is: the source's step moves and the copies follow
           const said = i.part !== undefined ? await seatPattern(ds, d, i.part, seatOpts()) : ''
-          return withSeat(added(d, `Arrayed ${copies} copies`), said)
+          return withSeat(stepOut(d, `Arrayed ${copies} copies`), said)
         }
         // Separate copies are new parts, placed where the engine puts each copy; the first is the part itself. The step
         // records the part copied, so a plan can name copy k as the part's own number plus k - 1 (design.check).
@@ -278,7 +273,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate`, ...(keepsArrayOf(src.name) ? { arrayOf: src.name } : {}), copyOf: { part, moves } }, undefined, withFeature(i.feature))
         // separate copies a hair from another part are named, not moved
         const said = await seatNew(ds, d, Array.from({ length: Math.max(0, d.parts.length - n) }, (_, k) => n + k), seatOpts())
-        return withSeat(added(d, `Arrayed ${copies} separate copies`), said)
+        return withSeat(stepOut(d, `Arrayed ${copies} separate copies`), said)
       }
       const out = await call('array', { mesh: await meshOut(i.model!), spec, merge: i.merge })
       return { summary: `Arrayed ${copies} copies${i.merge ? '' : ', as transforms'}`, output: out }
@@ -287,7 +282,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const repair = defineTool({
     name: 'geom.repair',
-    version: '1.2.0',
+    version: '1.2.1',
     source: 'command',
     permission: 'slice',
     description: 'Repair a mesh: weld vertices, fix winding and normals, and close small holes. With "design" it adds a repair step with the default options; with a model it writes a repaired STL and a report of what was fixed and what stayed open.',
@@ -307,7 +302,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         if (Object.values(options).some((v) => v !== undefined)) throw new ToolInputError('A repair step on a design takes the default options; leave close_holes, max_hole_edges and fix_normals out')
         const [ds, d] = designOf(design)
         await ds.add(d, part ?? -1, { op: 'repair' }, undefined, withFeature(feature))
-        return added(d, 'Repaired')
+        return stepOut(d, 'Repaired')
       }
       const out = await call('repair', { mesh: await meshOut(model!), options })
       return { summary: 'Repaired the mesh', output: out }
@@ -316,7 +311,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const hollow = defineTool({
     name: 'geom.hollow',
-    version: '1.2.0',
+    version: '1.2.1',
     source: 'command',
     permission: 'slice',
     description: 'Hollow a solid model to a shell of a given wall thickness, with optional drain holes so resin or trapped material can leave. With "design" it adds a hollow step (wall only); with a model it writes a new STL and a volume report.',
@@ -336,7 +331,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         if (options.voxel_mm !== undefined || options.drain_holes !== undefined) throw new ToolInputError('A hollow step on a design takes the wall only; leave voxel_mm and drain_holes out')
         const [ds, d] = designOf(design)
         await ds.add(d, part ?? -1, { op: 'hollow', wallMm: options.wall_mm }, undefined, withFeature(feature))
-        return added(d, 'Hollowed')
+        return stepOut(d, 'Hollowed')
       }
       const out = await call('hollow', { mesh: await meshOut(model!), options })
       return { summary: 'Hollowed the model', output: out }
@@ -345,7 +340,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const emboss = defineTool({
     name: 'geom.emboss',
-    version: '1.4.0',
+    version: '1.4.1',
     source: 'command',
     permission: 'slice',
     description: 'Raise (emboss) or cut in (deboss) text on a face of the model. Give the point on the surface where the text is centered, and the face normal if the point is on an edge. With "design" it adds a text step on the plane through the point (flat faces); with a model it writes a new STL. With a design, textFit in the reply compares the text with the face, along the text and across it (mm), and gives the largest letter height that fits (fitSizeMm).',
@@ -393,7 +388,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
           if (words && e instanceof Error) e.message = `${e.message} ${words}`
           throw e
         }
-        const r = added(d, i.mode === 'deboss' ? 'Debossed' : 'Embossed')
+        const r = stepOut(d, i.mode === 'deboss' ? 'Debossed' : 'Embossed')
         return { summary: words ? `${r.summary}. ${words}` : r.summary, output: { ...r.output, ...(fit ? { textFit: { ...fit, message: words } } : {}) } }
       }
       const out = await call('emboss', { mesh: await meshOut(model!), spec })
@@ -407,7 +402,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const build = defineTool({
     name: 'geom.build',
-    version: '1.7.0',
+    version: '1.7.1',
     source: 'command',
     permission: 'slice',
     description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,
@@ -444,7 +439,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         await ds.add(d, -1, { op: 'parts.add', parts: [part], label: `Add ${part.name}` }, undefined, withFeature(i.feature))
         // a new part a hair from another (under the gap a printer keeps open) is seated on it, as this step
         const seat = await seatNew(ds, d, Array.from({ length: Math.max(0, d.parts.length - n) }, (_, k) => n + k), { nozzleMm: deps.nozzleMm?.(), layerHeightMm: deps.fitProfile?.().layerHeightMm, plans: deps.plans })
-        const built = added(d, 'Built')
+        const built = stepOut(d, 'Built')
         const named = piece ? { ...built, summary: `${built.summary}${pieceNameNote(piece, i.name)}` } : built
         return seat ? { ...named, summary: `${named.summary.replace(/[.\s]+$/, '')}. ${seat}` } : named
       }
@@ -455,7 +450,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const subtract = defineTool({
     name: 'geom.subtract',
-    version: '1.3.0',
+    version: '1.3.1',
     source: 'command',
     permission: 'slice',
     description: `Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. Writes an STL and returns the removed volume. ${solidsHelp}`,
@@ -471,7 +466,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         const inWay = undercut(d.parts, i.part ?? -1, solids)
         if (inWay.length) throw new ToolInputError(placeNote('cut', inWay, solids.length === 1 ? solidBox(solids[0]!) : null))
         await ds.add(d, i.part ?? -1, { op: 'subtract', solids, label }, undefined, withFeature(i.feature))
-        return added(d, 'Subtracted')
+        return stepOut(d, 'Subtracted')
       }
       const out = await call('subtract', { mesh: await meshOut(i.model!), solids: i.solids })
       return { summary: `Removed ${String(out['removedVolumeMm3'] ?? '?')} mm3`, output: out }

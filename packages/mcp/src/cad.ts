@@ -21,7 +21,7 @@ import { gapMm, gapSentence, nozzleOr } from './design-check'
 import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
 import type { PlanRegistry } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
-import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, movedPaint, partAt, partsAt, pieceNameFor, pieceNameNote, replayChange, type Design } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, item, movedPaint, partAt, partsAt, pieceNameFor, pieceNameNote, replayChange, stepOut, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import type { AppLinkCaller } from './app-route'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
@@ -451,12 +451,6 @@ const plain = <T>(v: unknown): T => JSON.parse(JSON.stringify(v)) as T
 /** Exactly one of a model and a design. */
 function oneOf(i: { model?: string | undefined; design?: string | undefined }): void {
   if (!i.model === !i.design) throw new ToolInputError(i.model ? 'give "model" or "design", not both' : 'give "model" (an STL) or "design" (a design id)')
-}
-
-/** What a modeling tool returns for a design: the step it added and the design as it is now. */
-function stepOut(d: Design, verb: string): { summary: string; output: Record<string, unknown> } {
-  const s = d.history.steps[d.history.steps.length - 1]
-  return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
 }
 
 /**
@@ -895,7 +889,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.12.2',
+    version: '1.12.3',
     source: 'command',
     permission: 'slice',
     description:
@@ -968,7 +962,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.10.0',
+    version: '1.10.1',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -1032,7 +1026,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.12.0',
+    version: '1.12.2',
     source: 'command',
     permission: 'slice',
     description:
@@ -1091,7 +1085,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.11.0',
+    version: '1.11.1',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale, twist_deg and end_profile taper, turn and reshape it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
@@ -1433,7 +1427,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const push = defineTool({
     name: 'geom.push_pull',
-    version: '1.4.0',
+    version: '1.4.1',
     source: 'command',
     permission: 'slice',
     description: 'Push or pull a flat face of a model or a design along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. With "design" it adds a step to the design; with a model it writes the new STL and reports the volume change and the moved face.',
@@ -1500,7 +1494,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const BOOL = { union: 'union', subtract: 'difference', intersect: 'intersection' } as const
   const boolean = defineTool({
     name: 'geom.boolean',
-    version: '1.3.1',
+    version: '1.3.2',
     source: 'command',
     permission: 'slice',
     description:
@@ -1597,7 +1591,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const fillet = defineTool({
     name: 'geom.fillet',
-    version: '1.6.0',
+    version: '1.6.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -1620,7 +1614,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const chamfer = defineTool({
     name: 'geom.chamfer',
-    version: '1.6.0',
+    version: '1.6.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -1643,7 +1637,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const shell = defineTool({
     name: 'geom.shell',
-    version: '1.3.0',
+    version: '1.3.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -1993,7 +1987,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeEdit = defineTool({
     name: 'geom.hole_edit',
-    version: '1.0.0',
+    version: '1.0.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -2141,7 +2135,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeMake = defineTool({
     name: 'geom.hole',
-    version: '2.0.0',
+    version: '2.0.1',
     source: 'command',
     permission: 'slice',
     description:
