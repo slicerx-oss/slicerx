@@ -495,7 +495,7 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<(Vec<crate::api:
                 "{k} in the project's object or part settings is not used (custom G-code and scripts come from the printer settings)"
             ));
         }
-        // the object's own settings travel with its mesh, for a slice of it alone (`with_lone_settings`)
+        // the object's own settings travel with its mesh, for a slice of it alone or of objects that all share them (`with_plate_settings`)
         let settings = if object.is_empty() {
             serde_json::Value::Null
         } else {
