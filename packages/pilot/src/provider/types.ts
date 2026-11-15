@@ -92,13 +92,18 @@ export type LlmEvent =
   /** `webSearches`: the hosted web searches the reply ran, when the provider reports them. */
   | { type: 'usage'; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; webSearches?: number }
   | { type: 'done'; stop: LlmStop; raw?: unknown[] }
-  /** `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). */
-  | { type: 'error'; message: string; retryable: boolean; code?: string }
+  /**
+   * `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). `searchRefused`: a mimir cloud proxy deployed before
+   * tool search refused this tool search request for its shape; the client no longer takes tool search on it
+   * (LlmClient.toolSearch), and the runtime sends the request once more with the per-turn pick.
+   */
+  | { type: 'error'; message: string; retryable: boolean; code?: string; searchRefused?: true }
   /** The model that answered, when the reply names it (mimir cloud's `x-sx-model`). Comes before the reply's text. */
   | { type: 'model'; model: string }
   /**
    * mimir cloud's proxy takes a request that sends the whole tool catalog through tool search (its `mimir` stream event,
-   * supabase/functions/mimir/handler.ts). The transport client keeps it (LlmClient.toolSearch) and passes it on no further.
+   * supabase/functions/mimir/handler.ts). The transport client takes back an earlier refusal on it (LlmClient.toolSearch)
+   * and passes it on no further.
    */
   | { type: 'tool_search' }
 
@@ -118,7 +123,8 @@ export interface LlmClient {
   maxTools?: number
   /**
    * The provider runs a tool search over deferred tools and takes tool changes mid-chat (LlmRequest.toolSearch). It can
-   * turn true while the client runs: mimir cloud's proxy says so in its replies.
+   * change while the client runs: a mimir cloud proxy deployed before tool search turns it false by refusing a tool
+   * search request, and true again by saying in a reply that it takes tool search.
    */
   readonly toolSearch?: boolean
   stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent>

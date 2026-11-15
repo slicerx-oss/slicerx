@@ -3,13 +3,15 @@
 // A Claude model with tool search gets the chat's whole tool catalog on every request: the same bytes in the same order
 // from the first request to the last, the core loaded and every other tool deferred behind the search tool. A tool the
 // app offers or withdraws mid-chat is a tool change appended to the chat, never an edit of the list. The model's own
-// searches come back whole and go back unchanged. A local model and an OpenAI-style key keep their per-turn lists, and
-// so does mimir cloud until its proxy has said it takes tool search: a proxy deployed before it gets what it always got.
+// searches come back whole and go back unchanged. A local model and an OpenAI-style key keep their per-turn lists. mimir
+// cloud sends the catalog from its first request; a proxy deployed before tool search refuses it, and gets the request
+// once more as the per-turn pick, and that pick from then on.
 import { readFileSync } from 'node:fs'
 import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTransport, type PilotMachine, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createTransportClient, DEFAULT_CONFIG, defineTool, type PilotTool, type Toolset } from '../src/index'
+import { refusesToolSearch } from '../src/provider/client'
 import { createAnthropicAdapter, TOOL_CHANGES_BETA, TOOL_SEARCH_TOOL, toolSearchModel } from '../src/provider/anthropic'
 import type { LlmEvent, LlmRequest } from '../src/provider/types'
 import { catalogStep, SEARCH_CORE, type OfferedTool } from '../src/tool-search'
@@ -85,8 +87,28 @@ const PROXY_SAYS = (() => {
   return JSON.parse(`"${lit.slice(1, -1).replaceAll('"', '\\"')}"`) as string
 })()
 
-/** A provider that plays `steps` in order; `proxy` is a mimir cloud proxy that takes tool search, so each reply opens with its event. */
-function provider(steps: Step[], proxy = false): LlmTransport & { sent: LlmHttpRequest[] } {
+/** A refusal as the desktop host raises it: the status before the proxy's words, and its code apart. */
+const refusal = (status: number, words: string, code = 'invalid_request'): Error => Object.assign(new Error(`${status}: ${words}`), { status, code })
+
+/** The words a proxy deployed before tool search refused a catalog with (its shape.ts before tool search). */
+const OLD_TOO_MANY = 'tools must be a list of at most 128'
+
+/**
+ * What a proxy deployed before tool search did with a request: refused more than 128 tools, or a tool search tool, with
+ * a 400 and its words; anything else it took.
+ */
+function oldShape(req: LlmHttpRequest): Error | undefined {
+  const tools = toolsOf(req)
+  if (tools.length > 128) return refusal(400, OLD_TOO_MANY)
+  const search = tools.find((t) => typeof t['type'] === 'string' && t['type'] !== 'custom' && !String(t['type']).startsWith('web_search_'))
+  return search ? refusal(400, `tool ${String(search['type'])} is not allowed`) : undefined
+}
+
+/**
+ * A provider that plays `steps` in order; `proxy` is a mimir cloud proxy that takes tool search, so each reply opens with
+ * its event; `refuse` answers a request with an error instead of a step.
+ */
+function provider(steps: Step[], proxy = false, refuse?: (req: LlmHttpRequest) => Error | undefined): LlmTransport & { sent: LlmHttpRequest[] } {
   const sent: LlmHttpRequest[] = []
   let i = 0
   return {
@@ -94,6 +116,8 @@ function provider(steps: Step[], proxy = false): LlmTransport & { sent: LlmHttpR
     available: async () => true,
     async *stream(req) {
       sent.push(req)
+      const no = refuse?.(req)
+      if (no) throw no
       if (proxy) yield enc.encode(PROXY_SAYS)
       yield wire(steps[i++] ?? { text: 'Done.' })
     },
@@ -108,14 +132,15 @@ const systemMessages = (req: LlmHttpRequest): Obj[] => messagesOf(req).filter((m
 const name = (t: Obj): string => String(t['name']).replaceAll('__', '.')
 
 /**
- * A chat runtime on `kind`. On mimir cloud the proxy takes tool search unless `proxy` is 'old', and a first chat has
- * heard it say so (`warm`, its requests left out of `sent`); `warm: false` leaves that out.
+ * A chat runtime on `kind`. On mimir cloud the proxy takes tool search unless `proxy` is 'old' (deployed before it, so it
+ * refuses a catalog, oldShape), and a first chat has run (`warm`, its requests left out of `sent`); `warm: false` leaves
+ * that out.
  */
 async function setup(kind: Kind, steps: Step[], model = 'claude-haiku-5-5', extra: Partial<Parameters<typeof createPilot>[0]> = {}, opts: { proxy?: 'old' | 'new'; warm?: boolean } = {}) {
   const cloud = kind === 'mimir-cloud'
   const proxy = cloud && opts.proxy !== 'old'
   const warm = proxy && opts.warm !== false
-  const llm = provider(warm ? [{ text: 'Hi.' }, ...steps] : steps, proxy)
+  const llm = provider(warm ? [{ text: 'Hi.' }, ...steps] : steps, proxy, cloud && !proxy ? oldShape : undefined)
   const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
   const { models: _tiers, ...base } = DEFAULT_CONFIG
   const pilot = createPilot({ host, config: { ...base, provider: kind, model, maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: catalog(), ...extra })
@@ -332,56 +357,163 @@ describe('a chat on a model with tool search', () => {
   })
 })
 
-describe('mimir cloud before and after its proxy takes tool search', () => {
+describe('mimir cloud on a proxy with tool search and on one deployed before it', () => {
   const capped = (r: LlmHttpRequest): boolean => toolsOf(r).length <= 128 && !toolsOf(r).some((t) => 'defer_loading' in t || t['type'] === TOOL_SEARCH_TOOL.type) && systemMessages(r).length === 0 && r.headers['anthropic-beta'] === undefined
+  const searchTools = (r: LlmHttpRequest): string[] => toolsOf(r).filter((t) => t['defer_loading'] !== true).map(name)
 
-  it('on a proxy that never said so sends the per-turn pick: no deferral, no search tool and no tool changes', async () => {
+  it('sends the catalog from the first request on a fresh transport, the same tool list as a later chat', async () => {
+    const { llm, say } = await setup('mimir-cloud', [{ text: 'Hi.' }, { text: 'Still here.' }, { text: 'New chat.' }], 'claude-haiku-5-5', {}, { warm: false })
+    const first = [...(await say('hello')), ...(await say('and now?'))]
+    expect(first).toHaveLength(2)
+    const tools = toolsOf(first[0]!)
+    expect(tools).toHaveLength(SEARCH_CORE.length + 150 + 1)
+    expect(searchTools(first[0]!)).toEqual([...SEARCH_CORE, 'tool_search_tool_bm25'])
+    const next = await say('a new chat', 's2')
+    // byte for byte, so the next chat reads the first chat's prefix from the cache
+    expect([toolsJson(first[1]!), toolsJson(next[0]!)]).toEqual([toolsJson(first[0]!), toolsJson(first[0]!)])
+    expect(llm.sent).toHaveLength(3)
+  })
+
+  it('on a proxy deployed before tool search sends the refused catalog once more as the per-turn pick, and the pick from then on', async () => {
     const planner = { plan: (from: PilotMachine, to: PilotMachine) => ({ from, to, changes: [], warnings: [] }) }
-    const { llm, pilot, say } = await setup('mimir-cloud', [{ text: 'Hi.' }, { call: 'settings.t1' }, { text: 'Explained.' }, { text: 'Here.' }], 'claude-haiku-5-5', { planner }, { proxy: 'old' })
-    await say('hello')
+    const { llm, pilot, say } = await setup('mimir-cloud', [{ text: 'Hi.' }, { call: 'settings.t1' }, { text: 'Explained.' }, { text: 'Here.' }, { text: 'Again.' }], 'claude-haiku-5-5', { planner }, { proxy: 'old' })
+    const errors: string[] = []
+    for await (const e of pilot.run('s1', 'hello')) if (e.type === 'error') errors.push(e.message)
+    // the refusal never reaches the chat: the same step goes again at once, plain
+    expect(errors).toEqual([])
+    expect(llm.sent).toHaveLength(2)
+    expect(toolsOf(llm.sent[0]!).length).toBeGreaterThan(128)
+    expect(searchTools(llm.sent[0]!)).toContain('tool_search_tool_bm25')
+    expect(capped(llm.sent[1]!)).toBe(true)
     // a read-only run, which on the catalog would withdraw tools by a tool change
     const a1 = { printer: 'A1', material: 'PLA', nozzle: 0.4 }
     for await (const _ of pilot.switchMachine('s1', a1, { ...a1, material: 'PETG' }, { narrate: true })) void _
     await say('and now?')
     await say('a new chat', 's2')
     expect(pilot.tools().length).toBeGreaterThan(128)
-    expect(llm.sent.length).toBeGreaterThanOrEqual(4)
-    expect(llm.sent.filter((r) => !capped(r)).map((r) => toolsOf(r).length)).toEqual([])
+    expect(llm.sent.length).toBeGreaterThanOrEqual(5)
+    expect(llm.sent.slice(1).filter((r) => !capped(r)).map((r) => toolsOf(r).length)).toEqual([])
+    // a chat runtime made again on the same transport starts plain too
+    const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
+    const { models: _tiers, ...base } = DEFAULT_CONFIG
+    const again = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-5-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: catalog() })
+    const at = llm.sent.length
+    for await (const _ of again.run('s3', 'hello')) void _
+    expect(llm.sent.slice(at).map(capped)).toEqual([true])
   })
 
-  it('keeps the pick for the whole chat that first hears it, and sends the catalog from the next chat on', async () => {
-    const { llm, say } = await setup('mimir-cloud', [{ text: 'Hi.' }, { text: 'Still here.' }, { text: 'New chat.' }], 'claude-haiku-5-5', {}, { warm: false })
-    const first = [...(await say('hello')), ...(await say('and now?'))]
-    expect(first).toHaveLength(2)
-    expect(first.every(capped)).toBe(true)
-    const next = await say('a new chat', 's2')
-    const tools = toolsOf(next[0]!)
-    expect(tools).toHaveLength(SEARCH_CORE.length + 150 + 1)
-    expect(tools.filter((t) => t['defer_loading'] !== true).map(name)).toEqual([...SEARCH_CORE, 'tool_search_tool_bm25'])
-    expect(llm.sent).toHaveLength(3)
+  it('sends a catalog with no more than 128 tools once more too, when the old proxy refuses its search tool', async () => {
+    const few = catalog().slice(-40)
+    const llm = provider([{ text: 'Hi.' }], false, oldShape)
+    const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
+    const { models: _tiers, ...base } = DEFAULT_CONFIG
+    const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-5-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: few })
+    for await (const _ of pilot.run('s1', 'hello')) void _
+    expect(llm.sent).toHaveLength(2)
+    expect(toolsOf(llm.sent[0]!).length).toBeLessThanOrEqual(128)
+    expect(searchTools(llm.sent[0]!)).toContain('tool_search_tool_bm25')
+    expect(capped(llm.sent[1]!)).toBe(true)
   })
 
-  it('hears the event from mimir cloud only, keeps it per transport, and passes it on no further', async () => {
+  it('sends no request again for any other refusal, and keeps tool search on', async () => {
+    const others = [
+      refusal(400, 'messages must be a list of 1 to 400'),
+      // the words of today's proxy for too many tools up front, a request the app got wrong
+      refusal(400, 'at most 128 tools load up front; defer the rest behind tool search'),
+      // the old words, but not as a 400 for the request's shape
+      refusal(502, OLD_TOO_MANY, 'provider_error'),
+      refusal(400, OLD_TOO_MANY, 'provider_error'),
+    ]
+    for (const no of others) {
+      const llm = provider([{ text: 'Hi.' }], false, () => no)
+      const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
+      const { models: _tiers, ...base } = DEFAULT_CONFIG
+      const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-5-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: catalog() })
+      const errors: string[] = []
+      for await (const e of pilot.run('s1', 'hello')) if (e.type === 'error') errors.push(e.message)
+      expect(llm.sent, no.message).toHaveLength(1)
+      expect(errors, no.message).toEqual([no.message.replace(/^\d{3}: /, '')])
+      expect(createTransportClient(llm, 'mimir-cloud').toolSearch, no.message).toBe(true)
+    }
+  })
+
+  it('sends the request once more at most, even when the old words come back for the pick', async () => {
+    const llm = provider([{ text: 'Hi.' }], false, () => refusal(400, OLD_TOO_MANY))
+    const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
+    const { models: _tiers, ...base } = DEFAULT_CONFIG
+    const pilot = createPilot({ host, config: { ...base, provider: 'mimir-cloud', model: 'claude-haiku-5-5', maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools: catalog() })
+    const errors: string[] = []
+    for await (const e of pilot.run('s1', 'hello')) if (e.type === 'error') errors.push(e.message)
+    expect(llm.sent).toHaveLength(2)
+    expect(capped(llm.sent[1]!)).toBe(true)
+    expect(errors).toEqual([OLD_TOO_MANY])
+  })
+
+  it("leaves every other provider's first request as it was", async () => {
+    // a key on the Messages API sends the catalog first; an OpenAI-style key and a model without tool search send the pick
+    for (const [kind, model, search] of [['anthropic', 'claude-haiku-5-5', true], ['openai', 'gpt-5.6-luna', false], ['mimir-cloud', 'claude-haiku-4-5', false]] as const) {
+      const { llm, say } = await setup(kind, [{ text: 'Hi.' }], model, {}, { warm: false })
+      await say('hello')
+      if (search) expect(searchTools(llm.sent[0]!), kind).toEqual([...SEARCH_CORE, 'tool_search_tool_bm25'])
+      else {
+        const tools = toolsOf(llm.sent[0]!)
+        expect(tools.length, kind).toBeLessThanOrEqual(128)
+        expect(tools.some((t) => 'defer_loading' in t || t['type'] === TOOL_SEARCH_TOOL.type), kind).toBe(false)
+      }
+    }
+  })
+
+  it('reads the old proxy refusal from either host, and nothing else', () => {
+    // the desktop host puts the status before the words; the browser host keeps it apart
+    expect(refusesToolSearch(refusal(400, OLD_TOO_MANY))).toBe(true)
+    expect(refusesToolSearch(Object.assign(new Error(OLD_TOO_MANY), { status: 400, code: 'invalid_request' }))).toBe(true)
+    expect(refusesToolSearch(refusal(400, 'tool tool_search_tool_bm25_20251119 is not allowed'))).toBe(true)
+    expect(refusesToolSearch(new Error(`400: ${OLD_TOO_MANY}`))).toBe(true)
+    expect(refusesToolSearch(new Error(OLD_TOO_MANY))).toBe(false)
+    expect(refusesToolSearch(refusal(400, 'tool web_fetch_20250910 is not allowed'))).toBe(false)
+    expect(refusesToolSearch(refusal(400, 'tools must be a list of at most 512'))).toBe(false)
+    expect(refusesToolSearch(refusal(429, OLD_TOO_MANY, 'day_used'))).toBe(false)
+  })
+
+  it('hears the event from mimir cloud only, takes back a refusal by it, keeps both per transport, and passes it on no further', async () => {
     const said = (): LlmTransport & { sent: LlmHttpRequest[] } => provider([{ text: 'Hi.' }, { text: 'Hi.' }], true)
     const ask: LlmRequest = { model: 'claude-haiku-5-5', messages: [{ role: 'user', content: 'hello' }], tools: [] }
-    const events = async (c: ReturnType<typeof createTransportClient>): Promise<string[]> => {
-      const out: string[] = []
-      for await (const e of c.stream(ask)) out.push(e.type)
+    const events = async (c: ReturnType<typeof createTransportClient>, req = ask): Promise<LlmEvent[]> => {
+      const out: LlmEvent[] = []
+      for await (const e of c.stream(req)) out.push(e)
       return out
     }
-    const llm = said()
-    // a key on the Messages API takes tool search without the event, and an event there changes nothing
+    // a transport whose proxy refuses the first request for its shape, and then takes tool search
+    let refuse = true
+    const inner = said()
+    const llm: LlmTransport = {
+      available: async () => true,
+      async *stream(req, signal) {
+        if (refuse) {
+          refuse = false
+          throw refusal(400, OLD_TOO_MANY)
+        }
+        yield* inner.stream(req, signal)
+      },
+    }
     const direct = createTransportClient(llm, 'anthropic')
     const cloud = createTransportClient(llm, 'mimir-cloud')
-    expect([direct.toolSearch, cloud.toolSearch]).toEqual([true, false])
-    expect(await events(direct)).not.toContain('tool_search')
-    expect(cloud.toolSearch).toBe(false)
-    expect(await events(cloud)).toEqual(['text', 'usage', 'done'])
+    expect([direct.toolSearch, cloud.toolSearch]).toEqual([true, true])
+    // a plain request refused with the old words leaves tool search alone: only a tool search request is the shape
+    expect((await events(cloud)).map((e) => e.type)).toEqual(['error', 'done'])
     expect(cloud.toolSearch).toBe(true)
-    // a runtime made again on the same transport knows at once; another transport, or an OpenAI-style key, does not
-    expect(createTransportClient(llm, 'mimir-cloud').toolSearch).toBe(true)
-    expect(createTransportClient(said(), 'mimir-cloud').toolSearch).toBe(false)
+    refuse = true
+    const refused = await events(cloud, { ...ask, toolSearch: true })
+    expect(refused[0]).toEqual({ type: 'error', message: OLD_TOO_MANY, retryable: false, code: 'invalid_request', searchRefused: true })
+    expect(cloud.toolSearch).toBe(false)
+    // a runtime made again on the same transport knows at once; another transport, or a key on the Messages API, does not
+    expect(createTransportClient(llm, 'mimir-cloud').toolSearch).toBe(false)
+    expect(createTransportClient(said(), 'mimir-cloud').toolSearch).toBe(true)
+    expect(direct.toolSearch).toBe(true)
     expect(createTransportClient(llm, 'openai').toolSearch).toBe(false)
+    // the proxy's event takes the refusal back, and goes no further
+    expect((await events(cloud)).map((e) => e.type)).toEqual(['text', 'usage', 'done'])
+    expect(cloud.toolSearch).toBe(true)
     // the adapter reads it, and only the proxy's own event with its flag set
     const parsed: LlmEvent[] = []
     async function* chunks(): AsyncIterable<Uint8Array> {

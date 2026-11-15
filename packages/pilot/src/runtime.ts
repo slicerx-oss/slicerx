@@ -902,9 +902,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   /** Each chat's tool catalog on a model with tool search (tool-search.ts): declared once, only ever appended to. */
   const catalogs = new Map<string, ToolCatalog>()
   /**
-   * Whether each chat sends its tool catalog (tool-search.ts) or the per-turn pick, fixed at its first request. mimir
-   * cloud's proxy says it takes tool search only in its replies, so the chat that first hears it keeps the pick it
-   * started with, and no chat's tool list changes shape partway through; the next chat sends the catalog.
+   * Whether each chat sends its tool catalog (tool-search.ts) or the per-turn pick, fixed at its first request, so no
+   * chat's tool list changes shape partway through. The one change: a mimir cloud proxy deployed before tool search
+   * refuses the catalog, and the chat goes on the pick from that request, sent once more.
    */
   const searchChats = new Map<string, boolean>()
   /**
@@ -1691,6 +1691,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let slowed = 0
     // a request lost to the network is sent once more before the run says so (NETWORK_RETRY_MS, NETWORK_LINE)
     let netRetried = false
+    // a tool search request that a proxy deployed before tool search refused goes once more with the per-turn pick, never twice
+    let searchResent = false
     // the run's limits; an approved plan raises them to fit its features (planLimits)
     let maxSteps = opts.config.maxSteps
     let maxToolCalls = opts.config.maxToolCalls
@@ -1796,6 +1798,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let failed: string | null = null
       let netDown = false
       let failedCode: string | undefined
+      let searchRefused = false
       let cut = false
       const model = modelFor(opts.config, tier)
       if (capped.report) {
@@ -1870,6 +1873,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             case 'error':
               failed = ev.message
               failedCode = ev.code
+              searchRefused = ev.searchRefused === true
               netDown = networkLost({ message: ev.message })
               break
             case 'done':
@@ -1927,6 +1931,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         emit({ type: 'error', message: NETWORK_LINE, retryable: true, code: 'network' })
         stopReason = 'error'
         break
+      }
+      if (failed !== null && searchRefused && searching && !searchResent && !text && toolCalls.length === 0) {
+        // a proxy deployed before tool search refused the catalog: the chat drops it and sends the same step once more,
+        // unseen, with the per-turn pick (the client takes no tool search on this transport now, so it cannot come again)
+        searchResent = true
+        dropUnanswered(sessionId, messages)
+        searchChats.delete(sessionId)
+        catalogs.delete(sessionId)
+        step--
+        continue
       }
       if (failed !== null) {
         emit({ type: 'error', message: failed, retryable: true, ...(failedCode ? { code: failedCode } : {}) })

@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // No mimir tab request loads more than 128 tools. OpenAI-style APIs and local servers refuse a longer list, and so does
-// mimir cloud's proxy for the tools that load up front (supabase/functions/mimir/shape.ts). Once the proxy has said it
-// takes tool search (the event its streams open with), a new chat on mimir cloud carries the tab's whole catalog, most
-// of it deferred behind tool search; a proxy that never said so gets the per-turn pick it always got. The tab is made
+// mimir cloud's proxy for the tools that load up front (supabase/functions/mimir/shape.ts). A chat on mimir cloud carries
+// the tab's whole catalog from its first request, most of it deferred behind tool search; a proxy deployed before tool
+// search refuses that, and gets the request again as the per-turn pick it always got. The tab is made
 // the way the app makes it, with the commands the app registers at startup, its features' commands, a command per
 // connected printer and every connector's tools, and each request is read back from the HTTP body the provider adapter
 // wrote. Every kind of turn is checked in the desktop app (which slices and prints) and the browser build (which only
-// models), on mimir cloud before and after its proxy takes tool search, a key and a local model, in the neutral edition
+// models), on mimir cloud on a proxy deployed before tool search and on one with it, a key and a local model, in the neutral edition
 // and in one with the printer and web tools off. Last, a recorded chat's requests go through the proxy's own shape():
 // the same tools on every request.
 import type { EditionConfig } from '@slicerx/edition-config'
@@ -57,17 +57,31 @@ const PROXY_SAYS = (() => {
 })()
 
 /**
- * A transport that keeps each request and answers none of them, so every turn ends after its first request. `proxy`:
- * a mimir cloud proxy that takes tool search, so each answer opens with its event before it fails.
+ * What a mimir cloud proxy deployed before tool search answered a request that sends the tool catalog (its shape.ts
+ * then): a 400 for more than 128 tools, or for the tool search tool, as the desktop host raises it.
  */
-function transport(proxy = false): LlmTransport & { sent: LlmHttpRequest[] } {
+function oldRefusal(req: LlmHttpRequest): Error | undefined {
+  const tools = (JSON.parse(req.body) as { tools?: { type?: string }[] }).tools ?? []
+  const search = tools.find((t) => t.type !== undefined && t.type !== 'custom' && !t.type.startsWith('web_search_'))
+  const words = tools.length > 128 ? 'tools must be a list of at most 128' : search ? `tool ${String(search.type)} is not allowed` : null
+  return words ? Object.assign(new Error(`400: ${words}`), { status: 400, code: 'invalid_request' }) : undefined
+}
+
+/**
+ * A transport that keeps each request and answers none of them, so every turn ends after its first request. `proxy`:
+ * 'search', a mimir cloud proxy that takes tool search, so each answer opens with its event before it fails; 'old', one
+ * deployed before tool search, which refuses a catalog (oldRefusal) and keeps no refused request.
+ */
+function transport(proxy?: 'search' | 'old'): LlmTransport & { sent: LlmHttpRequest[] } {
   const sent: LlmHttpRequest[] = []
   return {
     sent,
     available: async () => true,
     async *stream(req) {
+      const no = proxy === 'old' ? oldRefusal(req) : undefined
+      if (no) throw no
       sent.push(req)
-      if (proxy) yield new TextEncoder().encode(PROXY_SAYS)
+      if (proxy === 'search') yield new TextEncoder().encode(PROXY_SAYS)
       throw new Error('not answered in this test')
     },
   }
@@ -87,8 +101,8 @@ const EDITIONS: [string, EditionConfig][] = [
 ]
 
 /**
- * How mimir runs: mimir cloud on a proxy that never said it takes tool search (deployed before it), mimir cloud once its
- * proxy has said so, a key on an OpenAI-style API, and a local model.
+ * How mimir runs: mimir cloud on a proxy deployed before tool search (which refuses the catalog), mimir cloud on one that
+ * takes it, a key on an OpenAI-style API, and a local model.
  */
 const MODES = {
   'mimir cloud': { mode: 'on', provider: 'mimir-cloud' },
@@ -127,15 +141,15 @@ function loadedNames(req: LlmHttpRequest): string[] {
 const SEARCH = 'tool_search_tool_bm25'
 
 /**
- * The first request of a turn in a fresh chat, after `before` when given, and how many tools the tab offers. With tool
- * search, a first chat has heard the proxy say it takes it.
+ * The first request the proxy took of a turn in a fresh chat, after `before` when given, and how many tools the tab
+ * offers. With tool search, a first chat has run before it.
  */
 async function turn(platform: Platform, edition: EditionConfig, mode: Mode, t: (typeof TURNS)[number]): Promise<{ req: LlmHttpRequest; offered: number }> {
   resetTabMimir()
   set({ pilot: MODES[mode] as never })
   const searching = mode === 'mimir cloud, tool search'
-  const llm = transport(searching)
   const cloud = MODES[mode].provider === 'mimir-cloud'
+  const llm = transport(searching ? 'search' : cloud ? 'old' : undefined)
   const pilot = await tabMimir(hostFor(platform, llm), cloud ? withCloud(edition) : edition, cloud ? 'cloud' : null)
   if (searching) for await (const _ of pilot.run('warm', 'hello')) void _
   if (t.before) for await (const _ of pilot.run('s', t.before)) void _
@@ -208,7 +222,7 @@ describe('no mimir tab request loads more than 128 tools', () => {
     }, 120_000)
   }
 
-  it('sends the per-turn pick on mimir cloud until its proxy says it takes tool search: no deferral, search tool or tool change', async () => {
+  it('sends the per-turn pick on mimir cloud once a proxy deployed before tool search refused the catalog: no deferral, search tool or tool change', async () => {
     const off = await registerApp('desktop')
     try {
       for (const t of TURNS) {
