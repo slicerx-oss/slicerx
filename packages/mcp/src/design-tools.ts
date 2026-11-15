@@ -13,7 +13,7 @@ import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
 import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendChanges, amendDropProblem, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
+import { AMEND_REASON_MAX, amendChanges, amendDropProblem, amendedSizes, amendOns, amendProblem, amendReason, amendShapeProblem, changeText } from './plan-amend'
 import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
 import { realMemoryNote, realSizeProblem, type RealEntry } from './plan-detail'
 import { meshStats } from './mesh'
@@ -1054,7 +1054,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.10.1',
+    version: '1.11.0',
     source: 'command',
     permission: 'read',
     description:
@@ -1141,14 +1141,14 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     // every way the amend is off, in one refusal
     const shape = amendShapeProblem(entry!.plan, given)
     const changes = shape ? [] : amendChanges(entry!.plan, given)
-    const off = [shape, !shape && !changes.length ? `amends: no size differs from plan ${planId}` : null, amendDropProblem(entry!.plan, given)].filter((p): p is string => p !== null)
+    const off = [shape, !shape && !changes.length && !amendOns(entry!.plan, given).length ? `amends: no size differs from plan ${planId}` : null, amendDropProblem(entry!.plan, given)].filter((p): p is string => p !== null)
     if (off.length) throw new ToolInputError(off.join('. '))
     const p = amendedSizes(entry!.plan, given)
     plans.put(p, entry!.design, 'client')
     const revision = plans.amended(planId, why.why)
     const under = underFloors(p, fit())
     return {
-      summary: `Changed plan ${planId} for ${p.part} (revision ${revision}): ${changes.map((c) => changeText(c, p.units)).join(', ')}.${underText(under, p.units)} Build to it as changed, then check it with design.check and planId ${planId}.`,
+      summary: `Changed plan ${planId} for ${p.part} (revision ${revision})${changes.length ? `: ${changes.map((c) => changeText(c, p.units)).join(', ')}` : ''}.${underText(under, p.units)} Build to it as changed, then check it with design.check and planId ${planId}.`,
       output: { planId, part: p.part, design: entry!.design!, revision, changes, underFloors: under.map(underOut) },
     }
   }
