@@ -37,9 +37,17 @@ fn fixture(name: &str) -> Vec<u8> {
 
 /// The G-code of the request fixture `request` with `edits` to its config, its one object printing `mesh`.
 fn slice(request: &str, mesh: &[u8], edits: &[(&str, Value)]) -> String {
+    slice_scaled(request, mesh, edits, None)
+}
+
+/// [`slice`] with the object, when `sx` is given, narrowed (or widened) across x by it, about its own origin.
+fn slice_scaled(request: &str, mesh: &[u8], edits: &[(&str, Value)], sx: Option<f64>) -> String {
     let mut req: Value = serde_json::from_slice(&fixture(request)).unwrap();
     for (k, v) in edits {
         req["config"][*k] = v.clone();
+    }
+    if let Some(sx) = sx {
+        req["plate"]["objects"][0]["transform"][0] = json!(sx);
     }
     let req: SliceRequest = serde_json::from_value(req).unwrap();
     let mesh = Arc::new(Mesh::load(mesh, "m.stl").unwrap());
@@ -486,7 +494,10 @@ fn at_monotonic_the_x_mark_strip_over_internal_solid_stays_internal_solid_with_a
 }
 
 /// The x-mark on the stock P1S request with smart layer heights (quality) and precise outer walls, classic walls and
-/// the stock monotonic internal solid infill, sliced once.
+/// the stock monotonic internal solid infill, sliced once. The part is narrowed to 99.2 % across x: at full width the
+/// band [`at_monotonic_the_band_of_a_sloped_face_floats`] reads sits within half a micrometer of resting on nothing
+/// below, so how the part's vertices round on the plate decided it; narrowed, it reaches 8 micrometers over the
+/// sparse infill below, and the layers keep their heights.
 #[allow(
     clippy::disallowed_methods,
     reason = "a plain slice with no parallel work waiting on it, shared by the tests of this file"
@@ -495,7 +506,7 @@ fn x_mark_smart() -> &'static String {
     static GCODE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     GCODE.get_or_init(|| {
         let mesh = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/bench/models/x-mark.stl")).unwrap();
-        slice(
+        slice_scaled(
             "p1s-x-mark.json",
             &mesh,
             &[
@@ -503,13 +514,14 @@ fn x_mark_smart() -> &'static String {
                 ("smart_layer", json!("quality")),
                 ("precise_outer_wall", json!(true)),
             ],
+            Some(0.992),
         )
     })
 }
 
 #[test]
 fn at_monotonic_the_band_of_a_sloped_face_floats() {
-    // The one-line shell band just inside the inner wall of a face that leans out about 0.14 mm a layer, at x 115.0
+    // The one-line shell band just inside the inner wall of a face that leans out about 0.14 mm a layer, at x 115.1
     // from y 120.2 to 131.9 on z 50.37, stands on the same band of the layers below: it floats, about 0.32 mm.
     let g = x_mark_smart();
     let floating = per_layer(g, "Floating vertical shell")
