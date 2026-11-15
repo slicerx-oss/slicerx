@@ -9,7 +9,7 @@
 import type { History, Step } from '@slicerx/cad-history'
 import type { Host } from '@slicerx/contracts'
 import { planLeft, type LlmMessage } from '@slicerx/pilot'
-import { PLANS_PART, PLANS_PART_MAX } from '@slicerx/threemf/project'
+import { PLANS_PART, PLANS_PART_MAX, plansJson } from '@slicerx/threemf/project'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sx3mfBytes } from '../src/export/actions'
 import { readProject, readProjectsWithGeom } from '../src/export/import3mf'
@@ -92,6 +92,37 @@ describe('reading the plans part', () => {
     restorePlans({ last: 'p1', plans: [{ plan: { ...plan('bad'), units: 'cubits' }, design: '1' }, { plan: plan('p1'), design: '1', failedChecks: 2, closed }] }, (f) => (f === '1' ? 'obj_new' : undefined))
     expect(mimirPlans.get('bad')).toBeUndefined()
     expect(mimirPlans.get('p1')).toMatchObject({ origin: 'card', design: 'obj_new', failedChecks: 2, closed })
+  })
+
+  it('keeps the items a plan\'s last check failed through a save and an open, so a follow-up after it is not blamed for them', async () => {
+    set({ plate: [entry('obj_a', [step('s1', 'Plate')])] })
+    mimirPlans.put(plan('p1') as never, 'obj_a', 'card')
+    // the plan shown on its card, then a check of it that failed on one item
+    const [shown] = withPlanState([{ name: 'design.plan', run: async () => ({ ok: true, output: { planId: 'p1', accepted: true } }) } as never])
+    await shown!.run({} as never, {} as never)
+    mimirPlans.checked('p1', false, [], ['stands on'])
+    const saved = projectPlans(new Set(['obj_a']), true)
+    expect(saved?.entries).toEqual([expect.objectContaining({ design: 'obj_a', failedChecks: 1, failing: ['stands on'] })])
+    cardPlans.clearPlans()
+    forgetPlanState()
+    restorePlans({ plans: saved!.entries.map((e) => ({ plan: e.plan as Record<string, unknown>, design: '1', ...(e.failedChecks ? { failedChecks: e.failedChecks } : {}), ...(e.failing ? { failing: [...e.failing] } : {}) })) }, () => 'obj_a')
+    expect(mimirPlans.get('p1')).toMatchObject({ failedChecks: 1, failing: ['stands on'] })
+  })
+
+  it('reads the failed items as written, and leaves out a list that is off', () => {
+    const ids = new Set(['1'])
+    const failing = { ...row, failing: ['stands on', 'minimum wall'] }
+    expect(parsePlans(files(enc({ version: 1, plans: [failing] })), ids)).toEqual({ plans: [failing] })
+    // as the project writes them: a plan's failed items beside its failed checks, none for a plan that passed
+    const written = plansJson({ entries: [{ plan: plan('p1'), design: 'obj_a', failedChecks: 1, failing: ['stands on'] }, { plan: plan('p2'), design: 'obj_a', passed: true, failing: [] }] }, new Map([['obj_a', 1]]))!
+    expect(parsePlans(files(enc(written)), ids)).toEqual({ plans: [{ plan: plan('p1'), design: '1', failedChecks: 1, failing: ['stands on'] }, { plan: plan('p2'), design: '1', passed: true }] })
+    for (const bad of [['stands on', 7], 'stands on', ['x'.repeat(121)], Array.from({ length: 65 }, (_, k) => `item ${k}`)]) {
+      expect(parsePlans(files(enc({ version: 1, plans: [{ ...row, failing: bad }] })), ids)).toEqual({ plans: [row] })
+    }
+    cardPlans.clearPlans()
+    set({ plate: [entry('obj_new', [step('s1', 'Plate')])] })
+    restorePlans({ plans: [{ plan: plan('p1'), design: '1', failedChecks: 1, failing: ['stands on'] }] }, (f) => (f === '1' ? 'obj_new' : undefined))
+    expect(mimirPlans.get('p1')).toMatchObject({ failedChecks: 1, failing: ['stands on'] })
   })
 })
 
