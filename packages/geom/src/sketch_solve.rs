@@ -1856,12 +1856,14 @@ mod tests {
         if cfg!(debug_assertions) {
             return;
         }
+        // the time on a core, so other jobs on a loaded machine don't count
         let runs = 50;
-        let t = std::time::Instant::now();
-        for _ in 0..runs {
-            std::hint::black_box(solve(std::hint::black_box(&s), None).unwrap());
-        }
-        let ms = t.elapsed().as_secs_f64() * 1e3 / f64::from(runs);
+        let ((), secs) = crate::busy::seconds(|| {
+            for _ in 0..runs {
+                std::hint::black_box(solve(std::hint::black_box(&s), None).unwrap());
+            }
+        });
+        let ms = secs * 1e3 / f64::from(runs);
         assert!(ms < 2.0, "{ms:.3} ms a solve");
     }
 }
