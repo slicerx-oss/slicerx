@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_design_plan` 1.17.2 (from 1.17.1), in the mimir tab: a display or fine plan compares each part with the largest main body by bulk, the box its planned sizes give over the ways both are sized, not by one length. A part may run longer or wider than the body it is on, as a neck, an arm, a handle or a mast does, and the plan passes; a part with more bulk than the largest main body is still refused, with how many times the body's bulk it has. Before, a plan whose neck ran longer than its body was refused, and the model was asked to shrink a part that was the right size. A part taller than the whole model is still refused.

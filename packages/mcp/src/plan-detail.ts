@@ -564,23 +564,39 @@ const WIDTH = /^(width|beam|breadth|diameter|d)$/i
 const LENGTH = /^(length|long)$/i
 const HEIGHT = /^(height|tall|depth)$/i
 
+/** The sizes that measure a part across one way: a length, a width, a height, a depth or a thickness; a diameter measures it two ways. */
+const ACROSS = /^(length|long|width|beam|breadth|height|tall|depth|thickness|thick)$/i
+const DIAMETER = /^(diameter|d)$/i
+
 /**
- * The masses against each other: no part other than a main body is wider, longer or taller than the largest main body
- * that way (a round upright as wide as the main body, a wheel taller than the car body). Read from the sizes named width (or beam,
- * breadth, diameter), length and height.
+ * A feature's bulk: the box of its three largest sizes across (a diameter counts as two, a round part being that size
+ * both ways), with a way it does not size taken as its smallest size. Undefined for a feature sized fewer than two ways.
+ */
+function bulkOf(sizes: Record<string, number>): number | undefined {
+  const across = Object.entries(sizes).flatMap(([k, v]) => (v > 0 ? (ACROSS.test(k.trim()) ? [v] : DIAMETER.test(k.trim()) ? [v, v] : []) : []))
+  if (across.length < 2) return undefined
+  const box = across.sort((a, b) => b - a).slice(0, 3)
+  while (box.length < 3) box.push(box.at(-1)!)
+  return box[0]! * box[1]! * box[2]!
+}
+
+/**
+ * The masses against each other: no part other than a main body has more bulk than the largest main body, read as the
+ * box its sizes give (bulkOf). A part may run longer than the body it is on, as a
+ * neck, an arm, a handle or a mast does; one with more bulk than the whole body is at the wrong scale. No part is taller
+ * than the whole model.
  */
 function massProblems(plan: DetailPlan, feature: FeatureOf): string[] {
   const bodies = [...(plan.curved ?? []), ...(plan.flat ?? [])].map(feature).filter((f): f is NonNullable<typeof f> => !!f)
   if (!bodies.length) return []
   const largest = (re: RegExp, fs: typeof bodies): number => Math.max(0, ...fs.flatMap((f) => Object.entries(f.sizes).filter(([k]) => re.test(k.trim())).map(([, v]) => v)))
+  // the largest main body that can be sized
+  const body = Math.max(0, ...bodies.map((b) => bulkOf(b.sizes) ?? 0))
   const out: string[] = []
   for (const f of plan.features) {
     if (bodies.includes(f)) continue
-    for (const [re, way] of [[WIDTH, 'wide'], [LENGTH, 'long']] as const) {
-      const body = largest(re, bodies)
-      const part = largest(re, [f])
-      if (body > 0 && part > body) out.push(`${f.name} is ${r1(part)} mm ${way}, more than the main body's ${r1(body)} mm; a part on the body is smaller than it, so size it from the real one`)
-    }
+    const part = bulkOf(f.sizes)
+    if (body > 0 && part !== undefined && part > body) out.push(`${f.name} has ${r1(part / body)} times the bulk of the largest main body, by the sizes planned for each; a part on the body is smaller than it, so size it from the real one`)
     const tall = largest(HEIGHT, [f])
     if (plan.overall && tall > plan.overall.z) out.push(`${f.name} is ${r1(tall)} mm tall, more than the whole model's ${r1(plan.overall.z)} mm height`)
   }

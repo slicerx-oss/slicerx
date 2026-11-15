@@ -193,9 +193,17 @@ describe('detailProblem: the rules are about the object', () => {
     expect(detailProblem({ ...car, scale: '1:43' })).toBeNull()
   })
 
-  it('refuses a part wider than the main body or taller than the whole model, with no source to check it against', () => {
+  it('refuses a part with more bulk than the main body or taller than the whole model, with no source to check it against', () => {
     const plan = { ...car, real: [], scale: undefined, overall: { x: 93, y: 42, z: 35 } }
-    expect(detailProblem(withFeature(plan, 'Wheels', { sizes: { diameter: 50, width: 6, count: 2 } }))).toContain("Wheels is 50 mm wide, more than the main body's 42 mm")
+    // a rod longer than the body it is on has far less bulk, so it passes
+    const rod = { ...plan, features: [...plan.features, { name: 'Rod', kind: 'extrude', sizes: { length: 150, diameter: 4 } }] }
+    expect(detailProblem(rod)).toBeNull()
+    expect(detailProblem({ ...plan, features: [...plan.features, { name: 'Bar', kind: 'extrude', sizes: { length: 160, width: 5, thickness: 3 } }] })).toBeNull()
+    // a block with ten times the body's bulk (93 x 42 x 32) is at the wrong scale
+    const block = { ...plan, features: [...plan.features, { name: 'Block', kind: 'extrude', sizes: { length: 186, width: 84, height: 80 } }] }
+    expect(detailProblem(block)).toContain('Block has 10 times the bulk of the largest main body')
+    // a part sized only one way is not compared
+    expect(detailProblem({ ...plan, features: [...plan.features, { name: 'Strip', kind: 'extrude', sizes: { length: 400 } }] })).toBeNull()
     expect(detailProblem(withFeature(plan, 'Spoiler', { sizes: { width: 36, height: 40, depth: 6 } }))).toContain("Spoiler is 40 mm tall, more than the whole model's 35 mm height")
     expect(detailProblem(plan)).toBeNull()
   })
@@ -380,7 +388,7 @@ function tab(local = false) {
 describe('design.plan with a detail level', () => {
   it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.17.1')
+    expect(t.tool.version).toBe('1.17.2')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
