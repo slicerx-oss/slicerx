@@ -7,7 +7,8 @@
 // - A mesh step on one part leaves every other part's solid as it was, and does not tessellate it.
 // - A part whose solid a mesh step ends says so on the step, in one plain line.
 // - Paint keeps the solid and tessellates only the painted part.
-// - A face whose key a merge cleared (0) goes by its place; a step saved with that key asks for the face again.
+// - A face whose key a merge cleared (0) goes by its place; a pull saved with that key asks for the face again, and paint
+//   seeded by it goes by its point.
 // - An added part that leans keeps the shape it was made as, turned with it, so it still starts as the kernel's solid.
 import { beforeEach, describe, expect, it } from 'vitest'
 import { IDENTITY, clearReplayCache, EXACT_OPS, fits, PAINT_DROPPED, replayHistory, EXACT_MESH_FROM_HERE, stepSalt, tiltedParams, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
@@ -258,15 +259,26 @@ describe('a face whose key a merge cleared', () => {
     expect(r.status[3]!.message).toMatch(/faceReference/)
   })
 
-  it('paint seeded on it goes by its point, and paint seeded by the cleared key asks for the face again', async () => {
+  it('paint seeded on it goes by its point, and paint seeded by the cleared key goes by its point too', async () => {
     const e = engine()
     const at: Vec3 = [1, 1, 0]
     const r = await replayHistory(e.call, { history: joined(step('paint', 0, { op: 'paint', layer: 'color', state: 2, target: { kind: 'seed', point: at } })), exact: true }, kept)
     expect(r.status[3]).toEqual({ state: 'done' })
     expect(e.of('paint.select')[0]!.req['target']).toEqual({ kind: 'seed', point: at })
     clearReplayCache()
-    const lost = await replayHistory(engine().call, { history: joined(step('paint', 0, { op: 'paint', layer: 'color', state: 2, target: { kind: 'seed', point: at, faceKey: stepSalt('hull') + 1 } })), exact: true }, kept)
-    expect(lost.status[3]).toEqual({ state: 'broken', message: 'Missing face; pick the face again to repair this step.' })
+    // no face has the key any more, so the face under the stored point is painted, the same as with no key
+    const keyed = engine()
+    const lost = await replayHistory(keyed.call, { history: joined(step('paint', 0, { op: 'paint', layer: 'color', state: 2, target: { kind: 'seed', point: at, faceKey: stepSalt('hull') + 1 } })), exact: true }, kept)
+    expect(lost.status[3]).toEqual({ state: 'done' })
+    expect(keyed.of('paint.select').map((s) => s.req['target'])).toEqual([{ kind: 'seed', point: at }])
+  })
+
+  it('paint seeded by the cleared key asks for the face again when no face lies under its point', async () => {
+    // 1 mm below the merged face: no face is under the point
+    const e = engine()
+    const r = await replayHistory(e.call, { history: joined(step('paint', 0, { op: 'paint', layer: 'color', state: 2, target: { kind: 'seed', point: [1, 1, -1], faceKey: stepSalt('hull') + 1 } })), exact: true }, kept)
+    expect(r.status[3]).toEqual({ state: 'broken', message: 'Missing face; pick the face again to repair this step.' })
+    expect(e.of('paint.select')).toHaveLength(0)
   })
 })
 

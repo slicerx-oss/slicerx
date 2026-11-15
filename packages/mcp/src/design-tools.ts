@@ -557,7 +557,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const open = defineTool({
     name: 'design.open',
-    version: '1.3.1',
+    version: '1.3.2',
     source: 'command',
     permission: 'read',
     description:
@@ -630,7 +630,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.8.2',
+    version: '1.8.3',
     source: 'command',
     permission: 'slice',
     description:

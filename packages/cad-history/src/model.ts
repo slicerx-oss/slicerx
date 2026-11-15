@@ -475,6 +475,58 @@ export function findByKey(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'fac
   return best < 0 ? null : { triangle: best, at: bestAt, split: false }
 }
 
+/** How far a seed's stored point may lie from a face for the face to be the one under it, in mm (about a nozzle width). */
+export const SEED_FACE_MM = 0.4
+
+/** The point of triangle `a b c` nearest `p`. */
+function nearestOn(p: Vec3, a: Vec3, b: Vec3, c: Vec3): Vec3 {
+  const ab: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+  const ac: Vec3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
+  const at = (u: number, v: number): Vec3 => [a[0] + u * ab[0] + v * ac[0], a[1] + u * ab[1] + v * ac[1], a[2] + u * ab[2] + v * ac[2]]
+  const ap: Vec3 = [p[0] - a[0], p[1] - a[1], p[2] - a[2]]
+  const d1 = dot(ab, ap)
+  const d2 = dot(ac, ap)
+  if (d1 <= 0 && d2 <= 0) return a
+  const bp: Vec3 = [p[0] - b[0], p[1] - b[1], p[2] - b[2]]
+  const d3 = dot(ab, bp)
+  const d4 = dot(ac, bp)
+  if (d3 >= 0 && d4 <= d3) return b
+  const vc = d1 * d4 - d3 * d2
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return at(d1 / (d1 - d3), 0)
+  const cp: Vec3 = [p[0] - c[0], p[1] - c[1], p[2] - c[2]]
+  const d5 = dot(ab, cp)
+  const d6 = dot(ac, cp)
+  if (d6 >= 0 && d5 <= d6) return c
+  const vb = d5 * d2 - d1 * d6
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return at(0, d2 / (d2 - d6))
+  const va = d3 * d6 - d5 * d4
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+    const w = (d4 - d3) / (d4 - d3 + (d5 - d6))
+    return [b[0] + w * (c[0] - b[0]), b[1] + w * (c[1] - b[1]), b[2] + w * (c[2] - b[2])]
+  }
+  const den = va + vb + vc
+  return at(vb / den, vc / den)
+}
+
+/**
+ * The triangle of a mesh (local, shown through `t`) nearest the world point `at`, measured to its nearest point, and
+ * how far that is; with `key`, only the triangles of the face with that key. The nearest triangle is the one
+ * paint.select starts a seed's fill from (the first of equally near ones). Null when there is none.
+ */
+export function nearestTriangle(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'faces'>, t: Mat4, at: Vec3, key?: number): { triangle: number; distance: number } | null {
+  const f = mesh.faces
+  const p = mesh.positions
+  const ix = mesh.indices
+  let best: { triangle: number; distance: number } | null = null
+  for (let k = 0; k + 2 < ix.length; k += 3) {
+    if (key !== undefined && f?.keys?.[f.ids[k / 3] ?? -1] !== key) continue
+    const q = nearestOn(at, point(t, p, 3 * ix[k]!), point(t, p, 3 * ix[k + 1]!), point(t, p, 3 * ix[k + 2]!))
+    const d = Math.hypot(q[0] - at[0], q[1] - at[1], q[2] - at[2])
+    if (!best || d < best.distance) best = { triangle: k / 3, distance: d }
+  }
+  return best
+}
+
 /**
  * The triangle of a mesh (local, shown through `t`) that holds the world point `at` on a face facing
  * `normal`: on its plane within 0.01 mm, normal within 0.01 degrees, inside it within 0.01 mm. The

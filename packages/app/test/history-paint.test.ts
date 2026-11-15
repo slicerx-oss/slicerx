@@ -43,12 +43,54 @@ const step = (id: string, params: StepParams) => ({ id, part: 0, transform: T, p
 const paint = (target: PaintTarget, state = 2, layer: 'color' | 'seam' = 'color'): StepParams => ({ op: 'paint', layer, state, target })
 
 describe('a paint step on replay', () => {
-  it('does not paint a neighboring face when the stored seed key is missing', async () => {
+  it('paints the face under the stored point, and no neighboring face, when the stored seed key is missing', async () => {
     clearReplayCache()
     const e = engine()
-    const history: History = { version: HISTORY_VERSION, base: [boxMesh(20, 20, 10)], steps: [step('missing', paint({ kind: 'seed', point: [10, 10, 10], faceKey: 123 }))] }
+    // a point inside the box's top (triangle 2), away from its edges
+    const history: History = { version: HISTORY_VERSION, base: [boxMesh(20, 20, 10)], steps: [step('missing', paint({ kind: 'seed', point: [3, -4, 10], faceKey: 123 }))] }
     const r = await replayHistory(e.call, { history })
-    expect(r.status[0]).toMatchObject({ state: 'broken', message: expect.stringMatching(/missing.*repair/i) })
+    expect(r.status[0]).toEqual({ state: 'done' })
+    // the engine starts from the stored point itself, so its fill begins on the triangle under it, with no key to follow
+    const asked = e.asked.filter((a) => a.op === 'paint.select')
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.request['target']).toEqual({ kind: 'seed', point: [3, -4, 10] })
+    expect(r.parts[0]?.paint).toEqual({ color: { 2: '8' } })
+  })
+
+  /** A box whose six sides are faces with keys: the bottom (triangles 0 and 1) is 11, the top (2 and 3) is 12. */
+  const keyedBox = (): HistoryMesh => ({ ...boxMesh(20, 20, 10), faces: { ids: [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5], table: [{}, {}, {}, {}, {}, {}], keys: [11, 12, 13, 14, 15, 16] } })
+
+  it('paints the face its stored key names when that face is under the stored point', async () => {
+    clearReplayCache()
+    const e = engine()
+    const history: History = { version: HISTORY_VERSION, base: [keyedBox()], steps: [step('top', paint({ kind: 'seed', point: [3, -4, 10], faceKey: 12 }))] }
+    const r = await replayHistory(e.call, { history })
+    expect(r.status[0]).toEqual({ state: 'done' })
+    // found by its key: the engine starts from the middle of the key's face's triangle nearest the point (triangle 2)
+    const target = e.asked.find((a) => a.op === 'paint.select')!.request['target'] as { kind: string; point: number[]; faceKey: number }
+    expect(target.faceKey).toBe(12)
+    expect(target.point.map((v) => Math.round(v * 1000) / 1000)).toEqual([3.333, -3.333, 10])
+    expect(r.parts[0]?.paint).toEqual({ color: { 2: '8' } })
+  })
+
+  it('paints the face under the stored point, not the far face its stored key names', async () => {
+    clearReplayCache()
+    const e = engine()
+    // the key names the bottom, 10 mm from the point on the top
+    const history: History = { version: HISTORY_VERSION, base: [keyedBox()], steps: [step('top', paint({ kind: 'seed', point: [3, -4, 10], faceKey: 11 }))] }
+    const r = await replayHistory(e.call, { history })
+    expect(r.status[0]).toEqual({ state: 'done' })
+    expect(e.asked.filter((a) => a.op === 'paint.select').map((a) => a.request['target'])).toEqual([{ kind: 'seed', point: [3, -4, 10] }])
+    expect(r.parts[0]?.paint).toEqual({ color: { 2: '8' } })
+  })
+
+  it('does not paint when the stored seed key is missing and no face lies under the stored point', async () => {
+    clearReplayCache()
+    const e = engine()
+    // 1 mm above the box's top: no face is under the point
+    const history: History = { version: HISTORY_VERSION, base: [boxMesh(20, 20, 10)], steps: [step('missing', paint({ kind: 'seed', point: [3, -4, 11], faceKey: 123 }))] }
+    const r = await replayHistory(e.call, { history })
+    expect(r.status[0]).toEqual({ state: 'broken', message: 'Missing face; pick the face again to repair this step.' })
     expect(r.parts[0]?.paint).toBeUndefined()
     expect(e.asked.some((a) => a.op === 'paint.select')).toBe(false)
   })
