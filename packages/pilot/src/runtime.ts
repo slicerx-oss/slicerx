@@ -460,6 +460,19 @@ const STOPPED_LINE = 'I stopped there, and nothing else was changed.'
 /** The design tools that change a design's geometry besides its geom.* steps: an edit, an undo or a redo. */
 const CHANGES_GEOMETRY: ReadonlySet<string> = new Set(['design.edit_step', 'design.undo', 'design.redo'])
 
+/**
+ * The result event of a step: for a failed one, the plain words of an engine refusal (plainEngine) with the engine's text in
+ * the row's details, or the text as written when there are none.
+ */
+function resultEvent(callId: string, ok: boolean, summary: string, plain: ReturnType<typeof plainEngine>, ms?: number): Extract<PilotEvent, { type: 'tool_result' }> {
+  const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId, ok, summary: plain?.shown ?? summary, ...(ms !== undefined ? { ms } : {}) }
+  if (plain) {
+    result.title = plain.title
+    result.detail = plain.raw
+  }
+  return result
+}
+
 /** A value as JSON with its object keys in order, so the same input sent with its keys in another order reads the same. */
 function sortedJson(v: unknown): string {
   return JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x))
@@ -1171,7 +1184,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const issues = parsed.error.issues.slice(0, 5).map((i) => `${(withheld ? i.path.slice(0, 1) : i.path).join('.') || '(input)'}: ${i.message}`)
       emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: withheld ? INPUT_WITHHELD : parsedJson, args: withheld ? INPUT_WITHHELD : argLine(parsedJson) })
       inputRefused.add(call.id)
-      emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Invalid arguments: ${issues.join('; ')}` })
+      // as for a tool's own refusal: a modeling tool's text shows in plain words with the full text in the details, and the
+      // model gets the full text with its issues below
+      const text = `Invalid arguments: ${issues.join('; ')}`
+      emit(resultEvent(call.id, false, text, plainEngine(text, tool.name)))
       return { message: JSON.stringify({ ok: false, error: 'Invalid arguments', issues }), stop: false }
     }
     const input = parsed.data
@@ -1383,11 +1399,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // an engine refusal shows in plain words, with the engine's text only in the row's details; the model reads the
     // engine's text with how to try again
     const plain = out.ok === false ? plainEngine(out.summary, tool.name) : undefined
-    const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
-    if (plain) {
-      result.title = plain.title
-      result.detail = plain.raw
-    }
+    const result = resultEvent(call.id, out.ok !== false, out.summary, plain, now() - t0)
     if (out.output !== undefined) result.output = out.output
     // a part started with no design argument lands in a design the result names: the sheet holds for that one
     const landed = (out.output as { design?: unknown } | undefined)?.design

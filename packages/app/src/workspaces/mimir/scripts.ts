@@ -815,8 +815,8 @@ const BUILD_VERB = String.raw`(?:(?:^|[.!?,;:]|\b(?:please|can you|could you|wou
 
 /**
  * A block whose fillet step fails, for the end-to-end tests: the step is sent with no edges and no radius, so its tool
- * turns it down on its arguments, in that tool's own words (the runtime shows those as the step's summary). The failed
- * step reaches the working loop's list as a bad step.
+ * is turned down on its arguments, in words with the field keys (the person reads it in plain words). The failed step
+ * reaches the working loop's list as a bad step.
  */
 const failedBlockStep: ScriptStep[] = [
   { text: 'Starting a block.', calls: [{ name: 'design.new', args: { name: 'Block' } }] },
