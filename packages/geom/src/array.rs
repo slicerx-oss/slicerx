@@ -973,10 +973,10 @@ mod tests {
         }
     }
 
+    /// the merged array, and the seconds the merge ran on a core
     fn joined(m: &TriMesh, spec: &ArraySpec) -> (TriMesh, BooleanReport, f64) {
-        let t = std::time::Instant::now();
-        let (u, r) = merged(m, spec, &BooleanOptions::default()).unwrap();
-        (u, r, t.elapsed().as_secs_f64())
+        let ((u, r), secs) = crate::busy::seconds(|| merged(m, spec, &BooleanOptions::default()).unwrap());
+        (u, r, secs)
     }
 
     #[test]

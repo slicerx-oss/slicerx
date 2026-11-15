@@ -21,6 +21,8 @@
 pub mod array;
 pub mod boolean;
 pub mod build;
+#[cfg(test)]
+mod busy;
 #[cfg(feature = "calib")]
 pub mod calib;
 pub mod color_slots;
