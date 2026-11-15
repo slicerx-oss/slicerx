@@ -6,6 +6,10 @@
     clippy::disallowed_methods,
     reason = "a G-code reader for the test: plate coordinates in mm"
 )]
+#![allow(
+    clippy::many_single_char_names,
+    reason = "the points and directions of plane geometry"
+)]
 
 use serde_json::{Value, json};
 use std::sync::Arc;
