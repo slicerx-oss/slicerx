@@ -31,45 +31,52 @@ const sameKeys = (a: object, b: object): boolean => {
   return ka.length === kb.length && ka.every((k, i) => k === kb[i])
 }
 
+/** The problems an amend check found, as one refusal: each in its own words, joined as a plan refusal joins its own. */
+const joined = (problems: readonly string[]): string | null => (problems.length ? problems.join('. ') : null)
+
 /**
  * What keeps `next` from being an amend of `old`, or null: an amend keeps the part, its units, every planned feature
  * (name, kind, the sizes it has and what each measures, in order, with features it adds anywhere among them under new
  * names), whether it has an overall size, and each row of holes (name and count), and its open faces. Only the numbers
- * change, and features may be added.
+ * change, and features may be added. Every mismatch is named at once, so a plan resent with three fields off is fixed
+ * in one round, not three.
  */
 export function amendShapeProblem(old: Sized, next: Sized, o: { asked?: boolean } = {}): string | null {
   const only = 'an amend changes sizes only'
-  if (next.part !== old.part) return `part: ${only}; the part stays "${old.part}"`
-  if (next.units !== old.units) return `units: ${only}; the plan stays in ${old.units}`
+  const out: string[] = []
+  if (next.part !== old.part) out.push(`part: ${only}; the part stays "${old.part}"`)
+  if (next.units !== old.units) out.push(`units: ${only}; the plan stays in ${old.units}`)
   const kept = keptFeatures(old, next)
-  if (!kept) return `features: an amend keeps every planned feature, in order, and may add features under new names; the plan has ${old.features.map((f) => f.name).join(', ')}`
+  if (!kept) out.push(`features: an amend keeps every planned feature, in order, and may add features under new names; the plan has ${old.features.map((f) => f.name).join(', ')}`)
   // a change the person asked for may change how a planned feature is made (its kind and the sizes that drive it)
-  if (o.asked) return amendRestProblem(old, next)
-  for (const [i, j] of kept.entries()) {
-    const f = next.features[j]!
-    const o = old.features[i]!
-    if ((f.kind ?? '') !== (o.kind ?? '')) return `features: ${only}; feature ${i + 1} stays "${o.name}"`
-    if (!sameKeys(f.sizes, o.sizes)) return `features: ${only}; ${o.name} keeps the sizes ${Object.keys(o.sizes).join(', ') || 'it has (none)'}`
-    if (JSON.stringify(Object.entries(f.kinds ?? {}).sort()) !== JSON.stringify(Object.entries(o.kinds ?? {}).sort())) return `features: ${only}; ${o.name} keeps its kinds`
-  }
-  return amendRestProblem(old, next)
+  else if (!o.asked)
+    for (const [i, j] of kept.entries()) {
+      const f = next.features[j]!
+      const was = old.features[i]!
+      if ((f.kind ?? '') !== (was.kind ?? '')) out.push(`features: ${only}; feature ${i + 1} stays "${was.name}"`)
+      if (!sameKeys(f.sizes, was.sizes)) out.push(`features: ${only}; ${was.name} keeps the sizes ${Object.keys(was.sizes).join(', ') || 'it has (none)'}`)
+      if (JSON.stringify(Object.entries(f.kinds ?? {}).sort()) !== JSON.stringify(Object.entries(was.kinds ?? {}).sort())) out.push(`features: ${only}; ${was.name} keeps its kinds`)
+    }
+  out.push(...amendRestProblems(old, next))
+  return joined(out)
 }
 
 /**
- * The plan's fields amendRestProblem holds an amend to: whether it has an overall size, its rows of holes by name and
+ * The plan's fields amendRestProblems holds an amend to: whether it has an overall size, its rows of holes by name and
  * count, and its open faces as they are. None of them can be dropped by an amend, so one left out is the plan's own.
  */
 export const AMEND_PINNED = ['overall', 'holes', 'openFaces'] as const
 
 /** The rest of amendShapeProblem: the overall size, the rows of holes and the open faces stay as they are. */
-function amendRestProblem(old: Sized, next: Sized): string | null {
+function amendRestProblems(old: Sized, next: Sized): string[] {
   const only = 'an amend changes sizes only'
-  if (Boolean(next.overall) !== Boolean(old.overall)) return `overall: ${only}; ${old.overall ? 'keep' : 'leave out'} the overall size`
+  const out: string[] = []
+  if (Boolean(next.overall) !== Boolean(old.overall)) out.push(`overall: ${only}; ${old.overall ? 'keep' : 'leave out'} the overall size`)
   const nh = next.holes ?? []
   const oh = old.holes ?? []
-  if (nh.length !== oh.length || nh.some((h, i) => h.name !== oh[i]!.name || (h.count ?? 1) !== (oh[i]!.count ?? 1))) return `holes: ${only}; the plan keeps its rows of holes, by name and count`
-  if (JSON.stringify(next.openFaces ?? null) !== JSON.stringify(old.openFaces ?? null)) return `openFaces: ${only}; ${old.openFaces ? 'the plan keeps its openFaces as they are' : 'leave out openFaces'}`
-  return null
+  if (nh.length !== oh.length || nh.some((h, i) => h.name !== oh[i]!.name || (h.count ?? 1) !== (oh[i]!.count ?? 1))) out.push(`holes: ${only}; the plan keeps its rows of holes, by name and count`)
+  if (JSON.stringify(next.openFaces ?? null) !== JSON.stringify(old.openFaces ?? null)) out.push(`openFaces: ${only}; ${old.openFaces ? 'the plan keeps its openFaces as they are' : 'leave out openFaces'}`)
+  return out
 }
 
 /**
@@ -106,28 +113,29 @@ function canonical(v: unknown, key?: string): unknown {
 const same = (a: unknown, b: unknown, key?: string): boolean => JSON.stringify(canonical(a, key)) === JSON.stringify(canonical(b, key))
 
 /**
- * What an amend (amendShapeProblem says it is one) changes that amendedSizes would not keep, or null: a planned
- * feature's on, a row of holes' recess, or a plan field among KEPT_FIELDS that it gives otherwise. A field it leaves
- * out of the plan stays as it is; on and recess are given with their feature or row, as its kinds are. Without this,
- * the change would be dropped while the amend reports the plan changed.
+ * What an amend changes that amendedSizes would not keep, or null: a planned feature's on, a row of holes' recess, or
+ * a plan field among KEPT_FIELDS that it gives otherwise, each one named. A field it leaves out of the plan stays as it
+ * is; on and recess are given with their feature or row, as its kinds are. Without this, the change would be dropped
+ * while the amend reports the plan changed.
  */
 export function amendDropProblem(old: Sized, next: Sized): string | null {
   const only = 'an amend changes sizes only'
+  const out: string[] = []
   for (const o of old.features) {
     const f = next.features.find((x) => x.name === o.name)
-    if (f && (f.on ?? '') !== (o.on ?? '')) return `features: ${only}; ${o.name} ${o.on ? `keeps on: ${JSON.stringify(o.on)}` : 'takes no on'}`
+    if (f && (f.on ?? '') !== (o.on ?? '')) out.push(`features: ${only}; ${o.name} ${o.on ? `keeps on: ${JSON.stringify(o.on)}` : 'takes no on'}`)
   }
   for (const [i, h] of (old.holes ?? []).entries()) {
     const n = next.holes?.[i]
-    if (n && (n.recess ?? false) !== (h.recess ?? false)) return `holes: ${only}; ${h.name} ${h.recess ? 'keeps recess: true' : 'takes no recess'}`
+    if (n && (n.recess ?? false) !== (h.recess ?? false)) out.push(`holes: ${only}; ${h.name} ${h.recess ? 'keeps recess: true' : 'takes no recess'}`)
   }
   const o = old as unknown as Record<string, unknown>
   const n = next as unknown as Record<string, unknown>
   for (const k of KEPT_FIELDS) {
     if (n[k] === undefined || same(n[k], o[k], k)) continue
-    return `${k}: ${only}; ${o[k] === undefined ? `leave out ${k}` : `the plan keeps ${k}: ${JSON.stringify(o[k])}`}`
+    out.push(`${k}: ${only}; ${o[k] === undefined ? `leave out ${k}` : `the plan keeps ${k}: ${JSON.stringify(o[k])}`}`)
   }
-  return null
+  return joined(out)
 }
 
 /** The features `next` adds to `old` (amendShapeProblem says it is an amend), by name, in order. */
