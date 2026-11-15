@@ -261,8 +261,12 @@ describe('the mimir tab on a local model', () => {
       const full = cloud.get(t!.name)!
       const got = pins(t!.parameters)
       expect(want.filter((p) => !got.has(p)), `${name} keeps its required fields and enums`).toEqual([])
-      // the local form takes exactly what the cloud form takes
-      expect([...got].sort(), name).toEqual([...pins(full.parameters)].sort())
+      // the local form takes exactly what the cloud form takes, for every field it offers: a field it leaves out (the
+      // detail level's own fields, an amend's changes) is the cloud model's alone. A local model only makes first plans,
+      // so its plan still requires what a first plan needs, which the cloud form leaves to the tool for an amend's sake
+      const offered = new Set(Object.keys((t!.parameters as { properties?: object }).properties ?? {}))
+      const firstPlanOnly = name === 'design.plan' ? new Set(['part required', 'units required', 'features required', 'assumptions required', 'questions required']) : new Set<string>()
+      expect([...got].filter((p) => !firstPlanOnly.has(p)).sort(), name).toEqual([...pins(full.parameters)].filter((p) => offered.has(p.split(/[. ]/)[0]!)).sort())
       if (t!.description === full.description) continue
       expect(t!.description.length, name).toBeLessThan(full.description.length)
       // each required argument by name, as a word of its own
