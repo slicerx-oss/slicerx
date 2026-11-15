@@ -12,7 +12,7 @@ import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSch
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
 import { AMEND_PINNED, AMEND_REASON_MAX, amendAdded, amendChanges, amendDropProblem, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
-import { type Bed, cardRealField, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, planDetailFields, FEATURES_FLOOR, LONG_EXTRA, LONG_RATIO, realMemoryNote, type RealSources, SECTIONS_FLOOR } from './plan-detail'
+import { type Bed, cardRealField, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, planDetailFields, FEATURES_FLOOR, unheldAsks, LONG_EXTRA, LONG_RATIO, realMemoryNote, type RealSources, SECTIONS_FLOOR } from './plan-detail'
 import { createLookupStore, lookupSizesTool } from './real-lookup'
 import { GAP_MARGIN_MM, jointProblem, planetsMiss, PLANETS_CANNOT_MESH, planFloors, raisedText, raisedWhy, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
 
@@ -89,6 +89,8 @@ export const amendId = (planId: string, revision: number): string => `${planId}~
 
 /** The amends the card keeps for showing again (a saved conversation's cards). */
 const AMENDS_KEEP = 50
+/** The parts whose refused plans' asked sizes the card keeps (unheldAsked); the oldest goes first. */
+const UNHELD_KEEP = 50
 
 /** The fit rule's smallest print-in-place gaps for a 0.4 mm nozzle in PLA, as design.plan's text names them. */
 const RULE = printInPlaceClearance()
@@ -152,6 +154,13 @@ export function createCardPlans(plans: PlanRegistry) {
     lookups: () => lookups.of(ctx.sessionId),
     said: ctx.said?.(),
   })
+  /**
+   * Per chat and part, the sizes a refused plan of that part was asked to give as real or name as not given by the
+   * source (unheldAsks), until a plan of it is shown. The next plan may then name them so, as the refusal asked, though
+   * no lookup listed them as missing; the not-asked rule holds every other size to a lookup as before.
+   */
+  const unheldAsked = new Map<string, Set<string>>()
+  const chainKey = (ctx: ToolContext, part: string): string => `${ctx.sessionId}\0${part.trim().toLowerCase()}`
   /** Each plan as mimir first showed it, before any edit, while the registry still keeps the plan. */
   const shownPlans = new Map<string, PartPlan>()
   /** The plan the person last approved whose part is not built yet: the next design built ties to it. */
@@ -216,6 +225,7 @@ export function createCardPlans(plans: PlanRegistry) {
     shownPlans.clear()
     amends.clear()
     lookups.clear()
+    unheldAsked.clear()
     unbuilt = null
   }
 
@@ -289,7 +299,7 @@ export function createCardPlans(plans: PlanRegistry) {
   function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile; designs?: () => readonly { id: string; name: string; parts: readonly unknown[] }[]; bed?: () => Bed | undefined } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.17.3',
+      version: '1.17.4',
       source: 'command',
       permission: 'read',
       description:
@@ -346,9 +356,20 @@ export function createCardPlans(plans: PlanRegistry) {
         if (planets) throw new ToolInputError(PLANETS_CANNOT_MESH(planets))
         // a display or fine plan holds its level's rules before the person sees it, so the build follows a plan that can
         // look like the real thing
-        const real = realSources(ctx)
+        const chain = chainKey(ctx, input.part)
+        const real: RealSources = { ...realSources(ctx), asked: [...(unheldAsked.get(chain) ?? [])] }
         const detail = detailProblem(input, { bed: opts.bed?.() ?? DEFAULT_BED, printer: opts.bed?.() ? ctx?.context?.machine?.printer : undefined }, { local: ctx?.localForm === true, real })
-        if (detail) throw new ToolInputError(detail)
+        if (detail) {
+          // the sizes this refusal asks for stand as not given by the source in the part's next plan
+          const asks = ctx?.localForm === true ? [] : unheldAsks(input, real)
+          if (asks.length) {
+            unheldAsked.delete(chain)
+            unheldAsked.set(chain, new Set([...(real.asked ?? []), ...asks]))
+            for (const k of [...unheldAsked.keys()].slice(0, Math.max(0, unheldAsked.size - UNHELD_KEEP))) unheldAsked.delete(k)
+          }
+          throw new ToolInputError(detail)
+        }
+        unheldAsked.delete(chain)
         // real sizes taken from memory say so on the card, among what the plan assumed
         const memory = input.detail && input.detail !== 'basic' && ctx?.localForm !== true ? realMemoryNote(input, real) : null
         const noted = memory && !input.assumptions.includes(memory) ? { ...input, assumptions: [...input.assumptions, memory] } : input

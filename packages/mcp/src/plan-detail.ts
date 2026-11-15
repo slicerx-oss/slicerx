@@ -118,6 +118,12 @@ export interface RealSources {
   said?: readonly string[] | undefined
   /** A client's own plan (design.put_plan): a size may give its source page; one with no page or words is from memory. */
   client?: boolean
+  /**
+   * The sizes, as "<feature> <size>", that a refusal of this part's plan earlier in this chat asked to be given as
+   * real or named as not given by the source (unheldAsks). A note that names one of them as not given stands, though
+   * no lookup listed it as missing: the refusal asked for that very line.
+   */
+  asked?: readonly string[] | undefined
 }
 
 /** How close a real size's mm sits to the figure its lookup or the person's words give, as a share. */
@@ -467,12 +473,29 @@ interface Held {
 }
 
 /**
+ * The sizes a refusal of this plan asks to be given as real or named as not given by the source (the unheld rule's
+ * list, as "<feature> <size>"), so the next plan of the part may name them so with no lookup listing them as missing.
+ * Empty when the plan's real sizes are not held to scale (none given, or no scale), as the rule then asks for nothing.
+ */
+export function unheldAsks(plan: DetailPlan, src?: RealSources): string[] {
+  if (!plan.real?.length || !(typeof plan.scale === 'string' ? Number(plan.scale.split(':').pop()) : plan.scale)) return []
+  const feature = (n: string) => plan.features.find((x) => x.name.trim().toLowerCase() === n.trim().toLowerCase())
+  return unheldCheck(plan, feature, src)?.asks ?? []
+}
+
+/** The unheld rule's refusal, or null when each size it holds is held. */
+function unheldProblem(plan: DetailPlan, feature: FeatureOf, src?: RealSources): string | null {
+  return unheldCheck(plan, feature, src)?.text ?? null
+}
+
+/**
  * The sizes a source's real list leaves unheld that set how the thing reads: each level of a tier list of two or more
  * levels (its length) and each repeat built as a pattern with a spacing (its part's height, on the part built once or
  * its pattern, and the pattern's spacing). A size the
- * source does not give is named in assumptions as NOT_GIVEN says, and the check takes it. Null when each is held.
+ * source does not give is named in assumptions as NOT_GIVEN says, and the check takes it. Null when each is held;
+ * else the refusal's text and the sizes it asks for (none when it only says a note names a size no lookup asked for).
  */
-function unheldProblem(plan: DetailPlan, feature: FeatureOf, src?: RealSources): string | null {
+function unheldCheck(plan: DetailPlan, feature: FeatureOf, src?: RealSources): { text: string; asks: string[] } | null {
   const isPattern = (f: DetailPlan['features'][number]): boolean => PATTERN.test(f.kind ?? '') || PATTERN.test(f.name)
   const keyOf = (f: DetailPlan['features'][number], ...res: RegExp[]): [string, RegExp] | null => {
     for (const re of res) {
@@ -539,10 +562,13 @@ function unheldProblem(plan: DetailPlan, feature: FeatureOf, src?: RealSources):
     const sizes = [m[2]!, m[3]].filter((s): s is string => !!s).map((s) => s.toLowerCase())
     return w.held.names.some((n) => stem(n) === stem(m[1]!)) && sizes.some((s) => s === w.held.key.trim().toLowerCase() || w.held.re.test(s))
   }
-  // where a lookup can run, "not given by the source" stands only for a size a lookup asked for and found no source for
-  const unread = src?.canLookUp && !src.client ? want.filter((w) => !given(w) && notes.some((n) => said(w, n)) && !askedAndMissing(src, w.held.names.map((n) => `${n} ${w.held.key}`))) : []
+  // where a lookup can run, "not given by the source" stands only for a size a lookup asked for and found no source
+  // for, or one an earlier refusal of this part's plan asked to be named so
+  const asked = new Set((src?.asked ?? []).map((a) => a.trim().toLowerCase()))
+  const askedBefore = (w: (typeof want)[number]): boolean => asked.has(`${w.held.feature} ${w.held.key}`.trim().toLowerCase())
+  const unread = src?.canLookUp && !src.client ? want.filter((w) => !given(w) && notes.some((n) => said(w, n)) && !askedBefore(w) && !askedAndMissing(src, w.held.names.map((n) => `${n} ${w.held.key}`))) : []
   const missing = want.filter((w) => !given(w) && !notes.some((n) => said(w, n)))
-  if (!missing.length) return unread.length ? NOT_ASKED(unread.map((w) => `${w.held.feature} ${w.held.key}`)) : null
+  if (!missing.length) return unread.length ? { text: NOT_ASKED(unread.map((w) => `${w.held.feature} ${w.held.key}`)), asks: [] } : null
   const ways = new Set(missing.map((w) => w.what))
   const rep = [ways.has('height') && 'height', ways.has('spacing') && 'spacing'].filter(Boolean).join(' and ')
   const lengths = missing.filter((w) => w.what === 'length')
@@ -556,7 +582,7 @@ function unheldProblem(plan: DetailPlan, feature: FeatureOf, src?: RealSources):
   const one = missing.length === 1
   const fix = stray ? `; the assumption "${stray.trim()}" does not name ${one ? 'it' : 'one of them'} as the check reads it, so write it as ${example}` : `; for a size the source does not give, say so in assumptions as ${example}`
   const ask = `real: ${held.join(' and ')} ${held.length > 1 || rep.includes(' and ') ? 'are' : 'is'} held to scale too, so give the real ${list}, ${one ? 'tied to that size' : 'each tied to its size'}${fix}`
-  return unread.length ? `${ask}. ${NOT_ASKED(unread.map((w) => `${w.held.feature} ${w.held.key}`))}` : ask
+  return { text: unread.length ? `${ask}. ${NOT_ASKED(unread.map((w) => `${w.held.feature} ${w.held.key}`))}` : ask, asks: sizes }
 }
 
 /** A size's name read as the main way it measures across: a width, a length or a height. */
