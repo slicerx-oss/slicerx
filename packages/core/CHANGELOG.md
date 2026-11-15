@@ -7,6 +7,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 ### Fixed
 
 - Organic tree support takes `tree_support_branch_angle`, `tree_support_branch_diameter` and `tree_support_branch_distance` from settings that set them without the matching `_organic` key (`tree_support_branch_angle_organic` and the like), as a project with only the plain keys does. Before, such a slice planned its branches with the default angle 40, diameter 2 and distance 1 whatever the settings said. A `_organic` key that is set still wins, and settings that carry both are read as before.
+- `sx slice --request` and `run_request` slice a project plate whose objects all carry the same object settings (from the file and the request) as one plate, the way `sx slice <file.3mf>` does: the shared settings go into the plate's settings and each object's are cleared. Before, any object settings sent the plate down the per-object path, where each object planned its tree support without its neighbors, so the support could cross a neighbor's first-layer wall and the plate was refused with a `path_conflict` that `sx slice` did not report. Objects whose settings differ, or that print with a nozzle of another size than the first, still slice each with its own.
 
 ## [0.2.9] - 2026-11-09
 
