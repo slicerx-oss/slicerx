@@ -118,6 +118,7 @@ export function projectPlans(objects: ReadonlySet<string>, designs: boolean): Pl
       ...(e.failedChecks ? { failedChecks: e.failedChecks } : {}),
       ...(e.closed ? { closed: e.closed } : {}),
       ...(run?.passed ? { passed: true } : {}),
+      ...(e.failing?.length ? { failing: e.failing } : {}),
       ...(run?.steps ? { steps: run.steps } : {}),
     })
   }
@@ -142,6 +143,8 @@ export function restorePlans(saved: SavedPlans, objectOf: (fileId: string) => st
     const entry = mimirPlans.get(planId)
     if (!entry) continue
     if (row.failedChecks) entry.failedChecks = row.failedChecks
+    // the items its last check failed, so a follow-up after the reopen is not told its change broke one of them
+    if (row.failing) entry.failing = [...row.failing]
     if (row.closed) mimirPlans.close(planId, row.closed)
     seen.delete(planId)
     seen.add(planId)

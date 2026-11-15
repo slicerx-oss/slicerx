@@ -1413,6 +1413,17 @@ export interface PlanEntry {
   followUp?: true
   /** Failed checks since its last pass, once it has passed; a follow-up change that breaks it is fixed or undone. */
   failsSincePass?: number
+  /**
+   * The items its last measured check failed, by name (empty when it passed); absent before its first check. The
+   * project file keeps it with the plan, so it holds after a reopen too.
+   */
+  failing?: string[]
+  /**
+   * The items that were failing when the person's change began (asked, reopenAfterBuild): its last measured check's, or
+   * the check that used its fix round when no other is known. A check after the change that fails only on these was
+   * not broken by it. Emptied by a pass.
+   */
+  failingBefore?: string[]
 
   /** How many times the build changed the plan with an amend (plan-amend.ts), plus one: absent for the plan as first approved. */
   revision?: number
@@ -1490,9 +1501,11 @@ export interface PlanRegistry {
   /**
    * Counts a design.check of a kept plan; returns how many of its checks have failed (0 when there is no such plan). A
    * failed check lets the part be rebuilt as a new design once (replace), started after it: `open` is the designs open
-   * then, which a rebuild is none of. A pass ends that.
+   * then, which a rebuild is none of. A pass ends that. `failed` is the items it failed, by name, kept as the plan's
+   * failing; a failed check of a follow-up that fails only on items already failing before the change
+   * (failingBefore) is not counted as one the change broke (failsSincePass).
    */
-  checked(planId: string, pass: boolean, open?: readonly string[]): number
+  checked(planId: string, pass: boolean, open?: readonly string[], failed?: readonly string[]): number
   /**
    * A check that failed only on how a part holding several pieces is named: the first one per plan leaves the fix round
    * alone and lets the part be rebuilt as a new design started after it (as a failed check does), and returns true.
@@ -1541,6 +1554,23 @@ export class PlanOwnedError extends Error {
   }
 }
 
+/**
+ * The items a plan fails as far as its checks know, by name: its last measured check's, else those of the check that
+ * used its fix round (kept in the project file as it was returned), else none known (an empty list: nothing failed
+ * before, so any failure after a change is the change's).
+ */
+function failingNow(entry: PlanEntry): string[] {
+  if (entry.failing) return [...entry.failing]
+  const items = (entry.closed?.output as { items?: unknown } | undefined)?.items
+  return Array.isArray(items) ? items.flatMap((x) => (x && typeof x === 'object' && (x as { pass?: unknown }).pass === false && typeof (x as { name?: unknown }).name === 'string' ? [(x as { name: string }).name] : [])) : []
+}
+
+/** Whether a failed check of a follow-up fails only on items that were failing before the person's change. */
+export function failedBefore(entry: Pick<PlanEntry, 'failingBefore'>, failed: readonly string[] | undefined): boolean {
+  const before = entry.failingBefore
+  return !!before && !!failed && failed.length > 0 && failed.every((n) => before.includes(n))
+}
+
 /** A registry of up to MAX_PLANS card plans and MAX_PLANS client plans, the oldest of each put dropped first. */
 export function createPlanRegistry(): PlanRegistry {
   const plans = new Map<string, PlanEntry>()
@@ -1551,7 +1581,7 @@ export function createPlanRegistry(): PlanRegistry {
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.passedOnce ? { passedOnce: was.passedOnce } : {}), ...(was?.followUp ? { followUp: was.followUp } : {}), ...(was?.failsSincePass ? { failsSincePass: was.failsSincePass } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.superseded ? { superseded: was.superseded } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}), ...(was?.revision ? { revision: was.revision } : {}), ...(was?.amendedAt !== undefined ? { amendedAt: was.amendedAt } : {}), ...(was?.amendWhy ? { amendWhy: was.amendWhy } : {}) }
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.passedOnce ? { passedOnce: was.passedOnce } : {}), ...(was?.followUp ? { followUp: was.followUp } : {}), ...(was?.failsSincePass ? { failsSincePass: was.failsSincePass } : {}), ...(was?.failing ? { failing: [...was.failing] } : {}), ...(was?.failingBefore ? { failingBefore: [...was.failingBefore] } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.superseded ? { superseded: was.superseded } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}), ...(was?.revision ? { revision: was.revision } : {}), ...(was?.amendedAt !== undefined ? { amendedAt: was.amendedAt } : {}), ...(was?.amendWhy ? { amendWhy: was.amendWhy } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -1572,7 +1602,7 @@ export function createPlanRegistry(): PlanRegistry {
       return true
     },
     tiedTo: (design) => [...plans.values()].filter((e) => e.design === design).map((e) => e.plan.planId),
-    checked(planId, pass, open) {
+    checked(planId, pass, open, failed) {
       const entry = plans.get(planId)
       if (!entry) return 0
       if (pass) {
@@ -1581,9 +1611,12 @@ export function createPlanRegistry(): PlanRegistry {
         entry.passed = true
         entry.passedOnce = true
         entry.failsSincePass = 0
+        entry.failing = []
+        if (entry.failingBefore) entry.failingBefore = []
       } else {
         delete entry.passed
-        if (entry.passedOnce || entry.followUp) entry.failsSincePass = (entry.failsSincePass ?? 0) + 1
+        if (failed) entry.failing = [...failed]
+        if ((entry.passedOnce || entry.followUp) && !failedBefore(entry, failed)) entry.failsSincePass = (entry.failsSincePass ?? 0) + 1
         entry.failedChecks = (entry.failedChecks ?? 0) + 1
         entry.replaceable = true
         if (open) entry.openAtFail = [...open]
@@ -1627,6 +1660,8 @@ export function createPlanRegistry(): PlanRegistry {
       const entry = plans.get(planId)
       if (!entry) return 0
       entry.revision = (entry.revision ?? 1) + 1
+      // what fails before the change is the change's to leave alone: a check after it is held to the rest
+      entry.failingBefore = failingNow(entry)
       // a change the person asked for once the part is built: a check it breaks is fixed or undone, never a stop
       entry.followUp = true
       entry.failsSincePass = 0
@@ -1639,6 +1674,7 @@ export function createPlanRegistry(): PlanRegistry {
     reopenAfterBuild(planId) {
       const entry = plans.get(planId)
       if (!entry) return
+      entry.failingBefore = failingNow(entry)
       delete entry.closed
       entry.followUp = true
       entry.failsSincePass = 0
