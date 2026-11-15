@@ -99,7 +99,7 @@ describe('design.plan with amends and changes', () => {
     expect(t.plan()).toMatchObject({ features: tower.features })
   })
 
-  it('refuses changes or add on a first plan, and a first plan with no part, units, features, assumptions or questions', async () => {
+  it('refuses changes or add on a first plan, and a first plan with no part, units or features', async () => {
     const t = await built()
     await expect(t.run({ ...tower, part: 'Gate house', changes: [{ feature: 'Tower', size: 'height', to: 84 }] })).rejects.toThrow('changes: only with amends, to change a plan already built')
     await expect(t.run({ ...tower, part: 'Gate house', add: [{ name: 'Roof', sizes: { height: 4 } }] })).rejects.toThrow('add: only with amends, to change a plan already built')
@@ -110,8 +110,6 @@ describe('design.plan with amends and changes', () => {
       'part: Invalid input: expected string, received undefined',
       'units: Invalid option: expected one of "mm"|"in"',
       'features: Invalid input: expected array, received undefined',
-      'assumptions: Invalid input: expected array, received undefined',
-      'questions: Invalid input: expected array, received undefined',
     ])
   })
 

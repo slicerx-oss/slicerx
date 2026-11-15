@@ -180,12 +180,12 @@ describe('design.plan holds sizes to the floors before Go', () => {
   })
 
   it('puts one line for every raised size when the plan has little room left for lines, and none when it has no room', () => {
-    const full = { ...hingedBox, assumptions: ['The pieces print in place', ...Array.from({ length: 10 }, (_, k) => `assumption ${k + 2}`)] }
+    const full = { ...hingedBox, assumptions: ['The pieces print in place', ...Array.from({ length: 18 }, (_, k) => `assumption ${k + 2}`)] }
     const one = raiseToFloors(full, planFloors())
-    expect(one.plan.assumptions).toHaveLength(12)
+    expect(one.plan.assumptions).toHaveLength(20)
     expect(one.plan.assumptions[0]).toBe("Raised to this printer's smallest sizes: Hinge pin gap 0.45 mm on each side (3 mm pin, 3.9 mm bore), Hinge pin vertical gap 0.45 mm on each side.")
     const none = raiseToFloors({ ...full, assumptions: [...full.assumptions, 'one more, print in place'] }, planFloors())
-    expect(none.plan.assumptions).toHaveLength(12)
+    expect(none.plan.assumptions).toHaveLength(20)
     expect(none.plan.features[2]!.sizes['gap']).toBe(0.45)
   })
 })
@@ -234,7 +234,7 @@ describe('design.put_plan names sizes under the floors', () => {
   it('keeps the client plan as given and says which size is too small and what the floor is', async () => {
     const plans = createPlanRegistry()
     const t = designToolset(host, {}, { plans, nozzleMm: () => 0.4 }).find((x) => x.name === 'design.put_plan')!
-    expect(t.version).toBe('1.9.1')
+    expect(t.version).toBe('1.10.0')
     const given = { planId: 'box-1', ...hingedBox }
     const out = await t.run(t.input.parse({ plan: given }) as never, { context: { machine: p1s } } as unknown as ToolContext)
     expect(plans.get('box-1')?.plan.features[2]?.sizes).toEqual({ pin_diameter: 3, gap: 0.3, vertical_gap: 0.3 })
