@@ -11,8 +11,9 @@ interface Refusal {
   test: RegExp
   /** The row's title: what happened, in a few words. */
   title: string
-  /** The step's row, for the person; {name} is the assistant's name as it is when the row is made. */
-  shown: string
+  /** The step's row, for the person; {name} is the assistant's name as it is when the row is made. A function fills
+   *  in a number from the engine's text. */
+  shown: string | ((text: string) => string)
   /** Added to the model's tool result: how to go on. */
   hint: string
 }
@@ -96,6 +97,17 @@ const REFUSALS: readonly Refusal[] = [
     title: 'Edge not rounded',
     shown: 'Fillet and chamfer cannot follow that edge where it meets a curved face, so the step was not made. Try other edges, or round the corner in the sketch before it is extruded.',
     hint: `This edge runs into or between curved faces in a way fillet and chamfer do not follow yet. Leave it out, or round that corner in the sketch before extruding it. ${NEVER_QUOTE}`,
+  },
+  {
+    // sketch.rs: a profile loop whose last segment does not end at its start, with how far apart they are
+    test: /Loop \d+ is open/i,
+    title: 'Outline not closed',
+    shown: (text) => {
+      const gap = /ends ([0-9.]+) mm from the start/.exec(text)
+      const short = gap ? ` Its end stops ${Number(gap[1]).toFixed(1)} mm short of its start.` : ''
+      return `That step was not made because one of its outlines does not close.${short} Closing the outline fixes it.`
+    },
+    hint: `A profile's loop is open. Close it by ending its last segment at its start, then try the step again. ${NEVER_QUOTE}`,
   },
   {
     // edge.rs: a corner where three or more rounded edges meet
@@ -203,7 +215,7 @@ function keptEdit(summary: string): { title: string; shown: string; hint: string
   else {
     // the reason's own group, as plainEngine would pick it for a refused step
     const group = REFUSALS.find((x) => x.test.test(reason))
-    const cause = group && group.title !== SENT_WRONG ? causeOf(group.shown, again) : undefined
+    const cause = group && group.title !== SENT_WRONG ? causeOf(typeof group.shown === 'function' ? group.shown(reason) : group.shown, again) : undefined
     if (cause) shown = `The edit was made, but step ${step} no longer builds: ${cause}`
   }
   return {
@@ -232,5 +244,7 @@ export function plainEngine(summary: string, tool?: string, { kept: readKept = t
   const modeling = tool === undefined || MODELING.test(tool)
   if (!modeling && !ENGINE_ONLY.test(summary)) return undefined
   const r = REFUSALS.find((x) => x.test.test(summary)) ?? (engineShaped(summary) || ENGINE_ONLY.test(summary) ? FALLBACK : undefined)
-  return r ? { title: r.title, shown: r.shown.replace('{name}', ASSISTANT_NAME), hint: r.hint, raw: summary } : undefined
+  if (!r) return undefined
+  const shown = typeof r.shown === 'function' ? r.shown(summary) : r.shown
+  return { title: r.title, shown: shown.replace('{name}', ASSISTANT_NAME), hint: r.hint, raw: summary }
 }
