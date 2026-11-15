@@ -15735,7 +15735,7 @@ fn shapes_area(shapes: &Shapes) -> f64 {
 /// transform).
 fn z_turn(o: &crate::plate::PlateObject) -> f64 {
     let t = &o.transform;
-    f64::from(t[1]).m_atan2(f64::from(t[0])).to_degrees()
+    t[1].m_atan2(t[0]).to_degrees()
 }
 
 /// Per printable object: the extruder whose nozzle it prints with when the printer's nozzles differ in size and its

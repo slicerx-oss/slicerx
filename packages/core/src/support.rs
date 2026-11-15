@@ -81,7 +81,7 @@ impl Anchors {
         let slices: Vec<crate::owners::ObjectSlice> = self.objects.iter().map(|(s, _)| s.clone()).collect();
         let mut groups: Vec<(usize, Shapes)> = Vec::new();
         for island in area {
-            let owner = self.owner(&slices, island);
+            let owner = Self::owner(&slices, island);
             match groups.iter_mut().find(|(k, _)| *k == owner) {
                 Some((_, g)) => g.push(island.clone()),
                 None => groups.push((owner, vec![island.clone()])),
@@ -98,7 +98,7 @@ impl Anchors {
     }
 
     /// The object (its place in the list) an island is anchored on, `usize::MAX` for none.
-    fn owner(&self, slices: &[crate::owners::ObjectSlice], island: &[Vec<IntPoint<i32>>]) -> usize {
+    fn owner(slices: &[crate::owners::ObjectSlice], island: &[Vec<IntPoint<i32>>]) -> usize {
         let outline = island.first().map_or(&[][..], Vec::as_slice);
         let mut held = vec![0usize; slices.len()];
         for p in outline.iter().step_by(outline.len().div_ceil(64).max(1)) {

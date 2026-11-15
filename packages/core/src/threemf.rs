@@ -543,8 +543,8 @@ fn unnamed(item_no: usize) -> String {
 
 /// The build item's place for the mesh it loads as ([`crate::mesh::Placement`]): the object it places and its
 /// transform for parts in millimeters (the move in millimeters, the turn and scale as the file has them).
-fn placement(object: u32, transform: &[f32; 12], scale: f32) -> crate::mesh::Placement {
-    let mut t = transform.map(f64::from);
+fn placement(object: u32, transform: &[f64; 12], scale: f32) -> crate::mesh::Placement {
+    let mut t = *transform;
     for c in t.iter_mut().skip(9) {
         *c *= f64::from(scale);
     }
@@ -1077,7 +1077,11 @@ pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
             ears.into_iter()
                 .map(|(object, pts)| {
                     let item = usize::try_from(object - 1).ok().and_then(|i| main.build.get(i));
-                    let t = item.map_or(IDENTITY, |i| i.transform);
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        reason = "ears are placed in single precision"
+                    )]
+                    let t = item.map_or(IDENTITY, |i| i.transform.map(|c| c as f32));
                     let scale = if main.unit_scale > 0.0 {
                         main.unit_scale
                     } else {
@@ -1272,6 +1276,10 @@ type Transform = [f32; 12];
 
 const IDENTITY: Transform = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
 
+/// A build item's transform, rows as [`Transform`], read in full precision: every item of one object is then placed
+/// where the file says, each move as written.
+type ItemTransform = [f64; 12];
+
 /// A `transform` attribute: twelve finite numbers, or none at all (the identity). Anything else is refused as
 /// `transform` for object `owner` (0 for a build item) and element `at`, not read as the identity.
 fn parse_transform(s: Option<&str>, owner: u32, at: usize) -> Parsed<Transform> {
@@ -1279,6 +1287,21 @@ fn parse_transform(s: Option<&str>, owner: u32, at: usize) -> Parsed<Transform> 
     let v: Vec<f32> = s
         .split_ascii_whitespace()
         .filter_map(|x| x.parse::<f32>().ok().filter(|f| f.is_finite()))
+        .collect();
+    match v.as_slice().try_into() {
+        Ok(t) if s.split_ascii_whitespace().count() == 12 => Ok(t),
+        _ => Err(Refused("transform", owner, at, s.to_owned())),
+    }
+}
+
+/// [`parse_transform`] for a build item, in full precision.
+fn parse_item_transform(s: Option<&str>, owner: u32, at: usize) -> Parsed<ItemTransform> {
+    let Some(s) = s else {
+        return Ok(IDENTITY.map(f64::from));
+    };
+    let v: Vec<f64> = s
+        .split_ascii_whitespace()
+        .filter_map(|x| x.parse::<f64>().ok().filter(|f| f.is_finite()))
         .collect();
     match v.as_slice().try_into() {
         Ok(t) if s.split_ascii_whitespace().count() == 12 => Ok(t),
@@ -1375,7 +1398,7 @@ struct Model {
 #[derive(Debug, Clone, Copy)]
 struct BuildItem {
     object: u32,
-    transform: Transform,
+    transform: ItemTransform,
 }
 
 /// One model file. Refuses, with what and where, what the loader would otherwise have to guess: an unknown unit,
@@ -1505,7 +1528,7 @@ fn parse_model(xml: &[u8]) -> Parsed<Model> {
                 if printable {
                     model.build.push(BuildItem {
                         object,
-                        transform: parse_transform(t.attr("transform"), 0, model.build.len())?,
+                        transform: parse_item_transform(t.attr("transform"), 0, model.build.len())?,
                     });
                 }
             }
@@ -2354,7 +2377,8 @@ mod tests {
         let bytes = turned_project();
         let items = &load_plate_objects(&bytes, "turned.3mf").unwrap()[0].1;
         assert_eq!(items.len(), 1);
-        let item = &items[0];
+        // The item's parts load in its object's space; placed where the item puts them.
+        let item = &items[0].clone().placed();
         let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(p, q)| (p - q).abs() < 0.01);
         let bounds = |p: &MeshPart| {
             let mut lo = [f32::MAX; 3];
@@ -2378,8 +2402,9 @@ mod tests {
             "{lo:?} {hi:?}"
         );
         let legacy = &load_plate_objects_legacy(&bytes, "turned.3mf").unwrap()[0].1;
-        assert_eq!(legacy[0].brim_points.len(), item.brim_points.len());
-        for (a, b) in legacy[0].brim_points.iter().zip(&item.brim_points) {
+        let legacy = legacy[0].clone().placed();
+        assert_eq!(legacy.brim_points.len(), item.brim_points.len());
+        for (a, b) in legacy.brim_points.iter().zip(&item.brim_points) {
             assert!(a.iter().zip(b).all(|(p, q)| (p - q).abs() < 1e-3), "{a:?} {b:?}");
         }
         let ears = &item.brim_points;
