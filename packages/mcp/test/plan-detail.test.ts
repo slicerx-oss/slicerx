@@ -187,7 +187,7 @@ describe('detailProblem: the rules are about the object', () => {
     expect(detailProblem({ ...car, scale: undefined })).toContain('scale: give N of the scale 1:N the real sizes are held to')
     expect(detailProblem({ ...car, real: undefined })).toContain('real: list the real sizes the lookup or the stated source gives')
     expect(detailProblem({ ...car, real: [], scale: undefined })).toBeNull()
-    expect(detailProblem({ ...house, real: [{ feature: 'Door', size: 'width', mm: 1000 }] })).toContain("real: give a main body's real size too")
+    expect(detailProblem({ ...house, real: [{ feature: 'Door', size: 'width', mm: 1000 }] })).toContain("realBody: give a main body's real size (its length), a feature in curved or flat, so the scale is set by the thing itself")
     expect(detailProblem({ ...house, real: [{ feature: 'Walls', size: 'span', mm: 10000 }] })).toContain('real: Walls has no size named span')
     expect(partPlanSchema.shape.scale.safeParse('25:1').success).toBe(false)
     expect(detailProblem({ ...car, scale: '1:43' })).toBeNull()

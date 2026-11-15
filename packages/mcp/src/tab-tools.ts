@@ -12,7 +12,7 @@ import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSch
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
 import { AMEND_REASON_MAX, amendAdded, amendBody, amendChanges, amendDropProblem, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, IGNORED_NOTE, type AmendChange } from './plan-amend'
-import { type Bed, cardRealField, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, flatInput, flatLevels, type FlatLevels, planDetailFields, FEATURES_FLOOR, unheldAsks, LONG_EXTRA, LONG_RATIO, realMemoryNote, type RealSources, SECTIONS_FLOOR } from './plan-detail'
+import { type Bed, cardRealField, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, flatInput, flatLevels, type FlatLevels, planDetailFields, realBodyInput, withRealBody, FEATURES_FLOOR, unheldAsks, LONG_EXTRA, LONG_RATIO, realMemoryNote, type RealSources, SECTIONS_FLOOR } from './plan-detail'
 import { createLookupStore, lookupSizesTool } from './real-lookup'
 import { GAP_MARGIN_MM, jointProblem, planetsMiss, PLANETS_CANNOT_MESH, planFloors, raisedText, raisedWhy, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
 
@@ -65,6 +65,7 @@ export const PlanToolInputSchema = PlanInputSchema.extend({
   questions: PlanInputSchema.shape.questions.optional().describe('What you still need to know; none when left out'),
   // each flat body with its levels; the older names-and-tiers form a saved plan or an older client sends is taken too
   flat: flatInput,
+  realBody: realBodyInput,
   tiers: planDetailFields.tiers.describe('The older form of flat\'s levels, with flat as a list of feature names: each flat body\'s levels from the bottom up, keyed by its name. Give the levels in flat instead'),
   amends: z.string().trim().min(1).max(64).optional().describe("Only to change a plan the person approved, once its part is built: that plan's planId. Leave it out of a first plan. With amends, send only what changes: changes and add, with part, units, features, assumptions and questions left out, as the approved plan has them; any other plan field sent is ignored, and the result names it"),
   reason: z.string().max(AMEND_REASON_MAX).optional().describe('Only with amends: why the build changes the approved plan, in a sentence the person reads. A first plan takes none'),
@@ -84,7 +85,7 @@ export const PlanToolInputSchema = PlanInputSchema.extend({
   }
 })
 /** design.plan's input with its flat bodies in the older form the rules and the card read (flatLevels). */
-type PlanToolInput = Omit<z.infer<typeof PlanToolInputSchema>, 'flat' | 'tiers'> & FlatLevels
+type PlanToolInput = Omit<z.infer<typeof PlanToolInputSchema>, 'flat' | 'tiers' | 'realBody'> & FlatLevels
 
 /** What the tool returns once the person answers on the card. */
 export interface PlanAnswer {
@@ -343,8 +344,9 @@ export function createCardPlans(plans: PlanRegistry) {
       localInput: LocalPlanInputSchema,
       args: (i) => (i.features ? `"${i.part ?? ''}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}${i.amends ? `, amends ${i.amends}` : ''}` : `amends ${i.amends ?? ''}${i.changes ? `, ${i.changes.length} size${i.changes.length === 1 ? '' : 's'}` : ''}${i.add ? `, ${i.add.length} added` : ''}`),
       async run(sent, ctx) {
-        // flat bodies given with their levels read as the names and tiers the rules and the card take
-        const i: PlanToolInput = flatLevels(sent, sent.features ?? (sent.amends !== undefined ? (planById(sent.amends)?.features ?? []) : []))
+        // flat bodies given with their levels read as the names and tiers the rules and the card take, and the main
+        // body's real size as its row in real
+        const i: PlanToolInput = withRealBody(flatLevels(sent, sent.features ?? (sent.amends !== undefined ? (planById(sent.amends)?.features ?? []) : [])))
         if (!ctx.ask) return { ok: false, summary: 'Nobody here can approve a plan' }
         // a plan waits for the person's Go only when its sizes must fit something (a sheet with fits) or its pieces print
         // assembled and move; any other, at its default size, shows on its card and is approved as shown at once

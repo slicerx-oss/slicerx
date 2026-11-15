@@ -110,6 +110,40 @@ export const flatInput = z
     'Display and fine: each main body whose real thing is flat-sided (a house, a bookshelf, a box), with its levels from the bottom up, each a planned feature, such as [{"feature": "Tower", "levels": ["Lower story", "Upper story"]}]: a body the real thing builds in steps or stories lists each level, a single block lists only itself. A list of feature names with their levels in tiers is the older form and still taken',
   )
 
+/**
+ * design.plan's realBody: the main body's real size, which sets the scale, with where it came from. It is read as the
+ * body's row in real (withRealBody), so every real size rule holds it as it holds any other row.
+ */
+export const realBodyInput = z
+  .object({
+    feature: text(60).describe('A main body: a feature in curved or flat'),
+    size: text(40).describe('The size of it the real one sets, such as length'),
+    mm: z.number().positive().describe('The real size in mm at full size'),
+    source: z.enum(['lookup', 'stated']).describe('lookup for a size design.lookup_sizes found, stated for one the person\'s words give'),
+    lookupId: text(40).optional().describe('With source lookup: the lookupId design.lookup_sizes returned with this size'),
+    stated: text(300).optional().describe("With source stated: the person's own words that give this size, quoted from their message"),
+  })
+  .superRefine((b, ctx) => {
+    if (b.source === 'lookup' && b.lookupId === undefined) ctx.addIssue({ code: 'custom', path: ['lookupId'], message: 'source lookup takes the lookupId design.lookup_sizes returned with this size' })
+  })
+  .optional()
+  .describe(
+    'Display and fine, needed when the plan gives real sizes: the main body\'s real size, the one the scale is set by, such as {"feature": "Body", "size": "length", "mm": 4200, "source": "lookup", "lookupId": "lookup_1"}. It counts as that size\'s row in real and is held to its source as real sizes are',
+  )
+
+/**
+ * A plan with its realBody read as the body's row in real, first, in place of any row real gives for the same size:
+ * real stays the one list every real size rule and the card read. A plan with no realBody comes back as it is, its
+ * realBody field left out.
+ */
+export function withRealBody<P extends { real?: readonly RealEntry[] | undefined; realBody?: z.infer<typeof realBodyInput> }>(plan: P): Omit<P, 'realBody'> {
+  const { realBody: b, ...rest } = plan
+  if (!b) return rest
+  const same = (r: RealEntry): boolean => (r.feature ?? '').trim().toLowerCase() === b.feature.trim().toLowerCase() && (r.size ?? '').trim().toLowerCase() === b.size.trim().toLowerCase()
+  const row: RealEntry = { feature: b.feature, size: b.size, mm: b.mm, ...(b.source === 'lookup' && b.lookupId !== undefined ? { lookup: b.lookupId } : {}), ...(b.source === 'stated' && b.stated !== undefined ? { stated: b.stated } : {}) }
+  return { ...rest, real: [row, ...(plan.real ?? []).filter((r) => !same(r))] }
+}
+
 /** The older form of a plan's flat bodies, as the rules and the card read them: the bodies' names, and their levels in tiers. */
 export interface FlatLevels {
   flat?: string[] | undefined
@@ -335,7 +369,7 @@ function scaleProblems(plan: DetailPlan, feature: FeatureOf, src?: RealSources):
   if (!n) return ['scale: give N of the scale 1:N the real sizes are held to, such as 25']
   const out: string[] = []
   const bodies = new Set([...(plan.curved ?? []), ...(plan.flat ?? [])].map((b) => b.trim().toLowerCase()))
-  if (bodies.size && !plan.real.some((r) => bodies.has((r.feature ?? '').trim().toLowerCase()))) out.push('real: give a main body\'s real size too (its length), so the scale is set by the thing itself')
+  if (bodies.size && !plan.real.some((r) => bodies.has((r.feature ?? '').trim().toLowerCase()))) out.push(NO_REAL_BODY)
   const unsourced: string[] = []
   for (const r of plan.real) {
     const [name, size] = [r.feature ?? '', r.size ?? '']
@@ -369,6 +403,9 @@ function scaleProblems(plan: DetailPlan, feature: FeatureOf, src?: RealSources):
   if (unheld) out.push(unheld)
   return out
 }
+
+/** A plan that gives real sizes with none for a main body (realBody, or a row in real for one). */
+export const NO_REAL_BODY = 'realBody: give a main body\'s real size (its length), a feature in curved or flat, so the scale is set by the thing itself'
 
 /** "A, B and C". */
 const andList = (xs: readonly string[]): string => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)!}` : xs[0]!)
