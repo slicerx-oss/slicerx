@@ -5637,6 +5637,88 @@ fn a_part_with_settings_of_its_own_prints_its_area_with_them() {
     assert!(a.abs_diff(b) * 4 <= b, "{a} against {b}");
 }
 
+/// A round column of `n` sides, centered on (`cx`, 0), so its slices have curved outlines.
+fn column(cx: f32, r: f32, h: f32, n: u32, name: &str) -> api::MeshPart {
+    let mut positions = vec![[cx, 0.0, 0.0], [cx, 0.0, h]];
+    for z in [0.0, h] {
+        for k in 0..n {
+            let a = std::f32::consts::TAU * k as f32 / n as f32;
+            positions.push([cx + r * a.cos(), r * a.sin(), z]);
+        }
+    }
+    let (b, t) = (2, 2 + n);
+    let mut triangles = Vec::new();
+    for k in 0..n {
+        let m = (k + 1) % n;
+        triangles.push([0, b + m, b + k]);
+        triangles.push([1, t + k, t + m]);
+        triangles.push([b + k, b + m, t + m]);
+        triangles.push([b + k, t + m, t + k]);
+    }
+    api::MeshPart {
+        name: name.into(),
+        slot: 1,
+        color: None,
+        positions,
+        triangles,
+        paint: Vec::new(),
+        support_paint: Vec::new(),
+        seam_paint: Vec::new(),
+        fuzzy_paint: Vec::new(),
+        paint_texts: Vec::new(),
+    }
+}
+
+/// Slices two round columns of one object with the given part settings and returns the G-code.
+fn columns_with(part_settings: Value) -> String {
+    let mesh = Arc::new(Mesh {
+        name: "columns".into(),
+        parts: vec![column(-15.0, 9.0, 3.0, 96, "left"), column(15.0, 9.0, 3.0, 96, "right")],
+        ..Mesh::default()
+    });
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{
+            "mesh": "c",
+            "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1],
+            "partSettings": part_settings,
+        }]},
+        "config": {"brim_width": 0, "skirt_loops": 0, "wall_loops": 2, "brim_type": "no_brim"},
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let r = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    assert_valid(&r);
+    text(&r)
+}
+
+#[test]
+fn part_settings_the_plate_already_has_print_as_if_there_were_none() {
+    let plain = columns_with(json!({}));
+    // Each part repeats settings the plate already holds, as a project's shared object settings arrive on its parts.
+    let same = columns_with(json!({
+        "left": {"brim_type": "no_brim", "wall_loops": 2},
+        "right": {"brim_type": "no_brim", "wall_loops": 2},
+    }));
+    let (p, s) = (features_by_layer(&plain), features_by_layer(&same));
+    assert_eq!(s.len(), p.len(), "extruding moves: {} with the repeated settings against {} without", s.len(), p.len());
+    assert!(same == plain, "repeated part settings changed the G-code");
+}
+
+#[test]
+fn part_settings_of_its_own_still_print_the_part_with_them() {
+    let plain = columns_with(json!({}));
+    let own = columns_with(json!({"right": {"wall_loops": 3}}));
+    let inner = |g: &str, right: bool| {
+        features_by_layer(g)
+            .into_iter()
+            .filter(|m| m.1 == "Inner wall" && (m.2 > 100.0) == right)
+            .count()
+    };
+    // Three walls on the right column means two inner ones instead of one; the left column keeps its two walls.
+    assert!(inner(&own, true) > inner(&plain, true), "{} {}", inner(&own, true), inner(&plain, true));
+    assert_eq!(inner(&own, false), inner(&plain, false));
+}
+
 fn vase_run(config: Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
