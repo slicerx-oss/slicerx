@@ -436,8 +436,13 @@ export const SLOW_DOWN_GIVE_UP_MS = 60_000
 export { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE }
 /** A step cut off at the output limit before it said or called anything. */
 export const CUT_NOTE = 'Your last reply reached the output limit before it said or did anything. Keep it shorter: make one smaller tool call (build a part in a few solids, or one feature at a time), or reply in a few sentences.'
+/**
+ * After a step cut off at the output limit, a reply that would end the run with the design it started still empty:
+ * the run goes on once with this, so a cut does not leave a narrated plan and nothing built.
+ */
+export const CUT_GO_ON_NOTE = 'Your reply above stopped before anything was built. Go on with the design now: plan it and build it, then reply.'
 /** The messages the runtime itself adds as the user's turn, so a scripted client can tell them from the person's. */
-export const RUNTIME_NOTES: ReadonlySet<string> = new Set([WRAP_NOTE, CUT_NOTE])
+export const RUNTIME_NOTES: ReadonlySet<string> = new Set([WRAP_NOTE, CUT_NOTE, CUT_GO_ON_NOTE])
 /** Whether a user turn is the runtime's own: one of RUNTIME_NOTES, or the note that an approved plan is not finished. */
 export function isRuntimeNote(text: string): boolean {
   return RUNTIME_NOTES.has(text) || text.startsWith(PLAN_LEFT_PREFIX)
@@ -1527,6 +1532,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let nudged = false
     // the run went on once from a reply that would have ended with its approved plan unfinished
     let planNudged = false
+    // a step of this run was cut off at the output limit, and the run went on once after it (CUT_GO_ON_NOTE)
+    let cutSeen = false
+    let cutGoneOn = false
     let said = false
     let reply = ''
     let looked = false
@@ -1866,6 +1874,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       }
       slowed = 0
       netRetried = false
+      if (cut) cutSeen = true
       const spoke = text.trim() !== ''
       if (spoke) {
         said = true
@@ -1903,6 +1912,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           planNudged = true
           emit({ type: 'error', message: again ? `${ASSISTANT_NAME} went on to plan ${left.part} again with the sizes confirmed on its sheet.` : planLeftNotice(left, ASSISTANT_NAME), retryable: false, code: PLAN_LEFT_CODE, waiting: true })
           messages.push({ role: 'user', content: again ? planAgainNote(left) : planLeftNote(left, { editStep: findTool('design.edit_step') !== undefined, check: findTool('design.check') !== undefined }) })
+          continue
+        }
+        // A reply after a cut that would end with the design this run started still waiting for its first body goes on
+        // once: the cut took the step that would have built it. Never past a card or sheet waiting on the person, nor a
+        // decision the reply asks them for.
+        if (cutSeen && !cutGoneOn && !stopped && !wrap && spoke && toolCalls.length === 0 && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls && waiting.has(sessionId) && !facing.has(sessionId) && unsettledQuestion(text) === undefined) {
+          cutGoneOn = true
+          messages.push({ role: 'user', content: CUT_GO_ON_NOTE })
           continue
         }
         // A follow-up that would end with a feature it took away, or built twice, goes back to put it right while it
