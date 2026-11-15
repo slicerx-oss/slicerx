@@ -49,6 +49,7 @@
 
 mod adaptive;
 mod anchor;
+mod bedfoot;
 mod chain;
 mod cooling;
 mod copies;

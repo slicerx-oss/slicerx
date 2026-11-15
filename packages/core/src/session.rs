@@ -7216,6 +7216,7 @@ impl SliceSession {
             branch_diameter_angle: t.branch_diameter_angle,
             top_rate: t.top_rate,
             tip_diameter: t.tip_diameter,
+            bed_foot: crate::bedfoot::enabled(cfg),
         };
         let brim = self.organic_brim(cfg, input.models.first());
         let inp = crate::organic::OrganicIn {
@@ -8539,6 +8540,9 @@ impl SliceSession {
     fn pad_area(&self, cfg: &PrintConfig, sl: &crate::support::SupportLayer) -> Shapes {
         let s = &cfg.support;
         let wmm = cfg.support_width();
+        if crate::bedfoot::enabled(cfg) {
+            return self.pad_area_stepped(cfg, sl);
+        }
         let expand = cfg.raw_number("raft_first_layer_expansion", 2.0).max(0.0);
         let mut pad = sl.base.clone();
         if expand > 1e-3 {
@@ -8557,6 +8561,31 @@ impl SliceSession {
             }
         }
         perimeters::difference(&pad, &sl.interface)
+    }
+
+    /// [`Self::pad_area`] with `support_bed_foot` on: the growth of `crate::bedfoot::grow_first_layer`, in steps
+    /// of at most one first-layer support line, then kept off the part's footprint grown by `brim_object_gap`
+    /// when the part has a brim, and inside the bed.
+    fn pad_area_stepped(&self, cfg: &PrintConfig, sl: &crate::support::SupportLayer) -> Shapes {
+        let s = &cfg.support;
+        let expand = crate::bedfoot::first_layer_expansion(cfg.raw_number("raft_first_layer_expansion", 2.0));
+        let first = self.layer_regions(0, Families::new(cfg), &Micros::default());
+        let part: Vec<&Shapes> = first.regions.iter().map(|(_, sh)| sh).collect();
+        let part = perimeters::union_all(&part);
+        let trim = perimeters::offset(&part, mm(s.object_first_layer_gap));
+        let mut pad =
+            crate::bedfoot::grow_first_layer(&sl.base, &trim, expand, cfg.first_layer_support_width());
+        if let Some(brim) = self.organic_brim(cfg, Some(&part)) {
+            pad = perimeters::difference(&pad, &brim);
+        }
+        let b = cfg.bed_rect();
+        let bed: Shapes = vec![vec![vec![
+            IntPoint::new(mm(b[0]), mm(b[1])),
+            IntPoint::new(mm(b[2]), mm(b[1])),
+            IntPoint::new(mm(b[2]), mm(b[3])),
+            IntPoint::new(mm(b[0]), mm(b[3])),
+        ]]];
+        perimeters::difference(&perimeters::intersection(&pad, &bed), &sl.interface)
     }
 
     /// Stage 2 for one layer: cut, merge per slot, resolve overlaps, and scan
