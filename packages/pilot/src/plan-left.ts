@@ -3,8 +3,10 @@
 // What an approved plan still needs when mimir's reply would end, read from the chat's tool calls and results: the
 // plan from design.plan, the steps of the design built from it with their plan feature tags (lastStep and the step
 // rows the design tools return, by step id), and design.check's verdict. Nothing here is kept between calls; the chat's
-// history is the record (the run's own messages, or the earlier run's when the person asks to go on with its plan). The words for it live here too, so the chat's fold (ui/reduce.ts, which the phone app
-// imports) can tell the notice apart without pulling in the runtime.
+// history is the record (the run's own messages, or the earlier run's when the person asks to go on with its plan),
+// with the design as it is now (DesignNow) when the run changes a plan built in an earlier run. The words for it live
+// here too, so the chat's fold (ui/reduce.ts, which the phone app imports) can tell the notice apart without pulling in
+// the runtime.
 import type { LlmMessage, LlmToolCall } from './provider/types'
 
 /** The code on the chat's notice that mimir went on with the plan; a notice, never a failure (`waiting` is set). */
@@ -79,6 +81,8 @@ interface Reading {
   stop?: boolean
   /** design.check: the names of the items it failed. */
   failed?: string[]
+  /** design.check: it failed only on items that were failing before the person's change (failedBefore). */
+  carried?: boolean
 }
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
@@ -115,6 +119,7 @@ function read(content: string): Reading {
     if (r['edits'] && typeof r['edits'] === 'object') reading.edits = r['edits'] as NonNullable<Reading['edits']>
     if (typeof r['pass'] === 'boolean') reading.pass = r['pass']
     if (str(r['stop']) || r['repeated'] === true) reading.stop = true
+    if (Array.isArray(r['failedBefore'])) reading.carried = true
     if (Array.isArray(r['items'])) reading.failed = r['items'].flatMap((x) => (x && typeof x === 'object' && (x as { pass?: unknown }).pass === false ? (str((x as { name?: unknown }).name) ?? []) : []))
     return reading
   } catch {
@@ -134,6 +139,7 @@ function read(content: string): Reading {
     const pass = /"nozzleMm":[\d.]+,"pass":(true|false)/.exec(content)?.[1]
     if (pass) reading.pass = pass === 'true'
     if (/"stop":"|"repeated":true|The fix round is used|has had its fix round/.test(content)) reading.stop = true
+    if (/"failedBefore":\[/.test(content)) reading.carried = true
     return reading
   }
 }
@@ -145,6 +151,55 @@ function args(call: LlmToolCall): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+/**
+ * A design as it is now, read from its host (a design.steps answer): its steps in order with their plan feature tags,
+ * and how many parts it has. What the run's own results say of the design is only what it changed, so a follow-up on
+ * a design built in an earlier run reads its steps here.
+ */
+export interface DesignNow {
+  design: string
+  steps: readonly { id: string; feature?: string; state?: string }[]
+  parts: number
+}
+
+/** A design.steps answer as a DesignNow, or null when it is not one. Suppressed steps build nothing, as design.check reads them. */
+export function designNow(content: string): DesignNow | null {
+  try {
+    const out = JSON.parse(content) as { ok?: unknown; result?: { design?: unknown; steps?: unknown; parts?: unknown } }
+    const r = out.result
+    const design = str(r?.design)
+    if (out.ok === false || !design || !Array.isArray(r?.steps) || !Array.isArray(r?.parts)) return null
+    const steps = r.steps.flatMap((row) => {
+      const o = row as { id?: unknown; feature?: unknown; state?: unknown } | null
+      const id = str(o?.id)
+      if (!id || o?.state === 'suppressed') return []
+      const feature = str(o?.feature)
+      return [feature ? { id, feature } : { id }]
+    })
+    return { design, steps, parts: r.parts.length }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The design the plan `planId` was checked in before message `upTo`, by the last design.check of it that answered, or
+ * null: the design a follow-up's amend of that plan changes.
+ */
+export function checkedDesignOf(messages: readonly LlmMessage[], planId: string, upTo = messages.length): string | null {
+  const calls = new Map<string, LlmToolCall>()
+  let found: string | null = null
+  messages.slice(0, upTo).forEach((m) => {
+    if (m.role === 'assistant') for (const c of m.toolCalls ?? []) calls.set(c.id, c)
+    if (m.role !== 'tool') return
+    const call = calls.get(m.callId)
+    if (call?.name !== 'design.check' || str(args(call)['planId']) !== planId) return
+    const r = read(m.content)
+    if (r.design && r.pass !== undefined) found = r.design
+  })
+  return found
 }
 
 const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((f) => str((f as { name?: unknown } | null)?.name) ?? []) : [])
@@ -165,12 +220,16 @@ const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((f)
  *    check is waiting on its fix round.
  * A design.check of the plan that failed after the design's last change, with its fix round still open (no stop), is
  * the plan unfinished too: its failed items are in fix, to be fixed and checked again, even with every feature built
- * and tagged.
+ * and tagged. One that failed only on items failing before the person's change (failedBefore) is not.
+ *
+ * `now` is the design as its host has it now. It stands for the design's steps and body when it is the plan's design:
+ * the one the run's calls built in, or, for a plan the run changed with amends (a plan built in an earlier run), the
+ * design given when the run's calls name none. A feature built and tagged in an earlier run then counts as built.
  */
-export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | null {
+export function planLeft(messages: readonly LlmMessage[], from = 0, now?: DesignNow): PlanLeft | null {
   from = carriedPlanFrom(messages, from) ?? from
   const calls = new Map<string, LlmToolCall>()
-  let plan: { planId: string; part: string; features: string[] } | undefined
+  let plan: { planId: string; part: string; features: string[]; amended: boolean } | undefined
   let design: string | undefined
   let started = false
   let body: boolean | undefined
@@ -192,7 +251,7 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
       if (!r.ok || r.accepted !== true || !r.planId) return
       const a = args(call)
       const features = featureNames(r.edits?.features ?? a['features'])
-      plan = { planId: r.planId, part: str(r.edits?.part) ?? str(a['part']) ?? 'The part', features }
+      plan = { planId: r.planId, part: str(r.edits?.part) ?? str(a['part']) ?? 'The part', features, amended: str(a['amends']) === r.planId }
       // a new plan starts over: its part is the next design built
       design = undefined
       started = false
@@ -208,7 +267,8 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
       if (str(args(call)['planId']) !== plan.planId) return
       if (r.stop) stop = true
       if (r.pass === true) passed = i
-      missed = r.pass === false && !r.stop ? { at: i, items: r.failed ?? [] } : undefined
+      // a follow-up's check that fails only on what failed before the change has no fix round open for it
+      missed = r.pass === false && !r.stop && !r.carried ? { at: i, items: r.failed ?? [] } : undefined
       return
     }
     if (!BUILDS.test(call.name)) return
@@ -241,6 +301,13 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
   })
   if (!plan || stop) return null
   if (passed >= 0 && passed > changed) return null
+  // the plan's design as its host has it now: every step built so far, in this run or an earlier one
+  if (now && (design === now.design || (design === undefined && plan.amended))) {
+    design = now.design
+    started = true
+    body = now.parts > 0
+    steps = now.steps.map((x) => ({ ...x }))
+  }
   const noBody = !started || body === false
   const fix = missed && missed.at > changed ? missed.items : undefined
   const left: PlanLeft = { planId: plan.planId, part: plan.part, ...(design ? { design } : {}), noBody, build: [], tag: [], ...(fix ? { fix } : {}) }
