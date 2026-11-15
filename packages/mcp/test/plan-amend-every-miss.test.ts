@@ -77,15 +77,16 @@ describe('design.plan with amends', () => {
     const t = tab()
     await t.run(block)
     t.card.tieBuiltPart({ name: 'design.new', permission: 'write' }, {}, { summary: 'Started', output: { design: 'd1' } })
-    const off = { ...block, units: 'in', overall: undefined, features: [block.features[0]!, { ...block.features[1]!, on: undefined, sizes: { ...block.features[1]!.sizes, height: 5 } }] }
-    await expect(t.run({ ...off, amends: 'plan_1', reason: 'The cap is thicker.' })).rejects.toThrow(`${SHAPE.units}. ${SHAPE.overall}. ${SHAPE.on}`)
+    const off = { ...block, units: 'in', holes: [{ name: 'Drain', diameter: 4, count: 4 }], features: [block.features[0]!, { ...block.features[1]!, on: undefined, sizes: { ...block.features[1]!.sizes, height: 5 } }] }
+    await expect(t.run({ ...off, amends: 'plan_1', reason: 'The cap is thicker.' })).rejects.toThrow(`${SHAPE.units}. ${SHAPE.holes}. ${SHAPE.on}`)
   })
 
-  it('names a field it would not keep beside a plan with no size changed', async () => {
+  it('names an on it would not keep beside a plan with no size changed', async () => {
     const t = tab()
     await t.run(block)
     t.card.tieBuiltPart({ name: 'design.new', permission: 'write' }, {}, { summary: 'Started', output: { design: 'd1' } })
-    await expect(t.run({ ...block, scale: 10, amends: 'plan_1', reason: 'The cap is thicker.' })).rejects.toThrow('amends: no size differs from the approved plan plan_1. scale: an amend changes sizes only; leave out scale')
+    const moved = { ...block, features: [block.features[0]!, { ...block.features[1]!, on: undefined }] }
+    await expect(t.run({ ...moved, amends: 'plan_1', reason: 'The cap is thicker.' })).rejects.toThrow(`amends: no size differs from the approved plan plan_1. ${SHAPE.on}`)
   })
 
   it('refuses a change the person asked for once, naming each field it would not keep', async () => {

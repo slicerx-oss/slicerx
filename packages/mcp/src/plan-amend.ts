@@ -118,7 +118,7 @@ const same = (a: unknown, b: unknown, key?: string): boolean => JSON.stringify(c
  * is; on and recess are given with their feature or row, as its kinds are. Without this, the change would be dropped
  * while the amend reports the plan changed.
  */
-export function amendDropProblem(old: Sized, next: Sized): string | null {
+export function amendDropProblem(old: Sized, next: Sized, opts: { fields?: boolean } = {}): string | null {
   const only = 'an amend changes sizes only'
   const out: string[] = []
   for (const o of old.features) {
@@ -131,12 +131,79 @@ export function amendDropProblem(old: Sized, next: Sized): string | null {
   }
   const o = old as unknown as Record<string, unknown>
   const n = next as unknown as Record<string, unknown>
-  for (const k of KEPT_FIELDS) {
+  // design.plan names the plan fields it leaves as they are (amendBody); a client's amend has them refused
+  for (const k of opts.fields === false ? [] : KEPT_FIELDS) {
     if (n[k] === undefined || same(n[k], o[k], k)) continue
     out.push(`${k}: ${only}; ${o[k] === undefined ? `leave out ${k}` : `the plan keeps ${k}: ${JSON.stringify(o[k])}`}`)
   }
   return joined(out)
 }
+
+/** One size an amend changes by name: a planned feature's size, the overall size's x, y or z, or a row of holes' diameter. */
+export interface SizeChange {
+  feature: string
+  size: string
+  to: number
+}
+
+/** What design.plan takes with amends: the plan fields it may send, and the changes and features it adds. */
+export type AmendSent = { [K in keyof Sized]?: Sized[K] | undefined } & { changes?: readonly SizeChange[] | undefined; add?: readonly PartPlan['features'][number][] | undefined }
+
+/**
+ * The plan fields design.plan's amend leaves as the approved plan has them, whatever it sends: the ones amendedSizes
+ * keeps, and the part's name. One sent otherwise is named in the result, not refused, so a plan resent whole with a
+ * field put another way still changes its sizes. The person's size flag is read by a first plan's check only and is
+ * never kept, so it is left out without a word.
+ */
+export const AMEND_IGNORED = [...KEPT_FIELDS, 'part'] as const
+
+const sameName = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
+const OVERALL_AXES: Record<string, 'x' | 'y' | 'z'> = { x: 'x', y: 'y', z: 'z', width: 'x', depth: 'y', height: 'z' }
+
+/**
+ * The plan an amend of `was` sends, as the amend checks read it: the approved plan's part, and its units, features,
+ * overall size, rows of holes and open faces wherever the amend leaves them out; then the features in `add` after the
+ * planned ones, and each size in `changes` set on it. `problems` names each change that sets no planned size;
+ * `ignored` names each field in AMEND_IGNORED the amend sent otherwise than the plan has it.
+ */
+export function amendBody(was: PartPlan, sent: AmendSent): { next: Sized; problems: string[]; ignored: string[] } {
+  const features = structuredClone([...(sent.features ?? was.features), ...(sent.add ?? [])])
+  const next: Sized = {
+    part: was.part,
+    units: sent.units ?? was.units,
+    features,
+    ...Object.fromEntries(AMEND_PINNED.flatMap((k) => (sent[k] !== undefined ? [[k, structuredClone(sent[k])]] : was[k] !== undefined ? [[k, structuredClone(was[k])]] : []))),
+  }
+  const problems: string[] = []
+  for (const c of sent.changes ?? []) {
+    const f = features.find((x) => sameName(x.name, c.feature))
+    if (f) {
+      const key = Object.keys(f.sizes).find((k) => sameName(k, c.size))
+      if (key) f.sizes[key] = c.to
+      else problems.push(`changes: ${f.name} has no size named ${c.size}; change one of its sizes (${Object.keys(f.sizes).join(', ')})`)
+      continue
+    }
+    const axis = OVERALL_AXES[c.size.trim().toLowerCase()]
+    if (sameName(c.feature, 'overall') && next.overall && axis) {
+      next.overall = { ...next.overall, [axis]: c.to }
+      continue
+    }
+    const row = next.holes?.find((h) => sameName(h.name, c.feature))
+    if (row && /^(diameter|d)$/i.test(c.size.trim())) {
+      row.diameter = c.to
+      continue
+    }
+    problems.push(`changes: ${c.feature} is not a planned feature, the overall size or a row of holes; name one the plan has (${[...features.map((x) => x.name), ...(next.overall ? ['overall'] : []), ...(next.holes ?? []).map((h) => h.name)].join(', ')})`)
+  }
+  const o = was as unknown as Record<string, unknown>
+  const n = sent as unknown as Record<string, unknown>
+  const ignored = AMEND_IGNORED.filter((k) => n[k] !== undefined && !same(n[k], o[k], k))
+  return { next, problems, ignored }
+}
+
+/** What the result says of the fields an amend sent that it left as the plan has them. */
+export const IGNORED_NOTE = (fields: readonly string[]): string =>
+  `Ignored ${fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)!}` : fields[0]!}: an amend changes sizes only, so the plan keeps ${fields.length === 1 ? 'it' : 'them'} as approved`
 
 /** The features `next` adds to `old` (amendShapeProblem says it is an amend), by name, in order. */
 export function amendAdded(old: Sized, next: Sized): string[] {
