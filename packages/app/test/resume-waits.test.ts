@@ -5,7 +5,7 @@
 // those waits (another plate shown, a resume plan kept), the slice is only ever recorded for the plate it was asked
 // for, and nothing starts that is not the shown plate's slice for its plan as it is then.
 import { act } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest, type SliceResult } from '@slicerx/contracts'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { RESUME_VOID, resumeFor, SLICE_NOT_CURRENT } from '../src/plate/resume-tops'
@@ -18,6 +18,7 @@ import { registerCommands } from '../src/commands/registry'
 import { switchPlate } from '../src/plate/plates'
 import { sendToPrinter, slicePlate, STALE_SLICE } from '../src/state/actions'
 import { autoSlicePending, startAutoSlice } from '../src/state/auto-slice'
+import { sendWarnings } from '../src/plate/lint'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { mimirCommands, STALE_REPLY, SWITCHED_REPLY } from '../src/workspaces/mimir/session'
 
@@ -137,6 +138,13 @@ const runSlice = (host: Host, cx: unknown) => {
   const [cmd] = mimirCommands(host, [{ id: 'slice', title: 'Slice', section: 'slice', run: () => undefined }])
   return (cmd!.run as (i: unknown, cx: unknown) => Promise<unknown>)(undefined, cx)
 }
+
+// The Print sheet's G-code lint runs in the background of each send, and its first run loads the printer knowledge
+// base (about 1 MB of JSON). On a loaded machine that load held the next send's steps and the polls of its 1 s waits
+// for up to 0.4 s, and later cases failed their wait, so the knowledge base is loaded before the tests.
+beforeAll(async () => {
+  await sendWarnings({ data: new ArrayBuffer(0), printers: {} as never, printerId: 'demo-1', result: { stats: { timeS: 1 } } as never })
+})
 
 beforeEach(() => {
   gates.profile = null
