@@ -65,7 +65,7 @@ import { toolSearchModel } from './provider/anthropic'
 import { catalogStep, loadedDefs, type ToolCatalog } from './tool-search'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
 import { firstLineNames, keepsNote, keepsNotice, keptRows, lostFeatures, type KeptRow } from './turn-keeps'
-import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
+import { checkedDesignOf, designNow, PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion, type PlanLeft } from './plan-left'
 
 export interface PilotHost extends ToolHost {
   llm: LlmTransport
@@ -1673,14 +1673,26 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
      * waiting on them. A failed check with its fix round open goes on under the same rules. A print-in-place plan whose sizes the
      * person changed on its sheet after the Go (isStale) goes on to be made again, never built: every body of its part
      * waits for the new plan (waitsForPlan), so the note asks for design.plan with the confirmed sizes instead.
+     * What the plan still needs is read against the design as its host has it now (design.steps, read quietly), so a
+     * feature built in an earlier run counts as built and a design with a body is never said to have none.
      */
-    const planGoesOn = (text: string): { left: PlanLeft; again: boolean } | null => {
+    const planGoesOn = async (text: string): Promise<{ left: PlanLeft; again: boolean } | null> => {
       // never past a question card or sheet waiting on the person, nor a decision the reply asks them for: the push
       // never answers for the person
       if (facing.has(sessionId)) return null
-      const left = planLeft(messages, runStart)
-      if (!left || unsettledQuestion(text) !== undefined) return null
+      const seen = planLeft(messages, runStart)
+      if (!seen || unsettledQuestion(text) !== undefined) return null
+      const design = seen.design ?? checkedDesignOf(messages, seen.planId, runStart) ?? checkedDesignOr()
+      const read = design ? await designRead(design) : null
+      const left = read ? planLeft(messages, runStart, read) : seen
+      if (!left) return null
       return { left, again: isStale(sessionId) && planned.get(sessionId)?.planId === left.planId }
+    }
+    // a design's steps and parts as its host has them now, read with no row in the chat; null without design.steps
+    const designRead = async (design: string) => {
+      if (!findTool('design.steps')) return null
+      const call: LlmToolCall = { id: `plan_steps_${sessionId}_${now()}_${lookN++}`, name: 'design.steps', arguments: JSON.stringify({ design }) }
+      return designNow((await execute(call, sessionId, context, () => undefined, signal, citations, cards, stops)).message)
     }
     // a follow-up on a cloud turn: the design an earlier run built is looked at first
     const look = !local ? findTool('design.look') : undefined
@@ -2004,7 +2016,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           continue
         }
         // A reply that would end with the plan approved in this run unfinished goes on once instead (planGoesOn).
-        const goesOn = !planNudged && !stopped && !wrap && spoke && toolCalls.length === 0 && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls ? planGoesOn(text) : null
+        const goesOn = !planNudged && !stopped && !wrap && spoke && toolCalls.length === 0 && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls ? await planGoesOn(text) : null
         if (goesOn) {
           const { left, again } = goesOn
           planNudged = true

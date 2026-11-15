@@ -39,7 +39,7 @@ interface Design {
  * lastStep with its id and plan feature, and the parts), enough to replay a recording's calls. `check` is what
  * design.check answers.
  */
-function designTools(check: () => Record<string, unknown> = () => ({ pass: false })): PilotTool<never>[] {
+function designTools(check: () => Record<string, unknown> = () => ({ pass: false }), o: { steps?: boolean } = {}): PilotTool<never>[] {
   const designs = new Map<string, Design>()
   let ids = 0
   const get = (id: unknown): Design => {
@@ -124,6 +124,15 @@ function designTools(check: () => Record<string, unknown> = () => ({ pass: false
       const out: Record<string, unknown> = { planId: a['planId'], design: 'd1', designName: 'Part', chosen: 'tied to the plan', nozzleMm: 0.4, items: [], ...check() }
       return { summary: out['pass'] === true ? 'all checks pass' : 'checks failed', output: out }
     }),
+    // the design as the host has it: every step with its plan feature tag, and its parts (designSummary with step rows)
+    ...(o.steps
+      ? [
+          tool('design.steps', (a) => {
+            const d = get(a['design'])
+            return { summary: `${d.steps.length} steps`, output: { ...summary(d), steps: d.steps.map((x, i) => ({ index: i + 1, id: x.id, name: x.name, op: 'shape.extrude', ...(x.feature ? { feature: x.feature } : {}), state: 'done' })) } }
+          }),
+        ]
+      : []),
   ]
 }
 
@@ -726,5 +735,113 @@ describe('a reopened project\'s plan gets no push', () => {
     await chat(client, ['Make a gear pair on a base plate', "Don't build the gears, stop there"], { standing })
     // the seed went into the new chat once, before its first message; the second run adds none
     expect(planCalls(client.requests.at(-1)!.messages).map((c) => c.id)).toEqual(['standing_plan_1', expect.any(String)])
+  })
+})
+
+// A follow-up on a design an earlier run built: the run's own results show only the steps it made, so the note read
+// every planned feature as unbuilt, or the part as having no body. It reads the design as the host has it now.
+describe('a follow-up on a design built in an earlier run', () => {
+  const FEATURES = ['Block', 'Stand', 'Top']
+  const PLAN = { part: 'Stand', units: 'mm', features: FEATURES.map((name) => ({ name, kind: 'extrude', sizes: {} })) }
+  // run 1: the plan, each feature built and tagged, and a check
+  const BUILT: ScriptStepData[] = [
+    { calls: [call('design.plan', PLAN)] },
+    { calls: [call('design.new', { name: 'Stand' })] },
+    { calls: [call('geom.extrude', { design: 'd1', operation: 'new', name: 'Stand', feature: 'Block' })] },
+    { calls: [call('geom.extrude', { design: 'd1', operation: 'join', part: 0, feature: 'Stand' })] },
+    { calls: [call('geom.extrude', { design: 'd1', operation: 'join', part: 0, feature: 'Top' })] },
+    { calls: [call('design.check', { planId: 'plan_1', design: 'd1' })] },
+    { text: 'The stand is built.' },
+  ]
+  // run 2's amend for the person's change: the same plan id, with the features it adds
+  const amend = (added: string[]) => ({ calls: [call('design.plan', { amends: 'plan_1', asked: 'add a lid', features: [...PLAN.features, ...added.map((name) => ({ name, kind: 'extrude', sizes: {} }))] })] })
+  /** design.plan answering Go on plan_1 with the plan as sent (its edits), as an amend answers; run 1's check passes, the later ones answer `check`. */
+  function tools(check: () => Record<string, unknown>) {
+    let n = 0
+    const plan = defineTool<Args>({ name: 'design.plan', version: '1', description: 'design.plan', source: 'command', permission: 'read', input: z.record(z.string(), z.unknown()), run: async (a) => ({ summary: 'Approved', output: { planId: 'plan_1', accepted: true, edits: { part: 'Stand', features: a['features'] } } }) }) as PilotTool<never>
+    return [plan, ...designTools(() => (n++ === 0 ? { pass: true } : check()), { steps: true }).filter((t) => t.name !== 'design.plan')]
+  }
+
+  it('lists only the feature really unbuilt, not the ones built in the earlier run', async () => {
+    const client = createScriptedClient([...BUILT, amend(['Lid', 'Lid handle']), { calls: [call('geom.extrude', { design: 'd1', operation: 'join', part: 0, feature: 'Lid' })] }, { text: 'The lid is on.' }, { text: 'Done.' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a stand', 'add a lid with a handle'], { tools: tools(() => ({ pass: false, items: [] })) })
+    const sent = notes(client.requests.at(-1)!.messages)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toContain('Still to build: Lid handle.')
+    expect(sent[0]).not.toMatch(/Block|has no body/)
+    expect(notices(two!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Lid handle.' })])
+    // the design was read with no row in the chat
+    expect(two!.filter((e) => e.type === 'tool_call').map((e) => (e as { tool: string }).tool)).not.toContain('design.steps')
+  })
+
+  it('gives no note when every feature is built, and never says a built part has no body', async () => {
+    const client = createScriptedClient([...BUILT, amend(['Lid']), { calls: [call('geom.extrude', { design: 'd1', operation: 'join', part: 0, feature: 'Lid' })] }, { text: 'The lid is on.' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a stand', 'add a lid'], { tools: tools(() => ({ pass: false })) })
+    expect(notes(client.requests.at(-1)!.messages)).toEqual([])
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(0)
+  })
+
+  it('a follow-up that only amends and checks reads the design built before: it has a body, and nothing is left', async () => {
+    const client = createScriptedClient([...BUILT, { calls: [call('design.plan', { amends: 'plan_1', asked: 'a little taller', features: PLAN.features })] }, { calls: [call('design.check', { planId: 'plan_1', design: 'd1' })] }, { text: 'Taller now.' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a stand', 'a little taller'], { tools: tools(() => ({ pass: false, failedBefore: ['stands on'] })) })
+    expect(notes(client.requests.at(-1)!.messages)).toEqual([])
+    expect(notices(two!)).toEqual([])
+  })
+
+  it('without design.steps reads only the run, as before', async () => {
+    const client = createScriptedClient([...BUILT, amend(['Lid']), { calls: [call('geom.extrude', { design: 'd1', operation: 'join', part: 0, feature: 'Lid' })] }, { text: 'The lid is on.' }, { text: 'Done.' }], { chunk: false })
+    const plain = tools(() => ({ pass: false })).filter((t) => t.name !== 'design.steps')
+    await chat(client, ['Make a stand', 'add a lid'], { tools: plain })
+    expect(notes(client.requests.at(-1)!.messages)[0]).toContain('Still to build: Block, Stand, Top.')
+  })
+})
+
+// The bridge chat recorded 2026-11-15, names made plain: the first build tagged a step for each of its features and
+// stopped on a failed check; the follow-up "Add a row of openings along both sides of the deck truss." sent the plan
+// with amends and asked, cut the openings in two tagged steps, and its check failed on the old item only. Its reply
+// was then pushed on with "Still to build:" and every one of its built features, and a fix round said to be open.
+describe('the recorded bridge follow-up, replayed', () => {
+  const FEATURES = ['Base plate', 'Deck', 'Piers', 'End blocks', 'Posts', 'Cross bar', 'Cross bar row', 'Rod', 'Rod row', 'Rod trim', 'Top rails']
+  const CHECKED = { pass: false, items: [{ name: 'stands on', pass: false }] }
+  // the first build's second check used the fix round
+  const STOPPED = { ...CHECKED, stop: 'The fix round is used: stop building, and tell the person exactly what is off.' }
+  const STAGE1: ScriptStepData[] = [
+    { calls: [call('design.plan', { part: 'Bridge', units: 'mm', features: FEATURES.map((name) => ({ name, kind: 'extrude', sizes: {} })) })] },
+    { calls: [call('design.new', { name: 'Bridge' })] },
+    ...FEATURES.map((feature, k) => ({ calls: [call('geom.extrude', { design: 'd1', operation: k === 0 ? 'new' : 'join', part: 0, name: 'Bridge', feature })] })),
+    { calls: [call('design.check', { planId: 'plan_1', design: 'd1' })] },
+    { text: 'I built the bridge, but it failed one of five plan checks, and I could not clear it.' },
+  ]
+  const OPENINGS = { name: 'Deck openings', kind: 'cut', on: 'Deck', sizes: { count: 24, width: 3, height: 2.4, depth: 1 }, kinds: { count: 'count' } }
+  const FOLLOW: ScriptStepData[] = [
+    { calls: [call('design.plan', { part: 'Bridge', units: 'mm', amends: 'plan_1', asked: 'Add a row of openings along both sides of the deck truss.', features: [...FEATURES.map((name) => ({ name, kind: 'extrude', sizes: {} })), OPENINGS], questions: [] })] },
+    { calls: [call('geom.extrude', { design: 'd1', feature: 'Deck openings', operation: 'cut', part: 0, extent: 'oneSide', distance_mm: 1, frame: { origin: [0, -1.4, 0], normal: [0, -1, 0] } })] },
+    { calls: [call('geom.extrude', { design: 'd1', feature: 'Deck openings', operation: 'cut', part: 0, extent: 'oneSide', distance_mm: 1, frame: { origin: [0, 1.4, 0], normal: [0, 1, 0] } })] },
+    { calls: [call('design.check', { planId: 'plan_1', design: 'd1' })] },
+    { text: 'I added the openings: 12 per side, 24 in total, on both sides of the deck. The plan check still fails on one item, as it did before this change.' },
+  ]
+  function tools(follow: Record<string, unknown>) {
+    let n = 0
+    const plan = defineTool<Args>({ name: 'design.plan', version: '1', description: 'design.plan', source: 'command', permission: 'read', input: z.record(z.string(), z.unknown()), run: async (a) => ({ summary: 'Approved', output: { planId: 'plan_1', accepted: true, edits: { part: 'Bridge', features: a['features'] } } }) }) as PilotTool<never>
+    // the first build's check, then the follow-up's
+    return [plan, ...designTools(() => (n++ === 0 ? STOPPED : follow), { steps: true }).filter((t) => t.name !== 'design.plan')]
+  }
+
+  it('gets no note that lists the built features as still to build, nor one that says a fix round is open', async () => {
+    const client = createScriptedClient([...STAGE1, ...FOLLOW, { text: 'Spare reply.' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a bridge', 'Add a row of openings along both sides of the deck truss.'], { tools: tools({ ...CHECKED, failedBefore: ['stands on'] }) })
+    expect(notes(client.requests.at(-1)!.messages)).toEqual([])
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('a check the change did break still gets the fix note, with nothing listed as still to build', async () => {
+    const client = createScriptedClient([...STAGE1, ...FOLLOW, { text: 'Fixed.' }], { chunk: false })
+    await chat(client, ['Make a bridge', 'Add a row of openings along both sides of the deck truss.'], { tools: tools({ pass: false, items: [{ name: 'minimum wall', pass: false }] }) })
+    const sent = notes(client.requests.at(-1)!.messages)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).not.toContain('Still to build')
+    expect(sent[0]).toContain('Its last design.check failed on minimum wall')
   })
 })
