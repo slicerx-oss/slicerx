@@ -9,7 +9,7 @@ import { mimirTools, scriptedMimir, type MimirScript } from '../src/workspaces/m
 import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, PlanInputSchema, planOfChoices, planTool, samePlan, shownPlan, unbuiltPlan, withPlanTies, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
 import { mimirPlans } from '../src/workspaces/mimir/plans'
 import { SCRIPTS } from '../src/workspaces/mimir/scripts'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { defineTool, STEP_NOT_MADE, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 
 afterEach(clearPlans)
@@ -75,7 +75,9 @@ describe('design.plan', () => {
     expect(ev.some((e) => e.type === 'ask')).toBe(false)
     const r = result(ev)
     expect(r.ok).toBe(false)
-    expect(r.summary).toMatch(/Invalid arguments: features/)
+    // the row reads in plain words; the check's own text, with its field, is in the details
+    expect(r.summary).toBe(STEP_NOT_MADE)
+    expect(r.detail).toMatch(/Invalid arguments: features/)
   })
 
   it('Go returns accepted true, with no edits when nothing changed', async () => {
@@ -172,7 +174,8 @@ describe('design.plan', () => {
     for (const args of bad) {
       const ev = await run(args, () => 'x')
       expect(ev.some((e) => e.type === 'ask')).toBe(false)
-      expect(result(ev).summary).toMatch(/Invalid arguments/)
+      expect(result(ev).summary).toBe(STEP_NOT_MADE)
+      expect(result(ev).detail).toMatch(/Invalid arguments/)
     }
   })
 
