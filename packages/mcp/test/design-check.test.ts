@@ -1245,11 +1245,13 @@ describe('a part that passed its check, broken by a later change', () => {
     await check()
     // the build used its fix round and stopped
     expect((await check()).out.stop).toMatch(/fix round is used/)
-    // the person then asks for a change: it reopens, and a check it breaks is fixed or undone, never a stop
+    // the person then asks for a change: it reopens and is never a stop; the size failed before the change, so the
+    // change is not told it broke it (check-failed-before.test.ts)
     plans.asked('box-1', 'add window slits')
     const after = await check()
     expect(after.out.stop).toBeUndefined()
-    expect(after.out.brokenByChange).toBe(true)
+    expect(after.out.brokenByChange).toBeUndefined()
+    expect((after.out as { failedBefore?: string[] }).failedBefore).toEqual(['overall size'])
     expect((await check()).out.repeated).toBeUndefined()
   })
 
@@ -1271,7 +1273,9 @@ describe('a part that passed its check, broken by a later change', () => {
     const after = await check()
     expect(after.out.repeated).toBeUndefined()
     expect(after.out.stop).toBeUndefined()
-    expect(after.out.brokenByChange).toBe(true)
+    // the size failed before the step was added, so the step is not told it broke it
+    expect(after.out.brokenByChange).toBeUndefined()
+    expect((after.out as { failedBefore?: string[] }).failedBefore).toEqual(['overall size'])
   })
 
   it('leaves a part that never passed on its one fix round, as before', async () => {

@@ -3,7 +3,7 @@
 // The mimir plans a project file keeps: Metadata/slicerx_plans.json (@slicerx/threemf project.ts plansJson), so a
 // plan approved in one session can be checked and finished after the project is opened again. Plan state only: the
 // plan as approved and edited, the object its part is built in, its failed checks, the check that used its fix round,
-// whether its last check passed, and the design's step ids when mimir last worked on it. Read as untrusted: a part
+// whether its last check passed and the items it failed, and the design's step ids when mimir last worked on it. Read as untrusted: a part
 // that is too big, not JSON or of another version is dropped whole with no note, and a row that is off is left out.
 // The plan itself is checked against the plan schema when it goes back in the registry (workspaces/mimir/plan-state.ts).
 import { PLANS_PART, PLANS_PART_MAX } from '@slicerx/threemf/project'
@@ -15,6 +15,8 @@ export interface SavedPlan {
   failedChecks?: number
   closed?: { summary: string; output: Record<string, unknown> }
   passed?: true
+  /** The items its last check failed, by name. */
+  failing?: string[]
   steps?: string[]
 }
 
@@ -29,6 +31,9 @@ export interface SavedPlans {
 const MAX_ROWS = 100
 /** The most steps read for one design. */
 const MAX_STEPS = 2000
+/** The most failed items read for one plan, and the longest item name. */
+const MAX_FAILING = 64
+const ITEM_MAX = 120
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const shortText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max
@@ -56,6 +61,8 @@ export function parsePlans(files: ReadonlyMap<string, Uint8Array>, objectIds: Re
     const closed = raw['closed']
     if (isObj(closed) && typeof closed['summary'] === 'string' && closed['summary'].length <= 20_000 && isObj(closed['output'])) row.closed = { summary: closed['summary'], output: closed['output'] }
     if (raw['passed'] === true) row.passed = true
+    const failing = raw['failing']
+    if (Array.isArray(failing) && failing.length <= MAX_FAILING && failing.every((x) => shortText(x, ITEM_MAX))) row.failing = [...(failing as string[])]
     const steps = raw['steps']
     if (Array.isArray(steps) && steps.length <= MAX_STEPS && steps.every((s) => shortText(s, 64))) row.steps = [...(steps as string[])]
     plans.push(row)

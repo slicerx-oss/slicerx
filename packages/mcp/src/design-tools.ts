@@ -8,7 +8,7 @@ import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { assumptionsInput, changeBroke, colorBands, createPlanRegistry, designCheck, FIX_ROUNDS, fixRoundOpen, NOTES_SAY, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, type PartPlan, partPlanSchema, type PlanEntry, plannedFloor, plannedHoleMm, PlanOwnedError, type PlanRegistry, printsTogether, stalePlanNote, supersededPlanNote } from './design-check'
+import { assumptionsInput, changeBroke, colorBands, createPlanRegistry, designCheck, failedBefore, FIX_ROUNDS, fixRoundOpen, NOTES_SAY, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, type PartPlan, partPlanSchema, type PlanEntry, plannedFloor, plannedHoleMm, PlanOwnedError, type PlanRegistry, printsTogether, stalePlanNote, supersededPlanNote } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -1017,7 +1017,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const open = designs.list().map((x) => x.id)
       // a miss only on how a part of several pieces is named is not the part's fault: once per plan it keeps the fix round
       if (failed.length === 1 && isNamingMiss(failed[0]!) && plans.waiveNaming(entry.plan.planId, open)) return { summary: `${summary}. This miss does not use the fix round.`, output }
-      const failedChecks = plans.checked(entry.plan.planId, result.pass, open)
+      // a follow-up's check that fails only on items failing before the change: read before checked keeps this one
+      const carried = (entry.passedOnce || entry.followUp) && failedBefore(entry, failed.map((x) => x.name))
+      const failedChecks = plans.checked(entry.plan.planId, result.pass, open, failed.map((x) => x.name))
       if (result.pass) {
         // a display model's finished reply gives its size and offers another, rather than asking about size up front
         const detail = (entry.plan as { detail?: string }).detail
@@ -1032,6 +1034,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         }
         return { summary, output }
       }
+      // a follow-up's change that leaves only items failing as they were before it broke nothing: the result names
+      // them in failedBefore and is never told to fix or undo the change, nor counted toward the undo
+      if (carried) return { summary, output: { ...output, failedBefore: failed.map((x) => x.name) } }
       // a part that passed before and fails now was broken by a later change (a follow-up's slits cut too deep): it is
       // fixed or undone in the same turn, and never ends the building or holds up the person's next request
       if (entry.passedOnce || entry.followUp) {

@@ -705,6 +705,8 @@ export interface PlanRecordInput {
   closed?: unknown
   /** Its last check passed. */
   passed?: boolean
+  /** The items its last check failed, by name. */
+  failing?: readonly string[]
   /** Its design's step ids when mimir last worked on it, in order. */
   steps?: readonly string[]
 }
@@ -718,7 +720,7 @@ export interface PlansInput {
 
 /**
  * Metadata/slicerx_plans.json: `{ "version": 1, "last", "plans": [{ "plan", "design", "failedChecks", "closed",
- * "passed", "steps" }] }`, each `design` the 3MF object id of the object its part is built in. A plan tied to an
+ * "passed", "failing", "steps" }] }`, each `design` the 3MF object id of the object its part is built in. A plan tied to an
  * object that is not written is left out. Past PLANS_PART_MAX the oldest plans go first. Null when no plan is left, so
  * a project with none has no part.
  */
@@ -733,6 +735,7 @@ export function plansJson(plans: PlansInput | undefined, fileIds: ReadonlyMap<st
       ...(e.failedChecks ? { failedChecks: e.failedChecks } : {}),
       ...(e.closed !== undefined ? { closed: e.closed } : {}),
       ...(e.passed ? { passed: true } : {}),
+      ...(e.failing?.length ? { failing: [...e.failing] } : {}),
       ...(e.steps ? { steps: [...e.steps] } : {}),
     })
   }
