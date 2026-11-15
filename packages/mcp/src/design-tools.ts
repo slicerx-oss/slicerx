@@ -1047,7 +1047,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.9.0',
+    version: '1.9.1',
     source: 'command',
     permission: 'read',
     description:
@@ -1131,12 +1131,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     const problem = amendProblem(planId, entry, 'client')
     if (problem) throw new ToolInputError(problem)
     if (design !== undefined && design !== entry!.design) throw new ToolInputError(`design: an amend keeps the plan's design, ${entry!.design}`)
+    // every way the amend is off, in one refusal
     const shape = amendShapeProblem(entry!.plan, given)
-    if (shape) throw new ToolInputError(shape)
-    const changes = amendChanges(entry!.plan, given)
-    if (!changes.length) throw new ToolInputError(`amends: no size differs from plan ${planId}`)
-    const dropped = amendDropProblem(entry!.plan, given)
-    if (dropped) throw new ToolInputError(dropped)
+    const changes = shape ? [] : amendChanges(entry!.plan, given)
+    const off = [shape, !shape && !changes.length ? `amends: no size differs from plan ${planId}` : null, amendDropProblem(entry!.plan, given)].filter((p): p is string => p !== null)
+    if (off.length) throw new ToolInputError(off.join('. '))
     const p = amendedSizes(entry!.plan, given)
     plans.put(p, entry!.design, 'client')
     const revision = plans.amended(planId, why.why)

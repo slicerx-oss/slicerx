@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_design_plan` 1.18.0 (from 1.17.2) and `slicerx_design_put_plan` 1.10.0 (from 1.9.0): an amend that is off in more than one way is refused once, with every mismatch named in the same words each check used alone, in the order they are checked: the part, the units, each planned feature's kind, sizes and kinds, the overall size, the rows of holes and the open faces, then a plan with no size changed, then each feature's `on`, each row's `recess` and each plan field the amend would not keep. Before, only the first mismatch was named, so a plan resent with three fields off took three refusals.

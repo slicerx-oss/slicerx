@@ -289,7 +289,7 @@ export function createCardPlans(plans: PlanRegistry) {
   function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile; designs?: () => readonly { id: string; name: string; parts: readonly unknown[] }[]; bed?: () => Bed | undefined } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.17.2',
+      version: '1.17.3',
       source: 'command',
       permission: 'read',
       description:
@@ -396,12 +396,12 @@ export function createCardPlans(plans: PlanRegistry) {
     const problem = amendProblem(planId, entry, 'card')
     if (problem) throw new ToolInputError(problem)
     const was = entry!.plan
+    // every way the amend is off, in one refusal: its shape, no size changed, and a field it would not keep (refused,
+    // so the plan never reads as changed with that change dropped)
     const shape = amendShapeProblem(was, i)
-    if (shape) throw new ToolInputError(shape)
-    if (!amendChanges(was, i).length && !amendAdded(was, i).length) throw new ToolInputError(`amends: no size differs from the approved plan ${planId}`)
-    // a field the amend would not keep is refused, so the plan never reads as changed with that change dropped
-    const dropped = amendDropProblem(was, i)
-    if (dropped) throw new ToolInputError(dropped)
+    const unchanged = !shape && !amendChanges(was, i).length && !amendAdded(was, i).length ? `amends: no size differs from the approved plan ${planId}` : null
+    const off = [shape, unchanged, amendDropProblem(was, i)].filter((p): p is string => p !== null)
+    if (off.length) throw new ToolInputError(off.join('. '))
     const revision = (entry!.revision ?? 1) + 1
     const id = amendId(planId, revision)
     // a size asked under its floor is raised as a new plan's is, with its line among the assumptions
@@ -448,10 +448,8 @@ export function createCardPlans(plans: PlanRegistry) {
     if (entry.stale || entry.superseded) throw new ToolInputError('amends: the person changed sizes since that plan was approved; make a new plan with the sizes they set')
     if (!entry.design) throw new ToolInputError("amends: the plan's part is not built yet; build to the plan")
     const was = entry.plan
-    const shape = amendShapeProblem(was, i, { asked: true })
-    if (shape) throw new ToolInputError(shape)
-    const dropped = amendDropProblem(was, i)
-    if (dropped) throw new ToolInputError(dropped)
+    const off = [amendShapeProblem(was, i, { asked: true }), amendDropProblem(was, i)].filter((p): p is string => p !== null)
+    if (off.length) throw new ToolInputError(off.join('. '))
     const { plan, raised } = raiseToFloors({ ...amendedSizes(was, i), planId }, floors)
     if (!amendChanges(was, plan).length && !amendAdded(was, plan).length && !amendKinds(was, plan).length) return { summary: 'The plan stays as approved; make the change the person asked for in the design, then add any new feature to the plan with amends and asked', output: { planId, accepted: true, revision: entry.revision ?? 1, changes: [] } satisfies PlanAnswer }
     plans.put(plan, entry.design, 'card')
