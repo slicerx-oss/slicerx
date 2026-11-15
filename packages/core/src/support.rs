@@ -42,6 +42,124 @@ pub(crate) struct SupportLayer {
     pub(crate) on_part: Shapes,
 }
 
+/// Where support fill lines are anchored. Fill lines run on a lattice through an anchor point; with one point for
+/// the whole session, copies of a part on one plate each stand at another place on that lattice and print other
+/// lines. On a plate of several objects each support island takes the center of its own object's box instead, so
+/// a part's support is the same wherever it stands: the object whose footprint holds the most of the island's
+/// outline (the first in plate order on a tie), or the nearest one when no footprint holds any of it. An island
+/// that runs under two objects takes one of them, so its lines never cross where the two meet.
+#[derive(Debug, Clone)]
+pub(crate) struct Anchors {
+    /// The box an island no object claims, and every island of a session of one object, is anchored on, mm.
+    pub(crate) bounds: [f64; 4],
+    /// Each object's footprint and its box, mm; empty for a session of one object.
+    objects: std::sync::Arc<Vec<(crate::owners::ObjectSlice, [f64; 4])>>,
+}
+
+impl Anchors {
+    /// Every island anchored on the middle of `bounds`.
+    pub(crate) fn one(bounds: [f64; 4]) -> Self {
+        Self {
+            bounds,
+            objects: std::sync::Arc::new(Vec::new()),
+        }
+    }
+
+    /// Each island anchored on its own object, given each object's footprint (`ObjectSlice`) and box.
+    pub(crate) fn of_objects(bounds: [f64; 4], objects: Vec<(crate::owners::ObjectSlice, [f64; 4])>) -> Self {
+        Self {
+            bounds,
+            objects: std::sync::Arc::new(objects),
+        }
+    }
+
+    /// The islands of `area` by the box they are anchored on.
+    pub(crate) fn groups<'a>(&self, area: &'a Shapes) -> Vec<([f64; 4], std::borrow::Cow<'a, Shapes>)> {
+        if self.objects.len() < 2 || area.is_empty() {
+            return vec![(self.bounds, std::borrow::Cow::Borrowed(area))];
+        }
+        let slices: Vec<crate::owners::ObjectSlice> = self.objects.iter().map(|(s, _)| s.clone()).collect();
+        let mut groups: Vec<(usize, Shapes)> = Vec::new();
+        for island in area {
+            let owner = self.owner(&slices, island);
+            match groups.iter_mut().find(|(k, _)| *k == owner) {
+                Some((_, g)) => g.push(island.clone()),
+                None => groups.push((owner, vec![island.clone()])),
+            }
+        }
+        let box_of = |k: usize| self.objects.get(k).map_or(self.bounds, |(_, b)| *b);
+        if let [(k, _)] = groups.as_slice() {
+            return vec![(box_of(*k), std::borrow::Cow::Borrowed(area))];
+        }
+        groups
+            .into_iter()
+            .map(|(k, g)| (box_of(k), std::borrow::Cow::Owned(g)))
+            .collect()
+    }
+
+    /// The object (its place in the list) an island is anchored on, `usize::MAX` for none.
+    fn owner(&self, slices: &[crate::owners::ObjectSlice], island: &[Vec<IntPoint<i32>>]) -> usize {
+        let outline = island.first().map_or(&[][..], Vec::as_slice);
+        let mut held = vec![0usize; slices.len()];
+        for p in outline.iter().step_by(outline.len().div_ceil(64).max(1)) {
+            if let Some(k) = slices.iter().position(|s| {
+                crate::owners::holder(std::slice::from_ref(s), crate::geom::Point::new(p.x, p.y)).is_some()
+            }) && let Some(n) = held.get_mut(k)
+            {
+                *n += 1;
+            }
+        }
+        let mut best: Option<(usize, usize)> = None;
+        for (k, &n) in held.iter().enumerate() {
+            if n > 0 && best.is_none_or(|(_, b)| n > b) {
+                best = Some((k, n));
+            }
+        }
+        if let Some((k, _)) = best {
+            return k;
+        }
+        // No footprint holds the island: the nearest object to the middle of its box.
+        let (mut lo, mut hi) = ([i32::MAX; 2], [i32::MIN; 2]);
+        for p in outline {
+            lo = [lo[0].min(p.x), lo[1].min(p.y)];
+            hi = [hi[0].max(p.x), hi[1].max(p.y)];
+        }
+        if outline.is_empty() {
+            return usize::MAX;
+        }
+        let at = crate::geom::Point::new(lo[0] / 2 + hi[0] / 2, lo[1] / 2 + hi[1] / 2);
+        crate::owners::nearest(slices, at, 1.0e5)
+            .and_then(|o| slices.iter().position(|s| s.object == o))
+            .unwrap_or(usize::MAX)
+    }
+
+    /// `fill` run over each group of islands of `area` with the middle of the box they are anchored on.
+    pub(crate) fn fill<T>(&self, area: &Shapes, mut fill: impl FnMut(&Shapes, [f64; 2]) -> Vec<T>) -> Vec<T> {
+        let mut out = Vec::new();
+        for (b, part) in self.groups(area) {
+            out.extend(fill(&part, middle(b)));
+        }
+        out
+    }
+
+    /// `fill` run over each group of islands of `area` with the box they are anchored on.
+    pub(crate) fn fill_box<T>(
+        &self,
+        area: &Shapes,
+        mut fill: impl FnMut(&Shapes, [f64; 4]) -> Vec<T>,
+    ) -> Vec<T> {
+        let mut out = Vec::new();
+        for (b, part) in self.groups(area) {
+            out.extend(fill(&part, b));
+        }
+        out
+    }
+}
+
+fn middle(b: [f64; 4]) -> [f64; 2] {
+    [f64::midpoint(b[0], b[2]), f64::midpoint(b[1], b[3])]
+}
+
 pub(crate) fn units(mm: f64) -> i32 {
     #[allow(clippy::cast_possible_truncation, reason = "distances are a few millimeters")]
     {
