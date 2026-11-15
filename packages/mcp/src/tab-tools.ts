@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendAdded, amendBody, amendChanges, amendDropProblem, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, IGNORED_NOTE, type AmendChange } from './plan-amend'
+import { AMEND_REASON_MAX, amendAdded, amendBody, amendChanges, amendDropProblem, amendKinds, amendedSizes, amendOns, amendProblem, amendReason, amendShapeProblem, changeText, IGNORED_NOTE, type AmendChange } from './plan-amend'
 import { type Bed, cardRealField, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, flatInput, flatLevels, type FlatLevels, planDetailFields, realBodyInput, withRealBody, FEATURES_FLOOR, unheldAsks, LONG_EXTRA, LONG_RATIO, realMemoryNote, type RealSources, SECTIONS_FLOOR } from './plan-detail'
 import { createLookupStore, lookupSizesTool } from './real-lookup'
 import { GAP_MARGIN_MM, jointProblem, planetsMiss, PLANETS_CANNOT_MESH, planFloors, raisedText, raisedWhy, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
@@ -443,17 +443,18 @@ export function createCardPlans(plans: PlanRegistry) {
     const was = entry!.plan
     // the plan as the amend sends it: the approved plan wherever it leaves a field out, with its changes on it
     const { next, problems, ignored } = amendBody(was, i)
-    // every way the amend is off, in one refusal: its shape, a change that sets no planned size, no size changed, and
-    // a feature's on or a row's recess it would not keep (refused, so the plan never reads as changed with that dropped)
+    // every way the amend is off, in one refusal: its shape, a change that sets no planned size, nothing changed (no
+    // size, no feature added and none moved onto another), and a row's recess it would not keep (refused, so the plan
+    // never reads as changed with that dropped)
     const shape = amendShapeProblem(was, next)
-    const unchanged = !shape && !problems.length && !amendChanges(was, next).length && !amendAdded(was, next).length ? `amends: no size differs from the approved plan ${planId}` : null
+    const unchanged = !shape && !problems.length && !amendChanges(was, next).length && !amendAdded(was, next).length && !amendOns(was, next).length ? `amends: no size differs from the approved plan ${planId}` : null
     const off = [shape, ...problems, unchanged, amendDropProblem(was, next, { fields: false })].filter((p): p is string => p !== null)
     if (off.length) throw new ToolInputError(off.join('. '))
     const revision = (entry!.revision ?? 1) + 1
     const id = amendId(planId, revision)
     // a size asked under its floor is raised as a new plan's is, with its line among the assumptions
     const { plan, raised } = raiseToFloors({ ...amendedSizes(was, next), planId: id }, floors)
-    if (!amendChanges(was, plan).length && !amendAdded(was, plan).length) {
+    if (!amendChanges(was, plan).length && !amendAdded(was, plan).length && !amendOns(was, plan).length) {
       const back = raised.map((u) => `${underName(u)} stays ${raisedText(u, was.units)}, ${raisedWhy(u)}`).join('; ')
       return { ok: false, summary: withIgnored(`Nothing changed: ${back}. Build to the plan as approved`, ignored), output: { planId, accepted: false, ...(ignored.length ? { ignored } : {}) } satisfies PlanAnswer }
     }
@@ -480,7 +481,7 @@ export function createCardPlans(plans: PlanRegistry) {
     const changes = amendChanges(was, latest)
     const edited = !samePlan(card, shown)
     const answer: PlanAnswer = { planId, accepted: true, edits: latest, revision, changes, ...(raised.length ? { raised: raised.map(raisedOut) } : {}), ...(ignored.length ? { ignored } : {}) }
-    const said = withIgnored(`Plan changed${edited ? ' with the person\'s edits' : ''} (revision ${revision}): ${changedText(was, latest)}. Build to it as changed`, ignored)
+    const said = withIgnored(`Plan changed${edited ? ' with the person\'s edits' : ''} (revision ${revision})${changedText(was, latest)}. Build to it as changed`, ignored)
     return approved(answer, latest, { edited, raised, floors, limits, said })
   }
 
@@ -501,12 +502,12 @@ export function createCardPlans(plans: PlanRegistry) {
     if (off.length) throw new ToolInputError(off.join('. '))
     const { plan, raised } = raiseToFloors({ ...amendedSizes(was, next), planId }, floors)
     const kept = ignored.length ? { ignored } : {}
-    if (!amendChanges(was, plan).length && !amendAdded(was, plan).length && !amendKinds(was, plan).length) return { summary: withIgnored('The plan stays as approved; make the change the person asked for in the design, then add any new feature to the plan with amends and asked', ignored), output: { planId, accepted: true, revision: entry.revision ?? 1, changes: [], ...kept } satisfies PlanAnswer }
+    if (!amendChanges(was, plan).length && !amendAdded(was, plan).length && !amendKinds(was, plan).length && !amendOns(was, plan).length) return { summary: withIgnored('The plan stays as approved; make the change the person asked for in the design, then add any new feature to the plan with amends and asked', ignored), output: { planId, accepted: true, revision: entry.revision ?? 1, changes: [], ...kept } satisfies PlanAnswer }
     plans.put(plan, entry.design, 'card')
     const revision = plans.asked(planId, words)
     const changes = amendChanges(was, plan)
     const answer: PlanAnswer = { planId, accepted: true, edits: plan, revision, changes, ...(raised.length ? { raised: raised.map(raisedOut) } : {}), ...kept }
-    return approved(answer, plan, { edited: false, raised, floors, limits, said: withIgnored(`Plan changed as asked (revision ${revision}): ${changedText(was, plan)}. Build to it as changed`, ignored) })
+    return approved(answer, plan, { edited: false, raised, floors, limits, said: withIgnored(`Plan changed as asked (revision ${revision})${changedText(was, plan)}. Build to it as changed`, ignored) })
   }
 
   /** An approved plan's result: the raised sizes, sizes the person set under their floors, and a print-in-place part's gaps. */
@@ -541,7 +542,9 @@ export type CardPlans = ReturnType<typeof createCardPlans>
 
 /** What an amend changed, in plain words: each size, then each feature it added. */
 function changedText(was: PartPlan, now: PartPlan): string {
-  return [...amendKinds(was, now), ...amendChanges(was, now).map((c) => changeText(c, now.units)), ...amendAdded(was, now).map((n) => `added ${n}`)].join(', ')
+  const said = [...amendKinds(was, now), ...amendChanges(was, now).map((c) => changeText(c, now.units)), ...amendAdded(was, now).map((n) => `added ${n}`)].join(', ')
+  // a change of what a feature stands on alone lists nothing: the plan in the result says it
+  return said ? `: ${said}` : ''
 }
 
 /** A result's words with the fields its amend ignored named after them. */

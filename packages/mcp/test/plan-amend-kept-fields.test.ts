@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// An amend changes sizes only. A feature's on or a hole row's recess that it gives otherwise than the approved plan is
+// An amend changes sizes, and may move a feature onto another (its on), which the stored plan then keeps; a feature
+// restated without its on keeps the plan's. A hole row's recess that it gives otherwise than the approved plan is
 // refused, naming it, and the plan stays as approved: never "Plan changed" with the change dropped. A plan field it does
 // not keep (the plan's detail and its lists) given otherwise is refused by design.put_plan over MCP, and in the mimir
 // tab design.plan changes the sizes, keeps the field as approved and names it in the result (plan-amend.ts). The plan
@@ -97,10 +98,15 @@ describe('design.plan with amends, for a field an amend does not keep', () => {
     expect(tab().version).toBe('1.20.0')
   })
 
-  it('refuses an amend that only moves the row onto another feature, as no size differs', async () => {
+  /** The stored plan's Funnel array, as design.check reads it. */
+  const funnels = (t: ReturnType<typeof tab>) => t.card.plans.get(ID)!.plan.features.find((f) => f.name === 'Funnel array')!
+
+  it('takes an amend that only moves the row onto another feature, listing no size', async () => {
     const t = tab()
-    await expect(t.run({ ...row(onDeck), amends: ID, reason })).rejects.toThrow(`amends: no size differs from the approved plan ${ID}`)
-    t.unchanged()
+    const out = await t.run({ ...row(onDeck), amends: ID, reason })
+    expect(out.summary).toBe('Plan changed (revision 2). Build to it as changed')
+    expect(funnels(t)).toMatchObject({ on: 'Upper deck house', sizes: { count: 4, spacing: 21 } })
+    expect(t.cards).toEqual(['Plan change'])
   })
 
   it('refuses one that moves the row and adds a size, as it keeps its sizes', async () => {
@@ -109,18 +115,21 @@ describe('design.plan with amends, for a field an amend does not keep', () => {
     t.unchanged()
   })
 
-  it('refuses one that moves the row with a spacing change, naming on, and the plan stays at 21 mm on the first funnel', async () => {
+  it('takes one that moves the row with a spacing change, and the plan keeps both', async () => {
     const t = tab()
-    await expect(t.run({ ...row((r) => onDeck(spaced(r))), amends: ID, reason })).rejects.toThrow('features: an amend changes sizes only; Funnel array keeps on: "Funnel"')
-    t.unchanged()
+    const out = await t.run({ ...row((r) => onDeck(spaced(r))), amends: ID, reason })
+    expect(out.summary).toBe('Plan changed (revision 2): Funnel array spacing 21 mm to 22 mm. Build to it as changed')
+    expect(funnels(t)).toMatchObject({ on: 'Upper deck house', sizes: { spacing: 22 } })
   })
 
-  it('refuses a row restated without its on, and a feature given an on it did not have', async () => {
+  it('keeps the row on the first funnel when it is restated without its on, and gives a feature an on it did not have', async () => {
     const t = tab()
-    await expect(t.run({ ...row(({ on: _on, ...r }) => spaced(r)), amends: ID, reason: 'Wider spacing.' })).rejects.toThrow('features: an amend changes sizes only; Funnel array keeps on: "Funnel"')
-    const hull = { ...row(spaced), features: row(spaced).features.map((f) => (f.name === 'Hull' ? { ...f, on: 'Funnel' } : f)) }
-    await expect(t.run({ ...hull, amends: ID, reason: 'Wider spacing.' })).rejects.toThrow('features: an amend changes sizes only; Hull takes no on')
-    t.unchanged()
+    await t.run({ ...row(({ on: _on, ...r }) => spaced(r)), amends: ID, reason: 'Wider spacing.' })
+    expect(funnels(t)).toMatchObject({ on: 'Funnel', sizes: { spacing: 22 } })
+    const t2 = tab()
+    const hull = { ...row(spaced), features: row(spaced).features.map((f) => (f.name === 'Mainmast' ? { ...f, on: 'Upper deck house' } : f)) }
+    await t2.run({ ...hull, amends: ID, reason: 'Wider spacing.' })
+    expect(t2.card.plans.get(ID)!.plan.features.find((f) => f.name === 'Mainmast')!.on).toBe('Upper deck house')
   })
 
   it.each([
@@ -153,9 +162,17 @@ describe('design.plan with amends, for a field an amend does not keep', () => {
     expect(t.card.plans.get(ID)!.plan.holes).toEqual([{ name: 'Vent', diameter: 3, count: 4, recess: true }])
   })
 
-  it('refuses a change the person asked for that moves the row, naming on, and changes nothing', async () => {
+  it('takes a change the person asked for that moves the row, with no card', async () => {
     const t = tab()
-    await expect(t.run({ ...row((r) => onDeck(spaced(r))), amends: ID, asked: 'put the funnels on the deck house, 22 mm apart' })).rejects.toThrow('features: an amend changes sizes only; Funnel array keeps on: "Funnel"')
+    const out = await t.run({ ...row((r) => onDeck(spaced(r))), amends: ID, asked: 'put the funnels on the deck house, 22 mm apart' })
+    expect(out.summary).toBe('Plan changed as asked (revision 2): Funnel array spacing 21 mm to 22 mm. Build to it as changed')
+    expect(funnels(t)).toMatchObject({ on: 'Upper deck house', sizes: { spacing: 22 } })
+    expect(t.cards).toEqual([])
+  })
+
+  it('refuses a plan with nothing changed, as before', async () => {
+    const t = tab()
+    await expect(t.run({ ...liner, amends: ID, reason })).rejects.toThrow(`amends: no size differs from the approved plan ${ID}`)
     t.unchanged()
   })
 
@@ -178,14 +195,13 @@ describe('design.put_plan with amends, for a field an amend does not keep', () =
   const mine = { planId: 'liner-1', ...kept } as unknown as PartPlan
   const moved = { ...mine, ...row((r) => onDeck(spaced(r))) } as PartPlan
 
-  it('is 1.10.1, refuses the moved row naming on, and keeps the plan as it was', async () => {
+  it('is 1.11.0, still refuses printInPlace and a recess, and takes the moved row', async () => {
     const plans = createPlanRegistry()
     const set = designToolset(host, {}, { plans, nozzleMm: () => 0.4 })
     const put = set.find((t) => t.name === 'design.put_plan')!
-    expect(put.version).toBe('1.10.1')
+    expect(put.version).toBe('1.11.0')
     plans.put(structuredClone(mine), 'd1', 'client')
     const run = (input: unknown) => put.run(put.input.parse(input) as never, { context: { machine } } as unknown as ToolContext)
-    await expect(run({ plan: moved, amends: 'liner-1', reason })).rejects.toThrow('features: an amend changes sizes only; Funnel array keeps on: "Funnel"')
     // its plan takes no detail fields; printInPlace is the plan field it takes and an amend keeps
     await expect(run({ plan: { ...mine, ...row(spaced), printInPlace: false }, amends: 'liner-1', reason })).rejects.toThrow('printInPlace: an amend changes sizes only; leave out printInPlace')
     const vented = { ...mine, holes: [{ name: 'Vent', diameter: 3, count: 4, recess: true }] }
@@ -193,20 +209,22 @@ describe('design.put_plan with amends, for a field an amend does not keep', () =
     await expect(run({ plan: { ...vented, holes: [{ name: 'Vent', diameter: 3.4, count: 4 }] }, amends: 'liner-1', reason: 'Wider vents.' })).rejects.toThrow('holes: an amend changes sizes only; Vent keeps recess: true')
     expect(plans.get('liner-1')!.plan).toEqual(vented)
     expect(plans.get('liner-1')!.revision).toBeUndefined()
+    plans.put(structuredClone(mine), 'd1', 'client')
+    const out = await run({ plan: moved, amends: 'liner-1', reason })
+    expect(out.summary).toMatch(/^Changed plan liner-1 for Titanic 1:1250 display model \(revision 2\): Funnel array spacing 21 mm to 22 mm\./)
+    expect(plans.get('liner-1')!.plan.features.find((f) => f.name === 'Funnel array')!.on).toBe('Upper deck house')
   })
 
-  it('refuses it over the MCP server as a client sees it, and the next size amend reads back from 21 mm as revision 2', async () => {
+  it('takes it over the MCP server as a client sees it, at revision 2, and reads the new on back', async () => {
     const h = await connect({ geomEngine: async () => ({ mesh: { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 5], indices: [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3] } }) })
     const design = data<{ output: { design: string } }>(await h.call('slicerx_design_new', { name: 'Titanic' })).output.design
     const put = await h.call('slicerx_design_put_plan', { plan: mine, design })
     expect(put.isError, text(put)).toBeFalsy()
-    const bad = await h.call('slicerx_design_put_plan', { plan: moved, amends: 'liner-1', reason })
-    expect(bad.isError).toBe(true)
-    expect(text(bad)).toContain('features: an amend changes sizes only; Funnel array keeps on: "Funnel"')
-    // the refused amend changed nothing and used no amend: a size amend is still taken, from the approved 21 mm
-    const ok = await h.call('slicerx_design_put_plan', { plan: { ...mine, ...row(spaced) }, amends: 'liner-1', reason: 'The funnels sit 22 mm apart.' })
+    const ok = await h.call('slicerx_design_put_plan', { plan: moved, amends: 'liner-1', reason })
     expect(ok.isError, text(ok)).toBeFalsy()
     expect(data<{ output: { revision: number; changes: unknown[] } }>(ok).output).toMatchObject({ revision: 2, changes: [{ where: 'feature', feature: 'Funnel array', size: 'spacing', from: 21, to: 22 }] })
+    const back = data<{ output: { plan: PartPlan } }>(await h.call('slicerx_design_get_plan', { planId: 'liner-1' })).output.plan
+    expect(back.features.find((f) => f.name === 'Funnel array')).toMatchObject({ on: 'Upper deck house', sizes: { spacing: 22 } })
   })
 })
 
