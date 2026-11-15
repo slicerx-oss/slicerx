@@ -44,6 +44,9 @@ pub(crate) struct Raw {
     pub(crate) branch_diameter_angle: f64,
     pub(crate) top_rate: f64,
     pub(crate) tip_diameter: f64,
+    /// `support_bed_foot`: trunks on the bed get the foot of `crate::bedfoot` when they are drawn, and the
+    /// planner's own widening toward the bed is off.
+    pub(crate) bed_foot: bool,
 }
 
 /// `TreeSupportMeshGroupSettings` and `TreeSupportSettings` together.
@@ -82,6 +85,8 @@ pub(crate) struct Settings {
     pub(crate) bp_radius_increase_per_layer: f64,
     pub(crate) z_distance_top_layers: usize,
     pub(crate) z_distance_bottom_layers: usize,
+    /// See [`Raw::bed_foot`].
+    pub(crate) bed_foot: bool,
 }
 
 fn round_up_divide(x: i64, y: i64) -> i64 {
@@ -131,14 +136,21 @@ impl Settings {
         let mut xy_distance = support_xy_distance;
         let mut xy_min_distance = support_xy_distance.min(support_xy_distance_overhang);
         let bp_radius = bp_diameter / 2;
-        let bp_radius_increase_per_layer =
-            (0.7_f64.m_tan() * layer_height as f64).min(0.5 * support_line_width as f64);
+        // With the drawn bed foot on, branches are planned without widening toward the bed.
+        let bp_radius_increase_per_layer = if r.bed_foot {
+            0.0
+        } else {
+            (0.7_f64.m_tan() * layer_height as f64).min(0.5 * support_line_width as f64)
+        };
         let top_distance = sc(r.top_distance);
         let bottom_distance = sc(r.bottom_distance);
         let z_distance_bottom_layers = (bottom_distance as f64 / layer_height as f64).round() as usize;
         let z_distance_top_layers = (top_distance as f64 / layer_height as f64).round() as usize;
-        let layer_start_bp_radius =
-            ((bp_radius - branch_radius) as f64 / bp_radius_increase_per_layer) as i64;
+        let layer_start_bp_radius = if r.bed_foot {
+            0
+        } else {
+            ((bp_radius - branch_radius) as f64 / bp_radius_increase_per_layer) as i64
+        };
         // `TreeSupportSettings::zero_top_z_gap`, set when the top Z distance is zero.
         if r.top_z_gap < eps {
             xy_min_distance = xy_min_distance.max(sc(0.1));
@@ -183,6 +195,7 @@ impl Settings {
             bp_radius_increase_per_layer,
             z_distance_top_layers,
             z_distance_bottom_layers,
+            bed_foot: r.bed_foot,
         }
     }
 

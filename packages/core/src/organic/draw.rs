@@ -774,6 +774,31 @@ fn slice_mesh(m: &Mesh, z: f64, tris: &[u32]) -> Shapes {
     geo::merge_rings(&rings, FillRule::Positive)
 }
 
+/// The foot of a trunk that stands on the bed (`support_bed_foot`), one ring per layer from the bed up
+/// (`crate::bedfoot::foot`), around the trunk's centers on those layers.
+fn foot_rings(
+    path: &[(usize, usize)],
+    move_bounds: &[Vec<Element>],
+    cfg: &Settings,
+    h: &Heights,
+) -> Vec<Ring> {
+    let trunk: Vec<crate::bedfoot::Circle> = path
+        .iter()
+        .map(|&(l, i)| {
+            let e = &move_bounds[l][i];
+            let p = e.state.result_on_layer.unwrap_or((0, 0));
+            crate::bedfoot::Circle {
+                center: [unscale(p.0), unscale(p.1)],
+                radius: unscale(elements::radius(cfg, &e.state)),
+            }
+        })
+        .collect();
+    crate::bedfoot::foot(&trunk, h.layer)
+        .iter()
+        .map(|c| crate::bedfoot::ring(c, 0.005))
+        .collect()
+}
+
 /// One branch: element positions `(layer, index)` from the bottom to the next fork or tip.
 struct Branch {
     path: Vec<(usize, usize)>,
@@ -920,6 +945,16 @@ pub(crate) fn draw_branches(
             let front = &move_bounds_ro[branch.path[0].0][branch.path[0].1];
             let back_e = branch.path.last().map(|&(l, i)| &move_bounds_ro[l][i]);
             let front_layer = front.state.layer_idx;
+            let foot = if cfg.bed_foot
+                && branch.has_root
+                && front_layer == 0
+                && front.state.to_buildplate
+                && h.raft.is_empty()
+            {
+                foot_rings(&branch.path, move_bounds_ro, cfg, h)
+            } else {
+                Vec::new()
+            };
             let back_layer = back_e.map_or(front_layer, |e| e.state.layer_idx);
             let mut layer_begin = if branch.has_root {
                 front_layer
@@ -939,7 +974,10 @@ pub(crate) fn draw_branches(
                 let tris = triangles_at(&mesh, &zs);
                 crate::par::map_range(0..(layer_end - layer_begin) as u32, |i| {
                     let l = layer_begin + i64::from(i);
-                    let s = slice_mesh(&mesh, zs[i as usize], &tris[i as usize]);
+                    let mut s = slice_mesh(&mesh, zs[i as usize], &tris[i as usize]);
+                    if let Some(ring) = usize::try_from(l - front_layer).ok().and_then(|k| foot.get(k)) {
+                        s = geo::union2(&s, &vec![vec![ring.clone()]]);
+                    }
                     let coll = volumes.collision(0, l, true);
                     let mut a = geo::diff(&s, &coll);
                     // With something to take away, the slice is an overlay's own output, which clipping to the
