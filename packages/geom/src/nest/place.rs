@@ -258,6 +258,11 @@ struct Put {
     pos: Pt,
 }
 
+/// How far apart two layouts' envelope areas may be and still count as the same envelope, mm2: copies placed at
+/// different places round their outlines their own way, which moves an envelope by thousandths of a square
+/// millimeter, so the earlier pass keeps a layout rather than those last bits.
+const SAME_ENVELOPE_MM2: f64 = 0.01;
+
 #[derive(Debug, Clone)]
 struct Layout {
     /// per moving slot (item, copy): where it went
@@ -269,7 +274,8 @@ struct Layout {
 }
 
 impl Layout {
-    /// more parts, then more area, then a smaller envelope, then the earlier pass
+    /// more parts, then more area, then a smaller envelope, then the earlier pass; envelopes within
+    /// [`SAME_ENVELOPE_MM2`] are the same envelope
     fn better_than(&self, o: &Self) -> bool {
         if self.placed != o.placed {
             return self.placed > o.placed;
@@ -278,7 +284,7 @@ impl Layout {
             return self.area > o.area;
         }
         let (a, b) = (self.envelope.area(), o.envelope.area());
-        if (a - b).abs() > 1e-6 {
+        if (a - b).abs() >= SAME_ENVELOPE_MM2 {
             return a < b;
         }
         self.pass < o.pass
