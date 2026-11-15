@@ -9,7 +9,7 @@ import type { PilotMachine } from '@slicerx/contracts'
 import { toolSpec, type ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { createPlanRegistry, type PartPlan } from '../src/design-check'
-import { amendShapeProblem } from '../src/plan-amend'
+import { amendBody, amendShapeProblem } from '../src/plan-amend'
 import { PLAN_GO, type PlanAnswer, type PlanInput } from '../src/tab-tools'
 import { createCardPlans, tabToolset } from '../src/toolset'
 
@@ -138,14 +138,10 @@ describe('design.plan with amends for a change the person asked for', () => {
   it('takes the approved plan when an asked change sends only the person\'s words', async () => {
     const t = tab()
     await t.approve(organizer)
-    const plan = tabToolset(boxHost(), t.card, { nozzleMm: () => machine.nozzle }).find((x) => x.name === 'design.plan')!
-    const filled = plan.fill!({ amends: 'plan_1', asked: 'add more pen cups' }) as PlanInput
-    expect(filled.features.map((f) => f.name)).toEqual(['Tray', 'Pen cups'])
-    const out = await t.run('design.plan', filled)
+    const out = await t.run('design.plan', { amends: 'plan_1', asked: 'add more pen cups' })
     expect(out.ok).not.toBe(false)
     expect(out.summary).toBe('The plan stays as approved; make the change the person asked for in the design, then add any new feature to the plan with amends and asked')
-    // a call with a plan body, or a first plan, is left as sent
-    expect(plan.fill!({ part: 'Box' })).toEqual({ part: 'Box' })
+    expect(t.card.plans.get('plan_1')!.plan.features.map((f) => f.name)).toEqual(['Tray', 'Pen cups'])
   })
 
   // shaped like a live call: the person asked to angle three features back, and the plan came back with every feature
@@ -200,11 +196,8 @@ describe('design.plan with amends for a change the person asked for', () => {
     assumptions: ['Tilt 4 degrees toward the back (-X)'],
     questions: [],
   })
-  /** design.plan as a call reaches it: filled, then read, then run. */
-  const sent = (t: ReturnType<typeof tab>, input: unknown) => {
-    const plan = tabToolset(boxHost(), t.card, { nozzleMm: () => machine.nozzle }).find((x) => x.name === 'design.plan')!
-    return t.run('design.plan', plan.fill!(input))
-  }
+  /** design.plan as a call reaches it: read, then run. */
+  const sent = (t: ReturnType<typeof tab>, input: unknown) => t.run('design.plan', input)
 
   it('keeps the approved overall size when an asked change with every feature leaves it out', async () => {
     const t = tab()
@@ -222,26 +215,23 @@ describe('design.plan with amends for a change the person asked for', () => {
   it('takes the overall size, rows of holes and open faces an asked change sends, and fills only those it leaves out', async () => {
     const t = tab()
     await t.approve(organizer)
-    const plan = tabToolset(boxHost(), t.card, { nozzleMm: () => machine.nozzle }).find((x) => x.name === 'design.plan')!
     const body = { ...cupsAt(organizer, 26), amends: 'plan_1', asked: 'make the pen cups shorter' }
     const { overall: _o, ...noOverall } = body
-    expect((plan.fill!(noOverall) as PlanInput).overall).toEqual({ x: 80, y: 50, z: 34 })
-    expect(plan.fill!({ ...body, overall: { x: 80, y: 50, z: 30 } })).toEqual({ ...body, overall: { x: 80, y: 50, z: 30 } })
+    const was = t.card.plans.get('plan_1')!.plan
+    expect(amendBody(was, noOverall as PlanInput).next.overall).toEqual({ x: 80, y: 50, z: 34 })
+    expect(amendBody(was, { ...body, overall: { x: 80, y: 50, z: 30 } } as PlanInput).next.overall).toEqual({ x: 80, y: 50, z: 30 })
     // the plan has no holes or open faces, so there are none to fill
-    expect(plan.fill!(body)).toBe(body)
+    expect(amendBody(was, body as PlanInput).next).not.toHaveProperty('holes')
     const out = await sent(t, { ...body, overall: { x: 80, y: 50, z: 30 } })
     expect(out.summary).toMatch(/Overall \w+ 34 mm to 30 mm/)
     // a plan with rows of holes and open faces: those left out are the plan's own, those sent stay as sent
     const holes = [{ name: 'Vent', diameter: 3, count: 4 }]
     const openFaces = [{ piece: 'Pen cups', faces: ['top' as const] }]
-    t.card.plans.put({ ...organizer, holes, openFaces, planId: 'plan_2' } as PartPlan, 'd1', 'card')
-    const two = { ...cupsAt(organizer, 26), amends: 'plan_2', asked: 'make the pen cups shorter' }
-    expect(plan.fill!(two)).toEqual({ ...two, holes, openFaces })
+    const two = { ...organizer, holes, openFaces, planId: 'plan_2' } as PartPlan
+    const sentTwo = cupsAt(organizer, 26)
+    expect(amendBody(two, sentTwo).next).toMatchObject({ holes, openFaces })
     const wider = [{ name: 'Vent', diameter: 4, count: 4 }]
-    expect(plan.fill!({ ...two, holes: wider })).toEqual({ ...two, holes: wider, openFaces })
-    // a build's amend, with a reason and no asked, is left as sent
-    const { asked: _k, ...build } = two
-    expect(plan.fill!({ ...build, reason: 'The cups need room.' })).toEqual({ ...build, reason: 'The cups need room.' })
+    expect(amendBody(two, { ...sentTwo, holes: wider }).next).toMatchObject({ holes: wider, openFaces })
   })
 
   it('still refuses an asked change that gives an overall size the plan does not have', async () => {

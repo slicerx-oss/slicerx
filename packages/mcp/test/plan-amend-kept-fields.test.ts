@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// An amend changes sizes only. A field it does not keep (a feature's on, a hole row's recess, the plan's detail and its
-// lists) that it gives otherwise than the approved plan is refused, naming the field, and the plan stays as approved:
-// never "Plan changed" with the change dropped. design.plan in the mimir tab and design.put_plan over MCP share the rule
-// (plan-amend.ts). The plan here is a recorded display plan: a 1:1250 liner whose funnel row stands on the first funnel.
+// An amend changes sizes only. A feature's on or a hole row's recess that it gives otherwise than the approved plan is
+// refused, naming it, and the plan stays as approved: never "Plan changed" with the change dropped. A plan field it does
+// not keep (the plan's detail and its lists) given otherwise is refused by design.put_plan over MCP, and in the mimir
+// tab design.plan changes the sizes, keeps the field as approved and names it in the result (plan-amend.ts). The plan
+// here is a recorded display plan: a 1:1250 liner whose funnel row stands on the first funnel.
 import type { DesignHost } from '@slicerx/cad-history'
 import type { PilotMachine } from '@slicerx/contracts'
 import type { ToolContext } from '@slicerx/pilot'
@@ -92,8 +93,8 @@ function tab() {
 }
 
 describe('design.plan with amends, for a field an amend does not keep', () => {
-  it('is 1.17.4', () => {
-    expect(tab().version).toBe('1.17.4')
+  it('is 1.18.0', () => {
+    expect(tab().version).toBe('1.18.0')
   })
 
   it('refuses an amend that only moves the row onto another feature, as no size differs', async () => {
@@ -133,10 +134,15 @@ describe('design.plan with amends, for a field an amend does not keep', () => {
     ['scale', '1300', 'the plan keeps scale: "1250"'],
     ['real', [{ feature: 'Hull', size: 'length', mm: 270000 }], 'the plan keeps real: [{"feature":"Hull","size":"length","mm":269100},{"feature":"Hull","size":"beam","mm":28200}]'],
     ['tiers', { 'Lower deck house': ['Lower deck house', 'Upper deck house'] }, 'the plan keeps tiers: {"Lower deck house":["Lower deck house"],"Upper deck house":["Upper deck house"]}'],
-  ])('refuses an amend that changes %s with a size, naming it, and changes nothing', async (field, value, keeps) => {
+  ])('takes an amend that changes %s with a size, keeping the field as approved and naming it', async (field, value, keeps) => {
     const t = tab()
-    await expect(t.run({ ...row(spaced), [field]: value, amends: ID, reason: 'Wider spacing.' })).rejects.toThrow(`${field}: an amend changes sizes only; ${keeps}`)
-    t.unchanged()
+    const was = structuredClone(t.card.plans.get(ID)!.plan) as unknown as Record<string, unknown>
+    const out = await t.run({ ...row(spaced), [field]: value, amends: ID, reason: 'Wider spacing.' })
+    expect(out.summary).toBe(`Plan changed (revision 2): Funnel array spacing 21 mm to 22 mm. Build to it as changed. Ignored ${field}: an amend changes sizes only, so the plan keeps it as approved`)
+    expect((out.output as PlanAnswer).ignored).toEqual([field])
+    expect((t.card.plans.get(ID)!.plan as unknown as Record<string, unknown>)[field]).toEqual(was[field])
+    // design.put_plan refuses the same field with the words it always used
+    expect(amendDropProblem(was as unknown as PartPlan, { ...row(spaced), [field]: value } as unknown as PartPlan)).toBe(`${field}: an amend changes sizes only; ${keeps}`)
   })
 
   it('refuses a hole row whose recess changes with its diameter', async () => {

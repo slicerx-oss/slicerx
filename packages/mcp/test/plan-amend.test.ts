@@ -101,7 +101,7 @@ const taller = (p: PlanInput, z: number): PlanInput => ({ ...p, features: p.feat
 describe('design.plan with amends', () => {
   it('tells the model a first plan takes no reason: amends and reason are for changing an approved plan', () => {
     const plan = tabToolset(boxHost(), createCardPlans(createPlanRegistry()), { nozzleMm: () => machine.nozzle }).find((t) => t.name === 'design.plan')!
-    expect(plan.version).toBe('1.17.4')
+    expect(plan.version).toBe('1.18.0')
     const props = toolSpec(plan).inputSchema.properties as Record<string, { description?: string }>
     expect(props['amends']?.description).toMatch(/only to change a plan the person approved/i)
     expect(props['reason']?.description).toMatch(/only with amends/i)
@@ -205,7 +205,8 @@ describe('design.plan with amends', () => {
     await expect(t.run('design.plan', { ...taller(box, 34), amends: 'plan_1', reason: '   ' })).rejects.toThrow('reason: say why the build changes the plan')
     await expect(t.run('design.plan', { ...taller(box, 34), reason: 'Taller.' })).rejects.toThrow('reason: give a reason only with amends')
     await expect(t.run('design.plan', { ...taller(box, 34), amends: 'plan_9', reason: 'Taller.' })).rejects.toThrow('amends: there is no plan the person approved with planId plan_9')
-    await expect(t.run('design.plan', { ...box, part: 'Hinged chest', amends: 'plan_1', reason: 'Renamed.' })).rejects.toThrow('part: an amend changes sizes only; the part stays "Hinged box"')
+    // the part's name is the approved plan's: a rename alone changes no size
+    await expect(t.run('design.plan', { ...box, part: 'Hinged chest', amends: 'plan_1', reason: 'Renamed.' })).rejects.toThrow('amends: no size differs from the approved plan plan_1')
     // a planned feature dropped is refused; one added is taken (plan-asked-change.test.ts)
     const fewer = { ...box, features: box.features.slice(1), amends: 'plan_1', reason: 'No base.' }
     await expect(t.run('design.plan', fewer)).rejects.toThrow('features: an amend keeps every planned feature, in order, and may add features under new names; the plan has Base, Hinge')
