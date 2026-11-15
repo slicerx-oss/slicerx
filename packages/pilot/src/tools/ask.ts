@@ -275,7 +275,7 @@ export function sheetTool(): PilotTool<never> {
       })
       .refine((i) => new Set(i.dims.map((d) => d.key)).size === i.dims.length, 'each dimension needs its own key')
       .refine((i) => i.dims.every((d) => (d.min === undefined || d.value >= d.min) && (d.max === undefined || d.value <= d.max)), 'a value is outside its own min and max')
-      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined || d.sourceTitle !== undefined || noteText(d) !== undefined), 'a looked-up value needs its sourceTitle, or its sourceUrl')
+      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined || d.sourceTitle !== undefined || noteText(d) !== undefined), 'a looked-up value names where it came from: its sourceTitle, its sourceUrl, or a note such as "269 m real at 1:1250"')
       .superRefine((i, ctx) => {
         for (const p of sheetProblems(i)) ctx.addIssue({ code: 'custom', path: p.path, message: p.message })
       }),

@@ -331,7 +331,7 @@ function planAgainNote(left: PlanLeft): string {
 }
 
 /** The answer to a new part started before its sizes were confirmed on a sheet. */
-export const SHEET_FIRST_NOTE = 'Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.'
+export const SHEET_FIRST_NOTE = 'Nothing was built. Before a new part, show its sizes with pilot.sheet, then send the same call again with the sheet\'s values. The sheet waits for the person only when it has fits or they asked to see the sizes; any other sheet shows and you build at once. A size the person gave in the request goes on the sheet as asked, and a looked-up size names its source with sourceTitle or sourceUrl.'
 
 /**
  * How much of a tool's own written refusal (a ToolInputError with code invalid_input) the model reads: enough for every
@@ -812,6 +812,23 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return (own !== undefined && design === own) || design === p.prior || namedAsPart(sessionId, design, p.part)
   }
   const usedSheet = new Set<string>()
+  // Sessions whose new plan (design.plan) this run was approved at once at its default size: its card showed the
+  // person the part's sizes and waited for nothing, so it stands for the sheet. It holds for new bodies in the design
+  // started for that part (named as the part), from the plan's run on (and the run after one cut short), until another
+  // plan is answered. design is unset until such a design is started.
+  const shownPlan = new Map<string, { part: string; design?: string }>()
+  // Sessions whose last new part's sheet was canceled or set aside in words: as the latest sheet's answer stands, no plan
+  // card stands for a sheet until a new part's sheet is confirmed again
+  const sheetDeclined = new Set<string>()
+  // whether the plan card approved at once stands for the sheet of a new part started in `design` (by id or by the
+  // name it was started under; with none named, the part this run started last): never while a sheet must wait (the
+  // person asked to see the sizes, a size must fit, pieces print in place) or after a new part's sheet was turned down
+  const planShowsSizes = (sessionId: string, design: unknown): boolean => {
+    const shown = shownPlan.get(sessionId)
+    if (!shown?.design || sheetDeclined.has(sessionId) || sheetAskedIn.has(sessionId) || fitSizes.has(sessionId) || printInPlace.has(sessionId)) return false
+    const target = typeof design === 'string' && design ? design : runPart.get(sessionId)?.at(-1)?.id
+    return target !== undefined && (target === shown.design || designNames.get(sessionId)?.get(shown.design) === target)
+  }
   // Sessions whose last run stopped at its step or tool call limit with the part unfinished: "keep going" builds the
   // rest of the same part, so the sheet confirmed for it still holds, for that part's design only.
   const cutShort = new Set<string>()
@@ -1221,6 +1238,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (refused) return { message: JSON.stringify({ ok: false, blocked: true, code: SAME_PART, message: ONE_PART_NOTE(refused[0].name, refused[0].id, refused[1]) }), stop: false }
     }
     let starting = false
+    // whether a new part goes ahead on a confirmed sheet (else on a plan card that showed its sizes)
+    let bySheet = false
     const design = (input as { design?: unknown } | null)?.design
     // a build into the built design a follow-up works on adds to that part: it is no new part, so it needs no sheet
     const newPart = startsPart(tool.name, input) && !(typeof design === 'string' && followed.get(sessionId) === design)
@@ -1229,7 +1248,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // never for a part in another design; with no design recorded for it, any design may be its own
       const under = sheetDesigns.get(sessionId)
       const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
-      if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
+      bySheet = confirmed.has(sessionId) && !elsewhere
+      // a plan card approved at once for this part's design already showed its sizes: it builds with no sheet
+      if (!bySheet && !planShowsSizes(sessionId, design)) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
     }
     // the planned part waits while its plan is stale, so it is never built on the old sizes: its first body, and any
     // change to its design (one started from a model has bodies already; a join on an empty one makes none). Starting
@@ -1239,8 +1260,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (changes && waitsForPlan(sessionId, design)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
     if (newPart && findTool('pilot.sheet')) {
       usedSheet.add(sessionId)
-      if (typeof design === 'string' && design) startedUnder(sessionId, design)
-      else starting = true
+      // only a confirmed sheet records the designs it started parts in; a plan card holds for its own design already
+      if (bySheet && typeof design === 'string' && design) startedUnder(sessionId, design)
+      else if (bySheet) starting = true
     }
     // the planned part is being built: a sheet from here on is another part's
     if (newPart) endPrintInPlace(sessionId)
@@ -1330,6 +1352,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           if (answer.confirmed) {
             if (!sheet.design) confirmed.add(sessionId)
           } else if (!answer.said && !sheet.design) confirmed.delete(sessionId)
+          // a new part's sheet canceled or set aside in words: no plan card stands for it, until a new part's sheet is confirmed
+          if (!sheet.design) {
+            if (answer.confirmed) sheetDeclined.delete(sessionId)
+            else sheetDeclined.add(sessionId)
+          }
           // a new part's sheet is a new part's sizes: nothing carries over from the last one, and no part has used it
           // yet. A sheet set aside by words, or one of a part already built, leaves the last part's sheet as it was.
           if (!sheet.design && (answer.confirmed || !answer.said)) {
@@ -1425,6 +1452,19 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (plans.get(was.planId)?.stale) plans.supersede(was.planId)
       planned.delete(sessionId)
     }
+    // a new plan answered replaces the plan card that stood for the sheet; only one approved at once, at its default
+    // size (auto: its card waited for nobody), stands for it, tied to the design this run started named as its part,
+    // else the first such design started after it. A change to an approved plan (amends) leaves it as it was.
+    if (answered && typeof answered.accepted === 'boolean' && typeof (input as { amends?: unknown }).amends !== 'string') {
+      shownPlan.delete(sessionId)
+      if (out.ok !== false && answered.accepted === true && (answered as { auto?: unknown }).auto === true) {
+        const part = typeof answered.edits?.part === 'string' ? answered.edits.part : (input as { part?: unknown }).part
+        if (typeof part === 'string' && part) {
+          const started = runPart.get(sessionId)?.findLast((d) => sharesWord(d.name, part))
+          shownPlan.set(sessionId, { part, ...(started ? { design: started.id } : {}) })
+        }
+      }
+    }
     if (answered && out.ok !== false && answered.accepted !== false) {
       // the plan as approved, with the person's edits when they made any
       const pieces = answered.edits ? answered.edits.printInPlace : (input as { printInPlace?: unknown }).printInPlace
@@ -1473,6 +1513,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // a design started from a model has its body at once
       const body = Array.isArray(made?.parts) && made.parts.length > 0
       if (typeof made?.design === 'string' && made.design) runPart.set(sessionId, [...(runPart.get(sessionId) ?? []), { id: made.design, name: typeof made.name === 'string' && made.name ? made.name : 'The design', body, failed: false }])
+      // the first design started named as the part of the plan card that stood for the sheet is that part's
+      const shown = shownPlan.get(sessionId)
+      const name = typeof made?.name === 'string' && made.name ? made.name : (input as { name?: unknown }).name
+      if (shown && shown.design === undefined && typeof made?.design === 'string' && made.design && typeof name === 'string' && sharesWord(name, shown.part)) shown.design = made.design
     }
     if (runBook && builtin && tool.name === 'design.new' && out.ok !== false) {
       const design = (out.output as { design?: unknown } | undefined)?.design
@@ -2186,7 +2230,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         if (unfinished) {
           carried.add(sessionId)
           usedSheet.add(sessionId)
-        } else carried.delete(sessionId)
+        } else {
+          carried.delete(sessionId)
+          // a plan card stands for the sheet in its own run, and in the next one only to finish a part cut short
+          shownPlan.delete(sessionId)
+        }
         if (gapSheet.delete(sessionId)) endPrintInPlace(sessionId)
         emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString(), ...(auto ? { route } : {}) })
         if (scope !== 'full') pluginTools = []
