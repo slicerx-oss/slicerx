@@ -13,7 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Host, MeshHandle, MeshPart, SliceRequest, SliceResult } from '@slicerx/contracts'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setGeomProvider, toGeom } from '../src/geom/client'
 import { planResume } from '../src/geom/resume'
 import { boxMesh } from '../src/plate/mesh-ops'
@@ -238,6 +238,13 @@ describe('the job layers a resume waits for', () => {
     return { host, requests }
   }
   const started = (h: { calls: () => number }) => vi.waitFor(() => expect(h.calls()).toBe(1))
+
+  // started() waits 1 s for the engine call. The slice first waits for the printer profile, whose first load
+  // (printer-base, the settings) can take most of that on a loaded machine, so it is loaded before the tests.
+  beforeAll(async () => {
+    await import('../src/workspaces/prepare/printer-base')
+    await (await import('../src/state/profile-sync')).profileReady()
+  })
 
   beforeEach(() => {
     onePlate(10, {})
