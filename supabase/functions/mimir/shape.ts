@@ -9,6 +9,11 @@
 // the base model, for every turn the edition does not step up (migrations/0028_mimir_step_up.sql)
 export const MODEL = 'claude-haiku-5-5'
 export const MAX_OUTPUT = 8192
+// Haiku's design turns think long: at 8192 a plan's thinking could fill the reply before any tool call, so the base model
+// gets more room; a reply is billed for what it uses, and a cut or unfinished one for this much at most
+export const BASE_OUTPUT = 32768
+/** The reply cap for the turn's model: the base model's own, every other model's MAX_OUTPUT. */
+export const maxOutputFor = (model: string): number => (/^claude-haiku-5-5(-|$)/.test(model) ? BASE_OUTPUT : MAX_OUTPUT)
 export const MAX_SEARCHES = 3
 // a conversation may carry up to 15 MB of the person's pictures and PDFs (20 MB as base64), plus its text
 export const MAX_BODY_BYTES = 24_000_000
@@ -364,8 +369,9 @@ export function shape(raw: unknown, model: string = MODEL, betas?: string | null
   try {
     if (!isObj(raw)) refuse('the body must be a JSON object')
     const r = raw as Obj
-    const asked = typeof r['max_tokens'] === 'number' && r['max_tokens'] > 0 ? Math.floor(r['max_tokens']) : MAX_OUTPUT
-    const maxOutput = Math.min(asked, MAX_OUTPUT)
+    const cap = maxOutputFor(model)
+    const asked = typeof r['max_tokens'] === 'number' && r['max_tokens'] > 0 ? Math.floor(r['max_tokens']) : cap
+    const maxOutput = Math.min(asked, cap)
     const t = tools(r['tools'])
     const body: Obj = { model, max_tokens: maxOutput, stream: true, messages: messages(r['messages']) }
     const sys = system(r['system'])

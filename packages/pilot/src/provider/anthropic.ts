@@ -12,6 +12,9 @@ import type { LlmAdapter, LlmEvent, LlmRequest, LlmStop } from './types'
 
 const DEFAULT_BASE = 'https://api.anthropic.com'
 const BUDGET = { low: 2048, medium: 8192, high: 16000 } as const
+// a reply's room when a current model thinks adaptively and nothing else is set: a design turn's thinking can run past
+// 16000 before its first tool call; a reply is billed for what it uses
+export const ADAPTIVE_OUTPUT = 32000
 const EPHEMERAL = { type: 'ephemeral' } as const
 /** The tool search tool a `toolSearch` request carries, never deferred. */
 export const TOOL_SEARCH_TOOL = { type: 'tool_search_tool_bm25_20251119', name: 'tool_search_tool_bm25' } as const
@@ -152,7 +155,7 @@ export function createAnthropicAdapter(): LlmAdapter {
       const budget = req.reasoning && !adaptive ? BUDGET[req.reasoning] : 0
       const body: Obj = {
         model: req.model,
-        max_tokens: req.maxOutputTokens ?? (budget > 0 ? budget + 8192 : req.reasoning ? 16000 : 8192),
+        max_tokens: req.maxOutputTokens ?? (budget > 0 ? budget + 8192 : req.reasoning ? ADAPTIVE_OUTPUT : 8192),
         messages,
         stream: true,
       }

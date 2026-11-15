@@ -140,6 +140,16 @@ describe('Anthropic adapter', () => {
     ])
   })
 
+  it('gives an adaptive thinking turn 32000 output tokens, a set cap its own, and a turn without reasoning 8192', () => {
+    const think = JSON.parse(adapter.build({ ...REQ, model: 'claude-haiku-5-5', reasoning: 'medium' }).body) as Record<string, unknown>
+    expect(think['thinking']).toEqual({ type: 'adaptive' })
+    expect(think['max_tokens']).toBe(32000)
+    const set = JSON.parse(adapter.build({ ...REQ, model: 'claude-haiku-5-5', reasoning: 'medium', maxOutputTokens: 1200 }).body) as Record<string, unknown>
+    expect(set['max_tokens']).toBe(1200)
+    const plain = JSON.parse(adapter.build({ ...REQ, model: 'claude-haiku-5-5' }).body) as Record<string, unknown>
+    expect(plain['max_tokens']).toBe(8192)
+  })
+
   it('does not force tool use while thinking, and needs no thinking field without reasoning', () => {
     const forced = JSON.parse(adapter.build({ ...REQ, toolChoice: 'required', reasoning: 'low' }).body) as Record<string, unknown>
     expect(forced['tool_choice']).toEqual({ type: 'auto' })
