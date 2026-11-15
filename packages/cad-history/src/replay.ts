@@ -7,7 +7,7 @@
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, FaceFrame, MovedFace, Vec3 } from './types'
 import { withTilt } from './tilt'
-import { IDENTITY, bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, newSlot, point, type History, type HistoryMesh, type LoftProfile, type Mat4, type PaintLayer, type PaintTexts, type PatternCopies, type PrimitiveSpec, type ReplayResult, type SkippedEdge, type Step, type StepParams, type StepStatus } from './model'
+import { IDENTITY, SEED_FACE_MM, bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, nearestTriangle, newSlot, point, type History, type HistoryMesh, type LoftProfile, type Mat4, type PaintLayer, type PaintTexts, type PatternCopies, type PrimitiveSpec, type ReplayResult, type SkippedEdge, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
@@ -724,10 +724,19 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         // a paint step with no target (none can be made, but a history may hold one) is broken as a lost face is
         if (!target?.kind) throw new Broken('Missing face; pick the face again to repair this step.')
         if (target.kind === 'seed' && target.faceKey) {
-          const byKey = findByKey(part, s.transform, target.faceKey, target.point)
-          if (!byKey) throw new Broken('Missing face; pick the face again to repair this step.')
-          if (byKey.split) throw new Broken('Ambiguous face; pick the face again to repair this step.')
-          target = { ...target, point: byKey.at }
+          // the stored point is what the person picked: the key's face counts only when it lies under that point, as a key
+          // made where the part's steps ran another way (on the mesh, or on the kernel) can name a face far from it
+          const keyed = nearestTriangle(part, s.transform, target.point, target.faceKey)
+          const byKey = keyed && keyed.distance <= SEED_FACE_MM ? findByKey(part, s.transform, target.faceKey, target.point) : null
+          if (byKey?.split) throw new Broken('Ambiguous face; pick the face again to repair this step.')
+          if (byKey) target = { ...target, point: byKey.at }
+          else {
+            // the face under the point instead, as paint.select finds a seed with no key; none there is a lost face
+            const under = nearestTriangle(part, s.transform, target.point)
+            if (!under || under.distance > SEED_FACE_MM) throw new Broken('Missing face; pick the face again to repair this step.')
+            const { faceKey: _key, ...picked } = target
+            target = picked
+          }
         }
         // A height band on an exact part goes on whole faces, so it lasts through the part's next exact steps as paint by
         // face does: the kernel first splits the faces that cross the band's edges (an engine that cannot leaves the
