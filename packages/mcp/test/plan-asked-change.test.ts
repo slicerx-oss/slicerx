@@ -148,6 +148,109 @@ describe('design.plan with amends for a change the person asked for', () => {
     expect(plan.fill!({ part: 'Box' })).toEqual({ part: 'Box' })
   })
 
+  // shaped like a live call: the person asked to angle three features back, and the plan came back with every feature
+  // and a tilt on three of them, but no overall size
+  const hall: PlanInput = {
+    part: 'Exhibition hall model',
+    units: 'mm',
+    detail: 'display',
+    scale: '1233',
+    proportions: 'lookup: 269 m long, 28.2 m wide, four towers about 18.8 m tall, scaled 1:1233',
+    curved: ['Base'],
+    flat: ['Lower tier'],
+    tiers: { 'Lower tier': ['Lower tier', 'Upper tier', 'Top tier'] },
+    repeats: ['Towers'],
+    features: [
+      { name: 'Base', kind: 'loft', sizes: { length: 218, width: 23, height: 15, sections: 8 }, kinds: { sections: 'count' } },
+      { name: 'Lower tier', kind: 'extrude', on: 'Base', sizes: { length: 120, width: 17, height: 4.5 } },
+      { name: 'Upper tier', kind: 'extrude', on: 'Lower tier', sizes: { length: 100, width: 14, height: 3.5 } },
+      { name: 'Top tier', kind: 'extrude', on: 'Upper tier', sizes: { length: 10, width: 13, height: 3 } },
+      { name: 'Tower', kind: 'extrude', on: 'Upper tier', sizes: { diameter: 5.5, height: 15 } },
+      { name: 'Tower array', kind: 'array', on: 'Upper tier', sizes: { count: 4, spacing: 14 }, kinds: { count: 'count' } },
+      { name: 'Front block', kind: 'extrude', on: 'Base', sizes: { length: 20, width: 10, height: 3 } },
+      { name: 'Back block', kind: 'extrude', on: 'Base', sizes: { length: 22, width: 12, height: 3 } },
+      { name: 'Front post', kind: 'extrude', on: 'Base', sizes: { diameter: 1.6, height: 25 } },
+      { name: 'Back post', kind: 'extrude', on: 'Base', sizes: { diameter: 1.6, height: 21 } },
+    ],
+    real: [
+      { feature: 'Base', size: 'length', mm: 269000 },
+      { feature: 'Base', size: 'width', mm: 28200 },
+      { feature: 'Tower', size: 'height', mm: 18800 },
+      { feature: 'Tower array', size: 'spacing', mm: 17262 },
+      { feature: 'Lower tier', size: 'length', mm: 148000 },
+      { feature: 'Upper tier', size: 'length', mm: 123000 },
+      { feature: 'Top tier', size: 'length', mm: 12000 },
+    ],
+    overall: { x: 218, y: 23, z: 40 },
+    assumptions: ['Front points toward +X, base bottom at z 0', 'One filament, no color', 'Railings, doors and windows are too small to print and are left out', 'Towers stand upright, not tilted'],
+    questions: [],
+  } as PlanInput
+  const tilted = (p: PlanInput) => ({
+    amends: 'plan_1',
+    asked: 'Tilt the towers and posts back a few degrees.',
+    part: p.part,
+    units: p.units,
+    features: p.features.map((f) =>
+      ['Tower', 'Front post', 'Back post'].includes(f.name)
+        ? { ...f, sizes: { ...f.sizes, tilt: 4 }, kinds: { tilt: 'angle' as const } }
+        : f.name === 'Tower array'
+          ? { ...f, sizes: { ...f.sizes, spacing: 18 } }
+          : f,
+    ),
+    assumptions: ['Tilt 4 degrees toward the back (-X)'],
+    questions: [],
+  })
+  /** design.plan as a call reaches it: filled, then read, then run. */
+  const sent = (t: ReturnType<typeof tab>, input: unknown) => {
+    const plan = tabToolset(boxHost(), t.card, { nozzleMm: () => machine.nozzle }).find((x) => x.name === 'design.plan')!
+    return t.run('design.plan', plan.fill!(input))
+  }
+
+  it('keeps the approved overall size when an asked change with every feature leaves it out', async () => {
+    const t = tab()
+    await t.approve(hall)
+    const out = await sent(t, tilted(hall))
+    expect(t.cards).toEqual(['Plan'])
+    expect(out.ok).not.toBe(false)
+    expect(out.output as PlanAnswer).toMatchObject({ planId: 'plan_1', accepted: true, revision: 2 })
+    const kept = t.card.plans.get('plan_1')!.plan
+    expect(kept.overall).toEqual({ x: 218, y: 23, z: 40 })
+    for (const name of ['Tower', 'Front post', 'Back post']) expect(kept.features.find((f) => f.name === name)).toMatchObject({ sizes: { tilt: 4 }, kinds: { tilt: 'angle' } })
+    expect(kept.features.find((f) => f.name === 'Tower array')!.sizes['spacing']).toBe(18)
+  })
+
+  it('takes the overall size, rows of holes and open faces an asked change sends, and fills only those it leaves out', async () => {
+    const t = tab()
+    await t.approve(organizer)
+    const plan = tabToolset(boxHost(), t.card, { nozzleMm: () => machine.nozzle }).find((x) => x.name === 'design.plan')!
+    const body = { ...cupsAt(organizer, 26), amends: 'plan_1', asked: 'make the pen cups shorter' }
+    const { overall: _o, ...noOverall } = body
+    expect((plan.fill!(noOverall) as PlanInput).overall).toEqual({ x: 80, y: 50, z: 34 })
+    expect(plan.fill!({ ...body, overall: { x: 80, y: 50, z: 30 } })).toEqual({ ...body, overall: { x: 80, y: 50, z: 30 } })
+    // the plan has no holes or open faces, so there are none to fill
+    expect(plan.fill!(body)).toBe(body)
+    const out = await sent(t, { ...body, overall: { x: 80, y: 50, z: 30 } })
+    expect(out.summary).toMatch(/Overall \w+ 34 mm to 30 mm/)
+    // a plan with rows of holes and open faces: those left out are the plan's own, those sent stay as sent
+    const holes = [{ name: 'Vent', diameter: 3, count: 4 }]
+    const openFaces = [{ piece: 'Pen cups', faces: ['top' as const] }]
+    t.card.plans.put({ ...organizer, holes, openFaces, planId: 'plan_2' } as PartPlan, 'd1', 'card')
+    const two = { ...cupsAt(organizer, 26), amends: 'plan_2', asked: 'make the pen cups shorter' }
+    expect(plan.fill!(two)).toEqual({ ...two, holes, openFaces })
+    const wider = [{ name: 'Vent', diameter: 4, count: 4 }]
+    expect(plan.fill!({ ...two, holes: wider })).toEqual({ ...two, holes: wider, openFaces })
+    // a build's amend, with a reason and no asked, is left as sent
+    const { asked: _k, ...build } = two
+    expect(plan.fill!({ ...build, reason: 'The cups need room.' })).toEqual({ ...build, reason: 'The cups need room.' })
+  })
+
+  it('still refuses an asked change that gives an overall size the plan does not have', async () => {
+    const t = tab()
+    const { overall: _o, ...bare } = organizer
+    await t.approve(bare as PlanInput)
+    await expect(sent(t, { ...cupsAt(bare as PlanInput, 26), overall: { x: 80, y: 50, z: 30 }, amends: 'plan_1', asked: 'make the pen cups shorter' })).rejects.toThrow('overall: an amend changes sizes only; leave out the overall size')
+  })
+
   it('lets a build amend add a feature too, on its card', async () => {
     const t = tab()
     await t.approve(organizer)
