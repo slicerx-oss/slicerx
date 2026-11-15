@@ -5,9 +5,10 @@
 //! between the places.
 //!
 //! The support is compared as shapes, not move by move: where a support loop starts, and where it leaves the
-//! gap that ends it, may fall at another point of the same loop without changing what prints. Each layer's
-//! paths are sampled every 0.05 mm; every sample of one must lie within [`SHAPE_MM`] of the other's paths moved
-//! back, and the other way round, and the layer's path lengths must agree within [`LENGTH_MM`].
+//! gap that ends it, may fall at another point of the same loop without changing what prints. So each loop's gap is
+//! closed first, then each layer's paths are sampled every 0.05 mm; every sample of one must lie within
+//! [`SHAPE_MM`] of the other's paths moved back, and the other way round, and the layer's path lengths (gaps left
+//! open) must agree within [`LENGTH_MM`].
 #![allow(
     clippy::disallowed_methods,
     clippy::cast_possible_truncation,
@@ -28,6 +29,8 @@ use sx_core::api::{Mesh, SliceRequest};
 /// round differently, which puts a sample up to about 0.0015 mm off. 0.01 mm leaves room for that, and for
 /// nothing a support line (0.4 mm wide) would show.
 const SHAPE_MM: f64 = 0.01;
+/// The longest gap a support loop leaves where it ends, mm: about a line width or two.
+const GAP_MM: f64 = 1.0;
 /// How far a layer's support path lengths may differ, mm: the same rounding, summed over a few hundred moves.
 const LENGTH_MM: f64 = 0.05;
 
@@ -155,6 +158,26 @@ fn farthest(from: &SupportSegs, to: &SupportSegs, shift: [f64; 2]) -> (f64, [f64
     worst
 }
 
+/// The segments of a layer with each loop's gap closed: a run of joined moves that ends within [`GAP_MM`] of where
+/// it starts gets the move back to its start. A loop that starts at another point of itself leaves its gap there,
+/// and the closed loops are the same.
+fn closed(segs: &SupportSegs) -> SupportSegs {
+    let mut out = segs.clone();
+    let mut start = 0;
+    for k in 0..segs.len() {
+        let ends_run = segs.get(k + 1).is_none_or(|next| next.1 != segs[k].2);
+        if ends_run {
+            let (first, last) = (mm(segs[start].1), mm(segs[k].2));
+            let gap = (last[0] - first[0]).hypot(last[1] - first[1]);
+            if k > start && gap > 0.0 && gap <= GAP_MM {
+                out.push((segs[k].0, segs[k].2, segs[start].1));
+            }
+            start = k + 1;
+        }
+    }
+    out
+}
+
 /// Every layer where `there` (support at a place `shift` from `here`'s) differs from `here` past the tolerances.
 fn differences(here: &[(f32, SupportSegs)], there: &[(f32, SupportSegs)], shift: [f64; 2]) -> Vec<String> {
     let mut bad = Vec::new();
@@ -163,8 +186,9 @@ fn differences(here: &[(f32, SupportSegs)], there: &[(f32, SupportSegs)], shift:
     }
     for ((z, a), (_, b)) in here.iter().zip(there) {
         let (la, lb) = (layer_length(a), layer_length(b));
-        let (d1, p1) = farthest(a, b, shift);
-        let (d2, p2) = farthest(b, a, [-shift[0], -shift[1]]);
+        let (a, b) = (closed(a), closed(b));
+        let (d1, p1) = farthest(&a, &b, shift);
+        let (d2, p2) = farthest(&b, &a, [-shift[0], -shift[1]]);
         if (la - lb).abs() > LENGTH_MM || d1 > SHAPE_MM || d2 > SHAPE_MM {
             bad.push(format!(
                 "z {z}: {la:.3} against {lb:.3} mm, {d1:.3} mm off at {p1:.2?}, {d2:.3} mm off at {p2:.2?}"
