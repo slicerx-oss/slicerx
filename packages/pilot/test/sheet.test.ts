@@ -81,11 +81,11 @@ describe('pilot.sheet', () => {
     // a long note is cut to the 80 characters a title holds
     const long = 'Overall length 269.1 m, from the builder plans as drawn at 1:1250 for the display case model'
     expect(sheetOf(sheetTool().input.parse({ title: 'Sizes', dims: [{ ...lookup, note: long }] }) as never).dims[0]!.sourceTitle).toBe(long.slice(0, 80).trimEnd())
-    // with no title, link or note, or a note of only spaces, the sheet is refused in the same words as before
+    // with no title, link or note, or a note of only spaces, the sheet is refused with the three places a source can be named
     for (const dims of [[lookup], [{ ...lookup, note: '   ' }]]) {
       const refused = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims } }] }], () => ({}))
       expect(refused.some((e) => e.type === 'sheet'), JSON.stringify(dims)).toBe(false)
-      expect(refused.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('a looked-up value needs its sourceTitle, or its sourceUrl') })
+      expect(refused.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('a looked-up value names where it came from: its sourceTitle, its sourceUrl, or a note such as "269 m real at 1:1250"') })
     }
   })
 
