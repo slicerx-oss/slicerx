@@ -11,7 +11,7 @@
 // - CAD-004: a cached replay keeps its moved-face facts
 // - CAD-005: repair, simplify and hollow drop paint on the triangles they rebuild (#217; text in geom-ops-paint.test.ts)
 // - CAD-007: the 3MF reader takes vertex attributes in any order
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host, MeshHandle, MeshPart, SliceResult } from '@slicerx/contracts'
 import { IDENTITY, clearReplayCache, replayHistory, type History, type HistoryMesh } from '@slicerx/cad-history'
 import { applyHistory } from '../src/cad/history/ops'
@@ -20,7 +20,7 @@ import { zip } from '../src/export/zip'
 import { setGeomProvider } from '../src/geom/client'
 import { hollowSelected, repairSelected, simplifySelected } from '../src/plate/geom-ops'
 import { clearProject } from '../src/project/new'
-import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../src/state/actions'
+import { cancelSlice, exportGcode, loadSliceRun, sendToPrinter, slicePlate } from '../src/state/actions'
 import { startAutoSlice } from '../src/state/auto-slice'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { resumeFor } from '../src/plate/resume-tops'
@@ -45,6 +45,14 @@ function preview(): ArrayBuffer {
 }
 
 describe('slices that no longer match the plate', () => {
+  // INT-002 waits 1 s for the preview request. The first slice in a run loads the slice code (loadSliceRun) and the
+  // printer profile (printer-base, the settings), which on a loaded machine can take most of that, so they are
+  // loaded before the tests.
+  beforeAll(async () => {
+    await loadSliceRun()
+    await import('../src/workspaces/prepare/printer-base')
+    await (await import('../src/state/profile-sync')).profileReady()
+  })
   beforeEach(() => set({ ...initial, plate: [box], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', slice: { status: 'idle' }, autoSlice: false, overrides: { smart_layer: 'off' }, resume: null, calibration: {}, layerMarks: {}, historyEdit: null, printSheet: null }))
   afterEach(() => {
     cancelSlice({ quiet: true })
