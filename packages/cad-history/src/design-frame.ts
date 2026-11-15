@@ -10,40 +10,50 @@
 // sketch is recorded where the sketch is stored (recordedOn), so no change of owner, undo or redo rewrites a frame.
 // Every offset comes from what the store holds, so any number of hosts, and the app's own tools, read the same.
 import type { SketchItem, Timeline } from './design'
-import { BED_FRAME, direction, IDENTITY, invert, multiply, point, type History, type Mat4, type PaintTarget, type SolidSpec, type StepParams } from './model'
+import { BED_FRAME, direction, IDENTITY, invert, multiply, point, type History, type Mat4, type PaintTarget, type Placed, type SolidSpec, type StepParams } from './model'
 import type { ArraySpec, EdgeRef, FaceFrame, Vec3 } from './types'
 
 /** A move by `v`, mm. */
 export const translation = (v: readonly [number, number, number]): Mat4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, v[0], v[1], v[2], 1]
 
-/** `t` moved on the plate by `by` (mm in X and Y), or back by it with `back`. */
-export function movedBy(t: Mat4, by: readonly [number, number] | undefined, back = false): Mat4 {
+/** `t` moved on the plate by `by` (mm in X, Y and Z), or back by it with `back`. */
+export function movedBy(t: Mat4, by: Readonly<Placed> | undefined, back = false): Mat4 {
   const m = [...t]
   if (!by) return m
   const s = back ? -1 : 1
   m[12] = (m[12] ?? 0) + s * by[0]
   m[13] = (m[13] ?? 0) + s * by[1]
+  m[14] = (m[14] ?? 0) + s * (by[2] ?? 0)
   return m
 }
+
+/** The move by landing moves `p`. */
+export const placedMove = (p: Readonly<Placed>): Mat4 => translation([p[0], p[1], p[2] ?? 0])
 
 /** The frame design tools work in for an object standing at `plate` with history `h`: the plate less its landing moves. */
 export function designFrame(plate: Mat4, h: Pick<History, 'placed'> | undefined): Mat4 {
   return movedBy(plate, h?.placed, true)
 }
 
+/** Landing moves as a history keeps them: none for no move, and two numbers for no lift (as files before lifts hold them). */
+export function placedAs(x: number, y: number, z: number): Placed | undefined {
+  if (x === 0 && y === 0 && z === 0) return undefined
+  return z === 0 ? [x, y] : [x, y, z]
+}
+
 /** The landing moves after one more, from `from` to `to` (both on the plate); none when they come to nothing. */
-export function placedAfter(placed: readonly [number, number] | undefined, from: Mat4, to: Mat4): [number, number] | undefined {
-  const x = (placed?.[0] ?? 0) + (to[12] ?? 0) - (from[12] ?? 0)
-  const y = (placed?.[1] ?? 0) + (to[13] ?? 0) - (from[13] ?? 0)
+export function placedAfter(placed: Readonly<Placed> | undefined, from: Mat4, to: Mat4): Placed | undefined {
   // float noise from adding and taking back the same move is no move
   const clean = (v: number) => (Math.abs(v) < 1e-9 ? 0 : Math.round(v * 1e9) / 1e9)
-  return clean(x) === 0 && clean(y) === 0 ? undefined : [clean(x), clean(y)]
+  const along = (k: 0 | 1 | 2) => clean((placed?.[k] ?? 0) + (to[12 + k] ?? 0) - (from[12 + k] ?? 0))
+  return placedAs(along(0), along(1), along(2))
 }
 
 /** `h` with `placed` as its landing moves (none drops them). */
-export function withPlaced(h: History, placed: readonly [number, number] | undefined): History {
+export function withPlaced(h: History, placed: Readonly<Placed> | undefined): History {
   const { placed: _p, ...rest } = h
-  return placed && (placed[0] !== 0 || placed[1] !== 0) ? { ...rest, placed: [placed[0], placed[1]] } : rest
+  const p = placed && placedAs(placed[0], placed[1], placed[2] ?? 0)
+  return p ? { ...rest, placed: p } : rest
 }
 
 const isIdentity = (m: Mat4) => m.every((v, i) => Math.abs(v - IDENTITY[i]!) < 1e-12)
@@ -271,6 +281,6 @@ export function claimSketches(t: Timeline, id: string): Timeline {
  * since it was stored (sketchMove), then back by the design's landing. A read applies it; a step drawn on the sketch is
  * recorded through its inverse, so the sketch keeps the frame it has.
  */
-export function storedToDesign(move: Mat4, placed: readonly [number, number] | undefined): Mat4 {
-  return multiply(translation([-(placed?.[0] ?? 0), -(placed?.[1] ?? 0), 0]), move)
+export function storedToDesign(move: Mat4, placed: Readonly<Placed> | undefined): Mat4 {
+  return multiply(translation([-(placed?.[0] ?? 0), -(placed?.[1] ?? 0), -(placed?.[2] ?? 0)]), move)
 }

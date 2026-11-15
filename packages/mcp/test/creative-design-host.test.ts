@@ -11,6 +11,7 @@ import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { parseRecording } from '../evals/creative/recordings'
 import { runPrompt, scoreParts, STALE_RESTART } from '../evals/creative/run'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../src/toolset'
+import { landedNote } from '../src/design-tools'
 import { useGeomEngine } from './geom-engine'
 
 const g = useGeomEngine('creative-design-host')
@@ -278,5 +279,45 @@ describe('the eval host lands bodies on the bed', () => {
     expect(landedOf(undone)).toBeUndefined()
     expect(onPlate(host.get(made.id))).toEqual(moved)
     expect(host.get(made.id).history.steps).toHaveLength(0)
+  })
+})
+
+describe('the eval host lifts a body under the bed onto it', () => {
+  const BED = { widthMm: 256, depthMm: 256, heightMm: 256 }
+  const atZ = (x: number, y: number, z: number): Mat4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]
+  const lone = () => headlessDesignHost(engine, { bed: () => plainBed(BED, () => []) })
+
+  it('reads the lowest point of the parts where they stand', () => {
+    const bed = plainBed(BED, () => [])
+    expect(bed.lowest([box([0, 0, -10], [20, 20, 10])], at(5, 5))).toBe(-10)
+    expect(bed.lowest([], at(5, 5))).toBeNull()
+    expect(bed.printsOnBed([box([118, 118, -10], [138, 138, 10])], [...IDENTITY])).toBe(false)
+  })
+
+  it('lifts a part built centered on z 0 on the middle of the bed, and keeps the design in its own frame', async () => {
+    const d = await lone().create('Handle', [box([118, 118, -10], [138, 138, 10])])
+    expect(d.landed).toEqual({ dxMm: 0, dyMm: 0, dzMm: 10 })
+    expect(d.placed).toEqual([0, 0, 10])
+    expect(d.transform).toEqual([...IDENTITY])
+    expect(onPlate(d)).toEqual(atZ(0, 0, 10))
+    expect(landedNote(d.landed!, d.name)).toBe("The part was under the bed, so it was lifted 10 mm onto it as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.")
+  })
+
+  it('lifts a part built 28 mm under the bed around the origin, and moves it onto the bed', async () => {
+    const d = await lone().create('Organizer', [box([-40, -30, -28], [40, 30, 15])])
+    expect(d.landed).toEqual({ dxMm: 128, dyMm: 128, dzMm: 28 })
+    expect(onPlate(d)).toEqual(atZ(128, 128, 28))
+    expect(landedNote(d.landed!, d.name)).toBe("The part was off the bed, so it moved to the plate by (128, 128) mm and was lifted 28 mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.")
+  })
+
+  it('leaves a part built standing above the bed where it is', async () => {
+    const d = await lone().create('Riser', [box([118, 118, 5], [138, 138, 15])])
+    expect(d.landed).toBeUndefined()
+    expect(d).not.toHaveProperty('placed')
+  })
+
+  it('says how far an edit lifted a part, and moved it too', () => {
+    expect(landedNote({ dxMm: 0, dyMm: 0, dzMm: 10, edit: true }, 'Handle')).toBe("Handle was under the bed, so it was lifted 10 mm onto it as a whole; its coordinates stay the design's own.")
+    expect(landedNote({ dxMm: 95, dyMm: 0, dzMm: 0.12, edit: true }, 'Handle')).toBe("Handle did not fit on the bed where it stood, so it moved by (95, 0) mm and was lifted 0.12 mm as a whole; its coordinates stay the design's own.")
   })
 })

@@ -217,12 +217,19 @@ export interface History {
   /** Why an earlier history ended, shown above the list: "History ends here: ..." */
   ended?: string
   /**
-   * How far the design hosts moved the object on the plate to land it, mm in X and Y (landing.ts). The design's own
-   * frame, the one the design tools give and read points in, is the object's transform moved back by this, so steps
-   * given in the frame it was built in still meet its body. Steps are stored in plate coordinates either way.
+   * How far the design hosts moved the object on the plate to land it, mm in X and Y, and up in Z when a landing lifted
+   * it onto the bed (landing.ts). The design's own frame, the one the design tools give and read points in, is the
+   * object's transform moved back by this, so steps given in the frame it was built in still meet its body. Steps are
+   * stored in plate coordinates either way.
    */
-  placed?: [number, number]
+  placed?: Placed
 }
+
+/**
+ * A design's landing moves, mm: X, Y and the lift in Z. A design never lifted keeps two numbers, as a file written
+ * before lifts holds them, and reads as no lift.
+ */
+export type Placed = [dx: number, dy: number, dz?: number]
 
 export type StepState = 'done' | 'broken' | 'skipped' | 'suppressed'
 

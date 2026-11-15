@@ -294,13 +294,16 @@ export function printPastBed(b: Box, bed: Bed, margins: PrintMargins, outlineRea
 }
 
 /**
- * True when an object prints where it stands: it is placed on the bed (placedOnBed), and what prints around it (brim,
- * raft, support pad, skirt, by the installed margins) stays on the bed and off the excluded areas and the prime tower.
+ * True when an object prints where it stands: it is placed on the bed (placedOnBed), its lowest point is not under the
+ * bed, and what prints around it (brim, raft, support pad, skirt, by the installed margins) stays on the bed and off
+ * the excluded areas and the prime tower.
  */
 export function printsOnBed(item: Pick<ArrangeItem, 'parts' | 'transform'>, bed: Bed, margins: PrintMargins = marginSource()): boolean {
   if (!placedOnBed(item, bed)) return false
   const b = bounds(item.parts, item.transform)
   if (!b) return true
+  // a part under the bed does not print where it stands: a design's landing lifts it (cad-history landing.ts)
+  if (b.min[2] < -ON_BED_TOL_MM) return false
   return !printPastBed(b, bed, margins, bed.round ? reachFrom(item.parts, item.transform, bed.widthMm / 2, bed.depthMm / 2) : undefined)
 }
 

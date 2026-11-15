@@ -10,7 +10,8 @@
 // later step or replay that takes a part that printed on the bed, or what prints around it, off the bed or into an
 // excluded area lands it again the same way, in the same undo step, and says so. A part that still prints where it
 // stands stays put; one parked off the bed before the step, or a locked one, stays where it is, and the step says it
-// is off the bed.
+// is off the bed. A body under the bed (its lowest point more than 0.01 mm down) is lifted onto it first, raised
+// only, at its first body or an edit; one opened from a project stays as saved until then.
 //
 // Every landing moves the design as a whole: the history keeps the move (History.placed), so the design's coordinates
 // stay the ones it was built in. Steps and timeline sketches are stored in plate coordinates; a step is moved into them
@@ -19,14 +20,14 @@
 // design's landing (cad-history design-frame.ts). Where a body stands comes from one place for every reader
 // (sketch-place.ts), waiting designs included, so the mimir tab's host, the app link's and Model read the same.
 import { renamedParts, renamedScope, withRenamedParts } from '../plate/part-renames'
-import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, unstopped, withPlaced, type AddOptions, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, liftedOnto, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, placedMove, recordedOn, sketchMove, stepId, storedToDesign, unstopped, withPlaced, type AddOptions, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type Placed, type RoomMove, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
 import { getArrangeOptions } from '../plate/edit'
 import { landOnBed, printsOnBed } from '../plate/arrange'
 import { nestArrange } from '../plate/nest'
-import { identity } from '../plate/transform'
+import { bounds, identity } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
 import { newStep, type UndoStep } from '../plate/history'
@@ -98,7 +99,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       name: e.name,
       history,
       transform: designFrame(e.transform, history),
-      ...(history.placed ? { placed: [...history.placed] as [number, number] } : {}),
+      ...(history.placed ? { placed: [...history.placed] as Placed } : {}),
       // each part with its paint, so the paint tools paint over what is there and read it back
       parts: withPaint(e),
       status: last ? last.status : history.steps.map((s) => (s.broken !== undefined ? { state: 'broken', message: s.broken } : s.note ? { state: 'done', note: s.note } : { state: 'done' })),
@@ -123,7 +124,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       const e = get().plate.find((p) => p.id === id)
       if (e) return fromEntry(e)
       const w = empty.get(id)
-      if (w) return { id, name: w.name, history: w.history, transform: designFrame(w.transform, w.history), ...(w.history.placed ? { placed: [...w.history.placed] as [number, number] } : {}), parts: [], status: [], madeBy: {}, redo: redo.get(id) ?? [] }
+      if (w) return { id, name: w.name, history: w.history, transform: designFrame(w.transform, w.history), ...(w.history.placed ? { placed: [...w.history.placed] as Placed } : {}), parts: [], status: [], madeBy: {}, redo: redo.get(id) ?? [] }
       // a design given by its name where its id goes: the one design of that name, else the ids there are
       const all = host.list()
       const named = designNamed(all, id)
@@ -251,7 +252,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       const standing = (id: string): DrawnFor => ({ design: id, transform: [...(placeOf(id) ?? identity())] })
       const drawnFor = d ? [standing(d.id)] : [...empty.keys()].map(standing)
       // drawn in a design's frame: stored in the plate's, by that design's landing
-      const by = d?.placed ? translation([d.placed[0], d.placed[1], 0]) : undefined
+      const by = d?.placed ? placedMove(d.placed) : undefined
       // one write, so one undo step takes the sketch back with what it is drawn for
       const k = finishSketch({ ...s, ...(by ? { frame: movedFrame(s.frame, by) } : {}), drawnFor })
       return d ? host.sketch!(k.id, d.id) : k
@@ -289,7 +290,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
    * recordedOn), as Model's own Extrude and Revolve keep theirs, so recording it leaves the sketch's frame as it was.
    */
   function recorded(d: Design, plate: Mat4, part: number, params: StepParams, label: string | undefined, sketch: string | undefined, feature: string | undefined, group?: string): Step {
-    const placed = d.placed ? translation([d.placed[0], d.placed[1], 0]) : undefined
+    const placed = d.placed ? placedMove(d.placed) : undefined
     const given = placed ? movedParams(params, placed) : params
     const { transform, params: p } = sketch !== undefined ? recordedOn(get().timeline, sketch, plate, given, placeOf) : { transform: [...plate], params: given }
     return { id: stepId(), part, transform, params: p, ...(label ? { label } : {}), ...(sketch ? { sketch } : {}), ...(feature ? { feature } : {}), ...(group ? { group } : {}) }
@@ -372,7 +373,8 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       // (or a better one is), so it is worked out again, and after a few tries the new design stays where it was built
       for (let tries = 0; tries < 3; tries++) {
         const before = new Map(get().plate.map((e) => [e.id, { transform: e.transform, locked: !!e.locked, parts: e.parts }]))
-        const made = await makeRoom(id, parts, transform)
+        // room for it lifted onto the bed, as a landing with a free spot would put it
+        const made = await makeRoom(id, parts, liftedOnto(parts, transform, onPlate(id)))
         if (!made) break
         const now = get().plate
         const stale = (e: PlateEntry) => {
@@ -482,6 +484,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     return {
       printsOnBed: (parts, transform) => printsOnBed({ parts, transform }, s.bed),
       landOnBed: (parts, transform) => landOnBed({ id, parts, transform }, s.plate.filter((p) => p.id !== id), s.bed, getArrangeOptions()),
+      lowest: (parts, transform) => bounds(parts, transform)?.min[2] ?? null,
     }
   }
 
@@ -493,7 +496,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
    * anywhere. Each says so in the edit's result. The move joins the design's landing moves, and the part stands where
    * a host landed it (PlateEntry.landedAt).
    */
-  function afterEdit(id: string): { land: (latest: PlateEntry, parts: PlateEntry['parts']) => Pick<PlateEntry, 'transform' | 'landedAt'> & { placed: [number, number] | undefined } | undefined; landed: () => Landed | undefined } {
+  function afterEdit(id: string): { land: (latest: PlateEntry, parts: PlateEntry['parts']) => Pick<PlateEntry, 'transform' | 'landedAt'> & { placed: Placed | undefined } | undefined; landed: () => Landed | undefined } {
     let out: Landed | undefined
     const land = (latest: PlateEntry, parts: PlateEntry['parts']) => {
       const r = landEdit({ parts: latest.parts, transform: latest.transform, locked: latest.locked }, parts, onPlate(id))

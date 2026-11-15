@@ -11,7 +11,7 @@
 import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, loftParams, loopStart, profileOffPathMm, projectionsOut, stepName, sweepParams, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
 import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
+import type { DesignHost, DesignCommit, Placed } from '@slicerx/cad-history'
 import { notClosedWords, partClosure, type Closure } from './closure'
 import { partBoxes, roundTenth, sunkNote, sunkParts } from './sunk'
 import { movedStep } from './step-reshape'
@@ -581,7 +581,7 @@ export interface SketchVia {
    * bed (its placedMm): the one named, by id or name, or with none named the only design once one was moved onto the
    * bed. Undefined when there is none to draw for, or the link does not answer.
    */
-  drawnFor?: (design: string | undefined) => Promise<{ design: string; placed?: [number, number] } | undefined>
+  drawnFor?: (design: string | undefined) => Promise<{ design: string; placed?: Placed } | undefined>
 }
 
 /**
@@ -600,7 +600,7 @@ export function wireSketchVia(via: SketchVia, tools: readonly PilotTool<never>[]
     return bed?.widthMm && bed.depthMm ? [bed.widthMm / 2, bed.depthMm / 2] : undefined
   }
   via.drawnFor = async (design) => {
-    const r = await appLink.call<{ output?: { designs?: { design?: string; name?: string; placedMm?: [number, number] }[] } }>('design.list').catch(() => undefined)
+    const r = await appLink.call<{ output?: { designs?: { design?: string; name?: string; placedMm?: Placed }[] } }>('design.list').catch(() => undefined)
     const all = r?.output?.designs ?? []
     const d = design !== undefined ? (all.find((x) => x.design === design) ?? all.find((x) => x.name === design)) : all.some((x) => x.placedMm) && all.length === 1 ? all[0] : undefined
     return d?.design ? { design: d.design, ...(d.placedMm ? { placed: d.placedMm } : {}) } : undefined
@@ -800,7 +800,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const faces = defineTool({
     name: 'geom.faces',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description:
@@ -838,7 +838,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const facePick = defineTool({
     name: 'geom.face_pick',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description:
@@ -866,7 +866,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const edgePick = defineTool({
     name: 'geom.edge_pick',
-    version: '2.0.0',
+    version: '2.1.0',
     source: 'command',
     permission: 'read',
     description:
@@ -999,7 +999,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.12.5',
+    version: '1.13.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1091,7 +1091,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   })
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.10.3',
+    version: '1.11.0',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -1150,7 +1150,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.13.4',
+    version: '1.14.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1213,7 +1213,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.11.3',
+    version: '1.12.0',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale, twist_deg and end_profile taper, turn and reshape it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
@@ -1491,7 +1491,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         if (i.dry_run) return undefined
         throw e
       })
-      const off: [number, number] = bedMiddle ? (drawn?.placed ?? [0, 0]) : [0, 0]
+      const off: Readonly<Placed> = bedMiddle ? (drawn?.placed ?? [0, 0]) : [0, 0]
       const middle = bedMiddle ? ([bedMiddle[0] - off[0], bedMiddle[1] - off[1]] as [number, number]) : undefined
       const center = i.center ?? middle ?? [0, 0]
       const options = plain<Record<string, unknown>>({
@@ -1564,7 +1564,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const push = defineTool({
     name: 'geom.push_pull',
-    version: '1.4.1',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description: 'Push or pull a flat face of a model or a design along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. With "design" it adds a step to the design; with a model it writes the new STL and reports the volume change and the moved face.',
@@ -1631,7 +1631,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const BOOL = { union: 'union', subtract: 'difference', intersect: 'intersection' } as const
   const boolean = defineTool({
     name: 'geom.boolean',
-    version: '1.3.2',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1728,7 +1728,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const fillet = defineTool({
     name: 'geom.fillet',
-    version: '1.6.1',
+    version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1751,7 +1751,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const chamfer = defineTool({
     name: 'geom.chamfer',
-    version: '1.6.1',
+    version: '1.7.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1774,7 +1774,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const shell = defineTool({
     name: 'geom.shell',
-    version: '1.3.1',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1808,7 +1808,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const info = defineTool({
     name: 'geom.info',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step; a part is closed when, with corners at the same point taken as one, every edge has exactly two faces, as the slicer reads it, and the summary says what keeps a part open. With --app, read the body in the open project without changing its history.',
@@ -1856,7 +1856,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const measure = defineTool({
     name: 'geom.measure',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description:
@@ -2124,7 +2124,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeEdit = defineTool({
     name: 'geom.hole_edit',
-    version: '1.0.1',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -2272,7 +2272,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeMake = defineTool({
     name: 'geom.hole',
-    version: '2.1.1',
+    version: '2.2.0',
     source: 'command',
     permission: 'slice',
     description:

@@ -260,7 +260,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
 
   const apply = defineTool({
     name: 'paint.apply',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description: "Apply a paint preview as a design step (it replays, saves and undoes like any step). Refused if the design changed since; preview again. Returns the paint read back.",
