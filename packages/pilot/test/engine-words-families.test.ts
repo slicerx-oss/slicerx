@@ -31,6 +31,8 @@ const CASES: readonly (readonly [string, string, RegExp])[] = [
   ['geom.loft', 'loft: the lofted body runs into itself; space the profiles further apart or make them smaller', /fold into itself/],
   ['geom.loft', 'loft: profiles 2 and 3 touch or cross; space them apart along the loft', /fold into itself/],
   ['geom.sweep', 'thicken: a 3 mm outward shell runs into itself where parts of the surface are closer than that; use a thinner shell or move those parts apart', /fold into itself/],
+  // sketch.rs: a profile loop whose last segment does not end at its start
+  ['geom.loft', 'The step did not go through: profiles: profile 1: Loop 1 is open: segment 3 ends 2.340 mm from the start. The design is unchanged.', /one of its outlines does not close/],
   // edge.rs: too many fillets at a corner
   ['geom.fillet', 'edges: the corner at (20.000, 10.000, 5.000) joins more than three fillets; leave some of its edges out', /rounded edges/],
   // edge.rs: edges on and along rounds the tool does not take
@@ -134,6 +136,23 @@ describe('every engine refusal in plain words', () => {
     expect(plainEngine('target: with a design, join and cut work on its "part"; leave target out', 'geom.cut')?.title).toBe('Step sent wrong')
     expect(plainEngine('The step did not go through: The part this step works on is gone. The design is unchanged.', 'design.edit_step')?.title).toBe('Part is gone')
     expect(plainEngine('request: missing "parts"', 'geom.build')).toMatchObject({ title: 'Step not made', shown: 'That step could not be made, so the part is unchanged. Try asking for it another way.' })
+  })
+
+  it('says how far short an open outline stops, and leaves the distance out when the engine gives none', () => {
+    const NEVER_QUOTE = 'Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.'
+    const hint = `A profile's loop is open. Close it by ending its last segment at its start, then try the step again. ${NEVER_QUOTE}`
+    const text = 'The step did not go through: profiles: profile 1: Loop 1 is open: segment 3 ends 2.340 mm from the start. The design is unchanged.'
+    expect(plainEngine(text, 'geom.loft')).toEqual({
+      title: 'Outline not closed',
+      shown: 'That step was not made because one of its outlines does not close. Its end stops 2.3 mm short of its start. Closing the outline fixes it.',
+      hint,
+      raw: text,
+    })
+    expect(plainEngine('profiles: profile 2: loop 1 is open', 'geom.loft')).toMatchObject({
+      title: 'Outline not closed',
+      shown: 'That step was not made because one of its outlines does not close. Closing the outline fixes it.',
+      hint,
+    })
   })
 
   it('leaves a printer\'s or the slicer\'s own words alone, and a modeling tool\'s plain sentences', async () => {
