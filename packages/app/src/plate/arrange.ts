@@ -307,6 +307,9 @@ export function printsOnBed(item: Pick<ArrangeItem, 'parts' | 'transform'>, bed:
   return !printPastBed(b, bed, margins, bed.round ? reachFrom(item.parts, item.transform, bed.widthMm / 2, bed.depthMm / 2) : undefined)
 }
 
+/** The lowest point of an object's parts where `transform` puts them, mm above the bed; null for no parts. */
+export const lowestOf = (parts: ArrangeItem['parts'], transform: Mat4): number | null => bounds(parts, transform)?.min[2] ?? null
+
 /** The room a landed part keeps from the bed edge and excluded areas when the plate gives no brim or skirt, mm. */
 export const LAND_EDGE_MM = 5
 

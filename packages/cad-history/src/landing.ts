@@ -5,7 +5,8 @@
 // part built standing above the bed stays where it is. A first body that then does not print where it was built (off
 // the bed, or with what prints around it past the edge) moves once to the middle of the plate or the first free spot.
 // An edit that takes a part that printed off the bed lands it again the same way, lifted first; a part already off the
-// bed before the edit was parked there and stays, and so does a locked one. Opening a project lands nothing: a part
+// bed before the edit was parked there and stays, and so does a locked one. An arrange lifts a part it places the same
+// way, a locked one never (the app's plate/edit.ts). Opening a project lands nothing: a part
 // saved under the bed shows where it was saved until a landing (a new body, an edit) lifts it. A landing moves the
 // design as a whole: the host keeps the move in the design's history (History.placed), and the design's coordinates
 // stay the ones it was built in (design-frame.ts). The rule is the same wherever designs are built (the app's plate,
@@ -35,8 +36,11 @@ export function landShift(from: Mat4, to: Mat4): { dxMm: number; dyMm: number; d
   return { dxMm: r2((to[12] ?? 0) - (from[12] ?? 0)), dyMm: r2((to[13] ?? 0) - (from[13] ?? 0)), ...(dz !== 0 ? { dzMm: dz } : {}) }
 }
 
-/** `transform` raised so the parts' lowest point is on the bed when it is under it; never lowered. */
-export function liftedOnto<P>(parts: P, transform: Mat4, bed: BedLanding<P>): Mat4 {
+/**
+ * `transform` raised so the parts' lowest point is on the bed when it is under it; never lowered. A landing lifts with
+ * it, and so does the app's arrange (plate/edit.ts), which needs only the bed's `lowest`.
+ */
+export function liftedOnto<P>(parts: P, transform: Mat4, bed: Pick<BedLanding<P>, 'lowest'>): Mat4 {
   const at = [...transform]
   const z = bed.lowest(parts, at)
   if (z === null || z >= -UNDER_BED_TOL_MM) return at

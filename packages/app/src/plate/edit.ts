@@ -3,9 +3,10 @@
 // Plate edits on the app store. Each one replaces `plate` once, so undo sees one step, and marks a
 // finished slice stale. The math lives in ./transform.
 import type { MeshHandle, MeshPart, PlateCheck } from '@slicerx/contracts'
+import { liftedOnto, placedAfter, withPlaced, type History } from '@slicerx/cad-history'
 import { get, markStale, selectedIds, set, toast, type PlateEntry } from '../state/store'
 import { bake, mergeParts, primitive, splitPieces, splitToObjects, type PrimitiveShape } from './mesh-ops'
-import { arrange, ARRANGE_DEFAULTS, fillCount, placeOnPlate, type ArrangeOptions, type ArrangeResult } from './arrange'
+import { arrange, ARRANGE_DEFAULTS, fillCount, lowestOf, placeOnPlate, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { arrangeByObject, type Place } from './by-object-arrange'
 import { arrangesInEngine, engineArrange } from './engine-arrange'
@@ -152,7 +153,8 @@ export function setArrangeOptions(o: Partial<ArrangeOptions>): void {
  * desktop), the engine lays the plate out (engine-arrange.ts), the same call and layout as sx and the MCP server;
  * elsewhere the geometry worker nests the true outlines (nest.ts), or the bounds when it cannot run. The objects it
  * finds no room for move to new plates (moveToNewPlates), laid out there the same way, turns included, and set in the
- * middle of the bed when it has room, in the same undo step. Returns how many did not fit on the shown plate.
+ * middle of the bed when it has room, in the same undo step. A design it places with its body under the bed is lifted
+ * onto it (liftArranged). Returns how many did not fit on the shown plate.
  */
 export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: ArrangeOptions = arrangeOptions): Promise<number> {
   const { plate, bed } = get()
@@ -233,11 +235,15 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   const still = (id: string) => now.get(id) === was.get(id)
   const transforms = Object.fromEntries(Object.entries(r.transforms).filter(([id]) => still(id)))
   const layouts = overflow.layouts.map((l) => ({ ...l, transforms: Object.fromEntries(Object.entries(l.transforms).filter(([id]) => still(id))) }))
-  // One undo step with the arrange.
+  // One undo step with the arrange, the lifts in it.
   let movedPlates: ReturnType<typeof moveToNewPlates> = []
   inStep({}, () => {
-    commitTransforms(transforms, r.order)
-    if (layouts.length > 0) movedPlates = moveToNewPlates(layouts)
+    const shown = liftArranged(get().plate, transforms)
+    const away = layouts.map((l) => ({ order: l.order, ...liftArranged(get().plate, l.transforms) }))
+    const lifted = new Map([shown, ...away].flatMap((l) => [...l.history]))
+    if (lifted.size) set({ plate: get().plate.map((p) => (lifted.has(p.id) ? { ...p, history: lifted.get(p.id)! } : p)) })
+    commitTransforms(shown.transforms, r.order)
+    if (away.length > 0) movedPlates = moveToNewPlates(away.map((l) => ({ transforms: l.transforms, ...(l.order ? { order: l.order } : {}) })))
   })
   // The engine checked the layout it landed: when every object took it, that answer stands for the plate now.
   const checked = 'report' in r ? (r as { report: { check?: PlateCheck } }).report.check : undefined
@@ -253,6 +259,26 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   // the slice is sure to refuse is said, and the warning keeps the pair with its fixes.
   if (cfg && !tooLarge && !first && rest.length === 0) await sayStillClashing()
   return r.leftOver.length
+}
+
+/**
+ * `transforms` from an arrange of `plate`, with each design (an object with a history) they leave under the bed lifted
+ * onto it, as a design's landing lifts one (cad-history liftedOnto): raised only, and a locked one never. The lift
+ * joins the design's landing moves (History.placed), in `history`, so a saved project and the design's next edit read
+ * it in the frame it was built in. Any other object keeps the height arrange gives it.
+ */
+export function liftArranged(plate: readonly PlateEntry[], transforms: Readonly<Record<string, Mat4>>): { transforms: Record<string, Mat4>; history: Map<string, History> } {
+  const out = { ...transforms }
+  const history = new Map<string, History>()
+  for (const e of plate) {
+    const t = transforms[e.id]
+    if (!t || !e.history || e.locked) continue
+    const up = liftedOnto(e.parts, t, { lowest: lowestOf })
+    if (up[14] === t[14]) continue
+    out[e.id] = up
+    history.set(e.id, withPlaced(e.history, placedAfter(e.history.placed, t, up)))
+  }
+  return { transforms: out, history }
 }
 
 /** After an arrange: a toast naming a pair the plate check is sure still clashes, if any. */
