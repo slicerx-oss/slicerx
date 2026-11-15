@@ -292,6 +292,29 @@ fn meshes() -> BTreeMap<&'static str, Shell> {
     ])
 }
 
+/// The meshes as the arrange is handed them, by id.
+fn held(meshes: &BTreeMap<&'static str, Shell>) -> BTreeMap<&'static str, Arc<Mesh>> {
+    meshes
+        .iter()
+        .map(|(k, (p, t))| {
+            (
+                *k,
+                Arc::new(Mesh {
+                    name: (*k).to_owned(),
+                    parts: vec![MeshPart {
+                        name: (*k).to_owned(),
+                        slot: 1,
+                        positions: p.clone(),
+                        triangles: t.clone(),
+                        ..MeshPart::default()
+                    }],
+                    ..Mesh::default()
+                }),
+            )
+        })
+        .collect()
+}
+
 fn round3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
@@ -343,25 +366,7 @@ fn golden() -> Value {
             )
         })
         .collect();
-    let held: BTreeMap<&str, Arc<Mesh>> = meshes
-        .iter()
-        .map(|(k, (p, t))| {
-            (
-                *k,
-                Arc::new(Mesh {
-                    name: (*k).to_owned(),
-                    parts: vec![MeshPart {
-                        name: (*k).to_owned(),
-                        slot: 1,
-                        positions: p.clone(),
-                        triangles: t.clone(),
-                        ..MeshPart::default()
-                    }],
-                    ..Mesh::default()
-                }),
-            )
-        })
-        .collect();
+    let held = held(&meshes);
     let cases: Vec<Value> = cases()
         .into_iter()
         .map(|c| {
@@ -436,25 +441,7 @@ fn the_golden_file_holds_the_arrange_layouts() {
 #[test]
 fn the_first_layout_comes_before_the_check() {
     let meshes = meshes();
-    let held: BTreeMap<&str, Arc<Mesh>> = meshes
-        .iter()
-        .map(|(k, (p, t))| {
-            (
-                *k,
-                Arc::new(Mesh {
-                    name: (*k).to_owned(),
-                    parts: vec![MeshPart {
-                        name: (*k).to_owned(),
-                        slot: 1,
-                        positions: p.clone(),
-                        triangles: t.clone(),
-                        ..MeshPart::default()
-                    }],
-                    ..Mesh::default()
-                }),
-            )
-        })
-        .collect();
+    let held = held(&meshes);
     let get = |id: &str| {
         held.get(id).cloned().ok_or_else(|| sx_core::Error::Config {
             key: "plate.objects.mesh",
@@ -492,4 +479,50 @@ fn the_first_layout_comes_before_the_check() {
             );
         }
     }
+}
+
+/// Two copies of one part, turned alike and standing at two places, have outlines that differ only in the last bits
+/// of their coordinates: each place rounds the turned corners its own way. They take the same places whichever of
+/// the two stands where, so those bits never decide which copy the arrange places first.
+#[test]
+fn copies_whose_outlines_differ_in_the_last_bits_arrange_the_same_either_way_round() {
+    let held = held(&meshes());
+    let get = |id: &str| {
+        held.get(id).cloned().ok_or_else(|| sx_core::Error::Config {
+            key: "plate.objects.mesh",
+            reason: id.to_owned(),
+        })
+    };
+    let layout = |at: [[f64; 2]; 2]| {
+        let objects: Vec<Value> = ["a", "b"]
+            .iter()
+            .zip(at)
+            .map(|(id, p)| json!({ "id": id, "name": id, "mesh": "box25x25x30", "transform": placed(15.0, p) }))
+            .collect();
+        let mut r: SliceRequest = serde_json::from_value(json!({
+            "plate": {
+                "bed": { "widthMm": 256, "depthMm": 256, "heightMm": 256 },
+                "placement": "arrange",
+                "arrange": { "rotate": false, "spacingMm": 4, "effort": "quick" },
+                "objects": objects,
+            },
+            "config": a1(&json!({})),
+        }))
+        .unwrap();
+        let out = kept(&serde_json::to_value(api::arrange_request(&mut r, &get).unwrap()).unwrap());
+        out["objects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| (o["id"].as_str().unwrap().to_owned(), o["transform"].clone()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let places = [[100.0, 100.0], [106.0, 104.0]];
+    let one = layout(places);
+    assert_eq!(one.len(), 2, "both copies placed");
+    assert_eq!(
+        one,
+        layout([places[1], places[0]]),
+        "which copy goes where follows where each stood"
+    );
 }
