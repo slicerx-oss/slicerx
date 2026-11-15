@@ -68,6 +68,17 @@ describe('reading a sizes answer', () => {
     expect(missing).toEqual(['Deck width'])
   })
 
+  it('reads a line that says its size was not found as not found, whatever figures it gives', () => {
+    const answer = [
+      'Gate height: 9 m (timber gates, 1 m deep), not found as a height figure; 30 m is given as the gate height above the river: 30 m',
+      'Lock width: not found (the chamber is 12 m long)',
+      'Lock length: 60 m',
+    ].join('\n')
+    const { found, missing } = readSizes(answer, ['Gate height', 'Lock width', 'Lock length'])
+    expect(found.map((f) => [f.size, f.mm])).toEqual([['Lock length', 60000]])
+    expect(missing).toEqual(['Gate height', 'Lock width'])
+  })
+
   it('reads feet and inches together when a line gives no metric figure', () => {
     expect(readSizes('Overall length: 412 ft 6 in', ['Overall length']).found).toEqual([{ size: 'Overall length', mm: 125730, said: '412 ft 6 in' }])
   })
@@ -82,6 +93,15 @@ describe('design.lookup_sizes asks for a few published sizes', () => {
     expect(t.input.safeParse({ subject: 'a suspension bridge', sizes: ['a b', 'c d', 'e f', 'g h', 'i j'] }).success).toBe(true)
     expect(t.input.safeParse({ subject: 'a suspension bridge', sizes: ['a b', 'c d', 'e f', 'g h', 'i j', 'k l'] }).success).toBe(false)
     expect(t.description).toContain('at most 5 sizes sources commonly publish')
+  })
+
+  it('shows a source whose title is short or all capitals with its site, as the card and the result name it', async () => {
+    const t = lookup()
+    const cite = (title: string, url: string) => ({ id: url, title, url, kind: 'web' })
+    const ctx = { sessionId: 's1', web: async () => ({ text: 'Tower height: 30 m', citations: [cite('STR', 'https://www.example.org/report/towers'), cite('STONE TOWER SURVEY', 'https://survey.example.net/a'), cite('Stone tower facts', 'https://example.com/facts')] }) } as unknown as ToolContext
+    const out = await t.run(t.input.parse({ subject: 'a stone tower', sizes: ['Tower height'] }) as never, ctx)
+    expect((out.output as { sources: { title: string }[] }).sources.map((x) => x.title)).toEqual(['STR (example.org)', 'STONE TOWER SURVEY (survey.example.net)', 'Stone tower facts'])
+    expect(out.lookup?.source).toEqual({ title: 'STR (example.org)', url: 'https://www.example.org/report/towers' })
   })
 
   it('keeps no found sizes, and shows no card, when the web answer cites no page', async () => {
