@@ -265,8 +265,8 @@ describe('geom.array copies of a part whose name has edges', () => {
 })
 
 describe('the array tool', () => {
-  it('is at 1.9.3, since it repeats chosen design steps on their part, a row can follow a curved side on exact solids too, copies that miss are left out, it reads back which copies landed, and a step repeated with its own row is made once in each copy', () => {
+  it('is at 1.10.0, since it repeats chosen design steps on their part, a row can follow a curved side on exact solids too, copies that miss are left out, it reads back which copies landed, and a step repeated with its own row is made once in each copy', () => {
     const tool = modelingTools({ files: { call: async () => ({}), mesh: async () => ({ stlPath: '' }) } }).find((t) => t.name === 'geom.array')!
-    expect(tool.version).toBe('1.9.3')
+    expect(tool.version).toBe('1.10.0')
   })
 })

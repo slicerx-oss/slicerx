@@ -21,7 +21,7 @@
 //
 // Left out, and said so by the tools: exact designs (the developer exact-solids option, off in the app too) and sketch
 // constraints (the app's own sketch solver).
-import { anchoredMove, appendStep, bakeMesh, claimSketches, designFrame, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOnSketch, replayHistory, storedToDesign, translation, unstopped, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
+import { anchoredMove, appendStep, bakeMesh, claimSketches, designFrame, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, placedMove, recordedOnSketch, replayHistory, storedToDesign, unstopped, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type Placed, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import type { Bed } from '@slicerx/contracts'
 import { boxInBed, sepOf } from '@slicerx/settings/box-pack'
@@ -74,6 +74,7 @@ export function plainBed(bed: Bed, others: () => readonly { parts: readonly Hist
       const xy = boxInBed(bed, b.min[0], b.min[1], b.max[0], b.max[1], -ON_BED_TOL_MM)
       return xy && b.min[2] >= -ON_BED_TOL_MM && b.max[2] <= bed.heightMm + ON_BED_TOL_MM
     },
+    lowest: (parts, t) => boundsOf(parts, t)?.min[2] ?? null,
     landOnBed(parts, t) {
       const b = boundsOf(parts, t)
       if (!b) return null
@@ -178,7 +179,7 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
   /** A step as the stored design `s` keeps it: in plate coordinates, and where its sketch is stored when it draws on one. */
   function recorded(s: Design, part: number, params: StepParams, label: string | undefined, sketch: string | undefined, feature: string | undefined): Step {
     const placed = s.history.placed
-    const given = placed ? movedParams(params, translation([placed[0], placed[1], 0])) : params
+    const given = placed ? movedParams(params, placedMove(placed)) : params
     const k = sketch !== undefined ? sketchOf(sketch) : undefined
     const { transform, params: p } = k ? recordedOnSketch(k, sketchMoved(k), s.transform, given) : { transform: [...s.transform], params: given }
     return { id: nextStepId(), part, transform, params: p, ...(label ? { label } : {}), ...(sketch ? { sketch } : {}), ...(feature ? { feature } : {}) }
@@ -204,7 +205,7 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
   const stored = (d: Design): Design => all.get(d.id) ?? d
   const copy = (s: Design, landed?: Landed): Design => {
     const { landed: _l, placed: _p, ...rest } = s
-    return { ...rest, transform: designFrame(s.transform, s.history), ...(s.history.placed ? { placed: [...s.history.placed] as [number, number] } : {}), ...(landed ? { landed } : {}) }
+    return { ...rest, transform: designFrame(s.transform, s.history), ...(s.history.placed ? { placed: [...s.history.placed] as Placed } : {}), ...(landed ? { landed } : {}) }
   }
   function give(d: Design, s: Design, landed: Landed | undefined): void {
     delete d.placed
@@ -285,7 +286,7 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
       // drawn for the design named, or every design that waits for a body, each where it stands now
       const standing = (x: Design): DrawnFor => ({ design: x.id, transform: [...x.transform] })
       const waits = d ? [standing(all.get(d.id)!)] : [...all.values()].filter((x) => !x.parts.length).map(standing)
-      const frame: FaceFrame | undefined = d?.placed ? movedFrame(s.frame, translation([d.placed[0], d.placed[1], 0])) : s.frame
+      const frame: FaceFrame | undefined = d?.placed ? movedFrame(s.frame, placedMove(d.placed)) : s.frame
       const id = `${nextStepId()}k`
       timeline = withSketch(timeline, { id, ...(frame ? { frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(waits.length ? { drawnFor: waits } : {}) })
       return d ? host.sketch!(id, d.id) : (timeline.items[timeline.marker - 1] as SketchItem)

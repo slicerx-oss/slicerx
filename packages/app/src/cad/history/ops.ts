@@ -14,7 +14,7 @@ import { commitMade, partColors } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, recordedOnSketch, replayHistory, unstopped, withFound, withPlaced, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type SketchItem, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, recordedOnSketch, replayHistory, unstopped, withFound, withPlaced, type History, type Placed, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type SketchItem, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
 import { exactSolids, noteFallBack, noteQuietLofts } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
@@ -105,7 +105,7 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * commit, not the ones `next` started with.
  * `step`, when given, is the undo step the result lands in (plate/history.ts newStep).
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: (status: StepStatus[], meshParts?: number[]) => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => (Pick<PlateEntry, 'landedAt'> & { transform: Mat4; placed: [number, number] | undefined }) | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: (status: StepStatus[], meshParts?: number[]) => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => (Pick<PlateEntry, 'landedAt'> & { transform: Mat4; placed: Placed | undefined }) | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()

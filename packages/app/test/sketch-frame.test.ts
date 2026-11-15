@@ -155,9 +155,20 @@ describe('a project file with a malformed landing or drawn for', () => {
     expect(sketch(t)).toMatchObject({ drawnFor: [{ design: '1', transform: at(128, 128) }] })
   })
 
+  it('reads a lift as the third number, and a third number of 0 as no lift', () => {
+    for (const [placed, read] of [[[128, 128, 10], [128, 128, 10]], [[128, 128, 0], [128, 128]], [[0, 0, 0.118], [0, 0, 0.118]]]) {
+      const t = readBack((j) => {
+        j.bodies[0]!['placed'] = placed
+      })
+      intact(t)
+      expect(t?.bodies[0]?.placed).toEqual(read)
+      expect(historyOf(t!, '1')?.placed).toEqual(read)
+    }
+  })
+
   it.each([
     ['one number', [128]],
-    ['three numbers', [128, 128, 0]],
+    ['four numbers', [128, 128, 10, 0]],
     ['a string', ['128', 128]],
     ['not a number', [null, 128]],
     ['past a bed\'s reach', [1e9, 0]],

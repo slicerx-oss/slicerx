@@ -4,7 +4,7 @@
 // features in the order they were made, across every body, and a marker that rolls it back. A feature names its
 // sketch by id instead of holding a copy. An object's own history is a view of it, filtered by body, so replay
 // and the app's per-object tools work unchanged.
-import type { History, HistoryMesh, Mat4, Step, StepParams } from './model'
+import type { History, HistoryMesh, Mat4, Placed, Step, StepParams } from './model'
 import { BODY_GONE, type Projection } from './project'
 import type { FaceFrame, SketchLoop } from './types'
 
@@ -63,7 +63,7 @@ export interface Body {
   exact?: true
   ended?: string
   /** How far design hosts moved it to land it on the bed (History.placed). */
-  placed?: [number, number]
+  placed?: Placed
 }
 
 export interface Timeline {

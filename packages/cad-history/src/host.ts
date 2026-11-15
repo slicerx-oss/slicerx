@@ -5,7 +5,7 @@
 // edit makes. The modeling tools take a host and never know which one they run on.
 import type { SketchItem } from './design'
 import type { ProjectMode, ProjectSource } from './project'
-import type { History, HistoryMesh, Mat4, ReplayResult, Step, StepParams, StepStatus } from './model'
+import type { History, HistoryMesh, Mat4, Placed, ReplayResult, Step, StepParams, StepStatus } from './model'
 import { replayHistory } from './replay'
 import type { FaceFrame, SketchConstraint, SketchLoop } from './types'
 
@@ -19,8 +19,8 @@ export interface Design {
    * still meets its body after a landing (design-frame.ts).
    */
   transform: Mat4
-  /** How far the host's landings moved the object on the plate, mm in X and Y; absent when none did. */
-  placed?: [number, number]
+  /** How far the host's landings moved the object on the plate, mm in X and Y, and Z when one lifted it; absent when none did. */
+  placed?: Placed
   /** The parts after the last replay, in the object's own frame. */
   parts: HistoryMesh[]
   status: StepStatus[]
@@ -35,13 +35,14 @@ export interface Design {
 }
 
 /**
- * A first body built off the bed: moved by (dxMm, dyMm) onto it as a whole, its coordinates staying the design's own;
- * or offBed when no spot on the bed holds it, so it stays where it was built. Off the bed counts what prints around the
- * part (brim, skirt) and the excluded areas. `edit` marks a part an edit left off the bed, landed again the same way;
- * `locked` one that stayed, and `parked` one that was off the bed before the edit and stays there. `room` names the
- * other designs a host moved over, each as a whole, so a new body had room on the bed.
+ * A first body built off the bed: moved by (dxMm, dyMm) onto it as a whole, its coordinates staying the design's own,
+ * and lifted by dzMm when it sat under the bed; or offBed when no spot on the bed holds it, so it stays where it was
+ * built. Off the bed counts what prints around the part (brim, skirt), the excluded areas and a part under the bed.
+ * `edit` marks a part an edit left off the bed, landed again the same way; `locked` one that stayed, and `parked` one
+ * that was off the bed before the edit and stays there. `room` names the other designs a host moved over, each as a
+ * whole, so a new body had room on the bed.
  */
-export type Landed = { dxMm: number; dyMm: number; edit?: true; room?: RoomMove[] } | { offBed: true; edit?: true; locked?: true; parked?: true }
+export type Landed = { dxMm: number; dyMm: number; dzMm?: number; edit?: true; room?: RoomMove[] } | { offBed: true; edit?: true; locked?: true; parked?: true }
 
 /** Another design moved over on the plate, as a whole, to make room for a new body. */
 export interface RoomMove {
