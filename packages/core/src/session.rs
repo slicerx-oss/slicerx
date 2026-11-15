@@ -274,6 +274,10 @@ pub struct SliceSession {
     /// Each object's XY box on the plate as placed `[min_x, min_y, max_x, max_y]`, mm, by its index on the
     /// session's plate (as `part_object` numbers them): sparse infill hangs off the center of its object's box.
     object_boxes: Vec<[f64; 4]>,
+    /// With organic trees planned per object (`organic_objects`): per object of the session's plate, the object whose
+    /// support plan it reuses (itself for the first of its kind) and how far it stands from it, internal units.
+    /// Empty when the setting is off at build time: each object is then planned on its own.
+    organic_copies: Vec<(usize, [i32; 2])>,
     /// Cuts and support regions of the objects, sliced like parts.
     volumes: Vec<(crate::plate::VolumeRole, PreparedPart)>,
     /// The setting overrides of each volume (modifiers); `Null` for the rest.
@@ -2112,6 +2116,11 @@ impl SliceSession {
             });
         }
         let tool_count = slots.last().copied().unwrap_or(1);
+        let organic_copies = if config.enable_support && crate::organic_objects::selected(config) {
+            crate::organic_objects::copies(&plate.objects)
+        } else {
+            Vec::new()
+        };
         let (top_shell, bottom_shell) = config.shell_layers(config.layer_height.max(0.01));
         let (tool_order, any_top, within_top) = plan_tools(
             &parts,
@@ -2198,6 +2207,7 @@ impl SliceSession {
             prep_micros: timer.micros(),
             bounds: xy,
             object_boxes,
+            organic_copies,
             volumes,
             volume_settings,
             region_parts,
@@ -7121,6 +7131,19 @@ impl SliceSession {
 
     /// Organic trees, one support layer per object layer.
     fn organic_layers(&self, cfg: &PrintConfig, input: &SupportInput) -> crate::organic::OrganicPlan {
+        self.organic_plan_of(cfg, input, self.bounds, self.object_footprints(), &|_| true)
+    }
+
+    /// Organic trees from `input`: `object` is the box of what is planned (mm), `footprints` each object's footprint
+    /// when several are planned together, and `painted` keeps the painted vertical enforcer points that belong to it.
+    fn organic_plan_of(
+        &self,
+        cfg: &PrintConfig,
+        input: &SupportInput,
+        object: [f64; 4],
+        footprints: Vec<Shapes>,
+        painted: &dyn Fn([f64; 2]) -> bool,
+    ) -> crate::organic::OrganicPlan {
         let n = self.plan.count();
         let tops: Vec<f64> = (0..n).map(|l| self.plan.top(l)).collect();
         let sc = cfg.support_config();
@@ -7177,7 +7200,7 @@ impl SliceSession {
                 support_width: cfg.support_width(),
                 force: &input.force,
                 block: &input.block,
-                object: self.bounds,
+                object,
                 bed: cfg.bed_rect(),
                 critical_only: crate::firmware::truthy(cfg, "support_critical_regions_only"),
                 first_layer_gap: sc.object_first_layer_gap,
@@ -7193,7 +7216,7 @@ impl SliceSession {
             first_layer_width: cfg.first_layer_support_width(),
             gap_xy_first_layer: s.object_first_layer_gap,
             brim,
-            footprints: self.object_footprints(),
+            footprints,
             vertical_points: self
                 .painted_supports
                 .iter()
@@ -7210,6 +7233,7 @@ impl SliceSession {
                         (t[0][2] + t[1][2] + t[2][2]) / 3.0,
                     ]
                 })
+                .filter(|p| painted([p[0], p[1]]))
                 .collect(),
             raft_tops: self
                 .raft
@@ -7224,6 +7248,71 @@ impl SliceSession {
             raft_expansion: cfg.raw_number("raft_expansion", 1.5),
         };
         crate::organic::plan(&inp)
+    }
+
+    /// Organic trees planned object by object (`organic_objects`), when the settings ask for it and this session
+    /// slices several objects together: each object planned alone from its own layers, enforcers and blockers (the
+    /// islands its footprint holds), the copies of an object given its plan moved to where they stand. None
+    /// otherwise.
+    fn organic_by_object(
+        &self,
+        cfg: &PrintConfig,
+        input: &SupportInput,
+    ) -> Option<crate::organic::OrganicPlan> {
+        if !crate::organic_objects::selected(cfg) {
+            return None;
+        }
+        let mut objects = self.part_object.clone();
+        objects.sort_unstable();
+        objects.dedup();
+        if objects.len() < 2 {
+            return None;
+        }
+        let hulls: Vec<&[[f64; 2]]> = self.objects.iter().map(|o| o.hull.as_slice()).collect();
+        let split = |layers: &[Shapes]| crate::organic_objects::split(layers, &hulls);
+        let (mut models, mut force, mut block) =
+            (split(&input.models), split(&input.force), split(&input.block));
+        let leader = |k: usize| self.organic_copies.get(k).copied().unwrap_or((k, [0, 0]));
+        let center = |b: [f64; 4]| [f64::midpoint(b[0], b[2]), f64::midpoint(b[1], b[3])];
+        // Each object that is the first of its kind, planned in place.
+        let mut plans: Vec<(usize, crate::organic::OrganicPlan, [f64; 4])> = Vec::new();
+        for &o in &objects {
+            let k = usize::from(o);
+            if leader(k).0 != k {
+                continue;
+            }
+            let Some(&bx) = self.object_boxes.get(k) else {
+                continue;
+            };
+            let own = SupportInput {
+                models: models.get_mut(k).map(std::mem::take).unwrap_or_default(),
+                thickness: input.thickness.clone(),
+                force: force.get_mut(k).map(std::mem::take).unwrap_or_default(),
+                block: block.get_mut(k).map(std::mem::take).unwrap_or_default(),
+                center: center(bx),
+            };
+            let plan = self.organic_plan_of(cfg, &own, bx, Vec::new(), &|p| {
+                crate::organic_objects::owner_of(p, &hulls) == k
+            });
+            plans.push((k, plan, bx));
+        }
+        let placed: Vec<crate::organic_objects::Planned<'_>> = objects
+            .iter()
+            .filter_map(|&o| {
+                let (of, shift) = leader(usize::from(o));
+                let (_, plan, at) = plans.iter().find(|(k, ..)| *k == of)?;
+                Some(crate::organic_objects::Planned {
+                    object: o,
+                    plan,
+                    shift,
+                    bounds: *at,
+                })
+            })
+            .collect();
+        Some(crate::organic_objects::assemble(
+            self.plan.count() as usize,
+            &placed,
+        ))
     }
 
     /// Each object's footprint on the bed (its hull, internal units) when this session slices several objects
@@ -7257,13 +7346,14 @@ impl SliceSession {
         o: &crate::organic::OrganicLayer,
         layer: u32,
         anchors: &crate::support::Anchors,
+        above: &dyn Fn() -> Shapes,
     ) -> SupportPaths {
         let s = &cfg.support;
         let wmm = cfg.support_width();
         let p = self.organic_paths_in(cfg, anchors);
         let mut iron = Vec::new();
         if s.ironing && s.interface_top_layers > 0 && !o.top_contact.is_empty() {
-            let area = perimeters::difference(&o.top_contact, &self.support_above(cfg, layer));
+            let area = perimeters::difference(&o.top_contact, &above());
             let gap = s.ironing_spacing.max(0.01);
             let angle = crate::organic::paths::interface_angle(o, &p);
             iron = if s.ironing_concentric {
@@ -7748,7 +7838,9 @@ impl SliceSession {
             return (layers, Some(plan.raft));
         }
         if Self::is_organic(cfg) {
-            let plan = self.organic_layers(cfg, input);
+            let plan = self
+                .organic_by_object(cfg, input)
+                .unwrap_or_else(|| self.organic_layers(cfg, input));
             return (plan.layers, Some(plan.raft));
         }
         let layers = crate::support::plan(
@@ -7784,17 +7876,74 @@ impl SliceSession {
 
     /// The support islands of the support layer right above `layer`, when it rests on it.
     fn support_above(&self, cfg: &PrintConfig, layer: u32) -> Shapes {
+        self.support_layer_above(cfg, layer)
+            .map(|l| perimeters::union_all(&[&l.base, &l.interface]))
+            .unwrap_or_default()
+    }
+
+    /// The support layer right above `layer`, when it rests on it.
+    fn support_layer_above(&self, cfg: &PrintConfig, layer: u32) -> Option<&crate::support::SupportLayer> {
         let next = layer as usize + 1;
-        let sl = if self.stack.is_empty() {
+        if self.stack.is_empty() {
             self.support_layers(cfg).get(next)
         } else {
             match (self.stack.get(layer as usize), self.stack.get(next)) {
                 (Some(here), Some(up)) if up.top - up.height <= here.top + 1e-4 => Some(&up.layer),
                 _ => None,
             }
-        };
-        sl.map(|l| perimeters::union_all(&[&l.base, &l.interface]))
-            .unwrap_or_default()
+        }
+    }
+
+    /// The organic support paths of a layer planned object by object (`organic_objects`): each object's made from
+    /// its own areas in the frame they were planned in, anchored on the middle of that object's box, then moved to
+    /// where the object stands. Copies that share a plan share the paths made for it.
+    fn object_support_paths(
+        &self,
+        cfg: &PrintConfig,
+        sl: &crate::support::SupportLayer,
+        layer: u32,
+    ) -> SupportPaths {
+        let mut made: Vec<(&crate::organic::OrganicLayer, SupportPaths)> = Vec::new();
+        let mut out = SupportPaths::default();
+        for piece in &sl.objects {
+            let own = piece.layer.as_ref();
+            if !made.iter().any(|(o, _)| std::ptr::eq(*o, own)) {
+                let above = || {
+                    self.support_layer_above(cfg, layer)
+                        .and_then(|up| up.objects.iter().find(|p| p.object == piece.object))
+                        .map(|p| {
+                            let o = &p.layer;
+                            perimeters::union_all(&[&o.base, &o.base_interface, &o.top_contact, &o.interface])
+                        })
+                        .unwrap_or_default()
+                };
+                made.push((
+                    own,
+                    self.organic_support_paths(
+                        cfg,
+                        own,
+                        layer,
+                        &crate::support::Anchors::one(piece.bounds),
+                        &above,
+                    ),
+                ));
+            }
+            let Some((_, sp)) = made.iter().find(|(o, _)| std::ptr::eq(*o, own)) else {
+                continue;
+            };
+            for (dst, src) in [
+                (&mut out.support, &sp.support),
+                (&mut out.interface, &sp.interface),
+                (&mut out.round, &sp.round),
+                (&mut out.round_interface, &sp.round_interface),
+                (&mut out.ironing, &sp.ironing),
+            ] {
+                let mut paths = src.clone();
+                crate::organic_objects::move_paths(&mut paths, piece.shift);
+                dst.append(&mut paths);
+            }
+        }
+        out
     }
 
     /// The support, support interface and support ironing paths of one support layer. `layer` is its
@@ -7819,8 +7968,11 @@ impl SliceSession {
         if let Some(t) = &sl.classic {
             return self.classic_tree_paths(cfg, t, layer, &anchors);
         }
+        if !sl.objects.is_empty() {
+            return self.object_support_paths(cfg, sl, layer);
+        }
         if let Some(o) = &sl.organic {
-            return self.organic_support_paths(cfg, o, layer, &anchors);
+            return self.organic_support_paths(cfg, o, layer, &anchors, &|| self.support_above(cfg, layer));
         }
         if !sl.on_part.is_empty() {
             // Where the layer rests on a top surface of the part it is filled on its own, the same way, so those

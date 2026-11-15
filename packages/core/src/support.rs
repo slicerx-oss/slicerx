@@ -37,6 +37,9 @@ pub(crate) struct SupportLayer {
     pub(crate) classic: Option<std::sync::Arc<crate::treeclassic::TreeLayer>>,
     /// Organic trees: the layer's areas by kind, which their toolpaths read.
     pub(crate) organic: Option<std::sync::Arc<crate::organic::OrganicLayer>>,
+    /// Organic trees planned object by object (`organic_objects`): each object's own areas, which its toolpaths are
+    /// made from; `organic` is then all of them together. Empty otherwise.
+    pub(crate) objects: Vec<crate::organic_objects::Piece>,
     /// With round bridge strands ([`StackHeights::bottom_h`]): the part of the layer that rests on a top surface of
     /// the part, which prints as round beads of that diameter.
     pub(crate) on_part: Shapes,
@@ -824,6 +827,7 @@ pub(crate) fn columns_from(
                 bottom: Shapes::new(),
                 classic: None,
                 organic: None,
+                objects: Vec::new(),
                 on_part: Shapes::new(),
             };
         }
@@ -1551,6 +1555,7 @@ pub(crate) fn stack(
             bottom,
             classic: None,
             organic: None,
+            objects: Vec::new(),
             on_part,
         };
         out.push(layer);
