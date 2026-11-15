@@ -192,7 +192,26 @@ fn measure_gcode(case: &str, gcode: &str) -> (Rows, Rows) {
                 .iter()
                 .enumerate()
                 .map(|(i, (t, s))| {
-                    let r = row(s, by.get(&(z, i)).map_or(&[][..], Vec::as_slice), surface, placed);
+                    let ms = by.get(&(z, i)).map_or(&[][..], Vec::as_slice);
+                    let mut r = row(s, ms, surface, placed);
+                    // Each line's offset is the mean of where its start and its end read across the strip: the
+                    // G-code rounds each end's coordinates on its own.
+                    let flipped: Vec<Move> = ms
+                        .iter()
+                        .map(|m| Move {
+                            feature: m.feature.clone(),
+                            z: m.z,
+                            a: m.b,
+                            b: m.a,
+                            width: m.width,
+                        })
+                        .collect();
+                    let ends = row(s, &flipped.iter().collect::<Vec<_>>(), surface, placed);
+                    if ends.lines.len() == r.lines.len() {
+                        for (l, e) in r.lines.iter_mut().zip(&ends.lines) {
+                            *l = f64::midpoint(*l, *e);
+                        }
+                    }
                     (*t, s.l, r)
                 })
                 .collect(),
