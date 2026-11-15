@@ -463,7 +463,7 @@ fn a_model_that_cannot_fit_is_refused_before_slicing() {
     // A cube scaled 100 times (2 m, like a file in the wrong units) sliced for minutes before the toolpath check
     // refused it. The reference config's bed is the usual 256 mm one.
     let m = Arc::new(Mesh::load(&cube_stl([20.0, 20.0, 20.0]), "cube.stl").unwrap());
-    let scaled = |s: f32, at: [f32; 2]| {
+    let scaled = |s: f64, at: [f64; 2]| {
         let mut req = request(base_config(), json!({}), [0.0; 3]);
         req.plate.objects[0].transform = Some(vec![
             s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s, 0.0, at[0], at[1], 0.0, 1.0,

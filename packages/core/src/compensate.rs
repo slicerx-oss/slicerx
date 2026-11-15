@@ -388,7 +388,7 @@ pub(crate) fn scale_plate(plate: &crate::plate::Plate, f: [f64; 3]) -> crate::pl
             continue;
         }
         let c = [f64::midpoint(lo[0], hi[0]), f64::midpoint(lo[1], hi[1]), 0.0];
-        let m = obj.transform.map(f64::from);
+        let m = obj.transform;
         // Column-major: element `i` is row `i % 4`, column `i / 4`. Rows 0 to 2 scale by `f`; the
         // translation column picks up the center: x' = s (x - c) + c.
         let n: [f64; 16] = std::array::from_fn(|i| {
@@ -400,10 +400,7 @@ pub(crate) fn scale_plate(plate: &crate::plate::Plate, f: [f64; 3]) -> crate::pl
                 _ => 0.0,
             }
         });
-        #[allow(clippy::cast_possible_truncation, reason = "the transform is f32")]
-        {
-            obj.transform = n.map(|v| v as f32);
-        }
+        obj.transform = n;
     }
     out
 }

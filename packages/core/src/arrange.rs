@@ -59,7 +59,7 @@ pub struct ArrangedObject {
     /// How far the arrange turned it about Z, after its own rotation, degrees counterclockwise, 0 to 360.
     pub turn_deg: f64,
     /// Its new transform, 4x4 column-major, machine coordinates, mm.
-    pub transform: Vec<f32>,
+    pub transform: Vec<f64>,
 }
 
 /// An object the arrange found no room for.
@@ -165,7 +165,7 @@ pub(crate) fn arrange(
     spec: &ArrangeSpec,
     lanes: bool,
     more: f64,
-) -> Result<(Vec<[f32; 16]>, Arrangement)> {
+) -> Result<(Vec<[f64; 16]>, Arrangement)> {
     let by_object = cfg.print_by_object();
     let area = printable(plate, cfg);
     let origin = [area[0], area[1]];
@@ -221,7 +221,7 @@ pub(crate) fn arrange(
     } else {
         nest_all(&shapes, &stay, &room)?
     };
-    let mut transforms: Vec<[f32; 16]> = plate.objects.iter().map(|o| o.transform).collect();
+    let mut transforms: Vec<[f64; 16]> = plate.objects.iter().map(|o| o.transform).collect();
     let mut objects = Vec::new();
     let mut not_fit = Vec::new();
     // Whether an empty bed holds a part, by its outline: copies are tried once.
@@ -372,7 +372,7 @@ fn z_span(o: &PlateObject) -> Option<(f64, f64)> {
 fn unsupported(
     cfg: &PrintConfig,
     o: &PlateObject,
-    seen: &mut HashMap<(usize, [u32; 12]), bool>,
+    seen: &mut HashMap<(usize, [u64; 12]), bool>,
 ) -> Option<PrintConfig> {
     if !cfg.enable_support {
         return None;
@@ -385,7 +385,7 @@ fn unsupported(
             .parts
             .iter()
             .any(|p| p.support_paint.iter().any(|f| f.state == 1));
-    let mut key = [0_u32; 12];
+    let mut key = [0_u64; 12];
     for (k, v) in key.iter_mut().zip(o.transform) {
         *k = v.to_bits();
     }
@@ -644,12 +644,11 @@ fn bbox(ring: &[[f64; 2]]) -> [f64; 4] {
 /// `origin` (the printable area's front left corner, where the nest's coordinates start), its move too, then moved by
 /// `offset` (plate coordinates). On a bed whose area does not start at 0, 0 (a delta, centered on it) the turn is about
 /// that corner, as the nest turned the outline.
-#[allow(clippy::cast_possible_truncation, reason = "transforms are f32 mm")]
-fn turned(t: &[f32; 16], deg: f64, offset: [f64; 2], origin: [f64; 2]) -> [f32; 16] {
+fn turned(t: &[f64; 16], deg: f64, offset: [f64; 2], origin: [f64; 2]) -> [f64; 16] {
     let (s, c) = deg.to_radians().m_sin_cos();
     let mut out = *t;
     for col in 0..4 {
-        let (mut x, mut y) = (f64::from(t[col * 4]), f64::from(t[col * 4 + 1]));
+        let (mut x, mut y) = (t[col * 4], t[col * 4 + 1]);
         if col == 3 {
             x -= origin[0];
             y -= origin[1];
@@ -660,8 +659,8 @@ fn turned(t: &[f32; 16], deg: f64, offset: [f64; 2], origin: [f64; 2]) -> [f32; 
         } else {
             (u, v)
         };
-        out[col * 4] = u as f32;
-        out[col * 4 + 1] = v as f32;
+        out[col * 4] = u;
+        out[col * 4 + 1] = v;
     }
     out
 }

@@ -75,6 +75,8 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
                     mesh.notes.push(crate::layers::LAYER_HEIGHTS_DIFFER.to_owned());
                 }
                 for o in objects {
+                    // Each item's parts where it puts them, since one mesh has no place of its own.
+                    let o = o.placed();
                     mesh.parts.extend(o.parts);
                     mesh.volumes.extend(o.volumes);
                     mesh.part_settings.extend(o.part_settings);
@@ -93,7 +95,8 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
 }
 
 /// Every plate with each build item as a mesh of its own, named after its object, in plate order.
-/// Positions are in the file's build space, like [`load_plates`]. The file is read by `sx-geom`'s 3MF reader;
+/// Positions are in the item's object space, with the item's transform as the mesh's placement
+/// ([`crate::mesh::Mesh::placement`]); [`load_plates`] puts them in the file's build space. The file is read by `sx-geom`'s 3MF reader;
 /// a build without it (the WebAssembly engine) reads it with [`load_plate_objects_legacy`].
 pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
     #[cfg(feature = "import")]
@@ -205,7 +208,8 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
             .work
             .checked_sub(cost)
             .ok_or_else(|| Error::mesh(name, "3MF components repeat their meshes too many times to load"))?;
-        ctx.object(&main, &root, item.object, item.transform, item.object, 0)?;
+        // The parts load in the item's object space; the plate object takes the item's transform (`placement`).
+        ctx.object(&main, &root, item.object, IDENTITY, item.object, 0)?;
         if parts.is_empty() {
             continue;
         }
@@ -265,7 +269,7 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
             part_settings,
             notes,
             settings,
-            brim_points: ears_of(&ears, item_no, &item.transform, scale),
+            brim_points: ears_of(&ears, item_no, &IDENTITY, scale),
             height_ranges,
             layer_heights,
             placement: Some(placement(item.object, &item.transform, scale)),
@@ -350,7 +354,8 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<(Vec<crate::api:
         if !o.printable || only.is_some_and(|n| o.plate.unwrap_or(1) != n) {
             continue;
         }
-        let brim_points = ears_of(&ears, item_no, &o.transform, scale);
+        // In the object's space, as its parts load.
+        let brim_points = ears_of(&ears, item_no, &IDENTITY, scale);
         let placed_by = placement(o.id, &o.transform, scale);
         let object = if prusa {
             let mut out = crate::prusa::object_overrides(&o.settings, prusa_config.as_deref());
@@ -426,7 +431,7 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<(Vec<crate::api:
                     notes.push(line);
                 }
             }
-            let part = geom_part(&p, &o.transform, slot, part_name);
+            let part = geom_part(&p, slot, part_name);
             match role {
                 None => {
                     let mut settings = object.clone();
@@ -537,19 +542,20 @@ fn unnamed(item_no: usize) -> String {
 }
 
 /// The build item's place for the mesh it loads as ([`crate::mesh::Placement`]): the object it places and its
-/// transform with the file's unit applied, as the parts are placed.
+/// transform for parts in millimeters (the move in millimeters, the turn and scale as the file has them).
 fn placement(object: u32, transform: &[f32; 12], scale: f32) -> crate::mesh::Placement {
-    crate::mesh::Placement {
-        object,
-        transform: transform.map(|c| f64::from(c) * f64::from(scale)),
+    let mut t = transform.map(f64::from);
+    for c in t.iter_mut().skip(9) {
+        *c *= f64::from(scale);
     }
+    crate::mesh::Placement { object, transform: t }
 }
 
-/// One part placed by the build item's transform and its components, with its paint decoded in place, as
-/// [`make_part`] places a mesh object.
+/// One part in its object's space (its components placed), with its paint decoded in place, as [`make_part`]
+/// places a mesh object; the build item's transform goes to the plate object ([`crate::mesh::Placement`]).
 #[cfg(feature = "import")]
-fn geom_part(p: &sx_geom::format::Part, item: &Transform, slot: u8, name: String) -> MeshPart {
-    let positions = p.placed(item, 1.0);
+fn geom_part(p: &sx_geom::format::Part, slot: u8, name: String) -> MeshPart {
+    let positions = p.in_object(1.0);
     let decode_all = |list: &[(u32, String)]| -> Vec<crate::paint::PaintFacet> {
         list.iter()
             .filter_map(|(k, code)| {

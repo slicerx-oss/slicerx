@@ -44,7 +44,7 @@ pub struct PlateVolume {
     pub role: VolumeRole,
     pub mesh: Arc<Mesh>,
     /// 4x4 column-major transform in mm; the object's own when absent.
-    pub transform: Option<[f32; 16]>,
+    pub transform: Option<[f64; 16]>,
     /// Orca key overrides of a modifier; `Null` for the other roles.
     pub settings: serde_json::Value,
 }
@@ -56,7 +56,7 @@ pub struct PlateObject {
     pub name: String,
     pub mesh: Arc<Mesh>,
     /// 4x4 column-major transform, mm, Z up, origin at the bed's front left corner.
-    pub transform: [f32; 16],
+    pub transform: [f64; 16],
     /// Part name to filament slot, when the plate differs from the file.
     pub slot_overrides: Vec<(String, u8)>,
     /// Orca key overrides of single parts, by part name.
@@ -84,13 +84,17 @@ impl PlateObject {
         Self::apply_with(&self.transform, p)
     }
 
-    /// Applies a 4x4 column-major transform to a point.
-    pub fn apply_with(transform: &[f32; 16], p: [f32; 3]) -> [f64; 3] {
-        let m = transform.map(f64::from);
+    /// Applies a 4x4 column-major transform to a point, exactly on the engine's grid
+    /// ([`crate::geom::SCALE`] steps): the turn and scale put the point on the grid, then the move adds whole grid
+    /// steps. A point moved by a transform that differs only in its move lands the same number of steps away
+    /// wherever it stands, so a part sliced at one place is the part sliced at another, moved. The move is rounded to
+    /// the grid (0.05 micron at most), which no slice resolves.
+    pub fn apply_with(transform: &[f64; 16], p: [f32; 3]) -> [f64; 3] {
         let [x, y, z] = p.map(f64::from);
+        let s = crate::geom::SCALE;
         std::array::from_fn(|r| {
-            let at = |c: usize| m.get(c * 4 + r).copied().unwrap_or(0.0);
-            at(0) * x + at(1) * y + at(2) * z + at(3)
+            let at = |c: usize| transform.get(c * 4 + r).copied().unwrap_or(0.0);
+            (((at(0) * x + at(1) * y + at(2) * z) * s).round() + (at(3) * s).round()) / s
         })
     }
 }
@@ -103,7 +107,7 @@ pub struct Plate {
 }
 
 /// The identity transform.
-pub const IDENTITY: [f32; 16] = [
+pub const IDENTITY: [f64; 16] = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
@@ -186,7 +190,7 @@ fn area_corner(area: [f64; 4]) -> [f32; 2] {
 }
 
 /// Object `k` (0-based) of a plate: one mesh with the volumes and part settings its file marks.
-fn item_object(mesh: Mesh, k: usize, transform: [f32; 16]) -> PlateObject {
+fn item_object(mesh: Mesh, k: usize, transform: [f64; 16]) -> PlateObject {
     PlateObject {
         id: format!("object-{}", k + 1),
         name: mesh.name.clone(),
@@ -220,8 +224,27 @@ pub fn file_volumes(mesh: &Mesh) -> Vec<PlateVolume> {
 }
 
 /// A translation that centers the mesh on the bed (on `center` when given) and drops it to z = 0.
-pub fn centered_transform(mesh: &Mesh, bed: Bed, center: Option<[f32; 2]>) -> [f32; 16] {
-    placed(mesh.bounds(), bed, center)
+pub fn centered_transform(mesh: &Mesh, bed: Bed, center: Option<[f32; 2]>) -> [f64; 16] {
+    on_item(placed(mesh.bounds(), bed, center), mesh)
+}
+
+/// `offset` after the build item's own transform of a mesh a project file loads one item at a time
+/// ([`Mesh::placement`]), whose parts are in the item's object space; `offset` alone for any other mesh.
+pub fn on_item(offset: [f64; 16], mesh: &Mesh) -> [f64; 16] {
+    match &mesh.placement {
+        Some(p) => multiply(&offset, &p.matrix()),
+        None => offset,
+    }
+}
+
+/// `a` after `b`, both 4x4 column-major.
+pub fn multiply(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
+    std::array::from_fn(|i| {
+        let (c, r) = (i / 4, i % 4);
+        (0..4)
+            .map(|k| a.get(k * 4 + r).copied().unwrap_or(0.0) * b.get(c * 4 + k).copied().unwrap_or(0.0))
+            .sum()
+    })
 }
 
 /// The middle of a request's bed on the machine: the bed's own middle moved by the front left corner of the printable
@@ -235,7 +258,7 @@ pub fn bed_middle(bed: Bed, config: &serde_json::Value) -> [f32; 2] {
 /// The one translation every build item of a 3MF plate takes: the items as a whole centered on the bed (on `center`
 /// when given) and set down on z = 0, so each keeps its place in the file and to the others. The request path gives it
 /// to the objects a project splits into, and [`Plate::items_on`] to its own.
-pub fn items_transform(items: &[Mesh], bed: Bed, center: Option<[f32; 2]>) -> [f32; 16] {
+pub fn items_transform(items: &[Mesh], bed: Bed, center: Option<[f32; 2]>) -> [f64; 16] {
     let bounds = items
         .iter()
         .filter_map(Mesh::bounds)
@@ -275,22 +298,25 @@ pub fn items_transforms(
     bed: Bed,
     center: Option<[f32; 2]>,
     placement: ItemsPlacement,
-) -> Vec<[f32; 16]> {
+) -> Vec<[f64; 16]> {
     match placement {
-        ItemsPlacement::Centered => vec![items_transform(items, bed, center); items.len()],
+        ItemsPlacement::Centered => {
+            let t = items_transform(items, bed, center);
+            items.iter().map(|m| on_item(t, m)).collect()
+        }
         ItemsPlacement::Kept([x, y]) => items
             .iter()
             .map(|m| {
                 let mut t = IDENTITY;
-                t[12] = x;
-                t[13] = y;
+                t[12] = f64::from(x);
+                t[13] = f64::from(y);
                 if let Some((lo, _)) = m.bounds()
                     && lo[2] < 0.0
                     && lo[2] > -SETTLE_MM
                 {
-                    t[14] = -lo[2];
+                    t[14] = -f64::from(lo[2]);
                 }
-                t
+                on_item(t, m)
             })
             .collect(),
     }
@@ -317,14 +343,14 @@ pub(crate) fn corner(pts: &[[f64; 2]]) -> Option<[f32; 2]> {
 }
 
 /// A translation that puts the middle of `bounds` on the bed's center (or `center`) and their bottom on z = 0.
-fn placed(bounds: Option<([f32; 3], [f32; 3])>, bed: Bed, center: Option<[f32; 2]>) -> [f32; 16] {
+fn placed(bounds: Option<([f32; 3], [f32; 3])>, bed: Bed, center: Option<[f32; 2]>) -> [f64; 16] {
     let Some((lo, hi)) = bounds else {
         return IDENTITY;
     };
     let [cx, cy] = center.unwrap_or([bed.width_mm / 2.0, bed.depth_mm / 2.0]);
     let mut t = IDENTITY;
-    t[12] = cx - f32::midpoint(lo[0], hi[0]);
-    t[13] = cy - f32::midpoint(lo[1], hi[1]);
-    t[14] = -lo[2];
+    t[12] = f64::from(cx - f32::midpoint(lo[0], hi[0]));
+    t[13] = f64::from(cy - f32::midpoint(lo[1], hi[1]));
+    t[14] = -f64::from(lo[2]);
     t
 }

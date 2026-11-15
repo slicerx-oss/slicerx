@@ -85,8 +85,10 @@ pub struct Mesh {
     /// `Metadata/layer_config_ranges.xml` ranges), heights above the bed, mm, in file order: when every printed object
     /// of the plate has the same, they plan the plate's layers ([`crate::range_layer_tops`]).
     pub layer_heights: Vec<crate::RangeLayerHeight>,
-    /// The build item that placed the parts, for a mesh a project file loads one item at a time: its parts are
-    /// already where the item puts them. `None` for any other mesh, a plate's items merged into one included.
+    /// The build item that places the parts, for a mesh a project file loads one item at a time: its parts are in
+    /// the item's object space (the file's components and unit applied), and the plate object takes this transform,
+    /// in full precision, so every item of one object is the same parts exactly moved. `None` for any other mesh,
+    /// whose parts are where they print; a plate's items merged into one are placed before they merge.
     pub placement: Option<Placement>,
 }
 
@@ -99,6 +101,31 @@ pub struct Placement {
     pub object: u32,
     /// The item's transform in millimeters, in the file's order: the turn and scale as three rows, then the move.
     pub transform: [f64; 12],
+}
+
+impl Placement {
+    /// The item's transform as a 4x4 column-major matrix, as plate objects take it.
+    pub fn matrix(&self) -> [f64; 16] {
+        let t = |i: usize| self.transform.get(i).copied().unwrap_or(0.0);
+        [
+            t(0),
+            t(1),
+            t(2),
+            0.0,
+            t(3),
+            t(4),
+            t(5),
+            0.0,
+            t(6),
+            t(7),
+            t(8),
+            0.0,
+            t(9),
+            t(10),
+            t(11),
+            1.0,
+        ]
+    }
 }
 
 /// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].
@@ -274,15 +301,59 @@ impl Mesh {
         self.parts.iter().map(|p| p.triangles.len()).sum()
     }
 
-    /// Axis-aligned bounds `(min, max)` in millimeters, or `None` when empty.
+    /// The mesh with its parts, volumes, paint and brim ears where its build item puts them ([`Self::placement`]),
+    /// and no placement: itself for a mesh without one.
+    #[allow(clippy::cast_possible_truncation, reason = "plate positions in mm fit f32")]
+    #[must_use]
+    pub fn placed(mut self) -> Self {
+        let Some(t) = self.placement.take().map(|p| p.matrix()) else {
+            return self;
+        };
+        let at = |p: [f32; 3]| crate::plate::PlateObject::apply_with(&t, p).map(|c| c as f32);
+        for p in self
+            .parts
+            .iter_mut()
+            .chain(self.volumes.iter_mut().map(|v| &mut v.part))
+        {
+            for v in &mut p.positions {
+                *v = at(*v);
+            }
+            for f in p
+                .paint
+                .iter_mut()
+                .chain(p.support_paint.iter_mut())
+                .chain(p.seam_paint.iter_mut())
+                .chain(p.fuzzy_paint.iter_mut())
+            {
+                f.v = f.v.map(at);
+            }
+        }
+        for e in &mut self.brim_points {
+            let [x, y, z] = at([e[0], e[1], e[2]]);
+            *e = [x, y, z, e[3]];
+        }
+        self
+    }
+
+    /// Axis-aligned bounds `(min, max)` in millimeters, or `None` when empty: where the build item puts the parts
+    /// of a mesh a project file loads one item at a time ([`Self::placement`]).
+    #[allow(clippy::cast_possible_truncation, reason = "plate positions in mm fit f32")]
     pub fn bounds(&self) -> Option<([f32; 3], [f32; 3])> {
-        let mut it = self.parts.iter().flat_map(|p| p.positions.iter());
-        let first = *it.next()?;
+        let item = self.placement.as_ref().map(Placement::matrix);
+        let mut it = self
+            .parts
+            .iter()
+            .flat_map(|p| p.positions.iter())
+            .map(|p| match &item {
+                Some(t) => crate::plate::PlateObject::apply_with(t, *p).map(|c| c as f32),
+                None => *p,
+            });
+        let first = it.next()?;
         let (mut lo, mut hi) = (first, first);
         for p in it {
             for ((l, h), v) in lo.iter_mut().zip(hi.iter_mut()).zip(p) {
-                *l = l.min(*v);
-                *h = h.max(*v);
+                *l = l.min(v);
+                *h = h.max(v);
             }
         }
         Some((lo, hi))
