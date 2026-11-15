@@ -155,6 +155,22 @@ describe('every engine refusal in plain words', () => {
     })
   })
 
+  it('gives a plan check\'s refusal no engine hint and a plain row, while a step\'s refusal in the same form keeps its hint', () => {
+    // design.plan and design.put_plan refusals, as an amend and a display plan write them: "field: why", which reads
+    // as engine shaped, though no step ran
+    const amend = 'holes: an amend changes sizes only; the plan keeps its rows of holes, by name and count'
+    const detail = 'A display model plan was not shown. overall: give the overall size; a display model the person gave no size for fills about 85% of a 256 x 256 x 256 mm build volume, as no printer is chosen'
+    for (const tool of ['design.plan', 'design.put_plan'])
+      for (const text of [amend, detail]) {
+        // the person's row reads as the catch-all, never with the plan's field keys; the model gets no hint
+        expect(plainEngine(text, tool)).toMatchObject({ title: 'Step not made', shown: 'That step could not be made, so the part is unchanged. Try asking for it another way.', hint: '', raw: text })
+      }
+    // the same text from a step that runs the engine still reads as an engine refusal, with its hint
+    expect(plainEngine(amend, 'design.edit_step')).toMatchObject({ title: 'Step not made' })
+    expect(plainEngine(amend, 'design.edit_step')!.hint).toMatch(/^The engine refused this step/)
+    expect(plainEngine('request: missing "parts"', 'geom.build')!.hint).toMatch(/^The engine refused this step/)
+  })
+
   it('leaves a printer\'s or the slicer\'s own words alone, and a modeling tool\'s plain sentences', async () => {
     expect(plainEngine('The printer is offline. Check that it is on and on the same network.', 'printer.status')).toBeUndefined()
     expect(plainEngine('edges: the result is not watertight; try a smaller size', 'printer.status')).toBeUndefined()

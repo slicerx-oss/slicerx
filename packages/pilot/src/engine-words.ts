@@ -171,6 +171,13 @@ export function plainReason(summary: string): string {
 const MODELING = /^(geom|design|parts)\.|^app\.(model_|paint|sketch)/
 
 /**
+ * The design tools that check a plan and run no step: their refusals say what to plan instead, in the plan's own
+ * "field: why" form. The model gets them as written with no engine hint, since a retry hint that says to tell the
+ * person once it fails again reads as leave off after one more plan; the person's row reads as the catch-all.
+ */
+const PLAN_TOOLS = new Set(['design.plan', 'design.put_plan'])
+
+/**
  * A join or cut that misses the part, as the hosts say it (cad-history missSentence, the app's cad-ops): how far short
  * it stops, inside the part, only touching it, part of it floating off, or no longer reaching it.
  */
@@ -262,8 +269,14 @@ export function plainEngine(summary: string, tool?: string, { kept: readKept = t
   if (MISSED.test(summary)) return undefined
   const modeling = tool === undefined || MODELING.test(tool)
   if (!modeling && !ENGINE_ONLY.test(summary)) return undefined
-  const r = REFUSALS.find((x) => x.test.test(summary)) ?? (engineShaped(summary) || ENGINE_ONLY.test(summary) ? FALLBACK : undefined)
+  // a plan check's refusal is written for the model in the plan's own field keys, so the person's row always reads as
+  // the catch-all does
+  const plan = tool !== undefined && PLAN_TOOLS.has(tool)
+  const r = REFUSALS.find((x) => x.test.test(summary)) ?? (plan || engineShaped(summary) || ENGINE_ONLY.test(summary) ? FALLBACK : undefined)
   if (!r) return undefined
   const shown = typeof r.shown === 'function' ? r.shown(summary) : r.shown
-  return { title: r.title, shown: shown.replace('{name}', ASSISTANT_NAME), hint: r.hint, raw: summary }
+  // a plan check runs no step: the person's row reads as any refusal does, never with the plan's own field keys, but the
+  // model gets no engine hint, as it has no step to try again
+  const hint = plan ? '' : r.hint
+  return { title: r.title, shown: shown.replace('{name}', ASSISTANT_NAME), hint, raw: summary }
 }
