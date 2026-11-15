@@ -408,7 +408,7 @@ impl Usage {
             }
         };
         // The world box of a volume, `[min x, min y, min z, max x, max y, max z]`.
-        let bounds = |tr: &[f32; 16], mesh: &crate::mesh::Mesh| {
+        let bounds = |tr: &[f64; 16], mesh: &crate::mesh::Mesh| {
             let mut b = [f64::MAX, f64::MAX, f64::MAX, f64::MIN, f64::MIN, f64::MIN];
             for part in mesh.parts.iter().filter(|p| !p.triangles.is_empty()) {
                 for &v in &part.positions {

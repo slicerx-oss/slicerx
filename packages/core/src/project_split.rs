@@ -133,7 +133,9 @@ pub fn split_projects(req: &mut SliceRequest, files: &dyn ProjectFiles) -> Resul
             let mut o = o;
             if let Some(one) = items.into_iter().next() {
                 o.brim_points.clone_from(&one.brim_points);
-                if placement != ItemsPlacement::Centered {
+                // A centered plate's one item is centered when the object is placed; its own transform (the item's,
+                // for parts in its object's space) still goes with it.
+                if placement != ItemsPlacement::Centered || one.placement.is_some() {
                     o.transform = at.first().map(|t| t.to_vec());
                 }
                 split.meshes.insert(key, Arc::new(one));
@@ -194,7 +196,7 @@ fn kept_whole(
     plate: Option<u32>,
     bed: api::Bed,
     config: &serde_json::Value,
-) -> Result<Vec<f32>> {
+) -> Result<Vec<f64>> {
     let bytes = files.bytes(file)?;
     let plate_no = match plate {
         Some(n) => n,
@@ -205,8 +207,8 @@ fn kept_whole(
         config,
     );
     let mut t = crate::plate::IDENTITY;
-    t[12] = x;
-    t[13] = y;
+    t[12] = f64::from(x);
+    t[13] = f64::from(y);
     Ok(t.to_vec())
 }
 

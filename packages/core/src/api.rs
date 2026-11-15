@@ -80,7 +80,8 @@ pub fn load_3mf_plate_objects(bytes: &[u8], file_name: &str) -> Result<Vec<(u32,
 /// when the file has no such plate. Each printable build item is a mesh of its own, with its parts, cuts, modifiers and
 /// support volumes, named after its object (`Object_<n>`, the item's place in the build, for an object without a
 /// name): one object of the plate, so one label in the G-code and one body for the collision check. Two items of one
-/// object are two meshes, in the file's build space. `sx slice <file.3mf>` makes its plate of them
+/// object are two meshes of the same parts in the object's space, each with its item's transform as its placement
+/// ([`Mesh::placement`]), which the plate object takes. `sx slice <file.3mf>` makes its plate of them
 /// ([`Plate::items_on`]), and a request's 3MF without a transform becomes one object per item, placed by
 /// [`crate::plate::items_transforms`], both as [`load_3mf_placement`] says.
 pub fn load_3mf_items(bytes: &[u8], file_name: &str, plate: Option<u32>) -> Result<Option<(u32, Vec<Mesh>)>> {
@@ -460,7 +461,7 @@ pub struct ObjectSpec {
     /// 4x4 column-major transform in mm. When absent the mesh is centered on
     /// the bed and set down on z = 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<Vec<f32>>,
+    pub transform: Option<Vec<f64>>,
     /// Part name to filament slot.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub slot_overrides: BTreeMap<String, u8>,
@@ -492,7 +493,7 @@ pub struct VolumeSpec {
     pub role: String,
     pub mesh: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<Vec<f32>>,
+    pub transform: Option<Vec<f64>>,
     /// For a modifier: Orca key overrides that apply to the object inside the volume
     /// (walls, infill density and pattern, speeds and flow).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -2363,7 +2364,7 @@ fn arrange_one(
     req.plate.placement = PlatePlacement::Center;
     let (config, _) = request_config_checked(req)?;
     let plate = build_plate(req, get)?;
-    let set = |req: &mut SliceRequest, transforms: &[[f32; 16]]| {
+    let set = |req: &mut SliceRequest, transforms: &[[f64; 16]]| {
         for (o, t) in req.plate.objects.iter_mut().zip(transforms) {
             o.transform = Some(t.to_vec());
         }

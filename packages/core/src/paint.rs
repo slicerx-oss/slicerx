@@ -301,7 +301,7 @@ pub(crate) enum Facets {
     /// Corners in mm on the bed.
     Mm(Vec<([[f64; 3]; 3], u8)>),
     /// Corners in the object's own frame, and the object's column-major transform.
-    Placed(Pieces, [f32; 16]),
+    Placed(Pieces, [f64; 16]),
 }
 
 /// Which painted pieces of a part a [`Pieces::Part`] reads: its color paint or its fuzzy skin paint.
@@ -343,7 +343,7 @@ impl Facets {
     /// `facets` of an object placed by `transform`, kept as they are (the pieces' room beyond their count is given
     /// back).
     #[cfg(test)]
-    pub(crate) fn placed(facets: &[PaintFacet], transform: &[f32; 16]) -> Self {
+    pub(crate) fn placed(facets: &[PaintFacet], transform: &[f64; 16]) -> Self {
         Self::Placed(Pieces::Own(facets.to_vec()), *transform)
     }
 
@@ -352,7 +352,7 @@ impl Facets {
         mesh: &std::sync::Arc<crate::mesh::Mesh>,
         part: usize,
         paint: PaintOf,
-        transform: &[f32; 16],
+        transform: &[f64; 16],
     ) -> Self {
         Self::Placed(Pieces::Part(std::sync::Arc::clone(mesh), part, paint), *transform)
     }
@@ -2271,7 +2271,7 @@ mod tests {
             },
         ];
         // a turn about z, a scale and a move, column-major
-        let t: [f32; 16] = [
+        let t: [f64; 16] = [
             0.8, 0.6, 0.0, 0.0, -0.6, 0.8, 0.0, 0.0, 0.0, 0.0, 1.25, 0.0, 128.3, 97.1, 0.0, 1.0,
         ];
         let placed = Facets::placed(&file, &t);

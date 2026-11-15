@@ -399,8 +399,8 @@ fn golden() -> Value {
                 let t = &o.transform;
                 for p in &meshes[mesh].0 {
                     let (x, y) = (
-                        f64::from(t[0] * p[0] + t[4] * p[1] + t[8] * p[2] + t[12]),
-                        f64::from(t[1] * p[0] + t[5] * p[1] + t[9] * p[2] + t[13]),
+                        t[0] * f64::from(p[0]) + t[4] * f64::from(p[1]) + t[8] * f64::from(p[2]) + t[12],
+                        t[1] * f64::from(p[0]) + t[5] * f64::from(p[1]) + t[9] * f64::from(p[2]) + t[13],
                     );
                     let inside = if round { x.hypot(y) <= (x1 - x0) / 2.0 + 1e-3 } else { x >= x0 - 1e-3 && x <= x1 + 1e-3 && y >= y0 - 1e-3 && y <= y1 + 1e-3 };
                     assert!(inside, "{}: {} reaches {x:.2}, {y:.2}, off the printable area", c.name, o.id);

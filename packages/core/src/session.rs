@@ -16080,13 +16080,10 @@ pub(crate) fn copies_of(
 }
 
 /// How far `b` stands from `a` across the bed, mm, when it is `a` moved there and nothing else: the same mesh,
-/// filaments and height ranges under the same turn and scale, or, for two build items of a project file (whose parts load already
-/// placed, [`crate::mesh::Placement`]), the same object of the file under the same item turn and scale, with parts
-/// of the same triangles whose vertices lie at the items' difference. None for anything else.
+/// filaments and height ranges under the same turn and scale. Two build items of one object of a project file load as
+/// the same parts in the object's space, each with its item's transform ([`crate::mesh::Placement`]), so they compare
+/// the same way. None for anything else.
 fn moved(a: &crate::plate::PlateObject, b: &crate::plate::PlateObject) -> Option<[f64; 2]> {
-    // The parts are placed in single precision, so each vertex is the item's difference away within its rounding;
-    // a micron is well past that and well under anything a slice resolves.
-    const ROUNDING_MM: f64 = 1e-3;
     type Points = [[f32; 3]];
     let (ta, tb) = (&a.transform, &b.transform);
     // The turn and scale (the first three columns) and the height and last row agree; only x and y move.
@@ -16098,10 +16095,7 @@ fn moved(a: &crate::plate::PlateObject, b: &crate::plate::PlateObject) -> Option
     if a.mesh.height_ranges != b.mesh.height_ranges || a.mesh.layer_heights != b.mesh.layer_heights {
         return None;
     }
-    let own = [
-        f64::from(tb[12]) - f64::from(ta[12]),
-        f64::from(tb[13]) - f64::from(ta[13]),
-    ];
+    let own = [tb[12] - ta[12], tb[13] - ta[13]];
     let (ma, mb) = (&a.mesh, &b.mesh);
     let parts_match = |same: &dyn Fn(&Points, &Points) -> bool| {
         ma.parts.len() == mb.parts.len()
@@ -16112,40 +16106,7 @@ fn moved(a: &crate::plate::PlateObject, b: &crate::plate::PlateObject) -> Option
                     && same(&p.positions, &q.positions)
             })
     };
-    if std::sync::Arc::ptr_eq(ma, mb) || parts_match(&|u, v| u == v) {
-        return Some(own);
-    }
-    // Build items of one object: only an exact copy of its turn and scale, and nothing of their own on the meshes.
-    let (pa, pb) = (ma.placement.as_ref()?, mb.placement.as_ref()?);
-    let bare =
-        |m: &crate::mesh::Mesh| m.volumes.is_empty() && m.part_settings.is_empty() && m.settings.is_null();
-    if pa.object != pb.object || pa.transform.get(..9) != pb.transform.get(..9) || !bare(ma) || !bare(mb) {
-        return None;
-    }
-    let step: [f64; 3] = std::array::from_fn(|c| {
-        pb.transform.get(9 + c).copied().unwrap_or(0.0) - pa.transform.get(9 + c).copied().unwrap_or(0.0)
-    });
-    // The items' difference is in the mesh's space; the plate object's turn takes it onto the bed, where it may
-    // only move across.
-    let m = ta.map(f64::from);
-    let across = |r: usize| {
-        (0..3)
-            .map(|c| m.get(c * 4 + r).copied().unwrap_or(0.0) * step.get(c).copied().unwrap_or(0.0))
-            .sum::<f64>()
-    };
-    if across(2).abs() > 1e-9 {
-        return None;
-    }
-    let close = |u: &Points, v: &Points| {
-        u.len() == v.len()
-            && u.iter().zip(v).all(|(p, q)| {
-                p.iter()
-                    .zip(q)
-                    .zip(&step)
-                    .all(|((&p, &q), &d)| (f64::from(q) - f64::from(p) - d).abs() <= ROUNDING_MM)
-            })
-    };
-    parts_match(&close).then(|| [own[0] + across(0), own[1] + across(1)])
+    (std::sync::Arc::ptr_eq(ma, mb) || parts_match(&|u, v| u == v)).then_some(own)
 }
 
 /// Merges bit-identical vertices and applies the object transform.
@@ -17124,7 +17085,7 @@ mod shared_paint_tests {
         let shared = api::build_session(&req, &plate, &config).expect("the session builds");
         // The paint as the session copied it before, part by part in the session's order.
         let mut copied = api::build_session(&req, &plate, &config).expect("the session builds");
-        let placed: Vec<(&MeshPart, &[f32; 16])> = plate
+        let placed: Vec<(&MeshPart, &[f64; 16])> = plate
             .objects
             .iter()
             .flat_map(|o| {
