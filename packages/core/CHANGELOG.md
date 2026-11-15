@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+
+- Organic tree support takes `tree_support_branch_angle`, `tree_support_branch_diameter` and `tree_support_branch_distance` from settings that set them without the matching `_organic` key (`tree_support_branch_angle_organic` and the like), as a project with only the plain keys does. Before, such a slice planned its branches with the default angle 40, diameter 2 and distance 1 whatever the settings said. A `_organic` key that is set still wins, and settings that carry both are read as before.
+
 ## [0.2.9] - 2026-11-09
 
 ### Fixed
