@@ -434,6 +434,11 @@ function networkLost(e: unknown): boolean {
 }
 export const SLOW_DOWN_GIVE_UP_MS = 60_000
 export { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE }
+/**
+ * A second look without compare on a follow-up: the turn's first picture stays the only one, and it shows the model as
+ * the turn found it, so a change made since is seen with one look that compares, after the last change.
+ */
+export const LOOK_AGAIN_NOTE = 'You looked at the model at the start of this turn; that picture is above and shows the model before your changes this turn. To see your changes, call design.look with compare true once, after the last change.'
 /** A step cut off at the output limit before it said or called anything. */
 export const CUT_NOTE = 'Your last reply reached the output limit before it said or did anything. Keep it shorter: make one smaller tool call (build a part in a few solids, or one feature at a time), or reply in a few sentences.'
 /**
@@ -1983,7 +1988,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         if (follow && followLooked && call.name === 'design.look' && !/"compare"\s*:\s*true/.test(call.arguments)) {
           watch({ type: 'tool_call', callId: call.id, tool: call.name, source: 'command', input: call.arguments })
           watch({ type: 'tool_result', callId: call.id, ok: true, summary: 'Looked at the model at the start of this turn' })
-          messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: true, summary: 'You looked at the model at the start of this turn; that picture is above and the model has not changed since, unless you changed it.' }) })
+          messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: true, summary: LOOK_AGAIN_NOTE }) })
           continue
         }
         const res = await execute(call, sessionId, context, watch, signal, citations, cards, stops, loader, catalog?.live)
