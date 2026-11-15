@@ -43,15 +43,16 @@ const GAP_MM: f64 = 1.0;
 /// How far a layer's support path lengths may differ, mm: the same rounding, summed over a few hundred moves.
 const LENGTH_MM: f64 = 0.05;
 
-/// Slices `objects` (an id and the place of its origin each, all of `mesh`) with tree support and object labels.
-fn slice(mesh: &Mesh, objects: &[(&str, [f32; 2])]) -> String {
+/// Slices `objects` (an id and the place of its origin each, all of `mesh`) with tree support and object labels,
+/// and the settings of `extra` over the test's own.
+fn slice(mesh: &Mesh, objects: &[(&str, [f32; 2])], extra: &Value) -> String {
     let list: Vec<(&str, &Mesh, [f32; 2])> = objects.iter().map(|(id, at)| (*id, mesh, *at)).collect();
-    slice_each(&list)
+    slice_each(&list, extra)
 }
 
 /// Slices `objects` (an id, a mesh and the place of its origin each) with tree support planned per object and
-/// object labels.
-fn slice_each(objects: &[(&str, &Mesh, [f32; 2])]) -> String {
+/// object labels, and the settings of `extra` over the test's own.
+fn slice_each(objects: &[(&str, &Mesh, [f32; 2])], extra: &Value) -> String {
     let list: Vec<Value> = objects
         .iter()
         .map(|(id, _, at)| {
@@ -59,14 +60,20 @@ fn slice_each(objects: &[(&str, &Mesh, [f32; 2])]) -> String {
                 "transform": [1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  at[0], at[1], 0, 1]})
         })
         .collect();
+    let mut config = json!({
+        "enable_support": true, "support_type": "tree(auto)", "support_style": "default",
+        "organic_per_object": true,
+        "brim_width": 0, "brim_type": "no_brim", "skirt_loops": 0, "enable_arc_fitting": false,
+        "gcode_label_objects": true, "layer_height": 0.2, "initial_layer_print_height": 0.2,
+    });
+    if let (Some(dst), Some(src)) = (config.as_object_mut(), extra.as_object()) {
+        for (k, v) in src {
+            dst.insert(k.clone(), v.clone());
+        }
+    }
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": list},
-        "config": {
-            "enable_support": true, "support_type": "tree(auto)", "support_style": "default",
-            "organic_per_object": true,
-            "brim_width": 0, "brim_type": "no_brim", "skirt_loops": 0, "enable_arc_fitting": false,
-            "gcode_label_objects": true, "layer_height": 0.2, "initial_layer_print_height": 0.2,
-        },
+        "config": config,
         "options": {"allowCollisions": true},
     }))
     .unwrap();
@@ -244,7 +251,7 @@ fn copies_of_a_part_on_one_plate_all_get_the_same_support() {
         })
         .collect();
     let objects: Vec<(&str, [f32; 2])> = places.iter().map(|(n, at)| (n.as_str(), *at)).collect();
-    let g = slice(&m, &objects);
+    let g = slice(&m, &objects, &json!({}));
     let first = models::object_support_moves(&g, Some("copy0"));
     assert!(length(&first) > 100.0, "the first copy prints support");
     let mut bad = Vec::new();
@@ -294,10 +301,11 @@ fn branches_of_two_parts_side_by_side_never_join() {
     let left = shelf("left", 18.0, 20.0, 30.0);
     let right = shelf("right", -18.0, 17.0, 25.0);
     let (at_left, at_right) = ([100.0, 100.0], [139.0, 100.0]);
-    let plate = slice_each(&[("left", &left, at_left), ("right", &right, at_right)]);
+    let none = json!({});
+    let plate = slice_each(&[("left", &left, at_left), ("right", &right, at_right)], &none);
     let alone = [
-        models::support_moves(&slice_each(&[("left", &left, at_left)])),
-        models::support_moves(&slice_each(&[("right", &right, at_right)])),
+        models::support_moves(&slice_each(&[("left", &left, at_left)], &none)),
+        models::support_moves(&slice_each(&[("right", &right, at_right)], &none)),
     ];
     for (name, layers) in ["left", "right"].iter().zip(&alone) {
         assert!(length(layers) > 100.0, "the {name} shelf prints support alone");
@@ -308,5 +316,82 @@ fn branches_of_two_parts_side_by_side_never_join() {
         "two shelves side by side against each alone",
         apart.len(),
         &differences(&apart, &together, [0.0, 0.0]),
+    );
+}
+
+/// How far past the bed's edge a support move may end, mm: G-code writes 3 decimals.
+const BED_MM: f64 = 0.001;
+
+#[test]
+fn a_copy_at_the_bed_edge_keeps_its_support_on_the_bed() {
+    // Two copies of the capped stem on a 256 mm bed: one in the middle, one with its 40 mm cap 1 mm from the left
+    // edge. The first layer of support grows 4 mm round its trunks, past the cap's edge. The copy reuses the first
+    // one's plan, made away from any edge, so moved as it is its first layer would print off the bed (and the plate
+    // would be refused for it).
+    let m = part();
+    let bed = [0.0, 0.0, 256.0, 256.0];
+    let g = slice(
+        &m,
+        &[("middle", [128.0, 128.0]), ("edge", [21.0, 128.0])],
+        &json!({"printable_area": ["0x0", "256x0", "256x256", "0x256"], "raft_first_layer_expansion": 4}),
+    );
+    let edge = models::object_support_moves(&g, Some("edge"));
+    assert!(length(&edge) > 100.0, "the copy at the edge prints support");
+    let mut off: Vec<String> = Vec::new();
+    for (z, segs) in models::support_moves(&g) {
+        for (_, a, b) in segs {
+            for p in [mm(a), mm(b)] {
+                if p[0] < bed[0] - BED_MM
+                    || p[1] < bed[1] - BED_MM
+                    || p[0] > bed[2] + BED_MM
+                    || p[1] > bed[3] + BED_MM
+                {
+                    off.push(format!("z {z} at {p:.3?}"));
+                }
+            }
+        }
+    }
+    assert!(
+        off.is_empty(),
+        "{} support move ends lie off the bed: {}",
+        off.len(),
+        off.iter().take(5).cloned().collect::<Vec<_>>().join("; ")
+    );
+}
+
+/// A 10 x 10 mm body 30 mm tall whose +X face leans out 12 mm over its height (68 degrees from the bed, which
+/// needs no support), and a 13 mm arm at 10 mm on its -X side, held up by tree support.
+fn leaning() -> Mesh {
+    Mesh {
+        name: "leaning".into(),
+        parts: vec![
+            models::prism_xz(
+                "body",
+                &[[-5.0, 0.0], [5.0, 0.0], [17.0, 30.0], [-5.0, 30.0]],
+                -5.0,
+                5.0,
+            ),
+            models::cuboid("arm", [-18.0, -5.0, 10.0], [-5.0, 5.0, 13.0]),
+        ],
+        ..Mesh::default()
+    }
+}
+
+#[test]
+fn support_of_close_copies_carries_each_copys_own_label() {
+    // Two copies 32 mm apart along X: the second's arm points at the first's leaning face, so the first layer of
+    // the second's support (grown 4 mm round its trunks) reaches under the top of the first, where nothing of the
+    // second stands above it. That support is still the second's: skipping one object must leave the other's
+    // support whole.
+    let m = leaning();
+    let places = [("first", [68.0f32, 128.0f32]), ("second", [100.0, 128.0])];
+    let g = slice(&m, &places, &json!({"raft_first_layer_expansion": 4}));
+    let first = models::object_support_moves(&g, Some("first"));
+    let second = models::object_support_moves(&g, Some("second"));
+    assert!(length(&first) > 100.0, "the first copy prints support");
+    report(
+        "two close copies by their labels",
+        first.len(),
+        &differences(&first, &second, shift(places[0].1, places[1].1)),
     );
 }
