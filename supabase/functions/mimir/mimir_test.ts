@@ -3,7 +3,7 @@
 // The proxy's request rules, its stream reading, and its routes against a fake database
 // and a fake provider. Run with `deno test supabase/functions/mimir`.
 import { assert, assertEquals, assertMatch } from 'jsr:@std/assert@1.0.13'
-import { BETAS, MAX_BODY_BYTES, MAX_LOADED_TOOLS, MAX_OUTPUT, MAX_TOOLS, MODEL, shape, TOOL_CHANGES_BETA, worstInput } from './shape.ts'
+import { BASE_OUTPUT, BETAS, MAX_BODY_BYTES, MAX_LOADED_TOOLS, MAX_OUTPUT, MAX_TOOLS, MODEL, shape, TOOL_CHANGES_BETA, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
 import { inWords, resetsAt } from './errors.ts'
 import { allowedOrigin, clientIp, dayKey, type Env, handle, marked, TOOL_SEARCH_EVENT, withoutThinking } from './handler.ts'
@@ -40,9 +40,21 @@ test('the model is pinned and the reply capped', () => {
   const picked = shape(base({ model: 'claude-opus-5-5' }), SONNET)
   assert(picked.ok)
   assertEquals(picked.body['model'], SONNET)
-  assertEquals(s.body['max_tokens'], MAX_OUTPUT)
+  // the base model's reply has room for a long plan; any other model's stays at MAX_OUTPUT
+  assertEquals(s.body['max_tokens'], BASE_OUTPUT)
+  assertEquals(BASE_OUTPUT, 32768)
+  assertEquals(MAX_OUTPUT, 8192)
+  assertEquals(ok(base()).body['max_tokens'], BASE_OUTPUT)
+  const step = shape(base({ max_tokens: 100000 }), SONNET)
+  assert(step.ok)
+  assertEquals(step.body['max_tokens'], MAX_OUTPUT)
+  assertEquals(step.maxOutput, MAX_OUTPUT)
+  const top = shape(base({ max_tokens: 32000 }), 'claude-opus-5-5')
+  assert(top.ok)
+  assertEquals(top.body['max_tokens'], MAX_OUTPUT)
   assertEquals(s.body['stream'], true)
   assertEquals(ok(base({ max_tokens: 500 })).body['max_tokens'], 500)
+  assertEquals(ok(base({ max_tokens: 32000 })).body['max_tokens'], 32000)
 })
 
 test('thinking is adaptive whatever the client asks', () => {
@@ -541,7 +553,7 @@ test('a call reserves, streams through, and settles what it used', async () => {
   // saved by the edition's default, since the client said nothing
   assertEquals(h.calls.map((c) => c.fn), ['mimir_reserve', 'mimir_settle', 'mimir_save_chat'])
   assertEquals(h.calls[0]!.args['p_ip'], '9.9.9.9')
-  assertEquals(h.calls[0]!.args['p_output'], MAX_OUTPUT)
+  assertEquals(h.calls[0]!.args['p_output'], BASE_OUTPUT)
   assertEquals(h.calls[0]!.args['p_input'], ok(base({ tools: [TOOL] })).promptEstimate)
   assertEquals(h.calls[1]!.args, {
     p_call: '11111111-1111-1111-1111-111111111111', p_model: MODEL, p_input: 12, p_cache_write: 3000, p_cache_read: 0, p_output: 40, p_searches: 1,
@@ -782,7 +794,7 @@ test('a failed, refused or cut-short call stores no session', async () => {
     await (await handle(post('/v1/messages', base(), shared), h.env)).text()
     await Promise.all(h.pending)
     // an unfinished stream may have billed more than it counted: it settles at the whole allowance
-    assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_output'], MAX_OUTPUT)
+    assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_output'], BASE_OUTPUT)
     assert(!h.calls.some((c) => c.fn === 'mimir_save_chat'))
   }
   // nothing the provider says about our account reaches the caller

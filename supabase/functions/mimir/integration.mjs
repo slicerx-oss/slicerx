@@ -96,7 +96,7 @@ try {
   const up = seen[0]
   assert.equal(up.headers['x-api-key'], 'sk-ant-integration')
   assert.equal(up.body.model, 'claude-haiku-5-5')
-  assert.equal(up.body.max_tokens, 8192)
+  assert.equal(up.body.max_tokens, 32768)
   assert.deepEqual(up.body.system[0].cache_control, { type: 'ephemeral' })
   // 100000 input at $0.10/M plus 1000 output at $0.50/M
   assert.equal(sql('select cost_micros from public.mimir_calls'), '10500')
