@@ -221,43 +221,95 @@ fn union(parts: &[Shapes]) -> Shapes {
     }
 }
 
+/// The bed `bed` (`[min x, min y, max x, max y]`, internal units) moved by `-d`: where the bed is in the frame a
+/// copy's support was planned in.
+fn bed_in_frame(bed: [i32; 4], d: [i32; 2]) -> Shapes {
+    let [x0, y0, x1, y1] = [bed[0] - d[0], bed[1] - d[1], bed[2] - d[0], bed[3] - d[1]];
+    vec![vec![vec![
+        IntPoint::new(x0, y0),
+        IntPoint::new(x1, y0),
+        IntPoint::new(x1, y1),
+        IntPoint::new(x0, y1),
+    ]]]
+}
+
+/// Whether `parts` moved by `d` reach past the bed `bed` (internal units).
+fn past_bed(parts: &[&Shapes], d: [i32; 2], bed: [i32; 4]) -> bool {
+    parts
+        .iter()
+        .filter_map(|s| perimeters::bounds(s))
+        .any(|b| b[0] + d[0] < bed[0] || b[1] + d[1] < bed[1] || b[2] + d[0] > bed[2] || b[3] + d[1] > bed[3])
+}
+
+/// `s` cut to `keep`.
+fn cut(s: &Shapes, keep: &Shapes) -> Shapes {
+    perimeters::intersection(s, keep)
+}
+
 /// The plate's organic plan from each object's own: on every layer, each object's areas moved to where it stands
 /// and put together (each object's areas kept apart as [`Piece`]s for its paths), and the branches through each raft
 /// layer likewise. `layers` is the number of support layers every plan has.
-pub(crate) fn assemble(layers: usize, plans: &[Planned<'_>]) -> crate::organic::OrganicPlan {
+///
+/// A copy's support was planned where the object it copies stands, against the bed border there. Where the copy's
+/// support, moved to it, would reach past the bed (`bed`, mm), it is cut to the bed on its own, in its planned
+/// frame, so its paths stay on the plate.
+pub(crate) fn assemble(layers: usize, plans: &[Planned<'_>], bed: [f64; 4]) -> crate::organic::OrganicPlan {
+    let bed = bed.map(crate::support::units);
     let mut out = crate::organic::OrganicPlan {
         layers: Vec::with_capacity(layers),
         raft: Vec::new(),
     };
     for l in 0..layers {
-        let pieces: Vec<Piece> = plans
-            .iter()
-            .filter_map(|p| {
-                let layer = p.plan.layers.get(l)?.organic.as_ref()?;
-                Some(Piece {
-                    object: p.object,
-                    layer: Arc::clone(layer),
-                    shift: p.shift,
-                    bounds: p.bounds,
-                })
-            })
-            .collect();
+        let mut pieces: Vec<Piece> = Vec::new();
+        // The layer's areas by kind, each object's moved to where it stands: base, interface, contact, hang, bottom.
+        let mut kinds: [Vec<Shapes>; 5] = Default::default();
+        for p in plans {
+            let Some(sl) = p.plan.layers.get(l) else { continue };
+            let Some(planned) = sl.organic.as_ref() else {
+                continue;
+            };
+            let fields = [&sl.base, &sl.interface, &sl.contact, &sl.hang, &sl.bottom];
+            let printed = [
+                &planned.top_contact,
+                &planned.interface,
+                &planned.base_interface,
+                &planned.base,
+                &planned.bottom_contact,
+            ];
+            let (layer, own): (Arc<OrganicLayer>, [Shapes; 5]) =
+                if p.shift != [0, 0] && past_bed(&printed, p.shift, bed) {
+                    let keep = bed_in_frame(bed, p.shift);
+                    let o = planned.as_ref();
+                    let clipped = OrganicLayer {
+                        top_contact: cut(&o.top_contact, &keep),
+                        interface: cut(&o.interface, &keep),
+                        interface_bottom: o.interface_bottom,
+                        base_interface: cut(&o.base_interface, &keep),
+                        base: cut(&o.base, &keep),
+                        bottom_contact: cut(&o.bottom_contact, &keep),
+                        interface_id: o.interface_id,
+                        hang: cut(&o.hang, &keep),
+                    };
+                    (Arc::new(clipped), fields.map(|s| cut(s, &keep)))
+                } else {
+                    (Arc::clone(planned), fields.map(Clone::clone))
+                };
+            for (dst, s) in kinds.iter_mut().zip(own) {
+                if !s.is_empty() {
+                    dst.push(moved(&s, p.shift));
+                }
+            }
+            pieces.push(Piece {
+                object: p.object,
+                layer,
+                shift: p.shift,
+                bounds: p.bounds,
+            });
+        }
         if pieces.is_empty() {
             out.layers.push(SupportLayer::default());
             continue;
         }
-        let each = |f: &dyn Fn(&SupportLayer) -> &Shapes| -> Shapes {
-            let parts: Vec<Shapes> = plans
-                .iter()
-                .filter_map(|p| {
-                    let sl = p.plan.layers.get(l)?;
-                    sl.organic.as_ref()?;
-                    let s = f(sl);
-                    (!s.is_empty()).then(|| moved(s, p.shift))
-                })
-                .collect();
-            union(&parts)
-        };
         let kind = |f: &dyn Fn(&OrganicLayer) -> &Shapes| -> Shapes {
             let parts: Vec<Shapes> = pieces
                 .iter()
@@ -279,12 +331,13 @@ pub(crate) fn assemble(layers: usize, plans: &[Planned<'_>]) -> crate::organic::
             interface_id: first.as_ref().map_or(0, |o| o.interface_id),
             hang: kind(&|o| &o.hang),
         };
+        let [base, interface, contact, hang, bottom] = kinds.map(|parts| union(&parts));
         out.layers.push(SupportLayer {
-            base: each(&|s| &s.base),
-            interface: each(&|s| &s.interface),
-            contact: each(&|s| &s.contact),
-            hang: each(&|s| &s.hang),
-            bottom: each(&|s| &s.bottom),
+            base,
+            interface,
+            contact,
+            hang,
+            bottom,
             organic: Some(Arc::new(whole)),
             objects: pieces,
             ..SupportLayer::default()
@@ -296,15 +349,68 @@ pub(crate) fn assemble(layers: usize, plans: &[Planned<'_>]) -> crate::organic::
             let parts: Vec<Shapes> = plans
                 .iter()
                 .filter_map(|p| {
-                    p.plan
-                        .raft
-                        .get(r)
-                        .filter(|s| !s.is_empty())
-                        .map(|s| moved(s, p.shift))
+                    let s = p.plan.raft.get(r).filter(|s| !s.is_empty())?;
+                    let s = if p.shift != [0, 0] && past_bed(&[s], p.shift, bed) {
+                        cut(s, &bed_in_frame(bed, p.shift))
+                    } else {
+                        s.clone()
+                    };
+                    (!s.is_empty()).then(|| moved(&s, p.shift))
                 })
                 .collect();
             union(&parts)
         })
         .collect();
     out
+}
+
+/// Per island of `islands` (a layer's organic support, all objects together), the plate object whose planned
+/// support it is: the one of `pieces` whose areas, moved to where it stands, meet the island, or
+/// `preview::OBJECT_NONE` when none or several do. Empty without pieces.
+pub(crate) fn island_owners(islands: &Shapes, pieces: &[Piece]) -> Vec<u16> {
+    if pieces.is_empty() {
+        return Vec::new();
+    }
+    let own: Vec<(u16, Shapes, Option<[i32; 4]>)> = pieces
+        .iter()
+        .map(|p| {
+            let o = &p.layer;
+            let all = perimeters::union_all(&[
+                &o.top_contact,
+                &o.interface,
+                &o.base_interface,
+                &o.base,
+                &o.bottom_contact,
+            ]);
+            let at = moved(&all, p.shift);
+            let b = perimeters::bounds(&at);
+            (p.object, at, b)
+        })
+        .collect();
+    let meet = |a: [i32; 4], b: [i32; 4]| a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+    islands
+        .iter()
+        .map(|island| {
+            let Some(b) = perimeters::bounds(std::slice::from_ref(island)) else {
+                return crate::preview::OBJECT_NONE;
+            };
+            let near: Vec<&(u16, Shapes, Option<[i32; 4]>)> = own
+                .iter()
+                .filter(|(_, _, ob)| ob.is_some_and(|ob| meet(b, ob)))
+                .collect();
+            let hit: Vec<u16> = if let [one] = near.as_slice() {
+                vec![one.0]
+            } else {
+                let shape = vec![island.clone()];
+                near.iter()
+                    .filter(|(_, s, _)| !perimeters::intersection(&shape, s).is_empty())
+                    .map(|(o, ..)| *o)
+                    .collect()
+            };
+            match hit.as_slice() {
+                [one] => *one,
+                _ => crate::preview::OBJECT_NONE,
+            }
+        })
+        .collect()
 }

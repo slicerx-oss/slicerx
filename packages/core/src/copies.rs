@@ -317,7 +317,16 @@ fn append_layer(dst: &mut LayerPaths, mut l: LayerPaths) {
         _ => {}
     }
     match (dst.support_areas.as_mut(), l.support_areas) {
-        (Some(d), Some(a)) => d.islands.extend(a.islands),
+        (Some(d), Some(a)) => {
+            // Planned owners stay one per island: an island without one has none.
+            if !d.owners.is_empty() || !a.owners.is_empty() {
+                d.owners.resize(d.islands.len(), crate::preview::OBJECT_NONE);
+                let mut own = a.owners;
+                own.resize(a.islands.len(), crate::preview::OBJECT_NONE);
+                d.owners.extend(own);
+            }
+            d.islands.extend(a.islands);
+        }
         (None, Some(a)) => dst.support_areas = Some(a),
         _ => {}
     }
