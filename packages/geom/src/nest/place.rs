@@ -1520,8 +1520,14 @@ mod tests {
     fn envelopes_within_a_hundredth_of_a_square_millimeter_keep_the_earlier_pass() {
         // 0.005 mm2 apart: the same envelope, so the earlier pass stays, whichever is a hair smaller.
         let (early, late) = (layout(6, 100.0, 100.000_05), layout(16, 100.0, 100.0));
-        assert!(!late.better_than(&early), "a later pass with an envelope 0.005 mm2 smaller wins");
-        assert!(early.better_than(&late), "the earlier pass loses to an envelope 0.005 mm2 smaller");
+        assert!(
+            !late.better_than(&early),
+            "a later pass with an envelope 0.005 mm2 smaller wins"
+        );
+        assert!(
+            early.better_than(&late),
+            "the earlier pass loses to an envelope 0.005 mm2 smaller"
+        );
         // 0.02 mm2 apart: the smaller envelope wins.
         let (early, late) = (layout(6, 100.0, 100.000_2), layout(16, 100.0, 100.0));
         assert!(late.better_than(&early), "a smaller envelope by 0.02 mm2 loses");
