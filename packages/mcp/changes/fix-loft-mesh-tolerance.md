@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_geom_loft` 1.15.1 (from 1.15.0) draws a mesh loft's splines at the same 0.01 mm chord the exact path uses, where the profiles are matched point by point by count (closed splines, for one). Before, they were drawn at 0.005 mm, twice as fine, and a 9-profile closed-spline loft 220 mm long came out at 145286 triangles, which every later cut had to work on. A loft whose body would have more than 250000 triangles has its rows and spline rings drawn coarser, up to four times as coarse, until it keeps within them. Lofts matched by landmarks or where their pieces meet, and the arcs, circles and ellipses of every profile, are drawn as before.

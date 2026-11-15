@@ -832,11 +832,11 @@ fn one_closed_spline_on_every_profile_lofts_to_three_exact_faces_held_to_the_dra
 const CLOSED_SPLINE_MESH_REPLIES: [(&str, &str); 2] = [
     (
         "smooth, nine closed splines",
-        "b5d64d80209f7da520901b0d9155701480a06387c5a8b4d969138eeadfb55074",
+        "5167b804943656511c0f584c20be3d97155f15f0d28e3a26ba6ead56c46e1b6c",
     ),
     (
         "smooth, three closed splines",
-        "89896fc5357edf68924ca74070fbf526f174964c1a72f815e54b35c3921b9102",
+        "c3ab426e48a68201cd801394c77185b41a65462ea3b116c6270774b718324bae",
     ),
 ];
 
