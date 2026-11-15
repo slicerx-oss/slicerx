@@ -64,24 +64,26 @@ describe('a tool\'s own refusal reaches the model whole up to its limit', () => 
     expect(errorText(new Error('x'.repeat(2000)), REFUSAL_TEXT)).toHaveLength(1500)
   })
 
-  it('gives the model the group-key sentence whole, where the 300 cut stopped at "If"; the row shows the catch-all and the short text as before', async () => {
+  it('gives the model the group-key sentence whole, where the 300 cut stopped at "If", with no engine retry hint; the row reads as before', async () => {
     const { row, model } = await once(() => new ToolInputError(REFUSALS.groupKey))
     expect(REFUSALS.groupKey.slice(0, 300).endsWith('with only Promenade deck in flat. If')).toBe(true)
     expect(model).toContain(GROUP_SENTENCE)
-    // the refusal, cut at 1500, then the retry hint the catch-all adds
-    expect(model).toBe(`${REFUSALS.groupKey.slice(0, 1500).replace(/[.\s]+$/, '')}. ${plainEngine(REFUSALS.groupKey.slice(0, 300), 'design.plan')!.hint}`)
-    // the person's row, as it read with the 300 cut
+    // the refusal, cut at 1500, and nothing after it: a plan check runs no step, so the engine's catch-all adds no hint
+    expect(model).toBe(REFUSALS.groupKey.slice(0, 1500))
+    expect(model).not.toContain('The engine refused this step')
+    expect(plainEngine(REFUSALS.groupKey.slice(0, 300), 'design.plan')!.hint).toBe('')
+    // the person's row, as it read with the 300 cut: plain words, the plan's field keys only in the details
     expect(row).toMatchObject({ ok: false, title: 'Step not made', summary: 'That step could not be made, so the part is unchanged. Try asking for it another way.', detail: REFUSALS.groupKey.slice(0, 300) })
   })
 
-  it('keeps the row of a refusal the catch-all does not take at the short text, and gives the model all its problem sentences', async () => {
+  it('shows any plan refusal in plain words, its field keys only in the details, and gives the model all its problem sentences', async () => {
     const { row, model } = await once(() => new ToolInputError(REFUSALS.features))
     expect(model).toBe(REFUSALS.features.slice(0, 1500))
     expect(model).toContain('this one has 8. Add the real thing\'s parts you left out')
     expect(model).toContain(GROUP_SENTENCE)
-    expect(row.summary).toBe(REFUSALS.features.slice(0, 300))
-    expect(row.title).toBeUndefined()
-    expect(row.detail).toBeUndefined()
+    // the row never shows the plan's field keys (features:, real:) to the person
+    expect(row).toMatchObject({ title: 'Step not made', summary: 'That step could not be made, so the part is unchanged. Try asking for it another way.', detail: REFUSALS.features.slice(0, 300) })
+    expect(row.summary).not.toMatch(/\b[a-z]+: /)
   })
 
   it('cuts any other error at 300 for the model too: one that only carries the code, and a tool\'s other failures', async () => {

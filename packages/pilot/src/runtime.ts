@@ -1471,7 +1471,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     if (out.citations) for (const c of out.citations) if (!citations.some((x) => x.id === c.id)) citations.push(c)
     const said = refusal ?? out.summary
-    return { message: toolMessage(plain ? { ...out, summary: `${said.replace(/[.\s]+$/, '')}. ${plain.hint}` } : { ...out, summary: said }), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
+    return { message: toolMessage(plain?.hint ? { ...out, summary: `${said.replace(/[.\s]+$/, '')}. ${plain.hint}` } : { ...out, summary: said }), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
 
   async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet, kind?: TurnKind, building = false, wordsAsk?: ReadonlySet<string>): Promise<PilotEvent & { type: 'done'; capped?: true }> {
