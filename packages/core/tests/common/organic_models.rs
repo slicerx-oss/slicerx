@@ -436,14 +436,27 @@ pub type SupportSegs = Vec<(bool, [f32; 2], [f32; 2])>;
 /// Support extrusions of a G-code file: per layer (print Z), the segments of `;TYPE:Support` and
 /// `;TYPE:Support interface` moves, as `(interface, [x0, y0], [x1, y1])`.
 pub fn support_moves(gcode: &str) -> Vec<(f32, SupportSegs)> {
+    object_support_moves(gcode, None)
+}
+
+/// [`support_moves`] of the object labeled `object` only (`gcode_label_objects` on), or of every object for `None`.
+pub fn object_support_moves(gcode: &str, object: Option<&str>) -> Vec<(f32, SupportSegs)> {
     let mut layers: Vec<(f32, SupportSegs)> = Vec::new();
     let mut kind: Option<bool> = None;
+    let mut mine = object.is_none();
     let mut pos = [0.0f32; 2];
     let mut z = 0.0f32;
     let mut relative_e = false;
     let mut last_e = 0.0f32;
     for line in gcode.lines() {
         let line = line.trim();
+        if let Some(want) = object {
+            if let Some(rest) = line.strip_prefix("; printing object ") {
+                mine = rest.split(" id:").next() == Some(want);
+            } else if line.starts_with("; stop printing object ") {
+                mine = false;
+            }
+        }
         if let Some(t) = line.strip_prefix(";TYPE:") {
             kind = match t {
                 "Support" => Some(false),
@@ -491,6 +504,7 @@ pub fn support_moves(gcode: &str) -> Vec<(f32, SupportSegs)> {
             None => false,
         };
         if extrudes
+            && mine
             && next != pos
             && let Some(iface) = kind
         {
