@@ -152,6 +152,7 @@ mod noise;
 pub mod nozzles;
 mod organic;
 mod organic2;
+mod organic_objects;
 pub mod outname;
 mod output;
 mod overhang;

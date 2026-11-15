@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- `organic_per_object`, off by default: on a plate sliced as one, organic tree support is planned object by object. An object's branches avoid only its own layers and the bed border, and merge only with its own branches. Objects that are the same after placement (mesh, paint, settings and turn, moved only across the bed) are planned once, and the other copies get that support moved to where they stand, so every copy prints the same support paths. With it off, output does not change.
+
 ### Fixed
 
 - Organic tree support takes `tree_support_branch_angle`, `tree_support_branch_diameter` and `tree_support_branch_distance` from settings that set them without the matching `_organic` key (`tree_support_branch_angle_organic` and the like), as a project with only the plain keys does. Before, such a slice planned its branches with the default angle 40, diameter 2 and distance 1 whatever the settings said. A `_organic` key that is set still wins, and settings that carry both are read as before.
