@@ -141,11 +141,30 @@ const REFUSALS: readonly Refusal[] = [
   },
 ]
 
+/** The sentence shown for a step the engine refused in words the app does not know: what happened, and what to do. */
+export const STEP_NOT_MADE = 'That step could not be made, so the part is unchanged. Try asking for it another way.'
+
 /** Any engine refusal none of the groups above knows. */
 const FALLBACK: Omit<Refusal, 'test'> = {
   title: 'Step not made',
-  shown: 'That step could not be made, so the part is unchanged. Try asking for it another way.',
+  shown: STEP_NOT_MADE,
   hint: `The engine refused this step. Read why, then change the step or build it another way. ${NEVER_QUOTE}`,
+}
+
+/** The tool name prefixes of the app's own tools, as the model calls them (design.plan, geom.fillet, or design__plan). */
+const TOOL_NAME = /\b(?:geom|design|app|parts|printer|settings|project|plate|slice|kb|web|memory|lookup|pilot|skill|plugin|run)(?:\.|__)[a-z_]+\b/
+
+/**
+ * Whether text has what a person never reads: a `key: ` (an internal field or setting), a tool's own name, or a command
+ * line's `$ `. Lines about a failed step run through it, and one that does shows the plain sentence instead.
+ */
+export function showsInternalNames(text: string): boolean {
+  return /\b[a-z][A-Za-z0-9_]*: /.test(text) || TOOL_NAME.test(text) || /(?:^|\s)\$ /.test(text)
+}
+
+/** A failed step's reason as the person reads it: its own summary when that is plain, else the catch-all sentence. */
+export function plainReason(summary: string): string {
+  return showsInternalNames(summary) ? STEP_NOT_MADE : summary
 }
 
 /** Tools whose failures come from the geometry engine: the design and modeling tools and the app's own model steps. */

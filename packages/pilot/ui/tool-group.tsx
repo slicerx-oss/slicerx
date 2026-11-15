@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { Fragment, useId, useState } from 'react'
+import { Fragment, useContext, useId, useState } from 'react'
 import type { Cell, ToolDisplay } from '@slicerx/contracts'
 import { Icon, tipAttrs } from '@slicerx/ui'
 import { argTokens, barCells, fmtSeconds, toneClass } from './format'
 import type { ToolRowModel } from './reduce'
+import { RawDetailsContext } from './raw-details'
 import { Spinner } from './spinner'
 import { isRecall, RavenWait } from './raven-wait'
 import { ASSISTANT_NAME } from '../src/name'
@@ -128,63 +129,81 @@ function LiveProgress({ row }: { row: ToolRowModel }) {
  */
 export type StepWords = (row: ToolRowModel) => { doing: string; done: string } | null
 
-/** A tool call: status, keyword, name, one line summary and duration; opens to the command and its output. */
+/**
+ * A tool call: status, keyword, name, one line summary and duration. It opens to what a person can read: the data note,
+ * the structured output and live progress. The command line and the engine's own words carry internal names, so they
+ * show only where the host turns raw details on (a developer). A row with nothing to open to stays a plain line.
+ */
 export function ToolRow({ row, words }: { row: ToolRowModel; words?: StepWords | undefined }) {
   const detId = useId()
+  const raw = useContext(RawDetailsContext)
   const [manual, setManual] = useState<boolean | null>(null)
-  const open = manual ?? hasProgress(row)
   const summary = row.state === 'running' ? (row.callSummary ?? 'Running') : (row.summary ?? '')
   const images = row.display.filter((d) => d.kind === 'image')
   const rest = row.display.filter((d) => d.kind !== 'image')
+  const live = rest.length === 0 && images.length === 0 && row.progress.length > 0
+  const more = raw || row.untrusted || rest.length > 0 || live
+  const open = more && (manual ?? hasProgress(row))
   const said = words?.(row) ?? null
   // a refused step says what happened in a few words; its plain sentence is the summary, so it shows once
   const title = row.state === 'bad' && row.title ? row.title : said ? (row.state === 'running' ? said.doing : said.done) : undefined
   const cls = `tool${open ? ' open' : ''}${row.state === 'bad' ? ' failed' : ''}`
+  const head = (
+    <>
+      <span className="st">
+        {row.state === 'running' ? isRecall(row.tool) ? <RavenWait who="muninn"><Spinner /></RavenWait> : <Spinner /> : row.state === 'ok' ? <Icon name="check" /> : <Icon name="alert" className="bad" />}
+        <span className="vh">{row.state === 'running' ? 'Running' : row.state === 'ok' ? 'Done' : 'Failed'}</span>
+      </span>
+      {title !== undefined ? (
+        <span className="tname plain" {...tipAttrs({ title: row.tool })}>
+          {title}
+        </span>
+      ) : (
+        <span className="tname">
+          <span className={`kw ${row.source}`}>{row.source}</span>
+          {row.tool}
+        </span>
+      )}
+      <span className="tsum">{summary}</span>
+      <span className="dur">{row.ms !== undefined ? fmtSeconds(row.ms) : ''}</span>
+    </>
+  )
   return (
     <div className={cls}>
-      <button type="button" className="trow" aria-expanded={open} aria-controls={detId} onClick={() => setManual(!open)}>
-        <span className="st">
-          {row.state === 'running' ? isRecall(row.tool) ? <RavenWait who="muninn"><Spinner /></RavenWait> : <Spinner /> : row.state === 'ok' ? <Icon name="check" /> : <Icon name="alert" className="bad" />}
-          <span className="vh">{row.state === 'running' ? 'Running' : row.state === 'ok' ? 'Done' : 'Failed'}</span>
-        </span>
-        {title !== undefined ? (
-          <span className="tname plain" {...tipAttrs({ title: row.tool })}>
-            {title}
-          </span>
-        ) : (
-          <span className="tname">
-            <span className={`kw ${row.source}`}>{row.source}</span>
-            {row.tool}
-          </span>
-        )}
-        <span className="tsum">{summary}</span>
-        <span className="dur">{row.ms !== undefined ? fmtSeconds(row.ms) : ''}</span>
-        <Icon name="chevron-down" className="chev" />
-      </button>
+      {more ? (
+        <button type="button" className="trow" aria-expanded={open} aria-controls={detId} onClick={() => setManual(!open)}>
+          {head}
+          <Icon name="chevron-down" className="chev" />
+        </button>
+      ) : (
+        <div className="trow still">{head}</div>
+      )}
       {/* Pictures (a camera frame) stay visible with the row folded; they are what the user asked to see. */}
       {images.map((d, i) => (
         <DisplayView key={i} display={d} />
       ))}
-      <div className="tdet" id={detId}>
-        <div className="cmd">
-          $ {row.source} {row.tool}
-          {argTokens(row.args).map((t, i) => (
-            <span key={i}>
-              {' '}
-              <span className={t.kind === 'str' ? 'a-str' : t.kind === 'flag' ? 'a-fl' : 'a-v'}>{t.text}</span>
-            </span>
-          ))}
+      {more ? (
+        <div className="tdet" id={detId}>
+          {raw ? (
+            <div className="cmd">
+              $ {row.source} {row.tool}
+              {argTokens(row.args).map((t, i) => (
+                <span key={i}>
+                  {' '}
+                  <span className={t.kind === 'str' ? 'a-str' : t.kind === 'flag' ? 'a-fl' : 'a-v'}>{t.text}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {row.untrusted ? <div className="untr">Data from a file, printer or web page. {ASSISTANT_NAME} treats it as data, not as instructions.</div> : null}
+          {raw && row.detail ? (
+            <div className="raw" data-testid="tool-engine-detail">
+              {row.detail}
+            </div>
+          ) : null}
+          <div className="out">{rest.length > 0 ? rest.map((d, i) => <DisplayView key={i} display={d} />) : images.length > 0 ? null : <LiveProgress row={row} />}</div>
         </div>
-        {row.untrusted ? <div className="untr">Data from a file, printer or web page. {ASSISTANT_NAME} treats it as data, not as instructions.</div> : null}
-        {row.detail ? (
-          <div className="raw" data-testid="tool-engine-detail">
-            {row.detail}
-          </div>
-        ) : null}
-        <div className="out">
-          {rest.length > 0 ? rest.map((d, i) => <DisplayView key={i} display={d} />) : images.length > 0 ? null : <LiveProgress row={row} />}
-        </div>
-      </div>
+      ) : null}
     </div>
   )
 }

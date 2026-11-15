@@ -813,6 +813,17 @@ const PRINT_NOUNS = String.raw`quality|settings?|profiles?|presets?|time|speed|t
  */
 const BUILD_VERB = String.raw`(?:(?:^|[.!?,;:]|\b(?:please|can you|could you|would you|let's|lets))\s*(?:design|print(?!\s+(?:${PRINT_NOUNS})\b))\b|(?<!\b(?:the|a|an|my|this|that|your|its)\s+(?:[\w-]+\s+){0,2})\b(?:design\s+(?:the|my|a|an|this|that|its|your|me|it|another|one|two|some)|print\s+(?:the|a|an|this|its|your|me|another|one|two|some))\b)`
 
+/**
+ * A block whose fillet step fails, for the end-to-end tests: the step is sent with no edges and no radius, so its tool
+ * turns it down on its arguments, in that tool's own words (the runtime shows those as the step's summary). The failed
+ * step reaches the working loop's list as a bad step.
+ */
+const failedBlockStep: ScriptStep[] = [
+  { text: 'Starting a block.', calls: [{ name: 'design.new', args: { name: 'Block' } }] },
+  withDesign((design) => ({ text: 'Rounding the block\'s edges.', calls: [{ name: 'geom.fillet', args: { design } }] })),
+  { text: 'That step did not go through, so the block is unchanged.' },
+]
+
 export const SCRIPTS: MimirScript[] = [
   // first, so "the dimension sheet for the box" shows the built box's sizes rather than building another; a message
   // that also asks to make, build, design or print one is a build, and goes on to the scripts below.
@@ -829,6 +840,8 @@ export const SCRIPTS: MimirScript[] = [
   { id: 'mounting-plate', match: /\bmounting plate\b/i, steps: mountingPlate, testOnly: true },
   // a reopened project's half built plate: mimir goes on with its plan only when the project kept it
   { id: 'keep-going', match: /^\s*keep going\b/i, steps: keepGoing, testOnly: true },
+  // a step the tool turns down on its arguments: shows how a failed step reads in the working loop's list
+  { id: 'failed-block-step', match: /\bfailed block step\b/i, steps: failedBlockStep, testOnly: true },
   // after the parts and before the slice: "print it on my A1" models a clip, slices and sends it
   { id: 'print-run', match: /\bprint (?:it|this)\b.*\bon (?:my|the)\b/i, steps: printRun },
   // after the parts, so a part asked for with a slice in the same message is built first
