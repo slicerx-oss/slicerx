@@ -1472,7 +1472,7 @@ impl PrintConfig {
             c.raw
                 .insert("retract_when_changing_layer".to_owned(), Value::Bool(false));
         }
-        // bambu studio writes -1 for auto: a 2 mm first layer (SupportCommon.cpp)
+        // a negative raft_first_layer_expansion means auto, which is a 2 mm first layer
         if c.raw_number("raft_first_layer_expansion", 2.0) < 0.0 {
             c.raw
                 .insert("raft_first_layer_expansion".to_owned(), Value::from(2.0));
