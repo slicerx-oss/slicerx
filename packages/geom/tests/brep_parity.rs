@@ -1186,6 +1186,18 @@ fn push_and_pull_flat_faces() {
             3,
         ),
         (
+            "push a round top",
+            &peg,
+            [3.0, 3.0, 10.0],
+            up,
+            -2.0,
+            PI * 100.0 * 8.0,
+            [-10.0, -10.0, 0.0],
+            [10.0, 10.0, 8.0],
+            ARC_TOL,
+            3,
+        ),
+        (
             "push a pocket wall",
             &cup,
             [15.0, 10.0, 12.0],

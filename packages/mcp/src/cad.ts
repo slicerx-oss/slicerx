@@ -1564,7 +1564,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const push = defineTool({
     name: 'geom.push_pull',
-    version: '1.5.0',
+    version: '1.5.1',
     source: 'command',
     permission: 'slice',
     description: 'Push or pull a flat face of a model or a design along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. With "design" it adds a step to the design; with a model it writes the new STL and reports the volume change and the moved face.',
