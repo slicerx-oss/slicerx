@@ -222,3 +222,32 @@ it.skipIf(!exact)(`cuts every exact part of a design that must stay exact when g
   expect(text(missed)).toContain('The shape no longer reaches the part')
   expect((await ok('slicerx_design_steps', { design: d }) as unknown as { steps: unknown[] }).steps).toHaveLength(3)
 }, 40000)
+
+it.skipIf(!exact)(`mirrors a box cut on the exact kernel, on one part and on every part, and the parts stay exact${skipped}`, async () => {
+  vi.stubEnv('SX_BREP_DEV', '1')
+  for (const part of [0, undefined]) {
+    clearReplayCache()
+    const calls: string[] = []
+    const native = geomEngine(bin!, 20000)
+    const h = await connect({ geomEngine: async (op, request) => { calls.push(op); return native(op, request) } })
+    interface Summary { exact: boolean; parts: { sizeMm: number[]; volumeMm3: number }[] }
+    const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: Summary }>(r).output
+    }
+    const d = (await ok('slicerx_design_new', { name: 'Two blocks', exact: true }) as unknown as { design: string }).design
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [15, 5] }, distance_mm: 3 })
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 10, heightMm: 10 }, placement: { center: [60, 5] }, distance_mm: 3 })
+    // a 4 x 4 mm slot through one end of the first block, then its mirror image through x = 15 at the other end
+    await ok('slicerx_geom_subtract', { design: d, solids: [{ type: 'box', min: [2, 3, -1], max: [6, 7, 4] }], ...(part === undefined ? {} : { part }) })
+    calls.length = 0
+    const both = await ok('slicerx_geom_mirror', { design: d, plane: { axis: 'x', at: 15 }, steps: [3] })
+    expect(both.exact).toBe(true)
+    expect(calls).toContain('brep.subtract')
+    expect(calls).not.toContain('subtract')
+    // flat faces only, so the volumes are the true ones: two slots of 48 mm3 out of 900, and the second block missed
+    expect(both.parts[0]!.volumeMm3).toBeCloseTo(900 - 2 * 48, 6)
+    expect(both.parts[1]).toMatchObject({ sizeMm: [10, 10, 3], volumeMm3: 300 })
+  }
+}, 60000)

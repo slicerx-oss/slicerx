@@ -475,16 +475,56 @@ it('mirrors a hole on the kernel: a cylinder mirrored is the same cylinder at it
   expect(subtracts[1]!.req['solids']).toMatchObject([{ type: 'cylinder', origin: [10, 0, 0], diameterMm: 4, heightMm: 5 }])
 })
 
-it('mirrors a box cutter on the mesh, as a box the kernel takes has no mirrored form here', async () => {
+// a slot as a box, and a mirror of it through x = 5
+const boxHole = step('hole-1', { op: 'subtract', solids: [{ type: 'box', min: [-1, -1, 0], max: [1, 1, 5] }], label: 'Slot' } as StepParams)
+const mirrorAt = (normal: [number, number, number]) => step('both-1', { op: 'pattern', steps: ['hole-1'], spec: { kind: 'mirror', plane: { point: [5, 0, 0], normal } } })
+
+it('mirrors a box cutter on the kernel as the same box at its mirror place, in a design that must stay exact too', async () => {
+  for (const strict of [false, true]) {
+    clearReplayCache()
+    const e = engine()
+    const r = await replayHistory(e.call, { history: { ...history(box, boxHole, mirrorAt([1, 0, 0])), ...(strict ? { exact: true } : {}) }, exact: true })
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+    expect(r.status[2]).not.toHaveProperty('note')
+    expect(r.exactFellBack).toBeUndefined()
+    // nothing on the mesh: the slot, then its mirror image reflected through x = 5, its two ends on x traded
+    expect(e.ops().filter((o) => !o.startsWith('brep.'))).toEqual([])
+    const subtracts = e.sent.filter((s) => s.op === 'brep.subtract')
+    expect(subtracts.map((s) => s.req['solids'])).toEqual([[{ type: 'box', min: [-1, -1, 0], max: [1, 1, 5] }], [{ type: 'box', min: [9, -1, 0], max: [11, 1, 5] }]])
+    expect(subtracts[1]!.req['keySalt']).toBe(stepSalt('both-1'))
+  }
+})
+
+it('turns a box cutter half way round on the kernel, as the same box at its turned place, in a design that must stay exact too', async () => {
+  const pair = step('pair-1', { op: 'pattern', steps: ['hole-1'], spec: { kind: 'circular', count: 2, center: [5, 0, 0] } })
+  for (const strict of [false, true]) {
+    clearReplayCache()
+    const e = engine()
+    const r = await replayHistory(e.call, { history: { ...history(box, boxHole, pair), ...(strict ? { exact: true } : {}) }, exact: true })
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+    expect(r.status[2]).not.toHaveProperty('note')
+    expect(r.exactFellBack).toBeUndefined()
+    expect(e.ops().filter((o) => !o.startsWith('brep.'))).toEqual([])
+    // the second copy, turned 180 degrees about z through x = 5: both ends on x and on y traded, z as it was
+    const subtracts = e.sent.filter((s) => s.op === 'brep.subtract')
+    expect(subtracts).toHaveLength(2)
+    const [turned] = subtracts[1]!.req['solids'] as { type: string; min: number[]; max: number[] }[]
+    expect(turned!.type).toBe('box')
+    ;[...turned!.min, ...turned!.max].forEach((v, i) => expect(v).toBeCloseTo([9, -1, 0, 11, 1, 5][i]!, 9))
+  }
+})
+
+it('mirrors a box cutter through a slanted plane on the mesh, where the mirrored box would no longer sit square', async () => {
   const e = engine()
-  const boxHole = step('hole-1', { op: 'subtract', solids: [{ type: 'box', min: [-1, -1, 0], max: [1, 1, 5] }], label: 'Slot' } as StepParams)
-  const both = step('both-1', { op: 'pattern', steps: ['hole-1'], spec: { kind: 'mirror', plane: { point: [5, 0, 0], normal: [1, 0, 0] } } })
-  const r = await replayHistory(e.call, { history: history(box, boxHole, both), exact: true })
+  const r = await replayHistory(e.call, { history: history(box, boxHole, mirrorAt([1, 1, 0])), exact: true })
   expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
   const mesh = e.sent.filter((s) => s.op === 'subtract')
   expect(mesh).toHaveLength(1)
-  // reflected through x = 5, as a column-major transform the engine applies to the part
-  expect(mesh[0]!.req['mesh']).toMatchObject({ transform: [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1] })
+  expect(e.ops().filter((o) => o === 'brep.subtract')).toHaveLength(1)
+  // reflected through x + y = 5, as a column-major transform the engine applies to the part
+  const t = (mesh[0]!.req['mesh'] as { transform: number[] }).transform
+  expect(t).toHaveLength(16)
+  ;[0, -1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 5, 5, 0, 1].forEach((v, i) => expect(t[i]).toBeCloseTo(v, 9))
 })
 
 // a window cut 1 mm into the side at y -10 of a 40 x 20 x 10 mm block, its center 1 mm up the side, a row of three
@@ -716,5 +756,21 @@ it('mirrors a cut on every part in one kernel call per exact part, with the mesh
     expect(f.sent.filter((s) => s.op === 'brep.subtract')[1]!.req['solids']).toMatchObject([{ type: 'cylinder', origin: [10, 0, 0] }])
     expect(f.sent.filter((s) => s.op === 'subtract')[1]!.req['mesh']).toMatchObject({ transform: [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1] })
     expect(mixed.meshParts).toEqual([0])
+  }
+})
+
+it('mirrors a box cutter on every part in one kernel call per exact part, in a design that must stay exact too', async () => {
+  const slotAll: Step = { ...boxHole, id: 'hole-all', part: -1 }
+  const both: Step = { ...step('both-1', { op: 'pattern', steps: ['hole-all'], spec: { kind: 'mirror', plane: { point: [0, 2, 0], normal: [0, -1, 0] } } }), part: -1 }
+  for (const strict of [false, true]) {
+    clearReplayCache()
+    const e = engine()
+    const r = await replayHistory(e.call, { history: { ...history(onPart('a', 0), onPart('b', 1), slotAll, both), ...(strict ? { exact: true } : {}) }, exact: true })
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done'])
+    expect(r.exactFellBack).toBeUndefined()
+    expect(e.ops().filter((o) => !o.startsWith('brep.'))).toEqual([])
+    // the slot on each part, then each part with the slot reflected through y = 2
+    const subtracts = e.sent.filter((s) => s.op === 'brep.subtract')
+    expect(subtracts.slice(2).map((s) => [s.req['body'], s.req['solids']])).toEqual([3, 4].map((n) => [{ smb: `subtract-${n}` }, [{ type: 'box', min: [-1, 3, 0], max: [1, 5, 5] }]]))
   }
 })

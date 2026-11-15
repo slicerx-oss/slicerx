@@ -195,7 +195,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const mirror = defineTool({
     name: 'geom.mirror',
-    version: '1.6.2',
+    version: '1.6.3',
     source: 'command',
     permission: 'slice',
     description:
