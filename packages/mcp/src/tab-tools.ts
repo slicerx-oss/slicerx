@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { assumptionsInput, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendAdded, amendChanges, amendDropProblem, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
+import { AMEND_PINNED, AMEND_REASON_MAX, amendAdded, amendChanges, amendDropProblem, amendKinds, amendedSizes, amendProblem, amendReason, amendShapeProblem, changeText, type AmendChange } from './plan-amend'
 import { type Bed, cardRealField, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, planDetailFields, FEATURES_FLOOR, LONG_EXTRA, LONG_RATIO, realMemoryNote, type RealSources, SECTIONS_FLOOR } from './plan-detail'
 import { createLookupStore, lookupSizesTool } from './real-lookup'
 import { GAP_MARGIN_MM, jointProblem, planetsMiss, PLANETS_CANNOT_MESH, planFloors, raisedText, raisedWhy, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
@@ -289,7 +289,7 @@ export function createCardPlans(plans: PlanRegistry) {
   function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile; designs?: () => readonly { id: string; name: string; parts: readonly unknown[] }[]; bed?: () => Bed | undefined } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.17.0',
+      version: '1.17.1',
       source: 'command',
       permission: 'read',
       description:
@@ -299,14 +299,20 @@ export function createCardPlans(plans: PlanRegistry) {
       input: PlanToolInputSchema,
       // a local model plans and builds; changing an approved plan is for a cloud model, whose context holds its rules
       localInput: LocalPlanInputSchema,
-      // a change the person asked for, sent with only their words, takes the approved plan as its body
+      // a change the person asked for, sent with only their words, takes the approved plan as its body; sent with a
+      // body, it takes the plan's own overall size, rows of holes and open faces where it leaves them out, since an
+      // amend keeps those (AMEND_PINNED)
       fill: (raw) => {
         const r = raw as Record<string, unknown> | null
-        if (!r || typeof r !== 'object' || typeof r['amends'] !== 'string' || typeof r['asked'] !== 'string' || r['features'] !== undefined) return raw
+        if (!r || typeof r !== 'object' || typeof r['amends'] !== 'string' || typeof r['asked'] !== 'string') return raw
         const kept = planById(r['amends'])
         if (!kept) return raw
-        const { planId: _p, ...body } = kept
-        return { ...body, ...r }
+        if (r['features'] === undefined) {
+          const { planId: _p, ...body } = kept
+          return { ...body, ...r }
+        }
+        const pinned = AMEND_PINNED.filter((k) => r[k] === undefined && kept[k] !== undefined)
+        return pinned.length ? { ...r, ...Object.fromEntries(pinned.map((k) => [k, kept[k]])) } : raw
       },
       args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}${i.amends ? `, amends ${i.amends}` : ''}`,
       async run(i, ctx) {
