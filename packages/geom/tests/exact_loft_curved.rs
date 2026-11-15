@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A loft through one whole circle or ellipse on every profile as an exact solid: its three faces, held to its drawing
 // at every profile, how far it is from the mesh loft and from the true circles and ellipses, its faces' keys, the
-// op's reply beside the mesh loft's, and the profiles still refused. Empty without the brep feature, so a workspace
+// op's reply beside the mesh loft's, and the profiles still refused. The same for one closed spline on every profile,
+// and a closed spline beside a profile with corners. Empty without the brep feature, so a workspace
 // test run that names every test target passes over it.
 #![cfg(feature = "brep")]
 #[allow(
@@ -720,4 +721,220 @@ fn a_whole_circle_or_ellipse_is_drawn_as_cubic_arcs_on_the_true_curve() {
         println!("ARCS {curve:?}: {worst:e} mm off the true curve");
         assert!(worst <= 1e-7, "{curve:?}: {worst:e}");
     }
+}
+
+/// Lofts through one closed spline on every profile: a 9-profile closed-spline loft lofted smooth as an app sends it,
+/// and three closed splines of different shapes, the second drawn the other way around from another start.
+fn closed_splines() -> Vec<(&'static str, Value)> {
+    let fixture: Value =
+        serde_json::from_str(include_str!("fixtures/exact-loft-closed-splines.json")).unwrap();
+    let spline = |points: Value| json!({ "type": "spline", "points": points });
+    vec![
+        ("smooth, nine closed splines", fixture["nineSmooth"].clone()),
+        (
+            "smooth, three closed splines",
+            json!({
+                "profiles": [
+                    level(0.0, &spline(json!([[12, 0], [0, 9], [-12, 0], [0, -9]]))),
+                    level(15.0, &spline(json!([[0, -11], [-15, 0], [0, 11], [15, 0]]))),
+                    level(30.0, &spline(json!([[10, 2], [3, 9], [-9, 5], [-8, -6], [4, -8]]))),
+                ],
+                "smooth": true,
+            }),
+        ),
+    ]
+}
+
+/// The angle of a ring's first point about the middle of its points, in its plane, degrees.
+#[allow(clippy::cast_precision_loss, reason = "a point count")]
+fn first_angle(flat: &[[f64; 2]]) -> f64 {
+    let n = flat.len() as f64;
+    let mid = [0, 1].map(|axis| flat.iter().map(|p| p[axis]).sum::<f64>() / n);
+    (flat[0][1] - mid[1]).m_atan2(flat[0][0] - mid[0]).to_degrees()
+}
+
+#[test]
+fn one_closed_spline_on_every_profile_lofts_to_three_exact_faces_held_to_the_drawing() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let start = table::count();
+    let mut report = String::new();
+    for (name, request) in closed_splines() {
+        // every profile's spline within 0.01 mm of the body, the body closed, and its volume within 0.2 percent of
+        // the mesh loft's
+        let held = held_to_its_drawing(name, &request);
+        let lofted = &held.lofted;
+        let rails = &lofted.rails;
+        // one piece all the way around, a spline on every profile
+        assert_eq!(rails.pieces.len(), 1, "{name}");
+        assert_eq!(rails.pieces[0].stretches, rails.rails.len(), "{name}");
+        assert!(
+            rails.pieces[0]
+                .curves
+                .iter()
+                .all(|c| matches!(c, Curve::Spline { .. })),
+            "{name}"
+        );
+        let mut faces: Vec<(Part, Kind)> = lofted
+            .parts
+            .iter()
+            .copied()
+            .zip(lofted.kinds.iter().copied())
+            .collect();
+        faces.sort_by_key(|(p, _)| match p {
+            Part::Side(k) => *k,
+            Part::First => 1000,
+            Part::Last => 1001,
+        });
+        assert_eq!(
+            faces,
+            [
+                (Part::Side(0), Kind::Skinned),
+                (Part::First, Kind::Flat),
+                (Part::Last, Kind::Flat)
+            ],
+            "{name}"
+        );
+        let largest = rails
+            .rings
+            .iter()
+            .flat_map(|r| r.points.iter().flatten())
+            .fold(1.0f64, |m, c| m.max(c.abs()));
+        assert!(lofted.off_mm <= 1e-9 * largest, "{name}: {:e} mm", lofted.off_mm);
+        // the rails do not twist: from each ring to the next the first rail stays within 10 degrees of where it was
+        let angles: Vec<f64> = rails.rings.iter().map(|r| first_angle(&r.flat)).collect();
+        assert!(
+            angles.windows(2).all(|w| (w[1] - w[0]).abs() < 10.0),
+            "{name}: {angles:?}"
+        );
+        writeln!(
+            report,
+            "CLOSED {name}: {} rails after {} doublings, edges {:e} mm, drawing {:e} mm by read-back and {:.6} mm \
+             by tessellation, volume {:.6} against {:.6} mm3 ({:+.4} percent), first rail at {angles:.2?} degrees",
+            rails.rails.len(),
+            lofted.doublings,
+            lofted.off_mm,
+            lofted.drawn_mm,
+            held.off.iter().copied().fold(0.0, f64::max),
+            held.volume,
+            held.want,
+            (held.volume - held.want) / held.want * 100.0,
+        )
+        .unwrap();
+    }
+    print!("{report}");
+    assert_eq!(table::count(), start);
+}
+
+/// The mesh loft's reply for each closed-spline case, held to the bytes the code before closed splines were made
+/// exact gave: SHA-256 of the reply, recorded from it.
+const CLOSED_SPLINE_MESH_REPLIES: [(&str, &str); 2] = [
+    (
+        "smooth, nine closed splines",
+        "b5d64d80209f7da520901b0d9155701480a06387c5a8b4d969138eeadfb55074",
+    ),
+    (
+        "smooth, three closed splines",
+        "89896fc5357edf68924ca74070fbf526f174964c1a72f815e54b35c3921b9102",
+    ),
+];
+
+#[test]
+fn a_closed_spline_loft_answers_the_mesh_loft_s_own_reply_plus_the_body() {
+    let replies: Vec<(&str, String)> = closed_splines()
+        .into_iter()
+        .map(|(name, request)| (name, sha256(op("sketch.loft", &request).as_bytes())))
+        .collect();
+    let want: Vec<(&str, String)> = CLOSED_SPLINE_MESH_REPLIES
+        .iter()
+        .map(|&(name, sha)| (name, sha.to_string()))
+        .collect();
+    assert_eq!(replies, want);
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let start = table::count();
+    for (name, mut request) in closed_splines() {
+        request["withFaces"] = json!(true);
+        request["keySalt"] = json!(77);
+        let plain = op("sketch.loft", &request);
+        request["exact"] = json!(true);
+        let asked = op("sketch.loft", &request);
+        let reply: Value = serde_json::from_str(&asked).unwrap();
+        let handle = reply["body"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{name}: {asked:.300}"));
+        // its three faces in the table, each with a key
+        let keys = reply["bodyKeys"].as_array().expect("its keys");
+        assert_eq!(keys.len(), 3, "{name}");
+        assert!(keys.iter().all(|k| *k != json!(0)), "{name}");
+        let shown: Value = serde_json::from_str(&op("brep.tessellate", &json!({ "body": handle }))).unwrap();
+        assert_eq!(shown["faces"].as_array().map(Vec::len), Some(3), "{name}");
+        let rest = without(
+            &without(&asked, &printed(&reply, "body")),
+            &printed(&reply, "bodyKeys"),
+        );
+        assert_eq!(rest, plain, "{name}");
+        assert_eq!(op("brep.free", &json!({ "body": handle })), "{\"freed\":true}");
+    }
+    assert_eq!(table::count(), start);
+}
+
+#[test]
+fn a_closed_spline_beside_a_profile_with_corners_is_cut_where_those_corners_land_or_stays_a_mesh() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let start = table::count();
+    let oval = json!({ "type": "spline", "points": [[12, 0], [0, 8], [-12, 0], [0, -8]] });
+    // beside two splines that meet at two corners, the closed spline is cut where those corners land on it, so each
+    // piece is a spline on both profiles
+    let lens = json!({ "start": [-14, 0], "segments": [
+        { "type": "spline", "points": [[0, -7]], "to": [14, 0] },
+        { "type": "spline", "points": [[0, 7]], "to": [-14, 0] },
+    ] });
+    let request = json!({ "profiles": [level(0.0, &oval), level(20.0, &lens)] });
+    let held = held_to_its_drawing("a closed spline to two splines", &request);
+    let rails = &held.lofted.rails;
+    assert_eq!(rails.pieces.len(), 2);
+    assert!(
+        rails
+            .pieces
+            .iter()
+            .all(|p| p.curves.iter().all(|c| matches!(c, Curve::Spline { .. })))
+    );
+    // the corners' rails run from the oval's two ends, where the least twist puts them
+    for p in &rails.pieces {
+        let (oval_at, lens_at) = (rails.rings[0].flat[p.first], rails.rings[1].flat[p.first]);
+        assert!(
+            (lens_at[0].abs() - 14.0).abs() < 1e-9 && lens_at[1].abs() < 1e-9,
+            "{lens_at:?}"
+        );
+        assert!(
+            oval_at[0].signum() == lens_at[0].signum() && oval_at[1].abs() < 0.5,
+            "{oval_at:?}"
+        );
+    }
+    println!(
+        "MIXED a closed spline to two splines: volume {:.6} against {:.6} mm3",
+        held.volume, held.want
+    );
+    // beside straight lines it stays a mesh loft, since a spline matches only a spline, and the reply says so
+    let square = json!({ "points": [[-10, -10], [10, -10], [10, 10], [-10, 10]] });
+    let mut request = json!({ "profiles": [level(0.0, &oval), level(20.0, &square)] });
+    let plain = op("sketch.loft", &request);
+    request["exact"] = json!(true);
+    let asked = op("sketch.loft", &request);
+    let reply: Value = serde_json::from_str(&asked).unwrap();
+    assert_eq!(
+        reply["exact"],
+        json!({
+            "made": false,
+            "why": "A spline is matched only to a spline, and profile 2 has none where profile 1 has one.",
+        })
+    );
+    assert!(reply.get("body").is_none());
+    assert_eq!(without(&asked, &printed(&reply, "exact")), plain);
+    assert_eq!(table::count(), start);
 }

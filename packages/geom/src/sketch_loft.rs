@@ -447,12 +447,19 @@ pub fn rails(profiles: &[Profile], opts: &Options, density: &Density) -> Result<
 /// piece, each corner to the same corner, so the mesh loft's points stay on the same piece at every profile instead
 /// of being matched by count, which runs a corner across a side where profiles flatten to different counts. None when
 /// every profile is straight (count matching keeps their corners), when they match as one piece or cannot be matched
-/// piece to piece, or when the places do not take as landmarks; those are matched by count as before.
+/// piece to piece, when any profile is a closed spline, or when the places do not take as landmarks; those are matched
+/// by count as before.
 fn piece_marks(profiles: &[Profile], opts: &Options) -> Option<(Vec<Profile>, Vec<Piece>)> {
     let curved = profiles
         .iter()
         .any(|p| p.loops.iter().any(|l| !l.construction && !straight(l)));
-    if !curved {
+    // the mesh loft keeps matching closed splines by count, as it did before they matched piece to piece
+    let closed_spline = profiles.iter().any(|p| {
+        p.loops
+            .iter()
+            .any(|l| !l.construction && l.kind.as_deref() == Some("spline"))
+    });
+    if !curved || closed_spline {
         return None;
     }
     // one place a piece is all the matching needs
