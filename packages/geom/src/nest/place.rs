@@ -357,6 +357,26 @@ fn key_of(r: &Region, extra: &[f64]) -> u64 {
     h
 }
 
+/// How far two corners of one outline may be apart and still be the same corner, mm. Copies of a part placed at
+/// different places give outlines that, moved to their own center, differ only in the last bits of each coordinate;
+/// those are one shape, so the order and the layout never follow those bits.
+const SAME_MM: f64 = 1e-6;
+
+fn same_ring(a: &[Pt], b: &[Pt]) -> bool {
+    a.len() == b.len()
+        && a
+            .iter()
+            .zip(b)
+            .all(|(p, q)| (p[0] - q[0]).abs() <= SAME_MM && (p[1] - q[1]).abs() <= SAME_MM)
+}
+
+fn same_region(a: &Region, b: &Region) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(s, t)| {
+            s.len() == t.len() && s.iter().zip(t).all(|(r, q)| same_ring(r, q))
+        })
+}
+
 fn xorshift(s: &mut u64) -> u64 {
     *s ^= *s << 13;
     *s ^= *s >> 7;
@@ -598,8 +618,8 @@ impl Nester {
         key_region.push(vec![hull.clone()]);
         let key = key_of(&key_region, &[half, edge, reach, turns.len() as f64]);
         if let Some(&s) = by_key.get(&key)
-            && self.shapes[s].raw == raw
-            && self.shapes[s].hull == hull
+            && same_region(&self.shapes[s].raw, &raw)
+            && same_ring(&self.shapes[s].hull, &hull)
         {
             return (s, center);
         }
