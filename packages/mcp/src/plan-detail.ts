@@ -93,6 +93,45 @@ export const planDetailFields = {
     .describe('Display and fine: each flat-sided main body\'s levels from the bottom up, each a planned feature, such as {"Tower": ["Lower story", "Upper story"]}: a body the real thing builds in steps or stories lists each level, a single block only itself'),
 }
 
+/** One flat-sided main body as design.plan takes it: the feature that builds it and its levels from the bottom up. */
+const FLAT_BODY = z.object({
+  feature: text(60).describe('The feature that builds the body'),
+  levels: z.array(text(60)).min(1).max(12).describe('Its levels from the bottom up, each a planned feature; a single block lists only itself'),
+})
+
+/**
+ * design.plan's flat: each flat-sided main body with its levels, or, the older form a saved plan or an older client
+ * sends, the bodies' names alone with their levels in tiers.
+ */
+export const flatInput = z
+  .union([z.array(FLAT_BODY).max(8), planDetailFields.flat.unwrap()])
+  .optional()
+  .describe(
+    'Display and fine: each main body whose real thing is flat-sided (a house, a bookshelf, a box), with its levels from the bottom up, each a planned feature, such as [{"feature": "Tower", "levels": ["Lower story", "Upper story"]}]: a body the real thing builds in steps or stories lists each level, a single block lists only itself. A list of feature names with their levels in tiers is the older form and still taken',
+  )
+
+/** The older form of a plan's flat bodies, as the rules and the card read them: the bodies' names, and their levels in tiers. */
+export interface FlatLevels {
+  flat?: string[] | undefined
+  tiers?: Record<string, string[]> | undefined
+}
+
+/**
+ * A plan's flat bodies in the older form the rules and the card read: a body given with its levels names its feature
+ * in flat and its levels in tiers, keyed by it. A body named by a word that is no planned feature, over levels that
+ * all are, is the levels of one body (the form says so), keyed by the lowest, so a name over them is never a key the
+ * plan has no feature for. tiers the plan gives for other bodies are kept. A plan in the older form comes back as it is.
+ */
+export function flatLevels<P extends { flat?: z.infer<typeof flatInput>; tiers?: Record<string, string[]> | undefined }>(plan: P, features: readonly { name: string }[]): Omit<P, 'flat' | 'tiers'> & FlatLevels {
+  const flat = plan.flat
+  if (!flat?.length || typeof flat[0] === 'string') return plan as Omit<P, 'flat' | 'tiers'> & FlatLevels
+  const planned = (n: string): boolean => features.some((f) => f.name.trim().toLowerCase() === n.trim().toLowerCase())
+  const bodies = (flat as z.infer<typeof FLAT_BODY>[]).map((b) => ({ body: !planned(b.feature) && b.levels.every(planned) ? b.levels[0]! : b.feature, levels: b.levels }))
+  const tiers: Record<string, string[]> = { ...plan.tiers }
+  for (const b of bodies) tiers[b.body] = [...b.levels]
+  return { ...plan, flat: bodies.map((b) => b.body), tiers }
+}
+
 /** A real size as the plan gives it: the feature size it sets, in mm at full size, and where it came from. */
 export interface RealEntry {
   feature?: string | undefined
@@ -847,7 +886,7 @@ export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, lev
  */
 /** A plan shape that passes a display plan's rules on the first try, said in general terms, for any object. */
 export const DETAIL_WORKED_SHAPE =
-  'A plan of this shape passes on the first try: a stepped body is one main body in flat, keyed in tiers by its own name, its levels in order, each its own feature at least 3 mm tall, stacked; a detail that repeats is listed in repeats and planned as two features, one that builds it once and one with kind array (or pattern) and its count as a size'
+  'A plan of this shape passes on the first try: a stepped body is one main body in flat, given by its own feature with its levels in order, each its own feature at least 3 mm tall, stacked; a detail that repeats is listed in repeats and planned as two features, one that builds it once and one with kind array (or pattern) and its count as a size'
 
 export const DETAIL_HELP =
   'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: look the real sizes up with design.lookup_sizes first and give each in real with its lookupId, and a part more than about a third off its looked-up size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, with the detail its size can carry: anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror. ' + DETAIL_WORKED_SHAPE

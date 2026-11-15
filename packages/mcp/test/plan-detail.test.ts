@@ -369,7 +369,7 @@ describe('detailProblem: the rules are about the object', () => {
 
   it('shows a plan shape that passes on the first try, in the help every refusal and the description carry', () => {
     expect(DETAIL_HELP).toContain(`then array and mirror. ${DETAIL_WORKED_SHAPE}`)
-    expect(DETAIL_WORKED_SHAPE).toContain('a stepped body is one main body in flat, keyed in tiers by its own name')
+    expect(DETAIL_WORKED_SHAPE).toContain('a stepped body is one main body in flat, given by its own feature with its levels in order')
   })
 
   it('names a body built by a feature the plan does not have', () => {
