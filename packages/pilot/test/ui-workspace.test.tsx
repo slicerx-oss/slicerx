@@ -193,7 +193,8 @@ describe('PilotWorkspace', () => {
     expect(second.getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(first)
     expect(first.getAttribute('aria-expanded')).toBe('true')
-    expect(container.querySelector('.cmd')?.textContent).toBe('$ plugin spoolman.check --material PETG')
+    // the command line carries internal names, so the opened row leaves it out unless the host turns raw details on
+    expect(container.querySelector('.cmd')).toBeNull()
     fireEvent.click(first)
     expect(first.getAttribute('aria-expanded')).toBe('false')
 

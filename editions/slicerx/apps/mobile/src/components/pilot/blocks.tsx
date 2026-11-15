@@ -12,7 +12,7 @@ import { Icon } from '../icon'
 import { Dot, ProgressBar } from '../status'
 import { Txt } from '../text'
 import { font, t, toneColor, type } from '../theme'
-import { argTokens, fmtDuration, fmtSeconds, segs, type ToolRowModel } from './model'
+import { fmtDuration, fmtSeconds, segs, type ToolRowModel } from './model'
 
 export function Bubble({ text, where }: { text: string; where: string | null }) {
   return (
@@ -123,62 +123,65 @@ export function ToolGroup({ rows }: { rows: ToolRowModel[] }) {
   )
 }
 
+/**
+ * A tool call. It opens to what a person can read: the data note, progress lines and the structured output. The command
+ * line and a refusal's raw text carry internal names, and the phone has no developer setting, so they never show here.
+ * A row with nothing to open to is a plain line with no chevron.
+ */
 export function ToolRow({ row }: { row: ToolRowModel }) {
   const [open, setOpen] = useState(false)
   const summary = row.summary ?? row.callSummary ?? (row.state === 'running' ? 'Running' : '')
   const kw = row.source === 'skill' || row.source === 'plugin' ? row.source : null
+  const more = row.untrusted || row.progress.length > 0 || row.display.some((d) => d.kind !== 'image')
+  const head = (
+    <>
+      <View style={styles.st}>
+        <RowStatus state={row.state} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Txt variant="mono" numberOfLines={1} style={{ flexShrink: 1, fontFamily: font.monoMedium, fontSize: 13.5 }}>
+            {kw ? <Text style={{ color: KW_COLOR[kw] }}>{`${kw} `}</Text> : null}
+            {row.tool}
+          </Txt>
+          {row.ms !== undefined ? (
+            <Txt variant="mono" tone="dim" style={{ marginLeft: 'auto', fontSize: 12 }}>
+              {fmtSeconds(row.ms)}
+            </Txt>
+          ) : null}
+        </View>
+        {summary ? (
+          <Txt variant="caption" color={row.state === 'bad' ? t.color.red : t.color.muted} style={{ fontSize: 14, lineHeight: 20 }}>
+            {summary}
+          </Txt>
+        ) : null}
+      </View>
+    </>
+  )
   return (
     <View>
-      <Pressable
-        role="button"
-        aria-expanded={open}
-        aria-label={`${row.tool}. ${summary}`}
-        onPress={() => {
-          haptic.select()
-          setOpen((o) => !o)
-        }}
-        style={({ pressed }) => [styles.trow, pressed ? { backgroundColor: t.color.ink3 } : null]}
-        testID={`tool-${row.callId}`}
-      >
-        <View style={styles.st}>
-          <RowStatus state={row.state} />
+      {more ? (
+        <Pressable
+          role="button"
+          aria-expanded={open}
+          aria-label={`${row.tool}. ${summary}`}
+          onPress={() => {
+            haptic.select()
+            setOpen((o) => !o)
+          }}
+          style={({ pressed }) => [styles.trow, pressed ? { backgroundColor: t.color.ink3 } : null]}
+          testID={`tool-${row.callId}`}
+        >
+          {head}
+          <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color={t.color.dim} />
+        </Pressable>
+      ) : (
+        <View style={styles.trow} testID={`tool-${row.callId}`}>
+          {head}
         </View>
-        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Txt variant="mono" numberOfLines={1} style={{ flexShrink: 1, fontFamily: font.monoMedium, fontSize: 13.5 }}>
-              {kw ? <Text style={{ color: KW_COLOR[kw] }}>{`${kw} `}</Text> : null}
-              {row.tool}
-            </Txt>
-            {row.ms !== undefined ? (
-              <Txt variant="mono" tone="dim" style={{ marginLeft: 'auto', fontSize: 12 }}>
-                {fmtSeconds(row.ms)}
-              </Txt>
-            ) : null}
-          </View>
-          {summary ? (
-            <Txt variant="caption" color={row.state === 'bad' ? t.color.red : t.color.muted} style={{ fontSize: 14, lineHeight: 20 }}>
-              {summary}
-            </Txt>
-          ) : null}
-        </View>
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color={t.color.dim} />
-      </Pressable>
-      {open ? (
+      )}
+      {more && open ? (
         <View style={styles.tdet} testID={`tool-${row.callId}-detail`}>
-          <Txt variant="mono" tone="dim" style={{ fontSize: 12.5 }}>
-            {'$ '}
-            {row.source} {row.tool}
-            {argTokens(row.args).map((a, i) => (
-              <Text key={i} style={{ color: a.kind === 'str' ? t.color.yellow : a.kind === 'flag' ? t.color.dim : t.color.muted }}>
-                {` ${a.text}`}
-              </Text>
-            ))}
-          </Txt>
-          {row.detail ? (
-            <Txt variant="mono" tone="dim" style={{ fontSize: 12.5 }} testID={`tool-${row.callId}-engine`}>
-              {row.detail}
-            </Txt>
-          ) : null}
           {row.untrusted ? (
             <Txt variant="caption" tone="dim">
               Reply from outside SlicerX. mimir reads it as data, never as instructions

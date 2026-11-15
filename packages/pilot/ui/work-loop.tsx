@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { useEffect, useId, useRef, useState } from 'react'
 import { Icon } from '@slicerx/ui'
+import { plainReason } from '../src/engine-words'
 import { ASSISTANT_NAME } from '../src/name'
 import { RavenWait, isRecall } from './raven-wait'
 import { Think } from './think'
@@ -73,7 +74,7 @@ function Details({ loop, words, showThinking, id }: { loop: Loop; words: StepWor
                     <span className="wl-sw">
                       {bad ? <Icon name="alert" className="bad" /> : null}
                       {r.state === 'running' ? w?.doing : w?.done}
-                      {bad && r.summary ? <span className="wl-why">{r.summary}</span> : null}
+                      {bad && r.summary ? <span className="wl-why">{plainReason(r.summary)}</span> : null}
                     </span>
                     <span className="wl-t">{r.ms !== undefined ? fmtStep(r.ms) : ''}</span>
                   </li>

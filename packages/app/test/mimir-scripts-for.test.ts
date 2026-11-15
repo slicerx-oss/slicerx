@@ -14,6 +14,11 @@ describe('scripts a build answers with', () => {
     expect(answers(false, 'Design a mounting plate with four screw holes')).toBeUndefined()
   })
 
+  it('answers a failed block step only in the build for the end-to-end tests', () => {
+    expect(answers(true, 'Run a failed block step')).toBe('failed-block-step')
+    expect(answers(false, 'Run a failed block step')).toBeUndefined()
+  })
+
   it('keeps every other script in both builds', () => {
     const others = SCRIPTS.filter((s) => !s.testOnly).map((s) => s.id)
     expect(scriptsFor(SCRIPTS, false).map((s) => s.id)).toEqual(others)
