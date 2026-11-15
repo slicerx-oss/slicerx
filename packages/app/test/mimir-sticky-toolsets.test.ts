@@ -1,7 +1,8 @@
 // @vitest-environment node
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// On a capped mimir cloud chat the tools a request carries follow the chat, not only the message. The worst case is the
+// On a capped mimir cloud chat (a proxy deployed before tool search, which refuses the catalog the chat's first request
+// carries, so the chat goes on the per-turn pick) the tools a request carries follow the chat, not only the message. The worst case is the
 // desktop app with every connector and twelve printing printers (well over 128 tools offered, 128 sent). A "yes please" after
 // mimir offers to print gets the printer tools, the list is the same request after request while the chat stays on its
 // topic (so the proxy's prompt cache keeps hitting), and every request stays at 128 tools or under. Each request is read
@@ -55,14 +56,30 @@ function reply(step: { text?: string; call?: { name: string; input?: unknown } }
   )
 }
 
-/** A transport that keeps each request and plays the replies in order. */
-function transport(steps: { text?: string; call?: { name: string; input?: unknown } }[]): LlmTransport & { sent: LlmHttpRequest[] } {
+/**
+ * What a mimir cloud proxy deployed before tool search answered a request that sends the tool catalog (its shape.ts
+ * then): a 400 for more than 128 tools, or for the tool search tool, as the desktop host raises it.
+ */
+function oldRefusal(req: LlmHttpRequest): Error | undefined {
+  const tools = (JSON.parse(req.body) as { tools?: { type?: string }[] }).tools ?? []
+  const search = tools.find((t) => t.type !== undefined && t.type !== 'custom' && !t.type.startsWith('web_search_'))
+  const words = tools.length > 128 ? 'tools must be a list of at most 128' : search ? `tool ${String(search.type)} is not allowed` : null
+  return words ? Object.assign(new Error(`400: ${words}`), { status: 400, code: 'invalid_request' }) : undefined
+}
+
+/**
+ * A transport that keeps each request and plays the replies in order. `old`: a mimir cloud proxy deployed before tool
+ * search, which refuses a catalog (oldRefusal); a refused request is not kept and plays no reply.
+ */
+function transport(steps: { text?: string; call?: { name: string; input?: unknown } }[], old = false): LlmTransport & { sent: LlmHttpRequest[] } {
   const sent: LlmHttpRequest[] = []
   let i = 0
   return {
     sent,
     available: async () => true,
     async *stream(req) {
+      const no = old ? oldRefusal(req) : undefined
+      if (no) throw no
       sent.push(req)
       yield reply(steps[i++] ?? { text: 'Done.' })
     },
@@ -91,11 +108,11 @@ async function registerApp(platform: Platform): Promise<() => void> {
   return off
 }
 
-/** A fresh mimir cloud chat in the desktop app, with the replies it plays. */
+/** A fresh mimir cloud chat in the desktop app on a proxy deployed before tool search, with the replies it plays. */
 async function chat(steps: Parameters<typeof transport>[0]) {
   resetTabMimir()
   set({ pilot: { mode: 'on', provider: 'mimir-cloud' } as never })
-  const llm = transport(steps)
+  const llm = transport(steps, true)
   const pilot = await tabMimir(hostFor('desktop', llm), withCloud(NEUTRAL), 'cloud')
   const say = async (message: string): Promise<LlmHttpRequest[]> => {
     const at = llm.sent.length

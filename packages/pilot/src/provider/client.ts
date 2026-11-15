@@ -22,9 +22,9 @@ export const MIMIR_CLOUD = 'mimir-cloud'
 /**
  * The most tools that load up front in one mimir cloud request (supabase/functions/mimir/shape.ts, MAX_LOADED_TOOLS);
  * it refuses more. The desktop app's tab offers more than that (the design tools, slicing, printers, the app's
- * commands, a command per printer and the connectors' tools). Once the proxy has said it takes tool search, a new chat
- * on a model with it sends them all, most deferred (tool-search.ts); until then, and on any other model, a turn sends
- * the tools it needs first (toolsets.ts).
+ * commands, a command per printer and the connectors' tools). A chat on a model with tool search sends them all, most
+ * deferred (tool-search.ts), from its first request; on a proxy that refuses that (refusesToolSearch), and on any other
+ * model, a turn sends the tools it needs first (toolsets.ts).
  */
 export const MIMIR_CLOUD_MAX_TOOLS = 128
 
@@ -76,31 +76,57 @@ export function adapterFor(provider: string): LlmAdapter {
   return make()
 }
 
-/** Joins an adapter with the host transport. The transport adds the key; this code never sees it. */
 /**
- * The transports whose mimir cloud proxy said it takes a request that sends the whole tool catalog through tool search
- * (the `mimir` event its streams open with, supabase/functions/mimir/handler.ts). Kept per transport, so a chat runtime
+ * What a mimir cloud proxy deployed before tool search answers a request that sends the whole catalog: its shape.ts
+ * then took at most 128 tools and no tool search tool, and refused anything else with a 400 and these words.
+ */
+const OLD_SHAPE = /^(?:tools must be a list of at most 128|tool tool_search_tool_(?:bm25|regex)_\d+ is not allowed)$/
+
+/**
+ * Whether a failed mimir cloud request was refused by a proxy deployed before tool search, for the request's shape:
+ * a 400 with its invalid request code (or none) and one of its old words (OLD_SHAPE). The desktop host puts the status
+ * before the words (`400: ...`); the browser's keeps it apart.
+ */
+export function refusesToolSearch(e: unknown): boolean {
+  const status = e && typeof e === 'object' && 'status' in e ? (e as { status: unknown }).status : undefined
+  const msg = errorText(e)
+  const said = /^400: /.test(msg)
+  if (typeof status === 'number' ? status !== 400 : !said) return false
+  const code = errorCode(e)
+  if (code !== undefined && code !== 'invalid_request') return false
+  return OLD_SHAPE.test(said ? msg.slice(5) : msg)
+}
+
+/**
+ * The transports whose mimir cloud proxy refused a request that sends the whole tool catalog through tool search
+ * (refusesToolSearch). Their chats send the per-turn pick from then on, until the proxy opens a reply with its `mimir`
+ * event (supabase/functions/mimir/handler.ts), which says it takes tool search. Kept per transport, so a chat runtime
  * made again on the same host knows it at once.
  */
-const searchingProxies = new WeakSet<LlmTransport>()
+const plainProxies = new WeakSet<LlmTransport>()
 
+/** Joins an adapter with the host transport. The transport adds the key; this code never sees it. */
 export function createTransportClient(transport: LlmTransport, provider: string, opts: { baseUrl?: string; share?: () => CloudShare } = {}): LlmClient {
   const adapter = adapterFor(provider)
   const cloud = provider === MIMIR_CLOUD
   // mimir cloud's refusals (daily caps, a pause) are shown as the proxy wrote them, never retried elsewhere
-  const failure = (e: unknown): LlmEvent => {
+  // a tool search request an old proxy refused marks the transport, and the runtime sends it once more without
+  const failure = (e: unknown, req: LlmRequest): LlmEvent => {
     if (!cloud) return { type: 'error', message: errorText(e), retryable: true }
     const code = errorCode(e)
-    return { type: 'error', message: errorText(e).replace(/^\d{3}: /, ''), retryable: false, ...(code ? { code } : {}) }
+    const refused = req.toolSearch === true && refusesToolSearch(e)
+    if (refused) plainProxies.add(transport)
+    return { type: 'error', message: errorText(e).replace(/^\d{3}: /, ''), retryable: false, ...(code ? { code } : {}), ...(refused ? { searchRefused: true as const } : {}) }
   }
   return {
     provider,
     // the proxy's own limit, though the Messages API it speaks has none; a tool search request carries more, deferred
     ...(cloud ? { maxTools: MIMIR_CLOUD_MAX_TOOLS } : adapter.maxTools === undefined ? {} : { maxTools: adapter.maxTools }),
-    // the Messages API searches deferred tools; through mimir cloud only once its proxy has said it passes them, so an
-    // app that reaches a proxy deployed before tool search keeps the per-turn pick
+    // the Messages API searches deferred tools, and so does mimir cloud from the first request, so the first chat sends
+    // the same tools as every later one; an app that reaches a proxy deployed before tool search keeps the per-turn pick
+    // once that proxy has refused the catalog
     get toolSearch(): boolean {
-      return adapter.id === 'anthropic' && (!cloud || searchingProxies.has(transport))
+      return adapter.id === 'anthropic' && (!cloud || !plainProxies.has(transport))
     },
     async *stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent> {
       let http = adapter.build(req, opts.baseUrl === undefined ? {} : { baseUrl: opts.baseUrl })
@@ -110,7 +136,7 @@ export function createTransportClient(transport: LlmTransport, provider: string,
       try {
         body = cloud ? transport.stream(http, signal, (h) => (headers = h)) : transport.stream(http, signal)
       } catch (e) {
-        yield failure(e)
+        yield failure(e, req)
         yield { type: 'done', stop: 'error' }
         return
       }
@@ -126,12 +152,13 @@ export function createTransportClient(transport: LlmTransport, provider: string,
         const model = cloudModel(headers)
         if (model) yield { type: 'model', model }
         for await (const ev of adapter.parse(replay(first, it))) {
-          if (ev.type === 'tool_search') searchingProxies.add(transport)
+          // the proxy says it takes tool search: a refusal before (a proxy deployed since) no longer holds
+          if (ev.type === 'tool_search') plainProxies.delete(transport)
           else yield ev
         }
       } catch (e) {
         if (signal?.aborted) throw e
-        yield failure(e)
+        yield failure(e, req)
         yield { type: 'done', stop: 'error' }
       }
     },

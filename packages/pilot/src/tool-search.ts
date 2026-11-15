@@ -6,7 +6,7 @@
 // never edited: a tool the app offers later is appended deferred, and offering or withdrawing a tool mid-chat (a run
 // limited to read-only tools, a printer or connector that comes or goes) is a tool change appended to the chat
 // (LlmMessage `tools`). Local models and providers without tool search keep their per-turn lists (toolsets.ts), and so
-// does a chat on mimir cloud until its proxy has said it takes tool search (LlmClient.toolSearch, runtime.ts).
+// does a chat on mimir cloud whose proxy, deployed before tool search, refused the catalog (LlmClient.toolSearch, runtime.ts).
 import type { LlmToolDef } from './provider/types'
 
 /**

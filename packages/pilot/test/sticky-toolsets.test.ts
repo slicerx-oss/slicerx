@@ -736,7 +736,11 @@ describe('a paint ask in a capped design chat', () => {
 })
 
 describe('words that ask for a held-back tool on a capped design chat', () => {
-  /** A design chat over the limit with the more design tools and the trending models command, whose model builds once and stops. */
+  /**
+   * A design chat over the limit with the more design tools and the trending models command, whose model builds once and
+   * stops, on a proxy deployed before tool search: it refuses the chat's first request, the whole catalog, so the chat
+   * goes on the per-turn pick (left out of `sent`).
+   */
   function chat() {
     const named = (name: string): PilotTool<never> =>
       defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
@@ -746,8 +750,9 @@ describe('words that ask for a held-back tool on a capped design chat', () => {
     const llm = {
       available: async () => true,
       async *stream(req: LlmHttpRequest) {
+        const body = JSON.parse(req.body) as { messages: { role: string; content: unknown }[]; tools?: unknown[] }
+        if ((body.tools ?? []).length > 128) throw Object.assign(new Error('400: tools must be a list of at most 128'), { status: 400, code: 'invalid_request' })
         sent.push(req)
-        const body = JSON.parse(req.body) as { messages: { role: string; content: unknown }[] }
         yield wire('mimir-cloud', JSON.stringify(body.messages.at(-1)?.content ?? '').includes('tool_result') ? { text: 'Done.' } : { call: 'geom.t0' })
       },
     } as unknown as LlmTransport
