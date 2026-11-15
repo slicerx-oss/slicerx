@@ -22,9 +22,29 @@ const f = (n: number) => {
   return Object.is(r, -0) ? '0' : String(r)
 }
 
-/** 3MF transform attribute from a column-major 4x4: the first three rows of each column. */
+/**
+ * A number as the shortest decimal that reads back to the same double (JavaScript's own number to text), in plain
+ * digits: a very small or very large one is spelled out rather than written with an exponent, and negative zero is "0".
+ * Whole numbers stay as short as they are ("1", "0", "128").
+ */
+function exactNumber(n: number): string {
+  const s = String(n)
+  const e = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(s)
+  if (!e) return s
+  const [, sign, lead, rest = '', power] = e
+  const digits = lead! + rest
+  const p = Number(power)
+  // String() only uses an exponent below 1e-6 or from 1e21 up, where the digits never reach the decimal point
+  return p < 0 ? `${sign}0.${'0'.repeat(-p - 1)}${digits}` : `${sign}${digits}${'0'.repeat(p + 1 - digits.length)}`
+}
+
+/**
+ * 3MF transform attribute from a column-major 4x4: the first three rows of each column, each entry written so it reads
+ * back to the same number, so a saved object opens exactly where it stood (a turn rounded to 4 decimals could move a
+ * point 100 mm out by up to about 0.01 mm).
+ */
 export function transformAttr(m: readonly number[]): string {
-  return [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14].map((i) => f(m[i] ?? 0)).join(' ')
+  return [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14].map((i) => exactNumber(m[i] ?? 0)).join(' ')
 }
 
 /** A mesh as the writer takes it: positions in mm (x, y, z per vertex) and three vertex indices per triangle. */
