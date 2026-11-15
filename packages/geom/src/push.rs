@@ -7,6 +7,7 @@ use crate::build;
 use crate::error::{Error, Result};
 use crate::face::{self, ExtrudeReport, FaceFrame, Operation};
 use crate::faces::{self, Surface};
+use crate::fm::Fm;
 use crate::mesh::TriMesh;
 use crate::poly2d::{self, Polygon};
 use crate::vec3::{self, V3};
@@ -92,15 +93,22 @@ fn on_corners(tool: &mut TriMesh, mesh: &TriMesh, region: &[u32], frame: &FaceFr
         let k = p.map(|c| (c / cell).floor() as i64);
         k
     };
-    let mut grid: HashMap<[i64; 3], Vec<V3>> = HashMap::new();
+    let walls = wall_lines(mesh, region, n);
+    let mut grid: HashMap<[i64; 3], Vec<(V3, V3)>> = HashMap::new();
     for &t in region {
         let Some(&tri) = mesh.triangles.get(t as usize) else {
             continue;
         };
-        for p in mesh.corners(tri) {
+        for i in tri {
+            let Some(&p) = mesh.positions.get(i as usize) else {
+                continue;
+            };
             let list = grid.entry(key(p)).or_default();
-            if !list.contains(&p) {
-                list.push(p);
+            if !list
+                .iter()
+                .any(|&(q, _)| q.map(f64::to_bits) == p.map(f64::to_bits))
+            {
+                list.push((p, walls.get(&i).copied().unwrap_or(n)));
             }
         }
     }
@@ -113,21 +121,201 @@ fn on_corners(tool: &mut TriMesh, mesh: &TriMesh, region: &[u32], frame: &FaceFr
         };
         let base = vec3::sub(v, vec3::scale(n, along));
         let k = key(base);
-        let mut best: Option<(f64, V3)> = None;
+        let mut best: Option<(f64, V3, V3)> = None;
         for dx in -1..=1 {
             for dy in -1..=1 {
                 for dz in -1..=1 {
-                    for &q in grid.get(&[k[0] + dx, k[1] + dy, k[2] + dz]).into_iter().flatten() {
+                    for &(q, w) in grid.get(&[k[0] + dx, k[1] + dy, k[2] + dz]).into_iter().flatten() {
                         let dist = vec3::len(vec3::sub(q, base));
-                        if dist <= cell && best.is_none_or(|(bd, _)| dist < bd) {
-                            best = Some((dist, q));
+                        if dist <= cell && best.is_none_or(|(bd, _, _)| dist < bd) {
+                            best = Some((dist, q, w));
                         }
                     }
                 }
             }
         }
-        best.map_or(v, |(_, q)| vec3::add(q, vec3::scale(n, h)))
+        best.map_or(v, |(_, q, w)| vec3::add(q, vec3::scale(w, h / vec3::dot(w, n))))
     });
+}
+
+/// how far past the face's outline a wall may stand and still count as the face's own: the outline's chords sit up
+/// to one chord tolerance inside a round rim and the wall's points up to one more outside it, so this covers twice
+/// the kernel's default chord (0.01 mm) with room to spare
+const FLAP_MM: f64 = 0.05;
+
+/// for a push down, a slab over the whole body from the new level up, when all the body has above that level is the
+/// face and walls not exactly on the prism's: a wall a few ulps off them, or a round wall bulging past the outline's
+/// chords, would leave crossing needles or flaps too thin to store
+fn slab(mesh: &TriMesh, pick: &face::FacePick, d: f64) -> Result<Option<TriMesh>> {
+    if d >= 0.0 {
+        return Ok(None);
+    }
+    let f = &pick.frame;
+    let size = mesh.bounds().map_or(1.0, |b| b.diagonal());
+    let eps = size * 1e-9;
+    let flat = |p: V3| {
+        let r = vec3::sub(p, f.origin);
+        ([vec3::dot(r, f.u), vec3::dot(r, f.v)], vec3::dot(r, f.normal))
+    };
+    let inside: HashSet<u32> = pick.triangles.iter().copied().collect();
+    let corners: HashSet<u32> = pick
+        .triangles
+        .iter()
+        .filter_map(|&t| mesh.triangles.get(t as usize))
+        .flatten()
+        .copied()
+        .collect();
+    let outline = Outline(&pick.outline);
+    let (mut lo, mut hi, mut top) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2], d);
+    let mut off_prism = false;
+    for (t, &tri) in mesh.triangles.iter().enumerate() {
+        let c = mesh.corners(tri).map(flat);
+        for (&i, &(_, h)) in tri.iter().zip(&c) {
+            off_prism |= h > d + eps && !corners.contains(&i);
+        }
+        for (p, h) in c {
+            lo = [lo[0].min(p[0]), lo[1].min(p[1])];
+            hi = [hi[0].max(p[0]), hi[1].max(p[1])];
+            top = top.max(h);
+        }
+        if u32::try_from(t).is_ok_and(|t| inside.contains(&t)) || c.iter().all(|&(_, h)| h <= d + eps) {
+            continue;
+        }
+        // a wall corner, above the level or below it, that is not exactly on the outline is off the prism's walls
+        for &(p, _) in &c {
+            off_prism |= !outline.holds(p) && !outline.on(p);
+        }
+        // what of this triangle is above the new level: its corners there and where its sides cross it
+        let mut above: Vec<[f64; 2]> = c.iter().filter(|&&(_, h)| h > d + eps).map(|&(p, _)| p).collect();
+        let [c0, c1, c2] = c;
+        for ((a, ha), (b, hb)) in [(c0, c1), (c1, c2), (c2, c0)] {
+            if (ha > d) != (hb > d) {
+                let s = (d - ha) / (hb - ha);
+                above.push([a[0] + s * (b[0] - a[0]), a[1] + s * (b[1] - a[1])]);
+            }
+        }
+        off_prism |= above.iter().any(|&p| !outline.holds(p) && !outline.on(p));
+        // and between them, so a cap over a hole in the face, its corners all on the hole's rim, is not a wall
+        let mut between: Vec<[f64; 2]> = above
+            .iter()
+            .zip(above.iter().cycle().skip(1))
+            .map(|(a, b)| [f64::midpoint(a[0], b[0]), f64::midpoint(a[1], b[1])])
+            .collect();
+        let (sum, count) = above
+            .iter()
+            .fold(([0.0; 2], 0.0), |(s, c), p| ([s[0] + p[0], s[1] + p[1]], c + 1.0));
+        between.push([sum[0] / count, sum[1] / count]);
+        above.extend(between);
+        for p in above {
+            if !outline.holds(p) && outline.off(p) > FLAP_MM {
+                return Ok(None);
+            }
+        }
+    }
+    // walls exactly on the outline from the face's corners to below the new level, with no point between, are cut
+    // clean by the prism, which leaves such a body (a box, a bar) as it always has
+    if !off_prism {
+        return Ok(None);
+    }
+    let rect = Polygon::simple(poly2d::rect(
+        [lo[0] - 1.0, lo[1] - 1.0],
+        [hi[0] + 1.0, hi[1] + 1.0],
+    ));
+    Ok(Some(build::extrude(&[rect], &f.checked()?, d, top + 1.0)?))
+}
+
+/// a face's outline in its frame
+struct Outline<'a>(&'a [Polygon]);
+
+impl Outline<'_> {
+    fn sides(&self) -> impl Iterator<Item = ([f64; 2], [f64; 2])> + '_ {
+        self.0
+            .iter()
+            .flat_map(|p| std::iter::once(&p.outer).chain(&p.holes))
+            .flat_map(|ring| ring.iter().copied().zip(ring.iter().copied().cycle().skip(1)))
+    }
+
+    fn holds(&self, p: [f64; 2]) -> bool {
+        self.0.iter().any(|poly| {
+            poly2d::point_in_ring(p, &poly.outer) && !poly.holes.iter().any(|h| poly2d::point_in_ring(p, h))
+        })
+    }
+
+    /// exactly on a side, as the walls of a box or a bar are
+    fn on(&self, p: [f64; 2]) -> bool {
+        self.sides().any(|(a, b)| {
+            poly2d::orient(a, b, p) == 0.0
+                && a[0].min(b[0]) <= p[0]
+                && p[0] <= a[0].max(b[0])
+                && a[1].min(b[1]) <= p[1]
+                && p[1] <= a[1].max(b[1])
+        })
+    }
+
+    fn off(&self, p: [f64; 2]) -> f64 {
+        self.sides()
+            .map(|(a, b)| segment_distance(p, a, b))
+            .fold(f64::INFINITY, f64::min)
+    }
+}
+
+fn segment_distance(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    let (ab, ap) = ([b[0] - a[0], b[1] - a[1]], [p[0] - a[0], p[1] - a[1]]);
+    let l2 = ab[0] * ab[0] + ab[1] * ab[1];
+    let s = if l2 > 0.0 {
+        ((ap[0] * ab[0] + ap[1] * ab[1]) / l2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (ap[0] - s * ab[0]).m_hypot(ap[1] - s * ab[1])
+}
+
+/// a wall edge this close to the face normal (the sine between them) is the line the prism's wall runs along
+const WALL_SIN: f64 = 1e-9;
+
+/// the face's corners whose wall runs along the normal, each with that wall edge's direction: the prism steps along
+/// it, not along the normal, since a normal fitted to a cap a few ulps off flat tilts the prism's walls across the
+/// body's and the cut leaves crossing needles where the two should lie in one plane
+fn wall_lines(mesh: &TriMesh, region: &[u32], n: V3) -> HashMap<u32, V3> {
+    let inside: HashSet<u32> = region.iter().copied().collect();
+    let corners: HashSet<u32> = region
+        .iter()
+        .filter_map(|&t| mesh.triangles.get(t as usize))
+        .flatten()
+        .copied()
+        .collect();
+    let mut best: HashMap<u32, (f64, V3)> = HashMap::new();
+    for (t, tri) in mesh.triangles.iter().enumerate() {
+        if u32::try_from(t).is_ok_and(|t| inside.contains(&t)) {
+            continue;
+        }
+        let [i0, i1, i2] = *tri;
+        for (a, b) in [(i0, i1), (i1, i2), (i2, i0)] {
+            for (from, to) in [(a, b), (b, a)] {
+                if !corners.contains(&from) {
+                    continue;
+                }
+                let (Some(&p), Some(&q)) =
+                    (mesh.positions.get(from as usize), mesh.positions.get(to as usize))
+                else {
+                    continue;
+                };
+                let Some(u) = vec3::normalize(vec3::sub(q, p)) else {
+                    continue;
+                };
+                let sin = vec3::len(vec3::cross(u, n));
+                if sin < WALL_SIN && best.get(&from).is_none_or(|&(s, _)| sin < s) {
+                    let w = if vec3::dot(u, n) < 0.0 {
+                        vec3::scale(u, -1.0)
+                    } else {
+                        u
+                    };
+                    best.insert(from, (sin, w));
+                }
+            }
+        }
+    }
+    best.into_iter().map(|(i, (_, w))| (i, w)).collect()
 }
 
 pub fn push_face(
@@ -144,7 +332,13 @@ pub fn push_face(
     carry_keys(&mut tool, mesh, triangle, &pick.triangles, &pick.frame);
     let before = boolean::Solid::new(mesh)?;
     let v0 = before.volume();
-    let solid = boolean::Solid::new(&tool)?;
+    let solid = match slab(mesh, &pick, distance_mm)? {
+        Some(mut slab) => {
+            carry_keys(&mut slab, mesh, triangle, &pick.triangles, &pick.frame);
+            boolean::Solid::new(&slab)?
+        }
+        None => boolean::Solid::new(&tool)?,
+    };
     let op = if operation == Operation::Join {
         BoolOp::Union
     } else {
@@ -338,6 +532,241 @@ mod tests {
         assert_eq!(r.operation, Operation::Cut);
         let r = push(&m, [1.0, 0.0, 0.0], 20.0, 5.0).unwrap();
         assert!((r.mesh.bounds().unwrap().max[0] - 25.0).abs() < 1e-9);
+    }
+
+    /// a ring's points, each with the center of the arc to the next one (none for a straight side)
+    type Ring = Vec<([f64; 2], Option<[f64; 2]>)>;
+
+    /// the point halfway along the ring from `i` to the next, on the arc when there is one
+    fn halfway(ring: &Ring, i: usize) -> [f64; 2] {
+        let ((a, c), (b, _)) = (ring[i], ring[(i + 1) % ring.len()]);
+        let m = [f64::midpoint(a[0], b[0]), f64::midpoint(a[1], b[1])];
+        let Some(c) = c else {
+            return m;
+        };
+        let r = (a[0] - c[0]).m_hypot(a[1] - c[1]);
+        let l = (m[0] - c[0]).m_hypot(m[1] - c[1]);
+        [c[0] + (m[0] - c[0]) * r / l, c[1] + (m[1] - c[1]) * r / l]
+    }
+
+    /// a straight prism `height` high on a convex `ring`, its wall in `rows` bands whose inner rows sit halfway
+    /// between the rim's points (on the arc, as a kernel puts points on a round wall), and its top a few ulps off
+    /// flat, the way a kernel's tessellation leaves a round top
+    fn prism_off_flat(ring: &Ring, rows: u32, height: f64) -> TriMesh {
+        let n = u32::try_from(ring.len()).unwrap();
+        let mut positions = Vec::new();
+        for k in 0..=rows {
+            let z = height * f64::from(k) / f64::from(rows);
+            for i in 0..ring.len() {
+                let p = if k % 2 == 1 && k < rows {
+                    halfway(ring, i)
+                } else {
+                    ring[i].0
+                };
+                let z = match (k == rows, i % 3) {
+                    (true, 1) => z.next_up(),
+                    (true, 2) => z.next_down(),
+                    _ => z,
+                };
+                positions.push([p[0], p[1], z]);
+            }
+        }
+        let mut triangles = Vec::new();
+        let top = rows * n;
+        for i in 1..n - 1 {
+            triangles.push([0, i + 1, i]);
+            triangles.push([top, top + i, top + i + 1]);
+        }
+        for k in 0..rows {
+            for i in 0..n {
+                let j = (i + 1) % n;
+                let (l, u) = (k * n, (k + 1) * n);
+                if rows == 1 {
+                    triangles.push([l + i, l + j, u + j]);
+                    triangles.push([l + i, u + j, u + i]);
+                } else if k % 2 == 0 {
+                    triangles.push([l + i, l + j, u + i]);
+                    triangles.push([l + j, u + j, u + i]);
+                } else {
+                    triangles.push([l + i, u + j, u + i]);
+                    triangles.push([l + i, l + j, u + j]);
+                }
+            }
+        }
+        TriMesh::new(positions, triangles)
+    }
+
+    /// `steps` points on a circle from `from_deg` through `sweep_deg`, the end left out, each with the center
+    fn arc(center: [f64; 2], r: f64, from_deg: f64, sweep_deg: f64, steps: u32) -> Ring {
+        (0..steps)
+            .map(|i| {
+                let a = (from_deg + sweep_deg * f64::from(i) / f64::from(steps)).to_radians();
+                (
+                    [center[0] + r * a.m_cos(), center[1] + r * a.m_sin()],
+                    Some(center),
+                )
+            })
+            .collect()
+    }
+
+    /// the area inside the ring's chords, and how far the arcs bulge past them at most
+    fn ring_area(ring: &Ring) -> (f64, f64) {
+        let n = ring.len();
+        let area = (0..n)
+            .map(|i| {
+                let (a, b) = (ring[i].0, ring[(i + 1) % n].0);
+                a[0] * b[1] - b[0] * a[1]
+            })
+            .sum::<f64>()
+            * 0.5;
+        let bulge = (0..n)
+            .map(|i| {
+                let (a, b, m) = (ring[i].0, ring[(i + 1) % n].0, halfway(ring, i));
+                let mid = [f64::midpoint(a[0], b[0]), f64::midpoint(a[1], b[1])];
+                (m[0] - mid[0]).m_hypot(m[1] - mid[1])
+            })
+            .fold(0.0, f64::max);
+        (area, bulge)
+    }
+
+    fn rings() -> [(&'static str, Ring); 3] {
+        let peg = arc([0.0, 0.0], 10.0, 0.0, 360.0, 128);
+        let mut slot = vec![([-10.0, -5.0], None)];
+        slot.extend(arc([10.0, 0.0], 5.0, -90.0, 180.0, 16));
+        slot.push(([10.0, 5.0], None));
+        slot.extend(arc([-10.0, 0.0], 5.0, 90.0, 180.0, 16));
+        let bar = [[-15.0, -5.0], [15.0, -5.0], [15.0, 5.0], [-15.0, 5.0]]
+            .map(|p| (p, None))
+            .to_vec();
+        [("peg", peg), ("slot", slot), ("bar", bar)]
+    }
+
+    /// the ring of `rings()` called `name`, pushed down 2 and pulled 2 with its top a few ulps off flat, and with
+    /// `rows` bands of wall
+    fn pushes_along_its_wall(name: &str, rows: &[u32]) {
+        let (_, ring) = rings().into_iter().find(|(n, _)| *n == name).unwrap();
+        let (area, bulge) = ring_area(&ring);
+        let perimeter: f64 = (0..ring.len())
+            .map(|i| {
+                let (a, b) = (ring[i].0, ring[(i + 1) % ring.len()].0);
+                (b[0] - a[0]).m_hypot(b[1] - a[1])
+            })
+            .sum();
+        for &rows in rows {
+            let m = prism_off_flat(&ring, rows, 10.0);
+            assert!(m.edge_report().is_watertight(), "{name} rows {rows}");
+            for d in [-2.0, 2.0] {
+                let what = format!("{name} rows {rows} d {d}");
+                let r = push(&m, [0.0, 0.0, 1.0], 10.0 - 1e-9, d).unwrap_or_else(|e| panic!("{what}: {e}"));
+                assert!(
+                    r.report.watertight && r.report.shells == 1,
+                    "{what}: {:?}",
+                    r.report
+                );
+                // the wall's bulges past the chords go with the cut: none is left standing over the new top
+                assert!(
+                    (highest(&r.mesh) - (10.0 + d)).abs() < 1e-9,
+                    "{what}: {}",
+                    highest(&r.mesh)
+                );
+                let off = if rows == 1 { 1e-6 } else { perimeter * bulge * 10.0 };
+                let want = if d > 0.0 {
+                    m.volume() + area * d
+                } else {
+                    area * (10.0 + d)
+                };
+                assert!(
+                    (r.mesh.volume() - want).abs() < off,
+                    "{what}: {} against {want}",
+                    r.mesh.volume()
+                );
+                boolean::storage_mesh(&r.mesh).unwrap_or_else(|e| panic!("{what}: {e}"));
+            }
+        }
+    }
+
+    #[test]
+    fn a_round_post_pushes_down_along_its_wall() {
+        pushes_along_its_wall("peg", &[1, 2, 4]);
+    }
+
+    #[test]
+    fn a_slot_with_round_ends_pushes_down_along_its_wall() {
+        pushes_along_its_wall("slot", &[1, 2, 4]);
+    }
+
+    #[test]
+    fn a_bar_with_a_top_a_few_ulps_off_flat_pushes_down() {
+        // its walls are flat, so no points between the rims: halfway along a side would cut the bar's corners
+        pushes_along_its_wall("bar", &[1]);
+    }
+
+    #[test]
+    fn a_plate_pushed_down_round_a_peg_keeps_the_peg() {
+        // the peg stands in the plate top's hole, its top's corners all on the hole's rim: not a wall of the top
+        let (_, peg) = rings().into_iter().next().unwrap();
+        let mut post = prism_off_flat(&peg, 1, 10.0);
+        post.map_positions(|p| [p[0] + 20.0, p[1] + 15.0, p[2] + 2.0]);
+        let plate = build::box_mesh([0.0; 3], [40.0, 30.0, 4.0]);
+        let m = boolean::boolean(&[plate], &[post], BoolOp::Union, &BooleanOptions::default())
+            .unwrap()
+            .0;
+        let r = push_at(&m, [2.0, 2.0, 4.0], UP, -1.0);
+        assert!(r.report.watertight && r.report.shells == 1, "{:?}", r.report);
+        assert!((highest(&r.mesh) - 12.0).abs() < 1e-6, "{}", highest(&r.mesh));
+    }
+
+    #[test]
+    fn a_block_just_past_the_bound_keeps_the_prism() {
+        // a block beside a round post, standing over the new level: within the bound it reads as the post's wall
+        // and the slab would take it, past the bound it is no wall and the push keeps the face's own prism
+        let (_, peg) = rings().into_iter().next().unwrap();
+        let post = prism_off_flat(&peg, 2, 10.0);
+        let n = u32::try_from(post.positions.len()).unwrap();
+        for (gap, slab_cut) in [(FLAP_MM * 0.9, true), (FLAP_MM * 1.1, false)] {
+            let block = build::box_mesh([10.0 + gap, -0.01, 0.0], [10.001 + gap, 0.01, 10.0]);
+            let both = TriMesh::new(
+                post.positions.iter().chain(&block.positions).copied().collect(),
+                post.triangles
+                    .iter()
+                    .copied()
+                    .chain(block.triangles.iter().map(|t| t.map(|i| i + n)))
+                    .collect(),
+            );
+            let (t, at) = facing(&both, [0.0, 0.0, 1.0], 10.0 - 1e-9);
+            let pick = face::pick_face(&both, t, at).unwrap();
+            assert!(pick.frame.origin[0] < 10.0, "the post's top, not the block's");
+            assert_eq!(slab(&both, &pick, -2.0).unwrap().is_some(), slab_cut, "gap {gap}");
+        }
+    }
+
+    #[test]
+    fn a_round_top_pushed_down_beside_a_taller_one_cuts_along_its_own_wall() {
+        // the taller peg stands over the new level, so the cut is the face's own prism; its walls step along the
+        // peg's wall, though the face's normal is a few ulps off the axis
+        let (_, peg) = rings().into_iter().next().unwrap();
+        let (area, _) = ring_area(&peg);
+        let short = prism_off_flat(&peg, 1, 10.0);
+        let mut tall = prism_off_flat(&peg, 1, 14.0);
+        tall.map_positions(|p| [p[0] + 30.0, p[1], p[2]]);
+        let n = u32::try_from(short.positions.len()).unwrap();
+        let both = TriMesh::new(
+            short.positions.iter().chain(&tall.positions).copied().collect(),
+            short
+                .triangles
+                .iter()
+                .copied()
+                .chain(tall.triangles.iter().map(|t| t.map(|i| i + n)))
+                .collect(),
+        );
+        let r = push(&both, [0.0, 0.0, 1.0], 10.0 - 1e-9, -2.0).unwrap();
+        assert!(r.report.watertight && r.report.shells == 2, "{:?}", r.report);
+        assert!(
+            (r.mesh.volume() - tall.volume() - area * 8.0).abs() < 1e-6,
+            "{}",
+            r.mesh.volume()
+        );
+        boolean::storage_mesh(&r.mesh).unwrap();
     }
 
     #[test]

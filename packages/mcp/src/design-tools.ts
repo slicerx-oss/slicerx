@@ -643,7 +643,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.9.0',
+    version: '1.9.1',
     source: 'command',
     permission: 'slice',
     description:
