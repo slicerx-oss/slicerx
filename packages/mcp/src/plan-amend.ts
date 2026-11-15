@@ -55,6 +55,12 @@ export function amendShapeProblem(old: Sized, next: Sized, o: { asked?: boolean 
   return amendRestProblem(old, next)
 }
 
+/**
+ * The plan's fields amendRestProblem holds an amend to: whether it has an overall size, its rows of holes by name and
+ * count, and its open faces as they are. None of them can be dropped by an amend, so one left out is the plan's own.
+ */
+export const AMEND_PINNED = ['overall', 'holes', 'openFaces'] as const
+
 /** The rest of amendShapeProblem: the overall size, the rows of holes and the open faces stay as they are. */
 function amendRestProblem(old: Sized, next: Sized): string | null {
   const only = 'an amend changes sizes only'
