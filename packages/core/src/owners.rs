@@ -211,11 +211,15 @@ pub(crate) fn assign(
                 flows.push(zf.1.unwrap_or(1.0));
             }
         };
+        // Support of organic trees planned object by object is the object's that planned it, wherever it runs.
+        let planned = matches!(p.feature, Feature::Support | Feature::SupportInterface)
+            .then(|| islands.and_then(|a| planned_owner(a, pts)))
+            .flatten();
         // A support path whose box reaches under two objects is cut where it passes from under one object to
         // under another ([`support_cuts`]).
         let mut plan = None;
         if !by_place(p.feature) {
-            let owner = match p.feature {
+            let owner = planned.unwrap_or_else(|| match p.feature {
                 Feature::Brim => brim_owner(here, pts),
                 Feature::Support | Feature::SupportInterface => support_owner(
                     here,
@@ -225,8 +229,9 @@ pub(crate) fn assign(
                     islands.map(|a| (a, &mut island_owners)),
                 ),
                 _ => OBJECT_NONE,
-            };
-            let two = matches!(p.feature, Feature::Support | Feature::SupportInterface)
+            });
+            let two = planned.is_none()
+                && matches!(p.feature, Feature::Support | Feature::SupportInterface)
                 && bbox(pts).is_some_and(|b| reach.get_or_insert_with(|| Reach::new(above)).under_two(b));
             if two {
                 plan = reach
@@ -743,6 +748,31 @@ fn place(pts: &[Point], at: &[f64], s: f64) -> (usize, Point, f64) {
     }
 }
 
+/// The object that planned the support island a support path runs in (`SupportAreas::owners`), found at the middle
+/// of one of its segments as [`support_owner`] finds the island; None without planned owners, or for an island of
+/// more than one object.
+fn planned_owner(areas: &SupportAreas, pts: &[Point]) -> Option<u16> {
+    if areas.owners.is_empty() {
+        return None;
+    }
+    let i = island_of(areas, pts)?;
+    areas.owners.get(i).copied().filter(|&o| o != OBJECT_NONE)
+}
+
+/// The support island a path runs in, found at the middle of one of its segments (the middle of its box can fall
+/// outside an island that is not convex), by its index in `areas.islands`.
+fn island_of(areas: &SupportAreas, pts: &[Point]) -> Option<usize> {
+    let on_path = |k: usize| {
+        let (a, b) = (pts.get(k)?, pts.get(k + 1)?);
+        Some(Point::new(i32::midpoint(a.x, b.x), i32::midpoint(a.y, b.y)))
+    };
+    let step = pts.len().div_ceil(ISLAND_SAMPLES).max(1);
+    (0..pts.len().saturating_sub(1))
+        .step_by(step)
+        .filter_map(on_path)
+        .find_map(|q| areas.island_at(q))
+}
+
 /// Support's object: the one [`support_owner_at`] gives the middle of the path's box (a support path's ends may
 /// come close to a neighbor it does not hold up).
 fn support_owner(
@@ -763,18 +793,9 @@ fn support_owner(
     }
     // Under none: the object its island holds up, so the short lines and loops at an island's edge (the first
     // layer's growth, a branch's side) go with the rest of it rather than with a neighbor that comes close there.
-    // The island is the one the path runs in, found at the middle of one of its segments (the middle of its box
-    // can fall outside an island that is not convex).
-    let on_path = |k: usize| {
-        let (a, b) = (pts.get(k)?, pts.get(k + 1)?);
-        Some(Point::new(i32::midpoint(a.x, b.x), i32::midpoint(a.y, b.y)))
-    };
-    let step = pts.len().div_ceil(ISLAND_SAMPLES).max(1);
+    // The island is the one the path runs in ([`island_of`]).
     if let Some((areas, owners)) = islands
-        && let Some(i) = (0..pts.len().saturating_sub(1))
-            .step_by(step)
-            .filter_map(on_path)
-            .find_map(|q| areas.island_at(q))
+        && let Some(i) = island_of(areas, pts)
         && let Some(slot) = owners.get_mut(i)
     {
         return *slot.get_or_insert_with(|| {

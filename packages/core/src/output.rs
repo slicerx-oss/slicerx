@@ -313,6 +313,9 @@ pub(crate) struct SupportAreas {
     pub islands: crate::perimeters::Shapes,
     /// Tree support: each island prints its sheath, then its fill, in that order (a `no_sort` collection).
     pub keep_order: bool,
+    /// Organic trees planned object by object: per island, the plate object whose support it is
+    /// (`preview::OBJECT_NONE` for an island that holds more than one object's). Empty otherwise.
+    pub owners: Vec<u16>,
 }
 
 impl SupportAreas {
@@ -601,6 +604,7 @@ mod support_area_tests {
         let a = SupportAreas {
             islands: vec![square(0), square(200_000)],
             keep_order: false,
+            owners: Vec::new(),
         };
         assert!(a.holds(Point::new(10_000, 10_000), Point::new(90_000, 90_000)));
         assert!(!a.holds(Point::new(10_000, 10_000), Point::new(210_000, 10_000)));

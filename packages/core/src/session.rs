@@ -7312,6 +7312,7 @@ impl SliceSession {
         Some(crate::organic_objects::assemble(
             self.plan.count() as usize,
             &placed,
+            cfg.bed_rect(),
         ))
     }
 
@@ -14924,7 +14925,14 @@ fn support_islands(sl: &crate::support::SupportLayer) -> Option<Box<crate::outpu
         perimeters::union_all(&[&sl.base, &sl.interface])
     };
     let keep_order = sl.classic.is_some() || sl.organic.is_some();
-    (!islands.is_empty()).then(|| Box::new(crate::output::SupportAreas { islands, keep_order }))
+    let owners = crate::organic_objects::island_owners(&islands, &sl.objects);
+    (!islands.is_empty()).then(|| {
+        Box::new(crate::output::SupportAreas {
+            islands,
+            keep_order,
+            owners,
+        })
+    })
 }
 
 fn place_support(
