@@ -82,9 +82,15 @@ fn slice(bytes: &[u8]) -> String {
     let (_, items) = sx_core::api::load_3mf_items(bytes, "rings.3mf", None)
         .unwrap()
         .unwrap();
-    let at = sx_core::plate::items_transform(&items, sx_core::api::Bed::default(), None);
+    // Each item's parts are in its object's space: its transform is the plate's centering after the item's own.
+    let at = sx_core::plate::items_transforms(
+        &items,
+        sx_core::api::Bed::default(),
+        None,
+        sx_core::plate::ItemsPlacement::Centered,
+    );
     let objects: Vec<Value> = (0..items.len())
-        .map(|k| json!({"id": format!("o{k}"), "name": "ring", "mesh": format!("m{k}"), "transform": at.to_vec()}))
+        .map(|k| json!({"id": format!("o{k}"), "name": "ring", "mesh": format!("m{k}"), "transform": at[k].to_vec()}))
         .collect();
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": objects},

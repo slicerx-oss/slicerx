@@ -19,6 +19,10 @@ pub type Transform = [f32; 12];
 
 pub const IDENTITY: Transform = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
 
+/// a build item's transform, rows as [`Transform`], read in full precision: two items of one object then place it
+/// exactly where the file says, each move as written
+pub type ItemTransform = [f64; 12];
+
 /// extensions whose content is read here or may be left out without changing the geometry
 const READ_EXTENSIONS: &[&str] = &[
     "http://schemas.microsoft.com/3dmanufacturing/production/2015/06",
@@ -95,7 +99,7 @@ pub struct Object {
     pub id: u32,
     pub name: String,
     /// the build item's transform, in the file's unit
-    pub transform: Transform,
+    pub transform: ItemTransform,
     pub printable: bool,
     pub plate: Option<u32>,
     pub slot: Option<u8>,
@@ -186,9 +190,11 @@ pub fn apply(t: &Transform, p: [f32; 3]) -> [f32; 3] {
 }
 
 impl Part {
-    /// positions on the build plate in millimeters: the item's transform, then the chain, as `sx` places them
-    pub fn placed(&self, item: &Transform, unit_scale: f32) -> Vec<[f32; 3]> {
-        let t = self.chain.iter().fold(*item, |t, ct| compose(ct, &t));
+    /// positions on the build plate in millimeters: the item's transform, then the chain, in single precision
+    #[allow(clippy::cast_possible_truncation, reason = "positions are single precision")]
+    pub fn placed(&self, item: &ItemTransform, unit_scale: f32) -> Vec<[f32; 3]> {
+        let item: Transform = item.map(|c| c as f32);
+        let t = self.chain.iter().fold(item, |t, ct| compose(ct, &t));
         self.positions
             .iter()
             .map(|p| apply(&t, *p).map(|c| c * unit_scale))
@@ -197,7 +203,7 @@ impl Part {
 
     /// positions in the object's own space in millimeters
     pub fn in_object(&self, unit_scale: f32) -> Vec<[f32; 3]> {
-        self.placed(&IDENTITY, unit_scale)
+        self.placed(&IDENTITY.map(f64::from), unit_scale)
     }
 
     pub fn prints(&self) -> bool {
@@ -621,7 +627,7 @@ struct Model {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Item {
     object: u32,
-    transform: Transform,
+    transform: ItemTransform,
     printable: bool,
 }
 
@@ -634,14 +640,27 @@ fn refused(path: &str, r: Refused) -> Error {
 }
 
 fn transform(s: Option<&str>, owner: u32, at: usize) -> std::result::Result<Transform, Refused> {
-    let Some(s) = s else { return Ok(IDENTITY) };
-    let mut t = IDENTITY;
+    numbers::<f32>(s, owner, at)
+}
+
+/// a build item's `transform`, in full precision
+fn item_transform(s: Option<&str>, owner: u32, at: usize) -> std::result::Result<ItemTransform, Refused> {
+    numbers::<f64>(s, owner, at)
+}
+
+/// twelve finite numbers of a `transform` attribute, the identity when there is none
+fn numbers<F>(s: Option<&str>, owner: u32, at: usize) -> std::result::Result<[F; 12], Refused>
+where
+    F: std::str::FromStr + Copy + From<f32> + Finite,
+{
+    let mut t: [F; 12] = IDENTITY.map(F::from);
+    let Some(s) = s else { return Ok(t) };
     let mut n = 0;
     for v in s.split_ascii_whitespace() {
         let x = v
-            .parse::<f32>()
+            .parse::<F>()
             .ok()
-            .filter(|f| f.is_finite())
+            .filter(|f| f.finite())
             .ok_or_else(|| Refused("transform", owner, at, s.to_owned()))?;
         match t.get_mut(n) {
             Some(slot) => *slot = x,
@@ -653,6 +672,23 @@ fn transform(s: Option<&str>, owner: u32, at: usize) -> std::result::Result<Tran
         Ok(t)
     } else {
         Err(Refused("transform", owner, at, s.to_owned()))
+    }
+}
+
+/// a number type a transform is read in
+trait Finite {
+    fn finite(self) -> bool;
+}
+
+impl Finite for f32 {
+    fn finite(self) -> bool {
+        self.is_finite()
+    }
+}
+
+impl Finite for f64 {
+    fn finite(self) -> bool {
+        self.is_finite()
     }
 }
 
@@ -893,7 +929,7 @@ impl ModelParser {
                 let at = self.model.build.len();
                 self.model.build.push(Item {
                     object,
-                    transform: transform(t.attr("transform"), 0, at)?,
+                    transform: item_transform(t.attr("transform"), 0, at)?,
                     printable: t.attr("printable").is_none_or(|v| v.trim() != "0"),
                 });
             }
