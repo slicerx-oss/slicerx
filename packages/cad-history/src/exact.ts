@@ -735,13 +735,24 @@ function shiftOf(m: Mat4): Vec3 | null {
   return r.every((v, i) => Math.abs(v - id[i]!) < SHIFT_ONLY) ? [m[12]!, m[13]!, m[14]!] : null
 }
 
+/** Each axis's sign under a move that keeps every axis on itself (a shift, or a mirror across an axis), else null. */
+function axisSigns(m: Mat4): Vec3 | null {
+  const r = [m[0]!, m[1]!, m[2]!, m[4]!, m[5]!, m[6]!, m[8]!, m[9]!, m[10]!]
+  const s: Vec3 = [Math.sign(r[0]!), Math.sign(r[4]!), Math.sign(r[8]!)]
+  return r.every((v, i) => Math.abs(v - (i % 4 === 0 ? s[i / 4]! : 0)) < SHIFT_ONLY) ? s : null
+}
+
 /** A cutter solid given in world at a step's transform `t`, moved by `m` in the part's own coordinates, or null for a box a turn would tip. */
 function movedSolid(x: SolidSpec, t: Mat4, m: Mat4): SolidSpec | null {
   const w = multiply(t, multiply(m, invert(t)))
   if (x.type === 'cylinder') return { ...x, origin: point(w, x.origin), axis: direction(w, x.axis) }
-  const d = shiftOf(w)
-  if (!d) return null
-  return { type: 'box', min: [x.min[0] + d[0], x.min[1] + d[1], x.min[2] + d[2]], max: [x.max[0] + d[0], x.max[1] + d[1], x.max[2] + d[2]] }
+  // a mirror across an axis keeps the box on the world's axes: each axis's ends trade places when it is reversed
+  const s = axisSigns(w)
+  if (!s) return null
+  const end = (k: number, v: number) => s[k]! * v + w[12 + k]! + 0
+  const min: Vec3 = [0, 1, 2].map((k) => Math.min(end(k, x.min[k]!), end(k, x.max[k]!))) as Vec3
+  const max: Vec3 = [0, 1, 2].map((k) => Math.max(end(k, x.min[k]!), end(k, x.max[k]!))) as Vec3
+  return { type: 'box', min, max }
 }
 
 /**
