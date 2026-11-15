@@ -25,9 +25,9 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
 import { getArrangeOptions } from '../plate/edit'
-import { landOnBed, printsOnBed } from '../plate/arrange'
+import { landOnBed, lowestOf, printsOnBed } from '../plate/arrange'
 import { nestArrange } from '../plate/nest'
-import { bounds, identity } from '../plate/transform'
+import { identity } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
 import { newStep, type UndoStep } from '../plate/history'
@@ -484,7 +484,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     return {
       printsOnBed: (parts, transform) => printsOnBed({ parts, transform }, s.bed),
       landOnBed: (parts, transform) => landOnBed({ id, parts, transform }, s.plate.filter((p) => p.id !== id), s.bed, getArrangeOptions()),
-      lowest: (parts, transform) => bounds(parts, transform)?.min[2] ?? null,
+      lowest: lowestOf,
     }
   }
 
