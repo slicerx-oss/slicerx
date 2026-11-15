@@ -31,7 +31,7 @@ describe('reading a sizes answer', () => {
     expect(found).toEqual([
       { size: 'Overall length', mm: 125700, said: '125.7 m' },
       { size: 'Width (across)', mm: 12600, said: '12.6 m' },
-      { size: 'Tower height above the roof', mm: 17526, said: '57.5 ft' },
+      { size: 'Tower height above the roof', mm: 17526, said: '57.5 ft', from: 'roof' },
     ])
     expect(missing).toEqual(['Wall height to the roof', 'Tower diameter', 'Spire height above ground', 'Wing length'])
   })
@@ -87,9 +87,9 @@ describe('reading a sizes answer', () => {
 describe('design.lookup_sizes asks for a few published sizes', () => {
   const lookup = () => tabToolset({ list: () => [], get: () => undefined } as unknown as DesignHost, createCardPlans(createPlanRegistry()), { nozzleMm: () => 0.4 }).find((t) => t.name === 'design.lookup_sizes')!
 
-  it('is 1.1.2, takes at most 5 sizes, and says to derive the rest of the proportions from them', () => {
+  it('is 1.2.0, takes at most 5 sizes, and says to derive the rest of the proportions from them', () => {
     const t = lookup()
-    expect(t.version).toBe('1.1.2')
+    expect(t.version).toBe('1.2.0')
     expect(t.input.safeParse({ subject: 'a suspension bridge', sizes: ['a b', 'c d', 'e f', 'g h', 'i j'] }).success).toBe(true)
     expect(t.input.safeParse({ subject: 'a suspension bridge', sizes: ['a b', 'c d', 'e f', 'g h', 'i j', 'k l'] }).success).toBe(false)
     expect(t.description).toContain('at most 5 sizes sources commonly publish')

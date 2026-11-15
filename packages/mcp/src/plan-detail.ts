@@ -12,7 +12,7 @@
 // change along its length in both directions across it (sectionsProblem), so one shape stretched along a length fails.
 import { loopPoints } from '@slicerx/cad-history'
 import { z } from 'zod'
-import { lengthsIn, type SizeLookup } from './real-lookup'
+import { type FoundSize, lengthsIn, sizeReference, type SizeLookup } from './real-lookup'
 
 export const DETAIL_LEVELS = ['basic', 'display', 'fine'] as const
 export type DetailLevel = (typeof DETAIL_LEVELS)[number]
@@ -86,7 +86,7 @@ export const planDetailFields = {
     .optional()
     .describe('Display and fine: N of the scale 1:N against the real thing, such as 25 ("1:25" is taken too)'),
   real: realList(REAL_ENTRY.extend({ source: z.object({ title: text(120), url: z.url({ protocol: /^https?$/ }) }).optional().describe("A client's plan: the page the size came from") }))
-    .describe('Display and fine: the real sizes design.lookup_sizes found, in mm at full size, each tied to the feature size it sets with its lookupId, such as {"feature": "Body", "size": "length", "mm": 4200, "lookup": "lookup_1"}: the main body\'s and each part\'s; with 2 or more levels, each one\'s length; for a patterned repeat, its part\'s height and spacing. Each is held to scale against the size the lookup found. An empty list for a made-up thing'),
+    .describe('Display and fine: the real sizes design.lookup_sizes found, in mm at full size, each tied to the feature size it sets with its lookupId, such as {"feature": "Body", "size": "length", "mm": 4200, "lookup": "lookup_1"}: the main body\'s and each part\'s; with 2 or more levels, each one\'s length; for a patterned repeat, its part\'s height and spacing. Each is held to scale against the size the lookup found. A real size measured from a reference (above keel, above deck, above ground) gives where the part\'s top sits, not the part\'s own height. An empty list for a made-up thing'),
   tiers: z
     .record(text(60), z.array(text(60)).min(1).max(12))
     .optional()
@@ -378,30 +378,128 @@ function scaleProblems(plan: DetailPlan, feature: FeatureOf, src?: RealSources):
       out.push(`real: ${name} is not a planned feature`)
       continue
     }
-    const key = Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === size.trim().toLowerCase())
-    if (!key) {
+    // a height measured from a reference is held against where the part's top stands; one the plan cannot place is
+    // read as before, by the part's own sizes
+    const top = referenceTop(plan, feature, f, r, src)
+    const key = top ? undefined : Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === size.trim().toLowerCase())
+    if (!top && !key) {
       out.push(`real: ${f.name} has no size named ${size}; tie the real size to one of its sizes (${Object.keys(f.sizes).join(', ')})`)
       continue
     }
-    const fig = realFigure(r, `${f.name} ${key}`, src)
+    const label = `${f.name} ${top ? top.label : key!}`
+    const fig = realFigure(r, label, src)
     if ('problem' in fig) {
       out.push(fig.problem)
       continue
     }
     if ('unsourced' in fig) {
-      unsourced.push(`${f.name} ${key}`)
+      unsourced.push(label)
       continue
     }
     const mm = fig.mm
     const want = mm / n
-    const got = f.sizes[key]!
-    if (want > 0 && (got > want * SCALE_SLACK || got < want / SCALE_SLACK))
-      out.push(`${f.name} ${key} is ${r1(got)} mm, ${r1(got / want)} times the ${r1(want)} mm its real ${r1(mm)} mm gives at 1:${n}; size it from the real one`)
+    const got = top ? top.mm : f.sizes[key!]!
+    if (want > 0 && (got > want * SCALE_SLACK || got < want / SCALE_SLACK)) {
+      // a top off scale is said to be a top, so the fix is where the part stands or its height, not the row
+      if (top) out.push(REFERENCE_TOP(f.name, top.label))
+      out.push(OFF_SCALE(label, got, want, mm, n))
+    }
   }
   if (unsourced.length) out.push(NO_LOOKUP_ID(unsourced))
   const unheld = unheldProblem(plan, feature, src)
   if (unheld) out.push(unheld)
   return out
+}
+
+/** A planned size more than SCALE_SLACK off the size its real one gives at 1:n. */
+const OFF_SCALE = (size: string, got: number, want: number, mm: number, n: number): string =>
+  `${size} is ${r1(got)} mm, ${r1(got / want)} times the ${r1(want)} mm its real ${r1(mm)} mm gives at 1:${n}; size it from the real one`
+
+/**
+ * The line for a real size measured from a reference whose part's top is off scale, before the scale line: the size
+ * gives where the top sits. `reference` is the size's own words ("height above keel").
+ * No closing period: the refusal joins its problems with one.
+ */
+export const REFERENCE_TOP = (part: string, reference: string): string =>
+  `real: ${part}'s ${reference} is where its top sits, not its own height: keep it as given, and the plan checks it against the top of ${part} where it stands`
+
+/** A reference under the water's surface or at it (a waterline, sea level): a plan has no height for one. */
+const WATER_REFERENCE = /\b(sea|water|waterline|tide|datum)\b/
+/** A reference at the bottom of the whole model, on the bed: a keel, a base, the ground. */
+const GROUND_REFERENCE = /^(keel|base|ground|floor|foot|bottom|bed|grade|street|land)$/
+/** A reference that is the surface a part stands on, when no planned feature has its name: a deck, a roof. */
+const SURFACE_REFERENCE = /^(deck|roof|top|platform|terrace)$/
+/** A size that gives how tall a feature stands: its height, or else its depth, as the mass rule reads one. */
+const TOP_SIZE = [/^(height|tall)$/i, /^depth$/i]
+
+/**
+ * Each planned feature's top, mm above the bed, as the plan places it: the top of what it stands on plus its own
+ * height. A feature stands on the feature its on names, or a level on the level before it in its tier list
+ * (stackPairs). A main body (in curved or flat, or a tier list's lowest level) with no on stands on the bed. Any other
+ * feature with no on stands on the main body, as a part of a display model does: the main body with the most bulk
+ * (bulkOf), or the first one named when a body's sizes give no bulk. Undefined for a feature whose top the plan does
+ * not give: one with no height (TOP_SIZE), one whose on names no planned feature, or one standing on such a feature.
+ */
+function plannedTops(plan: DetailPlan, feature: FeatureOf): { top(f: DetailPlan['features'][number]): number | undefined; base(f: DetailPlan['features'][number]): number | undefined } {
+  const lower = (n: string): string => n.trim().toLowerCase()
+  const support = new Map(stackPairs(plan).map(([part, on]) => [lower(part), on]))
+  const bodies = [...(plan.curved ?? []), ...(plan.flat ?? []), ...Object.keys(plan.tiers ?? {})].map(feature).filter((f): f is NonNullable<typeof f> => !!f)
+  const named = new Set(bodies.map((b) => lower(b.name)))
+  const bulks = bodies.map((b) => bulkOf(b.sizes))
+  const main = bulks.some((v) => v === undefined) ? bodies[0] : bodies[bulks.indexOf(Math.max(...(bulks as number[])))]
+  const tops = new Map<string, number | undefined>()
+  const height = (f: DetailPlan['features'][number]): number | undefined => {
+    for (const re of TOP_SIZE) {
+      const k = Object.keys(f.sizes).find((s) => re.test(s.trim()))
+      if (k) return f.sizes[k]
+    }
+    return undefined
+  }
+  const base = (f: DetailPlan['features'][number]): number | undefined => {
+    const on = support.get(lower(f.name))
+    if (on) return top(feature(on)!)
+    if (f.on?.trim() && lower(f.on) !== lower(f.name)) return undefined
+    if (named.has(lower(f.name)) || !main || main === f) return 0
+    return top(main)
+  }
+  const top = (f: DetailPlan['features'][number]): number | undefined => {
+    const k = lower(f.name)
+    if (tops.has(k)) return tops.get(k)
+    // a loop of supports places nothing
+    tops.set(k, undefined)
+    const [b, h] = [base(f), height(f)]
+    const t = b === undefined || h === undefined ? undefined : b + h
+    tops.set(k, t)
+    return t
+  }
+  return { top, base }
+}
+
+/**
+ * Where a real size measured from a reference puts a feature's top: the size's name with its reference (as the source
+ * named it, or "<size> above <reference>" when the lookup tagged a plain size), and the planned top over that
+ * reference, mm. The reference is the lookup's tag on the size it found (FoundSize.from), or else the one the row's
+ * size name gives (sizeReference). A waterline or sea level is under no planned height; a ground word (keel, base,
+ * ground) is the bed; else a planned feature by that name is that feature's top; else a deck or roof is the top of
+ * what the feature stands on. Null for a row that measures from no reference, or from one the plan cannot place, so
+ * it is held to the feature's own sizes as before.
+ */
+function referenceTop(plan: DetailPlan, feature: FeatureOf, f: DetailPlan['features'][number], r: RealEntry, src: RealSources | undefined): { label: string; mm: number } | null {
+  const size = (r.size ?? '').trim()
+  const named = sizeReference(size)
+  const ref = lookupHit(r, src)?.from ?? named
+  if (!ref) return null
+  const { top, base } = plannedTops(plan, feature)
+  const last = ref.split(' ').at(-1)!
+  const stem1 = stem(ref)
+  const byName = feature(ref) ?? plan.features.find((g) => stem(g.name) === stem1) ?? (() => {
+    const hits = plan.features.filter((g) => within(ref, g.name))
+    return hits.length === 1 ? hits[0] : undefined
+  })()
+  const at = WATER_REFERENCE.test(ref) ? undefined : GROUND_REFERENCE.test(last) ? 0 : byName && byName !== f ? top(byName) : SURFACE_REFERENCE.test(last) ? base(f) : undefined
+  const t = top(f)
+  if (at === undefined || t === undefined) return null
+  return { label: named ? size : `${size} above ${ref}`, mm: t - at }
 }
 
 /** A plan that gives real sizes with none for a main body (realBody, or a row in real for one). */
@@ -447,6 +545,13 @@ function fromUnreadLookup(r: RealEntry, size: string, src: RealSources): boolean
   return !!l && !l.searched && l.missing.some((m) => sameSize(m, size))
 }
 
+/** The size a real size's lookup found within REAL_MATCH of its mm, the nearest first; undefined with no lookup in this chat or no such size. */
+function lookupHit(r: RealEntry, src: RealSources | undefined): FoundSize | undefined {
+  const l = r.lookup !== undefined && src && !src.client ? src.lookup(r.lookup) : undefined
+  const mm = r.mm ?? 0
+  return l?.found.filter((x) => Math.abs(x.mm - mm) <= mm * REAL_MATCH).sort((a, b) => Math.abs(a.mm - mm) - Math.abs(b.mm - mm))[0]
+}
+
 /**
  * The figure a real size is held to. Without `src`, its own mm. With a lookupId, the size that lookup found within
  * REAL_MATCH of its mm (a lookup that ran no search holds it to nothing: it is from memory); with stated words, the length in them within REAL_MATCH (and the words must be the person's,
@@ -461,7 +566,7 @@ function realFigure(r: RealEntry, size: string, src: RealSources | undefined): {
     const l = src.client ? undefined : src.lookup(r.lookup)
     if (!l) return { problem: UNKNOWN_LOOKUP(r.lookup) }
     if (fromUnreadLookup(r, size, src)) return { mm }
-    const hit = l.found.filter((x) => Math.abs(x.mm - mm) <= mm * REAL_MATCH).sort((a, b) => Math.abs(a.mm - mm) - Math.abs(b.mm - mm))[0]
+    const hit = lookupHit(r, src)
     return hit ? { mm: hit.mm } : { problem: NOT_FOUND_IN_LOOKUP(size, mm, l) }
   }
   if (r.stated !== undefined) {
@@ -486,7 +591,8 @@ export function realMemoryNote(plan: DetailPlan, src: RealSources): string | nul
   const memory = (plan.real ?? []).flatMap((r) => {
     if (r.stated !== undefined || r.source !== undefined) return []
     const f = feature(r.feature ?? '')
-    const key = f && Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === (r.size ?? '').trim().toLowerCase())
+    const top = f && referenceTop(plan, feature, f, r, src)
+    const key = f && (top ? top.label : Object.keys(f.sizes).find((k) => k.trim().toLowerCase() === (r.size ?? '').trim().toLowerCase()))
     if (!f || !key) return []
     return r.lookup === undefined || fromUnreadLookup(r, `${f.name} ${key}`, src) ? [`${f.name} ${key}`] : []
   })
@@ -629,7 +735,10 @@ function unheldCheck(plan: DetailPlan, feature: FeatureOf, src?: RealSources): {
   const given = (w: (typeof want)[number]): boolean =>
     (plan.real ?? []).some((r) => {
       const f = feature(r.feature ?? '')
-      return !!f && w.group.concat(w.held.feature).some((g) => g.trim().toLowerCase() === f.name.trim().toLowerCase()) && Object.keys(f.sizes).some((k) => k.trim().toLowerCase() === (r.size ?? '').trim().toLowerCase() && w.held.re.test(k.trim()))
+      if (!f || !w.group.concat(w.held.feature).some((g) => g.trim().toLowerCase() === f.name.trim().toLowerCase())) return false
+      // a height measured from a reference holds the part's height: its top is held to scale where it stands
+      if (w.what === 'height' && referenceTop(plan, feature, f, r, src)) return true
+      return Object.keys(f.sizes).some((k) => k.trim().toLowerCase() === (r.size ?? '').trim().toLowerCase() && w.held.re.test(k.trim()))
     })
   const notes = (plan.assumptions ?? []).filter((a) => /^\s*real\s*:/i.test(a))
   const said = (w: (typeof want)[number], note: string): boolean => {
