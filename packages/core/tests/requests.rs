@@ -5673,7 +5673,10 @@ fn column(cx: f32, r: f32, h: f32, n: u32, name: &str) -> api::MeshPart {
 fn columns_with(part_settings: Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "columns".into(),
-        parts: vec![column(-15.0, 9.0, 3.0, 96, "left"), column(15.0, 9.0, 3.0, 96, "right")],
+        parts: vec![
+            column(-15.0, 9.0, 3.0, 96, "left"),
+            column(15.0, 9.0, 3.0, 96, "right"),
+        ],
         ..Mesh::default()
     });
     let req: SliceRequest = serde_json::from_value(json!({
@@ -5700,7 +5703,13 @@ fn part_settings_the_plate_already_has_print_as_if_there_were_none() {
         "right": {"brim_type": "no_brim", "wall_loops": 2},
     }));
     let (p, s) = (features_by_layer(&plain), features_by_layer(&same));
-    assert_eq!(s.len(), p.len(), "extruding moves: {} with the repeated settings against {} without", s.len(), p.len());
+    assert_eq!(
+        s.len(),
+        p.len(),
+        "extruding moves: {} with the repeated settings against {} without",
+        s.len(),
+        p.len()
+    );
     assert!(same == plain, "repeated part settings changed the G-code");
 }
 
@@ -5715,7 +5724,12 @@ fn part_settings_of_its_own_still_print_the_part_with_them() {
             .count()
     };
     // Three walls on the right column means two inner ones instead of one; the left column keeps its two walls.
-    assert!(inner(&own, true) > inner(&plain, true), "{} {}", inner(&own, true), inner(&plain, true));
+    assert!(
+        inner(&own, true) > inner(&plain, true),
+        "{} {}",
+        inner(&own, true),
+        inner(&plain, true)
+    );
     assert_eq!(inner(&own, false), inner(&plain, false));
 }
 
