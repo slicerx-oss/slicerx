@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_design_plan` 1.18.0 (from 1.17.2), in the mimir tab: a display or fine plan refused because a level's length or a repeated part's height or spacing has no real size is told to write "real: <feature> <size> not given by the source" for one the source does not give, and the part's next plan in the same chat that writes that line for a size the refusal named is now taken. Before, that line was refused as "not asked for in any lookup" unless a lookup had listed the size as missing, so the plan the refusal asked for was refused in turn. A "not given" line for any size the refusal did not name is still held to a lookup, and the sizes are forgotten once a plan of the part is shown.
