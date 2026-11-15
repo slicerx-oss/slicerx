@@ -42,7 +42,7 @@ const SHAPE = {
   sizes: 'features: an amend changes sizes only; Block keeps the sizes length, width, height',
   overall: 'overall: an amend changes sizes only; keep the overall size',
   holes: 'holes: an amend changes sizes only; the plan keeps its rows of holes, by name and count',
-  on: 'features: an amend changes sizes only; Cap keeps on: "Block"',
+  recess: 'holes: an amend changes sizes only; Drain takes no recess',
 }
 
 describe('the amend checks name every mismatch', () => {
@@ -57,8 +57,8 @@ describe('the amend checks name every mismatch', () => {
   })
 
   it('amendDropProblem joins each field it would not keep', () => {
-    const next = { ...was, features: [was.features[0]!, { ...was.features[1]!, on: undefined }], proportions: 'stated: a 60 cm block', scale: 10 }
-    expect(amendDropProblem(was, next)).toBe(`${SHAPE.on}. proportions: an amend changes sizes only; leave out proportions. scale: an amend changes sizes only; leave out scale`)
+    const next = { ...was, holes: [{ name: 'Drain', diameter: 4, count: 3, recess: true }], proportions: 'stated: a 60 cm block', scale: 10 }
+    expect(amendDropProblem(was, next)).toBe(`${SHAPE.recess}. proportions: an amend changes sizes only; leave out proportions. scale: an amend changes sizes only; leave out scale`)
   })
 })
 
@@ -77,24 +77,24 @@ describe('design.plan with amends', () => {
     const t = tab()
     await t.run(block)
     t.card.tieBuiltPart({ name: 'design.new', permission: 'write' }, {}, { summary: 'Started', output: { design: 'd1' } })
-    const off = { ...block, units: 'in', holes: [{ name: 'Drain', diameter: 4, count: 4 }], features: [block.features[0]!, { ...block.features[1]!, on: undefined, sizes: { ...block.features[1]!.sizes, height: 5 } }] }
-    await expect(t.run({ ...off, amends: 'plan_1', reason: 'The cap is thicker.' })).rejects.toThrow(`${SHAPE.units}. ${SHAPE.holes}. ${SHAPE.on}`)
+    const off = { ...block, units: 'in', holes: [{ name: 'Drain', diameter: 4, count: 4, recess: true }], features: [block.features[0]!, { ...block.features[1]!, sizes: { ...block.features[1]!.sizes, height: 5 } }] }
+    await expect(t.run({ ...off, amends: 'plan_1', reason: 'The cap is thicker.' })).rejects.toThrow(`${SHAPE.units}. ${SHAPE.holes}. ${SHAPE.recess}`)
   })
 
-  it('names an on it would not keep beside a plan with no size changed', async () => {
+  it('names a recess it would not keep beside a plan with no size changed', async () => {
     const t = tab()
     await t.run(block)
     t.card.tieBuiltPart({ name: 'design.new', permission: 'write' }, {}, { summary: 'Started', output: { design: 'd1' } })
-    const moved = { ...block, features: [block.features[0]!, { ...block.features[1]!, on: undefined }] }
-    await expect(t.run({ ...moved, amends: 'plan_1', reason: 'The cap is thicker.' })).rejects.toThrow(`amends: no size differs from the approved plan plan_1. ${SHAPE.on}`)
+    const recessed = { ...block, holes: [{ name: 'Drain', diameter: 4, count: 3, recess: true }] }
+    await expect(t.run({ ...recessed, amends: 'plan_1', reason: 'The cap is thicker.' })).rejects.toThrow(`amends: no size differs from the approved plan plan_1. ${SHAPE.recess}`)
   })
 
   it('refuses a change the person asked for once, naming each field it would not keep', async () => {
     const t = tab()
     await t.run(block)
     t.card.tieBuiltPart({ name: 'design.new', permission: 'write' }, {}, { summary: 'Started', output: { design: 'd1' } })
-    const asked = { ...block, holes: [{ name: 'Drain', diameter: 4, count: 4 }], features: [block.features[0]!, { ...block.features[1]!, on: undefined }], amends: 'plan_1', asked: 'one more drain hole' }
-    await expect(t.run(asked)).rejects.toThrow(`${SHAPE.holes}. ${SHAPE.on}`)
+    const asked = { ...block, holes: [{ name: 'Drain', diameter: 4, count: 4, recess: true }], amends: 'plan_1', asked: 'one more drain hole' }
+    await expect(t.run(asked)).rejects.toThrow(`${SHAPE.holes}. ${SHAPE.recess}`)
   })
 })
 

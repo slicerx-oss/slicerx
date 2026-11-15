@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A build that finds a planned size it cannot keep asks to change the approved plan: design.plan with amends shows
 // the person the plan with the changed sizes, the old value beside each, and the build's reason, and waits for Go, as
-// a new plan does; design.put_plan with amends changes a client's own plan. An amend changes sizes and may add
-// features, keeping every planned one, and gives every other field as the plan has it (amendDropProblem); a build's
+// a new plan does; design.put_plan with amends changes a client's own plan. An amend changes sizes and what a planned
+// feature stands on (its on), and may add features, keeping every planned one, and gives every other field as the plan
+// has it (amendDropProblem); a build's
 // amend comes once per fix round, never after the round is over, and never buys a second round: the plan keeps its
 // failed checks under the same planId, and its revision goes up by one. A change the person asked for (asked) goes in
 // with no card and is not held to the fix round (tab-tools.ts).
@@ -113,18 +114,14 @@ function canonical(v: unknown, key?: string): unknown {
 const same = (a: unknown, b: unknown, key?: string): boolean => JSON.stringify(canonical(a, key)) === JSON.stringify(canonical(b, key))
 
 /**
- * What an amend changes that amendedSizes would not keep, or null: a planned feature's on, a row of holes' recess, or
- * a plan field among KEPT_FIELDS that it gives otherwise, each one named. A field it leaves out of the plan stays as it
- * is; on and recess are given with their feature or row, as its kinds are. Without this, the change would be dropped
- * while the amend reports the plan changed.
+ * What an amend changes that amendedSizes would not keep, or null: a row of holes' recess, or a plan field among
+ * KEPT_FIELDS that it gives otherwise, each one named. A field it leaves out of the plan stays as it is; recess is given
+ * with its row, as a feature's kinds are. Without this, the change would be dropped while the amend reports the plan
+ * changed. A planned feature's on is kept by amendedSizes (amendOns), so the part is held to what it now stands on.
  */
 export function amendDropProblem(old: Sized, next: Sized, opts: { fields?: boolean } = {}): string | null {
   const only = 'an amend changes sizes only'
   const out: string[] = []
-  for (const o of old.features) {
-    const f = next.features.find((x) => x.name === o.name)
-    if (f && (f.on ?? '') !== (o.on ?? '')) out.push(`features: ${only}; ${o.name} ${o.on ? `keeps on: ${JSON.stringify(o.on)}` : 'takes no on'}`)
-  }
   for (const [i, h] of (old.holes ?? []).entries()) {
     const n = next.holes?.[i]
     if (n && (n.recess ?? false) !== (h.recess ?? false)) out.push(`holes: ${only}; ${h.name} ${h.recess ? 'keeps recess: true' : 'takes no recess'}`)
@@ -205,6 +202,17 @@ export function amendBody(was: PartPlan, sent: AmendSent): { next: Sized; proble
 export const IGNORED_NOTE = (fields: readonly string[]): string =>
   `Ignored ${fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)!}` : fields[0]!}: an amend changes sizes only, so the plan keeps ${fields.length === 1 ? 'it' : 'them'} as approved`
 
+/**
+ * The planned features whose on `next` changes, by name, in order: each one restated with an on other than the plan's.
+ * A feature restated without an on keeps the plan's (amendedSizes).
+ */
+export function amendOns(old: Sized, next: Sized): string[] {
+  return old.features.flatMap((f) => {
+    const n = next.features.find((x) => x.name === f.name)
+    return n?.on !== undefined && n.on.trim() !== '' && n.on.trim().toLowerCase() !== (f.on ?? '').trim().toLowerCase() ? [f.name] : []
+  })
+}
+
 /** The features `next` adds to `old` (amendShapeProblem says it is an amend), by name, in order. */
 export function amendAdded(old: Sized, next: Sized): string[] {
   const names = new Set(old.features.map((f) => f.name))
@@ -220,15 +228,17 @@ export function amendKinds(old: Sized, next: Sized): string[] {
 }
 
 /**
- * `old` with the sizes of `next` and the features it adds (amendShapeProblem says it is an amend, amendDropProblem that
- * it changes nothing this leaves out): its assumptions and questions, and every other field, stay as they are.
+ * `old` with the sizes of `next`, the on of each feature it moves onto another (amendOns), and the features it adds
+ * (amendShapeProblem says it is an amend, amendDropProblem that it changes nothing this leaves out): its assumptions
+ * and questions, and every other field, stay as they are. A planned feature restated without an on keeps its own.
  */
 export function amendedSizes<P extends PartPlan>(old: P, next: Sized): P {
   const out = structuredClone(old)
   const was = new Map(out.features.map((f) => [f.name, f]))
+  const moved = new Set(amendOns(old, next))
   out.features = next.features.map((f) => {
     const o = was.get(f.name)
-    return o ? { ...o, kind: f.kind ?? o.kind, sizes: { ...f.sizes }, ...(f.kinds ? { kinds: { ...f.kinds } } : {}) } : structuredClone(f)
+    return o ? { ...o, kind: f.kind ?? o.kind, sizes: { ...f.sizes }, ...(f.kinds ? { kinds: { ...f.kinds } } : {}), ...(moved.has(f.name) ? { on: f.on!.trim() } : {}) } : structuredClone(f)
   })
   if (out.overall && next.overall) out.overall = { ...next.overall }
   if (out.holes && next.holes) out.holes = out.holes.map((h, i) => ({ ...h, diameter: next.holes![i]!.diameter }))
