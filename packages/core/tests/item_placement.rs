@@ -5,6 +5,7 @@
 //! parts moved by whole grid steps, and a file written back with each item's transform (not its vertices moved) loads
 //! the same again.
 #![allow(clippy::disallowed_methods, reason = "test geometry written as 3MF text")]
+#![allow(clippy::float_cmp, reason = "whole grid steps, rounded, compared exactly")]
 
 mod common;
 
@@ -36,13 +37,11 @@ fn threemf(m: &Mesh, items: &[[f64; 12]]) -> Vec<u8> {
         }
         base += u32::try_from(p.positions.len()).unwrap();
     }
-    let build: String = items
-        .iter()
-        .map(|t| {
-            let words: Vec<String> = t.iter().map(f64::to_string).collect();
-            format!(r#"<item objectid="1" transform="{}"/>"#, words.join(" "))
-        })
-        .collect();
+    let mut build = String::new();
+    for t in items {
+        let words: Vec<String> = t.iter().map(f64::to_string).collect();
+        let _ = write!(build, r#"<item objectid="1" transform="{}"/>"#, words.join(" "));
+    }
     let model = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices>{vx}</vertices><triangles>{tx}</triangles></mesh></object></resources><build>{build}</build></model>"#
     );

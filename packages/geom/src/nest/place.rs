@@ -364,17 +364,16 @@ const SAME_MM: f64 = 1e-6;
 
 fn same_ring(a: &[Pt], b: &[Pt]) -> bool {
     a.len() == b.len()
-        && a
-            .iter()
+        && a.iter()
             .zip(b)
             .all(|(p, q)| (p[0] - q[0]).abs() <= SAME_MM && (p[1] - q[1]).abs() <= SAME_MM)
 }
 
 fn same_region(a: &Region, b: &Region) -> bool {
     a.len() == b.len()
-        && a.iter().zip(b).all(|(s, t)| {
-            s.len() == t.len() && s.iter().zip(t).all(|(r, q)| same_ring(r, q))
-        })
+        && a.iter()
+            .zip(b)
+            .all(|(s, t)| s.len() == t.len() && s.iter().zip(t).all(|(r, q)| same_ring(r, q)))
 }
 
 fn xorshift(s: &mut u64) -> u64 {
