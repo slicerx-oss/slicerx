@@ -143,13 +143,20 @@ export function fmtStep(ms: number): string {
   return fmtTotal(ms)
 }
 
-/** The closed line: "Built in 14 steps, 2 min 35 s", "Done in 3 steps, 4.2 s", or "Stopped after 5 steps, 40 s". */
+/**
+ * The closed line: "Built in 14 steps, 2 min 35 s", "Done in 3 steps, 4.2 s", or "Stopped after 5 steps, 40 s". A loop whose
+ * steps all failed reads like a stopped one ("Stopped after 1 step, 0.0 s"); one where only some failed names how many
+ * were not made ("Done in 3 steps, 1 not made, 4.2 s", "Built in 14 steps, 2 not made, 2 min 35 s").
+ */
 export function loopLine(l: Loop, stopped: boolean): string {
-  const n = loopSteps(l).length
+  const all = loopSteps(l)
+  const n = all.length
+  const failed = all.filter((s) => s.row.state === 'bad').length
   const steps = n === 1 ? '1 step' : `${n} steps`
   const time = fmtStep(loopMs(l))
-  if (stopped) return `Stopped after ${steps}, ${time}`
-  return `${loopBuilt(l) ? 'Built' : 'Done'} in ${steps}, ${time}`
+  if (stopped || (n > 0 && failed === n)) return `Stopped after ${steps}, ${time}`
+  const made = failed > 0 ? `${steps}, ${failed} not made` : steps
+  return `${loopBuilt(l) ? 'Built' : 'Done'} in ${made}, ${time}`
 }
 
 /** The live label: the step running now, a thought under way, or the last thing done; never a tool's own name. */

@@ -130,6 +130,21 @@ describe('the loop model', () => {
     expect(loopLine(stopped, true)).toBe('Stopped after 1 step, 0.0 s')
   })
 
+  it('says Stopped after when every step failed, and counts the steps not made when only some did', () => {
+    const one = loopsOf(live([START, call('a', 'geom.loft', { feature: 'Shell' }), result('a', 100, false)]))[0]!
+    expect(loopLine(one, false)).toBe('Stopped after 1 step, 0.1 s')
+    const all = loopsOf(live([START, call('a', 'kb.sources'), result('a', 100, false), call('b', 'geom.extrude', { feature: 'Fin' }), result('b', 100, false)]))[0]!
+    expect(loopLine(all, false)).toBe('Stopped after 2 steps, 2.1 s')
+    const some = loopsOf(live([START, call('a', 'design.check'), result('a', 400), call('b', 'kb.sources'), result('b', 100, false)]))[0]!
+    expect(loopLine(some, false)).toBe('Done in 2 steps, 1 not made, 2.1 s')
+    const most = loopsOf(live([START, call('a', 'design.check'), result('a', 400), call('b', 'kb.sources'), result('b', 100, false), call('c', 'kb.sources'), result('c', 100, false)]))[0]!
+    expect(loopLine(most, false)).toBe('Done in 3 steps, 2 not made, 4.1 s')
+    const builtSome = loopsOf(live([START, call('a', 'geom.loft', { feature: 'Shell' }), result('a', 500, true, design('Toy pod')), call('b', 'kb.sources'), result('b', 100, false)]))[0]!
+    expect(loopLine(builtSome, false)).toBe('Built in 2 steps, 1 not made, 2.1 s')
+    const none = loopsOf(live([START, call('a', 'design.check'), result('a', 400), call('b', 'design.check'), result('b', 100)]))[0]!
+    expect(loopLine(none, false)).toBe('Done in 2 steps, 2.1 s')
+  })
+
   it('adds the parts up when the clock was not kept (a chat saved before it was)', () => {
     const saved = loopsOf(foldEvents(build, startTurn(emptyTranscript(), { user: 'a toy pod' }, 0), 0))[0]!
     expect(loopMs(saved)).toBe(800 + 200 + 1500 + 600 + 400)
@@ -199,6 +214,12 @@ describe('the loop in the chat', () => {
   it('a stopped run says so on its line', () => {
     view(live([START, call('a', 'geom.loft', { feature: 'Shell' }), { type: 'done', stopReason: 'canceled', ms: 3000 }]))
     expect(screen.getByTestId('mimir-loop-line').textContent).toMatch(/^Stopped after 1 step, /)
+  })
+
+  it('a loop whose only step failed says so on its line, and keeps its failed mark', () => {
+    view(live([START, call('a', 'geom.loft', { feature: 'Shell' }), result('a', 100, false), { type: 'done', stopReason: 'end', ms: 900 }]))
+    expect(screen.getByTestId('mimir-loop-line').textContent).toMatch(/^Stopped after 1 step, /)
+    expect(screen.getByTestId('mimir-loop').hasAttribute('data-failed')).toBe(true)
   })
 
   it('without plain words (the terminal view) the rows stay as they are', () => {
