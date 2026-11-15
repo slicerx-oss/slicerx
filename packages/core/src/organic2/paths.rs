@@ -24,7 +24,8 @@ pub(crate) struct PathsIn {
     pub(crate) wall_count: u32,
     /// The base pattern is none or default: branches print as walls only.
     pub(crate) hollow: bool,
-    pub(crate) center: [f64; 2],
+    /// Where the fill lines are anchored.
+    pub(crate) anchors: crate::support::Anchors,
     /// Neighboring fill lines are joined along the edge when the way round is at most this long (mm).
     pub(crate) join: f64,
 }
@@ -92,21 +93,23 @@ fn loops(s: &Shapes, clip: f64) -> Vec<Vec<Point>> {
     out
 }
 
-struct Fill {
+struct Fill<'a> {
     w: f64,
     spacing: f64,
     density: f64,
     angle: f64,
-    center: [f64; 2],
+    anchors: &'a crate::support::Anchors,
     join: f64,
 }
 
-fn lines(area: &Shapes, f: &Fill) -> Vec<Vec<Point>> {
+fn lines(area: &Shapes, f: &Fill<'_>) -> Vec<Vec<Point>> {
     if area.is_empty() || f.density <= 0.0 {
         return Vec::new();
     }
     let pitch = (f.spacing / f.density.min(1.0)).max(f.spacing);
-    crate::patterns::support_lines(area, f.w, pitch, f.angle, false, f.join.max(0.0), f.center)
+    f.anchors.fill(area, |a, c| {
+        crate::patterns::support_lines(a, f.w, pitch, f.angle, false, f.join.max(0.0), c)
+    })
 }
 
 /// Walls of the hollow branches of `base` (one, or two for big islands and above 100 mm).
@@ -225,7 +228,7 @@ pub(crate) fn raft_walls(trees: &Shapes, width: f64, spacing: f64, wall_count: u
         angle: 0.0,
         wall_count,
         hollow: true,
-        center: [0.0, 0.0],
+        anchors: crate::support::Anchors::one([0.0; 4]),
         join: 0.0,
     };
     branch_walls(trees, &inp, 0.0)
@@ -253,7 +256,7 @@ pub(crate) fn layer_paths(
                 spacing: inp.first_spacing,
                 density: inp.first_density,
                 angle: inp.angle + 90.0,
-                center: inp.center,
+                anchors: &inp.anchors,
                 join: inp.join,
             },
         ));
@@ -270,7 +273,7 @@ pub(crate) fn layer_paths(
                 spacing: inp.spacing,
                 density: inp.support_density,
                 angle: inp.angle,
-                center: inp.center,
+                anchors: &inp.anchors,
                 join: inp.join,
             },
         ));
@@ -286,7 +289,7 @@ pub(crate) fn layer_paths(
             spacing: inp.spacing,
             density: inp.top_interface_density,
             angle: across,
-            center: inp.center,
+            anchors: &inp.anchors,
             join: inp.join,
         },
     ));
@@ -297,7 +300,7 @@ pub(crate) fn layer_paths(
             spacing: inp.spacing,
             density: inp.bottom_interface_density,
             angle: across,
-            center: inp.center,
+            anchors: &inp.anchors,
             join: inp.join,
         },
     ));
@@ -337,7 +340,7 @@ mod tests {
             angle: 0.0,
             wall_count,
             hollow: true,
-            center: [100.0, 100.0],
+            anchors: crate::support::Anchors::one([100.0, 100.0, 100.0, 100.0]),
             join: 0.0,
         }
     }

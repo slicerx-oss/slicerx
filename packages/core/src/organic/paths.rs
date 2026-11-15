@@ -63,7 +63,8 @@ pub(crate) struct PathsIn {
     pub(crate) hollow: bool,
     /// Islands wider than this get a second wall, mm2 (Orca's `tree_branch_diameter_double_wall_area_scaled`).
     pub(crate) double_wall_mm2: f64,
-    pub(crate) center: [f64; 2],
+    /// Where the fill lines are anchored.
+    pub(crate) anchors: crate::support::Anchors,
     pub(crate) anchor_max: f64,
 }
 
@@ -71,15 +72,9 @@ fn rect(area: &Shapes, spacing: f64, density: f64, angle: f64, p: &PathsIn) -> V
     if area.is_empty() || density <= 0.0 {
         return Vec::new();
     }
-    crate::patterns::support_lines(
-        area,
-        spacing,
-        spacing / density,
-        angle,
-        false,
-        p.anchor_max,
-        p.center,
-    )
+    p.anchors.fill(area, |a, c| {
+        crate::patterns::support_lines(a, spacing, spacing / density, angle, false, p.anchor_max, c)
+    })
 }
 
 fn base_fill(
@@ -96,7 +91,9 @@ fn base_fill(
     if rectilinear {
         rect(area, spacing, density, angle, p)
     } else {
-        crate::supportfill::support_base(area, spacing, density, angle, p.center)
+        p.anchors.fill(area, |a, c| {
+            crate::supportfill::support_base(a, spacing, density, angle, c)
+        })
     }
 }
 
@@ -126,27 +123,31 @@ fn contact_fill(area: &Shapes, density: f64, angle: f64, layer: u32, z: f64, p: 
         ContactFill::Concentric => {
             crate::surface::fill(area, crate::surface::Curve::Concentric, s / density, 0.0)
         }
-        ContactFill::Grid => crate::patterns::sparse(&crate::patterns::SparseIn {
-            pattern: crate::config::InfillPattern::Grid,
-            region: area,
-            w_mm: p.interface_width,
-            spacing_mm: s,
-            density,
-            z_mm: z,
-            layer,
-            connect_mm: p.anchor_max,
-            anchor_mm: 0.0,
-            object: [p.center[0], p.center[1], p.center[0], p.center[1]],
-            angle_deg: angle,
-            lateral_angles: [-45.0, 45.0],
-            overhang_angle_deg: 60.0,
-            fixed_angle: false,
-            gyroid_layer_height: None,
-            object_origin: false,
-            gyroid_margin: true,
+        ContactFill::Grid => p.anchors.fill(area, |region, c| {
+            crate::patterns::sparse(&crate::patterns::SparseIn {
+                pattern: crate::config::InfillPattern::Grid,
+                region,
+                w_mm: p.interface_width,
+                spacing_mm: s,
+                density,
+                z_mm: z,
+                layer,
+                connect_mm: p.anchor_max,
+                anchor_mm: 0.0,
+                object: [c[0], c[1], c[0], c[1]],
+                angle_deg: angle,
+                lateral_angles: [-45.0, 45.0],
+                overhang_angle_deg: 60.0,
+                fixed_angle: false,
+                gyroid_layer_height: None,
+                object_origin: false,
+                gyroid_margin: true,
+            })
         }),
         ContactFill::Rectilinear => rect(area, s, density, angle, p),
-        ContactFill::SupportBase => crate::supportfill::support_base(area, s, density, angle, p.center),
+        ContactFill::SupportBase => p.anchors.fill(area, |a, c| {
+            crate::supportfill::support_base(a, s, density, angle, c)
+        }),
     }
 }
 

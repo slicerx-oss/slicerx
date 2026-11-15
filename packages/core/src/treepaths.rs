@@ -250,7 +250,8 @@ pub(crate) struct TreePathsIn {
     pub(crate) default_pattern: bool,
     pub(crate) on_bed: bool,
     pub(crate) anchor_max: f64,
-    pub(crate) center: [f64; 2],
+    /// Where the fill lines are anchored.
+    pub(crate) anchors: crate::support::Anchors,
 }
 
 /// The support and interface paths of one tree layer.
@@ -259,15 +260,17 @@ pub(crate) fn layer_paths(t: &TreeLayer, p: &TreePathsIn) -> (Vec<Path>, Vec<Pat
     let mut support: Vec<Path> = Vec::new();
     let mut interface: Vec<Path> = Vec::new();
     let rect = |area: &Shapes, spacing: f64, density: f64, angle: f64| -> Vec<Path> {
-        crate::patterns::support_lines(
-            area,
-            spacing,
-            spacing / density.max(1e-3),
-            angle,
-            false,
-            p.anchor_max,
-            p.center,
-        )
+        p.anchors.fill(area, |a, c| {
+            crate::patterns::support_lines(
+                a,
+                spacing,
+                spacing / density.max(1e-3),
+                angle,
+                false,
+                p.anchor_max,
+                c,
+            )
+        })
     };
     // The interface filler: rectilinear when solid, else the support base filler, or the chosen pattern.
     let iface_fill = |area: &Shapes, density: f64| -> Vec<Path> {
@@ -290,7 +293,9 @@ pub(crate) fn layer_paths(t: &TreeLayer, p: &TreePathsIn) -> (Vec<Path>, Vec<Pat
                 v
             }
             _ if p.interface_density > 0.95 => rect(area, p.spacing, density, angle),
-            _ => crate::supportfill::support_base(area, p.spacing, density, angle, p.center),
+            _ => p.anchors.fill(area, |a, c| {
+                crate::supportfill::support_base(a, p.spacing, density, angle, c)
+            }),
         }
     };
     if !t.roof_first.is_empty() {
@@ -320,7 +325,9 @@ pub(crate) fn layer_paths(t: &TreeLayer, p: &TreePathsIn) -> (Vec<Path>, Vec<Pat
                 if p.base_density > 0.95 {
                     rect(s, p.spacing, p.base_density, p.angle)
                 } else {
-                    crate::supportfill::support_base(s, p.spacing, p.base_density, p.angle, p.center)
+                    p.anchors.fill(s, |a, c| {
+                        crate::supportfill::support_base(a, p.spacing, p.base_density, p.angle, c)
+                    })
                 }
             };
             support.extend(perimeter_and_infill(
@@ -392,7 +399,7 @@ mod tests {
             default_pattern: false,
             on_bed: false,
             anchor_max: 20.0,
-            center: [100.0, 100.0],
+            anchors: crate::support::Anchors::one([100.0, 100.0, 100.0, 100.0]),
         };
         let (s, _) = layer_paths(&t, &p);
         let closed = s.iter().filter(|q| q.len() > 3 && q.first() == q.last()).count();

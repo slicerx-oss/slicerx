@@ -5101,7 +5101,7 @@ impl SliceSession {
                 interface: contact,
                 ..crate::support::SupportLayer::default()
             };
-            self.support_pad(config, &layer, center)
+            self.support_pad(config, &layer, &crate::support::Anchors::one(self.bounds))
         } else {
             Vec::new()
         };
@@ -5859,6 +5859,44 @@ impl SliceSession {
                 )
             })
             .as_ref()
+    }
+
+    /// Where this session's support fill lines are anchored ([`crate::support::Anchors`]): the middle of the
+    /// session's box for one object, each object's own box on a plate of several, with the object's footprint
+    /// saying which islands are its.
+    fn support_anchors(&self) -> crate::support::Anchors {
+        let mut objects = self.part_object.clone();
+        objects.sort_unstable();
+        objects.dedup();
+        if objects.len() < 2 {
+            return crate::support::Anchors::one(self.bounds);
+        }
+        let list = objects
+            .iter()
+            .filter_map(|&k| {
+                let f = self.objects.get(usize::from(k))?;
+                let b = self.object_boxes.get(usize::from(k)).copied()?;
+                if f.hull.len() < 3 || b[0] > b[2] || b[1] > b[3] {
+                    return None;
+                }
+                let ring: Vec<IntPoint<i32>> =
+                    f.hull.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect();
+                let (mut lo, mut hi) = ([i32::MAX; 2], [i32::MIN; 2]);
+                for p in &ring {
+                    lo = [lo[0].min(p.x), lo[1].min(p.y)];
+                    hi = [hi[0].max(p.x), hi[1].max(p.y)];
+                }
+                Some((
+                    crate::owners::ObjectSlice {
+                        object: k,
+                        shapes: vec![vec![ring]],
+                        bounds: [lo[0], lo[1], hi[0], hi[1]],
+                    },
+                    b,
+                ))
+            })
+            .collect();
+        crate::support::Anchors::of_objects(self.bounds, list)
     }
 
     /// The islands of the sparse area `area` of object layer `layer` by object, each with its object's box: sparse
@@ -7208,11 +7246,11 @@ impl SliceSession {
         cfg: &PrintConfig,
         o: &crate::organic::OrganicLayer,
         layer: u32,
-        center: [f64; 2],
+        anchors: &crate::support::Anchors,
     ) -> SupportPaths {
         let s = &cfg.support;
         let wmm = cfg.support_width();
-        let p = self.organic_paths_in(cfg, center);
+        let p = self.organic_paths_in(cfg, anchors);
         let mut iron = Vec::new();
         if s.ironing && s.interface_top_layers > 0 && !o.top_contact.is_empty() {
             let area = perimeters::difference(&o.top_contact, &self.support_above(cfg, layer));
@@ -7221,7 +7259,9 @@ impl SliceSession {
             iron = if s.ironing_concentric {
                 crate::surface::fill(&area, crate::surface::Curve::Concentric, gap, 0.0)
             } else {
-                crate::patterns::support_lines(&area, gap, gap, angle, false, 3.0 * gap, center)
+                anchors.fill(&area, |a, c| {
+                    crate::patterns::support_lines(a, gap, gap, angle, false, 3.0 * gap, c)
+                })
             };
         }
         let mut loops = Vec::new();
@@ -7285,7 +7325,11 @@ impl SliceSession {
     }
 
     /// What the organic toolpaths read: the support parameters and flows.
-    fn organic_paths_in(&self, cfg: &PrintConfig, center: [f64; 2]) -> crate::organic::paths::PathsIn {
+    fn organic_paths_in(
+        &self,
+        cfg: &PrintConfig,
+        anchors: &crate::support::Anchors,
+    ) -> crate::organic::paths::PathsIn {
         use crate::config::InterfacePattern as IP;
         use crate::organic::paths::ContactFill;
         let s = &cfg.support;
@@ -7328,7 +7372,7 @@ impl SliceSession {
                 1 => f64::MAX,
                 _ => 1e-12,
             },
-            center,
+            anchors: anchors.clone(),
             anchor_max: cfg.anchor_max_mm(),
         }
     }
@@ -7570,7 +7614,7 @@ impl SliceSession {
     /// What the v2 organic toolpaths read.
     fn organic2_paths_in(
         cfg: &PrintConfig,
-        center: [f64; 2],
+        anchors: &crate::support::Anchors,
         first_height: f64,
     ) -> crate::organic2::paths::PathsIn {
         let s = &cfg.support;
@@ -7601,7 +7645,7 @@ impl SliceSession {
             wall_count: s.tree_settings.wall_count,
             hollow: matches!(pattern.as_str(), "default" | "hollow" | "none"),
             join: cfg.anchor_max_mm(),
-            center,
+            anchors: anchors.clone(),
         }
     }
 
@@ -7613,26 +7657,20 @@ impl SliceSession {
         o: &crate::organic2::Layer,
         index: u32,
         z: f64,
-        center: [f64; 2],
+        anchors: &crate::support::Anchors,
     ) -> SupportPaths {
         let s = &cfg.support;
         let wmm = cfg.support_width();
-        let p = Self::organic2_paths_in(cfg, center, self.plan.thickness(0));
+        let p = Self::organic2_paths_in(cfg, anchors, self.plan.thickness(0));
         let mut iron = Vec::new();
         if s.ironing && s.interface_top_layers > 0 && !o.top_contact.is_empty() {
             let gap = s.ironing_spacing.max(0.01);
             iron = if s.ironing_concentric {
                 crate::surface::fill(&o.top_contact, crate::surface::Curve::Concentric, gap, 0.0)
             } else {
-                crate::patterns::support_lines(
-                    &o.top_contact,
-                    gap,
-                    gap,
-                    s.angle + 90.0,
-                    false,
-                    3.0 * gap,
-                    center,
-                )
+                anchors.fill(&o.top_contact, |a, c| {
+                    crate::patterns::support_lines(a, gap, gap, s.angle + 90.0, false, 3.0 * gap, c)
+                })
             };
         }
         let mut loops = Vec::new();
@@ -7763,19 +7801,16 @@ impl SliceSession {
         let mut support: Vec<Vec<crate::geom::Point>>;
         let wmm = cfg.support_width();
         let s = &cfg.support;
-        let center = [
-            f64::midpoint(self.bounds[0], self.bounds[2]),
-            f64::midpoint(self.bounds[1], self.bounds[3]),
-        ];
+        let anchors = self.support_anchors();
         let tree = s.style.is_tree() || s.tree;
         if let Some(o) = self.organic2_for(sl) {
-            return self.organic2_support_paths(cfg, o, layer, z, center);
+            return self.organic2_support_paths(cfg, o, layer, z, &anchors);
         }
         if let Some(t) = &sl.classic {
-            return self.classic_tree_paths(cfg, t, layer, center);
+            return self.classic_tree_paths(cfg, t, layer, &anchors);
         }
         if let Some(o) = &sl.organic {
-            return self.organic_support_paths(cfg, o, layer, center);
+            return self.organic_support_paths(cfg, o, layer, &anchors);
         }
         if !sl.on_part.is_empty() {
             // Where the layer rests on a top surface of the part it is filled on its own, the same way, so those
@@ -7812,7 +7847,7 @@ impl SliceSession {
         // is the first one only when the first support rests on the bed rather than on the part.
         let on_bed = layer == 0 && self.stack.first().is_none_or(|st| st.top - st.height < 1e-4);
         if on_bed && self.raft.is_none() && !tree {
-            support = self.support_pad(cfg, sl, center);
+            support = self.support_pad(cfg, sl, &anchors);
             // Interface on the first layer (a contact resting on the bed) prints as interface.
         } else if on_bed && self.raft.is_none() {
             // The first support layer is a dense pad wider than the support above it
@@ -7822,8 +7857,9 @@ impl SliceSession {
             let expand = s.tree_settings.brim_width.max(1.85);
             let pad = perimeters::offset(&both, mm(expand));
             let pitch = wmm / 0.9;
-            support =
-                crate::patterns::support_lines(&pad, wmm, pitch, 0.0, false, cfg.anchor_max_mm(), center);
+            support = anchors.fill(&pad, |a, c| {
+                crate::patterns::support_lines(a, wmm, pitch, 0.0, false, cfg.anchor_max_mm(), c)
+            });
             let loop_ring = perimeters::offset(&pad, -mm(wmm / 2.0));
             for ring in loop_ring.iter().filter_map(|sh| sh.first()) {
                 let mut pts: Vec<crate::geom::Point> =
@@ -7865,25 +7901,29 @@ impl SliceSession {
                 }
             }
             let core = perimeters::offset(&trees, -mm(wmm * (f64::from(walls) + 0.5)));
-            lines.extend(crate::patterns::support_lines(
-                &core,
-                wmm,
-                s.base_spacing + cfg.flow_spacing(),
-                if layer.is_multiple_of(2) { 45.0 } else { 135.0 },
-                false,
-                0.0,
-                center,
-            ));
-            if !normal.is_empty() {
-                lines.extend(crate::patterns::support_lines(
-                    &normal,
+            lines.extend(anchors.fill(&core, |a, c| {
+                crate::patterns::support_lines(
+                    a,
                     wmm,
                     s.base_spacing + cfg.flow_spacing(),
+                    if layer.is_multiple_of(2) { 45.0 } else { 135.0 },
+                    false,
                     0.0,
-                    true,
-                    cfg.anchor_max_mm(),
-                    center,
-                ));
+                    c,
+                )
+            }));
+            if !normal.is_empty() {
+                lines.extend(anchors.fill(&normal, |a, c| {
+                    crate::patterns::support_lines(
+                        a,
+                        wmm,
+                        s.base_spacing + cfg.flow_spacing(),
+                        0.0,
+                        true,
+                        cfg.anchor_max_mm(),
+                        c,
+                    )
+                }));
             }
             support = lines;
         } else if matches!(s.base_pattern, InfillPattern::Rectilinear | InfillPattern::Grid) {
@@ -7907,49 +7947,49 @@ impl SliceSession {
                 &sl.base
             };
             support = if spacing / pitch <= 0.95 {
-                crate::supportfill::support_base(base, spacing, spacing / pitch, angle, center)
+                anchors.fill(base, |a, c| {
+                    crate::supportfill::support_base(a, spacing, spacing / pitch, angle, c)
+                })
             } else {
-                crate::patterns::support_lines(
-                    base,
-                    spacing,
-                    pitch,
-                    angle,
-                    false,
-                    cfg.anchor_max_mm(),
-                    center,
-                )
+                anchors.fill(base, |a, c| {
+                    crate::patterns::support_lines(a, spacing, pitch, angle, false, cfg.anchor_max_mm(), c)
+                })
             };
         } else {
-            support = crate::patterns::sparse(&crate::patterns::SparseIn {
-                pattern: s.base_pattern,
-                region: &sl.base,
-                w_mm: wmm,
-                spacing_mm: s.base_spacing + spacing,
-                density: 1.0,
-                z_mm: z,
-                layer,
-                connect_mm: cfg.anchor_max_mm(),
-                anchor_mm: 0.0,
-                object: self.bounds,
-                angle_deg: 45.0,
-                lateral_angles: [-45.0, 45.0],
-                overhang_angle_deg: 60.0,
-                fixed_angle: false,
-                gyroid_layer_height: None,
-                object_origin: false,
-                gyroid_margin: true,
+            support = anchors.fill_box(&sl.base, |region, object| {
+                crate::patterns::sparse(&crate::patterns::SparseIn {
+                    pattern: s.base_pattern,
+                    region,
+                    w_mm: wmm,
+                    spacing_mm: s.base_spacing + spacing,
+                    density: 1.0,
+                    z_mm: z,
+                    layer,
+                    connect_mm: cfg.anchor_max_mm(),
+                    anchor_mm: 0.0,
+                    object,
+                    angle_deg: 45.0,
+                    lateral_angles: [-45.0, 45.0],
+                    overhang_angle_deg: 60.0,
+                    fixed_angle: false,
+                    gyroid_layer_height: None,
+                    object_origin: false,
+                    gyroid_margin: true,
+                })
             });
         }
         if tree {
-            let interface = crate::patterns::support_lines(
-                &interface_area,
-                wmm,
-                s.interface_spacing + cfg.flow_spacing(),
-                90.0,
-                false,
-                cfg.anchor_max_mm(),
-                center,
-            );
+            let interface = anchors.fill(&interface_area, |a, c| {
+                crate::patterns::support_lines(
+                    a,
+                    wmm,
+                    s.interface_spacing + cfg.flow_spacing(),
+                    90.0,
+                    false,
+                    cfg.anchor_max_mm(),
+                    c,
+                )
+            });
             return SupportPaths {
                 support,
                 interface,
@@ -8016,10 +8056,10 @@ impl SliceSession {
             }
             match pattern {
                 InfillPattern::Grid => {
-                    out.interface
-                        .extend(crate::patterns::sparse(&crate::patterns::SparseIn {
+                    out.interface.extend(anchors.fill_box(area, |region, object| {
+                        crate::patterns::sparse(&crate::patterns::SparseIn {
                             pattern: InfillPattern::Grid,
-                            region: area,
+                            region,
                             w_mm: wmm,
                             spacing_mm: spacing,
                             density: dens,
@@ -8027,7 +8067,7 @@ impl SliceSession {
                             layer,
                             connect_mm: cfg.anchor_max_mm(),
                             anchor_mm: 0.0,
-                            object: self.bounds,
+                            object,
                             angle_deg: angle,
                             lateral_angles: [-45.0, 45.0],
                             overhang_angle_deg: 60.0,
@@ -8035,7 +8075,8 @@ impl SliceSession {
                             gyroid_layer_height: None,
                             object_origin: false,
                             gyroid_margin: true,
-                        }));
+                        })
+                    }));
                 }
                 InfillPattern::Concentric => {
                     out.interface.extend(crate::surface::fill(
@@ -8047,19 +8088,21 @@ impl SliceSession {
                 }
                 // Solid lines when they touch, else the support base filler.
                 _ if density <= 0.95 => {
-                    out.interface.extend(crate::supportfill::support_base(
-                        area, spacing, dens, angle, center,
-                    ));
+                    out.interface.extend(anchors.fill(area, |a, c| {
+                        crate::supportfill::support_base(a, spacing, dens, angle, c)
+                    }));
                 }
-                _ => out.interface.extend(crate::patterns::support_lines(
-                    area,
-                    spacing,
-                    spacing / dens,
-                    angle,
-                    false,
-                    cfg.anchor_max_mm(),
-                    center,
-                )),
+                _ => out.interface.extend(anchors.fill(area, |a, c| {
+                    crate::patterns::support_lines(
+                        a,
+                        spacing,
+                        spacing / dens,
+                        angle,
+                        false,
+                        cfg.anchor_max_mm(),
+                        c,
+                    )
+                })),
             }
         }
         if ironing {
@@ -8069,7 +8112,9 @@ impl SliceSession {
             out.ironing = if s.ironing_concentric {
                 crate::surface::fill(&area, crate::surface::Curve::Concentric, gap, 0.0)
             } else {
-                crate::patterns::support_lines(&area, gap, gap, angle, false, 3.0 * gap, center)
+                anchors.fill(&area, |a, c| {
+                    crate::patterns::support_lines(a, gap, gap, angle, false, 3.0 * gap, c)
+                })
             };
         }
         out
@@ -8081,7 +8126,7 @@ impl SliceSession {
         cfg: &PrintConfig,
         t: &crate::treeclassic::TreeLayer,
         layer: u32,
-        center: [f64; 2],
+        anchors: &crate::support::Anchors,
     ) -> SupportPaths {
         let s = &cfg.support;
         let wmm = cfg.support_width();
@@ -8140,7 +8185,7 @@ impl SliceSession {
             default_pattern,
             on_bed: layer == 0 && self.raft.is_none(),
             anchor_max: cfg.sparse_infill_anchor_max,
-            center,
+            anchors: anchors.clone(),
         };
         let (mut support, interface) = crate::treepaths::layer_paths(t, &inp);
         if lightning && !inp.on_bed {
@@ -8258,7 +8303,7 @@ impl SliceSession {
         &self,
         cfg: &PrintConfig,
         sl: &crate::support::SupportLayer,
-        center: [f64; 2],
+        anchors: &crate::support::Anchors,
     ) -> Vec<Vec<crate::geom::Point>> {
         let s = &cfg.support;
         if sl.base.is_empty() {
@@ -8281,15 +8326,17 @@ impl SliceSession {
             support.push(pts);
         }
         let inner = perimeters::offset(&ring, -mm(0.4 * first_spacing));
-        support.extend(crate::patterns::support_lines(
-            &inner,
-            first_spacing,
-            first_spacing / density,
-            s.angle + 90.0,
-            false,
-            cfg.anchor_max_mm(),
-            center,
-        ));
+        support.extend(anchors.fill(&inner, |a, c| {
+            crate::patterns::support_lines(
+                a,
+                first_spacing,
+                first_spacing / density,
+                s.angle + 90.0,
+                false,
+                cfg.anchor_max_mm(),
+                c,
+            )
+        }));
         support
     }
 
