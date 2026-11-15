@@ -1114,6 +1114,32 @@ impl PrintConfig {
                     *dst = num(x).ok_or_else(|| bad(key))?;
                 }
             }
+            // a project that sets a plain branch key but not its organic twin keeps one value for every tree
+            // style, so organic trees take the plain value
+            for (plain, twin, value, dst) in [
+                (
+                    "tree_support_branch_angle",
+                    "tree_support_branch_angle_organic",
+                    tr.branch_angle,
+                    &mut tr.branch_angle_organic,
+                ),
+                (
+                    "tree_support_branch_diameter",
+                    "tree_support_branch_diameter_organic",
+                    tr.branch_diameter,
+                    &mut tr.branch_diameter_organic,
+                ),
+                (
+                    "tree_support_branch_distance",
+                    "tree_support_branch_distance_organic",
+                    tr.branch_distance,
+                    &mut tr.branch_distance_organic,
+                ),
+            ] {
+                if get(plain).is_some() && !map.contains_key(twin) {
+                    *dst = value;
+                }
+            }
             if let Some(x) = get("tree_support_wall_count") {
                 let n = num(x).ok_or_else(|| bad("tree_support_wall_count"))?;
                 // bambu studio's -1 is auto, orca's 0
