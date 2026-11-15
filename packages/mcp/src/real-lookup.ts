@@ -170,7 +170,8 @@ function sameHead(a: string, b: string): boolean {
  * then to the one size whose name has the same head noun ("Width" for "Width (across)", "Tower height above the roof"
  * for "Tower height"); a line that could be two sizes' goes to neither. When no line names a size asked (each labeled
  * "size", or no name at all) and there are no more lines than sizes, they are read one per size in the order asked.
- * A size with no line, a line with no length, and "not found" all go to missing.
+ * A size with no line, a line with no length, and a line that says "not found" (whatever figures it also gives) all go
+ * to missing.
  */
 export function readSizes(answer: string, asked: readonly string[]): { found: FoundSize[]; missing: string[] } {
   const lines = answer
@@ -202,11 +203,29 @@ export function readSizes(answer: string, asked: readonly string[]): { found: Fo
   const missing: string[] = []
   asked.forEach((size, k) => {
     const at = line.get(k)
-    const fig = at === undefined ? undefined : figureIn(lines[at]!.rest)
+    // a line that says its size was not found gives none, though it may quote another size's figure
+    const fig = at === undefined || /\bnot found\b/i.test(lines[at]!.rest) ? undefined : figureIn(lines[at]!.rest)
     if (fig) found.push({ size, mm: fig.mm, said: fig.said })
     else missing.push(size)
   })
   return { found, missing }
+}
+
+/**
+ * A source page's title as the lookup shows it: a title so short or all capitals that it says little on its own, such
+ * as a site's initials, comes with the page's site ("STR (example.org)").
+ */
+export function sourceTitle(title: string, url: string): string {
+  const t = title.trim()
+  const letters = t.replace(/[^A-Za-z]/g, '')
+  if (t.length >= 8 && !(letters.length > 0 && letters === letters.toUpperCase())) return t
+  let host: string
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return t
+  }
+  return host && !t.toLowerCase().includes(host.toLowerCase()) ? `${t} (${host})` : t
 }
 
 /** The most sizes one lookup asks for: the ones sources commonly publish, so the answer fits its output limit. */
@@ -224,7 +243,7 @@ export const LOOKUP_UNAVAILABLE = 'Web lookup is not available here, so give the
 export function lookupSizesTool(store: LookupStore): PilotTool<never> {
   return defineTool({
     name: 'design.lookup_sizes',
-    version: '1.1.1',
+    version: '1.1.2',
     source: 'web',
     permission: 'read',
     description: LOOKUP_SIZES_DESCRIPTION,
@@ -237,7 +256,7 @@ export function lookupSizesTool(store: LookupStore): PilotTool<never> {
       if (!ctx.web) return { ok: false, summary: LOOKUP_UNAVAILABLE }
       const query = `${i.subject}: ${i.sizes.join('; ')}`
       const res = await ctx.web(query, ctx.signal, 'sizes')
-      const sources = res.citations.filter((c) => !!c.url).map((c) => ({ title: c.title, url: c.url! }))
+      const sources = res.citations.filter((c) => !!c.url).map((c) => ({ title: sourceTitle(c.title, c.url!), url: c.url! }))
       // an answer that ran no search was not read off the web, so its sizes are from memory: none is kept as found
       const searched = res.searched ?? sources.length > 0
       const { found, missing } = searched ? readSizes(res.text, i.sizes) : { found: [], missing: [...i.sizes] }
