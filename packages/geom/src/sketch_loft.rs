@@ -12,6 +12,7 @@ use crate::fm::Fm;
 use crate::mesh::TriMesh;
 use crate::poly2d::{self, Polygon};
 use crate::sketch::{self, Loop};
+use crate::sketch_spline;
 use crate::thicken::{self, Thicken};
 use crate::vec3::{self, Frame, V2, V3};
 use serde::Deserialize;
@@ -26,9 +27,19 @@ pub use pieces::{Curve, Density, Piece};
 pub const MAX_PROFILES: usize = 64;
 /// The most points one profile's ring may have once its arcs are flattened.
 const MAX_RING: usize = 4096;
-/// The most points one smooth loft makes (ring points times rows).
+/// The most points one smooth loft makes (ring points times rows), drawn as fine as it is drawn first.
 const MAX_POINTS: usize = 1_000_000;
-/// The farthest a smooth side strays from its flattened rows, mm: the sketch's own arc tolerance.
+/// The most triangles a mesh loft body is drawn with when drawing it coarser can keep it within them: past it, its rows
+/// and its spline rings are drawn coarser, up to [`MAX_MESH_TOL_MM`]. One still past it then is made as it is.
+pub const MAX_TRIANGLES: usize = 250_000;
+/// How far a mesh loft's rings matched by count stray from the splines they are drawn from, mm: the chord the exact path
+/// draws its bodies at, far below what prints. Rings matched by landmarks, and arcs, circles and ellipses, keep the
+/// sketch's own tolerance.
+pub const MESH_TOL_MM: f64 = 0.01;
+/// The coarsest a mesh loft's spline rings are drawn to keep within [`MAX_TRIANGLES`], its rows as many times coarser.
+pub const MAX_MESH_TOL_MM: f64 = 0.04;
+/// The farthest a smooth side strays from its flattened rows, mm: the sketch's own arc tolerance. A loft's spline rings
+/// matched by count are drawn at [`MESH_TOL_MM`].
 pub const SMOOTH_TOL_MM: f64 = 0.005;
 /// How far a landmark may sit from its profile, mm: twice the arc tolerance, so a point on a flattened arc counts.
 const LANDMARK_TOL_MM: f64 = 0.01;
@@ -91,25 +102,23 @@ pub fn loft(profiles: &[Profile]) -> Result<TriMesh> {
 /// The loft through `profiles` as `opts` asks: smooth sides through the profiles, the last joined back to the first,
 /// or the sides thickened into a shell (which open profiles need).
 pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
-    let LinedUp {
-        sections,
-        wrap,
-        open,
-        size,
-    } = lined_up(profiles, opts)?;
-    let count = sections.len();
-    let (rows, spans) = if opts.smooth {
-        smooth_rows(&sections, wrap)?
-    } else {
-        (
-            sections.iter().map(|s| s.ring.clone()).collect(),
-            (0..count).collect(),
-        )
+    // how many times coarser than first drawn, up to the coarsest
+    let most = MAX_MESH_TOL_MM / MESH_TOL_MM;
+    let mut coarser = 1.0;
+    let surface = loop {
+        match loft_at(profiles, opts, coarser, coarser >= most)? {
+            Made::Body(body) => break body,
+            Made::Over(n) => {
+                // a body's triangles go about as one over its tolerance (its rows and its rings each as one over the
+                // root)
+                #[allow(clippy::cast_precision_loss, reason = "triangle counts are far below 2^52")]
+                let over = n as f64 / MAX_TRIANGLES as f64;
+                coarser = (coarser * over.sqrt()).min(most);
+            }
+        }
     };
-    let caps = (!opts.closed && opts.thicken.is_none()).then(|| (&sections[0], &sections[count - 1]));
-    let surface = build_rows(&rows, &[rows[0].len()], &spans, !open, wrap, caps, size)?;
-    if let Some(t) = &opts.thicken {
-        return thicken::thicken(&surface, t);
+    if opts.thicken.is_some() {
+        return Ok(surface);
     }
     if (opts.smooth || opts.closed) && crate::boolean::Solid::new(&surface).is_ok_and(|s| s.self_intersects())
     {
@@ -119,6 +128,51 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
         ));
     }
     Ok(surface)
+}
+
+/// A loft drawn at one tolerance: its body, or about how many triangles it would have past [`MAX_TRIANGLES`].
+enum Made {
+    Body(TriMesh),
+    Over(usize),
+}
+
+/// The loft's body with its rows and spline rings drawn `coarser` times as coarse as at first, thickened when `opts`
+/// asks. Unless it is the `last` try, one whose rows and rings would make more than [`MAX_TRIANGLES`] is not made.
+fn loft_at(profiles: &[Profile], opts: &Options, coarser: f64, last: bool) -> Result<Made> {
+    let tol = SMOOTH_TOL_MM * coarser;
+    let LinedUp {
+        sections,
+        wrap,
+        open,
+        size,
+    } = lined_up(profiles, opts, coarser)?;
+    let count = sections.len();
+    let n = sections[0].ring.len();
+    // two triangles a ring point a row, twice over for a shell
+    let per_row = 2 * n * if opts.thicken.is_some() { 2 } else { 1 };
+    let rows_made = if opts.smooth {
+        smooth_counts(&sections, wrap, tol)?.iter().sum::<usize>() + usize::from(wrap.is_none())
+    } else {
+        count
+    };
+    let over = rows_made.saturating_mul(per_row);
+    if over > MAX_TRIANGLES && !last {
+        return Ok(Made::Over(over));
+    }
+    let (rows, spans) = if opts.smooth {
+        smooth_rows(&sections, wrap, tol)?
+    } else {
+        (
+            sections.iter().map(|s| s.ring.clone()).collect(),
+            (0..count).collect(),
+        )
+    };
+    let caps = (!opts.closed && opts.thicken.is_none()).then(|| (&sections[0], &sections[count - 1]));
+    let surface = build_rows(&rows, &[rows[0].len()], &spans, !open, wrap, caps, size)?;
+    Ok(Made::Body(match &opts.thicken {
+        Some(t) => thicken::thicken(&surface, t)?,
+        None => surface,
+    }))
 }
 
 /// A loft's rings matched point to point and lined up along it, before its sides are made.
@@ -178,21 +232,28 @@ fn checked(profiles: &[Profile], opts: &Options) -> Result<bool> {
     clippy::too_many_lines,
     reason = "one pass from the profiles to the matched rings, each step named"
 )]
-fn lined_up(profiles: &[Profile], opts: &Options) -> Result<LinedUp> {
+fn lined_up(profiles: &[Profile], opts: &Options, coarser: f64) -> Result<LinedUp> {
     let open = checked(profiles, opts)?;
-    let mut rings = Vec::with_capacity(profiles.len());
-    for (k, p) in profiles.iter().enumerate() {
-        rings.push((frame_of(p)?, ring_of(k, p)?));
-    }
+    // rings matched by landmarks have their points spread anew between the marks, and the new chords cut across a
+    // coarse drawing's corners, so their splines are drawn as finely as the sketch draws them; rings matched by count
+    // keep their own points, drawn at the chord the exact path draws at
+    let (fine, coarse) = (SMOOTH_TOL_MM * coarser, MESH_TOL_MM * coarser);
+    let rings_at = |tol: f64| -> Result<Vec<(Frame, Vec<V2>)>> {
+        profiles
+            .iter()
+            .enumerate()
+            .map(|(k, p)| Ok((frame_of(p)?, ring_within(k, p, tol)?)))
+            .collect()
+    };
     let own = landmarked(profiles)?;
     // curved profiles with no landmarks are matched at the places their pieces meet, as landmarks
     let implied = if own || open {
         None
     } else {
-        piece_marks(profiles, opts)
+        piece_marks(profiles, opts, fine)
     };
     // the rings by landmarks, and whether every one's way came from them
-    let by_marks = |profiles: &[Profile]| -> Result<(Vec<Vec<V2>>, bool)> {
+    let by_marks = |profiles: &[Profile], rings: &[(Frame, Vec<V2>)]| -> Result<(Vec<Vec<V2>>, bool)> {
         // which way each plane faces along the loft, and each profile's middle, from its points as drawn
         let centers: Vec<V3> = rings
             .iter()
@@ -204,29 +265,34 @@ fn lined_up(profiles: &[Profile], opts: &Options) -> Result<LinedUp> {
             .zip(&way)
             .map(|((f, _), a)| toward(f.w, *a))
             .collect();
-        by_landmarks(profiles, &rings, open, &facing, &centers)
+        by_landmarks(profiles, rings, open, &facing, &centers)
     };
-    let by_count = || {
+    let by_count = |rings: Vec<(Frame, Vec<V2>)>| {
         let n = rings.iter().map(|(_, r)| r.len()).max().unwrap_or(0);
-        rings
+        let flats = rings
             .iter()
             .map(|(_, r)| resample(r, n, !open))
-            .collect::<Vec<Vec<V2>>>()
+            .collect::<Vec<Vec<V2>>>();
+        (rings, flats, false, false)
     };
     // implied places that do not take as landmarks leave the rings matched by count, as before
-    let (flats, set, marked) = match (own, implied) {
+    let (rings, flats, set, marked) = match (own, implied) {
         (true, _) => {
-            let (f, set) = by_marks(profiles)?;
-            (f, set, true)
+            let rings = rings_at(fine)?;
+            let (f, set) = by_marks(profiles, &rings)?;
+            (rings, f, set, true)
         }
-        (false, Some((marked, pieces))) => match by_marks(&marked) {
-            Ok((mut f, set)) => {
-                onto_arcs(&mut f, &pieces);
-                (f, set, true)
+        (false, Some((marked, pieces))) => {
+            let rings = rings_at(fine)?;
+            match by_marks(&marked, &rings) {
+                Ok((mut f, set)) => {
+                    onto_arcs(&mut f, &pieces);
+                    (rings, f, set, true)
+                }
+                Err(_) => by_count(rings_at(coarse)?),
             }
-            Err(_) => (by_count(), false, false),
-        },
-        (false, None) => (by_count(), false, false),
+        }
+        (false, None) => by_count(rings_at(coarse)?),
     };
     let mut sections: Vec<Section> = rings
         .iter()
@@ -322,11 +388,12 @@ pub struct Matched {
     pub ring_closed: bool,
 }
 
-/// The rings [`loft_with`] makes its sides from, matched and lined up as it lines them up, refused in its words.
+/// The rings [`loft_with`] makes its sides from, matched and lined up as it lines them up, refused in its words. They
+/// are the first drawing's: a loft too big for [`MAX_TRIANGLES`] is drawn coarser by [`loft_with`], which these are not.
 pub fn matched_rings(profiles: &[Profile], opts: &Options) -> Result<Matched> {
     let LinedUp {
         sections, wrap, open, ..
-    } = lined_up(profiles, opts)?;
+    } = lined_up(profiles, opts, 1.0)?;
     Ok(Matched {
         rings: sections.into_iter().map(|s| s.ring).collect(),
         wrap,
@@ -472,7 +539,7 @@ pub fn rails(profiles: &[Profile], opts: &Options, density: &Density) -> Result<
 /// every profile is straight (count matching keeps their corners), when they match as one piece or cannot be matched
 /// piece to piece, when any profile is a closed spline, or when the places do not take as landmarks; those are matched
 /// by count as before.
-fn piece_marks(profiles: &[Profile], opts: &Options) -> Option<(Vec<Profile>, Vec<Piece>)> {
+fn piece_marks(profiles: &[Profile], opts: &Options, spline_tol: f64) -> Option<(Vec<Profile>, Vec<Piece>)> {
     let curved = profiles
         .iter()
         .any(|p| p.loops.iter().any(|l| !l.construction && !straight(l)));
@@ -498,7 +565,7 @@ fn piece_marks(profiles: &[Profile], opts: &Options) -> Option<(Vec<Profile>, Ve
     // profile's corner lands keeps the points it was flattened to (the points a body drawn from the same circle has)
     let mut marked = Vec::with_capacity(profiles.len());
     for (k, (p, flat)) in profiles.iter().zip(&m.flats).enumerate() {
-        let own = ring_of(k, p).ok()?;
+        let own = ring_within(k, p, spline_tol).ok()?;
         let landmarks = m.pieces.iter().map(|c| snapped(flat[c.first], &own)).collect();
         marked.push(Profile {
             landmarks,
@@ -569,7 +636,7 @@ fn straight(l: &Loop) -> bool {
 fn plain_rails(profiles: &[Profile], opts: &Options) -> Result<Rails> {
     let LinedUp {
         sections, wrap, open, ..
-    } = lined_up(profiles, opts)?;
+    } = lined_up(profiles, opts, 1.0)?;
     let count = sections.len();
     let n = sections[0].ring.len();
     let mut rings = Vec::with_capacity(count);
@@ -1133,18 +1200,29 @@ fn frame_of(p: &Profile) -> Result<Frame> {
     p.frame.unwrap_or_else(|| FaceFrame::bed([0.0, 0.0])).checked()
 }
 
-/// The profile's points in its plane: a closed ring counterclockwise, or an open chain as drawn.
+/// The profile's points in its plane, as the mesh loft draws them: a closed ring counterclockwise, or an open chain
+/// as drawn.
 fn ring_of(k: usize, p: &Profile) -> Result<Vec<V2>> {
+    ring_within(k, p, MESH_TOL_MM)
+}
+
+/// [`ring_of`] with splines drawn within `tol` mm.
+fn ring_within(k: usize, p: &Profile, tol: f64) -> Result<Vec<V2>> {
     let r = if p.open {
-        open_ring(&p.loops, "loft")
+        open_ring_within(&p.loops, "loft", tol)
     } else {
-        one_ring(&p.loops, "loft")
+        one_ring_within(&p.loops, "loft", tol)
     };
     r.map_err(|why| Error::invalid("profiles", format!("profile {}: {why}", k + 1)))
 }
 
 /// The one open chain of a `verb` ("loft", "sweep") profile, from its start to its end, or why there is none.
 pub(crate) fn open_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V2>, String> {
+    open_ring_within(loops, verb, sketch_spline::TOL_MM)
+}
+
+/// [`open_ring`] with splines drawn within `tol` mm.
+fn open_ring_within(loops: &[Loop], verb: &str, tol: f64) -> std::result::Result<Vec<V2>, String> {
     let drawn: Vec<(usize, &Loop)> = loops
         .iter()
         .enumerate()
@@ -1157,7 +1235,7 @@ pub(crate) fn open_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V
             return Err(format!("an open {verb} profile is one chain, not {}", more.len()));
         }
     };
-    let pts = sketch::open_chain(l, lp).map_err(|i| i.message)?.pts;
+    let pts = sketch::open_chain_within(l, lp, tol).map_err(|i| i.message)?.pts;
     let (Some(&first), Some(&last)) = (pts.first(), pts.last()) else {
         return Err(format!("nothing to {verb}"));
     };
@@ -1173,9 +1251,9 @@ pub(crate) fn open_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V
     Ok(pts)
 }
 
-/// The closed regions of a profile's loops, or the first thing wrong with them.
-fn regions(loops: &[Loop]) -> std::result::Result<Vec<Polygon>, String> {
-    let c = sketch::check(loops);
+/// The closed regions of a profile's loops with splines drawn within `tol` mm, or the first thing wrong with them.
+fn regions(loops: &[Loop], tol: f64) -> std::result::Result<Vec<Polygon>, String> {
+    let c = sketch::check_with(loops, tol);
     if let Some(i) = c.issues.into_iter().next() {
         return Err(i.message);
     }
@@ -1184,7 +1262,12 @@ fn regions(loops: &[Loop]) -> std::result::Result<Vec<Polygon>, String> {
 
 /// The one closed ring of a `verb` ("loft", "sweep") profile, counterclockwise in its plane, or why there is none.
 pub(crate) fn one_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V2>, String> {
-    let mut polys = regions(loops)?;
+    one_ring_within(loops, verb, sketch_spline::TOL_MM)
+}
+
+/// [`one_ring`] with splines drawn within `tol` mm.
+fn one_ring_within(loops: &[Loop], verb: &str, tol: f64) -> std::result::Result<Vec<V2>, String> {
+    let mut polys = regions(loops, tol)?;
     let Some(mut poly) = polys.pop() else {
         return Err(format!("nothing to {verb}"));
     };
@@ -1207,7 +1290,7 @@ pub(crate) fn one_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V2
 /// The one region of a `verb` profile: its outer loop counterclockwise in its plane and its holes clockwise, or why
 /// there is none.
 pub(crate) fn one_region(loops: &[Loop], verb: &str) -> std::result::Result<Polygon, String> {
-    let mut polys = regions(loops)?;
+    let mut polys = regions(loops, sketch_spline::TOL_MM)?;
     let Some(mut poly) = polys.pop() else {
         return Err(format!("nothing to {verb}"));
     };
@@ -1420,13 +1503,18 @@ pub(crate) fn bezier_at(b: &[V3; 4], t: f64) -> V3 {
     (0..4).fold([0.0; 3], |s, k| vec3::add(s, vec3::scale(b[k], w[k])))
 }
 
-/// The steps that keep every chord of the span within `SMOOTH_TOL_MM` of it: a polyline strays at most an eighth of
-/// the step squared times the largest second derivative.
+/// The steps that keep every chord of the span within `SMOOTH_TOL_MM` of it.
 pub(crate) fn steps(b: &[V3; 4]) -> f64 {
+    steps_within(b, SMOOTH_TOL_MM)
+}
+
+/// The steps that keep every chord of the span within `tol` mm of it: a polyline strays at most an eighth of the step
+/// squared times the largest second derivative.
+pub(crate) fn steps_within(b: &[V3; 4], tol: f64) -> f64 {
     let dd =
         |i: usize, j: usize, k: usize| vec3::len(vec3::add(vec3::sub(b[i], vec3::scale(b[j], 2.0)), b[k]));
     let most = 6.0 * dd(0, 1, 2).max(dd(1, 2, 3));
-    (most / (8.0 * SMOOTH_TOL_MM)).sqrt().ceil().max(1.0)
+    (most / (8.0 * tol)).sqrt().ceil().max(1.0)
 }
 
 /// The curve each ring point follows over span `s`, from section `s` to the next (on a ring, `wrap`, the last span
@@ -1476,19 +1564,39 @@ fn span_curves(sections: &[Section], wrap: Option<usize>, s: usize) -> Vec<[V3; 
 /// neighbors. A ring (`wrap`, the last ring's start on the first) runs around, its curves as they are: turning about
 /// its middle is its shape, and as few as three profiles of it share a coordinate where its curves must still bow.
 /// Every span is cut into as many rows as its most bent curve needs to stay within the tolerance.
-fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>>, Vec<usize>)> {
+fn smooth_rows(sections: &[Section], wrap: Option<usize>, tol: f64) -> Result<(Vec<Vec<V3>>, Vec<usize>)> {
+    let count = sections.len();
+    let mut rows = Vec::new();
+    let mut of = Vec::new();
+    for (s, m) in smooth_counts(sections, wrap, tol)?.into_iter().enumerate() {
+        let curves = span_curves(sections, wrap, s);
+        rows.push(sections[s].ring.clone());
+        of.push(s);
+        for j in 1..m {
+            #[allow(clippy::cast_precision_loss, reason = "at most MAX_SPAN_ROWS")]
+            let t = j as f64 / m as f64;
+            rows.push(curves.iter().map(|b| bezier_at(b, t)).collect());
+            of.push(s);
+        }
+    }
+    if wrap.is_none() {
+        rows.push(sections[count - 1].ring.clone());
+        of.push(count - 1);
+    }
+    Ok((rows, of))
+}
+
+/// How many rows each span of a smooth loft is cut into, so its most bent curve keeps within `tol` mm; see
+/// [`smooth_rows`].
+fn smooth_counts(sections: &[Section], wrap: Option<usize>, tol: f64) -> Result<Vec<usize>> {
     let count = sections.len();
     let n = sections[0].ring.len();
     let spans = if wrap.is_some() { count } else { count - 1 };
-    let mut rows = Vec::new();
-    let mut of = Vec::new();
-    #[allow(
-        clippy::needless_range_loop,
-        reason = "a ring's spans run around past its last section"
-    )]
+    let mut counts = Vec::with_capacity(spans);
+    let mut rows = usize::from(wrap.is_none());
     for s in 0..spans {
         let curves = span_curves(sections, wrap, s);
-        let most = curves.iter().map(steps).fold(1.0f64, f64::max);
+        let most = curves.iter().map(|b| steps_within(b, tol)).fold(1.0f64, f64::max);
         #[allow(clippy::cast_precision_loss, reason = "a small constant")]
         if most > MAX_SPAN_ROWS as f64 {
             return Err(Error::geometry(
@@ -1506,7 +1614,8 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
             reason = "checked against MAX_SPAN_ROWS"
         )]
         let m = most as usize;
-        if (rows.len() + m + 1).saturating_mul(n) > MAX_POINTS {
+        rows += m;
+        if rows.saturating_mul(n) > MAX_POINTS {
             return Err(Error::invalid(
                 "profiles",
                 format!(
@@ -1514,19 +1623,9 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
                 ),
             ));
         }
-        rows.push(sections[s].ring.clone());
-        of.push(s);
-        for j in 1..m {
-            let t = j as f64 / m as f64;
-            rows.push(curves.iter().map(|b| bezier_at(b, t)).collect());
-            of.push(s);
-        }
+        counts.push(m);
     }
-    if wrap.is_none() {
-        rows.push(sections[count - 1].ring.clone());
-        of.push(count - 1);
-    }
-    Ok((rows, of))
+    Ok(counts)
 }
 
 /// The mesh: one vertex per row point, two triangles per quad between neighboring rows, and with `caps` the first and

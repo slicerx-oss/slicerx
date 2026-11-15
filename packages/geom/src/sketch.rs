@@ -438,19 +438,19 @@ fn point_name(s: Option<usize>, j: usize, n: usize) -> String {
     }
 }
 
-fn too_dense(l: usize, s: Option<usize>, d: sketch_spline::Dense, at: V2) -> Issue {
+fn too_dense(l: usize, s: Option<usize>, d: sketch_spline::Dense, at: V2, tol: f64) -> Issue {
     let name = l + 1;
     let message = match (d, s) {
         (sketch_spline::Dense::Span(k), Some(s)) => format!(
             "Loop {name}: spline segment {} bends too sharply after {} to draw within {} mm; spread its points out.",
             s + 1,
             point_name(Some(s), k, usize::MAX),
-            sketch_spline::TOL_MM
+            tol
         ),
         (sketch_spline::Dense::Span(k), None) => format!(
             "Loop {name}: the spline bends too sharply after its point {} to draw within {} mm; spread its points out.",
             k + 1,
-            sketch_spline::TOL_MM
+            tol
         ),
         (sketch_spline::Dense::Budget, _) => {
             format!("Loop {name} has more than {RING_POINTS} points once its curves are drawn.")
@@ -460,7 +460,7 @@ fn too_dense(l: usize, s: Option<usize>, d: sketch_spline::Dense, at: V2) -> Iss
 }
 
 fn flatten(l: usize, lp: &Loop) -> std::result::Result<Ring, Issue> {
-    flatten_as(l, lp, true)
+    flatten_as(l, lp, true, sketch_spline::TOL_MM)
 }
 
 /// a closed loop's ring of points, as the mesh path draws it
@@ -481,6 +481,11 @@ pub(crate) struct Chain {
 /// start to the last end, which is not joined back to the start. `points` is an open polyline here. A circle and a
 /// closed spline have no ends, so they are refused.
 pub(crate) fn open_chain(l: usize, lp: &Loop) -> std::result::Result<Chain, Issue> {
+    open_chain_within(l, lp, sketch_spline::TOL_MM)
+}
+
+/// [`open_chain`] with its splines drawn within `spline_tol` mm
+pub(crate) fn open_chain_within(l: usize, lp: &Loop, spline_tol: f64) -> std::result::Result<Chain, Issue> {
     if lp.kind.as_deref() == Some("circle") {
         return Err(issue(
             l,
@@ -508,7 +513,7 @@ pub(crate) fn open_chain(l: usize, lp: &Loop) -> std::result::Result<Chain, Issu
             lp.points.first().copied(),
         ));
     }
-    let r = flatten_as(l, lp, false)?;
+    let r = flatten_as(l, lp, false, spline_tol)?;
     let n = r.pts.len();
     if n < 2 {
         return Ok(Chain {
@@ -563,7 +568,8 @@ pub(crate) fn open_chain(l: usize, lp: &Loop) -> std::result::Result<Chain, Issu
 }
 
 #[allow(clippy::too_many_lines, reason = "one arm per segment form")]
-fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Issue> {
+// `spline_tol`: how far a chord may stray from its spline, mm; arcs, circles and ellipses keep the sketch's own
+fn flatten_as(l: usize, lp: &Loop, closed: bool, spline_tol: f64) -> std::result::Result<Ring, Issue> {
     let name = l + 1;
     if lp.kind.as_deref() == Some("circle") {
         let (Some(c), Some(d)) = (lp.center, lp.diameter_mm) else {
@@ -613,8 +619,8 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
             ));
         }
         let pts = spline_points(l, None, &lp.points, true)?;
-        let mut ring =
-            sketch_spline::flatten_all(&pts, true, RING_POINTS).map_err(|d| too_dense(l, None, d, pts[0]))?;
+        let mut ring = sketch_spline::flatten_all_within(&pts, true, RING_POINTS, spline_tol)
+            .map_err(|d| too_dense(l, None, d, pts[0], spline_tol))?;
         ring.rotate_right(1);
         let seg = vec![0; ring.len()];
         return Ok(Ring {
@@ -783,7 +789,13 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
                 };
                 // every span takes a step at least, so too many points is refused before any are copied
                 if sg.points.len() >= RING_POINTS.saturating_sub(pts.len()) {
-                    return Err(too_dense(l, Some(s), sketch_spline::Dense::Budget, pos));
+                    return Err(too_dense(
+                        l,
+                        Some(s),
+                        sketch_spline::Dense::Budget,
+                        pos,
+                        spline_tol,
+                    ));
                 }
                 let mut through = vec![pos];
                 through.extend(&sg.points);
@@ -802,8 +814,8 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
                     ));
                 }
                 let room = RING_POINTS.saturating_sub(pts.len());
-                let flat = sketch_spline::flatten_all(&through, false, room)
-                    .map_err(|d| too_dense(l, Some(s), d, pos))?;
+                let flat = sketch_spline::flatten_all_within(&through, false, room, spline_tol)
+                    .map_err(|d| too_dense(l, Some(s), d, pos, spline_tol))?;
                 if let Some(b) = sketch_spline::spans(&through, false).last() {
                     dir = sketch_spline::end_dir(b);
                 }
@@ -824,7 +836,13 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
             }
         };
         if pts.len() + new.len() > RING_POINTS {
-            return Err(too_dense(l, Some(s), sketch_spline::Dense::Budget, pos));
+            return Err(too_dense(
+                l,
+                Some(s),
+                sketch_spline::Dense::Budget,
+                pos,
+                spline_tol,
+            ));
         }
         for p in new {
             pts.push(p);
@@ -954,14 +972,14 @@ fn no_profile(loops: &[Loop]) -> Option<Issue> {
 }
 
 // each loop drawn, stopping once the sketch passes its point budget
-fn rings_of(loops: &[Loop], issues: &mut Vec<Issue>) -> Vec<(usize, Ring)> {
+fn rings_of(loops: &[Loop], issues: &mut Vec<Issue>, spline_tol: f64) -> Vec<(usize, Ring)> {
     let mut rings: Vec<(usize, Ring)> = Vec::new();
     let mut total = 0;
     for (l, lp) in loops.iter().enumerate() {
         if lp.construction {
             continue;
         }
-        let r = flatten(l, lp);
+        let r = flatten_as(l, lp, true, spline_tol);
         // only splines can multiply their points, so plain rings stay within what the tools accept
         if let (Ok(r), true) = (&r, has_spline(lp)) {
             total += r.pts.len();
@@ -995,8 +1013,14 @@ fn rings_of(loops: &[Loop], issues: &mut Vec<Issue>) -> Vec<(usize, Ring)> {
 }
 
 pub fn check(loops: &[Loop]) -> SketchCheck {
+    check_with(loops, sketch_spline::TOL_MM)
+}
+
+/// [`check`] with splines drawn within `spline_tol` mm, for a caller that draws them coarser than the sketch does (a
+/// mesh loft draws them at the exact path's chord); arcs, circles and ellipses are drawn as the sketch draws them
+pub fn check_with(loops: &[Loop], spline_tol: f64) -> SketchCheck {
     let mut issues = Vec::new();
-    let rings = rings_of(loops, &mut issues);
+    let rings = rings_of(loops, &mut issues, spline_tol);
     issues.extend(no_profile(loops));
     let size = rings
         .iter()

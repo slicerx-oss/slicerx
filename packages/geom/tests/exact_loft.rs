@@ -813,7 +813,7 @@ fn the_mesh_loft_of_spline_sections_is_the_same_to_the_byte() {
         (
             "circle to a closed spline",
             json!({ "profiles": [level(0.0, &circle), level(20.0, &spline)] }),
-            "aa6f0c1dcb856151e03f0eb3d98d53e5069bae7b96cd40e4d2c8c6d0f6e91f5b",
+            "70d1a73434a804bb04277c3e6bd64092cc09b08d4955df3c5d4d9d35a49f8856",
         ),
     ] {
         let reply = sx_geom::json::call("sketch.loft", &request.to_string()).unwrap();

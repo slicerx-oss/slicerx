@@ -72,13 +72,18 @@ pub fn spans(pts: &[V2], closed: bool) -> Vec<[V2; 4]> {
 }
 
 /// the steps that keep every chord of the span within [`TOL_MM`], or None past [`MAX_STEPS`]
+pub fn steps(b: &[V2; 4]) -> Option<usize> {
+    steps_within(b, TOL_MM)
+}
+
+/// the steps that keep every chord of the span within `tol` mm, or None past [`MAX_STEPS`]
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     reason = "checked against MAX_STEPS first"
 )]
-pub fn steps(b: &[V2; 4]) -> Option<usize> {
+pub fn steps_within(b: &[V2; 4], tol: f64) -> Option<usize> {
     // a polyline's error is at most h^2/8 of the largest second derivative
     let dd = |i: usize, j: usize, k: usize| {
         len([
@@ -87,7 +92,7 @@ pub fn steps(b: &[V2; 4]) -> Option<usize> {
         ])
     };
     let m = 6.0 * dd(0, 1, 2).max(dd(1, 2, 3));
-    let n = (m / (8.0 * TOL_MM)).sqrt().ceil();
+    let n = (m / (8.0 * tol)).sqrt().ceil();
     (n.is_finite() && n <= MAX_STEPS as f64).then(|| (n as usize).max(1))
 }
 
@@ -102,13 +107,18 @@ pub enum Dense {
 
 /// the points after the first along the spline through `pts`, at most `budget` of them
 pub fn flatten_all(pts: &[V2], closed: bool, budget: usize) -> Result<Vec<V2>, Dense> {
+    flatten_all_within(pts, closed, budget, TOL_MM)
+}
+
+/// [`flatten_all`] with every chord within `tol` mm
+pub fn flatten_all_within(pts: &[V2], closed: bool, budget: usize, tol: f64) -> Result<Vec<V2>, Dense> {
     // each span takes a step at least
     if pts.len().saturating_sub(usize::from(!closed)) > budget {
         return Err(Dense::Budget);
     }
     let mut out = Vec::new();
     for (k, b) in spans(pts, closed).iter().enumerate() {
-        let n = steps(b).ok_or(Dense::Span(k))?;
+        let n = steps_within(b, tol).ok_or(Dense::Span(k))?;
         if out.len() + n > budget {
             return Err(Dense::Budget);
         }
