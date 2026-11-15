@@ -8,6 +8,7 @@ use sx_brep::Tessellation;
 use sx_geom::fm::Fm;
 use sx_geom::mesh::TriMesh;
 use sx_geom::sketch_loft::{self, Density, Options, Profile, exact};
+use sx_geom::sketch_spline;
 use sx_geom::vec3::{self, V3};
 
 /// Whether a volume the kernel computed is `want` to a millionth of it. The kernel integrates a solid's volume
@@ -247,7 +248,7 @@ pub fn rounded(width: f64, height: f64, radius: f64) -> Value {
 
 /// Points along a profile's true curves where it lies, `count` to a piece: each line, each arc as the circle through
 /// its start, its point and its end taken the way through its point (or, given by its radius, the short way round to
-/// its left), and a whole circle.
+/// its left), each spline span, and a whole circle.
 #[allow(clippy::cast_precision_loss, reason = "a point count")]
 pub fn true_points(profile: &Value, count: usize) -> Vec<V3> {
     let v3 = |x: &Value| -> V3 { [0, 1, 2].map(|k| x[k].as_f64().unwrap()) };
@@ -274,6 +275,10 @@ pub fn true_points(profile: &Value, count: usize) -> Vec<V3> {
         let radius = drawn["diameterMm"].as_f64().unwrap() / 2.0;
         round(&mut out, v2(&drawn["center"]), radius, 0.0, TAU, false);
         return out;
+    }
+    if drawn["type"] == "spline" {
+        let points: Vec<[f64; 2]> = drawn["points"].as_array().unwrap().iter().map(v2).collect();
+        return spline_points(&points, true, count).into_iter().map(at).collect();
     }
     let line = |out: &mut Vec<V3>, from: [f64; 2], to: [f64; 2]| {
         out.extend((0..=count).map(|step| {
@@ -332,10 +337,24 @@ pub fn true_points(profile: &Value, count: usize) -> Vec<V3> {
                 if ccw { turn } else { turn - TAU },
                 true,
             );
+        } else if segment["type"] == "spline" {
+            let mut through = vec![from];
+            through.extend(segment["points"].as_array().unwrap().iter().map(v2));
+            through.push(to);
+            out.extend(spline_points(&through, false, count).into_iter().map(at));
         } else {
             line(&mut out, from, to);
         }
         from = to;
+    }
+    out
+}
+
+/// Points along the spline through `through`, `count` to a span, from its first point.
+fn spline_points(through: &[[f64; 2]], closed: bool, count: usize) -> Vec<[f64; 2]> {
+    let mut out = vec![through[0]];
+    for b in sketch_spline::spans(through, closed) {
+        out.extend(sketch_spline::flatten(&b, count));
     }
     out
 }

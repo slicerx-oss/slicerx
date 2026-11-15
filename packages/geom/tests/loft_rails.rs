@@ -773,7 +773,7 @@ fn profiles_that_cannot_be_matched_say_why() {
             &json!([at(0.0, &circle([0.0, 0.0], 20.0)), at(20.0, &spline)]),
             &json!({})
         ),
-        "profile 2 is a closed spline, which has no corners to match its pieces between"
+        "a spline is matched only to a spline, and profile 1 has none where profile 2 has one"
     );
     let bow = |z: f64| {
         json!({

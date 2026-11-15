@@ -388,7 +388,7 @@ fn what_cannot_be_made_exact_is_refused_and_nothing_is_kept() {
             &json!([level(0.0, &circle(20.0)), level(20.0, &spline)]),
             &json!({})
         ),
-        "loft: profile 2 is a closed spline, which has no corners to match its pieces between"
+        "loft: a spline is matched only to a spline, and profile 1 has none where profile 2 has one"
     );
     // a rounded rectangle to a smaller one is made exact now, each held to its true arcs
     held_to_its_drawing(
@@ -620,7 +620,7 @@ fn a_loft_that_cannot_be_exact_answers_as_before_and_says_why() {
     let cases = [
         (
             json!({ "profiles": [level(0.0, &circle(20.0)), level(20.0, &spline)] }),
-            "Profile 2 is a closed spline, which has no corners to match its pieces between.",
+            "A spline is matched only to a spline, and profile 1 has none where profile 2 has one.",
         ),
         (
             json!({ "profiles": block(), "operation": "join", "target": { "mesh": target } }),
