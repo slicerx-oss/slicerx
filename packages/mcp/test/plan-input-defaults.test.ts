@@ -59,7 +59,7 @@ describe('design.plan defaults and caps', () => {
   it('design.put_plan takes the same assumptions', async () => {
     const plans = createPlanRegistry()
     const put = designToolset(host, {}, { plans, nozzleMm: () => 0.4 }).find((x) => x.name === 'design.put_plan')!
-    expect(put.version).toBe('1.10.0')
+    expect(put.version).toBe('1.10.1')
     const plan: PartPlan = { planId: 'box-1', ...box, units: 'mm', assumptions: Array.from({ length: 20 }, () => 'd'.repeat(300)), questions: [] }
     await put.run(put.input.parse({ plan }) as never, { context: { machine } } as unknown as ToolContext)
     expect(plans.get('box-1')!.plan.assumptions).toHaveLength(20)

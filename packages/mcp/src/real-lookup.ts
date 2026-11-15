@@ -9,11 +9,15 @@
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 
-/** One size a lookup found: its name as asked, in mm, and what the source said ("227 m"). */
+/**
+ * One size a lookup found: its name as asked, in mm, and what the source said ("227 m"). A height measured from a
+ * reference ("Funnel height above keel") names that reference in `from` (sizeReference).
+ */
 export interface FoundSize {
   size: string
   mm: number
   said: string
+  from?: string
 }
 
 /** A size lookup kept for its chat: what was asked, what was found, what no source gave, the pages its answer cites, and whether a search ran. */
@@ -157,6 +161,44 @@ function headOf(name: string): { head: string; parts: Set<string> } {
   return { head, parts: new Set(own.filter((_, i) => i !== (at >= 0 ? at : own.length - 1))) }
 }
 
+/** Words that say a size measures up: a height, or how high a part's top is. */
+const UPWARD = new Set(['height', 'tall', 'top', 'elevation', 'altitude', 'high'])
+/** Words that lead a reference and say nothing of it. */
+const LEADING = new Set(['the', 'its', 'a', 'an', 'mean'])
+/** Words that end a reference: "above keel to funnel top" measures from the keel. */
+const ENDS_REFERENCE = new Set(['to', 'at', 'of', 'in', 'for', 'with', 'and'])
+
+/** A reference's words as one name: no leading article, and "level" dropped after any word but sea ("ground level" is ground). */
+function referenceWords(words: readonly string[]): string | undefined {
+  const end = words.findIndex((w) => ENDS_REFERENCE.has(w))
+  let ref = (end < 0 ? words : words.slice(0, end)).slice()
+  while (ref.length && LEADING.has(ref[0]!)) ref = ref.slice(1)
+  if (ref.length > 1 && ref.at(-1) === 'level' && ref.at(-2) !== 'sea') ref = ref.slice(0, -1)
+  return ref.length && ref.length <= 4 ? ref.join(' ') : undefined
+}
+
+/**
+ * What a size's name measures from, when it measures a height from a reference rather than a part's own size: "Funnel
+ * height above keel" and "Height keel to funnel top" measure from the keel, "Spire height from the ground" and "Mast
+ * height above ground level" from the ground, "Tower height above sea level" from sea level. Read as the words after
+ * above, over or from, or else the words before to ("<reference> to <part> top"), in lower case. Only a name that
+ * measures up (a height, a top, an elevation) has one, so "Length bow to stern" has none. Undefined for a part's own
+ * size ("Funnel height"). design.lookup_sizes tags each found size with it, and design.plan reads a real size by it
+ * (plan-detail.ts), so both read a name the same way.
+ */
+export function sizeReference(name: string): string | undefined {
+  const words = plain(name.replace(/[()]/g, ' ')).split(' ').filter(Boolean)
+  if (!words.some((w) => UPWARD.has(w))) return undefined
+  const after = words.findIndex((w) => w === 'above' || w === 'over' || w === 'from')
+  if (after >= 0) return referenceWords(words.slice(after + 1))
+  const to = words.indexOf('to')
+  if (to <= 0) return undefined
+  // the reference is the words between the size's noun and to: "Hull height keel to boat deck"
+  const before = words.slice(0, to)
+  const noun = before.map((w) => UPWARD.has(w)).lastIndexOf(true)
+  return referenceWords(before.slice(noun + 1))
+}
+
 /** Two names for the same size: the same head noun, and the part words of one all in the other's. */
 function sameHead(a: string, b: string): boolean {
   const [x, y] = [headOf(a), headOf(b)]
@@ -171,7 +213,7 @@ function sameHead(a: string, b: string): boolean {
  * for "Tower height"); a line that could be two sizes' goes to neither. When no line names a size asked (each labeled
  * "size", or no name at all) and there are no more lines than sizes, they are read one per size in the order asked.
  * A size with no line, a line with no length, and a line that says "not found" (whatever figures it also gives) all go
- * to missing.
+ * to missing. A found size measured from a reference names it in `from` (sizeReference).
  */
 export function readSizes(answer: string, asked: readonly string[]): { found: FoundSize[]; missing: string[] } {
   const lines = answer
@@ -205,7 +247,8 @@ export function readSizes(answer: string, asked: readonly string[]): { found: Fo
     const at = line.get(k)
     // a line that says its size was not found gives none, though it may quote another size's figure
     const fig = at === undefined || /\bnot found\b/i.test(lines[at]!.rest) ? undefined : figureIn(lines[at]!.rest)
-    if (fig) found.push({ size, mm: fig.mm, said: fig.said })
+    const from = sizeReference(size)
+    if (fig) found.push({ size, mm: fig.mm, said: fig.said, ...(from ? { from } : {}) })
     else missing.push(size)
   })
   return { found, missing }
@@ -243,7 +286,7 @@ export const LOOKUP_UNAVAILABLE = 'Web lookup is not available here, so give the
 export function lookupSizesTool(store: LookupStore): PilotTool<never> {
   return defineTool({
     name: 'design.lookup_sizes',
-    version: '1.1.2',
+    version: '1.2.0',
     source: 'web',
     permission: 'read',
     description: LOOKUP_SIZES_DESCRIPTION,

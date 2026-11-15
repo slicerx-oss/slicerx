@@ -1054,7 +1054,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.10.0',
+    version: '1.10.1',
     source: 'command',
     permission: 'read',
     description:
