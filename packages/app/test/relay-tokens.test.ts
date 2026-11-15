@@ -2,7 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The app entries' two relay token calls wait in relay-tokens.ts until remote.ts loads, so the phone code stays out of
 // the startup code. The calls that came first are applied when it arrives, and later calls go straight in.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// The relay token mint loads @slicerx/pair the first time it runs. That first load in a test run can take most of the
+// 1 s the last case waits for the token call on a loaded machine, so it is loaded before the tests. Its loads after
+// each module reset are quick.
+beforeAll(async () => {
+  await import('@slicerx/pair')
+})
 
 beforeEach(() => vi.resetModules())
 
