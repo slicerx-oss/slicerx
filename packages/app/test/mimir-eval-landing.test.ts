@@ -29,7 +29,7 @@ type Call = { name: string; args: Record<string, unknown> }
  * A desk cable organizer built the way a user builds it: a top plate extruded around the origin, then a hook below
  * and in front of it, five slots cut in the top plate, and the list of designs, all in the frame the top plate was built
  * in. The extrude names the design by its name, which both hosts take, so the top plate is the first body: built off the
- * bed, it lands on it. The hook reaches below the bed, so that edit lands the part again, as a whole.
+ * bed, it lands on it. The hook reaches 25 mm below the bed, so that edit lifts the part onto it, as a whole.
  */
 const CABLE_ORGANIZER: Call[] = [
   { name: 'design.new', args: { name: 'Desk cable organizer' } },
@@ -206,9 +206,10 @@ describe('the creative eval lands a body as the app does', () => {
     const said = app.replies.map((r) => JSON.stringify(r))
     expect(said[1]).toMatch(/"ok":true.*moved to the plate/)
     expect(said.filter((s) => /moved to the plate/.test(s))).toHaveLength(1)
-    // the hook past the front edge moved the part again before its slots were cut, and the reads after it say nothing
-    expect(said[2]).toMatch(/did not fit on the bed where it stood, so it moved by/)
-    expect(said.filter((s) => /moved by/.test(s))).toHaveLength(1)
+    // the hook under the bed lifted the part onto it before its slots were cut, and the reads after it say nothing
+    expect(said[2]).toMatch(/Desk cable organizer was under the bed, so it was lifted 25 mm onto it as a whole/)
+    expect(said.filter((s) => /was lifted/.test(s))).toHaveLength(1)
+    expect(said.filter((s) => /moved by/.test(s))).toHaveLength(0)
     expect(e.transform).toEqual(a.transform)
     expect(body(e)).toEqual(body(a))
     expect(e.history.steps.map((s) => s.params.op)).toEqual(a.history.steps.map((s) => s.params.op))

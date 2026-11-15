@@ -31,7 +31,7 @@ import type { SyncChange, Tombstone } from '../presets/sync'
 import type { LayerMark } from '../plate/layer-marks'
 import type { SliceStamp } from '../plate/resume-tops'
 import type { Dimension } from '../geom/cad'
-import type { History, Timeline } from '@slicerx/cad-history'
+import type { History, Placed, Timeline } from '@slicerx/cad-history'
 import type { Spool } from '../inventory/spools'
 import type { QueueItem } from '../queue/queue'
 import type { SendOptionId } from '../send/options'
@@ -122,7 +122,7 @@ export interface PlateEntry {
    * and where it was built with the landing moves it had then: undoing that step through the design tools moves each
    * back that still stands where it went, and this design waits where it was built, so a redo lands it again. Not saved.
    */
-  roomMoves?: { step: string; moves: { id: string; from: number[]; to: number[] }[]; built: number[]; placed?: [number, number] }
+  roomMoves?: { step: string; moves: { id: string; from: number[]; to: number[] }[]; built: number[]; placed?: Placed }
 }
 
 /** A history step open for editing: the object shows the result before it while its tool panel is open. */

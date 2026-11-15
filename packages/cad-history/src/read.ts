@@ -4,7 +4,7 @@
 // file.ts. Untrusted: a bad step or mesh drops mesh history; required exact history refuses the project.
 import { productName } from '@slicerx/contracts/brand'
 import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
-import { pinnedOlder, type PlaceOf } from './design-frame'
+import { pinnedOlder, placedAs, type PlaceOf } from './design-frame'
 import { readTilt } from './tilt'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC, SKETCH_ANCHORS } from './file'
 import { MAX_STEPS_REPEATED, stepPatternProblem, type StepPattern } from './pattern'
@@ -306,10 +306,14 @@ function usesOf(v: unknown): Pick<Step, 'uses'> {
   return ids.length ? { uses: ids } : {}
 }
 
-/** A body's landing moves (History.placed): two finite numbers within a bed's reach, else none. */
+/**
+ * A body's landing moves (History.placed): X, Y and the lift in Z, finite and within a bed's reach, else none. A file
+ * written before lifts holds two numbers, which read as no lift.
+ */
 function placedOf(v: unknown): Pick<History, 'placed'> {
-  if (!Array.isArray(v) || v.length !== 2 || !v.every((x) => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= 100_000)) return {}
-  return v[0] === 0 && v[1] === 0 ? {} : { placed: [v[0] as number, v[1] as number] }
+  if (!Array.isArray(v) || (v.length !== 2 && v.length !== 3) || !v.every((x) => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= 100_000)) return {}
+  const placed = placedAs(v[0] as number, v[1] as number, (v[2] as number | undefined) ?? 0)
+  return placed ? { placed } : {}
 }
 
 const MAX_ITEMS = 4000

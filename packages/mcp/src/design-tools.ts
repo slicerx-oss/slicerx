@@ -302,15 +302,22 @@ export function designSummary(d: Design): Record<string, unknown> {
 
 /** What a client hears when the first body landed on the bed, or an edit moved the part, or either could not. */
 export function landedNote(l: NonNullable<Design['landed']>, name = 'The part'): string {
-  if (l.edit) {
-    if (!('offBed' in l)) return `${name} did not fit on the bed where it stood, so it moved by (${l.dxMm}, ${l.dyMm}) mm as a whole; its coordinates stay the design's own.`
+  if ('offBed' in l) {
+    if (!l.edit) return 'The part does not fit on the bed anywhere, so it stays where it was built, off the bed.'
     if (l.parked) return `${name} is off the bed, so it stays where it is. Move it onto the bed to print it.`
     if (l.locked) return `${name} does not fit on the bed where it stands, and it is locked, so it stays. Unlock it or undo the step.`
     return `${name} does not fit on the bed. Make it smaller or undo the step.`
   }
-  if ('offBed' in l) return 'The part does not fit on the bed anywhere, so it stays where it was built, off the bed.'
+  // a part under the bed was lifted onto it: only that, or as well as moving over
+  const onlyLifted = !!l.dzMm && !l.dxMm && !l.dyMm
+  const lift = l.dzMm ? ` and was lifted ${l.dzMm} mm` : ''
+  if (l.edit) {
+    const went = onlyLifted ? `${name} was under the bed, so it was lifted ${l.dzMm} mm onto it` : `${name} did not fit on the bed where it stood, so it moved by (${l.dxMm}, ${l.dyMm}) mm${lift}`
+    return `${went} as a whole; its coordinates stay the design's own.`
+  }
   const room = l.room?.length ? ` ${l.room.map((r) => `${r.name} moved by (${r.dxMm}, ${r.dyMm}) mm`).join(', ')} to make room; each keeps its own coordinates.` : ''
-  return `The part was off the bed, so it moved to the plate by (${l.dxMm}, ${l.dyMm}) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.${room}`
+  const went = onlyLifted ? `The part was under the bed, so it was lifted ${l.dzMm} mm onto it` : `The part was off the bed, so it moved to the plate by (${l.dxMm}, ${l.dyMm}) mm${lift}`
+  return `${went} as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.${room}`
 }
 
 /**
@@ -536,7 +543,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const create = defineTool({
     name: 'design.new',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -563,7 +570,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const open = defineTool({
     name: 'design.open',
-    version: '1.3.2',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description:
@@ -589,7 +596,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const list = defineTool({
     name: 'design.list',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description: 'The designs open on this server, with their parts, sizes and step counts.',
@@ -603,7 +610,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   const STEPS_TEXT = 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.'
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'read',
     // a local model gets the steps without the loft stations' words, which only the cloud follow-up guidance uses
@@ -636,7 +643,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.8.3',
+    version: '1.9.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -743,7 +750,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const undo = defineTool({
     name: 'design.undo',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description: 'Remove the last step of a design and replay it, back to how it was before that step.',
@@ -761,7 +768,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const redo = defineTool({
     name: 'design.redo',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description: 'Put back the step slicerx_design_undo last removed. A new step clears what can be redone.',
@@ -779,7 +786,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const partFilament = defineTool({
     name: 'design.part_filament',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description: 'Set which filament an existing part prints with, as a step that replays, saves and undoes. part from 0; slot from 1.',
@@ -800,7 +807,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const renamePart = defineTool({
     name: 'design.rename_part',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description: 'Rename an existing part, as a step that replays, saves and undoes. part from 0; a name no other part has.',
@@ -850,7 +857,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const save = defineTool({
     name: 'design.save',
-    version: '1.1.1',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: `Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in ${productName()} with every step editable (other slicers open the parts). Also writes the parts as one STL.`,
