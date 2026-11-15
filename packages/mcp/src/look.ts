@@ -220,12 +220,12 @@ export function lookTool(host: DesignHost, filaments?: FilamentList): PilotTool<
   const looked = new Map<string, Drawn>()
   return defineTool({
     name: 'design.look',
-    version: '1.2.0',
+    version: '1.2.1',
     source: 'command',
     permission: 'read',
     title: 'Look at the model',
     description:
-      'Look at a design as the person sees it: a 512 px picture with its edges drawn, from above at an angle, and with side also from its long side. Call it once on a vague follow-up (add bevels, more detail, make it nicer, smooth it, or a part word that names nothing in the plan), to see which parts are plain blocks and which part the person means, before changing anything. Nothing is changed.',
+      'Look at a design as the person sees it: a 512 px picture with its edges drawn, from above at an angle, and with side also from its long side. Call it once on a vague follow-up (add bevels, more detail, make it nicer, smooth it, or a part word that names nothing in the plan), to see which parts are plain blocks and which part the person means, before changing anything. Nothing is changed. On a follow-up the app has already looked at the start of the turn, so do not call it again to see your own change: a second call without compare returns no picture. To see how much a change altered the model, call it once with compare true after the last change.',
     input: z.object({
       design: designArg,
       side: z.boolean().default(false).describe('Also a picture from the long side, when the first does not tell a plain block from a shaped one'),

@@ -6,6 +6,7 @@ import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/con
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '../src/index'
+import { LOOK_AGAIN_NOTE } from '../src/runtime'
 
 function setup(steps: ScriptStep[], shares: number[], pass = true) {
   const log: string[] = []
@@ -112,5 +113,20 @@ describe('a follow-up on a built design', () => {
     expect(log).toEqual(['look d1', 'extrude Spoiler'])
     const last = (client.requests as { messages: { role: string; images?: unknown[] }[] }[]).at(-1)!
     expect(last.messages.flatMap((m) => m.images ?? [])).toHaveLength(1)
+  })
+
+  it('answers a second look after a change with what the first picture shows, and points to one compare after the last change', async () => {
+    const own = { calls: [{ name: 'design.look', args: { design: 'd1' } }] }
+    const { log, say, client } = setup([...built, x('Spoiler'), own, { text: 'Added a spoiler.' }], [9])
+    await say('make a toy car')
+    log.length = 0
+    await say('add a spoiler')
+    // the change ran, and the look after it did not run again
+    expect(log).toEqual(['look d1', 'extrude Spoiler'])
+    const answers = (client.requests as { messages: { role: string; content: unknown }[] }[]).at(-1)!.messages.filter((m) => m.role === 'tool').map((m) => JSON.parse(String(m.content)) as { summary?: string })
+    expect(answers.at(-1)!.summary).toBe(LOOK_AGAIN_NOTE)
+    // never that the model is unchanged, once a step has changed it
+    expect(answers.at(-1)!.summary).not.toContain('has not changed')
+    expect(LOOK_AGAIN_NOTE).toContain('compare true')
   })
 })
