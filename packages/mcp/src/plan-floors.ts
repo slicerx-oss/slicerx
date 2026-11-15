@@ -9,13 +9,13 @@
 // can match; design.put_plan names such sizes and keeps the plan as the client gave it.
 import { customHoleProblem } from '@slicerx/cad-history'
 import { kindOf } from '@slicerx/contracts/size-kind'
-import { gapWay, HEDGE_WORDS, keyWords, minWallFor, printsTogether, saysSeparately, type FitLimits, type PartPlan } from './design-check'
+import { ASSUMPTION_CHARS, ASSUMPTIONS_MAX, gapWay, HEDGE_WORDS, keyWords, minWallFor, printsTogether, saysSeparately, type FitLimits, type PartPlan } from './design-check'
 import { fitLimits, type FitProfile } from './fit-facts'
 
 const MM_PER_IN = 25.4
 /** The longest line a plan's assumptions take (partPlanSchema), and how many it keeps. */
-const LINE_MAX = 200
-const LINES_MAX = 12
+const LINE_MAX = ASSUMPTION_CHARS
+const LINES_MAX = ASSUMPTIONS_MAX
 
 /** The smallest sizes this printer makes, in mm, and the profile they are for. */
 export interface PlanFloors {
@@ -404,7 +404,7 @@ function restated(line: string, u: UnderFloor, units: 'mm' | 'in'): string {
 
 /**
  * The plan with every size under its floor raised to it (a gap to GAP_MARGIN_MM over it), and a line per raised size first among its
- * assumptions, saying from what to what and why. When the lines do not fit beside the plan's own assumptions (12 at
+ * assumptions, saying from what to what and why. When the lines do not fit beside the plan's own assumptions (20 at
  * most), one line names every raised size; with no room at all the card shows the raised sizes alone and the result
  * says why. A plan with nothing under its floors comes back as it is.
  */

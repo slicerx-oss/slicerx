@@ -178,11 +178,11 @@ describe('design.put_plan with amends, for a field an amend does not keep', () =
   const mine = { planId: 'liner-1', ...kept } as unknown as PartPlan
   const moved = { ...mine, ...row((r) => onDeck(spaced(r))) } as PartPlan
 
-  it('is 1.9.1, refuses the moved row naming on, and keeps the plan as it was', async () => {
+  it('is 1.10.0, refuses the moved row naming on, and keeps the plan as it was', async () => {
     const plans = createPlanRegistry()
     const set = designToolset(host, {}, { plans, nozzleMm: () => 0.4 })
     const put = set.find((t) => t.name === 'design.put_plan')!
-    expect(put.version).toBe('1.9.1')
+    expect(put.version).toBe('1.10.0')
     plans.put(structuredClone(mine), 'd1', 'client')
     const run = (input: unknown) => put.run(put.input.parse(input) as never, { context: { machine } } as unknown as ToolContext)
     await expect(run({ plan: moved, amends: 'liner-1', reason })).rejects.toThrow('features: an amend changes sizes only; Funnel array keeps on: "Funnel"')

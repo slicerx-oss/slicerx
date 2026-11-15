@@ -26,8 +26,10 @@ const feature = z
   })
 
 /** The assumptions a plan is given with; the card keeps one more, its own line for pieces that print together (PRINTS_TOGETHER). */
-export const ASSUMPTIONS_MAX = 12
-export const assumptionsInput = z.array(text(200)).max(ASSUMPTIONS_MAX)
+export const ASSUMPTIONS_MAX = 20
+/** The longest assumption line a plan takes. */
+export const ASSUMPTION_CHARS = 300
+export const assumptionsInput = z.array(text(ASSUMPTION_CHARS)).max(ASSUMPTIONS_MAX)
 
 /** The faces of a piece a plan can name as open, as the piece prints: top and bottom along z, front and back along y, left and right along x. */
 export const OPEN_FACES = ['top', 'bottom', 'front', 'back', 'left', 'right'] as const
@@ -91,7 +93,7 @@ export const partPlanSchema = z.object({
   overall: z.object({ x: size, y: size, z: size }).optional(),
   /** Each row is `count` holes of one diameter (default 1), such as four 3.4 mm motor screw holes. */
   holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1'), recess: z.boolean().optional() })).max(60).optional(),
-  assumptions: z.array(text(200)).max(ASSUMPTIONS_MAX + 1),
+  assumptions: z.array(text(ASSUMPTION_CHARS)).max(ASSUMPTIONS_MAX + 1),
   questions: z.array(text(200)).max(6),
   /**
    * Marks a print-in-place part: design.check then measures its pieces and the gaps between them. false says the pieces

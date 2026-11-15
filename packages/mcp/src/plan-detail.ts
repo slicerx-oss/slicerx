@@ -75,7 +75,7 @@ export const planDetailFields = {
     .describe("How much detail: display for a real object named without sizes (the default), basic when the person asks for simple, basic or nothing fancy, fine when they ask for detailed or accurate. A plain functional part (a bracket, a box) is basic"),
   curved: z.array(text(60)).max(8).optional().describe('Display and fine: the features that build a main body whose real thing is curved (a fuselage, a car body, a bottle, a vase)'),
   flat: z.array(text(60)).max(8).optional().describe('Display and fine: the features that build a main body whose real thing is flat-sided (a house, a bookshelf, a box)'),
-  proportions: text(200).optional().describe('Display and fine: where the proportions come from, a lookup or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"'),
+  proportions: text(400).optional().describe('Display and fine: where the proportions come from, a lookup or a stated source, such as "lookup: 4.5 m long, 1.8 m wide, scaled 1:25"'),
   repeats: z.array(text(60)).max(8).optional().describe('Display and fine: the real object\'s repeated details (windows, wheels, slats, vents), each built by a pattern; an empty list when it has none'),
   colors: z
     .record(text(60), text(40))

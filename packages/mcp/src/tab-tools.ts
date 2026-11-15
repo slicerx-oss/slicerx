@@ -48,20 +48,21 @@ export const LocalPlanInputSchema = PlanInputSchema.omit({ curved: true, flat: t
 
 export type PlanInput = z.infer<typeof PlanInputSchema>
 
-/** The fields a first plan must give, which an amend may leave to the approved plan. */
-const FIRST_PLAN_NEEDS = ['part', 'units', 'features', 'assumptions', 'questions'] as const
+/** The fields a first plan must give, which an amend may leave to the approved plan; its assumptions and questions are none when left out. */
+const FIRST_PLAN_NEEDS = ['part', 'units', 'features'] as const
 
 /**
  * design.plan's input: the plan, and for a change to an approved plan, the plan it amends and why (plan-amend.ts). An
  * amend may send only its changes: the part, units, features, assumptions and questions it leaves out are the approved
- * plan's. A first plan still needs them all, refused in the words the schema uses for any field left out.
+ * plan's. A first plan still needs its part, units and features, refused in the words the schema uses for any field
+ * left out; its assumptions and questions left out are none.
  */
 export const PlanToolInputSchema = PlanInputSchema.extend({
   part: PlanInputSchema.shape.part.optional(),
   units: PlanInputSchema.shape.units.optional(),
   features: PlanInputSchema.shape.features.optional(),
-  assumptions: PlanInputSchema.shape.assumptions.optional(),
-  questions: PlanInputSchema.shape.questions.optional(),
+  assumptions: PlanInputSchema.shape.assumptions.optional().describe('What you assumed; none when left out'),
+  questions: PlanInputSchema.shape.questions.optional().describe('What you still need to know; none when left out'),
   amends: z.string().trim().min(1).max(64).optional().describe("Only to change a plan the person approved, once its part is built: that plan's planId. Leave it out of a first plan. With amends, send only what changes: changes and add, with part, units, features, assumptions and questions left out, as the approved plan has them; any other plan field sent is ignored, and the result names it"),
   reason: z.string().max(AMEND_REASON_MAX).optional().describe('Only with amends: why the build changes the approved plan, in a sentence the person reads. A first plan takes none'),
   asked: z.string().trim().min(1).max(AMEND_REASON_MAX).optional().describe("Only with amends, for a change the person asked for in their latest message (a size, a detail added): their words. It goes in with no card, since their message is the go, and may add features; give no reason"),
