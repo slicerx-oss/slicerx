@@ -1883,7 +1883,17 @@ impl SliceSession {
                     slot,
                     plain,
                 };
-                match obj.part_settings.iter().find(|(n, _)| *n == part.name) {
+                // Settings that leave the plate's as they are (an object's own settings that every object shares, which
+                // the plate's config already holds) make no region: the part prints as its object does, and the layers
+                // keep one region instead of one per part and the hairline gaps between them and their object.
+                // Under height ranges or the chain rule a region also changes which settings or part owns the area,
+                // so those keep theirs.
+                let own = obj
+                    .part_settings
+                    .iter()
+                    .find(|(n, _)| *n == part.name)
+                    .filter(|(_, s)| !(ranges.is_empty() && !later_part_owns && changes_nothing(config, s)));
+                match own {
                     Some((_, s)) if s.as_object().is_some_and(|m| !m.is_empty()) => {
                         part_regions.push((verts.clone(), tris.clone(), s.clone(), region(false)));
                         after_own = later_part_owns;
@@ -15864,6 +15874,17 @@ fn object_config(base: &PrintConfig, over: &serde_json::Value) -> Result<PrintCo
         crate::preflight::hold_temperatures(&mut c);
     }
     Ok(c)
+}
+
+/// True when `over` on top of `base` leaves every setting as `base` has it, read as a modifier's settings are read
+/// for the slice: applied, checked and with the temperatures held.
+fn changes_nothing(base: &PrintConfig, over: &serde_json::Value) -> bool {
+    let mut c = base.clone();
+    if c.apply_value(over).is_err() || c.check().is_err() {
+        return false;
+    }
+    crate::preflight::hold_temperatures(&mut c);
+    c.raw == base.raw && settings_tag(&c) == settings_tag(base)
 }
 
 fn resolve_ranges(
