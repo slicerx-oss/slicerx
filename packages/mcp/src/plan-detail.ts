@@ -566,7 +566,8 @@ const HEIGHT = /^(height|tall|depth)$/i
 
 /** The sizes that measure a part across one way: a length, a width, a height, a depth or a thickness; a diameter measures it two ways. */
 const ACROSS = /^(length|long|width|beam|breadth|height|tall|depth|thickness|thick)$/i
-const DIAMETER = /^(diameter|d)$/i
+// a diameter by any name a plan gives one: diameter, d, or one end's (base_d, top_d, outer_diameter)
+const DIAMETER = /^(?:[a-z]+_)?(diameter|dia|d)$/i
 
 /**
  * A feature's bulk: the box of its three largest sizes across (a diameter counts as two, a round part being that size
@@ -590,8 +591,10 @@ function massProblems(plan: DetailPlan, feature: FeatureOf): string[] {
   const bodies = [...(plan.curved ?? []), ...(plan.flat ?? [])].map(feature).filter((f): f is NonNullable<typeof f> => !!f)
   if (!bodies.length) return []
   const largest = (re: RegExp, fs: typeof bodies): number => Math.max(0, ...fs.flatMap((f) => Object.entries(f.sizes).filter(([k]) => re.test(k.trim())).map(([, v]) => v)))
-  // the largest main body that can be sized
-  const body = Math.max(0, ...bodies.map((b) => bulkOf(b.sizes) ?? 0))
+  // the largest main body; when a main body's sizes do not give its bulk, the largest is not known, so no part is held
+  // to it
+  const sized = bodies.map((b) => bulkOf(b.sizes))
+  const body = sized.some((v) => v === undefined) ? 0 : Math.max(0, ...(sized as number[]))
   const out: string[] = []
   for (const f of plan.features) {
     if (bodies.includes(f)) continue

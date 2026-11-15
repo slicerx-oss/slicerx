@@ -202,6 +202,15 @@ describe('detailProblem: the rules are about the object', () => {
     // a block with ten times the body's bulk (93 x 42 x 32) is at the wrong scale
     const block = { ...plan, features: [...plan.features, { name: 'Block', kind: 'extrude', sizes: { length: 186, width: 84, height: 80 } }] }
     expect(detailProblem(block)).toContain('Block has 10 times the bulk of the largest main body')
+    // a tapered body sized by its end diameters and height is read by them: a plinth under it is far less bulk
+    const tower = { ...plan, curved: ['Column'], features: [
+      { name: 'Column', kind: 'loft', sizes: { sections: 7, base_d: 35.3, top_d: 18.5, height: 185 }, kinds: { sections: 'count' as const } },
+      { name: 'Plinth', kind: 'extrude', sizes: { diameter: 37, height: 5 } },
+    ], overall: { x: 49.5, y: 49.5, z: 216 } }
+    expect(detailProblem(tower)).not.toContain('bulk')
+    // a main body whose sizes give no bulk holds no part to it
+    const unread = { ...tower, features: [{ ...tower.features[0]!, sizes: { sections: 7, span: 35, height: 185 } }, tower.features[1]!] }
+    expect(detailProblem(unread)).not.toContain('bulk')
     // a part sized only one way is not compared
     expect(detailProblem({ ...plan, features: [...plan.features, { name: 'Strip', kind: 'extrude', sizes: { length: 400 } }] })).toBeNull()
     expect(detailProblem(withFeature(plan, 'Spoiler', { sizes: { width: 36, height: 40, depth: 6 } }))).toContain("Spoiler is 40 mm tall, more than the whole model's 35 mm height")
