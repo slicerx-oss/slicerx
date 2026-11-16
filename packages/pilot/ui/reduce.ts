@@ -61,8 +61,12 @@ export type Block =
   | { kind: 'diff'; id: string; diff: SettingsDiff }
   | { kind: 'perm'; id: string; permission: PermissionClass; mode: 'allow' | 'off'; message: string }
   | { kind: 'model'; id: string; model: string; label: string; reason: 'request' | 'tool' | 'struggle' }
-  /** `builtin`: the runtime's own tool asked, so the host may show its own card in place of the approval card. */
-  | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean; source?: ToolSource; builtin?: boolean }
+  /**
+   * `builtin`: the runtime's own tool asked, so the host may show its own card in place of the approval card. `callId`
+   * and `outcome`: the approved call's own row, and how it ended (null while it runs), so a host's card can say the send
+   * is going and when it went.
+   */
+  | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean; source?: ToolSource; builtin?: boolean; callId?: string; outcome?: ApprovalOutcome | null }
   | { kind: 'lookup'; id: string; lookup: PilotLookup }
   /** `picked` is the empty id for a question turned down (`dismissed`); `said` is what the person wrote instead. */
   | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean; dismissed?: boolean; said?: string; auto?: boolean }
@@ -78,6 +82,12 @@ export type Block =
    * how its print ended once a later print is the chat's.
    */
   | { kind: 'run'; id: string; stage: 'slice' | 'progress'; run?: PrintRun }
+
+/** How an approved call ended: `summary` is its row's own line. */
+export interface ApprovalOutcome {
+  ok: boolean
+  summary: string
+}
 
 export type BlockKind = Block['kind']
 
@@ -282,6 +292,10 @@ function finishRun(s: Draft, stopReason: Extract<PilotEvent, { type: 'done' }>['
     if (b.kind === 'approval' && b.resolution === null) {
       return { ...b, resolution: { decision: { kind: 'deny', reason: 'canceled' }, by: 'user', at: now } }
     }
+    // an approved call the run stopped in the middle of
+    if (b.kind === 'approval' && b.callId !== undefined && b.outcome === null) {
+      return { ...b, outcome: { ok: false, summary: stopReason === 'canceled' ? 'Canceled' : 'Stopped' } }
+    }
     // A sheet nobody answered before the run ended can no longer be: it closes as not confirmed.
     if (b.kind === 'sheet' && b.answer === null) {
       return { ...b, answer: { confirmed: false, values: Object.fromEntries(b.sheet.dims.map((d) => [d.key, d.value])), changed: [] } }
@@ -421,6 +435,9 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       // a plugin tool is named `<plugin>.<tool>`
       const plugin = event.source === 'plugin' ? event.tool.split('.')[0] : undefined
       if (plugin && !lastTurn(s)?.used?.includes(plugin)) s = withLastTurn(s, (t) => ({ ...t, used: [...(t.used ?? []), plugin] }))
+      // the call a card was just approved for: the latest approved card of the same tool that has no call yet
+      const asked = lastTurn(s)?.blocks.findLast((x) => x.kind === 'approval' && x.request.tool === event.tool && x.resolution?.decision.kind === 'approve' && x.callId === undefined)
+      if (asked) s = mapBlocks(s, (x) => (x.id === asked.id && x.kind === 'approval' ? { ...x, callId: event.callId, outcome: null } : x))
       const b = lastBlock(s)
       // Consecutive calls share one group; anything in between starts a new one.
       if (b && b.kind === 'tools') return replaceLastBlock(s, { ...b, rows: [...b.rows, row] })
@@ -429,6 +446,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
     case 'tool_progress':
       return mapRow(s, event.callId, (r) => ({ ...r, progress: [...r.progress, { line: event.line, fraction: event.fraction }] }))
     case 'tool_result':
+      s = mapBlocks(s, (b) => (b.kind === 'approval' && b.callId === event.callId ? { ...b, outcome: { ok: event.ok, summary: event.summary } } : b))
       return mapRow(s, event.callId, (r) => ({
         ...r,
         state: event.ok ? 'ok' : 'bad',

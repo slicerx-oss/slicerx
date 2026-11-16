@@ -142,8 +142,15 @@ export interface ApprovalToken {
   expiresAt: string
 }
 
-/** `bedClear` is true only when the person answered "the build plate is clear" on the card that asked it. */
-export type ApprovalDecision = { kind: 'approve'; bedClear?: boolean } | { kind: 'deny'; reason?: string }
+/**
+ * `bedClear` is true only when the person answered "the build plate is clear" on the card that asked it. `slotMap` is
+ * the spool the person picked on the send card, as printer.queue takes it (0 based filament index to slot id): the
+ * runtime then asks the tool for the same send from that slot and grants that request instead (`pickedRequestId`).
+ */
+export type ApprovalDecision = { kind: 'approve'; bedClear?: boolean; slotMap?: Record<string, string> } | { kind: 'deny'; reason?: string }
+
+/** The id of the request a send card's spool pick replaces its own with, so the card and the runtime agree on it. */
+export const pickedRequestId = (requestId: string): string => `${requestId}_pick`
 
 export type ApprovalFailure = 'unknown' | 'expired' | 'used' | 'mismatch' | 'bad_signature' | 'denied'
 

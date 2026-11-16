@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { PERMISSION_LABELS, startsPrint, type ApprovalRequest, type PrintRun } from '@slicerx/contracts'
 import { Button, Icon } from '@slicerx/ui'
 import { fmtClock, fmtCountdown } from './format'
-import type { ApprovalResolution } from './reduce'
+import type { ApprovalOutcome, ApprovalResolution } from './reduce'
 import { ASSISTANT_NAME } from '../src/name'
 
 export interface ApprovalCardProps {
@@ -12,12 +12,20 @@ export interface ApprovalCardProps {
   resolution: ApprovalResolution | null
   /** False for cards shown from a saved log: they cannot be answered. */
   actionable: boolean
-  /** `bedClear` is true only when the person ticked the bed question, which a card that starts a print asks. */
-  onApprove: (request: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
+  /**
+   * `bedClear` is true only when the person ticked the bed question, which a card that starts a print asks. `slotMap`:
+   * the spool the person picked on a host's send card, when it differs from the request's own.
+   */
+  onApprove: (request: ApprovalRequest, opts: { bedClear: boolean; slotMap?: Record<string, string> }) => Promise<void>
   onCancel: (request: ApprovalRequest) => Promise<void>
   onEditPlan?: ((request: ApprovalRequest) => void) | undefined
   /** The chat's print run, for a host's own card for a runtime tool. It shows the run; it never permits anything. */
   run?: PrintRun | null | undefined
+  /**
+   * For a host's own card: how the approved call went. Undefined before it starts, null while it runs, then its row's
+   * ok and line.
+   */
+  outcome?: ApprovalOutcome | null | undefined
 }
 
 function ruleLabel(request: ApprovalRequest): string {
