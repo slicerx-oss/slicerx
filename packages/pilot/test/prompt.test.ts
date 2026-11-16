@@ -371,7 +371,7 @@ describe('the line for rounded corners and ends', () => {
 
 describe('the line for levels with a lip', () => {
   it('is the drafted sentence, one line in the cloud prompt only, with design.plan, right after the rounded ends line', () => {
-    expect(LEVEL_LIP_LINE).toBe("- Stacked levels each carry a thin roof just wider than their walls, one nozzle width past them: the lip's edge and shadow are what let a viewer read the levels apart.")
+    expect(LEVEL_LIP_LINE).toBe("- In a body built in levels (the stories of a building, the tiers of a stand, a stepped block), planned as levels or by on, each level that another level stands on carries a thin roof of its own, a layer or two thick and one nozzle width past its own walls all round: the roof's edge and shadow let a viewer read the levels apart. A post, leg, pole or handle standing on something is not a level and gets none.")
     for (const scope of ['full', 'cad'] as const) {
       const cloud = systemPrompt(scope, () => true, '', { cloud: true })
       expect(cloud.split(LEVEL_LIP_LINE)).toHaveLength(2)

@@ -60,7 +60,7 @@ describe('a level with a lip', () => {
 describe("the levels' words", () => {
   it('say each level that carries another has a thin roof just past its walls', () => {
     expect(LEVELS_HELP).toBe(
-      'Its levels from the bottom up, each a planned feature; a single block lists only itself. At display and fine, each level that carries another has a thin roof reaching about one nozzle width past its walls, built with the level, so the level above stands on it and its edge shows.',
+      'Its levels from the bottom up, each a planned feature; a single block lists only itself. At display and fine, each level that carries another level has a thin roof of its own, a layer or two thick, reaching about one nozzle width past its own walls all round, built with the level, so its edge shows however far the level above is set in. A post, leg, pole or handle standing on a level is not a level and adds no roof.',
     )
     const body = (flatInput.unwrap().options[0] as unknown as { element: { shape: { levels: { description?: string } } } }).element.shape.levels
     expect(body.description).toBe(LEVELS_HELP)
