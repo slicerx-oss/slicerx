@@ -126,6 +126,8 @@ function targetOk(t: unknown): boolean {
       return vec3(t['point']) && keyOk(t['faceKey']) && angle && (t['mode'] === undefined || t['mode'] === 'smart' || t['mode'] === 'bucket')
     case 'replace':
       return stateOk(t['from'])
+    case 'feature':
+      return typeof t['feature'] === 'string' && t['feature'].trim().length > 0 && t['feature'].length <= 200
     default:
       return false
   }

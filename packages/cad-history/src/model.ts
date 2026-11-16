@@ -23,7 +23,8 @@ export type PaintTexts = Partial<Record<PaintLayer, Record<number, string>>>
  * What a paint step paints, in words a person uses, found again on every replay (sx-geom `paint.select`): the whole
  * part; the faces facing a direction (with a pick among the regions they make); a height band; region growing from a
  * point (smart fill across gentle edges, or a bucket over one state), the point's face kept by its key as push steps
- * keep theirs; or one state for another. World values at the step's transform.
+ * keep theirs; one state for another; or the faces the steps of one plan feature made, by its name (provenance.ts
+ * featureSteps, found from the face keys as replay goes). World values at the step's transform.
  */
 export type PaintTarget =
   | { kind: 'part' }
@@ -31,6 +32,7 @@ export type PaintTarget =
   | { kind: 'height'; below?: number; above?: number; from?: number; to?: number }
   | { kind: 'seed'; point: Vec3; faceKey?: number; angleDeg?: number; mode?: 'smart' | 'bucket' }
   | { kind: 'replace'; from: number }
+  | { kind: 'feature'; feature: string }
 
 export interface HistoryMesh {
   name: string
@@ -1283,7 +1285,9 @@ function paintName(p: Extract<StepParams, { op: 'paint' }>): string {
             ? t.mode === 'bucket'
               ? 'a filled area'
               : 'from a point'
-            : 'state ' + String(t.from)
+            : t.kind === 'feature'
+              ? t.feature
+              : 'state ' + String(t.from)
   const at = where ? ` ${where}` : ''
   if (p.layer === undefined || p.layer === 'color') return state === undefined ? `Paint${at}` : state > 0 ? `Paint${at} filament ${state}` : where ? `Clear paint, ${where}` : 'Clear paint'
   const what = p.layer === 'seam' ? 'Seam' : p.layer === 'support' ? (state === 2 ? 'Support blocker' : 'Support') : 'Fuzzy skin'

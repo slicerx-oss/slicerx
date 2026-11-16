@@ -95,6 +95,14 @@ A fillet or chamfer edge keeps the keys of the two faces either side (`keys`, th
 
 A mesh push preserves the source keys of the moved cap and extensions of adjacent planar walls. A moved base face therefore still reports the base as its origin, while the push appears among the steps that used it. Suppressing the push can therefore leave a later keyed fillet valid on the original edge, provided both faces still resolve uniquely. Connectivity requires shared edges: regions touching only at a vertex remain separate.
 
+### Paint by feature
+
+A paint step's target can be a plan feature by name (`{ kind: "feature", feature }`). On replay it paints, whole, every face whose key the feature's steps made (`madeBy`, read from the parts after each step before the paint), so it lasts as paint by face on an exact part. The feature's steps (`featureSteps` in provenance.ts) are the steps tagged with it, the steps a pattern tagged with it repeats (a row counts its steps as its first copy), and every pattern that repeats one of those, tagged or not. A pattern's copies are faces the pattern step makes, so a pattern of the steps of two features counts for both.
+
+A face of the feature that a later step cuts through keeps its key, so it stays the feature's. The walls and floor a cut makes are the cut's own faces, so they belong to the cutting feature: a row of holes paints by the holes' feature, and the body around them by its own. A pushed face keeps the key of the step that made it, so a push does not take it over.
+
+Two gaps leave faces to no feature. On exact solids a union clears the key of a face the joined shape sits flat on, and of faces a mirror image lands flush with (above). On the mesh, a body that a new extrude, revolve, loft or sweep makes keeps none of the keys the engine gave it (the replay bakes only its triangles into the part's frame), so the next keyed step gives every face of the body its own keys and all of them read as made by that step. A design started from a model has base keys and is not affected. Carrying the faces across needs the face table moved into the part's frame, as `sx-geom` faces.rs `Faces::transformed` does, and changes the engine requests of every later step, so the recorded engine replies are recorded again with it.
+
 ## Timeline
 
 - One design timeline for the plate (`design.ts`), the way Fusion keeps one: sketches and features in the order they were made, across every body, and a marker that rolls it back (items before it are live).

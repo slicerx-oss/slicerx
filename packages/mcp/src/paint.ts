@@ -12,7 +12,7 @@ import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import { designArg, designSummary, faceAt, featureArg, withFeature, type Design } from './design-tools'
 import { ToolInputError } from './errors'
-import { bandDepth, layerArg, paintState, targetArg, storedTarget } from './paint-target'
+import { bandDepth, layerArg, paintState, plannedFeature, targetArg, storedTarget } from './paint-target'
 import { RefusedPreviews } from './paint-refused'
 
 export { BAND_EDGE_MM, bandDepth } from './paint-target'
@@ -155,7 +155,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
   })
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'read',
     description:
@@ -184,6 +184,11 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
     step({ op: 'paint', layer: i.layer, state: i.state, target })
     let took = ''
     let part = i.part ?? -1
+    // a feature by its name as the design's steps give it; one the design has none of is refused with the names it has
+    if (target.kind === 'feature') {
+      target = { kind: 'feature', feature: plannedFeature(d.history.steps, target.feature) }
+      step({ op: 'paint', layer: i.layer, state: i.state, target })
+    }
     if (target.kind === 'seed') {
       // The seed's face, kept by its key as push steps keep theirs, and the part it is on.
       const at = faceAt(d, target.point)
@@ -216,8 +221,9 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
     const expected: Record<number, Texts> = {}
     const rows: { part: number; changedTriangles: number; selectedAreaMm2: number; regionCount: number; regions: Region[]; faces?: PaintedFace[] }[] = []
     // a height band or a direction on an exact design: the step's own replay, whose kernel splits the faces the band's
-    // edges cross, and which paints a direction on whole faces
-    const after = (target.kind === 'height' || target.kind === 'direction') && d.history.exact && designs.trial ? await designs.trial(d, part, params) : undefined
+    // edges cross, and which paints a direction on whole faces; a feature on any design, whose faces only the replay
+    // knows by the steps that made them
+    const after = designs.trial && (target.kind === 'feature' || ((target.kind === 'height' || target.kind === 'direction') && d.history.exact)) ? await designs.trial(d, part, params) : undefined
     if (after) {
       const band = target.kind === 'height' ? bandOf(target) : undefined
       for (const k of parts) {
@@ -225,7 +231,8 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
         if (!p) continue
         const texts = p.paint?.[i.layer] ?? {}
         expected[k] = texts
-        // a band's faces by height; a direction's, the faces of the triangles the step painted anew (it splits none)
+        // a band's faces by height; a direction's or a feature's, the faces of the triangles the step painted anew (it
+        // splits none)
         const was = d.parts[k]?.paint?.[i.layer] ?? {}
         const ids = band ? bandFaceIds(p, d.transform, band) : new Set(Array.from(p.faces?.ids ?? []).filter((_, t) => texts[t] !== was[t]))
         const tris = Array.from(p.faces?.ids ?? []).filter((id) => ids.has(id)).length
@@ -236,7 +243,8 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
         if (tris) rows.push({ part: k, changedTriangles: tris, selectedAreaMm2: area, regionCount: st?.regionCount ?? 0, regions: st?.regions ?? [], faces })
       }
     }
-    for (const k of after ? [] : parts) {
+    // a feature needs the step's replay (every host with an engine has one): with none it paints nothing
+    for (const k of after || target.kind === 'feature' ? [] : parts) {
       const p = d.parts[k]!
       const before = p.paint?.[i.layer]
       const { faceKey: _key, ...asked } = target as PaintTarget & { faceKey?: number }
