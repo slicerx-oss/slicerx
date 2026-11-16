@@ -11,7 +11,7 @@ import type { PrintRunHost, RunLanded, RunTarget } from '@slicerx/pilot'
 import { moveToSpool } from '../../filament/pick'
 import { followPrinterSlot } from '../../filament/slot-rail'
 import { objectSlots } from '../../filament/object-nozzle'
-import { effectiveSlot, mapSlot } from '../../filament/slots'
+import { effectiveSlot, mapSlot, resolveSlots } from '../../filament/slots'
 import { landOnBed, printsOnBed } from '../../plate/arrange'
 import { getArrangeOptions } from '../../plate/edit'
 import { activeMeta } from '../../plate/plates'
@@ -182,6 +182,8 @@ let printersHost: Pick<Host, 'printers'> | null = null
 const TAB_PRINT_RUN: PrintRunHost = {
   fingerprint: (plate) => plateFingerprint(get(), plate),
   setTarget,
+  // each filament as the rail shows it: a hand-set filament, else the spool it follows
+  filaments: () => resolveSlots(get()).map((r) => ({ index: r.index, type: r.type, color: r.color })),
   printers: () => printersHost?.printers,
 }
 

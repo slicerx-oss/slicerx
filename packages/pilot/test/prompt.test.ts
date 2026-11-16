@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { ASSEMBLED_LINE, assembledLine, BUILT_REPLY, CHECK_FOLLOWUP, DETAIL_LINE, DISMISSED_LINE, FAMILY_LINE, FOLLOWUP_LINE, LEVEL_LIP_LINE, LID_IN_PLACE, LID_PUT_ON, local, LOFT_BODY_LINES, MADE_REPLY, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, ROUNDED_ENDS_LINE, SCOPE_LINE, SIZES_ASK, SIZES_REPLY, systemPrompt, VAGUE_LINE, VOICE_HEADER } from '../src/prompt'
+import { ASSEMBLED_LINE, assembledLine, BUILT_REPLY, CHECK_FOLLOWUP, DETAIL_LINE, DISMISSED_LINE, FAMILY_LINE, FOLLOWUP_LINE, LEVEL_LIP_LINE, LID_IN_PLACE, LID_PUT_ON, local, LOFT_BODY_LINES, MADE_REPLY, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RECOLOR_LINE, RESHAPE_LINE, ROUNDED_ENDS_LINE, SCOPE_LINE, SIZES_ASK, SIZES_REPLY, systemPrompt, VAGUE_LINE, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 import { turnSet, turnSetTools } from '../src/turnsets'
@@ -77,6 +77,14 @@ describe('the print run in the full prompt', () => {
     expect(line).toContain('slice again')
     expect(line).toContain('"use 0.2 mm layers"')
     expect(line).toContain('"on the P1S instead"')
+  })
+
+  it('a color with no loaded spool of its material is asked about, never repainted to fit', () => {
+    const line = "- If run.target can't put a color on a loaded spool of its material, never repaint or recolor the part to fit; stop before slicing, say which colors aren't loaded, and ask whether to load them or print those parts in a loaded color the person picks."
+    expect(systemPrompt('full', undefined, '', { cloud: true }).split('\n')).toContain(line)
+    expect(systemPrompt('full', (n) => n !== 'run.target', '', { cloud: true })).not.toContain('repaint or recolor')
+    // a local turn keeps its build budget
+    expect(systemPrompt('full')).not.toContain('repaint or recolor')
   })
 
   it('a request to make a part, without asking to print it, ends with the part', () => {
@@ -244,7 +252,7 @@ describe('the line for parts that move', () => {
   const all = (): boolean => true
   /** The cloud prompt less its cloud-only parts: the line for parts that move, the plan line's pointer to it, the line for a sweep that changes shape and the line for a family. */
   // the line for things made of colored parts names only the tools offered, so it is taken out by its start
-  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${LOFT_BODY_LINES.join('\n')}`, '').replace(`\n${ROUNDED_ENDS_LINE}`, '').replace(`\n${LEVEL_LIP_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(CHECK_FOLLOWUP, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '').replace(BUILT_REPLY, MADE_REPLY)
+  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${LOFT_BODY_LINES.join('\n')}`, '').replace(`\n${ROUNDED_ENDS_LINE}`, '').replace(`\n${LEVEL_LIP_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(`\n${RECOLOR_LINE}`, '').replace(CHECK_FOLLOWUP, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '').replace(BUILT_REPLY, MADE_REPLY)
 
   it("the check line's follow-up sentence is in the cloud prompt only, word for word, after the stop rule", () => {
     const said = "On a follow-up, an item that was already failing before the person's change is no reason to stop or ask: make the change, then say in one line which item was already open."
@@ -468,11 +476,12 @@ describe('the lines a local model gets', () => {
     for (const scope of ['full', 'cad'] as const) {
       const cloud = systemPrompt(scope, () => true, '', { cloud: true }).split('\n')
       const local = systemPrompt(scope, () => true).split('\n')
-      const cloudOnly = new Set([FAMILY_LINE, DETAIL_LINE, ...LOFT_BODY_LINES, ROUNDED_ENDS_LINE, LEVEL_LIP_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, assembledLine(() => true)])
+      const cloudOnly = new Set([FAMILY_LINE, DETAIL_LINE, ...LOFT_BODY_LINES, ROUNDED_ENDS_LINE, LEVEL_LIP_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, RECOLOR_LINE, assembledLine(() => true)])
       // every local line is a cloud line, in the same order, the plan line less its pointer to the moving parts line and
       // its words on a lid that prints in place, and the check line less its follow-up sentence
       expect(cloud.filter((l) => !cloudOnly.has(l)).map((l) => l.replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(CHECK_FOLLOWUP, '').replace(BUILT_REPLY, MADE_REPLY))).toEqual(local)
-      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength(7 + LOFT_BODY_LINES.length)
+      // the cad prompt has no print run, so no recolor line
+      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength((scope === 'full' ? 8 : 7) + LOFT_BODY_LINES.length)
     }
   })
 

@@ -4,7 +4,7 @@
 // and slots, the last slice, the send and the job. Whether the slice is stale is worked out on every read, so a plate
 // edit, a printer change or a slot change after slicing is never missed. A job recorded with a watch host is watched
 // on its printer until it ends (watch-job.ts).
-import type { FilamentSlot, PilotEvent, PrinterHost, PrintRun, RunJob, RunSend, RunStepName } from '@slicerx/contracts'
+import type { FilamentSlot, MapFilament, PilotEvent, PrinterHost, PrintRun, RunJob, RunSend, RunStepName } from '@slicerx/contracts'
 import type { ToolGroups } from '../surfaces'
 import { watchJob, type RunJobPatch } from './watch-job'
 
@@ -22,6 +22,11 @@ export interface PrintRunHost {
    * says which moved and which found no room.
    */
   setTarget?(t: RunTarget): Promise<RunLanded | void>
+  /**
+   * The project's filaments by 1 based number, with the material and color each prints in now (a hand-set filament,
+   * else the spool it follows). run.target matches a filament asked for with no color by this color.
+   */
+  filaments?(): MapFilament[]
   /**
    * The printers a started print is watched through, as they are now. The watch reads them at each subscribe, so a
    * printer connection that came back is followed without a new runtime. Without it the watch host's printers are used.
@@ -91,6 +96,8 @@ export interface RunHandle {
   fingerprint(plate?: number): string
   /** Points the host's plate at the printer and slots picked; does nothing on a host without plates. */
   setTarget?(t: RunTarget): Promise<RunLanded | void>
+  /** The project's filaments as the host has them now; absent on a host without a project. */
+  filaments?(): MapFilament[] | undefined
 }
 
 export interface RunBook {
@@ -103,6 +110,8 @@ export interface RunBook {
   fingerprint(plate?: number): string
   /** Hands the printer and slots a chat picked to the host, and says which parts its bed made it move. */
   setTarget(t: RunTarget): Promise<RunLanded | void>
+  /** The project's filaments as the host has them now, or undefined on a host that does not say. */
+  filaments(): MapFilament[] | undefined
   /** Calls `fn` with the run after every change to it. Returns the unsubscribe. */
   subscribe(sessionId: string, fn: (run: PrintRun) => void): () => void
   /**
@@ -131,6 +140,7 @@ export function runHandle(book: RunBook, sessionId: string): RunHandle {
     recordJob: (job) => book.recordJob(sessionId, job),
     fingerprint: (plate) => book.fingerprint(plate),
     setTarget: (t) => book.setTarget(t),
+    filaments: () => book.filaments(),
   }
 }
 
@@ -281,6 +291,9 @@ export function createRunBook(host: PrintRunHost, now: () => number, firstWatche
       const out = write(sessionId, { job }, false)
       syncWatch(sessionId, job)
       return out
+    },
+    filaments() {
+      return host.filaments?.()
     },
     async setTarget(t) {
       return host.setTarget?.(t)

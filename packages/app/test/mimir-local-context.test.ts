@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { HISTORY_VERSION } from '@slicerx/cad-history'
 import type { Host, JsonSchema, LlmHttpRequest, LlmTransport, MeshHandle } from '@slicerx/contracts'
-import { BUILT_REPLY, CHECK_FOLLOWUP, describedPaths, DETAIL_LINE, encodeToolName, FAMILY_LINE, FOLLOWUP_LINE, LEVEL_LIP_LINE, LID_IN_PLACE, LID_PUT_ON, LOCAL_BUILD_CAP, LOCAL_TOOLS, LOFT_BODY_LINES, localToolDef, MADE_REPLY, messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, type PilotTool, REPLY_RESERVE, RESHAPE_LINE, ROUNDED_ENDS_LINE, SIZES_ASK, SIZES_REPLY, surfaceTools, toolSpec, toolsTokens, TURN_SET_TOOL, VAGUE_LINE } from '@slicerx/pilot'
+import { BUILT_REPLY, CHECK_FOLLOWUP, describedPaths, DETAIL_LINE, encodeToolName, FAMILY_LINE, FOLLOWUP_LINE, LEVEL_LIP_LINE, LID_IN_PLACE, LID_PUT_ON, LOCAL_BUILD_CAP, LOCAL_TOOLS, LOFT_BODY_LINES, localToolDef, MADE_REPLY, messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, type PilotTool, RECOLOR_LINE, REPLY_RESERVE, RESHAPE_LINE, ROUNDED_ENDS_LINE, SIZES_ASK, SIZES_REPLY, surfaceTools, toolSpec, toolsTokens, TURN_SET_TOOL, VAGUE_LINE } from '@slicerx/pilot'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { runCall } from '../src/app-link/methods'
 import { builtinCommands } from '../src/commands/builtin'
@@ -215,6 +215,9 @@ describe('the mimir tab on a local model', () => {
     expect(sent.messages[0]!.content).not.toContain(FAMILY_LINE)
     expect(cloud.messages[0]!.content).toContain(DETAIL_LINE)
     expect(sent.messages[0]!.content).not.toContain(DETAIL_LINE)
+    // a color no loaded spool holds is asked about on a cloud turn; a local turn has no room for the line
+    expect(cloud.messages[0]!.content).toContain(RECOLOR_LINE)
+    expect(sent.messages[0]!.content).not.toContain(RECOLOR_LINE)
     // the follow-up line is on a turn that follows a built design (one on the plate), never on a first build's prompt
     if (design) expect(cloud.messages[0]!.content).toContain(FOLLOWUP_LINE)
     else expect(cloud.messages[0]!.content).not.toContain(FOLLOWUP_LINE)
@@ -222,7 +225,7 @@ describe('the mimir tab on a local model', () => {
     // a thing made of colored parts is built assembled: the cloud prompt says so, the local one has no room for it
     expect(cloud.messages[0]!.content).toContain('- A thing made of parts in different colors')
     expect(sent.messages[0]!.content).not.toContain('parts in different colors')
-    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${LOFT_BODY_LINES.join('\n')}`, '').replace(`\n${ROUNDED_ENDS_LINE}`, '').replace(`\n${LEVEL_LIP_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(CHECK_FOLLOWUP, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '').replace(BUILT_REPLY, MADE_REPLY))
+    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${LOFT_BODY_LINES.join('\n')}`, '').replace(`\n${ROUNDED_ENDS_LINE}`, '').replace(`\n${LEVEL_LIP_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(`\n${RECOLOR_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(CHECK_FOLLOWUP, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '').replace(BUILT_REPLY, MADE_REPLY))
     // each prompt is pinned to its own text, so a wording change that moves the local prompt, and its budget, is made on purpose
     expect(sent.messages[0]!.content, 'the local prompt (packages/pilot/test/fixtures/mimir-prompt-local.txt)').toBe(LOCAL_PROMPT)
     expect(cloud.messages[0]!.content.replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${VAGUE_LINE}`, ''), 'the cloud prompt (packages/pilot/test/fixtures/mimir-prompt-cloud.txt), less the follow-up line of a turn on a built design').toBe(CLOUD_PROMPT)

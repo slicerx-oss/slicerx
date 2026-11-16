@@ -18,6 +18,8 @@ const MATERIALS = ['PETG', 'PCTG', 'HIPS', 'PLA', 'ABS', 'ASA', 'TPU', 'PVA', 'P
 interface Wanted extends MapFilament {
   /** The color word they named ("black"), when they named one. */
   word: string | null
+  /** The color as the call gave it ("black", "#d9a441"), or '' for none. */
+  said: string
 }
 
 export interface RunTargetResult {
@@ -25,6 +27,13 @@ export interface RunTargetResult {
   printerName: string
   slots: { filament: number; slot: string; material: string; color: string }[]
   from: 'words' | 'memory' | 'only' | 'picked'
+  /**
+   * Filaments asked for that no loaded spool of their material and color takes, by number, as they were asked. They
+   * keep their own color and are not moved; the person says whether to load them or print with other spools.
+   */
+  unmatched?: { filament: number; material: string; color: string }[]
+  /** Every spool the printer has loaded, when a filament is unmatched, so the question can name them. */
+  loaded?: { slot: string; material: string; color: string }[]
   /** Parts moved onto this printer's bed, by name and plate: they hung off it or sat in an excluded area. */
   moved?: LandedPart[]
   /** Parts with no room on this printer's bed, by name and plate; they stay where they were. */
@@ -98,13 +107,19 @@ function holds(s: FilamentSlot, w: Wanted): boolean {
   return w.word === null || colorWord(s.color) === w.word || colorDistance(s.color, w.color) < 60
 }
 
+/** Whether a spool can feed a filament at all: a loaded spool of its material family, or any loaded one when no material is known. */
+const sameMaterial = (s: FilamentSlot | undefined, w: Wanted | undefined): boolean => Boolean(s?.material) && (!w?.type || baseMaterial(s!.material) === baseMaterial(w.type))
+
 /**
  * Each filament's slot on one printer: matched by material and the closest color (as the Print sheet matches), and
- * kept only when the slot holds what was asked. `pinned` gives one filament a slot the person picked.
+ * kept only when the slot holds what was asked. `pinned` gives one filament a slot the person picked, only when that
+ * slot holds its material: a filament never goes on a spool of another material. Every filament asked for ends up in
+ * the map or in `missing`.
  */
 function placeOn(wanted: readonly Wanted[], slots: readonly FilamentSlot[], pinned?: { filament: number; slot: string }): { map: Record<number, string>; missing: Wanted[] } {
-  const free = pinned ? slots.filter((s) => s.id !== pinned.slot) : slots
-  const rest = pinned ? wanted.filter((w) => w.index !== pinned.filament) : wanted
+  const pin = pinned && sameMaterial(slots.find((s) => s.id === pinned.slot), wanted.find((w) => w.index === pinned.filament)) ? pinned : undefined
+  const free = pin ? slots.filter((s) => s.id !== pin.slot) : slots
+  const rest = pin ? wanted.filter((w) => w.index !== pin.filament) : wanted
   const map: Record<number, string> = matchSlots(rest, free)
   const missing = rest.filter((w) => {
     const s = free.find((x) => x.id === map[w.index])
@@ -112,7 +127,7 @@ function placeOn(wanted: readonly Wanted[], slots: readonly FilamentSlot[], pinn
     delete map[w.index]
     return true
   })
-  if (pinned) map[pinned.filament] = pinned.slot
+  if (pin) map[pin.filament] = pin.slot
   return { map, missing }
 }
 
@@ -123,7 +138,7 @@ function wantedFrom(asked: readonly { index?: number | undefined; material?: str
     const word = hex ? colorWord(hex) : null
     let type = a.material ? (materialIn(a.material) ?? a.material.trim().toUpperCase()) : ''
     if (!type && hex) type = [...slots].filter((s) => s.material).sort((x, y) => colorDistance(x.color, hex) - colorDistance(y.color, hex))[0]?.material ?? ''
-    return { index: a.index ?? i + 1, type, color: hex ?? '', word }
+    return { index: a.index ?? i + 1, type, color: hex ?? '', word, said: a.color?.trim() ?? '' }
   })
 }
 
@@ -186,6 +201,26 @@ function landedWords(printer: string, landed: RunLanded | void): string {
     .join(' ')
 }
 
+/** A filament as asked, "filament 3 (PLA, orange)", or its number alone for a list: "3 (PLA, orange)". */
+const filamentWords = (w: Wanted, named: boolean): string => {
+  const what = [w.type, w.said].filter(Boolean).join(', ')
+  return `${named ? 'Filament ' : ''}${w.index}${what ? ` (${what})` : ''}`
+}
+
+/**
+ * The filaments no loaded spool takes, and what the printer has loaded, in plain words: "Filaments 3 (PLA, orange)
+ * and 4 (PLA, red) are not matched: Desk has no loaded spool of the same material and color. Loaded: slot A1 (PLA,
+ * white) and slot A2 (PETG, blue)." '' when every filament has a spool.
+ */
+function unmatchedWords(printer: string, missing: readonly Wanted[], loadedSlots: readonly { slot: string; material: string; color: string }[]): string {
+  if (!missing.length) return ''
+  const one = missing.length === 1
+  const who = one ? filamentWords(missing[0]!, true) : `Filaments ${listed(missing.map((w) => filamentWords(w, false)))}`
+  const same = missing.some((w) => w.color) ? 'the same material and color' : 'the same material'
+  const spools = listed(loadedSlots.map((r) => `slot ${r.slot} (${[r.material, r.color].filter(Boolean).join(', ')})`))
+  return `${who} ${one ? 'is' : 'are'} not matched: ${printer} has no loaded spool of ${same}.${spools ? ` Loaded: ${spools}.` : ''}`
+}
+
 /** "PETG, Black" for the question. */
 const wantedWords = (w: readonly Wanted[]): string =>
   w
@@ -196,7 +231,7 @@ const wantedWords = (w: readonly Wanted[]): string =>
 export function runTools(opts: { memory?: MemoryStore | undefined } = {}): PilotTool<never>[] {
   const target = defineTool({
     name: 'run.target',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     toolset: 'printers',
@@ -273,7 +308,14 @@ export function runTools(opts: { memory?: MemoryStore | undefined } = {}): Pilot
       }
 
       // the spools: what the person named, else what their notes say they print with
-      const asked = i.filaments?.length ? i.filaments : rememberedFilament(facts)
+      // a filament asked for with no color is matched by the project's own color for it (and its material when none
+      // is named), as if the call had named them: never by its number, which says nothing about what the spool holds
+      const project = ctx.run.filaments?.() ?? []
+      const own = (a: NonNullable<typeof i.filaments>[number], k: number) => {
+        const f = a.color ? undefined : project.find((p) => p.index === (a.index ?? k + 1))
+        return f?.color ? { ...a, color: f.color, ...(a.material || !f.type ? {} : { material: f.type }) } : a
+      }
+      const asked = i.filaments?.length ? i.filaments.map(own) : rememberedFilament(facts)
       // no printer named (or none the name matches) or remembered, but only one printer online holds every spool asked
       // for: that one
       let fitNote = ''
@@ -302,8 +344,16 @@ export function runTools(opts: { memory?: MemoryStore | undefined } = {}): Pilot
         if (why) among = online
       }
 
+      // the printer is settled and only spools are missing: the card offers the spools that can take the first missing
+      // filament, its material on any printer online; with none, the filaments come back unmatched and the person is asked
+      const spoolsOnly = printer !== null && placed.missing.length > 0
+      const first = placed.missing[0]?.index ?? wantedFrom(asked, printer ? slotsOf(printer) : []).at(0)?.index ?? 1
+      const fits = (p: PrinterInfo, s: FilamentSlot): boolean => !spoolsOnly || sameMaterial(s, wantedFrom(asked, slotsOf(p)).find((w) => w.index === first))
+      if (printer && why && spoolsOnly && !among.some((p) => slotsOf(p).some((s) => loaded(s) && fits(p, s)))) why = ''
+      if (printer && why && spoolsOnly && !ctx.ask) why = ''
+
       if (!printer || why) {
-        const choices = among.flatMap((p) => slotsOf(p).filter(loaded).map((s) => ({ id: `pick:${p.id}:${s.id}`, label: label(p, s) })))
+        const choices = among.flatMap((p) => slotsOf(p).filter((s) => loaded(s) && fits(p, s)).map((s) => ({ id: `pick:${p.id}:${s.id}`, label: label(p, s) })))
         if (!choices.length) return { ok: false, summary: withOdd(online.length ? `${why} No printer online has a spool loaded.`.trim() : 'No printer is online.') }
         if (!ctx.ask) return { ok: false, summary: withOdd(`${why} Ask the person which printer and spool to use.`.trim()) }
         const picked = await ctx.ask({ title: 'Which printer and spool?', question: withOdd(`${why} Pick the spool to print with.`.trim()), choices: [...choices, { id: 'pick:none', label: 'None of these' }] })
@@ -314,7 +364,6 @@ export function runTools(opts: { memory?: MemoryStore | undefined } = {}): Pilot
         from = 'picked'
         const slots = slotsOf(printer)
         const wanted = wantedFrom(asked, slots)
-        const first = placed.missing[0]?.index ?? wanted[0]?.index ?? 1
         placed = placeOn(wanted, slots, { filament: first, slot: m[2]! })
       }
 
@@ -329,9 +378,19 @@ export function runTools(opts: { memory?: MemoryStore | undefined } = {}): Pilot
           return { filament: Number(k), slot: id, material: s?.material ?? '', color: s ? (colorWord(s.color) ?? s.color ?? '') : '' }
         })
         .sort((a, b) => a.filament - b.filament)
-      const out: RunTargetResult = { printerId: printer.id, printerName: printer.name, slots: rows, from, ...(landed?.moved.length ? { moved: landed.moved } : {}), ...(landed?.offBed.length ? { offBed: landed.offBed } : {}) }
+      const missing = [...placed.missing].sort((a, b) => a.index - b.index)
+      const loadedSlots = missing.length ? slots.filter(loaded).map((s) => ({ slot: s.id, material: s.material ?? '', color: colorWord(s.color) ?? s.color ?? '' })) : []
+      const out: RunTargetResult = {
+        printerId: printer.id,
+        printerName: printer.name,
+        slots: rows,
+        from,
+        ...(missing.length ? { unmatched: missing.map((w) => ({ filament: w.index, material: w.type, color: w.said })), loaded: loadedSlots } : {}),
+        ...(landed?.moved.length ? { moved: landed.moved } : {}),
+        ...(landed?.offBed.length ? { offBed: landed.offBed } : {}),
+      }
       const spools = rows.map((r) => `slot ${r.slot} (${[r.material, r.color].filter(Boolean).join(', ')})`).join(', ')
-      return { summary: withOdd([fitNote, `Printing on ${printer.name}${spools ? ` from ${spools}` : ''}.`, landedWords(printer.name, landed)].filter(Boolean).join(' ')), output: out }
+      return { summary: withOdd([fitNote, `Printing on ${printer.name}${spools ? ` from ${spools}` : ''}.`, unmatchedWords(printer.name, missing, loadedSlots), landedWords(printer.name, landed)].filter(Boolean).join(' ')), output: out }
     },
   })
   return [target as PilotTool<never>]
