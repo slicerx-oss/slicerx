@@ -1483,6 +1483,14 @@ export const stalePlanNote = (part: string, card = false): string =>
 export const FIX_ROUNDS = 1
 
 /**
+ * Whether a plan's one fix round is open: a check of it failed, the check that ends the round has not come (closed),
+ * and its part has not passed before nor been changed as the person asked since (a check such a change breaks is fixed
+ * or undone instead, changeBroke).
+ */
+export const fixRoundIsOpen = (entry: Pick<PlanEntry, 'failedChecks' | 'closed' | 'passed' | 'passedOnce' | 'followUp'>): boolean =>
+  !entry.closed && !entry.passed && !entry.passedOnce && !entry.followUp && (entry.failedChecks ?? 0) >= 1 && (entry.failedChecks ?? 0) <= FIX_ROUNDS
+
+/**
  * What a failed check says while its plan's fix round is open: that this check is not the last, what to change and to
  * check again, so a reply does not stop on the first miss. It names no tool, as the mimir card's step row shows it too.
  */

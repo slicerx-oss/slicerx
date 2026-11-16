@@ -114,6 +114,6 @@ describe('the descriptions of an amend that moves a feature', () => {
 
   it('design.plan says an amend may move a feature onto another planned one, word for word', () => {
     const plan = tabToolset(standHost().host, createCardPlans(createPlanRegistry())).find((t) => t.name === 'design.plan')!
-    expect(plan.description).toContain('It keeps every planned feature, may add features, and may move a feature onto another planned one (on) when the part was built on that one; once per fix round')
+    expect(plan.description).toContain('It keeps every planned feature, may add features (never while the fix round is open), and may move a feature onto another planned one (on) when the part was built on that one; once per fix round')
   })
 })

@@ -6,7 +6,8 @@
 // feature stands on (its on), and may add features, keeping every planned one, and gives every other field as the plan
 // has it (amendDropProblem); a build's
 // amend comes once per fix round, never after the round is over, and never buys a second round: the plan keeps its
-// failed checks under the same planId, and its revision goes up by one. A change the person asked for (asked) goes in
+// failed checks under the same planId, and its revision goes up by one. While the fix round is open, a build's amend
+// adds no feature (FIX_ROUND_ADDS). A change the person asked for (asked) goes in
 // with no card and is not held to the fix round (tab-tools.ts).
 import type { PartPlan, PlanEntry, PlanOrigin } from './design-check'
 
@@ -287,6 +288,14 @@ export function amendProblem(planId: string, entry: PlanEntry | undefined, origi
   if (entry.amendedAt === (entry.failedChecks ?? 0)) return 'amends: the plan was changed once already since its last failed check; build to it as changed'
   return null
 }
+
+/**
+ * The refusal for a build's amend that adds features while its plan's fix round is open (fixRoundIsOpen). The fix
+ * round is for the items the check failed, and a feature added then is one more the next check needs a step for, which
+ * nothing in the round builds; a planned feature built on another one moves there with its on instead.
+ */
+export const FIX_ROUND_ADDS = (added: readonly string[]): string =>
+  `add: the plan's fix round is open, and an amend in it adds no feature, since ${added.length > 1 ? `${added.slice(0, -1).join(', ')} and ${added.at(-1)!} would be more features` : `${added[0]!} would be one more feature`} the check needs a step tagged with its name for; fix the failed items on the part as planned, and for a planned feature built on another planned one, send the features with its on changed and no add`
 
 /** The reason an amend gives, trimmed; a ToolInputError message when it is missing or empty. */
 export function amendReason(reason: string | undefined): { why: string } | { problem: string } {
