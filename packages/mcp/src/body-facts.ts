@@ -15,7 +15,7 @@ import { fitFacts } from './fit-facts'
 import { looseGaps, looseText, movingParts, partsNear } from './seat'
 import { floorOpenings } from './holder-floor'
 import { hookOn, surfacePoints } from './hook-lip'
-import { loftSections, type FeatureHeights } from './plan-detail'
+import { featureOutlines, loftSections, type FeatureHeights } from './plan-detail'
 import { recessesOf } from './recesses'
 
 type V3 = [number, number, number]
@@ -99,6 +99,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     // a hint only: a paint step it cannot name is left out rather than failing the check
     paintUntagged: d.history.steps.flatMap((s) => (!s.suppressed && s.params?.op === 'paint' && !s.feature?.trim() ? hintName(s) : [])),
     lofts: loftSections(shaping as unknown as Parameters<typeof loftSections>[0]),
+    outlines: featureOutlines(shaping as unknown as Parameters<typeof featureOutlines>[0]),
     featureHeights: featureHeights(d, shaping),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     ...(world.length > 1 ? { partBoxes: world.map((w, k) => partBox(w, d.parts[k]!)) } : {}),

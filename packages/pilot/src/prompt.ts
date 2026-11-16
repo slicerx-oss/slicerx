@@ -78,6 +78,10 @@ export interface PromptOptions {
 // curved bodies lofted through sections and its repeated details patterned, each step named for what it is.
 export const DETAIL_LINE = `- A model of a real thing (a car, a plane, a house, a lamp) named without sizes is planned at display detail unless the person asks for something simple or detailed: a car body, fuselage or bottle is a series of sections, so loft it, and repeated details are built once and patterned, with steps named for what they are ("Body (loft)", "Window rows (array)").`
 
+// cloud prompt only, with design.plan: a display model's outlines. Without it every level of a stepped body came out
+// as a square block: the tools round corners and ends, but nothing said a display model wants them.
+export const ROUNDED_ENDS_LINE = "- A display model rounds the corners and ends a viewer sees unless the real thing is sharp there: a house or roof level, a cab, a vehicle's nose and tail, a tank or a capsule gets rounded ends or corners, at a radius the real thing's look gives; a box, a book or a modern block stays square."
+
 // cloud prompt only, with design.plan and geom.loft: a first build of a body with curved or tapering sides. Without it a
 // curved body came out as a stack of extrudes, or a loft through straight sections whose later cuts left the exact
 // path. The loft comes first and stays exact through the cuts and joins after it; pieces overlap what they stand on,
@@ -160,6 +164,7 @@ const buildLines = (has: HasTool, o: PromptOptions): Piece[] => {
     has('pilot.ask') && has('parts.lookup') && FAMILY_LINE,
     has('design.plan') && DETAIL_LINE,
     ...(has('design.plan') && has('geom.loft') ? LOFT_BODY_LINES : []),
+    has('design.plan') && ROUNDED_ENDS_LINE,
     ...(has('design.plan') ? [[local(PLAN_LINE), ...PLAN_LID, checks && MOVING_PARTS_ORDER], local(FEATURE_LINE)] : [local(STEPS_LINE)]),
     has('design.plan') && assembledLine(has),
     followUp && FOLLOWUP_LINE,

@@ -74,7 +74,12 @@ function shapeEdit(): { index: number; entryId: string; part: number; face: Pick
   const frame = p.frame ? now.frame(p.frame) : BED_FRAME
   const sh = p.shape
   const f: Record<string, string> = { x: String(p.placement?.center?.[0] ?? 0), y: String(p.placement?.center?.[1] ?? 0), turn: String(p.placement?.rotationDeg ?? 0), distance: String(p.spec.distanceMm) }
-  if (sh.type === 'rectangle') Object.assign(f, { width: String(sh.widthMm), height: String(sh.heightMm), corner: String(sh.cornerRadiusMm ?? 0) })
+  if (sh.type === 'rectangle') {
+    Object.assign(f, { width: String(sh.widthMm), height: String(sh.heightMm), corner: String(sh.cornerRadiusMm ?? 0) })
+    // an end's own round (an agent's frontRadiusMm or backRadiusMm) has no field here and is kept as it was
+    if (sh.frontRadiusMm !== undefined) f['front'] = String(sh.frontRadiusMm)
+    if (sh.backRadiusMm !== undefined) f['back'] = String(sh.backRadiusMm)
+  }
   if (sh.type === 'slot') Object.assign(f, { width: String(sh.lengthMm), height: String(sh.widthMm) })
   if (sh.type === 'ellipse') Object.assign(f, { width: String(sh.widthMm), height: String(sh.heightMm) })
   if (sh.type === 'circle') f['diameter'] = String(sh.diameterMm)
@@ -106,6 +111,8 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   const [width, setWidth] = useDraft('width', v('width', '20'))
   const [height, setHeight] = useDraft('height', v('height', '10'))
   const [corner, setCorner] = useDraft('corner', v('corner', '0'))
+  // the ends' own rounds of a rectangle step opened from the history, carried through unchanged
+  const [ends] = useState(() => ({ ...(edit?.f['front'] !== undefined ? { frontRadiusMm: num(edit.f['front']) } : {}), ...(edit?.f['back'] !== undefined ? { backRadiusMm: num(edit.f['back']) } : {}) }))
   const [diameter, setDiameter] = useDraft('diameter', v('diameter', '10'))
   const [sides, setSides] = useDraft('sides', v('sides', '6'))
   const [text, setText] = useDraft('text', v('text', appName()))
@@ -162,7 +169,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
       case 'rectangle':
         if (!pos(width) || !pos(height)) return 'Width and height must be more than 0 mm.'
         if (!(num(corner) >= 0) || num(corner) * 2 > Math.min(num(width), num(height))) return 'The corner radius is at most half the shorter side.'
-        return { type, widthMm: num(width), heightMm: num(height), ...(num(corner) > 0 ? { cornerRadiusMm: num(corner) } : {}) }
+        return { type, widthMm: num(width), heightMm: num(height), ...(num(corner) > 0 ? { cornerRadiusMm: num(corner) } : {}), ...ends }
       case 'circle':
         return pos(diameter) ? { type, diameterMm: num(diameter) } : 'The diameter must be more than 0 mm.'
       case 'ellipse':
@@ -180,7 +187,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
         if (!text.trim()) return 'Type the text.'
         return pos(size) ? { type, text: text.trim(), sizeMm: num(size), align: 'center' } : 'The letter height must be more than 0 mm.'
     }
-  }, [type, width, height, corner, diameter, sides, text, size, svg])
+  }, [type, width, height, corner, ends, diameter, sides, text, size, svg])
   const placed = Number.isFinite(num(x)) && Number.isFinite(num(y)) && Number.isFinite(num(turn))
   const depthOk = Number.isFinite(num(distance)) && num(distance) > 0
   const pattern = patternFromFields(patternFields, num)

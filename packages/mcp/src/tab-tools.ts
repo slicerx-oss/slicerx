@@ -24,8 +24,8 @@ export { PLAN_SIZE_MAX, type PartPlan }
  */
 export const PartPlanSchema = partPlanSchema.extend({ features: partPlanSchema.shape.features.min(1) }).omit({ openFaces: true })
 
-/** What mimir sends: the plan without its id, which the tool gives it, and with no room for the card's own line. */
-export const PlanInputSchema = PartPlanSchema.omit({ planId: true }).extend({
+/** What mimir sends: the plan without its id, which the tool gives it, and with no room for the card's own line. Each flat body's ends come with the body in flat (flatLevels). */
+export const PlanInputSchema = PartPlanSchema.omit({ planId: true, ends: true }).extend({
   assumptions: assumptionsInput,
   // the card takes each real size's lookupId or the person's words; a source page is a client's own plan's
   real: cardRealField(planDetailFields.real.description ?? ''),
@@ -332,7 +332,7 @@ export function createCardPlans(plans: PlanRegistry) {
   function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile; designs?: () => readonly { id: string; name: string; parts: readonly unknown[] }[]; bed?: () => Bed | undefined } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.19.0',
+      version: '1.20.0',
       source: 'command',
       permission: 'read',
       description:

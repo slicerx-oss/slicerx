@@ -531,33 +531,62 @@ function ring(l: Loop): Vec2[] {
   return out
 }
 
-/** A slot or a rounded rectangle as lines and arcs, counterclockwise, centered on the origin. */
-function rounded(shape: Shape): Loop | null {
+/** A rectangle's corner radii at its +x (front) and -x (back) ends, as the engine reads them (sx-geom face.rs end_radii). */
+export function endRadii(shape: Extract<Shape, { type: 'rectangle' }>): [number, number] {
+  const corner = shape.cornerRadiusMm ?? 0
+  return [shape.frontRadiusMm ?? corner, shape.backRadiusMm ?? corner]
+}
+
+/**
+ * A slot or a rounded rectangle as lines and arcs, counterclockwise, centered on the origin. A rectangle's two +x
+ * corners take the front radius and its two -x corners the back one (endRadii); a radius of half the height makes that
+ * end one half circle, and a side the rounds use up whole is left out.
+ */
+export function roundedOutline(shape: Shape): Loop | null {
   if (shape.type === 'slot') {
     const r = shape.widthMm / 2
     const x = shape.lengthMm / 2 - r
     if (!(r > 0) || x < 0) return null
     return { start: [-x, -r], segments: [{ to: [x, -r] }, { to: [x, r], center: [x, 0], sweepDeg: 180 }, { to: [-x, r] }, { to: [-x, -r], center: [-x, 0], sweepDeg: 180 }] }
   }
-  if (shape.type !== 'rectangle' || !shape.cornerRadiusMm) return null
+  if (shape.type !== 'rectangle') return null
   const w = shape.widthMm / 2
   const h = shape.heightMm / 2
-  const r = shape.cornerRadiusMm
-  if (!(w > 0 && h > 0 && r > 0 && r <= Math.min(w, h))) return null
-  const [x, y] = [w - r, h - r]
-  return {
-    start: [w, -y],
-    segments: [
-      { to: [w, y] },
-      { to: [x, h], center: [x, y], sweepDeg: 90 },
-      { to: [-x, h] },
-      { to: [-w, y], center: [-x, y], sweepDeg: 90 },
-      { to: [-w, -y] },
-      { to: [-x, -h], center: [-x, -y], sweepDeg: 90 },
-      { to: [x, -h] },
-      { to: [w, -y], center: [x, -y], sweepDeg: 90 },
-    ],
+  const [f, b] = endRadii(shape)
+  if (!(w > 0 && h > 0 && f >= 0 && b >= 0 && f + b > 0 && f <= h && b <= h && f + b <= 2 * w)) return null
+  const segments: Piece[] = []
+  let at: Vec2 = [w, -h + f]
+  const line = (to: Vec2): void => {
+    if (Math.hypot(to[0] - at[0], to[1] - at[1]) > 1e-9) segments.push({ to })
+    at = to
   }
+  const round = (to: Vec2, center: Vec2, r: number): void => {
+    if (!(r > 0)) return
+    const last = segments.at(-1)
+    // two rounds about one center (an end of half the height) are one half circle
+    if (last?.center && last.center[0] === center[0] && last.center[1] === center[1]) {
+      last.to = to
+      last.sweepDeg! += 90
+    } else segments.push({ to, center, sweepDeg: 90 })
+    at = to
+  }
+  const start = at
+  line([w, h - f])
+  round([w - f, h], [w - f, h - f], f)
+  line([-w + b, h])
+  round([-w, h - b], [-w + b, h - b], b)
+  line([-w, -h + b])
+  round([-w + b, -h], [-w + b, -h + b], b)
+  line([w - f, -h])
+  round(start, [w - f, -h + f], f)
+  // a front end of half the height starts the loop on its half circle: the loop starts where that half circle does
+  const [first, last] = [segments[0]!, segments.at(-1)!]
+  if (segments.length > 2 && first.center && last.center && first.center[0] === last.center[0] && first.center[1] === last.center[1]) {
+    segments.pop()
+    first.sweepDeg! += last.sweepDeg!
+    return { start: segments.at(-1)!.to, segments }
+  }
+  return { start, segments }
 }
 
 /**
@@ -605,7 +634,7 @@ async function loops(call: Call, shape: Shape | FreeShape, placement: { center?:
     profiles = [{ outer: { center: [0, 0], diameterMm: shape.diameterMm }, holes: [] }]
   } else if (shape.type === 'ellipse') {
     profiles = [{ outer: { center: [0, 0], widthMm: shape.widthMm, heightMm: shape.heightMm, angleDeg: 0 }, holes: [] }]
-  } else if (shape.type === 'rectangle' && !shape.cornerRadiusMm) {
+  } else if (shape.type === 'rectangle' && !endRadii(shape).some((r) => r > 0)) {
     const w = shape.widthMm / 2
     const h = shape.heightMm / 2
     profiles = [{ outer: { points: [[-w, -h], [w, -h], [w, h], [-w, h]] }, holes: [] }]
@@ -616,7 +645,7 @@ async function loops(call: Call, shape: Shape | FreeShape, placement: { center?:
     const start = -Math.PI / 2 - Math.PI / n
     profiles = [{ outer: { points: Array.from({ length: n }, (_, i): Vec2 => [r * Math.cos(start + (2 * Math.PI * i) / n), r * Math.sin(start + (2 * Math.PI * i) / n)]) }, holes: [] }]
   } else {
-    const l = rounded(shape as Shape)
+    const l = roundedOutline(shape as Shape)
     if (!l) return null
     profiles = [{ outer: l, holes: [] }]
   }

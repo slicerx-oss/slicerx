@@ -224,6 +224,12 @@ pub enum Shape {
         height_mm: f64,
         #[serde(default)]
         corner_radius_mm: f64,
+        /// the radius of the two corners at the +x end, in place of `corner_radius_mm` there
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        front_radius_mm: Option<f64>,
+        /// the radius of the two corners at the -x end, in place of `corner_radius_mm` there
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        back_radius_mm: Option<f64>,
     },
     Circle {
         diameter_mm: f64,
@@ -270,6 +276,65 @@ pub struct Placement {
     pub rotation_deg: f64,
 }
 
+/// The radii of a rectangle's corners at its +x (front) and -x (back) ends: `front_radius_mm` and `back_radius_mm` where
+/// given, else `corner_radius_mm`. `corner_radius_mm` is at most half the shorter side, an end's radius at most half the
+/// height (at half, that end is a half circle), and the two ends together at most the width.
+fn end_radii(w: f64, h: f64, corner: f64, front: Option<f64>, back: Option<f64>) -> Result<[f64; 2]> {
+    if !(corner.is_finite() && corner >= 0.0 && corner <= w.min(h) / 2.0) {
+        return Err(Error::invalid(
+            "cornerRadiusMm",
+            "between 0 and half the shorter side",
+        ));
+    }
+    let end = |r: Option<f64>, what: &'static str| -> Result<f64> {
+        match r {
+            None => Ok(corner),
+            Some(r) if r.is_finite() && r >= 0.0 && r <= h / 2.0 => Ok(r),
+            Some(_) => Err(Error::invalid(what, "between 0 and half the height")),
+        }
+    };
+    let (f, b) = (end(front, "frontRadiusMm")?, end(back, "backRadiusMm")?);
+    if f + b > w {
+        return Err(Error::invalid(
+            if front.is_some() {
+                "frontRadiusMm"
+            } else {
+                "backRadiusMm"
+            },
+            "together with the other end's radius, at most the width",
+        ));
+    }
+    Ok([f, b])
+}
+
+/// A `w` by `h` rectangle centered on the origin, counterclockwise, its two +x corners rounded by `rf` and its two -x
+/// corners by `rb` (0 leaves a corner sharp), each round `quarter` segments.
+fn rounded_ring(w: f64, h: f64, rf: f64, rb: f64, quarter: usize) -> Vec<V2> {
+    let (x, y) = (w / 2.0, h / 2.0);
+    let mut ring = Vec::new();
+    for (c, r, a0) in [
+        ([x - rf, y - rf], rf, 0.0),
+        ([-x + rb, y - rb], rb, PI / 2.0),
+        ([-x + rb, -y + rb], rb, PI),
+        ([x - rf, -y + rf], rf, 1.5 * PI),
+    ] {
+        if r > 0.0 {
+            arc(c, r, a0, a0 + PI / 2.0, quarter, &mut ring);
+        } else {
+            ring.push(c);
+        }
+    }
+    // a round of half the height meets the one beside it, and two rounds of half the width meet across the top
+    ring.dedup_by(|a, b| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9);
+    if ring.len() > 1 {
+        let (first, last) = (ring[0], ring[ring.len() - 1]);
+        if (first[0] - last[0]).abs() < 1e-9 && (first[1] - last[1]).abs() < 1e-9 {
+            ring.pop();
+        }
+    }
+    ring
+}
+
 fn positive(v: f64, what: &'static str) -> Result<f64> {
     if v.is_finite() && v > 0.0 && v <= 10_000.0 {
         Ok(v)
@@ -308,35 +373,37 @@ fn shape_polygons(
             width_mm,
             height_mm,
             corner_radius_mm,
+            front_radius_mm,
+            back_radius_mm,
         } => {
             let (w, h) = (positive(width_mm, "widthMm")?, positive(height_mm, "heightMm")?);
-            let r0 = corner_radius_mm;
-            if !(r0.is_finite() && r0 >= 0.0 && r0 <= w.min(h) / 2.0) {
-                return Err(Error::invalid(
-                    "cornerRadiusMm",
-                    "between 0 and half the shorter side",
-                ));
-            }
+            let [front, back] = end_radii(w, h, corner_radius_mm, front_radius_mm, back_radius_mm)?;
             let (w, h) = (w - 2.0 * inset, h - 2.0 * inset);
             if w <= 0.0 || h <= 0.0 {
                 return Err(taper_error());
             }
-            if r0 == 0.0 {
+            if front == 0.0 && back == 0.0 {
                 vec![Polygon::simple(poly2d::rect(
                     [-w / 2.0, -h / 2.0],
                     [w / 2.0, h / 2.0],
                 ))]
             } else {
-                let r = (r0 - inset).max(0.01).min(w.min(h) / 2.0);
-                let quarter = (circle_segs(segs_r.unwrap_or(r0)) / 4).max(2);
-                let (x, y) = (w / 2.0 - r, h / 2.0 - r);
-                let mut ring = Vec::new();
-                arc([x, y], r, 0.0, PI / 2.0, quarter, &mut ring);
-                arc([-x, y], r, PI / 2.0, PI, quarter, &mut ring);
-                arc([-x, -y], r, PI, 1.5 * PI, quarter, &mut ring);
-                arc([x, -y], r, 1.5 * PI, 2.0 * PI, quarter, &mut ring);
-                ring.dedup();
-                vec![Polygon::simple(ring)]
+                // a taper moves each round in with the sides, kept inside the smaller outline
+                let shrink = |r0: f64| {
+                    if r0 > 0.0 {
+                        (r0 - inset).max(0.01).min(h / 2.0)
+                    } else {
+                        0.0
+                    }
+                };
+                let (mut rf, mut rb) = (shrink(front), shrink(back));
+                if rf + rb > w {
+                    let k = w / (rf + rb);
+                    rf *= k;
+                    rb *= k;
+                }
+                let quarter = (circle_segs(segs_r.unwrap_or(front.max(back))) / 4).max(2);
+                vec![Polygon::simple(rounded_ring(w, h, rf, rb, quarter))]
             }
         }
         Shape::Circle { diameter_mm } => {
@@ -524,7 +591,14 @@ fn piece(
         return build::extrude(&polys, frame, lo, hi);
     }
     let seg_r = match *shape {
-        Shape::Rectangle { corner_radius_mm, .. } => corner_radius_mm,
+        Shape::Rectangle {
+            corner_radius_mm,
+            front_radius_mm,
+            back_radius_mm,
+            ..
+        } => front_radius_mm
+            .unwrap_or(corner_radius_mm)
+            .max(back_radius_mm.unwrap_or(corner_radius_mm)),
         Shape::Circle { diameter_mm } => diameter_mm / 2.0,
         Shape::Slot { width_mm, .. } => width_mm / 2.0,
         _ => 1.0,
@@ -1275,6 +1349,8 @@ mod tests {
             width_mm: 50.0,
             height_mm: 30.0,
             corner_radius_mm: 0.0,
+            front_radius_mm: None,
+            back_radius_mm: None,
         };
         assert!(extrude(&p.frame, &big, &Placement::default(), None, &all, Some(&m)).is_err());
         let far = extrude(
@@ -1470,12 +1546,103 @@ mod tests {
     }
 
     #[test]
+    fn a_rectangle_rounds_one_end_or_both() {
+        let frame = FaceFrame::bed([0.0, 0.0]);
+        let spec = ExtrudeSpec {
+            distance_mm: 2.0,
+            ..ExtrudeSpec::default()
+        };
+        let rect = |corner: f64, front: Option<f64>, back: Option<f64>| Shape::Rectangle {
+            width_mm: 20.0,
+            height_mm: 10.0,
+            corner_radius_mm: corner,
+            front_radius_mm: front,
+            back_radius_mm: back,
+        };
+        let made = |s: &Shape| extrude(&frame, s, &Placement::default(), None, &spec, None);
+        // a round of r takes (1 - pi / 4) r^2 from each corner it rounds
+        let cut = |r: f64| (1.0 - PI / 4.0) * r * r;
+        for (shape, area) in [
+            (rect(0.0, Some(5.0), None), 200.0 - 2.0 * cut(5.0)),
+            (rect(0.0, None, Some(3.0)), 200.0 - 2.0 * cut(3.0)),
+            (
+                rect(1.0, Some(5.0), None),
+                200.0 - 2.0 * cut(5.0) - 2.0 * cut(1.0),
+            ),
+            (rect(0.0, Some(5.0), Some(5.0)), 200.0 - 4.0 * cut(5.0)),
+        ] {
+            let r = made(&shape).unwrap();
+            assert!(
+                r.report.watertight && r.report.shells == 1,
+                "{shape:?}: {:?}",
+                r.report
+            );
+            let v = r.mesh.volume();
+            assert!(
+                (v - 2.0 * area).abs() < 0.01 * 2.0 * area,
+                "{shape:?}: {v} against {}",
+                2.0 * area
+            );
+            let b = r.mesh.bounds().unwrap();
+            assert!(
+                (b.max[0] - 10.0).abs() < 1e-9
+                    && (b.min[0] + 10.0).abs() < 1e-9
+                    && (b.max[1] - 5.0).abs() < 1e-9
+            );
+        }
+        // at half the height the front end is a half circle: its tip is the one point at y 0 on x 10
+        let half = made(&rect(0.0, Some(5.0), None)).unwrap();
+        let tip: Vec<_> = half
+            .mesh
+            .positions
+            .iter()
+            .filter(|p| p[2].abs() < 1e-9 && (p[0] - 10.0).abs() < 1e-9)
+            .collect();
+        assert!(tip.len() == 1 && tip[0][1].abs() < 1e-9, "{tip:?}");
+        // past half the height, or two ends past the width, is refused by name
+        let refused = |s: Shape, what: &str| {
+            let e = made(&s).unwrap_err().to_string();
+            assert!(e.contains(what), "{e}");
+        };
+        refused(rect(0.0, Some(5.01), None), "frontRadiusMm");
+        refused(rect(0.0, None, Some(-1.0)), "backRadiusMm");
+        refused(
+            Shape::Rectangle {
+                width_mm: 8.0,
+                height_mm: 10.0,
+                corner_radius_mm: 0.0,
+                front_radius_mm: Some(5.0),
+                back_radius_mm: Some(5.0),
+            },
+            "at most the width",
+        );
+        // a taper keeps both rounds inside the smaller top
+        let taper = ExtrudeSpec {
+            distance_mm: 2.0,
+            taper_deg: 10.0,
+            ..ExtrudeSpec::default()
+        };
+        let t = extrude(
+            &frame,
+            &rect(0.0, Some(5.0), Some(2.0)),
+            &Placement::default(),
+            None,
+            &taper,
+            None,
+        )
+        .unwrap();
+        assert!(t.report.watertight, "{:?}", t.report);
+    }
+
+    #[test]
     fn taper_text_and_rounded_rect() {
         let frame = FaceFrame::bed([0.0, 0.0]);
         let rr = Shape::Rectangle {
             width_mm: 20.0,
             height_mm: 10.0,
             corner_radius_mm: 2.0,
+            front_radius_mm: None,
+            back_radius_mm: None,
         };
         let taper = ExtrudeSpec {
             distance_mm: 4.0,
@@ -1627,6 +1794,8 @@ mod tests {
             width_mm: 12.0,
             height_mm: 12.0,
             corner_radius_mm: 0.0,
+            front_radius_mm: None,
+            back_radius_mm: None,
         };
         let join = ExtrudeSpec {
             distance_mm: 2.0,
