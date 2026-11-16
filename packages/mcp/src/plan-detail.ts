@@ -1024,20 +1024,20 @@ function pastSides(p: FeatureHeights[string], s: FeatureHeights[string]): boolea
 }
 
 /**
- * Whether a sunk part's planned height shows right above the support's top: within a layer either way, so its top is
- * where the plan puts it. A part sunk and also short or tall by more than a layer is built from the wrong height.
+ * Whether a stacked part's planned height shows above its support's top: within SCALE_SLACK either way, the same for a
+ * part seated on the top and one sunk into it, since what shows above the top is the same part either way.
  */
-const showsRight = (shows: number, planned: number): boolean => Math.abs(shows - planned) <= STAND_LAYER_MM + 1e-6
+const showsPlanned = (shows: number, planned: number): boolean => shows >= planned / SCALE_SLACK && shows <= planned * SCALE_SLACK
 
 /** What a stacked part's base and height say against its support's top: null when both hold. */
 function standsWrong(part: string, support: string, base: number, shows: number, planned: number | undefined, top: TopRead, inside: boolean): string | null {
   if (base > STAND_LAYER_MM + 1e-6) return STANDS_FLOATS(part, support, base, top)
   // a part sunk into its support with its planned height showing above the top, and inside the support's sides, looks
-  // as planned: the sunk part is hidden in the support, so it passes
-  if (base < -STAND_LAYER_MM - 1e-6 && planned !== undefined && inside && showsRight(shows, planned)) return null
+  // as a seated one does: the sunk part is hidden in the support, so it is held to the same height a seated part is
+  if (base < -STAND_LAYER_MM - 1e-6 && planned !== undefined && inside && showsPlanned(shows, planned)) return null
   // no height planned: only the base is held, as the plan says nothing of how much should show
   if (base < -STAND_LAYER_MM - 1e-6) return planned === undefined ? STANDS_BASE_OFF(part, support, -base, top) : STANDS_OFF(part, support, -base, shows, planned, top, inside)
-  if (planned === undefined || (shows >= planned / SCALE_SLACK && shows <= planned * SCALE_SLACK)) return null
+  if (planned === undefined || showsPlanned(shows, planned)) return null
   return STANDS_HEIGHT_OFF(part, support, shows, planned, top)
 }
 

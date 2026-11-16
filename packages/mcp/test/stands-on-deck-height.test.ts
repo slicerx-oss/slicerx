@@ -18,13 +18,14 @@ const heights = featureHeights({ history: { base: [], steps: run.steps }, status
 
 describe('stands on, with the height to build from', () => {
   it('names the lowest of a curved deck under each part, and a flat support\'s top, as the heights the parts were measured against', () => {
+    // the mainmast is sunk 0.7 mm into the poop deck with 11.3 mm of its planned 12 mm showing, within SCALE_SLACK, so it
+    // passes as a seated mast does; the two decks float
     expect(stackItem(run.plan, heights)).toMatchObject({
       name: 'stands on',
       pass: false,
       got:
         'Forecastle deck stands on Hull (loft), but its base is 0.34 mm above its top, so it floats; build it from the top of Hull (loft), whose lowest point under it is at z 15.26 mm: with design.edit_step, move the step that makes Forecastle deck by [0, 0, -0.34]; ' +
-        'Poop deck stands on Hull (loft), but its base is 0.29 mm above its top, so it floats; build it from the top of Hull (loft), whose lowest point under it is at z 15.31 mm: with design.edit_step, move the step that makes Poop deck by [0, 0, -0.29]; ' +
-        "Mainmast stands on Poop deck, but its base sits 0.7 mm below Poop deck's top, so 11.3 mm of it shows where the plan has 12 mm. Poop deck's highest point is at z 17.6 mm. With design.edit_step, set the size of the step that makes Mainmast to 12.7 mm along z (it grows up from its base at z 16.9), or move that step by [0, 0, 0.7] and set its size to 12 mm along z.",
+        'Poop deck stands on Hull (loft), but its base is 0.29 mm above its top, so it floats; build it from the top of Hull (loft), whose lowest point under it is at z 15.31 mm: with design.edit_step, move the step that makes Poop deck by [0, 0, -0.29]',
     })
   })
 
