@@ -5,8 +5,9 @@
 // at most 188 KB gzip, and each WASM module at most 1.0 MB gzip (the slicer engine's sx_wasm is only
 // reported). The STEP reader (OpenCASCADE, loaded only when a STEP file opens) has a budget of its own and must
 // not be reachable from the shell, and so do the full geometry engine (the modeling tools and the heavier
-// modules, loaded the first time a call needs them) and the B-rep kernel (exact solids, packages/brep, loaded the
-// first time a call needs one). It also fails when printer, filament or G-code profile data
+// modules, loaded the first time a call needs them) and the full engine with exact solids (the engine and the B-rep
+// kernel in one module, loaded in its place when exact solids are on). Its budget is the two budgets it replaces: the
+// full engine's 1600 KB and the separate kernel's 1400 KB. It also fails when printer, filament or G-code profile data
 // lands in a startup chunk, and when a startup chunk names an icon that is not in the startup icon table.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -22,10 +23,10 @@ const WASM_KB = 1056
 const SLICER_WASM_KB = 1444
 const STEP_WASM_KB = 3584
 const FULL_GEOM_WASM_KB = 1600
-const BREP_WASM_KB = 1400
+const EXACT_GEOM_WASM_KB = 3000
 const isStepReader = (file) => /occt-import-js/.test(file)
 const isFullGeom = (file) => /sx_geom_wasm/.test(file)
-const isBrep = (file) => /sx_brep/.test(file)
+const isExact = (file) => /sx_geom_exact/.test(file)
 // The slicer engine's module (sx_wasm): the browser no longer slices, so its size is reported, never a failure.
 // The geometry modules and the shell keep their budgets.
 const isSlicer = (file) => /(^|[/_-])sx_wasm[^/]*\.wasm$/.test(file) && !/sx_geom/.test(file)
@@ -96,8 +97,8 @@ for (const key of seen) {
     console.error(`bundle-size: the STEP reader is in the startup chunk ${manifest[key].file}`)
     failed = true
   }
-  if (isBrep(manifest[key].file)) {
-    console.error(`bundle-size: the B-rep kernel is in the startup chunk ${manifest[key].file}`)
+  if (isExact(manifest[key].file)) {
+    console.error(`bundle-size: the engine with exact solids is in the startup chunk ${manifest[key].file}`)
     failed = true
   }
 }
@@ -115,7 +116,7 @@ for (const key of seen) {
 }
 for (const f of files(dist).filter((f) => f.endsWith('.wasm'))) {
   const size = gz(f)
-  const budget = isStepReader(f) ? STEP_WASM_KB : isFullGeom(f) ? FULL_GEOM_WASM_KB : isBrep(f) ? BREP_WASM_KB : WASM_KB
+  const budget = isStepReader(f) ? STEP_WASM_KB : isFullGeom(f) ? FULL_GEOM_WASM_KB : isExact(f) ? EXACT_GEOM_WASM_KB : WASM_KB
   if (isSlicer(f)) {
     console.log(`wasm ${f}: ${(size / 1024).toFixed(1)} KB gzip (reference ${SLICER_WASM_KB} KB, report only)`)
     continue

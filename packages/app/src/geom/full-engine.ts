@@ -6,6 +6,7 @@
 // The geometry client loads after the first screen, not with it: this module only reads its status, so the client's
 // code is fetched on an idle moment (or when Design asks first).
 import { createStore, useStore } from 'zustand'
+import { exactSolids } from '../cad/history/exact-flag'
 
 export type FullEngine = 'idle' | 'loading' | 'ready' | 'failed'
 
@@ -44,7 +45,8 @@ function start({ geom, usesWorker }: Client): void {
   if (!usesWorker()) return engine.setState({ status: 'ready' })
   engine.setState({ status: 'loading' })
   geom()
-    .call<boolean>('engine.full', null)
+    // with exact solids on, the worker loads the full engine that has them instead (modules.ts)
+    .call<boolean>('engine.full', { exact: exactSolids() })
     .then(
       (ok) => engine.setState({ status: ok ? 'ready' : 'failed' }),
       () => engine.setState({ status: 'failed' }),

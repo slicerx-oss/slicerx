@@ -4,8 +4,50 @@
 import { afterEach, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ bytes: 0, loads: 0 }))
-vi.mock('../src/geom/brep', () => ({ loadBrep: async () => { state.loads++; return { memoryBytes: () => state.bytes, call: (op: string) => { if (op === 'fail') throw new Error('failed'); return {} } } } }))
-vi.mock('../src/geom/modules', () => ({ engineModules: () => ({ run: async () => ({}), module: async () => ({ operations: new Set(), call: () => ({}) }), core: async () => true, full: async () => true }) }))
+// the engine with exact solids, as its exports: a memory of state.bytes (replaced when it grows, as a wasm memory's
+// buffer is) that answers {} to every call and an error to brep.fail
+vi.mock('../src/geom/exact-engine', () => ({
+  loadExactExports: async () => {
+    state.loads++
+    let buffer = new ArrayBuffer(0)
+    let op = ''
+    const at = { out: 0, error: 16, ops: 40, input: 64 }
+    const reply = { out: new TextEncoder().encode('{}'), error: new TextEncoder().encode('{"error":"failed"}'), ops: new TextEncoder().encode('[]') }
+    const memory = {
+      get buffer() {
+        if (buffer.byteLength !== state.bytes) {
+          buffer = new ArrayBuffer(state.bytes)
+          new Uint8Array(buffer).set(reply.out, at.out)
+          new Uint8Array(buffer).set(reply.error, at.error)
+          new Uint8Array(buffer).set(reply.ops, at.ops)
+        }
+        return buffer
+      },
+    }
+    return {
+      memory,
+      geom_input: () => at.input,
+      geom_call: () => {
+        const bytes = new Uint8Array(memory.buffer, at.input, 32)
+        op = new TextDecoder().decode(bytes.subarray(0, bytes.indexOf(0)))
+        return op === 'brep.fail' ? 1 : 0
+      },
+      geom_ops: () => 0,
+      geom_out_ptr: () => (op === '' ? at.ops : at.out),
+      geom_out_len: () => (op === '' ? reply.ops.length : reply.out.length),
+      geom_error_ptr: () => at.error,
+      geom_error_len: () => reply.error.length,
+    }
+  },
+}))
+vi.mock('../src/geom/modules', () => ({
+  engineModules: (_core: unknown, _full: unknown, _err: unknown, loadExact: () => Promise<{ call(op: string, r: unknown): unknown }>) => {
+    let exact: Promise<{ call(op: string, r: unknown): unknown }> | null = null
+    const plain = { operations: new Set(), call: () => ({}) }
+    const module = async (op: string) => (op.startsWith('brep.') ? (exact ??= loadExact()) : plain)
+    return { run: async (op: string, r: unknown) => (await module(op)).call(op, r), module, core: async () => true, full: async () => true }
+  },
+}))
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.resetModules() })
 
 it('reports the lazy exact heap after growth and on error replies', async () => {

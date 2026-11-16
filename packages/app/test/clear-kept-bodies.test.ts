@@ -5,16 +5,13 @@
 // worker, in the native engine (useNativeEngine), and, with no geometry client loaded yet, nowhere (nothing was kept
 // and nothing loads for the clear). The project code asks through cad/waiting.ts, so the app shell does not load the
 // geometry client and the history code it brings (apps/web/scripts/bundle-size.mjs).
-import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { IDENTITY, clearReplayCache, releaseReplayCache, replayHistory, type EngineCall, type History, type ReplayRequest, type Step, type StepParams } from '@slicerx/cad-history'
-import init from '../../brep/lib/sx_brep.mjs'
-import { brepModule } from '../src/geom/brep'
+import { exactBuilt, exactKernel } from './exact-module'
 import { endIdleGeomWorker, geom, setGeomProvider } from '../src/geom/client'
 import { decodeFrame, encodeFrame, useNativeEngine, type NativeEngine } from '../src/geom/native-provider'
 import { clearProject } from '../src/project/new'
 
-const wasm = readFileSync(new URL('../../brep/lib/sx_brep.wasm', import.meta.url))
 
 const frame = { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
 
@@ -33,7 +30,8 @@ let engine: EngineCall
 
 beforeEach(async () => {
   clearReplayCache()
-  const kernel = brepModule(await init({ wasmBinary: wasm }))
+  if (!exactBuilt) return
+  const kernel = await exactKernel()
   live = () => (kernel.call('count', {}) as { bodies: number }).bodies
   engine = async (op, r) => {
     if (!op.startsWith('brep.')) throw new Error(`no mesh engine here (${op})`)
@@ -58,7 +56,7 @@ async function replayThenClear(): Promise<void> {
   await vi.waitFor(() => expect(live()).toBe(0), { timeout: 2000 })
 }
 
-it("frees them in the app's own geometry worker", async () => {
+it.skipIf(!exactBuilt)("frees them in the app's own geometry worker", async () => {
   const ops: string[] = []
   // the worker's side of its messages (geom-worker.ts): replays keep their bodies in it, and the release frees them there
   class KernelWorker {
@@ -82,7 +80,7 @@ it("frees them in the app's own geometry worker", async () => {
   expect(ops).toEqual(['history.replay', 'history.release'])
 }, 60_000)
 
-it('frees them in the native engine', async () => {
+it.skipIf(!exactBuilt)('frees them in the native engine', async () => {
   const ops: string[] = []
   // the engine's serve loop, in this process: each frame's call runs on the kernel and answers in a frame
   const native: NativeEngine = {
@@ -104,7 +102,7 @@ it('frees them in the native engine', async () => {
   expect(ops).toContain('brep.free')
 }, 60_000)
 
-it('frees nothing and loads no geometry client when none was loaded', async () => {
+it.skipIf(!exactBuilt)('frees nothing and loads no geometry client when none was loaded', async () => {
   vi.resetModules()
   let loaded = false
   vi.doMock('../src/geom/client', async (actual) => {

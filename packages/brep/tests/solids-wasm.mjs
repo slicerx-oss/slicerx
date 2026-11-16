@@ -3,26 +3,20 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import init from '../lib/sx_brep.mjs'
+// the kernel in the engine's exact build (packages/geom/wasm/scripts/build-exact.sh), called as the app's worker calls it
+import init from '../../geom/wasm/pkg/sx_geom_exact.mjs'
 
 const fixtures = JSON.parse(readFileSync(new URL('./solid-cases.json', import.meta.url), 'utf8'))
-const kernel = await init({ wasmBinary: readFileSync(new URL('../lib/sx_brep.wasm', import.meta.url)) })
+const engine = await init({ wasmBinary: readFileSync(new URL('../../geom/wasm/pkg/sx_geom_exact.wasm', import.meta.url)) })
+const text = (ptr, len) => new TextDecoder().decode(engine.HEAPU8.subarray(ptr, ptr + len))
 function call(op, request) {
-  const text = JSON.stringify(request)
-  const o = kernel.stringToNewUTF8(op)
-  const r = kernel.stringToNewUTF8(text)
-  let reply = 0
-  try {
-    reply = kernel._sx_brep_call(o, r)
-    assert.ok(reply, 'kernel reply allocation')
-    const result = JSON.parse(kernel.UTF8ToString(reply))
-    assert.equal(result.error, undefined, result.error)
-    return result
-  } finally {
-    if (reply) kernel._sx_brep_free(reply)
-    kernel._free(r)
-    kernel._free(o)
-  }
+  const bytes = new TextEncoder().encode(`brep.${op}\0${JSON.stringify(request)}`)
+  // the input buffer first: making it may grow the memory, which replaces HEAPU8
+  const at = engine._geom_input(bytes.length)
+  engine.HEAPU8.set(bytes, at)
+  const code = engine._geom_call()
+  assert.equal(code, 0, code === 0 ? '' : text(engine._geom_error_ptr(), engine._geom_error_len()))
+  return JSON.parse(text(engine._geom_out_ptr(), engine._geom_out_len()))
 }
 
 function request(value, key, scale, offset, bodies) {

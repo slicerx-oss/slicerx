@@ -53,11 +53,11 @@ export function trapMessage(panic: string, memoryBytes: number): string {
 
 /**
  * Whether a call that ran out of memory is tried once more on the engine loaded again. Each call carries all of its
- * input, so the retry sees what the first try did, except a nest session's later steps: the session lived in the
- * engine that stopped. A panic would only repeat, so it is never tried again.
+ * input, so the retry sees what the first try did, except a nest session's later steps and an exact solid op: the
+ * session and the bodies lived in the engine that stopped. A panic would only repeat, so it is never tried again.
  */
 export const retriesAfterTrap = (err: unknown, op: string): err is EngineTrap =>
-  err instanceof EngineTrap && err.outOfMemory && op !== 'nest.step' && op !== 'nest.end'
+  err instanceof EngineTrap && err.outOfMemory && op !== 'nest.step' && op !== 'nest.end' && !op.startsWith('brep.')
 
 /**
  * The request with each mesh that came as typed arrays (and without faces) written into an engine buffer in the raw
@@ -162,17 +162,34 @@ function plainArrays(v: unknown): unknown {
   return out
 }
 
+const MAX_EXACT_REQUEST = 32 * 1024 * 1024
+
+/**
+ * An exact solid op's request as the kernel takes it: as it is, and refused before it is copied into the engine when
+ * the op's name passes 128 bytes or the request 32 MiB, the kernel's own limits (packages/brep/README.md).
+ */
+export function exactRequest(op: string, request: unknown): string {
+  const name = op.slice('brep.'.length)
+  if (name.length > 128 || new TextEncoder().encode(name).byteLength > 128) throw new Error('op: exceeds 128 bytes')
+  const json = JSON.stringify(request ?? {}) as string | undefined
+  if (json === undefined) throw new Error('brep: request is not JSON')
+  if (json.length > MAX_EXACT_REQUEST || new TextEncoder().encode(json).byteLength > MAX_EXACT_REQUEST) throw new Error('request: exceeds 32 MiB')
+  return json
+}
+
 /**
  * One call of the engine: the request with its typed-array meshes in raw buffers and the rest as JSON, every mesh asked
  * for with its faces (which the parts keep and send again with the next call); the answer with any raw output
- * buffers read back as typed arrays. Throws the engine's message when the call fails.
+ * buffers read back as typed arrays. An exact solid op (brep.*) goes as it is (exactRequest). Throws the engine's
+ * message when the call fails.
  */
 export function callEngine(x: GeomExports, op: string, request: unknown): unknown {
   const text = (ptr: number, len: number) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len))
   let code: number
   try {
     const files = { n: 0 }
-    const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(rawMeshes(x, rawData(x, request, files), files))))}`)
+    const json = op.startsWith('brep.') ? exactRequest(op, request) : JSON.stringify(askFaces(plainArrays(rawMeshes(x, rawData(x, request, files), files))))
+    const bytes = new TextEncoder().encode(`${op}\0${json}`)
     const at = x.geom_input(bytes.length)
     new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
     code = x.geom_call()

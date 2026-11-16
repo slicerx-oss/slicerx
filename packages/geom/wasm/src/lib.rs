@@ -147,6 +147,10 @@ pub extern "C" fn geom_error_len() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn geom_call() -> u32 {
     keep_panics();
+    // the app's worker sends back the bodies it kept as text (a project's, a replay's cache), as it did to the
+    // separate kernel module before; the text ends in a hash of itself, checked before the kernel reads it
+    #[cfg(feature = "brep")]
+    sx_geom::json::allow_brep_text(true);
     let result = with(|s| {
         let split = s
             .input

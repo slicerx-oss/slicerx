@@ -84,6 +84,17 @@ fn main() {
         b
     };
     let (sm_inc, api_inc) = (sm.join("inc"), api.join("inc"));
+    // the engine's exact wasm build links the kernel, its C API and the wrapper itself, from the objects
+    // scripts/wasm-objects.sh made (packages/geom/wasm/scripts/build-exact.sh); only the bridge is built here
+    println!("cargo:rerun-if-env-changed=SX_BREP_WASM_OBJECTS");
+    if std::env::var("SX_BREP_WASM_OBJECTS").as_deref() == Ok("1") {
+        #[cfg(feature = "typed")]
+        build(cxx_build::bridge("src/kernel.rs"), [&api_inc, &sm_inc])
+            .define("SM_API_EXPORTS", None)
+            .compile("sx_brep_bridge");
+        println!("cargo:rustc-cfg=sx_brep_kernel");
+        return;
+    }
     // with the typed feature the wrapper's library also holds the bridge of src/kernel.rs: cxx writes its C++ half,
     // which builds against the same headers with the same flags
     #[cfg(feature = "typed")]

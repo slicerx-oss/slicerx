@@ -2,23 +2,25 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { readFileSync } from 'node:fs'
 import { parentPort } from 'node:worker_threads'
-import init from '../../../brep/lib/sx_brep.mjs'
+import init from '../../../geom/wasm/pkg/sx_geom_exact.mjs'
 
-const kernel = await init({ wasmBinary: readFileSync(new URL('../../../brep/lib/sx_brep.wasm', import.meta.url)) })
+// the engine with exact solids (packages/geom/wasm/scripts/build-exact.sh), called as the worker calls it
+const engine = await init({ wasmBinary: readFileSync(new URL('../../../geom/wasm/pkg/sx_geom_exact.wasm', import.meta.url)) })
+const text = (ptr, len) => new TextDecoder().decode(engine.HEAPU8.subarray(ptr, ptr + len))
 function call(op, request) {
-  const o = kernel.stringToNewUTF8(op)
-  const r = kernel.stringToNewUTF8(JSON.stringify(request))
-  let p = 0
+  const bytes = new TextEncoder().encode(`brep.${op}\0${JSON.stringify(request)}`)
+  // the input buffer first: making it may grow the memory, which replaces HEAPU8
+  const at = engine._geom_input(bytes.length)
+  engine.HEAPU8.set(bytes, at)
+  if (engine._geom_call() === 0) return JSON.parse(text(engine._geom_out_ptr(), engine._geom_out_len()))
+  const message = text(engine._geom_error_ptr(), engine._geom_error_len())
+  let error = message
   try {
-    p = kernel._sx_brep_call(o, r)
-    const result = JSON.parse(kernel.UTF8ToString(p))
-    if (result.error) throw new Error(result.error)
-    return result
-  } finally {
-    if (p) kernel._sx_brep_free(p)
-    kernel._free(r)
-    kernel._free(o)
+    error = JSON.parse(message).error ?? message
+  } catch {
+    // a plain message stays as it is
   }
+  throw new Error(error)
 }
 
 parentPort.on('message', ({ id, op, request }) => {

@@ -299,6 +299,21 @@ jobs:
           key: geom
       - if: steps.scope.outputs.engine == 'true'
         run: sh packages/geom/wasm/scripts/build.sh
+      # The full engine with exact solids (one Emscripten module with the SMLib kernel) for the app tests of exact
+      # solids. Emscripten and the kernel's objects are cached; the objects' stamps decide which are built again.
+      - if: steps.scope.outputs.engine == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/slicerx/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - if: steps.scope.outputs.engine == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sx-exact
+          key: exact-wasm-${{ runner.os }}-${{ hashFiles('packages/brep/scripts/wasm-objects.sh', 'packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh', 'packages/brep/cpp/**') }}
+          restore-keys: exact-wasm-${{ runner.os }}-
+      - if: steps.scope.outputs.engine == 'true'
+        run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"
       # Chromium for the unit tests that lay out in a real browser (packages/ui setting-row-browser.test.tsx).
       - if: steps.scope.outputs.chromium == 'true'
         id: pw
@@ -889,6 +904,20 @@ jobs:
       # The geometry module the app's worker loads, then both modules for the e2e shards or the smoke job.
       - if: needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true'
         run: sh packages/geom/wasm/scripts/build.sh
+      # The full engine with exact solids, every run: the web build below holds it to its budget, and the kernel's
+      # wasm tests run on it. Emscripten and the kernel's objects are cached; the objects' stamps decide which are built
+      # again.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/slicerx/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sx-exact
+          key: exact-wasm-${{ runner.os }}-${{ hashFiles('packages/brep/scripts/wasm-objects.sh', 'packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh', 'packages/brep/cpp/**') }}
+          restore-keys: exact-wasm-${{ runner.os }}-
+      - run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"
+      - run: node --test packages/brep/tests/solids-wasm.mjs
       - if: needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -950,7 +979,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: node --test packages/brep/tests/solids-wasm.mjs
       - run: sh packages/brep/tests/wasm-cache.sh
       - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: actions/cache@v4
@@ -1019,7 +1047,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: node --test packages/brep/tests/solids-wasm.mjs
       - run: sh packages/brep/tests/wasm-cache.sh
       - run: eval "$SX_TOOLCHAIN_INSTALL"
       - uses: actions/cache@v4

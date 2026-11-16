@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // sx-brep: exact solids on the SMLib kernel behind one JSON call, for the native build (src/lib.rs) and the
-// WebAssembly module (scripts/build-wasm.sh). Bodies live in a table here and are named by number; every op that
+// geometry engine's WebAssembly build (scripts/wasm-objects.sh). Bodies live in a table here and are named by number; every op that
 // changes a body makes a new one, so a caller can keep earlier steps.
 #include "json.h"
 #include "sx_keys.h"

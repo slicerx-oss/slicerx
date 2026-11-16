@@ -4,13 +4,10 @@
 // Kept bodies don't leak: 200 exact replays on the B-rep kernel's wasm module, as the geometry worker runs them
 // (keepsBodies), with edits that miss the cache and cancels part way, then the cache cleared. The kernel's live
 // body count stays bounded and comes back to zero.
-import { readFileSync } from 'node:fs'
 import { beforeEach, expect, it } from 'vitest'
 import { IDENTITY, clearReplayCache, replayHistory, type History, type Step, type StepParams } from '@slicerx/cad-history'
-import init from '../../brep/lib/sx_brep.mjs'
-import { brepModule } from '../src/geom/brep'
+import { exactBuilt, exactKernel } from './exact-module'
 
-const wasm = readFileSync(new URL('../../brep/lib/sx_brep.wasm', import.meta.url))
 
 const step = (id: string, params: StepParams): Step => ({ id, part: 0, transform: [...IDENTITY], params })
 const frame = { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
@@ -29,8 +26,8 @@ function history(i: number): History {
 
 beforeEach(() => clearReplayCache())
 
-it('frees every kept body once no cached step holds it, through edits and cancels', async () => {
-  const kernel = brepModule(await init({ wasmBinary: wasm }))
+it.skipIf(!exactBuilt)('frees every kept body once no cached step holds it, through edits and cancels', async () => {
+  const kernel = await exactKernel()
   const live = () => (kernel.call('count', {}) as { bodies: number }).bodies
   const call = async (op: string, r: unknown) => {
     if (!op.startsWith('brep.')) throw new Error(`no mesh engine here (${op})`)

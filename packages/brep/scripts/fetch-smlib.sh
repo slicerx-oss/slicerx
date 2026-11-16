@@ -4,7 +4,7 @@
 # Downloads the SMLib kernel (NVIDIA usd-brep, Apache-2.0) at the pinned commit, checks its SHA-256 and unpacks the
 # kernel (source/SMLib), its C API (source/SM_API) and the license into a cache outside the repository, then swaps
 # in our versions of the routines swap-routines.sh names. Prints the directory, which the native build (build.rs) and
-# scripts/build-wasm.sh read from SX_SMLIB_DIR. The marker's number goes up with each change to swap-routines.sh.
+# scripts/wasm-objects.sh read from SX_SMLIB_DIR. The marker's number goes up with each change to swap-routines.sh.
 # Each run checks that the copy it prints has every inventoried routine swapped out.
 set -eu
 commit=c9c5979f04cea8c38213004d4f04df0dcfb40d05

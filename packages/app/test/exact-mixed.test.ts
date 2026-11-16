@@ -6,15 +6,13 @@ import { createHash } from 'node:crypto'
 import { cpus, platform } from 'node:os'
 import { expect, it } from 'vitest'
 import { clearReplayCache, IDENTITY, replayHistory, type History, type HistoryMesh } from '@slicerx/cad-history'
-import init from '../../brep/lib/sx_brep.mjs'
-import { brepModule } from '../src/geom/brep'
-import { callEngine, type GeomExports } from '../src/geom/engine-call'
+import { callEngine } from '../src/geom/engine-call'
 import { scanStl } from '../src/export/stl-scan'
-import { wasmBuilt } from './geom-engine'
+import { exactBuilt, exactKernel, exactWasm } from './exact-module'
 
-const meshPath = process.env['SX_GEOM_WASM'] ?? new URL('../../geom/wasm/pkg/sx_geom_wasm.wasm', import.meta.url)
-const available = wasmBuilt(meshPath)
-if (process.env['SX_BREP_REQUIRE_MIXED'] === '1' && !available) throw new Error('mixed replay requires the real geometry WASM')
+// the mesh steps and the exact ones in the one module that holds both, as the worker runs them with exact solids on
+const available = exactBuilt
+if (process.env['SX_BREP_REQUIRE_MIXED'] === '1' && !available) throw new Error('mixed replay requires the engine with exact solids (build-exact.sh)')
 
 function importedCube(): HistoryMesh {
   const corners = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]]
@@ -61,24 +59,19 @@ function checkMesh(mesh: HistoryMesh, volume: number, bounds: number[], toleranc
 
 it.skipIf(!available)('replays imported STL and exact parts independently with measured warm recovery', async () => {
   const loading = performance.now()
-  const exactBytes = readFileSync(new URL('../../brep/lib/sx_brep.wasm', import.meta.url))
-  const kernel = brepModule(await init({ wasmBinary: exactBytes }))
+  const exactBytes = readFileSync(exactWasm)
+  const kernel = await exactKernel()
   const exactLoadMs = performance.now() - loading
-  const meshLoading = performance.now()
-  const meshBytes = readFileSync(meshPath)
-  const { instance } = await WebAssembly.instantiate(meshBytes, {})
-  const mesh = instance.exports as unknown as GeomExports
-  const meshLoadMs = performance.now() - meshLoading
   const base = importedCube(), original = JSON.stringify(base)
   const samples: object[] = []
   let operations: { op: string; ms: number }[] = []
-  let peakWasmBytes = kernel.memoryBytes() + mesh.memory.buffer.byteLength
+  let peakWasmBytes = kernel.memoryBytes()
   const call = async (op: string, request: unknown) => {
     const start = performance.now()
-    try { return op.startsWith('brep.') ? kernel.call(op.slice(5), request) : callEngine(mesh, op, request) }
+    try { return callEngine(kernel.exports, op, request) }
     finally {
       operations.push({ op, ms: performance.now() - start })
-      peakWasmBytes = Math.max(peakWasmBytes, kernel.memoryBytes() + mesh.memory.buffer.byteLength)
+      peakWasmBytes = Math.max(peakWasmBytes, kernel.memoryBytes())
     }
   }
   clearReplayCache()
@@ -118,7 +111,7 @@ it.skipIf(!available)('replays imported STL and exact parts independently with m
     expect(kernel.call('count', {})).toEqual({ bodies: 0 })
   }
   const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
-  const profile = { platform: platform(), cpu: cpus()[0]?.model, node: process.version, exactSha256: digest(exactBytes), meshSha256: digest(meshBytes), exactLoadMs, meshLoadMs, peakWasmBytes, processPeakRssBytes: process.resourceUsage().maxRSS * 1024, samples }
+  const profile = { platform: platform(), cpu: cpus()[0]?.model, node: process.version, exactSha256: digest(exactBytes), exactLoadMs, peakWasmBytes, processPeakRssBytes: process.resourceUsage().maxRSS * 1024, samples }
   const output = process.env['SX_BREP_PROFILE_PATH']
   if (output) writeFileSync(output, JSON.stringify(profile, null, 2) + '\n')
 }, 60_000)

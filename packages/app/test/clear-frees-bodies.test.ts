@@ -6,15 +6,12 @@
 // then the plate cleared. Before, every clear left the last design's bodies held, so the count went 5, 10, 15 over
 // three designs; now each clear takes it back to 0 with no further replay. A replay running at the clear keeps its
 // bodies until it ends, and keeps none after.
-import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { IDENTITY, clearReplayCache, releaseReplayCache, replayHistory, type EngineCall, type History, type ReplayRequest, type Step, type StepParams } from '@slicerx/cad-history'
-import init from '../../brep/lib/sx_brep.mjs'
-import { brepModule } from '../src/geom/brep'
+import { exactBuilt, exactKernel } from './exact-module'
 import { geom, setGeomProvider, type GeomProvider } from '../src/geom/client'
 import { clearProject } from '../src/project/new'
 
-const wasm = readFileSync(new URL('../../brep/lib/sx_brep.wasm', import.meta.url))
 
 const step = (id: string, params: StepParams): Step => ({ id, part: 0, transform: [...IDENTITY], params })
 const frame = { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
@@ -40,7 +37,8 @@ let beforeStep: (() => Promise<void>) | null = null
 
 beforeEach(async () => {
   clearReplayCache()
-  const kernel = brepModule(await init({ wasmBinary: wasm }))
+  if (!exactBuilt) return
+  const kernel = await exactKernel()
   live = () => (kernel.call('count', {}) as { bodies: number }).bodies
   engine = async (op, r) => {
     if (!op.startsWith('brep.')) throw new Error(`no mesh engine here (${op})`)
@@ -67,7 +65,7 @@ afterEach(() => {
 /** An exact replay of `h`, sent as the app sends it. */
 const replay = (h: History) => geom().call<{ status: { state: string }[] }>('history.replay', { history: h, exact: true })
 
-it('frees the bodies of each design when the plate is cleared, with no further replay', async () => {
+it.skipIf(!exactBuilt)('frees the bodies of each design when the plate is cleared, with no further replay', async () => {
   expect(live()).toBe(0)
   for (const i of [0, 1, 2]) {
     const r = await replay(design(i))
@@ -79,7 +77,7 @@ it('frees the bodies of each design when the plate is cleared, with no further r
   }
 }, 60_000)
 
-it('keeps the bodies of a replay running at the clear until it ends, and none after', async () => {
+it.skipIf(!exactBuilt)('keeps the bodies of a replay running at the clear until it ends, and none after', async () => {
   let reached!: () => void
   const atRound = new Promise<void>((r) => (reached = r))
   let go!: () => void

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @vitest-environment node
-import { readFileSync } from 'node:fs'
 import { beforeEach, expect, it } from 'vitest'
 import { clearReplayCache, IDENTITY, replayHistory, type History, type HistoryMesh } from '@slicerx/cad-history'
-import init from '../../brep/lib/sx_brep.mjs'
-import { brepModule } from '../src/geom/brep'
+import { exactBuilt, exactKernel } from './exact-module'
 
 beforeEach(() => clearReplayCache())
 const mesh: HistoryMesh = { name: 'Face', slot: 1, positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [7], table: [{ kind: 'plane', normal: [0, 0, 1], offset: 0 }] } }
@@ -53,8 +51,8 @@ it.each(['', 'brep: '])('does not fall back after an exact reference failure wit
   expect(r.exactFellBack).toBeUndefined()
 })
 
-it('requires repair for deleted, split and merged kernel faces, including after save and reload', async () => {
-  const k = brepModule(await init({ wasmBinary: readFileSync(new URL('../../brep/lib/sx_brep.wasm', import.meta.url)) }))
+it.skipIf(!exactBuilt)('requires repair for deleted, split and merged kernel faces, including after save and reload', async () => {
+  const k = await exactKernel()
   const held: number[] = []
   const make = (op: string, req: object) => { const r = k.call(op, req) as { body: number; bodySmb: string }; held.push(r.body); return r }
   const faces = (body: unknown) => (k.call('tessellate', { body }) as { faces: { key: number; surface: { normal: number[]; offset: number } }[] }).faces

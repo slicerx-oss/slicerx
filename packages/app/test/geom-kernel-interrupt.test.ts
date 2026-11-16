@@ -5,8 +5,9 @@ import { Worker as Thread } from 'node:worker_threads'
 import { expect, it, vi } from 'vitest'
 import { clearReplayCache, IDENTITY, replayHistory, type History } from '@slicerx/cad-history'
 import { endIdleGeomWorker, geom, setGeomProvider } from '../src/geom/client'
+import { exactBuilt } from './exact-module'
 
-it('ends a busy real kernel worker and starts again without its body handles', async () => {
+it.skipIf(!exactBuilt)('ends a busy real kernel worker and starts again without its body handles', async () => {
   const workers: KernelWorker[] = []
   class KernelWorker {
     onmessage: ((event: MessageEvent) => void) | null = null

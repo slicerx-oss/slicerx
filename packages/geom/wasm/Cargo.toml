@@ -37,3 +37,6 @@ hollow = ["sx-geom/hollow"]
 formats = ["sx-geom/formats"]
 texture = ["sx-geom/texture"]
 trace = ["sx-geom/trace"]
+# Exact solids (the SMLib kernel) in the same module: an Emscripten build (scripts/build-exact.sh), not in the default
+# set, since it needs the kernel's C++ objects at the link.
+brep = ["sx-geom/brep"]

@@ -29,14 +29,14 @@ node --test packages/brep/tests/solids-wasm.mjs
 
 Both paths check analytic volume, bounds, manifold status, save/reopen, closed and consistently oriented tessellation, and released body counts. Analytic relative volume tolerance is 1e-6, or 1e-4 for fillets that may use spline surfaces. Tessellation uses a scale-relative 0.01 mm chord and a 15 degree angle; its separate volume tolerance is 0.5 percent. Mesh volume is measured relative to the placement origin to avoid cancellation from large world coordinates. These are correctness tests, not timing benchmarks or proof of complete numerical conditioning.
 
-The app's mixed replay fixture uses the production STL reader and both real WASM adapters. It checks an imported part beside a native plate, hole edits, undo cache reuse, history reconstruction and final body cleanup. Build the geometry WASM first, then run from the repository root:
+The app's mixed replay fixture uses the production STL reader and the engine with exact solids, which runs the mesh steps and the exact ones. It checks an imported part beside a native plate, hole edits, undo cache reuse, history reconstruction and final body cleanup. Build that module first (above), then run from the repository root:
 
 ```sh
 SX_BREP_REQUIRE_MIXED=1 SX_BREP_PROFILE_PATH=/tmp/mixed-exact-profile.json \
   pnpm --filter @slicerx/app exec vitest run test/exact-mixed.test.ts --maxWorkers=1
 ```
 
-The required flag fails when the geometry WASM is absent; ordinary app unit runs can skip this fixture. CI requires it and uploads the profile. The profile records artifact hashes, module load time, each operation, tessellation, replay overhead, combined WASM heap high-water size and whole test-process peak RSS. Five forced rebuilds per path retain correctness checks. Fixed execution order, first-use costs and shared-machine load limit timing comparisons; use the measurements as a baseline before choosing latency thresholds. JSON history reconstruction here does not replace the browser project save/reopen and reslice gate.
+The required flag fails when the module is absent; ordinary app unit runs can skip this fixture. CI requires it and uploads the profile. The profile records artifact hashes, module load time, each operation, tessellation, replay overhead, WASM heap high-water size and whole test-process peak RSS. Five forced rebuilds per path retain correctness checks. Fixed execution order, first-use costs and shared-machine load limit timing comparisons; use the measurements as a baseline before choosing latency thresholds. JSON history reconstruction here does not replace the browser project save/reopen and reslice gate.
 
 ## Our routines in the kernel
 
@@ -93,23 +93,17 @@ SX_BREP_REQUIRE=1 cargo test -p sx-brep --release --features typed
 
 ## WebAssembly
 
-The browser runs the same kernel and wrapper as a wasm module in `lib/`, built by `scripts/build-wasm.sh` with a pinned Emscripten (6.0.10, `-Oz` with link-time optimization, wasm exceptions, one thread). The geometry worker loads it the first time an op needs it (`packages/app/src/geom/brep.ts`), so the app shell never carries it; `apps/web/scripts/bundle-size.mjs` fails a build that puts it in a startup chunk and holds the wasm to a 1400 KB gzip ceiling. The module loads only for exact solids, which are behind a developer flag.
+The browser runs the same kernel and wrapper inside the geometry engine: `packages/geom/wasm/scripts/build-exact.sh` builds sx-geom with exact solids and links the kernel's objects into one Emscripten module (`sx_geom_exact.wasm`, pinned Emscripten 6.0.10, `-Oz` with link-time optimization, wasm exceptions, one thread). `scripts/wasm-objects.sh` compiles those objects. The app's geometry worker loads the module in place of the full engine when exact solids are on, which a developer flag turns on, and on the first exact call otherwise (`packages/app/src/geom/modules.ts`), so the app shell never carries it; `apps/web/scripts/bundle-size.mjs` fails a build that puts it in a startup chunk and holds the wasm to a 3000 KB gzip budget.
 
-The build is committed so the web build needs no C++ toolchain. Rebuild it after a change to `cpp/` or the pinned kernel:
+The module is generated, as the other engine builds are, and CI builds it with Emscripten and the kernel's objects cached:
 
 ```sh
 sh packages/brep/scripts/fetch-smlib.sh
-sh packages/brep/scripts/build-wasm.sh /tmp/sx-brep-build
+sh packages/geom/wasm/scripts/build-exact.sh /tmp/sx-exact-build
+node --test packages/brep/tests/solids-wasm.mjs
 ```
 
 Cached objects include the source, recursive wrapper and kernel headers, compiler identity and flags in their stamps. `sh packages/brep/tests/wasm-cache.sh` checks invalidation for nested headers, both kernel header trees, compiler changes and flags.
-
-| File | Bytes | gzip | SHA-256 |
-| --- | --- | --- | --- |
-| `lib/sx_brep.wasm` | 3,268,611 | 1,293,131 | `bd7ab2ee2dc6a1fb5272453d51773fcdd4f7fbae1c5c3c6e4501d9c8363c5d67` |
-| `lib/sx_brep.mjs` | 63,340 | 17,861 | `ecda0a5fb31873ad175525b589c3fc45c98ed0aa967b23186df002eb0997760c` |
-
-Gzip sizes use Node zlib at level 9, matching the web bundle gate. The previous WASM was 1,290,436 bytes by the same method; this build adds 2,695 bytes and remains below the 1,400,000-byte ceiling.
 
 ## Licenses
 

@@ -1,19 +1,17 @@
 // @vitest-environment node
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The B-rep kernel's wasm module (packages/brep/lib) through the worker's wrapper: a hole as deep as the part comes
+// The B-rep kernel in the engine's exact build (exact-module.ts) through the worker's caller: a hole as deep as the part comes
 // out closed with its exact volume, every triangle names its face, the Add shapes stand where their meshes do, and
 // errors arrive as thrown messages.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import init from '../../brep/lib/sx_brep.mjs'
-import { brepModule, type BrepModule } from '../src/geom/brep'
+import { exactBuilt, exactKernel, type ExactKernel } from './exact-module'
 import { bake, primitive } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
 
-const wasm = readFileSync(new URL('../../brep/lib/sx_brep.wasm', import.meta.url))
-let kernel: Promise<BrepModule> | null = null
-const brep = () => (kernel ??= init({ wasmBinary: wasm }).then(brepModule))
+let kernel: Promise<ExactKernel> | null = null
+const brep = () => (kernel ??= exactKernel())
 
 interface Body {
   body: number
@@ -64,7 +62,7 @@ function meshVolume(x: ArrayLike<number>, ix: ArrayLike<number>): number {
   return v
 }
 
-describe('B-rep kernel module', () => {
+describe.skipIf(!exactBuilt)('B-rep kernel module', () => {
   it('requires repair for missing and split face keys without changing the solid', async () => {
     const k = await brep()
     const { body: cube } = k.call('box', { min: [0, 0, 0], max: [20, 20, 20], keySalt: 71 }) as Body
@@ -185,17 +183,12 @@ describe('B-rep kernel module', () => {
   })
 })
 
-it('reports the current exact heap after real memory growth', async () => {
-  const m = await init({ wasmBinary: wasm })
-  const k = brepModule(m)
+it.skipIf(!exactBuilt)('reports the current exact heap after real memory growth', async () => {
+  const k = await exactKernel()
   const before = k.memoryBytes()
   expect(before).toBeGreaterThan(0)
-  const ptr = m.stringToNewUTF8('x'.repeat(before + 1))
-  try {
-    expect(ptr).toBeGreaterThan(0)
-    expect(k.memoryBytes()).toBeGreaterThan(before)
-    expect(k.memoryBytes()).toBe(m.HEAPU8.buffer.byteLength)
-  } finally {
-    m._free(ptr)
-  }
+  // an input buffer larger than the whole heap grows it
+  expect(k.exports.geom_input(before + 1)).toBeGreaterThan(0)
+  expect(k.memoryBytes()).toBeGreaterThan(before)
+  expect(k.memoryBytes()).toBe(k.module.HEAPU8.buffer.byteLength)
 })
