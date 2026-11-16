@@ -77,6 +77,12 @@ export function readProjectSettings(args: Record<string, unknown>) {
   return read(parsed.data.keys)
 }
 
+/** A settings edit waits for a load, a slice or an edit in progress to finish. */
+export function refuseWhileBusy(what: string): void {
+  const s = get()
+  if (s.plateLoading || s.historyEdit || s.rollback || s.dragging || s.liveEdit || s.slice.status === 'running') throw new LinkError('busy', `Finish the current load, slice or edit before changing ${what}`)
+}
+
 /** Check every key and value before applying the same override edit as the settings panel. */
 export function editProjectSettings(args: Record<string, unknown>, client: string) {
   const parsed = projectSettingsInput.safeParse(args)
@@ -87,8 +93,8 @@ export function editProjectSettings(args: Record<string, unknown>, client: strin
   const checked = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, Array.isArray(v) && (v as unknown[]).includes('nil') ? (v as unknown[]).filter((x) => x !== 'nil') : v]))
   const errors = checkValues(checked as PrintConfig).filter((i) => i.severity === 'error' || i.code === 'enum_value_unavailable')
   if (errors.length) throw new LinkError('invalid_input', errors.map((i) => i.message).join('; '))
+  refuseWhileBusy('project settings')
   const s = get()
-  if (s.plateLoading || s.historyEdit || s.rollback || s.dragging || s.liveEdit || s.slice.status === 'running') throw new LinkError('busy', 'Finish the current load, slice or edit before changing project settings')
   const next = { ...s.overrides }
   for (const key of parsed.data.clear) delete next[key]
   Object.assign(next, patch)
