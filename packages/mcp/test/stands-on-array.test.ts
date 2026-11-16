@@ -66,7 +66,7 @@ describe('stands on, with an array of a stacked part', () => {
   it('still fails a funnel sunk into its deckhouse beside its array', () => {
     const sunk: FeatureHeights = { ...ON_SOURCE_HEIGHTS, funnel: { lo: 17.2, hi: 32.3 }, 'funnels (array)': { lo: 17.2, hi: 32.3 } }
     expect(stackItem(ARRAY_ON_SOURCE, sunk)).toMatchObject({
-      got: 'Funnel stands on Promenade deck house, but its base is 1 mm below its top, so 14.1 mm of it shows of a planned 15.1 mm; build it from the top of Promenade deck house, whose highest point is at z 18.2 mm',
+      got: 'Funnel stands on Promenade deck house, but its base is 1 mm below its top, so 14.1 mm of it shows of a planned 15.1 mm; make it 16.1 mm tall from its base at z 17.2, so 15.1 mm shows above the top of Promenade deck house, whose highest point is at z 18.2 mm: with design.edit_step, set the size of the step that makes Funnel to 16.1 mm along z, or move it by [0, 0, 1] and set its size to 15.1 mm along z',
       pass: false,
     })
   })
