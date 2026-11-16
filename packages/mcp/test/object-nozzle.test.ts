@@ -28,7 +28,7 @@ async function project(machine: Record<string, unknown>, sizes: number[], filame
   await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
   await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'cube.stl'), copies: 1 })
   await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'cube.stl'), copies: 1 })
-  for (let i = 1; i < filaments; i++) await call(h, 'slicerx_project_add_filament', { color: ['#0a2989', '#22cc66', '#eeeeee'][i - 1] })
+  for (let i = 1; i < filaments; i++) await call(h, 'slicerx_project_add_filament', { color: ['#0a2989', '#22cc66', '#ee8800'][i - 1] })
   const set = await call(h, 'slicerx_project_set_overrides', { changes: { ...machine, nozzle_diameter: sizes } })
   expect(set.ok, set.summary).toBe(true)
   return h

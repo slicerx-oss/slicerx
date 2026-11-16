@@ -4,13 +4,11 @@
 // rail and its dialog do, under the same names and inputs as the server's project.add_filament and project.set_filament.
 // Each answers with the filament and every filament of the project as the rail now shows them, and the parts on screen
 // take the new colors. The part makers that take a filament slot, and color paint, say when it was past the project's
-// last filament. Neither rewrites what the project already has: adding a color the project already has in that material
-// (NEAR_COLOR apart or less) is refused with the filament to use, and so is changing a filament's material, since its
-// parts and the spool it maps to count on it. Matching filaments to spools stays with the send card.
-import { baseMaterial, colorDistance, NEAR_COLOR } from '@slicerx/contracts'
+// last filament. Neither rewrites what the project already has, by the rule the server's tools keep (filaments.ts).
+// Matching filaments to spools stays with the send card.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { FILAMENT_TYPES, filamentColor, filamentType, MAX_FILAMENTS } from './filaments'
+import { ADD_FILAMENT_RULE, addFilamentRefusal, FILAMENT_TYPES, filamentColor, filamentType, MAX_FILAMENTS, SET_FILAMENT_LEAD, SET_FILAMENT_RULE, setFilamentRefusal } from './filaments'
 
 /** One filament as the rail shows it: its number from 1, material type and color (#rrggbb). */
 export interface TabFilament {
@@ -51,13 +49,6 @@ function patchOf(i: { type?: string | undefined; color?: string | undefined }): 
   return { ...(i.type !== undefined ? { type: filamentType(i.type) } : {}), ...(i.color !== undefined ? { color: filamentColor(i.color) } : {}) }
 }
 
-/** The project's filament of `type` within NEAR_COLOR of `color`, the nearest first, if there is one. */
-export function sameFilament(all: readonly TabFilament[], type: string, color: string): TabFilament | undefined {
-  return all
-    .filter((f) => baseMaterial(f.type) === baseMaterial(type) && colorDistance(f.color, color) < NEAR_COLOR)
-    .sort((a, b) => colorDistance(a.color, color) - colorDistance(b.color, color) || a.slot - b.slot)[0]
-}
-
 const failed = (e: unknown) => ({ ok: false as const, summary: e instanceof Error ? e.message : String(e) })
 
 /** project.add_filament and project.set_filament on `filaments`. */
@@ -71,10 +62,10 @@ export function filamentTools(filaments: FilamentList): PilotTool<never>[] {
 
   const add = defineTool({
     name: 'project.add_filament',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
-    description: `Add a filament to the open project after the last one (Add filament on the Slice filament rail), with a material type and a color. Unset, the type is PLA and the color the default for its number. A project holds ${MAX_FILAMENTS} at most. Parts print in a filament by its number (the slot the part makers take), and show in its color. Add only a color something will print or paint in: a color the project already has in that material, or one close to it, is refused with the filament to use instead. Answers with the new filament and every filament of the project.`,
+    description: `Add a filament to the open project after the last one (Add filament on the Slice filament rail), with a material type and a color. Unset, the type is PLA and the color the default for its number. A project holds ${MAX_FILAMENTS} at most. Parts print in a filament by its number (the slot the part makers take), and show in its color. ${ADD_FILAMENT_RULE} Answers with the new filament and every filament of the project.`,
     input: z.object(filamentInput),
     args: (i) => [i.type, i.color].filter(Boolean).join(' '),
     async run(i) {
@@ -82,8 +73,8 @@ export function filamentTools(filaments: FilamentList): PilotTool<never>[] {
         const patch = patchOf(i)
         const slot = filaments.list().length + 1
         if (slot > MAX_FILAMENTS) return { ok: false, summary: `The project already has ${MAX_FILAMENTS} filaments, the most it holds.` }
-        const same = patch.color ? sameFilament(filaments.list(), patch.type ?? 'PLA', patch.color) : undefined
-        if (same) return { ok: false, summary: `Filament ${same.slot} is already ${same.type} ${same.color}, close to ${patch.color}: paint or print with filament ${same.slot}. Nothing was added.` }
+        const refused = addFilamentRefusal(filaments.list(), patch, 'PLA')
+        if (refused) return { ok: false, summary: refused }
         filaments.add(slot, patch)
         return answer(slot, 'Added')
       } catch (e) {
@@ -94,10 +85,10 @@ export function filamentTools(filaments: FilamentList): PilotTool<never>[] {
 
   const set = defineTool({
     name: 'project.set_filament',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
-    description: "Change the color of a filament of the open project (the filament dialog, opened by clicking a ring on the Slice filament rail). Its material type stays: a type other than its own is refused, so add a filament with project.add_filament for another material. Every part printed in that filament shows the new color. Answers with the filament and every filament of the project.",
+    description: `${SET_FILAMENT_LEAD} (the filament dialog, opened by clicking a ring on the Slice filament rail). ${SET_FILAMENT_RULE} Every part printed in that filament shows the new color. Answers with the filament and every filament of the project.`,
     input: z.object({ slot: z.number().int().min(1).max(MAX_FILAMENTS).describe('Filament number, 1-based, as the part makers and the rail number them'), ...filamentInput }),
     args: (i) => [String(i.slot), i.type, i.color].filter(Boolean).join(' '),
     async run(i) {
@@ -107,9 +98,8 @@ export function filamentTools(filaments: FilamentList): PilotTool<never>[] {
         const n = filaments.list().length
         if (i.slot > n) return { ok: false, summary: `No filament ${i.slot}: the project has ${n}. Add one with project.add_filament.` }
         const cur = filaments.list().find((f) => f.slot === i.slot)
-        if (cur && patch.type !== undefined && baseMaterial(patch.type) !== baseMaterial(cur.type)) {
-          return { ok: false, summary: `Filament ${i.slot} stays ${cur.type}: a filament's material is not changed. For ${patch.type}, add a filament with project.add_filament. Nothing changed.` }
-        }
+        const refused = cur && setFilamentRefusal(cur, patch)
+        if (refused) return { ok: false, summary: refused }
         filaments.set(i.slot, patch)
         return answer(i.slot, 'Set')
       } catch (e) {

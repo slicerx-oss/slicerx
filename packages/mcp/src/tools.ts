@@ -18,7 +18,7 @@ import type { ProfileCatalog } from './profiles'
 import { readStlPositions, splitBodies } from './mesh'
 import { placementTools } from './placement'
 import { McpProject } from './project'
-import { FILAMENT_TYPES, MAX_FILAMENTS } from './filaments'
+import { ADD_FILAMENT_RULE, addFilamentRefusal, FILAMENT_TYPES, MAX_FILAMENTS, SET_FILAMENT_LEAD, SET_FILAMENT_RULE, setFilamentRefusal } from './filaments'
 import { validateConfig } from './settings'
 import { projectSettingsInput } from './project-settings-input'
 import type { NodeSlicerHost } from './slicerhost'
@@ -249,14 +249,16 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const addFilament = defineTool({
     name: 'project.add_filament',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'settings',
     permission: 'slice',
-    description: `Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. Unset, the type is the filament profile's and the color the default for its number. A project holds ${MAX_FILAMENTS} at most. Answers with the project, whose filaments list reads it back. Filaments a printer's AMS holds are loaded on the printer, not added here.`,
+    description: `Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. Unset, the type is the filament profile's and the color the default for its number. A project holds ${MAX_FILAMENTS} at most. ${ADD_FILAMENT_RULE} Answers with the project, whose filaments list reads it back. Filaments a printer's AMS holds are loaded on the printer, not added here.`,
     input: z.object(filamentInput),
     async run(i) {
       const project = need()
       try {
+        const refused = project.filaments().length < MAX_FILAMENTS ? addFilamentRefusal(project.filaments(), i, project.profileType()) : undefined
+        if (refused) return { ok: false, summary: refused }
         const f = project.addFilament(i)
         return { summary: `Added filament ${f.slot}: ${f.type} ${f.color}`, output: { filament: f, project: project.describe() } }
       } catch (e) {
@@ -267,15 +269,18 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const setFilament = defineTool({
     name: 'project.set_filament',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'settings',
     permission: 'slice',
-    description: "Change a filament of the open project: its material type, its color, or both (the app's filament dialog, opened by clicking a ring on the Slice filament rail). What is not given stays. Answers with the project, whose filaments list reads it back.",
+    description: `${SET_FILAMENT_LEAD} (the app's filament dialog, opened by clicking a ring on the Slice filament rail). ${SET_FILAMENT_RULE} Answers with the project, whose filaments list reads it back.`,
     input: z.object({ slot: z.number().int().min(1).max(MAX_FILAMENTS).describe('Filament number, 1-based, as slicerx_project_show lists them'), ...filamentInput }),
     async run(i) {
       const project = need()
       if (i.type === undefined && i.color === undefined) return { ok: false, summary: 'Give a type, a color or both.' }
       try {
+        const cur = project.filaments().find((f) => f.slot === i.slot)
+        const refused = cur && setFilamentRefusal(cur, i)
+        if (refused) return { ok: false, summary: refused }
         const f = project.setFilament(i.slot, i)
         return { summary: `Filament ${f.slot} is ${f.type} ${f.color}`, output: { filament: f, project: project.describe() } }
       } catch (e) {

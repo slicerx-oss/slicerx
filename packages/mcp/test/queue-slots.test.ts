@@ -24,13 +24,13 @@ function fakeHub(h: Awaited<ReturnType<typeof connect>>) {
   return sent
 }
 
-/** A sliced one-cube plate for a P1S, with filament 1 as given. */
+/** A sliced one-cube plate for a P1S, with filament 1 as given: its type is the filament profile's, which a filament keeps. */
 async function sliced(filament: { type?: string; color?: string } = {}) {
   const h = await connect()
   const sent = fakeHub(h)
-  await h.call('slicerx_project_open', { name: 'Brackets', printer: 'bambu_p1s', filament: 'pla' })
-  if (filament.type || filament.color) {
-    const set = await h.call('slicerx_project_set_filament', { slot: 1, ...filament })
+  await h.call('slicerx_project_open', { name: 'Brackets', printer: 'bambu_p1s', filament: filament.type ?? 'pla' })
+  if (filament.color) {
+    const set = await h.call('slicerx_project_set_filament', { slot: 1, color: filament.color })
     expect(set.isError, text(set)).toBeFalsy()
   }
   await h.call('slicerx_project_add_model', { model: join(h.dir, 'cube.stl'), copies: 1 })
