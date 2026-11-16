@@ -6,14 +6,14 @@
 // a face with no key of its own going by the face it came from.
 import { describe, expect, it } from 'vitest'
 import { facesMadeBySteps, featureNames, featureSteps, type Step, type StepParams } from '@slicerx/cad-history'
-import { noFeatureText, PAINT_TARGET_TEXT, plannedFeature, storedTarget, targetArg } from '../src/paint-target'
+import { noFeatureText, PAINT_TARGET_TEXT, plannedFeature, REAL_BAND_TEXT, storedTarget, targetArg } from '../src/paint-target'
 import { COLORS_PAINT_TEXT, DETAIL_HELP, DISPLAY_PAINT_TEXT, planDetailFields } from '../src/plan-detail'
 import { appPaintPreviewInput } from '../src/app-paint-input'
 
 describe('the paint by feature wording', () => {
   it('describes the paint target with the feature kind, on the server and the app link alike', () => {
     expect(PAINT_TARGET_TEXT).toBe(
-      'What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from } | { kind: "feature", feature }: every face the steps of that plan feature made, such as a roof, a handle, a pole, a chimney top or a trim, even on a body built from many steps',
+      `What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from } | { kind: "feature", feature }: every face the steps of that plan feature made, such as a roof, a handle, a pole, a chimney top or a trim, even on a body built from many steps. ${REAL_BAND_TEXT}`,
     )
     expect(targetArg.description).toBe(PAINT_TARGET_TEXT)
     expect(appPaintPreviewInput.shape.target.description).toBe(PAINT_TARGET_TEXT)
@@ -23,7 +23,7 @@ describe('the paint by feature wording', () => {
     expect(COLORS_PAINT_TEXT).toBe(
       'A body painted in two or more colors is built in its lightest large color. A feature that is its own color (a roof, a handle, a pole, a chimney top, a trim) is painted by feature, and a band that crosses features (a stripe, a trim line) is its own feature with its color here and its heights as sizes, painted on by height.',
     )
-    expect(planDetailFields.colors.description).toContain(` ${COLORS_PAINT_TEXT} Left out, the part prints in one default filament`)
+    expect(planDetailFields.colors.description).toContain(` ${COLORS_PAINT_TEXT} ${REAL_BAND_TEXT} Left out, the part prints in one default filament`)
     expect(DISPLAY_PAINT_TEXT).toBe(
       'a feature that is its own color (a roof, a handle, a pole, a chimney top, a trim) is painted by feature once the body is built, and a band that crosses features (a stripe, a trim line) is its own feature named for it with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height.',
     )

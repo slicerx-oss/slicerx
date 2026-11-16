@@ -12,6 +12,7 @@
 // change along its length in both directions across it (sectionsProblem), so one shape stretched along a length fails.
 import { loopPoints } from '@slicerx/cad-history'
 import { z } from 'zod'
+import { REAL_BAND_TEXT } from './paint-target'
 import { type FoundSize, lengthsIn, sizeReference, type SizeLookup } from './real-lookup'
 
 export const DETAIL_LEVELS = ['basic', 'display', 'fine'] as const
@@ -103,7 +104,7 @@ export const planDetailFields = {
   colors: z
     .record(text(60), text(40))
     .optional()
-    .describe(`Only when the person asks for color, in the request or a follow-up: each feature's color, by feature name, such as {"Lower body": "red"}. ${COLORS_PAINT_TEXT} Left out, the part prints in one default filament`),
+    .describe(`Only when the person asks for color, in the request or a follow-up: each feature's color, by feature name, such as {"Lower body": "red"}. ${COLORS_PAINT_TEXT} ${REAL_BAND_TEXT} Left out, the part prints in one default filament`),
   scale: z
     .union([z.number().positive(), z.string().trim().regex(/^(1\s*:\s*)?\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
     .optional()

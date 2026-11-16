@@ -95,7 +95,7 @@ function tab() {
 
 describe('design.plan with amends, for a field an amend does not keep', () => {
   it('is 1.20.0', () => {
-    expect(tab().version).toBe('1.24.0')
+    expect(tab().version).toBe('1.25.0')
   })
 
   /** The stored plan's Funnel array, as design.check reads it. */
