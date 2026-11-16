@@ -235,6 +235,27 @@ describe('a project on the spools of a printer, painted and printed', () => {
   })
 })
 
+describe('filaments asked for by material alone', () => {
+  const A1: PrinterInfo = { id: 'bay-1', name: 'Desk', vendor: 'Bambu Lab', model: 'A1', plugin: 'bambu-lan', nozzleCount: 1, filamentSystem: 'ams' }
+  // the AMS holds the red in A3 and the buff in A4, the other way round from the project's filaments 3 and 4
+  const loaded: FilamentSlot[] = [
+    { id: 'A1', material: 'PLA', color: '#FFFFFF' },
+    { id: 'A2', material: 'PLA', color: '#000000' },
+    { id: 'A3', material: 'PLA', color: '#A82A22' },
+    { id: 'A4', material: 'PLA', color: '#D9A441' },
+    { id: '1', material: 'PLA', color: '#FFFFFF' },
+  ]
+
+  it('match by the project filament\'s own color, never by its number', async () => {
+    set({ plate: [clip], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', printerId: 'bay-1', printerSlots: loaded, slotMatch: {}, slotSetup: { 3: { type: 'PLA', brand: '', color: '#d9a441' }, 4: { type: 'PLA', brand: '', color: '#a82a22' } } })
+    const printers = { list: async () => [A1], status: async (): Promise<PrinterStatus> => ({ printerId: 'bay-1', state: 'idle', nozzles: [], slots: loaded, cameraAvailable: false, updatedAt: '2026-10-19T00:00:00.000Z' }) } as unknown as PrinterHost
+    const book = createRunBook(appPrintRun(), () => 0)
+    const ctx = { host: { printers }, sessionId: 's', run: runHandle(book, 's') } as unknown as ToolContext
+    const out = await runTools()[0]!.run({ printer: 'Bambu Lab A1', filaments: [1, 2, 3, 4].map((index) => ({ index, material: 'PLA' })) } as never, ctx)
+    expect((out.output as RunTargetResult).slots.map((r) => `${r.filament} ${r.slot}`)).toEqual(['1 A1', '2 A2', '3 A4', '4 A3'])
+  })
+})
+
 describe('a new printer lands the parts its bed leaves off', () => {
   const BIG: Bed = { ...get().bed, widthMm: 350, depthMm: 320, round: false }
   const P1S: Bed = { ...BIG, widthMm: 256, depthMm: 256 }

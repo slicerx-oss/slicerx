@@ -168,14 +168,22 @@ describe('run.target', () => {
     expect(result).toMatchObject({ printerId: 'bay-3', from: 'picked', slots: [{ filament: 1, slot: 'A1' }] })
   })
 
-  it('a filament that is not loaded asks', async () => {
-    const statuses = [status('bay-1', [WHITE_PLA]), status('bay-2', [], 'offline')]
-    const { asks, result } = await target({ printer: 'Desk', filaments: [{ material: 'PETG' }] }, { statuses, answer: () => 'pick:bay-1:A1' })
+  it('a filament that is not loaded asks for a spool of its material', async () => {
+    const statuses = [status('bay-1', [WHITE_PLA, { id: 'A2', material: 'PETG', color: '#FFFFFF' }])]
+    const { asks, result } = await target({ printer: 'Desk', filaments: [{ material: 'PETG', color: 'black' }] }, { printers: [A1], statuses, answer: () => 'pick:bay-1:A2' })
     expect(asks).toHaveLength(1)
-    expect(asks[0]!.question).toContain('Desk has no PETG loaded.')
-    expect(asks[0]!.choices.map((c) => c.id)).toEqual(['pick:bay-1:A1', 'pick:none'])
+    expect(asks[0]!.question).toContain('Desk has no Black PETG loaded.')
+    expect(asks[0]!.choices.map((c) => c.id)).toEqual(['pick:bay-1:A2', 'pick:none'])
     // the person can still print from the spool they picked
-    expect(result).toMatchObject({ printerId: 'bay-1', from: 'picked', slots: [{ filament: 1, slot: 'A1' }] })
+    expect(result).toMatchObject({ printerId: 'bay-1', from: 'picked', slots: [{ filament: 1, slot: 'A2' }] })
+  })
+
+  it('a filament whose material is not loaded anywhere comes back unmatched, with no card', async () => {
+    const statuses = [status('bay-1', [WHITE_PLA]), status('bay-2', [], 'offline')]
+    const { asks, result, out } = await target({ printer: 'Desk', filaments: [{ material: 'PETG' }] }, { statuses, answer: () => 'pick:bay-1:A1' })
+    expect(asks).toHaveLength(0)
+    expect(result).toMatchObject({ printerId: 'bay-1', slots: [], unmatched: [{ filament: 1, material: 'PETG', color: '' }], loaded: [{ slot: 'A1', material: 'PLA', color: 'white' }] })
+    expect(out.summary).toBe('Printing on Desk. Filament 1 (PETG) is not matched: Desk has no loaded spool of the same material. Loaded: slot A1 (PLA, white).')
   })
 
   it('a printer that has reported no slots asks', async () => {
@@ -208,8 +216,8 @@ describe('run.target', () => {
     expect(out.summary).toBe('Printing on Desk from slot A2 (PETG, black). "mauve" is not a color I know, so its spool was matched by material only.')
     // a color it knows adds nothing
     expect((await target({ printer: 'Desk', filaments: [{ material: 'PETG', color: 'black' }] })).out.summary).not.toContain('not a color')
-    // two it does not know, and the question on the card says it too
-    const two = await target({ printer: 'Desk', filaments: [{ material: 'ABS', color: 'mauve' }, { material: 'PLA', color: 'teal' }] })
+    // two it does not know, and the question on the card says it too (Desk has one PLA spool for the two)
+    const two = await target({ printer: 'Desk', filaments: [{ material: 'PLA', color: 'mauve' }, { material: 'PLA', color: 'teal' }] })
     expect(two.asks[0]!.question).toContain('"mauve" and "teal" are not colors I know, so their spools were matched by material only.')
   })
 
@@ -267,6 +275,117 @@ describe('run.target', () => {
     expect(toolGroupOf({ name: 'run.target' })).toBe('printers')
     expect(applyToolGroups(tools, { printers: false }).map((t) => t.name)).not.toContain('run.target')
     expect(applyToolGroups(tools, { design: false }).map((t) => t.name)).toContain('run.target')
+  })
+})
+
+describe('run.target on spools of several materials', () => {
+  // an AMS of PLA white, PLA black, PETG blue and TPU orange, and PLA white on the external spool
+  const MIXED: FilamentSlot[] = [
+    { id: 'A1', material: 'PLA', color: '#FFFFFF' },
+    { id: 'A2', material: 'PLA', color: '#000000' },
+    { id: 'A3', material: 'PETG', color: '#2050C0' },
+    { id: 'A4', material: 'TPU', color: '#F97316' },
+    { id: '1', material: 'PLA', color: '#FFFFFF' },
+  ]
+  const FOUR = [
+    { index: 1, material: 'PLA', color: 'white' },
+    { index: 2, material: 'PLA', color: 'black' },
+    { index: 3, material: 'PLA', color: '#d9a441' },
+    { index: 4, material: 'PLA', color: 'red' },
+  ]
+  const only = (slots: FilamentSlot[]) => ({ printers: [A1], statuses: [status('bay-1', slots)] })
+  const LOADED = MIXED.map((s) => ({ slot: s.id, material: s.material, color: colorWord(s.color) ?? s.color }))
+
+  /** Every filament asked for is in the slots or in unmatched, once. */
+  const everyFilament = (r: RunTargetResult | undefined, asked: number[]) => expect([...(r?.slots ?? []).map((s) => s.filament), ...(r?.unmatched ?? []).map((u) => u.filament)].sort()).toEqual(asked)
+
+  it('a pick of another material on the card never takes a filament, and every filament not matched comes back unmatched with what is loaded', async () => {
+    const { result, out, asks, setTarget } = await target({ printer: 'Desk', filaments: FOUR }, { ...only(MIXED), answer: () => 'pick:bay-1:A3' })
+    expect(asks).toHaveLength(1)
+    expect(result?.slots.map((s) => `${s.filament} ${s.slot}`)).toEqual(['1 A1', '2 A2'])
+    expect(result?.slots.some((s) => s.slot === 'A3')).toBe(false)
+    expect(result?.unmatched?.map((u) => u.filament)).toEqual([3, 4])
+    expect(result?.unmatched?.every((u) => u.material === 'PLA')).toBe(true)
+    expect(result?.loaded).toEqual(LOADED)
+    expect(setTarget).toHaveBeenCalledWith(expect.objectContaining({ slots: { 1: 'A1', 2: 'A2' } }))
+    expect(out.summary).toBe(
+      'Printing on Desk from slot A1 (PLA, white), slot A2 (PLA, black). Filaments 3 (PLA, #d9a441) and 4 (PLA, red) are not matched: Desk has no loaded spool of the same material and color. Loaded: slot A1 (PLA, white), slot A2 (PLA, black), slot A3 (PETG, blue), slot A4 (TPU, orange) and slot 1 (PLA, white).',
+    )
+    expect(result?.unmatched).toEqual([{ filament: 3, material: 'PLA', color: '#d9a441' }, { filament: 4, material: 'PLA', color: 'red' }])
+    everyFilament(result, [1, 2, 3, 4])
+  })
+
+  it('the card for a missing filament offers only spools of its material', async () => {
+    const { asks } = await target({ printer: 'Desk', filaments: FOUR }, only(MIXED))
+    expect(asks[0]!.choices.map((c) => c.id)).toEqual(['pick:bay-1:A1', 'pick:bay-1:A2', 'pick:bay-1:1', 'pick:none'])
+  })
+
+  it('with no one to ask, the filaments not loaded come back unmatched and the rest are set', async () => {
+    const tool = runTools()[0]!
+    const host = { list: async () => [A1], status: async () => status('bay-1', MIXED) } as unknown as PrinterHost
+    const book = createRunBook({ fingerprint: () => 'fp1' }, () => 0)
+    const out = await tool.run({ printer: 'Desk', filaments: FOUR } as never, { host: { printers: host }, sessionId: 's', run: runHandle(book, 's') } as unknown as ToolContext)
+    const result = out.output as RunTargetResult | undefined
+    expect(result?.slots.map((s) => `${s.filament} ${s.slot}`)).toEqual(['1 A1', '2 A2'])
+    expect(result?.unmatched?.map((u) => u.filament)).toEqual([3, 4])
+    expect(result?.loaded).toEqual(LOADED)
+    everyFilament(result, [1, 2, 3, 4])
+  })
+
+  it('PLA white, black, red and buff in the AMS take all four by color, and the external spool is not used', async () => {
+    const all: FilamentSlot[] = [
+      { id: 'A1', material: 'PLA', color: '#FFFFFF' },
+      { id: 'A2', material: 'PLA', color: '#000000' },
+      { id: 'A3', material: 'PLA', color: '#A82A22' },
+      { id: 'A4', material: 'PLA', color: '#D9A441' },
+      { id: '1', material: 'PLA', color: '#FFFFFF' },
+    ]
+    const { result, asks } = await target({ printer: 'Desk', filaments: FOUR }, only(all))
+    expect(asks).toHaveLength(0)
+    expect(result?.slots.map((s) => `${s.filament} ${s.slot}`)).toEqual(['1 A1', '2 A2', '3 A4', '4 A3'])
+    expect(result?.unmatched).toBeUndefined()
+  })
+
+  it('a color loaded only in another material is unmatched, not matched across materials', async () => {
+    const { result, asks } = await target({ printer: 'Desk', filaments: [{ index: 1, material: 'PLA', color: 'black' }, { index: 2, material: 'PLA', color: 'blue' }] }, { ...only(MIXED), answer: () => 'pick:bay-1:A3' })
+    // the blue on the printer is PETG, so the card offers the PLA spools only
+    expect(asks[0]!.choices.map((c) => c.id)).not.toContain('pick:bay-1:A3')
+    expect(result?.slots.map((s) => `${s.filament} ${s.slot}`)).toEqual(['1 A2'])
+    expect(result?.unmatched).toEqual([{ filament: 2, material: 'PLA', color: 'blue' }])
+    everyFilament(result, [1, 2])
+  })
+
+  it('a filament whose material no spool holds skips the card and comes back unmatched', async () => {
+    const { result, asks } = await target({ printer: 'Desk', filaments: [{ index: 1, material: 'PLA', color: 'white' }, { index: 2, material: 'ASA', color: 'white' }] }, only(MIXED))
+    expect(asks).toHaveLength(0)
+    expect(result?.slots.map((s) => `${s.filament} ${s.slot}`)).toEqual(['1 A1'])
+    expect(result?.unmatched).toEqual([{ filament: 2, material: 'ASA', color: 'white' }])
+  })
+
+  it('a filament asked for by material alone is matched by the project\'s color for it, never by its number', async () => {
+    const all: FilamentSlot[] = [
+      { id: 'A1', material: 'PLA', color: '#FFFFFF' },
+      { id: 'A2', material: 'PLA', color: '#000000' },
+      { id: 'A3', material: 'PLA', color: '#A82A22' },
+      { id: 'A4', material: 'PLA', color: '#D9A441' },
+    ]
+    const project = [
+      { index: 1, type: 'PLA', color: '#ffffff' },
+      { index: 2, type: 'PLA', color: '#000000' },
+      { index: 3, type: 'PLA', color: '#d9a441' },
+      { index: 4, type: 'PLA', color: '#a82a22' },
+    ]
+    const host = { list: async () => [A1], status: async () => status('bay-1', all) } as unknown as PrinterHost
+    const book = createRunBook({ fingerprint: () => 'fp1', filaments: () => project }, () => 0)
+    const out = await runTools()[0]!.run({ printer: 'Desk', filaments: [1, 2, 3, 4].map((index) => ({ index, material: 'PLA' })) } as never, { host: { printers: host }, sessionId: 's', run: runHandle(book, 's') } as unknown as ToolContext)
+    expect((out.output as RunTargetResult).slots.map((s) => `${s.filament} ${s.slot}`)).toEqual(['1 A1', '2 A2', '3 A4', '4 A3'])
+  })
+
+  it('a spool of the right material picked on the card takes the missing filament, and the rest still match', async () => {
+    const { result } = await target({ printer: 'Desk', filaments: FOUR }, { ...only(MIXED), answer: () => 'pick:bay-1:1' })
+    expect(result?.slots.map((s) => `${s.filament} ${s.slot}`)).toEqual(['1 A1', '2 A2', '3 1'])
+    expect(result?.unmatched?.map((u) => u.filament)).toEqual([4])
+    everyFilament(result, [1, 2, 3, 4])
   })
 })
 

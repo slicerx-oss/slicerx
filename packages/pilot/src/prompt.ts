@@ -298,6 +298,9 @@ const rulesPrompt = (scope: PilotScope, has: HasTool, o: PromptOptions): string 
 export const systemPrompt = (scope: PilotScope = 'full', has: HasTool = ALL_TOOLS, extra = '', o: PromptOptions = {}): string =>
   [rulesPrompt(scope, has, o), extra, editionVoiceBlock(assistantVoice())].filter(Boolean).join('\n\n')
 
+/** The print turn's line for a color no loaded spool of its material holds: ask, never repaint to fit (cloud turns only). */
+export const RECOLOR_LINE = "- If run.target can't put a color on a loaded spool of its material, never repaint or recolor the part to fit; stop before slicing, say which colors aren't loaded, and ask whether to load them or print those parts in a loaded color the person picks."
+
 // make and print in one conversation: with the printer tools the order ends in a send, never of a stale slice, and a
 // printer picked on the card is offered once as a note; without them the slice ends in a saved file. A part asked for
 // without a print stops at the part.
@@ -313,9 +316,13 @@ const printRunLines = (has: HasTool): Piece[] => {
     `- For a request to make and print a part, in order: design it (as above), then ${target}${slice}, then printer.queue. Say the step list first.`,
     `- Never call printer.queue with a stale slice. After any change the person asks for ("use 0.2 mm layers", "on the P1S instead"), ${has('run.target') ? 'call run.target again for a new printer or spool, and ' : ''}slice again before sending.`,
   ]
+  // a color with no loaded spool of its material is the person's call, never a reason to change the part; cloud turns
+  // only, since a local build turn has no room left for it
+  const out: Piece[] = lines.map(local)
+  if (has('run.target')) out.push(RECOLOR_LINE)
   // the offer comes after the send, since a no to the chip ends the run
-  if (has('run.target') && has('memory.remember')) lines.push('- If run.target says picked, offer once after the send to remember the choice with memory.remember; the app asks with its chip.')
-  return [...lines.map(local), local(only)]
+  if (has('run.target') && has('memory.remember')) out.push(local('- If run.target says picked, offer once after the send to remember the choice with memory.remember; the app asks with its chip.'))
+  return [...out, local(only)]
 }
 
 /** The whole app: designing parts, slicing, settings and printers, in one conversation. */
