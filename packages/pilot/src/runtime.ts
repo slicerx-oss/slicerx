@@ -721,7 +721,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const newId = opts.newId ?? randomId
   const kb = opts.kb ?? createKnowledgeBase(EMPTY_KB_INDEX)
   let policy = normalizePolicy(opts.policy ?? DEFAULT_POLICY)
-  const client: LlmClient = opts.client ?? createTransportClient(opts.host.llm, opts.config.provider, { ...(opts.config.baseUrl === undefined ? {} : { baseUrl: opts.config.baseUrl }), ...(opts.share ? { share: opts.share } : {}) })
+  const client: LlmClient = opts.client ?? createTransportClient(opts.host.llm, opts.config.provider, { ...(opts.config.baseUrl === undefined ? {} : { baseUrl: opts.config.baseUrl }), ...(opts.share ? { share: opts.share } : {}), ...(opts.config.cloudEveryTurn ? { everyTurn: opts.config.cloudEveryTurn } : {}) })
   const history = new Map<string, LlmMessage[]>()
   /** The plan the open project holds (opts.standingPlan), for a chat whose history has no design.plan; none on a throw. */
   const standing = (messages: readonly LlmMessage[]): LlmMessage[] => {

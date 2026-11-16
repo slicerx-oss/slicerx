@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir an edition is running, read over the app link (`mimir.brain`): its name, whether the edition gave it a
-// voice, the tool groups it keeps on, mimir cloud's base model and the step-up the edition asks for, what it may
+// voice, the tool groups it keeps on, mimir cloud's base model, the step-up the edition asks for and on which turns, what it may
 // remember, and how many docs of the edition's own knowledge it has. Metadata only: the voice text and the docs stay
 // in the app, and only the fields below reach a client.
 import { assistantText } from '@slicerx/contracts'
@@ -17,7 +17,7 @@ export interface BrainState {
   name: string
   voice: boolean
   toolGroups: Record<string, boolean>
-  cloud: { base: string; stepUp: string | null }
+  cloud: { base: string; stepUp: string | null; everyTurn: 'step' | 'auto' }
   memory: { local: boolean; sync: 'off' | 'opt-in' }
   knowledgeDocs: number
 }
@@ -44,7 +44,7 @@ export function pick(raw: unknown): BrainState {
     name: typeof b['name'] === 'string' ? b['name'] : '',
     voice: b['voice'] === true,
     toolGroups: Object.fromEntries(TOOL_GROUP_KEYS.map((g) => [g, groups[g] === true])),
-    cloud: { base: typeof cloud['base'] === 'string' ? cloud['base'] : '', stepUp: typeof cloud['stepUp'] === 'string' ? cloud['stepUp'] : null },
+    cloud: { base: typeof cloud['base'] === 'string' ? cloud['base'] : '', stepUp: typeof cloud['stepUp'] === 'string' ? cloud['stepUp'] : null, everyTurn: cloud['everyTurn'] === 'step' ? 'step' : 'auto' },
     memory: { local: memory['local'] === true, sync: memory['sync'] === 'opt-in' ? 'opt-in' : 'off' },
     knowledgeDocs: typeof docs === 'number' && Number.isInteger(docs) && docs > 0 ? docs : 0,
   }
@@ -53,10 +53,10 @@ export function pick(raw: unknown): BrainState {
 export function mimirBrainTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const brain = defineTool({
     name: 'mimir.brain',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: assistantText(`Read the mimir the open ${appName} app runs as its edition sets it up, never the voice text or the docs themselves: the assistant's name, whether the edition gave it a voice, each tool group (design, slicing, printers, watch, paint, web) on or off, the model mimir cloud answers with and the step-up the edition asks for (null for none; the proxy decides), whether it remembers on this computer and whether memories sync, and how many docs of the edition's own knowledge it has.`),
+    description: assistantText(`Read the mimir the open ${appName} app runs as its edition sets it up, never the voice text or the docs themselves: the assistant's name, whether the edition gave it a voice, each tool group (design, slicing, printers, watch, paint, web) on or off, the model mimir cloud answers with and the step-up the edition asks for (null for none; the proxy decides), whether it asks for the step-up on every turn (everyTurn step) or on hard turns only (auto), whether it remembers on this computer and whether memories sync, and how many docs of the edition's own knowledge it has.`),
     input: z.object({}),
     async run() {
       if (!link) throw new ToolInputError(`reading mimir's setup needs the open ${appName} app: start the server with --printers link and turn on the app link`, 'not_configured')
@@ -77,7 +77,7 @@ export function mimirBrainTools(link: AppLinkCaller | undefined, appName: string
       const summary = [
         `${output.name} in ${appName}: ${output.voice ? 'the edition voice' : 'the stock voice'}`,
         off.length ? `${groups.length - off.length} of ${groups.length} tool groups on (off: ${off.join(', ')})` : `all ${groups.length} tool groups on`,
-        `mimir cloud on ${output.cloud.base || 'its base model'}${output.cloud.stepUp ? `, asks to step up to ${output.cloud.stepUp} (the proxy decides)` : ' with no step-up'}`,
+        `mimir cloud on ${output.cloud.base || 'its base model'}${output.cloud.stepUp ? `, asks to step up to ${output.cloud.stepUp}${output.cloud.everyTurn === 'step' ? ' on every turn' : ''} (the proxy decides)` : ' with no step-up'}`,
         `memory ${output.memory.local ? 'on this computer' : 'off'}, sync ${output.memory.sync}`,
         `${plural(output.knowledgeDocs, 'doc')} of its own knowledge.`,
       ].join('; ')

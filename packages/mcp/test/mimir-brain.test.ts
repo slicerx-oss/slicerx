@@ -12,7 +12,7 @@ const HARBOR: BrainState = {
   name: 'Pilot',
   voice: true,
   toolGroups: { design: true, slicing: true, printers: false, watch: true, paint: true, web: false },
-  cloud: { base: 'claude-haiku-5-5', stepUp: 'sonnet' },
+  cloud: { base: 'claude-haiku-5-5', stepUp: 'sonnet', everyTurn: 'auto' },
   memory: { local: true, sync: 'opt-in' },
   knowledgeDocs: 2,
 }
@@ -34,10 +34,21 @@ describe('slicerx_mimir_brain', () => {
     expect(out.output).toEqual(HARBOR)
     expect(out.summary).toBe('Pilot in SlicerX: the edition voice; 4 of 6 tool groups on (off: printers, web); mimir cloud on claude-haiku-5-5, asks to step up to sonnet (the proxy decides); memory on this computer, sync opt-in; 2 docs of its own knowledge.')
 
-    const stock: BrainState = { name: 'mimir', voice: false, toolGroups: Object.fromEntries(Object.keys(HARBOR.toolGroups).map((g) => [g, true])), cloud: { base: 'claude-haiku-5-5', stepUp: null }, memory: { local: true, sync: 'off' }, knowledgeDocs: 0 }
+    const stock: BrainState = { name: 'mimir', voice: false, toolGroups: Object.fromEntries(Object.keys(HARBOR.toolGroups).map((g) => [g, true])), cloud: { base: 'claude-haiku-5-5', stepUp: null, everyTurn: 'auto' }, memory: { local: true, sync: 'off' }, knowledgeDocs: 0 }
     const plain = await run({ call: (async () => stock) as AppLinkCaller['call'] })
     expect(plain.output).toEqual(stock)
     expect(plain.summary).toBe('mimir in SlicerX: the stock voice; all 6 tool groups on; mimir cloud on claude-haiku-5-5 with no step-up; memory on this computer, sync off; 0 docs of its own knowledge.')
+  })
+
+  it('says when the edition asks for the step-up on every turn', async () => {
+    const every: BrainState = { ...HARBOR, cloud: { ...HARBOR.cloud, everyTurn: 'step' } }
+    const out = await run({ call: (async () => every) as AppLinkCaller['call'] })
+    expect(out.output).toEqual(every)
+    expect(out.summary).toContain('mimir cloud on claude-haiku-5-5, asks to step up to sonnet on every turn (the proxy decides)')
+    // an older app sends no everyTurn, and anything but step reads as auto
+    const { everyTurn: _e, ...older } = HARBOR.cloud
+    expect(pick({ ...HARBOR, cloud: older }).cloud.everyTurn).toBe('auto')
+    expect(pick({ ...HARBOR, cloud: { ...older, everyTurn: 'always' } }).cloud.everyTurn).toBe('auto')
   })
 
   it('no voice text or doc text leaks', async () => {
@@ -50,7 +61,7 @@ describe('slicerx_mimir_brain', () => {
   })
 
   it('an answer of the wrong shape reads as safe defaults, with only the six known tool groups', async () => {
-    const none = { name: '', voice: false, toolGroups: { design: false, slicing: false, printers: false, watch: false, paint: false, web: false }, cloud: { base: '', stepUp: null }, memory: { local: false, sync: 'off' }, knowledgeDocs: 0 }
+    const none = { name: '', voice: false, toolGroups: { design: false, slicing: false, printers: false, watch: false, paint: false, web: false }, cloud: { base: '', stepUp: null, everyTurn: 'auto' }, memory: { local: false, sync: 'off' }, knowledgeDocs: 0 }
     for (const bad of [null, 'mimir', 42, [], { cloud: null, memory: 'yes', toolGroups: [] }]) expect(pick(bad), JSON.stringify(bad)).toEqual(none)
     const extra = pick({ ...HARBOR, toolGroups: { ...HARBOR.toolGroups, cad: true, __proto__: { x: true }, web: 'yes' }, knowledgeDocs: 2.5 })
     expect(Object.keys(extra.toolGroups)).toEqual(['design', 'slicing', 'printers', 'watch', 'paint', 'web'])

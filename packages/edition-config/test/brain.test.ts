@@ -33,6 +33,17 @@ describe('ai.brain', () => {
     expect(check({ cloud: { stepUp: 'opus' } }).ok).toBe(false)
   })
 
+  it('everyTurn is auto unless set, and step needs a stepUp model', () => {
+    expect(defineEditionConfig({}).ai.brain.cloud.everyTurn).toBe('auto')
+    expect(defineEditionConfig({ ai: { brain: { cloud: { stepUp: 'sonnet' } } } }).ai.brain.cloud.everyTurn).toBe('auto')
+    expect(check({ cloud: { stepUp: 'sonnet', everyTurn: 'step' } }).ok).toBe(true)
+    expect(check({ cloud: { stepUp: 'none', everyTurn: 'auto' } }).ok).toBe(true)
+    const none = check({ cloud: { stepUp: 'none', everyTurn: 'step' } })
+    expect(none.ok).toBe(false)
+    if (!none.ok) expect(none.issues.map((i) => i.path)).toContain('ai.brain.cloud.everyTurn')
+    expect(check({ cloud: { stepUp: 'sonnet', everyTurn: 'always' } }).ok).toBe(false)
+  })
+
   it('memory sync is off or opt-in', () => {
     expect(check({ memory: { sync: 'opt-in' } }).ok).toBe(true)
     expect(check({ memory: { sync: 'always' } }).ok).toBe(false)

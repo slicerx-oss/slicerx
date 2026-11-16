@@ -45,12 +45,13 @@ export const CLOUD_STEP = 'step'
 export const CLOUD_BASE = 'base'
 
 /**
- * The proxy's headers. `x-sx-tier` asks for the stronger model on a muninn turn; the proxy decides within the edition's
- * limits and names the model it used in `x-sx-model`. The save headers: off says so; on files the chat under its session
- * and app version when they are valid. With no share setting at all the proxy follows the edition's default.
+ * The proxy's headers. `x-sx-tier` asks for the stronger model on a muninn turn, or on every turn when the edition says
+ * so (`everyTurn`, ai.brain.cloud.everyTurn); the proxy decides within the edition's limits and names the model it used
+ * in `x-sx-model`. The save headers: off says so; on files the chat under its session and app version when they are
+ * valid. With no share setting at all the proxy follows the edition's default.
  */
-export function cloudHeaders(share: CloudShare | undefined, session: string | undefined, tier: Tier = HUGINN): Record<string, string> {
-  const step = { 'x-sx-tier': tier === MUNINN ? CLOUD_STEP : CLOUD_BASE }
+export function cloudHeaders(share: CloudShare | undefined, session: string | undefined, tier: Tier = HUGINN, everyTurn?: 'step'): Record<string, string> {
+  const step = { 'x-sx-tier': tier === MUNINN || everyTurn === 'step' ? CLOUD_STEP : CLOUD_BASE }
   if (!share) return step
   if (!share.on) return { ...step, 'x-sx-share': '0' }
   return {
@@ -105,8 +106,11 @@ export function refusesToolSearch(e: unknown): boolean {
  */
 const plainProxies = new WeakSet<LlmTransport>()
 
-/** Joins an adapter with the host transport. The transport adds the key; this code never sees it. */
-export function createTransportClient(transport: LlmTransport, provider: string, opts: { baseUrl?: string; share?: () => CloudShare } = {}): LlmClient {
+/**
+ * Joins an adapter with the host transport. The transport adds the key; this code never sees it. `everyTurn` (mimir
+ * cloud only) asks the proxy for the stronger model on every request (cloudHeaders).
+ */
+export function createTransportClient(transport: LlmTransport, provider: string, opts: { baseUrl?: string; share?: () => CloudShare; everyTurn?: 'step' } = {}): LlmClient {
   const adapter = adapterFor(provider)
   const cloud = provider === MIMIR_CLOUD
   // mimir cloud's refusals (daily caps, a pause) are shown as the proxy wrote them, never retried elsewhere
@@ -130,7 +134,7 @@ export function createTransportClient(transport: LlmTransport, provider: string,
     },
     async *stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent> {
       let http = adapter.build(req, opts.baseUrl === undefined ? {} : { baseUrl: opts.baseUrl })
-      if (cloud) http = { ...http, provider: MIMIR_CLOUD, headers: { ...http.headers, ...cloudHeaders(opts.share?.(), req.session, req.tier) } }
+      if (cloud) http = { ...http, provider: MIMIR_CLOUD, headers: { ...http.headers, ...cloudHeaders(opts.share?.(), req.session, req.tier, opts.everyTurn) } }
       let headers: Record<string, string> | undefined
       let body: AsyncIterable<Uint8Array>
       try {

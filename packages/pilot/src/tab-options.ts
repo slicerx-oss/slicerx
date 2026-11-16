@@ -39,13 +39,15 @@ export function editionToolGroups(edition: Pick<EditionConfig, 'ai'>): ToolGroup
 }
 
 /**
- * `config` with the edition's brain pack on it: no web search when the web group is off, and ai.brain.routing as the
- * models for the person's own key (mimir cloud ignores it; its proxy picks the model).
+ * `config` with the edition's brain pack on it: no web search when the web group is off, ai.brain.routing as the
+ * models for the person's own key (mimir cloud ignores it; its proxy picks the model), and ai.brain.cloud.everyTurn,
+ * which has mimir cloud ask for the stronger model on every turn (other providers ignore it).
  */
 export function withBrain(config: PilotConfig, edition: Pick<EditionConfig, 'ai'>): PilotConfig {
   const brain = edition.ai.brain
   const out: PilotConfig = { ...config }
   if (brain.tools?.web === false) out.webSearch = false
+  if (brain.cloud.everyTurn === 'step' && brain.cloud.stepUp !== 'none') out.cloudEveryTurn = 'step'
   const r = brain.routing
   if (r && (r.base !== undefined || r.step !== undefined)) {
     out.routing = { ...(r.provider !== undefined ? { provider: r.provider } : {}), ...(r.base !== undefined ? { base: r.base } : {}), ...(r.step !== undefined ? { step: r.step } : {}) }

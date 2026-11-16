@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir this edition runs, read over the app link (mimir.brain): its name, whether the edition gave it a voice,
-// which tool groups it keeps, the model mimir cloud answers with and the step-up the edition asks for, what it may
+// which tool groups it keeps, the model mimir cloud answers with, the step-up the edition asks for and on which turns, what it may
 // remember, and how many docs of the edition's own knowledge it searches. Metadata only: the voice text and the
 // knowledge docs never leave the app.
 import type { EditionConfig } from '@slicerx/edition-config'
@@ -19,8 +19,11 @@ export interface BrainState {
   voice: boolean
   /** Every tool group an edition can switch, true unless the edition switched it off. */
   toolGroups: Record<string, boolean>
-  /** mimir cloud's base model, and the step-up the edition asks for (null for none). The proxy decides the step-up. */
-  cloud: { base: string; stepUp: string | null }
+  /**
+   * mimir cloud's base model, the step-up the edition asks for (null for none), and whether it asks on every turn
+   * (step) or on hard turns only (auto; ai.brain.cloud.everyTurn). The proxy decides the step-up.
+   */
+  cloud: { base: string; stepUp: string | null; everyTurn: 'step' | 'auto' }
   memory: { local: boolean; sync: 'off' | 'opt-in' }
   /** Docs of the edition's own knowledge (ai.brain.knowledge) mimir searches: those in the edition index that do not share a bundled doc's id or name. */
   knowledgeDocs: number
@@ -39,7 +42,7 @@ export function brainOf(edition: EditionConfig, editionIndex: Pick<KbIndex, 'doc
     name: edition.brand.assistant.name,
     voice: brain.voice !== undefined,
     toolGroups,
-    cloud: { base: CLOUD_MODEL, stepUp: brain.cloud.stepUp === 'none' ? null : brain.cloud.stepUp },
+    cloud: { base: CLOUD_MODEL, stepUp: brain.cloud.stepUp === 'none' ? null : brain.cloud.stepUp, everyTurn: brain.cloud.everyTurn },
     memory: { local: brain.memory.local, sync: brain.memory.sync },
     knowledgeDocs: editionIndex ? keptEditionDocs(bundled, { id: edition.id, index: editionIndex as KbIndex }).length : 0,
   }

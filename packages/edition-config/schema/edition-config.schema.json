@@ -1231,6 +1231,14 @@
                     "sonnet",
                     "none"
                   ]
+                },
+                "everyTurn": {
+                  "default": "auto",
+                  "type": "string",
+                  "enum": [
+                    "step",
+                    "auto"
+                  ]
                 }
               }
             },

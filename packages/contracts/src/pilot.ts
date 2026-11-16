@@ -533,6 +533,11 @@ export interface PilotConfig {
    * `provider` only. mimir cloud ignores it; its proxy picks the model.
    */
   routing?: { provider?: 'anthropic' | 'openai'; base?: string; step?: string }
+  /**
+   * mimir cloud only (ai.brain.cloud.everyTurn): `step` asks the proxy for the stronger model on every turn, whatever
+   * the turn's tier; unset asks on a muninn turn only. The tier itself (tools, effort, the route) does not change.
+   */
+  cloudEveryTurn?: 'step'
 }
 
 /** The machine a plate targets. Ids are knowledge ids (`prusa_mk4s`, `petg`). */

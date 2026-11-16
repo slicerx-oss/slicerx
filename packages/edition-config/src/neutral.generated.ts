@@ -69,7 +69,8 @@ export const NEUTRAL_PARSED: EditionConfig = {
     "keySource": "keychain",
     "brain": {
       "cloud": {
-        "stepUp": "none"
+        "stepUp": "none",
+        "everyTurn": "auto"
       },
       "memory": {
         "local": true,

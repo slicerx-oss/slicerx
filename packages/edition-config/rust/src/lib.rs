@@ -303,18 +303,31 @@ pub struct BrainCloud {
     /// "sonnet" or "none".
     #[serde(default = "step_up_none")]
     pub step_up: String,
+    /// Which turns ask mimir cloud for the step-up model: "step" (every turn) or "auto" (hard turns).
+    /// Written only when it is not "auto", so a config from before the field reads and writes back the same.
+    #[serde(default = "every_turn_auto", skip_serializing_if = "is_auto")]
+    pub every_turn: String,
 }
 
 impl Default for BrainCloud {
     fn default() -> Self {
         Self {
             step_up: step_up_none(),
+            every_turn: every_turn_auto(),
         }
     }
 }
 
 fn step_up_none() -> String {
     "none".into()
+}
+
+fn every_turn_auto() -> String {
+    "auto".into()
+}
+
+fn is_auto(v: &str) -> bool {
+    v == "auto"
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -687,6 +700,13 @@ impl EditionConfig {
             self.legal.source_url.is_some(),
             "legal.sourceUrl: edition builds ship the AGPL-3.0 stock profiles: set legal.sourceUrl so users can get the source (section 13)",
         );
+        if let Some(c) = self.ai.brain.as_ref().map(|b| &b.cloud) {
+            need(
+                c.every_turn == "step",
+                c.step_up != "none",
+                "ai.brain.cloud.everyTurn: everyTurn 'step' needs a stepUp model (sonnet)",
+            );
+        }
         if let Some(r) = self.ai.brain.as_ref().and_then(|b| b.routing.as_ref()) {
             need(
                 r.base.is_some() || r.step.is_some(),
@@ -800,6 +820,17 @@ mod tests {
     }
 
     #[test]
+    fn brain_reads_every_turn() {
+        let none: Brain =
+            serde_json::from_value(serde_json::json!({ "cloud": { "stepUp": "sonnet" } })).unwrap();
+        assert_eq!(none.cloud.every_turn, "auto");
+        let input = serde_json::json!({ "stepUp": "sonnet", "everyTurn": "step" });
+        let cloud: BrainCloud = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(cloud.every_turn, "step");
+        assert_eq!(serde_json::to_value(cloud).unwrap(), input);
+    }
+
+    #[test]
     fn brain_reads_knowledge_tools_and_routing() {
         let input = serde_json::json!({
             "cloud": { "stepUp": "none" }, "memory": { "local": true, "sync": "off" },
@@ -871,6 +902,33 @@ mod tests {
             panic!("expected issues")
         };
         assert!(issues.iter().any(|i| i.starts_with("ai.brain.routing.provider")));
+    }
+
+    #[test]
+    fn every_turn_step_needs_a_step_up() {
+        let with = |cloud: serde_json::Value| {
+            neutral_with(|v| {
+                v["ai"]["brain"]["cloud"] = cloud;
+            })
+        };
+        assert!(
+            EditionConfig::from_json(&with(
+                serde_json::json!({ "stepUp": "sonnet", "everyTurn": "step" })
+            ))
+            .is_ok()
+        );
+        assert!(
+            EditionConfig::from_json(&with(
+                serde_json::json!({ "stepUp": "none", "everyTurn": "auto" })
+            ))
+            .is_ok()
+        );
+        let Err(Error::Invalid(issues)) = EditionConfig::from_json(&with(
+            serde_json::json!({ "stepUp": "none", "everyTurn": "step" }),
+        )) else {
+            panic!("expected issues")
+        };
+        assert!(issues.iter().any(|i| i.starts_with("ai.brain.cloud.everyTurn")));
     }
 
     #[test]
