@@ -1179,11 +1179,13 @@ cold.describe('mimir in the browser build that only models', () => {
     await page.getByTestId('tab-mimir').click()
     const chat = page.getByTestId('mimir-chat')
     await expect(chat).toBeVisible()
-    // a parts note, nothing about slicing or printers
+    // a parts note, nothing about slicing or printers, read out but not shown, so the eye goes to the message box
     await expect(chat.locator('.mimir-empty')).toContainText('Describe a part')
+    await expect(chat.locator('.mimir-empty p')).toHaveClass(/sr-only/)
     await expect(chat.locator('.mimir-empty')).not.toContainText(/slice|printer/i)
     await expect(page.getByTestId('mimir-composer').getByRole('textbox')).toHaveAttribute('placeholder', 'Ask mimir')
     if (shotsOn()) await chat.screenshot({ path: `${shotsDir(info)}/web-tab-empty.png` })
+    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/web-tab-empty-window.png` })
 
     await askTab(page, 'What layer height for a strong bracket?')
     await expect(chat).toContainText('Use 0.2 mm for a strong bracket', { timeout: 30_000 })

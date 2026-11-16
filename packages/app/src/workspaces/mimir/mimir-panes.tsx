@@ -526,7 +526,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             <MimirConnect />
           ) : transcript.turns.length === 0 ? (
             <div className="mimir-empty">
-              <p>{emptyNote(hostSlices())}</p>
+              <p className="sr-only">{emptyNote(hostSlices())}</p>
             </div>
           ) : (
             <div ref={turns} className="mimir-turns">
