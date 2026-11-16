@@ -4,9 +4,9 @@
 // filament rail shows them. A client adds one after the last and changes one's type or color; the slice config
 // carries them as filament_type and filament_colour. The server's project.add_filament and project.set_filament and the
 // mimir tab's tools of the same names keep what the project has by one rule, with the same words: adding a color the
-// project already has in that material (under NEAR_COLOR apart) is refused with the filament to use, and so is
-// changing a filament's material, since its parts and the spool it maps to count on it.
-import { baseMaterial, colorDistance, COLOR_SLOT_MAX, NEAR_COLOR, productName } from '@slicerx/contracts'
+// project already has in that material (one that looks the same, under SAME_COLOR_DE00) is refused with the filament
+// to use, and so is changing a filament's material, since its parts and the spool it maps to count on it.
+import { baseMaterial, colorDeltaE, COLOR_SLOT_MAX, productName, SAME_COLOR_DE00 } from '@slicerx/contracts'
 
 /** The most filaments a project holds, as in the app. */
 export const MAX_FILAMENTS = COLOR_SLOT_MAX
@@ -78,11 +78,14 @@ export const SET_FILAMENT_LEAD = 'Change the color of a filament of the open pro
 /** What project.set_filament says about a filament's material, in the server's and the tab's descriptions. */
 export const SET_FILAMENT_RULE = 'Its material type stays: a type other than its own is refused, so add a filament with project.add_filament for another material.'
 
-/** The project's filament of `type` under NEAR_COLOR from `color`, the nearest first, if there is one. */
+/**
+ * The project's filament of `type` whose color looks the same as `color` (colorDeltaE under SAME_COLOR_DE00), the
+ * nearest first, if there is one.
+ */
 export function sameFilament<F extends NumberedFilament>(all: readonly F[], type: string, color: string): F | undefined {
   return all
-    .filter((f) => baseMaterial(f.type) === baseMaterial(type) && colorDistance(f.color, color) < NEAR_COLOR)
-    .sort((a, b) => colorDistance(a.color, color) - colorDistance(b.color, color) || a.slot - b.slot)[0]
+    .filter((f) => baseMaterial(f.type) === baseMaterial(type) && colorDeltaE(f.color, color) < SAME_COLOR_DE00)
+    .sort((a, b) => colorDeltaE(a.color, color) - colorDeltaE(b.color, color) || a.slot - b.slot)[0]
 }
 
 /**

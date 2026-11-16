@@ -249,7 +249,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const addFilament = defineTool({
     name: 'project.add_filament',
-    version: '1.2.0',
+    version: '1.2.1',
     source: 'settings',
     permission: 'slice',
     description: `Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. Unset, the type is the filament profile's and the color the default for its number. A project holds ${MAX_FILAMENTS} at most. ${ADD_FILAMENT_RULE} Answers with the project, whose filaments list reads it back. Filaments a printer's AMS holds are loaded on the printer, not added here.`,

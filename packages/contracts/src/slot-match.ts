@@ -36,6 +36,14 @@ export function colorDistance(a: string | undefined, b: string | undefined): num
 }
 
 /**
+ * How little two filament colors may differ in CIEDE2000 (colorDeltaE, sRGB under D65) to look like the same color:
+ * under 6, so a near-black reads as black, an off-white or light gray as white and two buffs as one, while a dark gray,
+ * silver or two distinct reds stay apart. project.add_filament refuses a color the project has this close in that
+ * material. Unlike NEAR_COLOR's plain RGB distance, it weighs a step near black or white as the eye does.
+ */
+export const SAME_COLOR_DE00 = 6
+
+/**
  * How close two filament colors are to count as the same color: under 40 apart (of 441), so an off-white spool reads as
  * white and a near-black as black, while red, buff and gray stay apart. Paint reuses a filament this close, and the
  * external spool loses to an AMS slot this close.

@@ -108,3 +108,42 @@ describe('the tab filament tools keep the filaments a project has', () => {
     expect(await run(set!, { slot: 1, type: 'PLA', color: '#f2f2ee' })).toMatchObject({ summary: 'Set filament 1: PLA #f2f2ee' })
   })
 })
+
+describe('the tab says a color is already there by how alike the two look', () => {
+  /** Filament 1 TPU orange, filament 2 PLA in `color`. */
+  const two = (color: string) => seeded([{ type: 'TPU', color: '#f97316' }, { type: 'PLA', color }])
+
+  it.each([
+    ['#1a1a1a', '#000000'],
+    ['#f2f2ee', '#ffffff'],
+    ['#c8a23c', '#d9a441'],
+    ['#909090', '#808080'],
+    ['#e6e6e6', '#ffffff'],
+  ])('refuses PLA %s beside PLA %s, naming filament 2', async (color, has) => {
+    const p = two(has)
+    const [add] = filamentTools(p)
+    expect(await run(add!, { type: 'PLA', color })).toEqual({ ok: false, summary: `Filament 2 is already PLA ${has}, close to ${color}: paint or print with filament 2. Nothing was added.` })
+    expect(p.list()).toHaveLength(2)
+  })
+
+  it.each([
+    ['#d1d3d5', '#ffffff'],
+    ['#333333', '#000000'],
+    ['#cccccc', '#ffffff'],
+    ['#ff8000', '#d9a441'],
+    ['#000080', '#0000ff'],
+    ['#a82a22', '#c8102e'],
+  ])('adds PLA %s beside PLA %s', async (color, has) => {
+    const p = two(has)
+    const [add] = filamentTools(p)
+    expect(await run(add!, { type: 'PLA', color })).toMatchObject({ summary: `Added filament 3: PLA ${color}` })
+  })
+
+  it('adds the same color in another material', async () => {
+    const p = two('#000000')
+    const [add] = filamentTools(p)
+    expect(await run(add!, { type: 'PETG', color: '#1a1a1a' })).toMatchObject({ summary: 'Added filament 3: PETG #1a1a1a' })
+    expect(await run(add!, { type: 'PETG', color: '#000000' })).toMatchObject({ ok: false, summary: expect.stringContaining('paint or print with filament 3') })
+    expect(await run(add!, { type: 'TPU', color: '#000000' })).toMatchObject({ summary: 'Added filament 4: TPU #000000' })
+  })
+})

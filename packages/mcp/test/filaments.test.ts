@@ -183,6 +183,25 @@ describe('project filaments the server keeps, as the mimir tab does', () => {
   })
 })
 
+describe('a near-black beside the black a project has', () => {
+  it('is refused over MCP, naming the black filament, and the same color in another material is added', async () => {
+    const h = await connect()
+    await h.call('slicerx_project_open', { name: 'Boat', printer: 'bambu_p1s', filament: 'pla' })
+    for (const r of [await h.call('slicerx_project_set_filament', { slot: 1, color: '#ffffff' }), await h.call('slicerx_project_add_filament', { type: 'PLA', color: '#000000' })]) expect(r.isError, text(r)).toBeFalsy()
+    const near = await h.call('slicerx_project_add_filament', { type: 'PLA', color: '#1a1a1a' })
+    expect(near.isError).toBe(true)
+    expect(data(near)).toMatchObject({ ok: false, summary: 'Filament 2 is already PLA #000000, close to #1a1a1a: paint or print with filament 2. Nothing was added.' })
+    // with no type, the filament profile's (PLA): a light gray reads as the white the project has
+    expect(data(await h.call('slicerx_project_add_filament', { color: '#e6e6e6' }))).toMatchObject({ ok: false, summary: 'Filament 1 is already PLA #ffffff, close to #e6e6e6: paint or print with filament 1. Nothing was added.' })
+    for (const [type, color] of [['PLA', '#333333'], ['PLA', '#d1d3d5'], ['PETG', '#1a1a1a']] as const) {
+      const r = await h.call('slicerx_project_add_filament', { type, color })
+      expect(r.isError, text(r)).toBeFalsy()
+    }
+    const shown = data<Out>(await h.call('slicerx_project_show')).output.filaments!.map((f) => `${f.slot} ${f.type} ${f.color}`)
+    expect(shown).toEqual(['1 PLA #ffffff', '2 PLA #000000', '3 PLA #333333', '4 PLA #d1d3d5', '5 PETG #1a1a1a'])
+  })
+})
+
 describe('project filaments from a shell', () => {
   const run = promisify(execFile)
   const cli = (...args: string[]) => run(process.execPath, ['--import', 'tsx', 'src/cli.ts', '--engine', 'stub', '--printers', 'off', ...args], { cwd: resolve(__dirname, '..') })
