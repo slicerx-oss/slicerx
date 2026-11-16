@@ -171,6 +171,32 @@ impl Body {
         )
     }
 
+    /// The body hollowed to a wall `wall_mm` thick: every face moved in by the wall, at a true constant distance (an
+    /// inner corner under a convex edge is round), and that cut out of the body, so every point of the inner side is
+    /// the wall from the outer one. Each of `open` stays where it is and the cavity breaks through it. Refused, before
+    /// the kernel is asked, unless the wall is above 0 and at most 1000 mm and each open face is one of this body's;
+    /// the result is read back as every body is.
+    pub fn shell(&self, wall_mm: f64, open: &[Face<'_>]) -> Result<Self> {
+        Self::checked(
+            "shell",
+            || {
+                positive("wall", wall_mm)?;
+                if wall_mm > 1000.0 {
+                    return Err(Error::input("wall", "must be at most 1000 mm"));
+                }
+                let mine = self.solid.faces()?;
+                if open.iter().any(|f| !mine.contains(&f.0)) {
+                    return Err(Error::input("open", "each open face must be one of this body's"));
+                }
+                Ok(())
+            },
+            || {
+                let kept: Vec<FaceRef<'_>> = open.iter().map(|f| f.0).collect();
+                self.solid.shelled(-wall_mm, &kept)
+            },
+        )
+    }
+
     /// The enclosed volume in mm3.
     pub fn volume(&self) -> Result<f64> {
         self.solid.volume(VOLUME_ACCURACY)
