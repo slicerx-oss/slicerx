@@ -132,5 +132,8 @@ describe('slicerx_design_check on a display deck with a boat in its filament', (
     // the check passes, so its summary asks the reply to pass the note on, after the size and the resize offer
     expect(out.output.pass).toBe(true)
     expect(out.summary.endsWith(`offer a resize as a follow-up: half size, or a length the person types. ${NOTES_SAY(out.output.notes!)}`)).toBe(true)
+    // one sentence, since the part card shows the parts and sources, word for word
+    expect(out.summary).toMatch(/\. In the reply, one sentence: what you built, its size \(\d+ mm long, \d+ mm wide and \d+ mm tall, fits (the bed|the [^)]+)\) and that its check passed; the card under it shows its parts and sources\. Then offer a resize as a follow-up: half size, or a length the person types/)
+    expect(out.summary).not.toContain('looked up on')
   })
 })

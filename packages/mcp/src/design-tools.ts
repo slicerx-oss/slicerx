@@ -975,7 +975,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.27.0',
+    version: '1.28.0',
     source: 'command',
     permission: 'read',
     description:
@@ -1050,7 +1050,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           // a note on its looks (a small part that hardly shows) is said too, or the reply would skip it
           const notes = result.notes?.length ? `. ${NOTES_SAY(result.suggest ?? result.notes)}` : ''
           const real = realSaid((entry.plan as { real?: readonly RealEntry[] }).real, opts.lookupSource)
-          return { summary: `${summary}. In the reply, give its size (${long} mm long, ${Math.round(Math.min(b.x, b.y))} mm wide and ${Math.round(b.z)} mm tall, fits ${printer ? `the ${printer}` : 'the bed'})${real} and offer a resize as a follow-up: half size, or a length the person types${notes}`, output }
+          return { summary: `${summary}. In the reply, one sentence: what you built, its size (${long} mm long, ${Math.round(Math.min(b.x, b.y))} mm wide and ${Math.round(b.z)} mm tall, fits ${printer ? `the ${printer}` : 'the bed'}) and that its check passed${real}; the card under it shows its parts and sources. Then offer a resize as a follow-up: half size, or a length the person types${notes}`, output }
         }
         return { summary, output }
       }
@@ -1191,18 +1191,17 @@ const CLIENT_REAL =
   'For a model of a real thing: its real sizes in mm at full size, each tied to the feature size it sets, with the page it came from as source or the person\'s words that give it as stated (a size with neither is kept as from memory, and the plan says so in its assumptions), such as {"feature": "Deck", "size": "length", "mm": 280000, "source": {"title": "Bridge facts", "url": "https://example.org/bridge"}}. Each is held to scale within about a third'
 
 /**
- * Where a display plan's real sizes came from, as design.check's reply says it: the sizes taken from memory by name, or
- * the page its lookup's answer cites (a lookup that ran no search counts as from memory; one whose answer cites no page
- * names none). Empty when the plan has no real sizes, or gives them from the person's words only.
+ * Where a display plan's real sizes came from, as design.check's reply says it: the sizes taken from memory by name (a
+ * lookup that ran no search counts as from memory). A page a lookup read is on the part card, so it is not said. Empty
+ * when the plan has no real sizes, gives them from the person's words only, or looked them up.
  */
 export function realSaid(real: readonly RealEntry[] | undefined, source?: (id: string) => { page?: { title: string } } | undefined): string {
   const list = real ?? []
   // a lookupId whose lookup ran no search is from memory too
   const memory = list.filter((r) => r.stated === undefined && r.source === undefined && (r.lookup === undefined || (source !== undefined && !source(r.lookup)))).map((r) => `${r.feature} ${r.size}`)
-  if (memory.length) return `, say ${memory.length > 1 ? `${memory.slice(0, -1).join(', ')} and ${memory.at(-1)!}` : memory[0]!} ${memory.length === 1 ? 'is' : 'are'} from memory, not looked up,`
-  const looked = list.find((r) => r.lookup !== undefined)
-  const page = looked?.lookup !== undefined ? source?.(looked.lookup)?.page : list.find((r) => r.source)?.source
-  return page ? `, say its real sizes were looked up on ${page.title},` : ''
+  if (memory.length) return `, saying ${memory.length > 1 ? `${memory.slice(0, -1).join(', ')} and ${memory.at(-1)!}` : memory[0]!} ${memory.length === 1 ? 'is' : 'are'} from memory, not looked up`
+  // where the real sizes were looked up is on the part card's Details, so the reply leaves it out
+  return ''
 }
 
 /** Sizes under the printer's floors in the result's words, for a plan kept as the client gave it. */
