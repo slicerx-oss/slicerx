@@ -36,6 +36,8 @@ type V3 = [number, number, number]
 export { flatFaces }
 
 const vec2 = z.tuple([z.number(), z.number()])
+/** What geom.shell says about its walls: which bodies get exact ones. */
+export const SHELL_WALLS = 'A body whose faces are all flat gets exact walls; on a design with exact solids a curved body does too, unless the exact shell cannot close it, and then it is shelled as a mesh.'
 /** What the app link takes: the UTF-8 bytes of a call's arguments as compact JSON (sx-link app_link.rs, MAX_ARGS). */
 const LINK_ARGS = 64 * 1024
 /** design.sketch_svg's arguments may come to this many bytes; 512 are kept back for numbers the link may write longer. */
@@ -1796,11 +1798,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const shell = defineTool({
     name: 'geom.shell',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. With "design" it adds a shell step (the open faces kept by their keys, and its wall an editable number); with a model it writes the new STL and reports the walls. With --app, a design is the body in the open project.',
+      `Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). ${SHELL_WALLS} Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. With "design" it adds a shell step (the open faces kept by their keys, and its wall an editable number); with a model it writes the new STL and reports the walls. With --app, a design is the body in the open project.`,
     localDescription:
       'Hollow a closed body to wall_mm with the open faces left open (each a point on it and its outward normal; none for a closed hollow), for boxes, trays and enclosures. With design it adds a step; with a model, an STL. More: kb.search "modeling tools".',
     input: z.object({

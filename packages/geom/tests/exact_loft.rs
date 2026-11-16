@@ -529,7 +529,10 @@ fn the_engine_says_which_ops_make_exact_bodies() {
     if sx_brep::KERNEL {
         assert_eq!(
             ops,
-            json!({ "ops": ["sketch.loft"], "maxSolid": { "edges": 3300, "controlPoints": 178_000 } })
+            json!({
+                "ops": ["sketch.loft", "brep.shell"],
+                "maxSolid": { "edges": 3300, "controlPoints": 178_000 }
+            })
         );
     } else {
         assert_eq!(ops, json!({ "ops": [] }));

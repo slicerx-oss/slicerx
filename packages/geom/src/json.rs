@@ -105,6 +105,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("brep.chamfer", "brep"),
     ("brep.push", "brep"),
     ("brep.hole", "brep"),
+    ("brep.shell", "brep"),
     ("brep.info", "brep"),
     ("brep.tessellate", "brep"),
     ("brep.save", "brep"),
@@ -549,7 +550,7 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
         #[cfg(feature = "brep")]
         "exact.ops" => {
             let ops: &[&str] = if sx_brep::KERNEL && cfg!(feature = "cad") {
-                &["sketch.loft"]
+                &["sketch.loft", "brep.shell"]
             } else {
                 &[]
             };

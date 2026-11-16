@@ -841,7 +841,10 @@ export async function addedSolids(call: Call, added: readonly HistoryMesh[], sol
 }
 
 /** The steps exactStep has a version of on exact solids. */
-const EXACT_STEPS: ReadonlySet<StepParams['op']> = new Set(['face.push', 'hole.apply', 'shape.extrude', 'subtract', 'boolean', 'edge.fillet', 'edge.chamfer', 'plane.cut'])
+const EXACT_STEPS: ReadonlySet<StepParams['op']> = new Set(['face.push', 'hole.apply', 'shape.extrude', 'subtract', 'boolean', 'edge.fillet', 'edge.chamfer', 'plane.cut', 'shell'])
+
+/** The engine operation that shells an exact solid, which only some engines have (exactOps lists it). */
+export const EXACT_SHELL = 'brep.shell'
 
 /**
  * The parts after step `s` on exact solids, or null when the mesh path should run it. Kernel failures come back as
@@ -851,8 +854,9 @@ const EXACT_STEPS: ReadonlySet<StepParams['op']> = new Set(['face.push', 'hole.a
  * cutters moved; null when a move would take the outline off its plane or tip a box, for the pattern to run copy by copy.
  * `missed` is told which copies (from 0, in `copies` order) left no face of their own in the result, from the kernel's
  * `missed` list of outlines or cutters, or null when the kernel's reply does not say (an engine from before it did).
+ * `opened` is told the key of each face a shell left open, as it found them (0 for one without).
  */
-export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}, copies?: readonly Mat4[], tooBig?: (chars: number, limit: number) => void, missed?: (copies: number[] | null) => void): Promise<ExactPart[] | null> {
+export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}, copies?: readonly Mat4[], tooBig?: (chars: number, limit: number) => void, missed?: (copies: number[] | null) => void, opened?: (keys: number[]) => void): Promise<ExactPart[] | null> {
   const p = s.params
   let parts = given
   const frame = rigidFrame(s.transform)
@@ -867,6 +871,8 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
   const part = (like: Pick<ExactPart, 'name' | 'slot'>, r: unknown, k = 'body'): Promise<ExactPart> => madePart(call, solids, like, r, k, tooBig)
   // a step with no exact version runs on the mesh, before any part is made a solid for it
   if (!EXACT_STEPS.has(p.op)) return null
+  // a shell runs on the kernel only where the engine has it; elsewhere on the mesh, as before there was one
+  if (p.op === 'shell' && !(await solids.has?.(EXACT_SHELL))) return null
   if (copies && !(copies.length && (p.op === 'subtract' || (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') !== 'new')))) return null
   try {
     // the parts the step works on that Add shape made, and still fit the shape, start as the kernel's solid of it;
@@ -892,6 +898,22 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         const u = direction(s.transform, f.u)
         const outline: Polygon[] = r.polygons.map((q) => ({ outer: ring(q.outer), holes: q.holes.map(ring) }))
         pushed({ frame: { origin: point(s.transform, f.origin), normal, u, v: cross(normal, u) }, outline, distanceMm: p.distanceMm }, r.faceKey, r.reached)
+        return out
+      }
+      case 'shell': {
+        const b = solid(target)
+        if (b === null || !target) return null
+        // the open faces in the part's own coordinates, found again by their keys or by their place, as the mesh
+        // shell finds them; the wall is a length, which a rigid placement keeps
+        const inv = invert(s.transform)
+        const open = p.open.map((o) => {
+          const n = direction(inv, o.normal)
+          const l = Math.hypot(...n) || 1
+          return { at: point(inv, o.at), normal: [n[0] / l, n[1] / l, n[2] / l], ...(o.key ? { key: o.key } : {}) }
+        })
+        const r = (await call(EXACT_SHELL, { body: b, open, wallMm: p.wallMm, ...kept })) as Record<string, unknown>
+        out[s.part] = await part(target, r)
+        opened?.(Array.isArray(r['openKeys']) ? (r['openKeys'] as number[]) : [])
         return out
       }
       case 'hole.apply': {
