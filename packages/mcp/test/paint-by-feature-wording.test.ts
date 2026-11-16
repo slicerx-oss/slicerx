@@ -2,9 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Paint by feature as the tools say it, word for word: the paint target's kinds, the plan's colors and the display
 // rule, each from its one place; the refusal of a feature a design has none of; and which steps a feature's faces come
-// from (its own, a row or a mirror of them, and the steps a row tagged with it repeats).
+// from (its own, a row or a mirror of them, and the steps a row tagged with it repeats), and the faces those steps made,
+// a face with no key of its own going by the face it came from.
 import { describe, expect, it } from 'vitest'
-import { featureNames, featureSteps, type Step, type StepParams } from '@slicerx/cad-history'
+import { facesMadeBySteps, featureNames, featureSteps, type Step, type StepParams } from '@slicerx/cad-history'
 import { noFeatureText, PAINT_TARGET_TEXT, plannedFeature, storedTarget, targetArg } from '../src/paint-target'
 import { COLORS_PAINT_TEXT, DETAIL_HELP, DISPLAY_PAINT_TEXT, planDetailFields } from '../src/plan-detail'
 import { appPaintPreviewInput } from '../src/app-paint-input'
@@ -56,5 +57,27 @@ describe('a feature by its name', () => {
     expect(() => plannedFeature(steps, 'Chimney')).toThrow('target: Chimney is not a planned feature; name one the plan has (Box, Hole, Hole row)')
     expect(noFeatureText('Chimney', [])).toBe('target: Chimney is not a planned feature')
     expect(storedTarget({ kind: 'feature', feature: ' Pole ' })).toEqual({ kind: 'feature', feature: 'Pole' })
+  })
+})
+
+describe('the faces a feature\'s steps made', () => {
+  // keys 10 and 20 were made by steps a and b; face 2 lost its key to a join and came from 10, face 3 is a piece of a
+  // face a cut split that came from 20, and face 4 has neither
+  const made = new Map([[10, 'a'], [20, 'b']])
+  const part = { faces: { ids: [], table: [null, null, null, null, null], keys: [10, 20, 0, 0, 0], from: [0, 0, 10, 20, 0] } }
+
+  it('takes a face with no key of its own by the key it came from', () => {
+    expect([...facesMadeBySteps(part, made, new Set(['a']))]).toEqual([0, 2])
+    expect([...facesMadeBySteps(part, made, new Set(['b']))]).toEqual([1, 3])
+  })
+
+  it('goes by a face\'s own key when it has one, and leaves a face with neither out', () => {
+    const own = { faces: { ...part.faces, from: [20, 0, 10, 20, 0] } }
+    expect([...facesMadeBySteps(own, made, new Set(['a']))]).toEqual([0, 2])
+    expect([...facesMadeBySteps({ faces: { ids: [], table: [null], keys: [0] } }, made, new Set(['a', 'b']))]).toEqual([])
+  })
+
+  it('reads a part whose faces have only from', () => {
+    expect([...facesMadeBySteps({ faces: { ids: [], table: [null, null], from: [0, 10] } }, made, new Set(['a']))]).toEqual([1])
   })
 })
