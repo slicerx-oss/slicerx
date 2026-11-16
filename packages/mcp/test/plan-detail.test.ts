@@ -430,7 +430,7 @@ function tab(local = false) {
 describe('design.plan with a detail level', () => {
   it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.23.0')
+    expect(t.tool.version).toBe('1.24.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
@@ -446,7 +446,7 @@ describe('design.plan with a detail level', () => {
     const d = tab().tool.description
     expect(d).toContain('display for a model of a real thing named without sizes (the default)')
     expect(d).toContain('a flat-sided one (a house, a bookshelf) can be extruded')
-    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'Repeated small parts are one part, then array and mirror', 'is built whole in its lightest large color, and a feature that is its own color', 'Plan the features a person recognizes the real thing by', 'a bottom lifting at the ends', 'each darker band its own feature, with its color and its heights as sizes, painted on by height'])
+    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'Repeated small parts are one part, then array and mirror', 'is built whole in its lightest large color, and a feature that is its own color', 'Plan the features a person recognizes the real thing by', 'a top rising toward both ends', 'each darker band its own feature, with its color and its heights as sizes, painted on by height'])
       expect(d).toContain(step)
     await expect(tab().run({ ...car, proportions: undefined })).rejects.toThrow(DETAIL_HELP)
   })
@@ -642,5 +642,13 @@ describe('display rules any kind of object can use', () => {
   it('refuses one feature of two colors on either, with the way to plan it', () => {
     expect(detailProblem({ ...house, colors: { ...house.colors, Walls: 'white and gray' } })).toContain('give it its lightest large color, and each other color its own band feature')
     expect(detailProblem({ ...car, colors: { ...car.colors, Body: 'white and blue' } })).toContain('give it its lightest large color, and each other color its own band feature')
+  })
+})
+
+describe('a curved body planned at display detail', () => {
+  it('has its top line follow the body, with its top height at both ends and in the middle as sizes', () => {
+    expect(DETAIL_HELP).toContain(
+      "The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top line follows the real body from end to end as their bottom does (a top rising toward both ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Give a curved body's top height at both ends and in the middle as its sizes topStart, topMiddle and topEnd, and build its sections to them.",
+    )
   })
 })
