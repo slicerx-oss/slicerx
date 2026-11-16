@@ -167,6 +167,7 @@ mod ffi {
         type SmCurveArray;
         type SmAttribute;
         type SmAttributeArray;
+        type SmConstFaceArray;
 
         // making bodies. Each can allocate, so each is declared with Result: a C++ exception under it comes back
         // as an error where a plain declaration would end the process.
@@ -241,6 +242,17 @@ mod ffi {
             joined_edges: &mut ULONG,
             widest_vertex_gap: &mut f64,
             widest_edge_gap: &mut f64,
+        ) -> Result<SmLong>;
+
+        // a body's faces offset, and the wall between them and the body made a solid
+        unsafe fn SmApiShellBrepFull(
+            body: *const SmBrep,
+            distance: f64,
+            extend_convex: i32,
+            self_intersections: i32,
+            close_sheet: i32,
+            kept: &SmConstFaceArray,
+            out: &mut *mut SmBrep,
         ) -> Result<SmLong>;
 
         unsafe fn SmApiWriteBrepToFile(
@@ -369,6 +381,7 @@ mod ffi {
         fn Add(self: Pin<&mut SmCountArray>, count: ULONG) -> ULONG;
         unsafe fn Add(self: Pin<&mut SmSplineArray>, curve: *mut SmBSplineCurve) -> ULONG;
         unsafe fn Add(self: Pin<&mut SmCurveArray>, curve: *mut SmCurve) -> ULONG;
+        unsafe fn Add(self: Pin<&mut SmConstFaceArray>, face: *const SmFace) -> ULONG;
 
         // a face's attributes, where its key is kept. Each call can allocate, so each is declared with Result.
         fn GetAttributes(self: &SmFace, out: Pin<&mut SmAttributeArray>) -> Result<()>;
@@ -415,6 +428,8 @@ mod ffi {
         fn new_curve_array() -> UniquePtr<SmCurveArray>;
         #[cxx_name = "sx_new"]
         fn new_attribute_array() -> UniquePtr<SmAttributeArray>;
+        #[cxx_name = "sx_new"]
+        fn new_const_face_array() -> UniquePtr<SmConstFaceArray>;
         fn sx_long_attribute(id: ULONG, value: SmLong, out: &mut *mut SmAttribute) -> Result<SmLong>;
         #[cxx_name = "sx_new"]
         fn new_body() -> UniquePtr<SmBrep>;
@@ -1217,6 +1232,24 @@ impl Solid {
             }
         }
         Ok(())
+    }
+
+    /// The body's faces offset `distance` mm, out where positive and in where negative, at a true constant distance
+    /// (a convex edge of the offset rounds, never extends), and the wall between them and the body made a solid; each
+    /// of `kept` is left where it is, so the wall breaks through there. Refused when the kernel makes nothing; the
+    /// caller reads the result back.
+    pub(crate) fn shelled(&self, distance: f64, kept: &[FaceRef<'_>]) -> Result<Self> {
+        let kernel = held();
+        let mut faces = ffi::new_const_face_array();
+        for face in kept {
+            // SAFETY: the face belongs to this solid, which is live; the array only holds the pointer.
+            unsafe { faces.pin_mut().Add(face.ptr.as_ptr().cast_const()) };
+        }
+        let mut raw = ptr::null_mut();
+        // SAFETY: the body and the array are live; the kernel works on a copy of the body and leaves it as it is.
+        let status =
+            unsafe { ffi::SmApiShellBrepFull(self.brep.as_ptr(), distance, 0, 1, 0, &faces, &mut raw) };
+        adopt(&kernel, "shell", status, raw)
     }
 
     /// Puts the body in the older operations' table and gives its number there (`src/handover.rs`). Temporary.

@@ -60,6 +60,7 @@ using SmCountArray = SmTArray<ULONG>;
 using SmSplineArray = SmTArray<SmBSplineCurve*>;
 using SmCurveArray = SmTArray<SmCurve*>;
 using SmAttributeArray = SmTArray<SmAttribute*>;
+using SmConstFaceArray = SmTArray<const SmFace*>;
 
 // --- facts
 // The two kernel types Rust holds by value, field for field (Vec3 and Params in src/kernel.rs, which checks the

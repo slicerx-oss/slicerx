@@ -560,6 +560,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       (chars, limit) => {
         big = tooBig(chars, limit)
       },
+      undefined,
+      (keys) => {
+        // as the mesh path below records a shell's open faces
+        if (p.op === 'shell' && keys.some((k, j) => k && k !== p.open[j]?.key)) found.keys[s.id] = { openKeys: keys }
+      },
     )
     if (done) {
       const every = s.part === -1 && p.op === 'subtract'

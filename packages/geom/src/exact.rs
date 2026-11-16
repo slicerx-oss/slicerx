@@ -275,7 +275,7 @@ pub(crate) fn sendable(smb: &str) -> Result<()> {
 
 /// [`answer`], before a body sent back as text is counted.
 fn answered(op: &str, req: &Value, raw: bool) -> Result<Value> {
-    let sent = if matches!(op, "tessellate" | "info" | "save") {
+    let sent = if matches!(op, "tessellate" | "info" | "save" | "shell") {
         carried(req)?
     } else {
         None
@@ -287,7 +287,7 @@ fn answered(op: &str, req: &Value, raw: bool) -> Result<Value> {
     match (op, named) {
         ("count", _) => Ok(json!({ "bodies": count() })),
         ("free", n) => Ok(json!({ "freed": n.and_then(handle_of).is_some_and(free) })),
-        ("tessellate" | "info" | "save", Some(n)) => {
+        ("tessellate" | "info" | "save" | "shell", Some(n)) => {
             let (handle, held) = handle_of(n)
                 .and_then(|handle| get(handle).map(|held| (handle, held)))
                 .ok_or_else(|| no_such_body("body"))?;
@@ -299,12 +299,261 @@ fn answered(op: &str, req: &Value, raw: bool) -> Result<Value> {
                     .saved_with_from(&held.keys, &held.from)
                     .map(|smb| json!({ "smb": smb }))
                     .map_err(|e| kernel(&e)),
+                #[cfg(feature = "cad")]
+                "shell" => shelled(handle, &held, req),
                 _ => tessellate(handle, &held, req, raw),
             }
         }
         _ if sx_brep::handover::ROUTED.contains(&op) => handed(op, req),
         _ => older(op, req),
     }
+}
+
+/// The most faces one shell leaves open, as the mesh shell takes them.
+#[cfg(feature = "cad")]
+const MOST_OPEN: usize = 64;
+
+/// A face to leave open as a shell request names it: a point on it and its outward normal, and its key when the step
+/// kept one.
+#[cfg(feature = "cad")]
+struct Opening {
+    at: V3,
+    normal: V3,
+    key: u64,
+}
+
+/// A face reference that does not hold, in the words the older operations use, so a replay asks for the face again
+/// instead of running the step on the mesh.
+#[cfg(feature = "cad")]
+fn reference(why: &str) -> Error {
+    Error::geometry("brep", format!("faceReference: {why}"))
+}
+
+#[cfg(feature = "cad")]
+fn openings(req: &Value) -> Result<Vec<Opening>> {
+    let bad = |why: &str| Error::invalid("open", why);
+    let list = match req.get("open") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Array(list)) => list,
+        Some(_) => return Err(bad("must be a list of faces")),
+    };
+    if list.len() > MOST_OPEN {
+        return Err(bad(&format!("at most {MOST_OPEN} faces are left open")));
+    }
+    let v3 = |o: &Value, k: &str| -> Result<V3> {
+        let p: Option<V3> = o.get(k).and_then(|v| serde_json::from_value(v.clone()).ok());
+        p.filter(|p| p.iter().all(|c| c.is_finite()))
+            .ok_or_else(|| bad(&format!("each face needs {k} as [x, y, z]")))
+    };
+    list.iter()
+        .map(|o| {
+            let key = match o.get("key") {
+                None | Some(Value::Null) => 0,
+                Some(k) => k
+                    .as_u64()
+                    .filter(|&k| k < 1 << 52)
+                    .ok_or_else(|| reference("invalid face key; pick the face again to repair this step"))?,
+            };
+            Ok(Opening {
+                at: v3(o, "at")?,
+                normal: v3(o, "normal")?,
+                key,
+            })
+        })
+        .collect()
+}
+
+/// The face each opening names on a held body, and its key (0 when it has none): by its key when it has one, which
+/// must name exactly one face, or else as the mesh shell finds it, the face of a triangle under the point that faces
+/// the same way. The mesh is the body's own, so a point picked on its triangles is found again.
+#[cfg(feature = "cad")]
+fn opened(held: &Held, mesh: &Mesh, open: &[Opening]) -> Result<(Vec<usize>, Vec<u64>)> {
+    let at = |i: u32| mesh.positions.get(i as usize).copied().unwrap_or_default();
+    let size = held
+        .body
+        .bounds()
+        .map_or(1.0, |(lo, hi)| vec3::len(vec3::sub(hi, lo)));
+    let tol = (size * 1e-5).max(1e-3);
+    let (mut faces, mut keys) = (Vec::new(), Vec::new());
+    for o in open {
+        let face = if o.key != 0 {
+            let named: Vec<usize> = held
+                .keys
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &k)| (k == o.key).then_some(i))
+                .collect();
+            match named[..] {
+                [one] => one,
+                [] => {
+                    return Err(reference(
+                        "the face reference is missing; repair the reference before editing",
+                    ));
+                }
+                _ => {
+                    return Err(reference(
+                        "the face reference was split; repair the reference before editing",
+                    ));
+                }
+            }
+        } else {
+            let n = vec3::normalize(o.normal)
+                .ok_or_else(|| Error::invalid("open", "a face's normal must not be zero"))?;
+            let hit = mesh.triangles.iter().position(|t| {
+                let [a, b, c] = t.map(at);
+                let Some(tn) = vec3::normalize(vec3::cross(vec3::sub(b, a), vec3::sub(c, a))) else {
+                    return false;
+                };
+                vec3::dot(tn, n) > 0.999
+                    && vec3::dot(vec3::sub(o.at, a), tn).abs() <= tol
+                    && [(a, b), (b, c), (c, a)].iter().all(|&(from, to)| {
+                        let out = vec3::normalize(vec3::cross(vec3::sub(to, from), tn)).unwrap_or([0.0; 3]);
+                        vec3::dot(vec3::sub(o.at, from), out) <= tol
+                    })
+            });
+            let t = hit.ok_or_else(|| {
+                Error::invalid(
+                    "open",
+                    "a face to open is not on a face of the body; pick it again",
+                )
+            })?;
+            mesh.faces.get(t).copied().unwrap_or(0) as usize
+        };
+        keys.push(held.keys.get(face).copied().unwrap_or(0));
+        if !faces.contains(&face) {
+            faces.push(face);
+        }
+    }
+    if !mesh.surfaces.is_empty() && faces.len() == mesh.surfaces.len() {
+        return Err(Error::invalid(
+            "open",
+            "opening every face leaves no body; leave at least one face closed",
+        ));
+    }
+    Ok((faces, keys))
+}
+
+/// `shell`: the held body hollowed to `wallMm` with the faces in `open` left open, at a true constant wall. A face of
+/// the result on the body's own surface keeps the key it had; every face the wall made gets a key of the step
+/// (`keySalt`), so it reads as made by it. The reply names the new body (`body`), each open face's key as found
+/// (`openKeys`, 0 for one without), and with `withKeys` or `save` the new body's keys or text. With a face open, the
+/// kernel is asked only for a body of planes, cylinders and cones: on other curved faces it can leave the wall open,
+/// or fail outright, so such a body is refused in words first and a replay shells it on the mesh.
+#[cfg(feature = "cad")]
+fn shelled(handle: u32, held: &Held, req: &Value) -> Result<Value> {
+    let wall = req
+        .get("wallMm")
+        .and_then(Value::as_f64)
+        .filter(|w| w.is_finite() && *w > 0.0 && *w <= 1000.0)
+        .ok_or_else(|| Error::invalid("wallMm", "must be above 0 (at most 1000 mm)"))?;
+    let open = openings(req)?;
+    let shown = shown(handle, held, &Tessellation::default())?;
+    let (faces, open_keys) = opened(held, &shown.mesh, &open)?;
+    let all = held.body.faces().map_err(|e| kernel(&e))?;
+    let picked: Vec<Face<'_>> = faces.iter().filter_map(|&i| all.get(i).copied()).collect();
+    if !picked.is_empty() && !all.iter().all(|f| shells_open(&f.surface())) {
+        return Err(Error::geometry(
+            "shell",
+            format!(
+                "a {wall} mm wall could not be made exact on this body (with a face open, only a body of flat faces, \
+                 cylinders and cones is shelled exact)"
+            ),
+        ));
+    }
+    let body = held.body.shell(wall, &picked).map_err(|e| {
+        Error::geometry(
+            "shell",
+            format!("a {wall} mm wall could not be made exact on this body ({e})"),
+        )
+    })?;
+    let keys = carried_keys(&held.body, &body, wall / 2.0)?;
+    let number = hold(body, keys.clone())?;
+    let mut out = json!({ "body": number, "openKeys": open_keys });
+    made_extras(&mut out, number, &keys, req)?;
+    Ok(out)
+}
+
+/// Whether the kernel's shell is asked for a body with a face open when it has faces of this kind.
+#[cfg(feature = "cad")]
+fn shells_open(surface: &Surface) -> bool {
+    matches!(
+        surface,
+        Surface::Plane { .. } | Surface::Cylinder { .. } | Surface::Cone { .. }
+    )
+}
+
+/// The keys of `made`, a body cut from `from`: a face that lies on `from`'s surface keeps the key the kernel carried to
+/// it, and every other face, one the operation made and so at least `apart` mm from that surface, gets a key of the
+/// current step, or none outside one. None at all when neither has any.
+#[cfg(feature = "cad")]
+fn carried_keys(from: &Body, made: &Body, apart: f64) -> Result<Vec<u64>> {
+    let had = made.keys().map_err(|e| kernel(&e))?;
+    let mesh = made
+        .tessellate(&Tessellation::default())
+        .map_err(|e| kernel(&e))?;
+    let (lo, hi) = from.bounds().map_err(|e| kernel(&e))?;
+    let on = 1e-6 * vec3::len(vec3::sub(hi, lo)).max(1.0);
+    // a point inside each face's triangles, away from its edges: the middle of its largest triangle
+    let mut middle: Vec<Option<(f64, V3)>> = vec![None; mesh.surfaces.len()];
+    for (t, &f) in mesh.triangles.iter().zip(&mesh.faces) {
+        let [a, b, c] = t.map(|i| mesh.positions.get(i as usize).copied().unwrap_or_default());
+        let area = vec3::len(vec3::cross(vec3::sub(b, a), vec3::sub(c, a)));
+        let m = vec3::scale(vec3::add(vec3::add(a, b), c), 1.0 / 3.0);
+        if let Some(slot) = middle.get_mut(f as usize)
+            && slot.is_none_or(|(best, _)| area > best)
+        {
+            *slot = Some((area, m));
+        }
+    }
+    let mut fresh = Vec::new();
+    for slot in &middle {
+        // a face of the body's surface: its middle on that surface, to within the kernel's own tolerance
+        let kept = match slot {
+            Some((_, m)) => from.distance_to(*m).map_err(|e| kernel(&e))? <= (on + mesh_chord()).min(apart),
+            None => false,
+        };
+        fresh.push(!kept);
+    }
+    let new_keys = crate::faces::fresh_keys(fresh.iter().filter(|&&f| f).count());
+    if new_keys.is_empty() && had.iter().all(|&k| k == 0) {
+        return Ok(Vec::new());
+    }
+    let mut next = new_keys.into_iter();
+    Ok(had
+        .iter()
+        .zip(&fresh)
+        .map(|(&k, &is_new)| if is_new { next.next().unwrap_or(0) } else { k })
+        .collect())
+}
+
+/// the farthest a triangle's middle sits from its surface at the default chord
+#[cfg(feature = "cad")]
+fn mesh_chord() -> f64 {
+    Tessellation::default().chord_mm
+}
+
+/// `bodyKeys` and `bodySmb` for a body an operation here made, as `withKeys` and `save` ask
+#[cfg(feature = "cad")]
+fn made_extras(out: &mut Value, number: u32, keys: &[u64], req: &Value) -> Result<()> {
+    let asked = |k: &str| req.get(k).and_then(Value::as_bool) == Some(true);
+    if asked("withKeys") {
+        let faces = with(number, |h| h.body.faces().map(|f| f.len()))
+            .transpose()
+            .map_err(|e| kernel(&e))?
+            .unwrap_or(0);
+        out["bodyKeys"] = if keys.is_empty() {
+            json!(vec![0; faces])
+        } else {
+            json!(keys)
+        };
+    }
+    if asked("save") {
+        let smb = with(number, |h| h.body.saved(&h.keys))
+            .transpose()
+            .map_err(|e| kernel(&e))?;
+        out["bodySmb"] = json!(smb);
+    }
+    Ok(())
 }
 
 /// An older operation on the bodies this table holds: each body the request names by number is lent to it for the
