@@ -143,29 +143,18 @@ journey.describe('the mimir tab fits a phone', () => {
     await box.fill('')
   })
 
-  journey('the empty chat keeps its hint whole above a six-line composer at 390 and 360 px', async ({ page }, info) => {
+  journey('the empty chat shows only the ring above a six-line composer at 390 and 360 px', async ({ page }, info) => {
     const chat = await phoneMimir(page)
-    const hint = chat.locator('.mimir-empty p')
     const box = page.getByTestId('mimir-composer').getByRole('textbox')
     const six = Array.from({ length: 6 }, (_, i) => `Line ${i + 1}`).join('\n')
     for (const phone of PHONES) {
       await page.setViewportSize(phone)
       await box.fill('')
-      // with one line the hint sits in the ring's lower half, whole, inside the chat
-      const ravens = (await chat.locator('.mimir-ravens').boundingBox())!
-      const one = (await hint.boundingBox())!
-      const room = (await page.getByTestId('mimir-transcript').boundingBox())!
-      expect(one.y, `the hint at ${phone.width} px`).toBeGreaterThanOrEqual(ravens.y + ravens.height / 2)
-      expect(one.y + one.height).toBeLessThanOrEqual(room.y + room.height + 0.5)
+      // no note shows (it is read out only), and the ring stays
+      await expect(chat.locator('.mimir-empty p')).toHaveClass(/sr-only/)
+      await expect(chat.locator('.mimir-ravens')).toBeVisible()
       await box.fill(six)
       expect((await box.boundingBox())!.height).toBeGreaterThanOrEqual(6 * 20 + 2 * 12 - 1)
-      // the composer at six lines: the hint moves up, whole, and ends above it
-      const h = (await hint.boundingBox())!
-      const log = (await page.getByTestId('mimir-transcript').boundingBox())!
-      const composer = (await page.getByTestId('mimir-composer').boundingBox())!
-      expect(h.y + h.height, `the hint over the composer at ${phone.width} px`).toBeLessThanOrEqual(composer.y + 0.5)
-      expect(h.y).toBeGreaterThanOrEqual(log.y - 0.5)
-      expect(h.y + h.height).toBeLessThanOrEqual(log.y + log.height + 0.5)
       await noHorizontalScroll(page)
     }
     await page.setViewportSize(PHONES[0])

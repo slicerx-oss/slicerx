@@ -29,8 +29,8 @@
    either theme. It stays for the whole conversation: the transcript scrolls over it and it never fades or moves. */
 .mimir-ravens { position: absolute; left: 50%; top: 50%; z-index: 0; width: var(--mark); aspect-ratio: 1; transform: translate(-50%, -50%); color: light-dark(color-mix(in srgb, var(--fg) 5%, transparent), color-mix(in srgb, var(--fg) 4%, transparent)); pointer-events: none; }
 .mimir-ravens .sx-raven-mark { width: 100%; height: 100%; }
-/* the empty state sits under the ring, at reading width. It stays in the flow: the space above it gives way first
-   when the chat gets short (a growing message box), then the chat scrolls, so the text is never cut off. */
+/* the empty chat shows only the ring, so the eye goes to the message box; its note is read out but not shown. The
+   element stays in the flow under the ring, so the chat's layout matches a chat with a note. */
 .mimir-transcript:has(> .mimir-empty) { display: flex; flex-direction: column; }
 .mimir-transcript:has(> .mimir-empty)::before { content: ''; flex: 0 1 calc(50% + var(--mark) / 2 + var(--s-4)); min-height: 0; }
 .mimir-empty { flex: none; align-self: center; width: min(300px, calc(100% - 2 * var(--s-4))); text-align: center; color: var(--muted); }
