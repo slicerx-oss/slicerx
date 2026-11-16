@@ -105,6 +105,16 @@ An `unauthorized` app-link response means this setup is missing or the connectio
 
 `slicerx_app_preview_markers_set` accepts one or more boolean switches, for example `{"seams":true,"wipes":true}`. It uses the same switches as the legend and returns read-back; poll the read command for later counts. The app must have a loaded slice on Slice with no paint, brim or face tool active. All inputs validate before anything changes. These view commands use the existing read grant, leave the project and its Undo history unchanged, and are also available through `sx call --app app_preview_markers_set '{"seams":true}' app_preview_markers`.
 
+### Exploded view
+
+`slicerx_app_explode` reads the Spread control over the app's 3D view: `spread` (0 to 100 percent), `axis` (`radial`, `x`, `y` or `z`), the selected objects of 2 parts or more it moves apart (`targets`), whether the view draws it now (`shown`), whether an edit tool keeps the parts where they print (`held`) and the offsets the view draws each part at (`drawn`, bed mm). `slicerx_app_explode_set` takes `spread`, `axis` or both and answers with the same read-back; it is refused with `busy` while the toolpaths are shown or an edit tool is open. Select the object first. Both use the read grant and never change the project, the slice or the undo history:
+
+```sh
+slicerx-mcp call --app app_ui_select '{"selection":["obj_1"]}' app_explode_set '{"spread":60,"axis":"z"}' app_explode
+```
+
+`slicerx_design_render` draws a design's parts with the same spread on the server's own engine and leaves the design as it was.
+
 ### Slice playback
 
 With the app link on, `app_preview_playback` reads the playback bar's clock and `app_preview_playback_set` controls `playing`, `timeS`, `speed` and `followNozzle`. Both work through `sx call --app` with the existing read grant. The sliced toolpath bar must be open for changes; active modeling and object tools refuse them. No project or printer state changes.
