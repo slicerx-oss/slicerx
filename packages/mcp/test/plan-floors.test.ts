@@ -376,7 +376,7 @@ const run3: PlanInput = {
 describe('a print-in-place plan settles its joints first', () => {
   it('tells the model, in design.plan\'s description, to settle where pieces join and build each at its joint', () => {
     const tool = createCardPlans(createPlanRegistry()).planTool()
-    expect(tool.description).toContain(`an approved plan's result gives this printer's. ${JOINT_LAYOUT_HELP} Two or more`)
+    expect(tool.description).toContain(`an approved plan's result gives this printer's. A change to existing features (a tilt, a move, a color) is a feature with no part of its own: never add a part to give it one. ${JOINT_LAYOUT_HELP} Two or more`)
     expect(JOINT_LAYOUT_HELP).toContain('ask any choice that moves a joint (pilot.ask) before the plan')
     expect(JOINT_LAYOUT_HELP).toContain('never laid loose to join later')
   })

@@ -288,6 +288,8 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...(typeof s['label'] === 'string' && s['label'].trim() ? { label: s['label'].trim().slice(0, 100) } : {}),
       // the plan feature mimir tagged the step with (design.check matches features by it)
       ...(typeof s['feature'] === 'string' && s['feature'].trim() ? { feature: s['feature'].trim().slice(0, 60) } : {}),
+      // the planned changes (a tilt, a move) an edit of the step carried out, which design.check counts as built
+      ...editsOf(s['edits']),
       // the sketches a loft or sweep was made from, which hide while it is live
       ...usesOf(s['uses']),
       // the lean an edit gave what the step made
@@ -297,6 +299,13 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
     })
   }
   return { version: 1, base, steps, ...(v['exact'] === true ? { exact: true } : {}), ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}), ...placedOf(v['placed']) }
+}
+
+/** The planned features an edit of a step carried out (Step.edits): up to 30 names, as a plan feature tag is kept, else none. */
+function editsOf(v: unknown): Pick<Step, 'edits'> {
+  if (!Array.isArray(v)) return {}
+  const names = v.flatMap((x) => (typeof x === 'string' && x.trim() ? [x.trim().slice(0, 60)] : [])).slice(0, 30)
+  return names.length ? { edits: names } : {}
 }
 
 /** A loft's or sweep's source sketch ids (Step.uses): up to 64 short strings, else none. */

@@ -187,6 +187,11 @@ export interface Step {
   /** What the step made leans this way, turned about its foot (tilt.ts); laid on params as the step replays. */
   tilt?: StepTilt
   /**
+   * The planned features, by name, that a change of this step carried out: a tilt or a move the plan names as a feature
+   * of its own, which builds no step (design.edit_step records them, design.check counts them as built).
+   */
+  edits?: string[]
+  /**
    * The steps one call made share a group (a rail's posts and bar): undo takes the whole
    * group off the end of the history, and redo puts it back. A step with none undoes alone, as every step did before.
    */

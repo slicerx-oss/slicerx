@@ -14,7 +14,7 @@ import { score } from '../evals/score'
 import type { Audit } from '../evals/harness'
 import type { Scenario } from '../evals/types'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type PilotTool } from '../src/index'
-import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planSeed, unsettledQuestion, type StandingPlan } from '../src/plan-left'
+import { designNow, PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planSeed, unsettledQuestion, type StandingPlan } from '../src/plan-left'
 import type { LlmClient, LlmEvent, LlmMessage, LlmRequest } from '../src/provider/types'
 import type { ScriptStepData } from '../src/provider/scripted'
 import { SLOW_DOWN_LINE } from '../src/slow-down-lines'
@@ -843,5 +843,40 @@ describe('the recorded bridge follow-up, replayed', () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]).not.toContain('Still to build')
     expect(sent[0]).toContain('Its last design.check failed on minimum wall')
+  })
+})
+
+// A planned change to features already built (a tilt, a move) builds no step: design.edit_step records it on the
+// step it changed (the row's edits), and the note counts it as built from there, as design.check does, so it never
+// sends mimir on to build a part for it.
+describe('a planned change an edit carried out', () => {
+  const PLAN = { part: 'Desk lamp', units: 'mm', features: [{ name: 'Base', kind: 'extrude', sizes: {} }, { name: 'Arm', kind: 'extrude', sizes: {} }, { name: 'Arm lean', kind: 'tilt', sizes: {} }] }
+  const rows = (edits?: string[]) => [{ index: 1, id: 's1', feature: 'Base' }, { index: 2, id: 's2', feature: 'Arm', ...(edits ? { edits } : {}) }]
+  const run = (edits?: string[]): LlmMessage[] => {
+    const calls = [
+      { id: 'c1', name: 'design.plan', arguments: JSON.stringify(PLAN) },
+      { id: 'c2', name: 'design.edit_step', arguments: JSON.stringify({ design: 'd1', step: 's2', tilt: { toward: '-x', degrees: 12 } }) },
+    ]
+    return [
+      { role: 'user', content: 'User request:\nlean the arm back' },
+      { role: 'assistant', content: '', toolCalls: [calls[0]!] },
+      { role: 'tool', callId: 'c1', content: JSON.stringify({ ok: true, result: { planId: 'plan_1', accepted: true, edits: PLAN } }) },
+      { role: 'assistant', content: '', toolCalls: [calls[1]!] },
+      { role: 'tool', callId: 'c2', content: JSON.stringify({ ok: true, result: { design: 'd1', steps: rows(edits), parts: [{ index: 0, name: 'Desk lamp' }] } }) },
+    ] as LlmMessage[]
+  }
+
+  it('counts as built from the row that names it, and leaves nothing to build', () => {
+    expect(planLeft(run(['Arm lean']), 1)).toBeNull()
+  })
+
+  it('with no edit naming it is still to build', () => {
+    expect(planLeft(run(), 1)).toMatchObject({ planId: 'plan_1', build: ['Arm lean'] })
+  })
+
+  it('counts as built from the design as its host has it now', () => {
+    const now = designNow(JSON.stringify({ ok: true, result: { design: 'd1', steps: rows(['Arm lean']), parts: [{ index: 0, name: 'Desk lamp' }] } }))!
+    expect(now.steps[1]).toEqual({ id: 's2', feature: 'Arm', edits: ['Arm lean'] })
+    expect(planLeft(run(), 1, now)).toBeNull()
   })
 })
