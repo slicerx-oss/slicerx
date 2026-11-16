@@ -94,6 +94,22 @@ export interface PlanCardProps {
   auto?: boolean | undefined
 }
 
+/**
+ * On a plan change, a feature that now stands on another one reads where it stands and where it stood, as a size's
+ * "was" tag does: "stands on Piers, was Base plate".
+ */
+function movedTag(f: { name: string; on?: string | undefined }, was: PartPlan | undefined): ReactNode {
+  const now = f.on?.trim()
+  const old = (was?.features.find((x) => x.name === f.name) as { on?: string } | undefined)?.on?.trim()
+  if (!was || !now || now.toLowerCase() === (old ?? '').toLowerCase()) return null
+  return (
+    <small className="sheet-rec-tag" data-testid="mimir-plan-moved">
+      stands on {now}
+      {old ? `, was ${old}` : ''}
+    </small>
+  )
+}
+
 export function PlanCard({ askId, plan: given, shown = given, picked, actionable, onChoose, dismissed = false, amend, auto = false }: PlanCardProps) {
   const [plan, setPlan] = useState(given)
   const [sent, setSent] = useState<string | null>(null)
@@ -213,6 +229,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
               </span>
               <span>{f.name}</span>
               {f.kind ? <small className="sheet-rec-tag">{plainLabel(f.kind).toLowerCase()}</small> : null}
+              {movedTag(f, amend?.was)}
             </span>
             {Object.keys(f.sizes).length ? <ul className="sheet-rec-rows">{Object.entries(f.sizes).map(([k, v]) => row(`${base}-f${i}-${k}`, plainLabel(sizeLabelKey(k, kindOf(k, f.kinds?.[k]))), v, { kind: 'feature', index: i, key: k }, f.name, 1, kindOf(k, f.kinds?.[k])))}</ul> : null}
           </li>

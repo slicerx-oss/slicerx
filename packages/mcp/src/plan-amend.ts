@@ -43,7 +43,7 @@ const joined = (problems: readonly string[]): string | null => (problems.length 
  * in one round, not three.
  */
 export function amendShapeProblem(old: Sized, next: Sized, o: { asked?: boolean } = {}): string | null {
-  const only = 'an amend changes sizes only'
+  const only = 'an amend changes sizes and on only'
   const out: string[] = []
   if (next.part !== old.part) out.push(`part: ${only}; the part stays "${old.part}"`)
   if (next.units !== old.units) out.push(`units: ${only}; the plan stays in ${old.units}`)
@@ -70,7 +70,7 @@ export const AMEND_PINNED = ['overall', 'holes', 'openFaces'] as const
 
 /** The rest of amendShapeProblem: the overall size, the rows of holes and the open faces stay as they are. */
 function amendRestProblems(old: Sized, next: Sized): string[] {
-  const only = 'an amend changes sizes only'
+  const only = 'an amend changes sizes and on only'
   const out: string[] = []
   if (Boolean(next.overall) !== Boolean(old.overall)) out.push(`overall: ${only}; ${old.overall ? 'keep' : 'leave out'} the overall size`)
   const nh = next.holes ?? []
@@ -120,7 +120,7 @@ const same = (a: unknown, b: unknown, key?: string): boolean => JSON.stringify(c
  * changed. A planned feature's on is kept by amendedSizes (amendOns), so the part is held to what it now stands on.
  */
 export function amendDropProblem(old: Sized, next: Sized, opts: { fields?: boolean } = {}): string | null {
-  const only = 'an amend changes sizes only'
+  const only = 'an amend changes sizes and on only'
   const out: string[] = []
   for (const [i, h] of (old.holes ?? []).entries()) {
     const n = next.holes?.[i]
@@ -200,7 +200,7 @@ export function amendBody(was: PartPlan, sent: AmendSent): { next: Sized; proble
 
 /** What the result says of the fields an amend sent that it left as the plan has them. */
 export const IGNORED_NOTE = (fields: readonly string[]): string =>
-  `Ignored ${fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)!}` : fields[0]!}: an amend changes sizes only, so the plan keeps ${fields.length === 1 ? 'it' : 'them'} as approved`
+  `Ignored ${fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)!}` : fields[0]!}: an amend changes sizes and on only, so the plan keeps ${fields.length === 1 ? 'it' : 'them'} as approved`
 
 /**
  * The planned features whose on `next` changes, by name, in order: each one restated with an on other than the plan's.
@@ -224,6 +224,15 @@ export function amendKinds(old: Sized, next: Sized): string[] {
   return old.features.flatMap((f) => {
     const n = next.features.find((x) => x.name === f.name)
     return n && (n.kind ?? '') !== (f.kind ?? '') ? [`${f.name} made by ${n.kind ?? 'another feature'}, not ${f.kind ?? 'what it was'}`] : []
+  })
+}
+
+/** The planned features `next` moves onto another, as "Deck on Piers, not Base plate". */
+export function amendOnsText(old: Sized, next: Sized): string[] {
+  return old.features.flatMap((f) => {
+    const n = next.features.find((x) => x.name === f.name) as { on?: string } | undefined
+    const [was, now] = [(f as { on?: string }).on?.trim() ?? '', n?.on?.trim() ?? '']
+    return n && now && now.toLowerCase() !== was.toLowerCase() ? [`${f.name} on ${now}, not ${was || 'what it stood on'}`] : []
   })
 }
 

@@ -126,8 +126,8 @@ describe('design.put_plan openFaces', () => {
   it('keeps its open faces through an amend, which changes sizes only', () => {
     const was: PartPlan = { ...cup, openFaces: [{ piece: 'Pen cup', faces: ['top'] }] }
     expect(amendShapeProblem(was, { ...was, features: [{ ...was.features[0]!, sizes: { ...was.features[0]!.sizes, height: 110 } }] })).toBeNull()
-    expect(amendShapeProblem(was, { ...was, openFaces: [{ piece: 'Pen cup', faces: ['bottom'] }] })).toBe('openFaces: an amend changes sizes only; the plan keeps its openFaces as they are')
-    expect(amendShapeProblem(was, { ...was, openFaces: undefined })).toBe('openFaces: an amend changes sizes only; the plan keeps its openFaces as they are')
-    expect(amendShapeProblem(cup, was)).toBe('openFaces: an amend changes sizes only; leave out openFaces')
+    expect(amendShapeProblem(was, { ...was, openFaces: [{ piece: 'Pen cup', faces: ['bottom'] }] })).toBe('openFaces: an amend changes sizes and on only; the plan keeps its openFaces as they are')
+    expect(amendShapeProblem(was, { ...was, openFaces: undefined })).toBe('openFaces: an amend changes sizes and on only; the plan keeps its openFaces as they are')
+    expect(amendShapeProblem(cup, was)).toBe('openFaces: an amend changes sizes and on only; leave out openFaces')
   })
 })

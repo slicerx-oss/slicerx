@@ -924,7 +924,7 @@ export const STANDS_OFF = (part: string, support: string, below: number, shows: 
 
 /** The failure for a stacked part whose base floats above its support's top, planned height or not. */
 export const STANDS_FLOATS = (part: string, support: string, above: number, top: TopRead): string =>
-  `${part} stands on ${support}, but its base is ${r2(above)} mm above its top, so it floats; build it from the top of ${supportTop(support, top)}`
+  `${part} stands on ${support}, but its base is ${r2(above)} mm above its top, so it floats; build it from the top of ${supportTop(support, top)}: with design.edit_step, move the step that makes ${part} by [0, 0, -${r2(above)}]`
 
 /** The failure for a stacked part on its support's top whose planned height does not show above it. */
 export const STANDS_HEIGHT_OFF = (part: string, support: string, shows: number, planned: number, top: TopRead): string =>
