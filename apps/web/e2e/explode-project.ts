@@ -5,7 +5,7 @@
 // together (a base, a post standing on it and a cap on the post), each on its own filament, and a single box beside it.
 import type { Page } from '@playwright/test'
 import { expect } from './fixtures'
-import { openModel } from './journeys/lib/model'
+import { openModel, setState } from './journeys/lib/model'
 import { zip } from './project-zip'
 
 const ns = 'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"'
@@ -56,16 +56,15 @@ export function explodeProject(): Buffer {
 
 type Entry = { id: string; name: string; parts: unknown[]; transform: number[] }
 export type ExplodeState = { plate: Entry[]; explode: { spread: number; axis: string }; selection: string | null; selectedIds: string[] }
-type Sx = { getState(): ExplodeState; setState(p: unknown): void }
+type Sx = { getState(): ExplodeState }
 type Vp = { exploded(): Record<string, number[][]>; drawnObjects(): string[] }
 
 export const appState = (page: Page): Promise<ExplodeState> => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
-export const setApp = (page: Page, patch: Record<string, unknown>): Promise<void> => page.evaluate((p) => (window as unknown as { __sx: Sx }).__sx.setState(p), patch)
 export const exploded = (page: Page): Promise<Record<string, number[][]>> => page.evaluate(() => (window as unknown as { __vp: Vp }).__vp.exploded())
 
 /** Opens the project and selects the assembly; answers the two objects' ids. */
 export async function openAssembly(page: Page): Promise<{ assembly: string; single: string }> {
-  await setApp(page, { autoSlice: false })
+  await setState(page, { autoSlice: false })
   await openModel(page, { name: 'Lamp stand.3mf', mimeType: 'model/3mf', buffer: explodeProject() }, { asProject: true })
   const s = await appState(page)
   const assembly = s.plate.find((p) => p.name === ASSEMBLY)
@@ -73,6 +72,6 @@ export async function openAssembly(page: Page): Promise<{ assembly: string; sing
   expect(assembly?.parts).toHaveLength(3)
   expect(single?.parts).toHaveLength(1)
   await expect.poll(() => page.evaluate((id) => (window as unknown as { __vp: Vp }).__vp.drawnObjects().includes(id), assembly!.id)).toBe(true)
-  await setApp(page, { selection: assembly!.id, selectedIds: [assembly!.id] })
+  await setState(page, { selection: assembly!.id, selectedIds: [assembly!.id] })
   return { assembly: assembly!.id, single: single!.id }
 }
