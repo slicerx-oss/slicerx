@@ -86,6 +86,10 @@ export function bodyEnds(plan: { detail?: DetailLevel | undefined; ends?: Readon
   return key !== undefined ? plan.ends![key]! : 'round'
 }
 
+/** How the plan's colors say a body of several colors is built and painted: by feature, and a band across features by height. */
+export const COLORS_PAINT_TEXT =
+  'A body painted in two or more colors is built in its lightest large color. A feature that is its own color (a roof, a handle, a pole, a chimney top, a trim) is painted by feature, and a band that crosses features (a stripe, a trim line) is its own feature with its color here and its heights as sizes, painted on by height.'
+
 /** The plan fields the detail level adds; each is optional in the shared plan, and the card's input asks for detail. */
 export const planDetailFields = {
   detail: z
@@ -99,7 +103,7 @@ export const planDetailFields = {
   colors: z
     .record(text(60), text(40))
     .optional()
-    .describe('Only when the person asks for color, in the request or a follow-up: each feature\'s color, by feature name, such as {"Lower body": "red"}. A body painted in two or more colors is built in its lightest large color, and each darker band (a stripe, a trim line) is its own feature with its color here and its heights as sizes, painted on by height. Left out, the part prints in one default filament'),
+    .describe(`Only when the person asks for color, in the request or a follow-up: each feature's color, by feature name, such as {"Lower body": "red"}. ${COLORS_PAINT_TEXT} Left out, the part prints in one default filament`),
   scale: z
     .union([z.number().positive(), z.string().trim().regex(/^(1\s*:\s*)?\d+(\.\d+)?$/, 'scale is N of 1:N, such as 25')])
     .optional()
@@ -1083,12 +1087,16 @@ export function featuresFloor(plan: Pick<DetailPlan, 'overall' | 'repeats'>, lev
  * The method a display or fine plan follows, for any object (a car body, a plane's fuselage, a bottle): a few
  * lines in the plan tool's description and in each refusal, never a recipe for one object.
  */
+/** How the display rule has a body's colors painted on once it is built: by feature, and a band across features by height. */
+export const DISPLAY_PAINT_TEXT =
+  'a feature that is its own color (a roof, a handle, a pole, a chimney top, a trim) is painted by feature once the body is built, and a band that crosses features (a stripe, a trim line) is its own feature named for it with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height.'
+
 /** A plan shape that passes a display plan's rules on the first try, said in general terms, for any object. */
 export const DETAIL_WORKED_SHAPE =
   'A plan of this shape passes on the first try: a stepped body is one main body in flat, given by its own feature with its levels in order, each its own feature at least 3 mm tall, stacked; a detail that repeats is listed in repeats and planned as two features, one that builds it once and one with kind array (or pattern) and its count as a size'
 
 export const DETAIL_HELP =
-  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and each darker band is its own feature named for it (a band, a stripe) with its color in colors and its heights as sizes (below, or from and to, in mm above the bed), painted on by height once the body is built. Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: look the real sizes up with design.lookup_sizes first and give each in real with its lookupId, and a part more than about a third off its looked-up size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, with the detail its size can carry: anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror. ' + DETAIL_WORKED_SHAPE
+  'How a display model is built: a curved body is a table of sections, each with the same number of points, spaced evenly along its length, its lowest point at or above z 0, with upright sides for the last bit at a top or roof edge so no knife edge is left. The sections change along the length as the real thing does, in both directions across it: narrower toward the ends, and their top and bottom rising or falling (a bottom lifting at the ends, a hood lower than a roof); one outline stretched only in width is a box, and the check fails it. Color is planned only when the person asks for it, in the request or a follow-up; otherwise the part is one default filament and the plan gives no colors. When they ask, a body the real thing paints in two or more colors is built whole in its lightest large color, and ' + DISPLAY_PAINT_TEXT + ' Sizes of the parts on it (doors, chimneys, wheels) follow the looked-up proportions at the scale the plan gives, not a guess: look the real sizes up with design.lookup_sizes first and give each in real with its lookupId, and a part more than about a third off its looked-up size at scale is refused. A body the real thing builds in steps or stories is planned as its levels, each its own feature. Stack each level on the one below, sunk about 0.1 mm into it. Keep repeated detail (windows) at least two nozzle widths from edges and from each other. Plan the features a person recognizes the real thing by, from what you know of it and from lookups, with the detail its size can carry: anything smaller is named in assumptions. Repeated small parts are one part, then array and mirror. ' + DETAIL_WORKED_SHAPE
 
 /** A loft step's sections as the check reads them: the feature it was tagged with, and each section's world bounds. */
 export interface LoftSections {

@@ -425,7 +425,7 @@ function tab(local = false) {
 describe('design.plan with a detail level', () => {
   it('is 1.10.0 and refuses a display plan that extrudes a curved body before any card shows', async () => {
     const t = tab()
-    expect(t.tool.version).toBe('1.22.0')
+    expect(t.tool.version).toBe('1.23.0')
     await expect(t.run(withFeature(pod, 'Lower shell', { kind: 'extrude' }))).rejects.toThrow('Lower shell builds a curved body, so do not build it as a single extrude')
     expect(t.shown).toEqual([])
   })
@@ -441,7 +441,7 @@ describe('design.plan with a detail level', () => {
     const d = tab().tool.description
     expect(d).toContain('display for a model of a real thing named without sizes (the default)')
     expect(d).toContain('a flat-sided one (a house, a bookshelf) can be extruded')
-    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'Repeated small parts are one part, then array and mirror', 'is built whole in its lightest large color, and each darker band is its own feature', 'Plan the features a person recognizes the real thing by', 'a bottom lifting at the ends', 'each darker band its own feature, with its color and its heights as sizes, painted on by height'])
+    for (const step of ['a table of sections, each with the same number of points', 'sunk about 0.1 mm into it', 'at least two nozzle widths from edges and from each other', 'Repeated small parts are one part, then array and mirror', 'is built whole in its lightest large color, and a feature that is its own color', 'Plan the features a person recognizes the real thing by', 'a bottom lifting at the ends', 'each darker band its own feature, with its color and its heights as sizes, painted on by height'])
       expect(d).toContain(step)
     await expect(tab().run({ ...car, proportions: undefined })).rejects.toThrow(DETAIL_HELP)
   })
