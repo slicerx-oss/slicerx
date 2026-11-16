@@ -63,6 +63,8 @@ pub(crate) struct PathsIn {
     pub(crate) hollow: bool,
     /// Islands wider than this get a second wall, mm2 (Orca's `tree_branch_diameter_double_wall_area_scaled`).
     pub(crate) double_wall_mm2: f64,
+    /// How far the anchor at the start of a branch loop runs along the wall inside it, line spacings.
+    pub(crate) wall_anchor_spacings: f64,
     /// Where the fill lines are anchored.
     pub(crate) anchors: crate::support::Anchors,
     pub(crate) anchor_max: f64,
@@ -239,7 +241,13 @@ pub(crate) fn layer_paths(ol: &OrganicLayer, layer: u32, z: f64, p: &PathsIn) ->
             ));
         } else if p.hollow {
             let double = if z > 100.0 { 0.1 } else { p.double_wall_mm2 };
-            support.extend(crate::treepaths::branch_walls(&base, p.width, p.spacing, double));
+            support.extend(crate::treepaths::branch_walls_with_anchor(
+                &base,
+                p.width,
+                p.spacing,
+                double,
+                p.wall_anchor_spacings,
+            ));
         } else {
             support.extend(with_sheath(
                 &base,

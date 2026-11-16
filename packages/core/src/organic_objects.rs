@@ -49,6 +49,17 @@ pub(crate) fn auto_double_wall_mm2(cfg: &crate::config::PrintConfig) -> f64 {
     }
 }
 
+/// With the switch on, the anchor a hollow branch loop starts with runs up to this many line spacings along the
+/// wall inside it, so the loop's ends sit about 1.2 mm apart. Measured on the same plates, layers 80 to 200: each
+/// branch loop's last move ends 1.09 to 1.43 mm from where it started (median 1.22 to 1.26 mm), and no move runs on
+/// past a closed loop. With the switch off the anchor runs up to 6 spacings, about 2 mm.
+pub(crate) const WALL_ANCHOR_SPACINGS: f64 = 3.0;
+
+/// How many line spacings the anchor of a hollow branch loop runs inside it.
+pub(crate) fn wall_anchor_spacings(cfg: &crate::config::PrintConfig) -> f64 {
+    if selected(cfg) { WALL_ANCHOR_SPACINGS } else { 6.0 }
+}
+
 /// True when the settings ask for organic trees planned object by object.
 pub(crate) fn selected(cfg: &crate::config::PrintConfig) -> bool {
     crate::firmware::truthy(cfg, KEY)
@@ -586,6 +597,41 @@ mod tests {
         }
     }
 
+    /// How far apart the two ends of the one loop of a branch `d` mm across are, mm.
+    fn loop_ends_apart(d: f64, anchor_spacings: f64) -> f64 {
+        let paths = crate::treepaths::branch_walls_with_anchor(
+            &circle(d),
+            0.42,
+            0.42,
+            DOUBLE_WALL_MM2,
+            anchor_spacings,
+        );
+        let [one] = paths.as_slice() else {
+            panic!("one loop for {d} mm, got {}", paths.len());
+        };
+        let (a, b) = (one[0], one[one.len() - 1]);
+        f64::from(b.x - a.x).m_hypot(f64::from(b.y - a.y)) / crate::geom::SCALE
+    }
+
+    #[test]
+    fn a_branch_loop_ends_about_a_mm_and_a_quarter_from_its_start_with_the_switch_on() {
+        // The anchor runs 3 line spacings (1.26 mm) along the wall a line inside, so on a round branch its end
+        // sits 0.9 to 1.3 mm from where the loop closes, against 1.09 to 1.43 mm measured on whole plates (where
+        // branches are seldom round); with the longer anchor the ends sit about 2 mm apart.
+        for d in [3.0, 4.5, 6.0] {
+            let on = loop_ends_apart(d, WALL_ANCHOR_SPACINGS);
+            assert!(
+                (0.85..=1.45).contains(&on),
+                "{d} mm branch: ends {on:.3} mm apart"
+            );
+            let off = loop_ends_apart(d, 6.0);
+            assert!(
+                off > 1.6,
+                "{d} mm branch with the longer anchor: ends {off:.3} mm apart"
+            );
+        }
+    }
+
     #[test]
     fn the_wall_line_follows_the_switch() {
         let off = crate::config::PrintConfig::from_value(&serde_json::json!({})).unwrap();
@@ -593,5 +639,7 @@ mod tests {
             .unwrap();
         assert!((auto_double_wall_mm2(&off) - 0.25 * std::f64::consts::PI * 25.0).abs() < 1e-9);
         assert!((auto_double_wall_mm2(&on) - DOUBLE_WALL_MM2).abs() < 1e-9);
+        assert!((wall_anchor_spacings(&off) - 6.0).abs() < 1e-9);
+        assert!((wall_anchor_spacings(&on) - WALL_ANCHOR_SPACINGS).abs() < 1e-9);
     }
 }
