@@ -6,10 +6,10 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { appState, exploded, openAssembly, setApp } from '../explode-project'
+import { appState, exploded, openAssembly } from '../explode-project'
 import { expect } from '../fixtures'
 import { journey as test } from '../journey'
-import { settledView, useFileDialogs } from './lib/model'
+import { setState, settledView, useFileDialogs } from './lib/model'
 
 test.use({ journeyPrefs: { workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, autoSliceBySize: false } })
 test.skip(({ isMobile }) => isMobile, 'Runs at desktop width')
@@ -31,7 +31,7 @@ async function shots(page: Page, name: string): Promise<void> {
   const dir = process.env['SX_SHOTS_DIR'] ?? test.info().outputPath()
   mkdirSync(dir, { recursive: true })
   for (const scheme of ['dark', 'light'] as const) {
-    await setApp(page, { scheme, themeFollowsSystem: false })
+    await setState(page, { scheme, themeFollowsSystem: false })
     for (const spread of [0, 60]) {
       await page.locator('#explode-spread').fill(String(spread))
       // no tooltip from the last press, and in Model the view framed on the spread parts
@@ -41,7 +41,7 @@ async function shots(page: Page, name: string): Promise<void> {
       await page.screenshot({ path: join(dir, `${name}-${spread}-${scheme}.png`) })
     }
   }
-  await setApp(page, { scheme: 'dark' })
+  await setState(page, { scheme: 'dark' })
 }
 
 
@@ -97,31 +97,31 @@ test.describe('exploded view', () => {
     await shots(page, 'prepare-1440')
 
     // a single part has nothing to spread; a new selection puts the parts back
-    await setApp(page, { selection: single, selectedIds: [single] })
+    await setState(page, { selection: single, selectedIds: [single] })
     await expect(bar).toBeHidden()
     expect((await appState(page)).explode.spread).toBe(0)
     expect(await exploded(page)).toEqual({})
-    await setApp(page, { selection: assembly, selectedIds: [assembly] })
+    await setState(page, { selection: assembly, selectedIds: [assembly] })
     await expect(page.locator('#explode-spread')).toHaveValue('0')
   })
 
   test('spreads the selected assembly in Model too', async ({ page }) => {
     const { assembly } = await openAssembly(page)
-    await setApp(page, { modelMode: 'design' })
-    await setApp(page, { selection: assembly, selectedIds: [assembly] })
+    await setState(page, { modelMode: 'design' })
+    await setState(page, { selection: assembly, selectedIds: [assembly] })
     const bar = page.getByTestId('explode-bar')
     await expect(bar).toBeVisible()
     await page.locator('#explode-spread').fill('60')
     await expect.poll(async () => (await exploded(page))[assembly]?.length ?? 0).toBe(3)
     await shots(page, 'model-1440')
-    await setApp(page, { modelMode: 'slice' })
+    await setState(page, { modelMode: 'slice' })
   })
 
   test('an edit tool puts the parts back first: a brim ear lands on the true part, a turn drops from true geometry', async ({ page }) => {
     const { assembly } = await openAssembly(page)
     // the Brim ears tool shows while the brim is painted
     const st = await appState(page)
-    await setApp(page, { overrides: { ...(st as unknown as { overrides: object }).overrides, brim_type: 'painted' } })
+    await setState(page, { overrides: { ...(st as unknown as { overrides: object }).overrides, brim_type: 'painted' } })
     await page.getByTestId('explode-axis-x').click()
     await page.locator('#explode-spread').fill('60')
     await expect.poll(async () => (await exploded(page))[assembly]?.length ?? 0).toBe(3)
@@ -150,10 +150,10 @@ test.describe('exploded view', () => {
     const brim = toolbar.getByRole('button', { name: 'Brim ears' })
     if ((await brim.getAttribute('aria-pressed')) === 'true') await brim.click()
     await expect(brim).toHaveAttribute('aria-pressed', 'false')
-    await setApp(page, { overrides: (st as unknown as { overrides: object }).overrides })
+    await setState(page, { overrides: (st as unknown as { overrides: object }).overrides })
 
     // Rotate: a drag on a ring of a spread object starts from the parts where they print and ends on the bed.
-    await setApp(page, { selection: assembly, selectedIds: [assembly] })
+    await setState(page, { selection: assembly, selectedIds: [assembly] })
     await expect(page.locator('#explode-spread')).toBeEnabled()
     await page.getByTestId('explode-axis-z').click()
     await page.locator('#explode-spread').fill('100')
@@ -193,8 +193,8 @@ test.describe('exploded view', () => {
 
   test('in Model, a click on a spread part picks its face where it prints, and the picked face holds the parts home', async ({ page }) => {
     const { assembly } = await openAssembly(page)
-    await setApp(page, { modelMode: 'design', subPicks: [], pickFilter: ['face'] })
-    await setApp(page, { selection: assembly, selectedIds: [assembly] })
+    await setState(page, { modelMode: 'design', subPicks: [], pickFilter: ['face'] })
+    await setState(page, { selection: assembly, selectedIds: [assembly] })
     await page.getByTestId('explode-axis-z').click()
     await page.locator('#explode-spread').fill('100')
     await expect.poll(async () => (await exploded(page))[assembly]?.length ?? 0).toBe(3)
@@ -226,6 +226,6 @@ test.describe('exploded view', () => {
     await expect(page.getByTestId('explode-hint')).toBeVisible()
     expect((await appState(page)).explode.spread).toBe(0)
     expect(await exploded(page)).toEqual({})
-    await setApp(page, { subPicks: [], modelMode: 'slice' })
+    await setState(page, { subPicks: [], modelMode: 'slice' })
   })
 })
