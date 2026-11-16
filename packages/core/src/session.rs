@@ -7252,8 +7252,8 @@ impl SliceSession {
 
     /// Organic trees planned object by object (`organic_objects`), when the settings ask for it and this session
     /// slices several objects together: each object planned alone from its own layers, enforcers and blockers (the
-    /// islands its footprint holds), the copies of an object given its plan moved to where they stand. None
-    /// otherwise.
+    /// islands its footprint holds), the copies of an object given its plan moved to where they stand, and every
+    /// object's support then cut clear of the other objects' layers by `support_object_xy_distance`. None otherwise.
     fn organic_by_object(
         &self,
         cfg: &PrintConfig,
@@ -7270,8 +7270,7 @@ impl SliceSession {
         }
         let hulls: Vec<&[[f64; 2]]> = self.objects.iter().map(|o| o.hull.as_slice()).collect();
         let split = |layers: &[Shapes]| crate::organic_objects::split(layers, &hulls);
-        let (mut models, mut force, mut block) =
-            (split(&input.models), split(&input.force), split(&input.block));
+        let (models, mut force, mut block) = (split(&input.models), split(&input.force), split(&input.block));
         let leader = |k: usize| self.organic_copies.get(k).copied().unwrap_or((k, [0, 0]));
         let center = |b: [f64; 4]| [f64::midpoint(b[0], b[2]), f64::midpoint(b[1], b[3])];
         // Each object that is the first of its kind, planned in place.
@@ -7285,7 +7284,7 @@ impl SliceSession {
                 continue;
             };
             let own = SupportInput {
-                models: models.get_mut(k).map(std::mem::take).unwrap_or_default(),
+                models: models.get(k).cloned().unwrap_or_default(),
                 thickness: input.thickness.clone(),
                 force: force.get_mut(k).map(std::mem::take).unwrap_or_default(),
                 block: block.get_mut(k).map(std::mem::take).unwrap_or_default(),
@@ -7313,6 +7312,10 @@ impl SliceSession {
             self.plan.count() as usize,
             &placed,
             cfg.bed_rect(),
+            &crate::organic_objects::Outlines {
+                layers: &models,
+                gap: cfg.support.xy_distance,
+            },
         ))
     }
 
