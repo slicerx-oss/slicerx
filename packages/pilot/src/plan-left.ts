@@ -7,7 +7,9 @@
 // with the design as it is now (DesignNow) when the run changes a plan built in an earlier run. The words for it live
 // here too, so the chat's fold (ui/reduce.ts, which the phone app imports) can tell the notice apart without pulling in
 // the runtime.
+import { nameKey, single } from '@slicerx/contracts/feature-name'
 import type { LlmMessage, LlmToolCall } from './provider/types'
+import { asksToRemove } from './turn-keeps'
 
 /** The code on the chat's notice that mimir went on with the plan; a notice, never a failure (`waiting` is set). */
 export const PLAN_LEFT_CODE = 'plan_left'
@@ -39,21 +41,6 @@ export interface PlanLeft {
   fix?: string[]
 }
 
-/** A feature name or tag as compared: lower case, words only, plurals made single (as design.check compares them). */
-function single(w: string): string {
-  if (w === 'axes') return 'axis'
-  if (w === 'shelves' || w === 'halves') return `${w.slice(0, -3)}f`
-  if (w.length > 4 && w.endsWith('ies')) return `${w.slice(0, -3)}y`
-  if (w.length > 4 && /(?:ch|sh|ss|x|z)es$/.test(w)) return w.slice(0, -2)
-  return w.length > 3 && w.endsWith('s') && !/(?:ss|is)$/.test(w) ? w.slice(0, -1) : w
-}
-const nameKey = (name: string): string =>
-  name
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean)
-    .map(single)
-    .join(' ')
 /** The words that tell features apart: three letters or more, not starting with a digit, plurals made single. */
 const nameWords = (name: string): Set<string> => new Set(name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d/.test(w)).map(single))
 
@@ -67,6 +54,8 @@ interface Step {
   feature?: string
   /** The planned changes (a tilt, a move) an edit of the step carried out, which build no step of their own. */
   edits?: string[]
+  /** The step row says it is suppressed (turned off with design.edit_step). */
+  off?: boolean
 }
 
 interface Reading {
@@ -110,10 +99,10 @@ function read(content: string): Reading {
     if (typeof r['steps'] === 'number') reading.steps = r['steps']
     if (Array.isArray(r['steps']))
       reading.rows = r['steps'].flatMap((row) => {
-        const o = row as { id?: unknown; feature?: unknown; edits?: unknown }
+        const o = row as { id?: unknown; feature?: unknown; edits?: unknown; state?: unknown }
         const id = str(o?.id)
         if (!id) return []
-        return [stepOf(id, o.feature, o.edits)]
+        return [{ ...stepOf(id, o.feature, o.edits), ...(o.state === 'suppressed' ? { off: true } : {}) }]
       })
     const ls = r['lastStep'] as { index?: unknown; id?: unknown; feature?: unknown } | undefined
     if (ls && typeof ls.index === 'number' && str(ls.id)) {
@@ -225,6 +214,8 @@ const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((f)
  *  - design.check passed after the design's last change;
  *  - the design's steps are unknown (results without lastStep or step rows) and the part has a body, and no failed
  *    check is waiting on its fix round.
+ * A feature mimir took away on purpose (takenAway) is left out: never to build again, unless the person asked for it
+ * since.
  * A design.check of the plan that failed after the design's last change, with its fix round still open (no stop), is
  * the plan unfinished too: its failed items are in fix, to be fixed and checked again, even with every feature built
  * and tagged. One that failed only on items failing before the person's change (failedBefore) is not.
@@ -319,6 +310,8 @@ export function planLeft(messages: readonly LlmMessage[], from = 0, now?: Design
   const fix = missed && missed.at > changed ? missed.items : undefined
   const left: PlanLeft = { planId: plan.planId, part: plan.part, ...(design ? { design } : {}), noBody, build: [], tag: [], ...(fix ? { fix } : {}) }
   if (!steps) return noBody || fix ? left : null
+  // a feature mimir took away on purpose, in this run or an earlier one, is neither to build nor to tag
+  const away = design ? takenAway(messages, design) : new Set<string>()
   // a planned change (a tilt, a move) an edit carried out counts as built, as design.check counts it
   const tagged = new Set(steps.flatMap((s) => [...(s.feature ? [s.feature] : []), ...(s.edits ?? [])].map(nameKey)))
   // the steps no feature of the plan is tagged on, with what they were called
@@ -326,7 +319,7 @@ export function planLeft(messages: readonly LlmMessage[], from = 0, now?: Design
   const loose = steps.filter((s) => s.id && !(s.feature && keys.has(nameKey(s.feature)))).map((s) => ({ id: s.id, name: s.feature ?? labels.get(s.id) ?? '' })).filter((s) => s.name)
   for (const feature of plan.features) {
     const key = nameKey(feature)
-    if (tagged.has(key)) continue
+    if (tagged.has(key) || away.has(key)) continue
     // the step named as the feature; else the one whose name shares the most words with it
     const exact = loose.find((s) => nameKey(s.name) === key)
     const words = nameWords(feature)
@@ -387,6 +380,84 @@ export function carriedPlanFrom(messages: readonly LlmMessage[], runStart: numbe
     started = true
   }
   return last.at
+}
+
+/** Calls whose answer's lastStep is a step already there, not one they built: an undo, an edit, a move of the timeline marker. */
+const UNMAKES: ReadonlySet<string> = new Set(['design.undo', 'design.edit_step', 'design.roll'])
+
+/** The step `ref` names (an index from 1, as a number or digits, or a step id) among the steps in order. */
+function stepAt(steps: readonly Step[], ref: unknown): Step | undefined {
+  if (typeof ref === 'number') return steps[ref - 1]
+  const id = str(ref)
+  if (!id) return undefined
+  return steps.find((s) => s.id === id) ?? (/^\d+$/.test(id) ? steps[Number(id) - 1] : undefined)
+}
+
+// Words that ask for a feature again: add it, put it back, bring it back, build it again.
+const ASKS_AGAIN = /\b(?:add|adding|back|again|restore|return|bring|put|rebuild|re-?add|redo)\b/i
+
+/** Whether the person's words ask for the feature again: they name it (a word of its name) and ask to add it or put it back, not to remove it. */
+function asksAgain(words: string, feature: string): boolean {
+  if (!ASKS_AGAIN.test(words) || asksToRemove(words)) return false
+  const named = nameWords(feature)
+  return [...nameWords(words)].some((w) => named.has(w))
+}
+
+/**
+ * The planned features mimir took away on purpose in design `design`, by name key (as nameKey compares them), read
+ * from the whole chat: a step tagged with the feature that design.undo removed, or that design.edit_step turned off
+ * (suppressed), with no step built for it since (nor that step turned back on). The design's history records both: an
+ * undo's answer has fewer steps than the design had, so the steps it removed are the ones the results last named at
+ * those places, and a suppressed step's row says so. Each is mimir's own call, made for the person's words ("take the
+ * openings off") or to clear a check, so the note never sends mimir back to build the feature again. A message of the
+ * person after the removal that asks for the feature again (it names the feature and asks to add it or put it back)
+ * gives it back to the plan: it is to build again while no step makes it. A feature an amend dropped is not in the
+ * plan at all.
+ */
+export function takenAway(messages: readonly LlmMessage[], design: string): Set<string> {
+  const calls = new Map<string, LlmToolCall>()
+  // the design's steps in order, as the results named them
+  let known: Step[] = []
+  // each feature taken away, by name key
+  const away = new Map<string, string>()
+  const take = (s: Step | undefined): void => {
+    if (s?.feature) away.set(nameKey(s.feature), s.feature)
+  }
+  const give = (s: { feature?: string } | undefined): void => {
+    if (s?.feature) away.delete(nameKey(s.feature))
+  }
+  for (const m of messages) {
+    if (m.role === 'user') {
+      const words = said(m.content)
+      if (words !== undefined) for (const [key, feature] of away) if (asksAgain(words, feature)) away.delete(key)
+      continue
+    }
+    if (m.role === 'assistant') for (const c of m.toolCalls ?? []) calls.set(c.id, c)
+    if (m.role !== 'tool') continue
+    const call = calls.get(m.callId)
+    if (!call || !BUILDS.test(call.name)) continue
+    const r = read(m.content)
+    if (r.design !== design) continue
+    const before = known
+    if (r.rows) known = r.rows
+    else if (r.steps !== undefined) {
+      known = before.slice(0, r.steps)
+      while (known.length < r.steps) known.push({ id: '' })
+      if (r.last && r.last.index >= 1 && r.last.index <= r.steps) known[r.last.index - 1] = { id: r.last.id, ...(r.last.feature ? { feature: r.last.feature } : {}) }
+    }
+    // an undo removes the steps past the design's new count
+    if (call.name === 'design.undo' && r.ok) for (const s of before.slice(known.length)) take(s)
+    // a step turned off: by its row when the answer lists the steps, else by the call when it went through; turned
+    // back on, it builds its feature again
+    if (call.name === 'design.edit_step' && typeof args(call)['suppressed'] === 'boolean') {
+      const s = stepAt(known, args(call)['step']) ?? stepAt(before, args(call)['step'])
+      if (args(call)['suppressed'] === false) give(s)
+      else if (s?.off || (r.ok && !r.rows)) take(s)
+    }
+    // a step built again for the feature (or put back with design.redo) builds it again
+    if (r.ok && !READS.has(call.name) && !UNMAKES.has(call.name)) give(r.last)
+  }
+  return new Set(away.keys())
 }
 
 /** "a", "a and b", "a, b and c". */

@@ -633,10 +633,16 @@ function calledTools(messages: readonly LlmMessage[]): Set<string> {
   return names
 }
 
-export function toolMessage(out: ToolOutput): string {
+/** A tool's answer in full, as JSON: ok, its summary and its result. */
+function toolAnswer(out: ToolOutput): string {
   const body: Record<string, unknown> = { ok: out.ok !== false, summary: out.summary }
   if (out.output !== undefined) body['result'] = out.untrusted ? { untrusted: true, note: UNTRUSTED_NOTE, data: out.output } : out.output
-  const s = JSON.stringify(body)
+  return JSON.stringify(body)
+}
+
+/** A tool's answer as the model gets it: cut at 12000 characters. */
+export function toolMessage(out: ToolOutput): string {
+  const s = toolAnswer(out)
   return s.length > 12000 ? `${s.slice(0, 12000)}...(truncated)` : s
 }
 
@@ -1197,7 +1203,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { kind: 'run', token }
   }
 
-  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, stops: TurnStops, loader?: AnyTool, live?: ReadonlySet<string>): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
+  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, stops: TurnStops, loader?: AnyTool, live?: ReadonlySet<string>): Promise<{ message: string; stop: boolean; images?: LlmImage[]; whole?: string }> {
     // pilot.load_tools is not one of the offered tools: only a capped request carries it, made for that step, and a
     // call to it from a step that did not carry it is an unknown tool; so is a tool of the catalog that was withdrawn
     // (`live`, tool-search.ts)
@@ -1554,7 +1560,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     if (out.citations) for (const c of out.citations) if (!citations.some((x) => x.id === c.id)) citations.push(c)
     const said = refusal ?? out.summary
-    return { message: toolMessage(plain?.hint ? { ...out, summary: `${said.replace(/[.\s]+$/, '')}. ${plain.hint}` } : { ...out, summary: said }), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
+    const sent = plain?.hint ? { ...out, summary: `${said.replace(/[.\s]+$/, '')}. ${plain.hint}` } : { ...out, summary: said }
+    const message = toolMessage(sent)
+    // a long answer the model gets cut keeps its whole text for the runtime's own quiet reads (designRead)
+    return { message, stop: false, ...(out.images?.length ? { images: out.images } : {}), ...(message.endsWith('...(truncated)') ? { whole: toolAnswer(sent) } : {}) }
   }
 
   async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet, kind?: TurnKind, building = false, wordsAsk?: ReadonlySet<string>): Promise<PilotEvent & { type: 'done'; capped?: true }> {
@@ -1688,11 +1697,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (!left) return null
       return { left, again: isStale(sessionId) && planned.get(sessionId)?.planId === left.planId }
     }
-    // a design's steps and parts as its host has them now, read with no row in the chat; null without design.steps
+    // a design's steps and parts as its host has them now, read with no row in the chat; null without design.steps. The
+    // answer is read whole: a long design's (one with lofted steps lists their stations and shape words) runs past what
+    // a result sent to the model keeps, and a cut one does not parse
     const designRead = async (design: string) => {
       if (!findTool('design.steps')) return null
       const call: LlmToolCall = { id: `plan_steps_${sessionId}_${now()}_${lookN++}`, name: 'design.steps', arguments: JSON.stringify({ design }) }
-      return designNow((await execute(call, sessionId, context, () => undefined, signal, citations, cards, stops)).message)
+      const res = await execute(call, sessionId, context, () => undefined, signal, citations, cards, stops)
+      return designNow(res.whole ?? res.message)
     }
     // a follow-up on a cloud turn: the design an earlier run built is looked at first
     const look = !local ? findTool('design.look') : undefined

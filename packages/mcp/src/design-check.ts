@@ -6,6 +6,7 @@
 // wait in a registry under their planId until design.check reads them. Only zod and hook-lip.ts (which imports nothing)
 // here, so any package can import the
 // plan and result shapes.
+import { nameKey, single } from '@slicerx/contracts/feature-name'
 import { SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { LIP_RISE_MM } from './hook-lip'
@@ -397,27 +398,12 @@ function sizeMatch(got: number[], want: number[], sizeOk: SizeOk = tightOk): { p
 // words a step's own name carries whatever it builds ("Sketch extrude 5 mm"), which say nothing about the feature
 const STEP_WORDS = new Set(['sketch', 'extrude', 'revolve', 'pull', 'push', 'step', 'copies', 'shape', 'new', 'join', 'the', 'and', 'for', 'with', 'four', 'two', 'three', 'six', 'eight', 'all', 'each'])
 
-/** Plurals the rules below get wrong: an f that turns to ves, and axes, the plural of axis. */
-const PLURALS: Record<string, string> = { shelves: 'shelf', halves: 'half', axes: 'axis' }
-
-/** A word made single: "holes" is "hole", "boxes" is "box", "assemblies" is "assembly", "shelves" is "shelf"; "glass", "axis" and "chassis" stay. */
-function single(w: string): string {
-  const odd = PLURALS[w]
-  if (odd) return odd
-  if (w.length > 4 && w.endsWith('ies')) return `${w.slice(0, -3)}y`
-  if (w.length > 4 && /(?:ch|sh|ss|x|z)es$/.test(w)) return w.slice(0, -2)
-  return w.length > 3 && w.endsWith('s') && !/(?:ss|is)$/.test(w) ? w.slice(0, -1) : w
-}
-
 /** The words of a name that tell features apart: lower case, three letters or more, no numbers, plurals made single. */
 function nameWords(name: string): Set<string> {
   return new Set(name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d/.test(w) && !STEP_WORDS.has(w)).map(single))
 }
 
-/** A feature name or tag as compared: lower case, words only, plurals made single ("Snap-fit lids" is "snap fit lid"). */
-export function nameKey(name: string): string {
-  return name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(single).join(' ')
-}
+export { nameKey }
 
 /** A planned feature kind that leans features already built (a tilt, a lean, a rake, a rotation). */
 const TILT_KIND = /\b(?:tilt|lean|rake|raking|rotat)/i
