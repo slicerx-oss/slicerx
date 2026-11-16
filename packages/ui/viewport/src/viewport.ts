@@ -3255,7 +3255,10 @@ class ViewportImpl implements Viewport {
 
   // ---------- camera ----------
 
-  /** What the camera frames: the toolpaths in preview, else the selection, else every object. `whole` leaves the selection out. */
+  /**
+   * What the camera frames: the toolpaths in preview, else the selection, else every object, else the whole plate.
+   * `whole` leaves the selection out.
+   */
   private framingBox(whole = false): Box3 {
     const box = new Box3()
     this.stage.scene.updateMatrixWorld(true)
@@ -3272,7 +3275,8 @@ class ViewportImpl implements Viewport {
       const list = sel.length && !whole ? sel : [...this.objects.values()]
       for (const o of list) box.expandByObject(o.group)
     }
-    if (box.isEmpty()) box.setFromCenterAndSize(new Vector3(0, 20, 0), new Vector3(120, 40, 120))
+    // an empty plate frames its outline, so Model's first-open reveal, which runs round it, plays in view
+    if (box.isEmpty()) box.setFromCenterAndSize(new Vector3(), new Vector3(this.stage.bed.widthMm, 0, this.stage.bed.depthMm))
     return box
   }
 
