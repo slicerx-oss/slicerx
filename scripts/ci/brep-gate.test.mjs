@@ -85,7 +85,6 @@ test('macOS and Windows gate a pull request through the one required name and st
 test('the Linux job runs the same build and tests as the other systems', () => {
   const linux = job('brep-linux')
   for (const cmd of [
-    'node --test packages/brep/tests/solids-wasm.mjs',
     'sh packages/brep/tests/wasm-cache.sh',
     'cargo clippy -p sx-brep --release --all-targets --features routine-probe,typed -- -D warnings',
     'cargo test -p sx-brep --release --features routine-probe,typed',
@@ -96,6 +95,13 @@ test('the Linux job runs the same build and tests as the other systems', () => {
     assert.ok(job('brep').includes(cmd), `brep runs ${cmd}`)
   }
   assert.match(linux, /SX_BREP_REQUIRE: '1'/)
+})
+
+test('the kernel\'s wasm tests run where the engine with exact solids is built', () => {
+  const wasm = job('wasm')
+  assert.ok(wasm.includes('- run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"'), 'wasm builds the exact module')
+  assert.ok(wasm.includes('- run: node --test packages/brep/tests/solids-wasm.mjs'), 'wasm runs solids-wasm')
+  assert.ok(wasm.indexOf('build-exact.sh') < wasm.indexOf('solids-wasm.mjs'), 'solids-wasm runs after the build')
 })
 
 test('the gate script passes on a skip and fails a wanted build that did not pass', () => {
