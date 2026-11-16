@@ -19,6 +19,10 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 - The Snapmaker J1 no longer plays the H2D's purge chute switch, and the Snapmaker Artisan plays no tool change until its mechanism is checked.
 - The isometric, fit and Model straight views of an empty plate frame the whole plate, its outline with room around it, instead of a fixed 120 mm box in its middle that a larger bed overfilled. The plate reveal on Model's first open now plays in view from the front middle to the bloom at the back. A plate with a part frames as before.
 
+### Fixed
+
+- An object rebuilt under the same id (each step of a design changes its mesh) lets the build it replaces go. Every rebuild used to keep all the builds before it alive: their meshes' arrays, the paint drawn on them and the renderer's lists of what each last drew. A long design session grew by every step's model, hundreds of megabytes for a painted one.
+
 ## [0.2.8] - 2026-11-08
 
 ### Added

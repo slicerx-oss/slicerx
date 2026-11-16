@@ -24,6 +24,13 @@ export { featureEdges, weldVertices } from './mesh-math'
 
 const EDGE_DEG = 38
 
+/**
+ * Edges are never picked. One function for every part's edges: an arrow made in buildObject would keep that call's
+ * whole scope with the edges, the material callback passed in among it, and with that callback whatever its caller
+ * held, which was the build before. Each rebuild under one id then kept every older one alive.
+ */
+const noPick = (): void => {}
+
 export interface PartEntry {
   mesh: Mesh
   edges: LineSegments
@@ -242,7 +249,7 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
     mesh.userData.source = { positions: p.positions, indices: p.indices }
     mesh.onBeforeRender = partOffset(i)
     const edges = new LineSegments(s.edges, edgeMaterial)
-    edges.raycast = () => {}
+    edges.raycast = noPick
     mesh.add(edges)
     group.add(mesh)
     const part: PartEntry = { mesh, edges, shared: s, color: p.color, finish: p.finish ?? 'basic', index: i, ...(p.slot !== undefined ? { slot: p.slot } : {}) }
@@ -327,7 +334,7 @@ export function wideEdges(p: PartEntry, material: LineMaterial): LineSegments2 {
     if (s) s.wide = g
   }
   const w = new LineSegments2(g, material)
-  w.raycast = () => {}
+  w.raycast = noPick
   p.mesh.add(w)
   p.wide = w
   return w
