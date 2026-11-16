@@ -991,9 +991,33 @@ function topUnder(p: FeatureHeights[string], s: FeatureHeights[string]): TopRead
   return z === null ? { z: s.hi, under: false } : { z, under: true }
 }
 
+/**
+ * Whether a part's footprint reaches past its support's sides, where the heights say: past the support's own footprint,
+ * or past the ends of a deck along its length. A part with no footprint, or a support with neither, is not read.
+ */
+function pastSides(p: FeatureHeights[string], s: FeatureHeights[string]): boolean {
+  if (!p.foot) return false
+  const out = (a: readonly [number, number], b: readonly [number, number]): boolean => a[0] < b[0] - STAND_LAYER_MM || a[1] > b[1] + STAND_LAYER_MM
+  if (s.foot && (out(p.foot.x, s.foot.x) || out(p.foot.y, s.foot.y))) return true
+  if (s.deck) {
+    const ends: readonly [number, number] = [s.deck.at[0]![0], s.deck.at.at(-1)![0]]
+    return out(s.deck.axis === 'x' ? p.foot.x : p.foot.y, ends)
+  }
+  return false
+}
+
+/**
+ * Whether a sunk part's planned height shows right above the support's top: within a layer either way, so its top is
+ * where the plan puts it. A part sunk and also short or tall by more than a layer is built from the wrong height.
+ */
+const showsRight = (shows: number, planned: number): boolean => Math.abs(shows - planned) <= STAND_LAYER_MM + 1e-6
+
 /** What a stacked part's base and height say against its support's top: null when both hold. */
-function standsWrong(part: string, support: string, base: number, shows: number, planned: number | undefined, top: TopRead): string | null {
+function standsWrong(part: string, support: string, base: number, shows: number, planned: number | undefined, top: TopRead, inside: boolean): string | null {
   if (base > STAND_LAYER_MM + 1e-6) return STANDS_FLOATS(part, support, base, top)
+  // a part sunk into its support with its planned height showing above the top, and inside the support's sides, looks
+  // as planned: the sunk part is hidden in the support, so it passes
+  if (base < -STAND_LAYER_MM - 1e-6 && planned !== undefined && inside && showsRight(shows, planned)) return null
   // no height planned: only the base is held, as the plan says nothing of how much should show
   if (base < -STAND_LAYER_MM - 1e-6) return planned === undefined ? STANDS_BASE_OFF(part, support, -base, top) : STANDS_OFF(part, support, -base, shows, planned, top)
   if (planned === undefined || (shows >= planned / SCALE_SLACK && shows <= planned * SCALE_SLACK)) return null
@@ -1024,7 +1048,7 @@ export function stackItem(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail'
     const planned = Object.entries(plan.features.find((f) => f.name === part)?.sizes ?? {}).find(([k]) => /^height$/i.test(k.trim()))?.[1]
     const top = topUnder(p, s)
     // the height the failure names is the one the part was measured against, so the two never disagree
-    const wrong = standsWrong(part, support, p.lo - top.z, p.hi - top.z, planned, top)
+    const wrong = standsWrong(part, support, p.lo - top.z, p.hi - top.z, planned, top, !pastSides(p, s))
     return wrong ? [wrong] : []
   })
   return {
