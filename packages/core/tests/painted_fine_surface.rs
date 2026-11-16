@@ -26,10 +26,11 @@ fn peak_rss() -> usize {
     kb << 10
 }
 
-/// Starts the peak over from the memory in use now (Linux 4.0 and later).
+/// Starts the peak over from the memory in use now (Linux 4.0 and later). Where that is refused the peak counts
+/// from the start of this test binary, which holds only a few MB before the slice, so the ceiling still holds.
 #[cfg(target_os = "linux")]
 fn reset_peak() {
-    std::fs::write("/proc/self/clear_refs", "5").unwrap();
+    std::fs::write("/proc/self/clear_refs", "5").ok();
 }
 
 /// Side of the block in mm.
@@ -135,7 +136,8 @@ fn a_finely_meshed_painted_top_slices_in_bounded_memory() {
     let prepared = api::prepare(&req, &meshes).unwrap();
     let layers = prepared.session().layer_count();
     assert_eq!(layers, 10);
-    // The paint is a few MB, and the layers' painted regions add little to it.
+    // The paint is a few MB, and the layers' painted regions add little to it. Elsewhere the block still slices
+    // and the layers are checked; only Linux reads the peak back.
     #[cfg(target_os = "linux")]
     {
         let peak = peak_rss();
