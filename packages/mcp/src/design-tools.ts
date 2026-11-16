@@ -13,7 +13,7 @@ import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
 import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendAdded, amendChanges, amendDropProblem, amendedSizes, amendOns, amendOnsText, amendProblem, amendReason, amendShapeProblem, changeText, FIX_ROUND_ADDS } from './plan-amend'
+import { AMEND_REASON_MAX, amendAdded, amendChanges, amendDropProblem, amendedSizes, amendOns, amendOnsText, amendProblem, amendReason, amendShapeProblem, amendProblemsText, changeText, FIX_ROUND_ADDS } from './plan-amend'
 import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, underLine, type PlanFloors, type UnderFloor } from './plan-floors'
 import { realMemoryNote, realSizeProblem, type RealEntry } from './plan-detail'
 import { meshStats } from './mesh'
@@ -1171,7 +1171,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     // the fix round fixes what the check failed, here as on the card's plan: a feature added in it is one more to build
     const added = !shape && fixRoundIsOpen(entry!) ? amendAdded(entry!.plan, given) : []
     const off = [shape, !shape && !changes.length && !amendOns(entry!.plan, given).length ? `amends: no size differs from plan ${planId}` : null, added.length ? FIX_ROUND_ADDS(added) : null, amendDropProblem(entry!.plan, given)].filter((p): p is string => p !== null)
-    if (off.length) throw new ToolInputError(off.join('. '))
+    if (off.length) throw new ToolInputError(amendProblemsText(off))
     const p = amendedSizes(entry!.plan, given)
     const said = [...amendOnsText(entry!.plan, given), ...changes.map((c) => changeText(c, p.units))]
     plans.put(p, entry!.design, 'client')

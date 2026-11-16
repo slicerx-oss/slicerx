@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { assumptionsInput, fixRoundIsOpen, gapLimitsText, type FitLimits, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { runFitLimits, type FitProfile } from './fit-facts'
-import { AMEND_REASON_MAX, amendAdded, amendBody, FIX_ROUND_ADDS, amendChanges, amendDropProblem, amendKinds, amendedSizes, amendOnsText, amendOns, amendProblem, amendReason, amendShapeProblem, changeText, IGNORED_NOTE, type AmendChange } from './plan-amend'
+import { AMEND_REASON_MAX, amendAdded, amendBody, FIX_ROUND_ADDS, amendChanges, amendProblemsText, amendDropProblem, amendKinds, amendedSizes, amendOnsText, amendOns, amendProblem, amendReason, amendShapeProblem, changeText, IGNORED_NOTE, type AmendChange } from './plan-amend'
 import { type Bed, cardRealField, DEFAULT_BED, DETAIL_HELP, DETAIL_LEVELS, detailProblem, flatInput, flatLevels, type FlatLevels, planDetailFields, realBodyInput, withRealBody, FEATURES_FLOOR, unheldAsks, LONG_EXTRA, LONG_RATIO, realMemoryNote, type RealSources, SECTIONS_FLOOR } from './plan-detail'
 import { createLookupStore, lookupSizesTool } from './real-lookup'
 import { GAP_MARGIN_MM, jointProblem, planetsMiss, PLANETS_CANNOT_MESH, planFloors, raisedText, raisedWhy, raiseToFloors, underFloors, underLine, underName, type PlanFloors, type UnderFloor } from './plan-floors'
@@ -457,7 +457,7 @@ export function createCardPlans(plans: PlanRegistry) {
     // builds, so the next check fails its feature count
     const added = !shape && fixRoundIsOpen(entry!) ? amendAdded(was, next) : []
     const off = [shape, ...problems, unchanged, added.length ? FIX_ROUND_ADDS(added) : null, amendDropProblem(was, next, { fields: false })].filter((p): p is string => p !== null)
-    if (off.length) throw new ToolInputError(off.join('. '))
+    if (off.length) throw new ToolInputError(amendProblemsText(off))
     const revision = (entry!.revision ?? 1) + 1
     const id = amendId(planId, revision)
     // a size asked under its floor is raised as a new plan's is, with its line among the assumptions
