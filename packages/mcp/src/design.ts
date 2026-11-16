@@ -6,7 +6,7 @@
 // and its reason returned: a design never keeps a broken edit the client did not ask for.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, designNamed, noDesignMessage, parseHistories, replayHistory, stepId, unstopped, type AddOptions, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, designNamed, exactOps, noDesignMessage, parseHistories, replayHistory, stepId, unstopped, type AddOptions, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type SolidLimits, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { soup, slug, type Design, type DesignFiles } from './design-tools'
 import { writeBinaryStl, readStlPositions } from './mesh'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
@@ -83,6 +83,13 @@ export class Designs implements DesignHost {
     else { this.export(d); this.revisions.register(id) }
     this.all.set(id, d)
     return d
+  }
+
+  async solidLimits(): Promise<SolidLimits | undefined> {
+    // a body held by number never goes between calls as text
+    if (await this.deps.keepsBodies?.()) return undefined
+    const { maxSolidText, maxSolid } = await exactOps(this.deps.engine)
+    return { textChars: maxSolidText, ...maxSolid }
   }
 
   /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through. */

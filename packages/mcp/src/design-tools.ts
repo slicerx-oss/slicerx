@@ -545,7 +545,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const create = defineTool({
     name: 'design.new',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -566,7 +566,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         )
       const base = i.from ? await files.model(i.from, i.name) : []
       const d = await designs.create(i.name, base, undefined, undefined, { exact: i.exact ?? opts.exactByDefault === true })
-      return { summary: `Started ${d.name} (${d.id})${base.length ? ' from the model' : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
+      // how detailed an exact part may grow, where its body goes between calls as text
+      const limits = d.history.exact ? await designs.solidLimits?.() : undefined
+      return { summary: `Started ${d.name} (${d.id})${base.length ? ' from the model' : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: { ...designSummary(d), ...(limits ? { solidLimits: limits } : {}) } }
     },
   })
 

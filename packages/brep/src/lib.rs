@@ -60,6 +60,7 @@ use std::sync::Mutex;
 mod against_json;
 #[cfg(feature = "typed")]
 mod body;
+mod detail;
 #[cfg(feature = "typed")]
 mod error;
 #[cfg(feature = "typed")]
@@ -90,6 +91,8 @@ pub use error::{Error, FailedFace, Stage};
 pub use stitch::{DRAWN_MM, Path, Sheet, apart, skin_ends, skin_stations};
 #[cfg(feature = "typed")]
 pub use tess::{Mesh, MeshEdge, Tessellation};
+
+pub use detail::{Detail, detail};
 
 /// Whether this build has the kernel (its source was there when it was built).
 pub const KERNEL: bool = cfg!(sx_brep_kernel);

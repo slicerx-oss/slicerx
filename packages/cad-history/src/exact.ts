@@ -328,18 +328,29 @@ export interface Solids {
 /** The engine operation that lists the operations it has an exact path for. */
 export const EXACT_OPS = 'exact.ops'
 
+/** What the engine counts of a body it saves as text, past which it refuses to: edges, or control points of its spline curves and surfaces. */
+export type SolidMeasure = 'edges' | 'controlPoints'
+
+/** The most of each measure a body the engine saves as text may have (exact.ops `maxSolid`). Held bodies have no such limit. */
+export type MaxSolid = Record<SolidMeasure, number>
+
+const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0
+
 /**
- * The operations the engine makes exact bodies for, and the largest solid text it takes, as it answers EXACT_OPS
- * (`{ ops: [...], maxSolidText }`). An engine without the kernel lists none, and one that does not know the question
- * has none either. An engine that gives no limit has MAX_SOLID_TEXT.
+ * The operations the engine makes exact bodies for, the largest solid text it takes, and how detailed a body it saves
+ * as text may be, as it answers EXACT_OPS (`{ ops: [...], maxSolidText, maxSolid: { edges, controlPoints } }`). An
+ * engine without the kernel lists none, and one that does not know the question has none either. An engine that
+ * gives no text limit has MAX_SOLID_TEXT; one that gives no `maxSolid` counts nothing.
  */
-export async function exactOps(call: Call): Promise<{ ops: Set<string>; maxSolidText: number }> {
+export async function exactOps(call: Call): Promise<{ ops: Set<string>; maxSolidText: number; maxSolid?: MaxSolid }> {
   try {
-    const r = (await call(EXACT_OPS, {})) as { ops?: unknown; maxSolidText?: unknown } | null
+    const r = (await call(EXACT_OPS, {})) as { ops?: unknown; maxSolidText?: unknown; maxSolid?: { edges?: unknown; controlPoints?: unknown } } | null
     const limit = r?.maxSolidText
+    const most = r?.maxSolid
     return {
       ops: new Set(Array.isArray(r?.ops) ? r.ops.filter((o): o is string => typeof o === 'string') : []),
-      maxSolidText: typeof limit === 'number' && Number.isInteger(limit) && limit > 0 ? limit : MAX_SOLID_TEXT,
+      maxSolidText: isCount(limit) ? limit : MAX_SOLID_TEXT,
+      ...(most && isCount(most.edges) && isCount(most.controlPoints) ? { maxSolid: { edges: most.edges, controlPoints: most.controlPoints } } : {}),
     }
   } catch (e) {
     if ((e as { name?: string }).name === 'AbortError') throw e
@@ -358,28 +369,49 @@ function inMillions(chars: number, limit: number): [string, string] {
   return [m(chars, places), m(limit, places)]
 }
 
+/** A measure's words in a sentence. */
+const MEASURE_WORDS: Record<SolidMeasure, string> = { edges: 'edges', controlPoints: 'control points' }
+
+/** A count as a sentence gives it, with thousands set apart: 3,412. */
+const counted = (n: number): string => n.toLocaleString('en-US')
+
+/** A part grown too detailed to stay exact, in a design that need not stay exact: the rest is built as a mesh. `size` ends without a stop. */
+const MESH_FROM_HERE = (size: string): string => `This part is now too detailed to stay an exact solid, so from this step on it is built as a mesh. (${size}.)`
+
+/** A step that would make a part too detailed to stay exact, in a design that must stay exact. */
+const STAYS_EXACT = (size: string): string => `this step would make the part too detailed to stay an exact solid (${size}).`
+
 /**
- * What a step says when the part's exact solid grew past the limit (`max`, the engine's or MAX_SOLID_TEXT): from this step on the part is built as a mesh,
- * or, in a design that must stay exact (`strict`), the step cannot stay exact.
+ * What a step says when the part's exact solid grew past the limit (`max`): from this step on the part is built as a
+ * mesh, or, in a design that must stay exact (`strict`), the step cannot stay exact. Without `measure` the size is the
+ * solid's text in characters and `max` the engine's text limit or MAX_SOLID_TEXT; with it, what the engine counted
+ * when it refused to save the body as text (TooBig).
  */
-export function solidTooBig(chars: number, strict: boolean, max = MAX_SOLID_TEXT): string {
-  const [now, limit] = inMillions(chars, max)
-  const size = `size ${now} million, limit ${limit} million`
-  return strict
-    ? `this step would make the part too detailed to stay an exact solid (${size}).`
-    : `This part is now too detailed to stay an exact solid, so from this step on it is built as a mesh. (Size ${now} million, limit ${limit} million.)`
+export function solidTooBig(size: number, strict: boolean, max = MAX_SOLID_TEXT, measure?: SolidMeasure): string {
+  if (measure) {
+    const said = `${counted(size)} ${MEASURE_WORDS[measure]}, limit ${counted(max)}`
+    return strict ? STAYS_EXACT(said) : MESH_FROM_HERE(said)
+  }
+  const [now, limit] = inMillions(size, max)
+  return strict ? STAYS_EXACT(`size ${now} million, limit ${limit} million`) : MESH_FROM_HERE(`Size ${now} million, limit ${limit} million`)
 }
 
-/** The engine's refusal of a body too big for it, as its error reply gives it: `{ error, tooBig: { size, limit } }`. */
+/**
+ * The engine's refusal of a body too big for it, as its error reply gives it: `{ error, tooBig: { size, limit,
+ * measure } }`. An engine that counts no measure (an older one) gives the size and limit alone.
+ */
 export interface TooBig {
   size: number
   limit: number
+  measure?: SolidMeasure
 }
 
 /** The size and limit an engine error carries (withTooBig), or undefined for any other error, an older engine's too. */
 export function tooBigOf(e: unknown): TooBig | undefined {
-  const t = (e as { tooBig?: { size?: unknown; limit?: unknown } } | null)?.tooBig
-  return t && Number.isInteger(t.size) && Number.isInteger(t.limit) ? { size: t.size as number, limit: t.limit as number } : undefined
+  const t = (e as { tooBig?: { size?: unknown; limit?: unknown; measure?: unknown } } | null)?.tooBig
+  if (!t || !Number.isInteger(t.size) || !Number.isInteger(t.limit)) return undefined
+  const measure = t.measure === 'edges' || t.measure === 'controlPoints' ? t.measure : undefined
+  return { size: t.size as number, limit: t.limit as number, ...(measure ? { measure } : {}) }
 }
 
 /** `error` carrying the size and limit of the engine's reply (or answer) when it refused a body too big for it. */

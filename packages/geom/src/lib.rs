@@ -114,7 +114,7 @@ pub mod thread;
 pub mod vec3;
 pub mod xform;
 
-pub use error::{Error, Result};
+pub use error::{Error, Measure, Result, TooDetailed};
 pub use mesh::{Aabb, TriMesh};
 pub use poly2d::Polygon;
 pub use vec3::{Plane, V2, V3};
