@@ -14,8 +14,12 @@ export const PAINT_STATE_REFUSAL = `Paint uses filaments 1 to ${PAINT_FILAMENT_M
 /** A paint state: for color the filament (1 to 32), seam and support 1 or 2, fuzzy 1; 0 clears. */
 export const paintState = () => z.number().int().min(0).max(PAINT_FILAMENT_MAX, PAINT_STATE_REFUSAL)
 
+/** Where a band that stands for a real feature goes: at that feature's real height, as the plan's colors and the paint target say. */
+export const REAL_BAND_TEXT =
+  "A band that stands for a real feature (a stripe, a trim line, the line where one paint meets another) sits at that feature's real height scaled to the model, looked up first when it isn't known; never a thin token band in its place."
+
 /** What a paint target can be, as the paint tools describe their target. */
-export const PAINT_TARGET_TEXT = 'What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from } | { kind: "feature", feature }: every face the steps of that plan feature made, such as a roof, a handle, a pole, a chimney top or a trim, even on a body built from many steps'
+export const PAINT_TARGET_TEXT = `What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from } | { kind: "feature", feature }: every face the steps of that plan feature made, such as a roof, a handle, a pole, a chimney top or a trim, even on a body built from many steps. ${REAL_BAND_TEXT}`
 
 /**
  * Why a paint by feature is refused when the design has no feature by that name: the names it has, as a plan amend

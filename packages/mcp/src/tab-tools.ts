@@ -337,7 +337,7 @@ export function createCardPlans(plans: PlanRegistry) {
   function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile; designs?: () => readonly { id: string; name: string; parts: readonly unknown[] }[]; bed?: () => Bed | undefined } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
-      version: '1.24.0',
+      version: '1.25.0',
       source: 'command',
       permission: 'read',
       description:
