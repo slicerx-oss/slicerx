@@ -95,6 +95,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-plan-auto` | On a plan card approved at its default size with nobody asked (`data-auto` on `mimir-plan-card`), in place of its buttons: the line saying to ask to resize or change it |
 | `mimir-plan-why` | On a plan change card (`data-amends` holds the approved plan's planId): why the build asks to change the plan |
 | `mimir-plan-was` | Beside a size on a plan change card: the value the approved plan has |
+| `mimir-plan-moved` | Beside a feature on a plan change card that now stands on another one: where it stands and where the approved plan had it ("stands on Piers, was Base plate") |
 | `mimir-send` | The send card in place of the approval card for mimir's own printer.queue: the printer, each filament's slot, the time, the grams and the file; `data-request-id` is the request, `data-state` is off, ready, approved or closed |
 | `mimir-send-bed` | The bed tick on `mimir-send`, unchecked on every card; Print stays off until it is ticked |
 | `danger-mimir-send-print` | Print on `mimir-send`: on only with the tick, a passing preflight, a fresh slice, an idle or finished printer and a request that has not expired. It starts a print, so the agent bridge refuses it |
