@@ -21,6 +21,12 @@ export const PAINT_TARGET_TEXT = 'What to paint: { kind: "part" } | { kind: "dir
  * Why a paint by feature is refused when the design has no feature by that name: the names it has, as a plan amend
  * names the features it can change.
  */
+/** The refusal of a feature target on a part that is not an exact solid, whose faces no longer say which step made them. */
+export const featureNotExactText = (part: number): string => `target: painting by feature needs a part built as an exact solid, and part ${part} is not one; paint it by height, by direction or from a seed point instead`
+
+/** The first of `parts` that is built as a mesh (`meshed`), whose faces a feature target cannot be read from, or undefined. */
+export const meshedOf = (parts: readonly number[], meshed: readonly number[]): number | undefined => parts.find((k) => meshed.includes(k))
+
 export const noFeatureText = (feature: string, names: readonly string[]): string => (names.length ? `target: ${feature} is not a planned feature; name one the plan has (${names.join(', ')})` : `target: ${feature} is not a planned feature`)
 
 /**
