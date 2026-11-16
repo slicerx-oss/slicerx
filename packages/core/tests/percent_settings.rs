@@ -584,7 +584,10 @@ fn box_part(name: &str, lo: [f32; 3], hi: [f32; 3]) -> MeshPart {
 fn sloped_part(name: &str, lo: [f32; 3], hi: [f32; 2], top: [f32; 2]) -> MeshPart {
     let mut part = box_part(name, lo, [hi[0], hi[1], top[1]]);
     // The top corners run lo x, hi x, hi x, lo x (see `box_part`).
-    for (p, z) in part.positions[4..].iter_mut().zip([top[0], top[1], top[1], top[0]]) {
+    for (p, z) in part.positions[4..]
+        .iter_mut()
+        .zip([top[0], top[1], top[1], top[0]])
+    {
         p[2] = z;
     }
     part
