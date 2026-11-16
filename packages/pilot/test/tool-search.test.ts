@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createTransportClient, DEFAULT_CONFIG, defineTool, type PilotTool, type Toolset } from '../src/index'
 import { refusesToolSearch } from '../src/provider/client'
-import { createAnthropicAdapter, TOOL_CHANGES_BETA, TOOL_SEARCH_TOOL, toolSearchModel } from '../src/provider/anthropic'
+import { createAnthropicAdapter, TOOL_CHANGES_BETA, TOOL_SEARCH_TOOL, toolSearchModel, withoutUnansweredServerCalls } from '../src/provider/anthropic'
 import type { LlmEvent, LlmRequest } from '../src/provider/types'
 import { catalogStep, SEARCH_CORE, type OfferedTool } from '../src/tool-search'
 
@@ -251,6 +251,75 @@ describe('a tool search request', () => {
     expect(events.filter((e) => e.type === 'tool_call')).toEqual([{ type: 'tool_call', call: { id: 'toolu_geom.t7', name: 'geom.t7', arguments: '{}' } }])
     const next = JSON.parse(adapter.build(req({ messages: [{ role: 'user', content: 'a cube' }, { role: 'assistant', content: '', raw: done.raw! }] })).body) as Obj
     expect((next['messages'] as Obj[])[1]!['content']).toEqual(done.raw)
+  })
+
+  /** A reply that calls a client tool and then starts a tool search the provider never runs: it stops for the client's call. */
+  function unanswered(thinking: boolean): Uint8Array {
+    const parts: string[] = []
+    let i = 0
+    if (thinking) {
+      parts.push(
+        ev('content_block_start', { type: 'content_block_start', index: i, content_block: { type: 'thinking', thinking: '', signature: '' } }) +
+          ev('content_block_delta', { type: 'content_block_delta', index: i, delta: { type: 'thinking_delta', thinking: '' } }) +
+          ev('content_block_delta', { type: 'content_block_delta', index: i, delta: { type: 'signature_delta', signature: 'c2lnbmVk' } }) +
+          ev('content_block_stop', { type: 'content_block_stop', index: i }),
+      )
+      i++
+    }
+    parts.push(
+      ev('content_block_start', { type: 'content_block_start', index: i, content_block: { type: 'tool_use', id: 'toolu_target', name: 'run__target', input: {}, caller: { type: 'direct' } } }) +
+        ev('content_block_delta', { type: 'content_block_delta', index: i, delta: { type: 'input_json_delta', partial_json: '{"printer": "A1"}' } }) +
+        ev('content_block_stop', { type: 'content_block_stop', index: i }),
+    )
+    i++
+    parts.push(
+      ev('content_block_start', { type: 'content_block_start', index: i, content_block: { type: 'server_tool_use', id: 'srvtoolu_never', name: 'tool_search_tool_bm25', input: {} } }) +
+        ev('content_block_delta', { type: 'content_block_delta', index: i, delta: { type: 'input_json_delta', partial_json: '{"query": "queue a print", "limit": 6}' } }) +
+        ev('content_block_stop', { type: 'content_block_stop', index: i }),
+    )
+    return enc.encode(
+      ev('message_start', { type: 'message_start', message: { usage: { input_tokens: 1, output_tokens: 0 } } }) +
+        parts.join('') +
+        ev('message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 1 } }) +
+        ev('message_stop', { type: 'message_stop' }),
+    )
+  }
+
+  async function events(bytes: Uint8Array): Promise<LlmEvent[]> {
+    async function* chunks(): AsyncIterable<Uint8Array> {
+      yield bytes
+    }
+    const out: LlmEvent[] = []
+    for await (const e of adapter.parse(chunks())) out.push(e)
+    return out
+  }
+
+  const doneOf = (evs: LlmEvent[]) => evs.find((e) => e.type === 'done') as Extract<LlmEvent, { type: 'done' }>
+
+  it('keeps a reply without the tool search the provider never ran, its thinking and client call as they came', async () => {
+    const evs = await events(unanswered(true))
+    const done = doneOf(evs)
+    expect(done.stop).toBe('tool_calls')
+    expect(done.raw).toEqual([
+      { type: 'thinking', thinking: '', signature: 'c2lnbmVk' },
+      { type: 'tool_use', id: 'toolu_target', name: 'run__target', input: { printer: 'A1' }, caller: { type: 'direct' } },
+    ])
+    expect(evs.filter((e) => e.type === 'tool_call')).toEqual([{ type: 'tool_call', call: { id: 'toolu_target', name: 'run.target', arguments: '{"printer":"A1"}' } }])
+    // the next request carries the reply as kept, so no later request names the search
+    const next = JSON.parse(adapter.build(req({ messages: [{ role: 'user', content: 'print it' }, { role: 'assistant', content: '', raw: done.raw! }, { role: 'tool', callId: 'toolu_target', content: 'ok' }] })).body) as Obj
+    expect((next['messages'] as Obj[])[1]!['content']).toEqual(done.raw)
+    expect(JSON.stringify(next['messages'])).not.toContain('srvtoolu_never')
+  })
+
+  it('keeps a reply without thinking the same way', async () => {
+    const done = doneOf(await events(unanswered(false)))
+    expect(done.raw).toEqual([{ type: 'tool_use', id: 'toolu_target', name: 'run__target', input: { printer: 'A1' }, caller: { type: 'direct' } }])
+  })
+
+  it('keeps a tool search the provider answered, and its result, untouched', async () => {
+    const done = doneOf(await events(wire({ search: true, call: 'geom.t7' })))
+    expect(done.raw?.map((b) => (b as Obj)['type'])).toEqual(['server_tool_use', 'tool_search_tool_result', 'tool_use'])
+    expect(withoutUnansweredServerCalls(done.raw!)).toEqual(done.raw)
   })
 })
 
