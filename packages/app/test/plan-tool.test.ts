@@ -65,7 +65,7 @@ describe('design.plan', () => {
 
   it('asks for the moving pieces of a part that prints assembled by name in printInPlace', () => {
     const t = planTool()
-    expect(t.description).toContain('what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet at least')
+    expect(t.description).toContain('what you assumed, what you still need to know, the real thing\'s details you left out in leftOut (noun phrases only), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet at least')
     // printInPlace is a field of the plan the description names
     expect(Object.keys(PlanInputSchema.shape)).toContain('printInPlace')
   })
