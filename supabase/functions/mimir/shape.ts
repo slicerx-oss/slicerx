@@ -47,7 +47,8 @@ const CONTEXT_TOKENS = 1_000_000
 type Obj = Record<string, unknown>
 export type Shaped =
   /** `documents`: the request carries a PDF, whose cost bytes can't bound, so it is counted exactly before the call. */
-  | { ok: true; body: Obj; promptEstimate: number; maxOutput: number; maxSearches: number; documents: number; betas: string[] }
+  /** `unanswered`: server tool calls left out of the history because no block anywhere in it answers them. */
+  | { ok: true; body: Obj; promptEstimate: number; maxOutput: number; maxSearches: number; documents: number; betas: string[]; unanswered: number }
   | { ok: false; error: string }
 
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -173,17 +174,43 @@ function toolChange(m: Obj): Obj {
   }
 }
 
-function messages(raw: unknown): Obj[] {
+// the ids of the server tool calls the history answers: a result block names its call, in the same reply or, when the
+// provider ran the call at the start of the next one, in a later reply
+function answeredCalls(raw: unknown[]): Set<string> {
+  const ids = new Set<string>()
+  for (const m of raw) {
+    if (!isObj(m) || m['role'] !== 'assistant' || !Array.isArray(m['content'])) continue
+    for (const b of m['content']) if (isObj(b) && typeof b['type'] === 'string' && b['type'].endsWith('_tool_result') && typeof b['tool_use_id'] === 'string') ids.add(b['tool_use_id'])
+  }
+  return ids
+}
+
+// A server tool call no block answers (a tool search streamed after a client tool call, in a reply that stopped for the
+// client's call, kept by an app from before it left such calls out) is a 400 on every later request, so it is left out,
+// and an assistant message it leaves empty with it.
+function messages(raw: unknown): { list: Obj[]; unanswered: number } {
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_MESSAGES) refuse('messages must be a list of 1 to 400')
-  return (raw as unknown[]).map((m) => {
-    if (isObj(m) && m['role'] === 'system') return toolChange(m)
+  const answered = answeredCalls(raw as unknown[])
+  let unanswered = 0
+  const list: Obj[] = []
+  for (const m of raw as unknown[]) {
+    if (isObj(m) && m['role'] === 'system') {
+      list.push(toolChange(m))
+      continue
+    }
     if (!isObj(m) || (m['role'] !== 'user' && m['role'] !== 'assistant')) return refuse('each message is from the user or the assistant')
     const role = m['role'] as string
     const c = m['content']
-    if (typeof c === 'string') return { role, content: c }
+    if (typeof c === 'string') {
+      list.push({ role, content: c })
+      continue
+    }
     if (!Array.isArray(c) || c.length === 0) return refuse('message content must be text or blocks')
-    return { role, content: c.map((b) => block(b, role)) }
-  })
+    const kept = c.filter((b) => !(role === 'assistant' && isObj(b) && b['type'] === 'server_tool_use' && !(typeof b['id'] === 'string' && answered.has(b['id']))))
+    unanswered += c.length - kept.length
+    if (kept.length > 0) list.push({ role, content: kept.map((b) => block(b, role)) })
+  }
+  return { list, unanswered }
 }
 
 function system(raw: unknown): Obj[] | undefined {
@@ -373,7 +400,8 @@ export function shape(raw: unknown, model: string = MODEL, betas?: string | null
     const asked = typeof r['max_tokens'] === 'number' && r['max_tokens'] > 0 ? Math.floor(r['max_tokens']) : cap
     const maxOutput = Math.min(asked, cap)
     const t = tools(r['tools'])
-    const body: Obj = { model, max_tokens: maxOutput, stream: true, messages: messages(r['messages']) }
+    const m = messages(r['messages'])
+    const body: Obj = { model, max_tokens: maxOutput, stream: true, messages: m.list }
     const sys = system(r['system'])
     if (sys) body['system'] = sys
     if (t.list.length > 0) {
@@ -383,7 +411,7 @@ export function shape(raw: unknown, model: string = MODEL, betas?: string | null
     }
     Object.assign(body, thinkingFor(model, r['thinking'], r['output_config'], maxOutput))
     placeCache(body)
-    return { ok: true, body, promptEstimate: estimate(body), maxOutput, maxSearches: t.searches, documents: documentsIn(body), betas: betasOf(betas) }
+    return { ok: true, body, promptEstimate: estimate(body), maxOutput, maxSearches: t.searches, documents: documentsIn(body), betas: betasOf(betas), unanswered: m.unanswered }
   } catch (e) {
     if (e instanceof Refused) return { ok: false, error: e.message }
     throw e
