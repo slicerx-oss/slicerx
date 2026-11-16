@@ -1817,7 +1817,8 @@ impl LayerPaint<'_> {
                 // meet, at the contour resolution. Grown in one pass with every point of a fine mesh, it crossed
                 // itself too many times to finish.
                 let cell = i64::from(crate::geom::mm(CELL));
-                let area = perimeters::union_min_area(&[&*shapes], u64::try_from(cell * cell).unwrap_or(0));                *shapes = perimeters::offset(&self.at_resolution(area), crate::geom::mm(CELL));
+                let area = perimeters::union_min_area(&[&*shapes], u64::try_from(cell * cell).unwrap_or(0));
+                *shapes = perimeters::offset(&self.at_resolution(area), crate::geom::mm(CELL));
             }
         }
         for ((state, top, s), tris) in flat_tris {
