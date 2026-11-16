@@ -169,3 +169,12 @@ describe('the recorded bridge follow-up, replayed', () => {
     expect(fixed.out.items.find((i) => i.name === 'stands on')!.pass).toBe(true)
   })
 })
+
+describe("design.check's description", () => {
+  it('says what failedBefore holds, word for word, after the fix round sentence', () => {
+    const tools = tabToolset(standHost().host, createCardPlans(createPlanRegistry()))
+    expect(tools.find((t) => t.name === 'design.check')!.description).toContain(
+      'fix the failed items once and check again. After a change the person asked for, a check that fails only on items that failed before the change lists them in failedBefore; the change did not cause them. A plan gets one fix round',
+    )
+  })
+})

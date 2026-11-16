@@ -105,3 +105,15 @@ describe('what an amend still cannot carry', () => {
     await expect(run('design.plan', { amends: 'plan_1', reason: 'The top is lofted.', features: lofted })).rejects.toThrow('features: an amend changes sizes and on only; feature 3 stays "Top"')
   })
 })
+
+describe('the descriptions of an amend that moves a feature', () => {
+  it('design.put_plan says an amend changes sizes and what a planned feature stands on, word for word', () => {
+    const put = designToolset(standHost().host).find((t) => t.name === 'design.put_plan')!
+    expect(put.description).toContain('a size the build cannot keep is changed with amends (its planId) and reason (why, required): sizes, and what a planned feature stands on (on), only once per fix round and never after the stop result')
+  })
+
+  it('design.plan says an amend may move a feature onto another planned one, word for word', () => {
+    const plan = tabToolset(standHost().host, createCardPlans(createPlanRegistry())).find((t) => t.name === 'design.plan')!
+    expect(plan.description).toContain('It keeps every planned feature, may add features, and may move a feature onto another planned one (on) when the part was built on that one; once per fix round')
+  })
+})
