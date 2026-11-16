@@ -119,7 +119,12 @@ async function pickBand(d: Design, part: number, state: number, ask: NonNullable
   return c ? { target: c.target, label: c.label } : null
 }
 
-export function paintTools(designs: DesignHost): PilotTool<never>[] {
+/**
+ * The paint tools over `designs`. `filamentColors` gives the project's filament colors, filament 1 first (#rrggbb): a
+ * picture draws each part's filament and each painted state in them, as the slice prints them. Without them, or past
+ * the last, the engine's own colors stand in.
+ */
+export function paintTools(designs: DesignHost, opts: { filamentColors?: () => readonly string[] } = {}): PilotTool<never>[] {
   const engine = (op: string, request: unknown) => designs.call(op, request)
   const previews = new Map<string, Preview>()
   let seq = 0
@@ -128,13 +133,18 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
 
   /** A picture of the design with `layerPaint` drawn on its parts; the PNG only when asked. */
   async function picture(d: Design, layer: PaintLayer, layerPaint: (part: number) => Texts | undefined, view: string, focus: { min: V3; max: V3 } | undefined, size: number | undefined, image: boolean, parts: readonly HistoryMesh[] = d.parts) {
-    // The layer's states are drawn as filament colors (for color paint they are the filaments).
+    // The layer's states are drawn as filament colors (for color paint they are the filaments): state n and a part in
+    // slot n in the project's filament n. The colors change only the PNG, so a picture not asked for is drawn without.
     void layer
     const objects = parts.map((p, i) => {
       const t = layerPaint(i)
       return { mesh: meshOf(p), transform: d.transform, slot: p.slot, ...(t && Object.keys(t).length ? { paint: t } : {}) }
     })
-    const r = (await engine('render', { objects, view, ...(focus ? { focus } : {}), ...(size ? { size } : {}), image })) as Record<string, unknown>
+    // up to the first color the engine cannot read, so filament n stays entry n
+    const given = image ? (opts.filamentColors?.() ?? []).slice(0, 32) : []
+    const bad = given.findIndex((c) => !/^#[0-9a-fA-F]{6}$/.test(c))
+    const shown = bad < 0 ? given : given.slice(0, bad)
+    const r = (await engine('render', { objects, view, ...(focus ? { focus } : {}), ...(size ? { size } : {}), image, ...(shown.length ? { colors: shown } : {}) })) as Record<string, unknown>
     const png = typeof r['pngBase64'] === 'string' ? r['pngBase64'] : undefined
     const { pngBase64: _png, ...summary } = r
     return { summary, images: image && png ? [{ mime: 'image/png' as const, data: png }] : undefined }
@@ -155,7 +165,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
   })
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.6.0',
+    version: '1.6.1',
     source: 'command',
     permission: 'read',
     description:
@@ -318,7 +328,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
 
   const read = defineTool({
     name: 'paint.regions',
-    version: '1.2.0',
+    version: '1.2.1',
     source: 'command',
     permission: 'read',
     description: 'Read a design\'s paint back: for one layer, each part\'s painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. Optionally a picture (PNG only with image: true).',
