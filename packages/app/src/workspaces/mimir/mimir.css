@@ -366,6 +366,8 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
    value, the spool chips are a little shorter, and the slide's knob and end ring are 44 px targets, inset 3 px each
    side as slide-to-print.tsx travel() counts */
 :root[data-phone] .mimir-chat .send-rec .sheet-rec-rows { flex-direction: row; gap: var(--s-2); }
+/* on a phone the part card's Details toggle is a 44 px touch target, like every other control in the chat */
+:root[data-phone] .mimir-chat .part-details-h { min-height: 44px; }
 :root[data-phone] .mimir-chat .send-rec .send-rec-row { flex: 1 1 0; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 0; min-height: 0; align-content: start; }
 :root[data-phone] .mimir-chat .send-rec .send-rec-v { white-space: nowrap; text-align: left; }
 :root[data-phone] .mimir-chat .send-chip { min-height: 72px; padding: var(--s-4) var(--s-1) var(--s-1); }
