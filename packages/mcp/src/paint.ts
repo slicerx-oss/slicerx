@@ -165,7 +165,7 @@ export function paintTools(designs: DesignHost, opts: { filamentColors?: () => r
   })
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.7.0',
+    version: '1.8.0',
     source: 'command',
     permission: 'read',
     description:

@@ -14,6 +14,9 @@ import { NO_ENGINE_HOST } from '../src/toolset'
 const BAND =
   "A band that stands for a real feature (a stripe, a trim line, the line where one paint meets another) sits at that feature's real height scaled to the model, looked up first when it isn't known; never a thin token band in its place."
 
+const ORDER =
+  'Painting a body by feature also colors its top faces. Paint a body of its own color by feature first, then give its top its own color with direction "top" at a small angle (about 5 degrees), and paint any band across features by height last.'
+
 const field = (tool: PilotTool<never>, name: string): string | undefined => (toolSpec(tool).inputSchema.properties as Record<string, { description?: string }>)[name]?.description
 
 describe('a band that stands for a real feature', () => {
@@ -29,9 +32,9 @@ describe('a band that stands for a real feature', () => {
     for (const tool of [preview, app]) {
       const target = field(tool, 'target')
       expect(target, tool.name).toContain(`even on a body built from many steps. ${BAND}`)
-      expect(target?.endsWith(BAND), tool.name).toBe(true)
+      expect(target?.endsWith(`${BAND} ${ORDER}`), tool.name).toBe(true)
     }
-    expect(preview.version).toBe('1.7.0')
-    expect(app.version).toBe('1.3.0')
+    expect(preview.version).toBe('1.8.0')
+    expect(app.version).toBe('1.4.0')
   })
 })

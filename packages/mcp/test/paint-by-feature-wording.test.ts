@@ -6,14 +6,17 @@
 // a face with no key of its own going by the face it came from.
 import { describe, expect, it } from 'vitest'
 import { facesMadeBySteps, featureNames, featureSteps, type Step, type StepParams } from '@slicerx/cad-history'
-import { noFeatureText, PAINT_TARGET_TEXT, plannedFeature, REAL_BAND_TEXT, storedTarget, targetArg } from '../src/paint-target'
+import { noFeatureText, PAINT_ORDER_TEXT, PAINT_TARGET_TEXT, plannedFeature, REAL_BAND_TEXT, storedTarget, targetArg } from '../src/paint-target'
 import { COLORS_PAINT_TEXT, DETAIL_HELP, DISPLAY_PAINT_TEXT, planDetailFields } from '../src/plan-detail'
 import { appPaintPreviewInput } from '../src/app-paint-input'
 
 describe('the paint by feature wording', () => {
   it('describes the paint target with the feature kind, on the server and the app link alike', () => {
     expect(PAINT_TARGET_TEXT).toBe(
-      `What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from } | { kind: "feature", feature }: every face the steps of that plan feature made, such as a roof, a handle, a pole, a chimney top or a trim, even on a body built from many steps. ${REAL_BAND_TEXT}`,
+      `What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from } | { kind: "feature", feature }: every face the steps of that plan feature made, such as a roof, a handle, a pole, a chimney top or a trim, even on a body built from many steps. ${REAL_BAND_TEXT} ${PAINT_ORDER_TEXT}`,
+    )
+    expect(PAINT_ORDER_TEXT).toBe(
+      'Painting a body by feature also colors its top faces. Paint a body of its own color by feature first, then give its top its own color with direction "top" at a small angle (about 5 degrees), and paint any band across features by height last.',
     )
     expect(targetArg.description).toBe(PAINT_TARGET_TEXT)
     expect(appPaintPreviewInput.shape.target.description).toBe(PAINT_TARGET_TEXT)
