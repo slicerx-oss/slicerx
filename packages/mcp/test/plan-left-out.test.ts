@@ -54,7 +54,7 @@ describe('leftOut on a plan', () => {
     const planShape = (put.input as unknown as { shape: { plan: { shape: Record<string, unknown> } } }).shape.plan.shape
     expect(Object.keys(planShape)).not.toContain('leftOut')
     const card = createCardPlans(createPlanRegistry()).planTool()
-    expect(card.version).toBe('1.23.0')
+    expect(card.version).toBe('1.24.0')
     expect(keys(card.localInput)).not.toContain('leftOut')
     expect(card.localDescription).not.toContain('leftOut')
   })
