@@ -235,6 +235,13 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-filament-reset` | Reset to printer, in that menu (when a slot was edited) |
 | `slice-filament-swap` | Swap colors, in that menu (two filaments or more); opens the swap in a popover |
 | `slice-filament-use-printer` | Use printer's filament, for a slot that differs from what the printer holds |
+| `slice-feature-filaments` | The Color tab's "Filament for features" table, with `data-scope` (plate or the selection) |
+| `slice-feature-filament-row` | A feature's row in that table, with `data-feature`, `data-key`, `data-source` (plate, own or mixed) and `data-value` (empty when mixed) |
+| `slice-feature-filament-pick` | The row's filament menu button |
+| `slice-feature-filament-menu` | That filament menu |
+| `slice-feature-filament-option` | A choice in that menu, with `data-value` (0 is the object's own filament, 1 and up a slot) |
+| `slice-feature-filament-row-reset` | Reset, on a row the scope set itself, with `data-key` |
+| `slice-feature-filament-printed` | The swatches after the row's label: the slots that feature printed with in the current slice, in `data-slots` |
 | `slice-settings-tab-<group>` | A print settings tab in Advanced and Expert: `quality`, `strength`, `speed`, `supports`, `adhesion`, `multicolor` (Color, with two or more filaments), `effects` (Surface), `output` |
 | `slice-settings-tab-count` | A tab's count of changed settings, on the tab |
 | `slice-settings-section` | A section header in the open tab, with `data-section` (`tab/section`) and `aria-expanded`; it folds the section to a summary line |
