@@ -1813,7 +1813,11 @@ impl LayerPaint<'_> {
                 if (self.stop)() {
                     return whole();
                 }
-                *shapes = perimeters::offset(&perimeters::union_all(&[&*shapes]), crate::geom::mm(CELL));
+                // The union without the specks and pinholes under a grid cell that faces meshed apart leave where they
+                // meet, at the contour resolution. Grown in one pass with every point of a fine mesh, it crossed
+                // itself too many times to finish.
+                let cell = i64::from(crate::geom::mm(CELL));
+                let area = perimeters::union_min_area(&[&*shapes], u64::try_from(cell * cell).unwrap_or(0));                *shapes = perimeters::offset(&self.at_resolution(area), crate::geom::mm(CELL));
             }
         }
         for ((state, top, s), tris) in flat_tris {
@@ -1821,21 +1825,10 @@ impl LayerPaint<'_> {
                 return whole();
             }
             let mut work = || {
-                let mut face =
-                    perimeters::union_all(&[&tris.iter().map(|r| vec![r.clone()]).collect::<Shapes>()]);
-                // the mesh's every edge is a point of the face; at the contour resolution like the outlines
-                if let Some((_, _, (resolution, _, _))) = self.memo {
-                    face = face
-                        .iter()
-                        .map(|s| {
-                            s.iter()
-                                .map(|ring| perimeters::simplify_ring(ring, resolution))
-                                .filter(|ring| ring.len() >= 3)
-                                .collect::<Vec<_>>()
-                        })
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                }
+                let face = self.at_resolution(perimeters::union_all(&[&tris
+                    .iter()
+                    .map(|r| vec![r.clone()])
+                    .collect::<Shapes>()]));
                 let beyond = if top { self.above.get(s) } else { self.below.get(s) };
                 self.opened(&match beyond {
                     Some(b) => perimeters::difference(&face, b),
@@ -1942,6 +1935,24 @@ impl LayerPaint<'_> {
             }
         }
         settle_slivers(raw, d)
+    }
+
+    /// `shapes` at the contour resolution, like the layer's outlines. A union of mesh triangles keeps every edge of
+    /// the mesh as a point; without the session's resolution (a split made on its own) it is left as it is.
+    fn at_resolution(&self, shapes: Shapes) -> Shapes {
+        let Some((_, _, (resolution, _, _))) = self.memo else {
+            return shapes;
+        };
+        shapes
+            .iter()
+            .map(|s| {
+                s.iter()
+                    .map(|ring| perimeters::simplify_ring(ring, resolution))
+                    .filter(|ring| ring.len() >= 3)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|s| !s.is_empty())
+            .collect()
     }
 
     /// `area` without the pieces narrower than twice `small` (an opening) and without specks.
