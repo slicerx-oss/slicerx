@@ -1268,6 +1268,140 @@ SmBrep* join_or_cut(SmBrep* a, SmBrep* t, bool join, bool& touches, const char* 
     return m;
 }
 
+// --- a cut that starts on the body's surface
+
+// how near its start plane the body's surface must pass, inside the outline, for a cut to start back past it, mm
+const double kFlushBand = 1e-3;
+// how far back past the surface such a cut starts, as the mesh path's cuts do (face.rs OVERLAP_MM), mm
+const double kCutOverlap = 0.01;
+// the most a loop's points along it are apart, mm
+const double kFlushStep = 0.05;
+
+// points along one loop of an extrude's outline, in its frame's plane, at most kFlushStep apart
+void loop_points(const Value& l, std::vector<std::pair<double, double>>& out)
+{
+    auto line = [&](double x0, double y0, double x1, double y1) {
+        int n = std::min(4000, std::max(1, int(std::ceil(std::hypot(x1 - x0, y1 - y0) / kFlushStep))));
+        for (int i = 0; i < n; ++i) out.emplace_back(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n);
+    };
+    // an ellipse or arc around (cx, cy) with half axes a and b turned by deg, from angle t0 through sweep
+    auto arc = [&](double cx, double cy, double a, double b, double deg, double t0, double sweep) {
+        int n = std::min(4000, std::max(8, int(std::ceil(std::fabs(sweep) * std::max(a, b) / kFlushStep))));
+        double c = std::cos(deg), s = std::sin(deg);
+        for (int i = 0; i < n; ++i) {
+            double t = t0 + sweep * i / n, x = a * std::cos(t), y = b * std::sin(t);
+            out.emplace_back(cx + c * x - s * y, cy + s * x + c * y);
+        }
+    };
+    if (l.has("start")) {
+        double x, y;
+        v2(l["start"], "start", x, y);
+        for (const auto& sg : l["segments"].a) {
+            double tx, ty;
+            v2(sg["to"], "to", tx, ty);
+            if (sg.has("center")) {
+                double cx, cy;
+                v2(sg["center"], "center", cx, cy);
+                double r = std::hypot(x - cx, y - cy);
+                arc(cx, cy, r, r, 0, std::atan2(y - cy, x - cx), num(sg, "sweepDeg") * kPi / 180);
+            } else line(x, y, tx, ty);
+            x = tx;
+            y = ty;
+        }
+    } else if (l.has("widthMm")) {
+        double cx, cy;
+        v2(l["center"], "center", cx, cy);
+        arc(cx, cy, num(l, "widthMm") / 2, num(l, "heightMm") / 2, num_or(l, "angleDeg", 0) * kPi / 180, 0, 2 * kPi);
+    } else if (l.has("center")) {
+        double cx, cy;
+        v2(l["center"], "center", cx, cy);
+        double r = num(l, "diameterMm") / 2;
+        arc(cx, cy, r, r, 0, 0, 2 * kPi);
+    } else {
+        const Value& pts = l["points"];
+        size_t n = pts.a.size();
+        for (size_t i = 0; i < n; ++i) {
+            double x0, y0, x1, y1;
+            v2(pts.a[i], "points", x0, y0);
+            v2(pts.a[(i + 1) % n], "points", x1, y1);
+            line(x0, y0, x1, y1);
+        }
+    }
+}
+
+// whether (x, y) is inside a polygon's outline and out of its holes, as the loops' points draw them (even-odd)
+bool in_outline(const std::vector<std::vector<std::pair<double, double>>>& loops, double x, double y)
+{
+    bool in = false;
+    for (const auto& r : loops)
+        for (size_t i = 0, j = r.size() - 1; i < r.size(); j = i++)
+            if ((r[i].second > y) != (r[j].second > y) &&
+                x < r[j].first + (r[i].first - r[j].first) * (y - r[j].second) / (r[i].second - r[j].second))
+                in = !in;
+    return in;
+}
+
+// whether a cut's start plane (z = 0 in its frame) lies on the body's surface somewhere inside its outline: at some
+// point along a loop, or on a grid across each outline, the body is just past the plane on the cut's side (`back` is
+// the other side) and not just before it. A plane on a flat face, on a curved side it touches along a line, or a
+// hair inside or outside either, does; a plane in the body (a pocket from inside) or clear of it does not
+bool starts_on_surface(SmBrep* b, const Value& r, double back)
+{
+    Frame f = frame_of(r["frame"]);
+    SmTArray<SmEdge*> es;
+    if (SmApiGetEdges(b, es) != SM_SUCCESS || !es.GetSize()) return false;
+    SmPoint3d lo, hi;
+    if (SmApiBrepBoundingBox(b, FALSE, lo, hi) != SM_SUCCESS) return false;
+    auto at = [&](double x, double y, double z) {
+        return SmVector3d(f.o.x + x * f.u.x + y * f.v.x + z * f.n.x, f.o.y + x * f.u.y + y * f.v.y + z * f.n.y,
+                          f.o.z + x * f.u.z + y * f.v.z + z * f.n.z);
+    };
+    auto near_box = [&](const SmVector3d& p) {
+        const double m = 2 * kFlushBand;
+        return p.x >= lo.x - m && p.x <= hi.x + m && p.y >= lo.y - m && p.y <= hi.y + m && p.z >= lo.z - m && p.z <= hi.z + m;
+    };
+    auto on = [&](double x, double y) {
+        if (!near_box(at(x, y, 0))) return false;
+        return !inside(es[0], at(x, y, back * kFlushBand)) && inside(es[0], at(x, y, -back * kFlushBand));
+    };
+    for (const auto& p : r["polygons"].a) {
+        std::vector<std::vector<std::pair<double, double>>> loops(1);
+        loop_points(p["outer"], loops[0]);
+        for (const auto& h : p["holes"].a) {
+            loops.emplace_back();
+            loop_points(h, loops.back());
+        }
+        double x0 = 1e300, y0 = 1e300, x1 = -1e300, y1 = -1e300;
+        for (const auto& l : loops)
+            for (const auto& q : l) {
+                if (on(q.first, q.second)) return true;
+                x0 = std::min(x0, q.first), y0 = std::min(y0, q.second), x1 = std::max(x1, q.first), y1 = std::max(y1, q.second);
+            }
+        // a touch wholly inside the outline, as a rounded side under a wide one
+        const int n = 8;
+        for (int i = 1; i < n; ++i)
+            for (int j = 1; j < n; ++j) {
+                double x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * j / n;
+                if (in_outline(loops, x, y) && on(x, y)) return true;
+            }
+    }
+    return false;
+}
+
+// a cut whose start plane lies on the body's surface starts kCutOverlap back past it, so the boolean never meets the
+// two faces flush; one that starts in the body or clear of it, or tapers from it, is left as asked
+Value cut_from_surface(SmBrep* b, const Value& r)
+{
+    if (r.has("taperDeg") && num(r, "taperDeg") != 0) return r;
+    double z0 = num(r, "fromMm"), z1 = num(r, "toMm");
+    double back = z1 == 0 && z0 < 0 ? 1 : z0 == 0 && z1 > 0 ? -1 : 0;
+    if (back == 0 || !starts_on_surface(b, r, back)) return r;
+    Value e = r;
+    if (back > 0) e.set("toMm", Value(kCutOverlap));
+    else e.set("fromMm", Value(-kCutOverlap));
+    return e;
+}
+
 // --- pushing a flat face
 
 Value xy(double x, double y)
@@ -1687,7 +1821,8 @@ Value run(const std::string& op, const Value& r)
             if (o != "join" && o != "cut") throw Error("operation", "must be join or cut with a target");
             SmBrep* a = body(r, "target");
             bool touches = false;
-            SmBrep* m = join_or_cut(a, fresh_keys(extrude(r, true)), o == "join", touches, "extrude");
+            const Value tool = o == "cut" ? cut_from_surface(a, r) : r;
+            SmBrep* m = join_or_cut(a, fresh_keys(extrude(tool, true)), o == "join", touches, "extrude");
             out.set("touches", Value(touches));
             out.set("missed", missed_tools(m, r["polygons"].a.size()));
             if (touches) out.set("body", Value(keep(m)));
