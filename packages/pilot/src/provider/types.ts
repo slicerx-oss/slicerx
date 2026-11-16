@@ -80,6 +80,11 @@ export interface LlmRequest {
   session?: string
   /** The tier the runtime picked for this turn. mimir cloud asks its proxy for the stronger model on muninn. */
   tier?: Tier
+  /**
+   * The index in `messages` of the message the earlier turns end with, the turn's opening request: a provider with a
+   * prompt cache caches the prompt through it, so the next turn reads it back (runtime.ts, fold.ts).
+   */
+  cacheAt?: number
 }
 
 export type LlmStop = 'end' | 'tool_calls' | 'length' | 'error'

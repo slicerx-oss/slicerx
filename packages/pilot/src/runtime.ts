@@ -60,6 +60,7 @@ import { planToDiff } from './tools/settings'
 // the opening turn of a plan the open project holds (planSeed), which is no message of the person's
 import { PLAN_SEED_NOTE } from './plan-left'
 import { chatRoute, HUGINN, INPUT_REFUSAL_FAILS, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Route, type Tier } from './models'
+import { foldEarlierTurns } from './fold'
 import { bindingKey, unbindOldReasoning } from './reasoning-binding'
 import { toolSearchModel } from './provider/anthropic'
 import { catalogStep, loadedDefs, type ToolCatalog } from './tool-search'
@@ -1868,15 +1869,20 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // with tool search only the tools that load up front bind it: a deferred tool nothing found yet is not part of it
       const bound = local ? undefined : bindingKey(messages, catalog ? loadedDefs(catalog) : toolDefs)
       if (bound) unbindOldReasoning(messages, runStart, bound)
+      // a cloud request sends the earlier turns folded to a line per result (fold.ts) and this turn whole; once the fold
+      // shortens anything it caches through the turn's opening request, so the next turn reads the earlier ones back
+      const folded = local ? [...sent] : foldEarlierTurns(messages, runStart)
+      const shortened = !local && folded.some((m, i) => m !== messages[i])
       const req = {
         model,
-        messages: [...sent],
+        messages: folded,
         tools: toolDefs,
         toolChoice: stopped || wrap ? ('none' as const) : ('auto' as const),
         session: sessionId,
         tier,
         ...(catalog ? { toolSearch: true } : {}),
         ...(opts.config.reasoning ? { reasoning: opts.config.reasoning } : {}),
+        ...(shortened ? { cacheAt: runStart - 1 } : {}),
       }
       try {
         for await (const ev of client.stream(req, signal)) {
