@@ -196,7 +196,7 @@ const wantedWords = (w: readonly Wanted[]): string =>
 export function runTools(opts: { memory?: MemoryStore | undefined } = {}): PilotTool<never>[] {
   const target = defineTool({
     name: 'run.target',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     toolset: 'printers',

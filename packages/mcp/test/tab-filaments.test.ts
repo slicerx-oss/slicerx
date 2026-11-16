@@ -61,3 +61,50 @@ describe('the tab filament tools', () => {
     expect([...SLOT_TOOLS]).toEqual(['geom.build', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'geom.emboss', 'design.part_filament'])
   })
 })
+
+/** A project whose filaments start as `seed`, each changed only through the list. */
+function seeded(seed: readonly Omit<TabFilament, 'slot'>[]): FilamentList {
+  const all: TabFilament[] = seed.map((f, i) => ({ slot: i + 1, ...f }))
+  return {
+    list: () => all.map((f) => ({ ...f })),
+    add: (slot, patch) => void all.push({ slot, type: patch.type ?? 'PLA', color: patch.color ?? '#808080' }),
+    set: (slot, patch) => void Object.assign(all[slot - 1]!, patch),
+  }
+}
+
+describe('the tab filament tools keep the filaments a project has', () => {
+  const spools = [
+    { type: 'PLA', color: '#ffffff' },
+    { type: 'PLA', color: '#1a1a1f' },
+    { type: 'PETG', color: '#3b82f6' },
+    { type: 'TPU', color: '#f97316' },
+  ]
+
+  it('a color the project already has is not added again: the answer names the filament to use', async () => {
+    const p = seeded(spools)
+    const [add] = filamentTools(p)
+    expect(await run(add!, { type: 'PLA', color: '#1c1c1e' })).toEqual({ ok: false, summary: 'Filament 2 is already PLA #1a1a1f, close to #1c1c1e: paint or print with filament 2. Nothing was added.' })
+    // an off-white reads as the white the project has
+    expect(await run(add!, { color: '#f2f2ee' })).toMatchObject({ ok: false, summary: expect.stringContaining('paint or print with filament 1') })
+    expect(p.list()).toHaveLength(4)
+  })
+
+  it('adds only a new color, and the same color in another material is a new filament', async () => {
+    const p = seeded(spools)
+    const [add] = filamentTools(p)
+    expect(await run(add!, { type: 'PLA', color: '#a8261c' })).toMatchObject({ summary: 'Added filament 5: PLA #a8261c' })
+    expect(await run(add!, { type: 'PLA', color: '#d9a441' })).toMatchObject({ summary: 'Added filament 6: PLA #d9a441' })
+    expect(await run(add!, { type: 'PETG', color: '#1c1c1e' })).toMatchObject({ summary: 'Added filament 7: PETG #1c1c1e' })
+    expect(p.list().map((f) => `${f.type} ${f.color}`)).toEqual(['PLA #ffffff', 'PLA #1a1a1f', 'PETG #3b82f6', 'TPU #f97316', 'PLA #a8261c', 'PLA #d9a441', 'PETG #1c1c1e'])
+  })
+
+  it("never rewrites a filament's material", async () => {
+    const p = seeded(spools)
+    const [, set] = filamentTools(p)
+    expect(await run(set!, { slot: 3, type: 'PLA', color: '#a8261c' })).toEqual({ ok: false, summary: "Filament 3 stays PETG: a filament's material is not changed. For PLA, add a filament with project.add_filament. Nothing changed." })
+    expect(await run(set!, { slot: 4, type: 'pla' })).toMatchObject({ ok: false, summary: expect.stringContaining('Filament 4 stays TPU') })
+    expect(p.list().map((f) => f.type)).toEqual(['PLA', 'PLA', 'PETG', 'TPU'])
+    // its own material, named again, and a new color are fine
+    expect(await run(set!, { slot: 1, type: 'PLA', color: '#f2f2ee' })).toMatchObject({ summary: 'Set filament 1: PLA #f2f2ee' })
+  })
+})

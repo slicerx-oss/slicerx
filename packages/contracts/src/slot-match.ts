@@ -35,6 +35,13 @@ export function colorDistance(a: string | undefined, b: string | undefined): num
   return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2])
 }
 
+/**
+ * How close two filament colors are to count as the same color: under 40 apart (of 441), so an off-white spool reads as
+ * white and a near-black as black, while red, buff and gray stay apart. Paint reuses a filament this close, and the
+ * external spool loses to an AMS slot this close.
+ */
+export const NEAR_COLOR = 40
+
 /** The material family a slot or filament names, such as "PLA" for "PLA Matte". */
 export const baseMaterial = (m: string | undefined): string => (m ?? '').toUpperCase().split(/[^A-Z0-9]+/)[0] ?? ''
 
@@ -54,13 +61,15 @@ export function backupSlots(filament: MapFilament, map: Readonly<Record<number, 
  * dialog picks it: a loaded slot of the same material, the closest color first, each slot used once. The
  * closest pairs across the whole plate go first, so one filament cannot take the slot another matches better. A
  * filament no loaded slot matches by material stays out of the map: the sheet shows it as not loaded and the
- * person picks a slot. Keys are the filaments' 1 based numbers.
+ * person picks a slot. The external spool takes a filament only when it is more than NEAR_COLOR closer than every
+ * AMS slot that could: a job with the base on the external spool and the rest in the AMS purges more and may need a
+ * hand at the printer. Keys are the filaments' 1 based numbers.
  */
 export function matchSlots(filaments: readonly MapFilament[], slots: readonly MapSlot[]): Record<number, string> {
   const pairs: { f: number; s: string; d: number; order: number }[] = []
   slots.forEach((s, order) => {
     if (!s.material) return
-    for (const f of filaments) if (baseMaterial(s.material) === baseMaterial(f.type)) pairs.push({ f: f.index, s: s.id, d: colorDistance(s.color, f.color), order })
+    for (const f of filaments) if (baseMaterial(s.material) === baseMaterial(f.type)) pairs.push({ f: f.index, s: s.id, d: colorDistance(s.color, f.color) + (s.id === EXTERNAL_SLOT ? NEAR_COLOR : 0), order })
   })
   pairs.sort((a, b) => a.d - b.d || a.f - b.f || a.order - b.order)
   const out: Record<number, string> = {}

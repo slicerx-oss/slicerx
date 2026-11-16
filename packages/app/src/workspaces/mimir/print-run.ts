@@ -10,6 +10,7 @@ import type { Host } from '@slicerx/contracts'
 import type { PrintRunHost, RunLanded, RunTarget } from '@slicerx/pilot'
 import { moveToSpool } from '../../filament/pick'
 import { followPrinterSlot } from '../../filament/slot-rail'
+import { objectSlots } from '../../filament/object-nozzle'
 import { effectiveSlot, mapSlot } from '../../filament/slots'
 import { landOnBed, printsOnBed } from '../../plate/arrange'
 import { getArrangeOptions } from '../../plate/edit'
@@ -130,7 +131,8 @@ function moveSlots(t: RunTarget): void {
   for (const n of new Set(to.values())) followPrinterSlot(n)
   const meta = activeMeta(s)
   const parts = s.plate.flatMap((e) => (e.printable === false ? [] : e.handle.parts.map((p) => ({ id: e.id, part: p.name, on: mapSlot(meta, effectiveSlot(e, p)) }))))
-  const inUse = new Set(parts.map((p) => p.on))
+  // every filament the plate prints, its color paint included: a painted part is on one filament but prints on several
+  const inUse = new Set(s.plate.flatMap((e) => (e.printable === false ? [] : objectSlots(meta, e))))
   if (inUse.size < 2 && to.size === 1) return void moveToSpool({ kind: 'plate' }, [...to.values()][0]!)
   for (const p of parts) {
     const n = to.get(p.on)
