@@ -8,7 +8,7 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, loftParams, loopStart, madeKeyOfTriangle, profileOffPathMm, projectionsOut, stepName, sweepParams, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, loftParams, loopStart, madeKeyOfTriangle, profileOffPathMm, projectionsOut, saysWhereMissed, stepName, sweepParams, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
 import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit, Placed } from '@slicerx/cad-history'
@@ -90,6 +90,24 @@ export function givenFrame(f: { origin: V3; normal: V3; u?: V3 | undefined; v?: 
   if (off.length) throw new ToolInputError(`frame: with v given, u, v and normal must be at right angles to each other, within ${FRAME_TOLERANCE}; here ${off.join(', ')}. Fix them, or leave v out and v is normal × u.`)
   const frame = frameFor(f.origin, f.normal, u)
   return { frame, mirrored: dot(frame.v, v) < 0 }
+}
+
+/** An axis as a sentence names it: +X to -Z when it runs along one, else its direction rounded. */
+const axisText = (a: V3): string => {
+  const k = a.findIndex((c) => Math.abs(Math.abs(c) - 1) < 1e-9)
+  return k >= 0 ? `${a[k]! > 0 ? '+' : '-'}${'XYZ'[k]}` : `[${a.map((c) => Math.round(c * 100) / 100 + 0).join(', ')}]`
+}
+
+/**
+ * A refusal that says where a join or cut missed (cad-history missedWhere), with which way the sketch's u and v ran
+ * when its frame was given with no u, before the sentence that says the design is unchanged.
+ */
+export function withAxes(e: unknown, f: { origin: V3; normal: V3; u?: V3 | undefined; v?: V3 | undefined } | undefined): unknown {
+  if (!f || f.u || !(e instanceof Error) || !saysWhereMissed(e.message)) return e
+  const g = givenFrame(f).frame
+  const tail = / The design is unchanged\.$/.test(e.message) ? ' The design is unchanged.' : ''
+  e.message = `${e.message.slice(0, e.message.length - tail.length)} This frame's sketch u runs along ${axisText(g.u)} and v along ${axisText(g.v)}; give frame.u to choose them.${tail}`
+  return e
 }
 
 /** Why a frame that mirrors what is drawn on it cannot take this (text or artwork would read backwards), or null. */
@@ -364,7 +382,7 @@ function parsedAt<T extends z.ZodType>(schema: T, v: unknown, field: string): z.
 }
 
 const frameShape = z.object({ origin: vec3, normal: vec3, u: vec3.optional(), v: vec3.optional() })
-const frameSchema = frameShape.describe('Sketch plane: the "frame" of slicerx_geom_face_pick, or {"origin":[x,y,z],"normal":[x,y,z]} for any plane. Shape and sketch coordinates are [u, v] in it; v is normal × u unless given. Absent: the bed (origin 0,0,0, normal +Z, u along +X)')
+const frameSchema = frameShape.describe('Sketch plane: the "frame" of slicerx_geom_face_pick, or {"origin":[x,y,z],"normal":[x,y,z]} for any plane. Shape and sketch coordinates are [u, v] in it; v is normal × u unless given. Absent: the bed (origin 0,0,0, normal +Z, u along +X). Without u, u is any direction across the normal (for a normal along Y it runs along -X or +X), so give u when the sketch\'s directions matter.')
 // a local model's frame text is as it was before v was kept, which only cloud turns are told
 const localFrameSchema = frameShape.describe('Sketch plane: the "frame" of slicerx_geom_face_pick, or {"origin":[x,y,z],"normal":[x,y,z]} for any plane. Shape and sketch coordinates are [u, v] in it. Absent: the bed (origin 0,0,0, normal +Z, u along +X)')
 
@@ -450,7 +468,9 @@ const frameRef = z
     }
     return r.data
   })
-  .describe('Plane {origin, normal}, or a face_pick frame; none is the bed')
+  .describe('Plane {origin, normal}, or a face_pick frame; none is the bed. Without u, u is any direction across the normal (for a normal along Y it runs along -X or +X), so give u when the sketch\'s directions matter.')
+// a local model's frame text is as it was before u was told, as localFrameSchema keeps its own
+const localFrameRef = frameRef.describe('Plane {origin, normal}, or a face_pick frame; none is the bed')
 
 const sketchEntity = z.discriminatedUnion('type', [
   z.object({ type: z.literal('line'), a: z.number().int().min(0), b: z.number().int().min(0) }),
@@ -1036,14 +1056,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   })
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.14.0',
+    version: '1.15.0',
     source: 'command',
     permission: 'slice',
     description:
       'Extrude a shape on the bed, a plane or a picked face as a new body, joined to a target or cut from it: with "design" a step (join and cut work on "part"), with a model an STL with volume, bounds and watertightness.',
     input: extrudeInput,
     // a local model's shape leaves out what its row has no room for (localShape)
-    localInput: slotted(extrudeInput).localInput.extend({ shape: localShape.optional() }),
+    localInput: slotted(extrudeInput).localInput.extend({ shape: localShape.optional(), frame: localFrameRef.optional() }),
     async run(i) {
       slotOk(i)
       const spec = { distanceMm: i.distance_mm, extent: i.extent, operation: i.operation, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}), ...(i.flip !== undefined ? { flip: i.flip } : {}), ...(i.taper_deg !== undefined ? { taperDeg: i.taper_deg } : {}) }
@@ -1068,7 +1088,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const on = i.operation === 'join' ? (part ?? 0) : -1
         const before = on >= 0 ? partBoxes(d) : []
         const n = d.parts.length
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined)).catch((e: unknown) => {
+          throw withAxes(e, k ? undefined : f)
+        })
         // parts that stood on the body this raised are lifted onto its new top, at the steps that made them, with
         // their paint; the answer says so
         const sunk = on >= 0 ? sunkParts(d, on, before) : []
@@ -1113,7 +1135,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   })
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.11.0',
+    version: '1.11.1',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -1309,13 +1331,15 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const sketchInput = z.object({ loops: loopsRef, frame: frameRef.optional(), constraints: z.array(loopConstraint).max(8192).optional(), design: designArg.optional().describe("The design the sketch is drawn for: its frame is in that design's coordinates") })
   const sketch = defineTool({
     name: 'design.sketch',
-    version: '1.4.1',
+    version: '1.4.2',
     source: 'command',
     permission: 'slice',
     description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. With design, the frame is in that design's own coordinates, as its other tools take them. Without, it is in the plate's while no design was moved onto the bed; after that it is the only design's, or name the design.`,
-    input: z.object({ loops: loopsRef, frame: frameRef.optional(), constraints: z.array(loopConstraint).max(8192).optional(), design: designArg.optional().describe("The design the sketch is drawn for: its frame is in that design's coordinates") }),
+    input: sketchInput,
+    localInput: sketchInput.extend({ frame: localFrameRef.optional() }),
     async run(i) {
       // on a frame that mirrors what is drawn on it, the loops and their angles are mirrored onto the engine's frame
       const flipped = sided(i.frame)
@@ -1346,31 +1370,32 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const svgInput = z.object({
+    svg: z
+      .string()
+      .min(1)
+      .describe(`The SVG file as text. With the other fields it may come to ${kb(SVG_ARGS)} (${SVG_ARGS} bytes of UTF-8 JSON, quotes escaped), the most the app link carries`),
+    frame: frameRef.optional(),
+    design: designArg.optional().describe("The design the sketch is drawn for: frame and center are in that design's coordinates"),
+    scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
+    fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
+    fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
+    center: vec2.optional().describe("Where the middle of the artwork lands, sketch mm; when absent, the middle of the plane: the bed's middle on the bed, the frame's origin on a plane or face"),
+    tolerance_mm: z.number().min(0.001).max(1).optional().describe('How far a spline may stray from a curve of the artwork, 0.001 to 1; 0.01 when absent'),
+  })
+  // the link counts the bytes of every field as it sends them, so non-Latin text counts 2 to 4 a character
+  const svgFits = (args: z.infer<typeof svgInput>, ctx: z.RefinementCtx): void => {
+    const sent = new TextEncoder().encode(JSON.stringify(args)).length
+    if (sent > SVG_ARGS) ctx.addIssue({ code: 'custom', path: ['svg'], message: `This SVG comes to ${kb(sent)} once sent to the app, and the app link takes ${kb(SVG_ARGS)}. Simplify it in a vector editor (fewer points, no embedded images, fonts, metadata or long text), or split it and import each part with its own center.` })
+  }
   const sketchSvg = defineTool({
     name: 'design.sketch_svg',
-    version: '1.1.1',
+    version: '1.1.2',
     source: 'command',
     permission: 'slice',
     description: `Turn SVG artwork into a finished sketch in the open project's design timeline, as Import SVG in the sketch tool does: each closed path of a filled or stroked shape becomes a loop of lines, arcs, circles and splines (holes stay loops inside, transforms apply), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. Open strokes, text and images are left out and named in warnings. Returns the sketch id, its loops as stored, how many of each curve, the size, and the sketch check (holes, area, any crossings).`,
-    input: z
-      .object({
-        svg: z
-          .string()
-          .min(1)
-          .describe(`The SVG file as text. With the other fields it may come to ${kb(SVG_ARGS)} (${SVG_ARGS} bytes of UTF-8 JSON, quotes escaped), the most the app link carries`),
-        frame: frameRef.optional(),
-        design: designArg.optional().describe("The design the sketch is drawn for: frame and center are in that design's coordinates"),
-        scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
-        fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
-        fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
-        center: vec2.optional().describe("Where the middle of the artwork lands, sketch mm; when absent, the middle of the plane: the bed's middle on the bed, the frame's origin on a plane or face"),
-        tolerance_mm: z.number().min(0.001).max(1).optional().describe('How far a spline may stray from a curve of the artwork, 0.001 to 1; 0.01 when absent'),
-      })
-      .superRefine((args, ctx) => {
-        // the link counts the bytes of every field as it sends them, so non-Latin text counts 2 to 4 a character
-        const sent = new TextEncoder().encode(JSON.stringify(args)).length
-        if (sent > SVG_ARGS) ctx.addIssue({ code: 'custom', path: ['svg'], message: `This SVG comes to ${kb(sent)} once sent to the app, and the app link takes ${kb(SVG_ARGS)}. Simplify it in a vector editor (fewer points, no embedded images, fonts, metadata or long text), or split it and import each part with its own center.` })
-      }),
+    input: svgInput.superRefine(svgFits),
+    localInput: svgInput.extend({ frame: localFrameRef.optional() }).superRefine(svgFits),
     async run(i) {
       if (sided(i.frame)) throw new ToolInputError(mirroredRefusal(i.frame!, 'the artwork'))
       const host = deps.designs
@@ -1463,7 +1488,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const traceImage = defineTool({
     name: 'design.trace_image',
-    version: '1.1.1',
+    version: '1.1.2',
     source: 'command',
     permission: 'slice',
     description: `Trace a PNG or JPEG into a finished sketch in the open project's design timeline, as Trace image in the sketch tool does: the inside (dark or light areas, opaque areas, or picked colors) is found, specks are cleaned away, and its edges become loops of lines, arcs, circles and splines (holes stay loops inside), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. The image is traced on this server, so it may be large; the loops then go to the timeline as slicerx_design_sketch sends them. Use dry_run to tune the settings first, and preview_image to see the loops over the image. Returns the sketch id, its loops, how many of each curve, the size, what was cleaned away, and the sketch check.`,

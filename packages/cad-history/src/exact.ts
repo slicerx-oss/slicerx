@@ -436,8 +436,20 @@ export class ExactBroken extends Error {
   }
 }
 
-/** A join or cut that did not reach the part: a pattern leaves that copy out, as the mesh path does. */
-export class ExactMissed extends ExactBroken {}
+/** A box, mm: its least corner and its greatest. */
+export type Box3 = { lo: Vec3; hi: Vec3 }
+
+/**
+ * A join or cut that did not reach the part: a pattern leaves that copy out, as the mesh path does. `shape` is the box
+ * the step's shape filled, in world at the step's transform, when the step knows it (missedWhere).
+ */
+export class ExactMissed extends ExactBroken {
+  readonly shape?: Box3
+  constructor(message: string, shape?: Box3) {
+    super(message)
+    if (shape) this.shape = shape
+  }
+}
 
 /**
  * The engine's answer to brep.tessellate, in either form it comes in. The numbers are lists or typed arrays. `faces`
@@ -687,6 +699,23 @@ async function loops(call: Call, shape: Shape | FreeShape, placement: { center?:
   return profiles.map((p) => ({ outer: placed(p.outer), holes: p.holes.map(placed) }))
 }
 
+/** The box outlines in a frame fill, run from `z[0]` to `z[1]` along its normal, in world at `t`. */
+function filled(t: Mat4, f: { origin: Vec3; u: Vec3; normal: Vec3 }, polygons: readonly Profile[], z: readonly [number, number]): Box3 {
+  const v = cross(f.normal, f.u)
+  const lo: Vec3 = [Infinity, Infinity, Infinity]
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
+  for (const q of polygons)
+    for (const [a, b] of ring(q.outer))
+      for (const h of z) {
+        const w = point(t, [0, 1, 2].map((k) => f.origin[k]! + a * f.u[k]! + b * v[k]! + h * f.normal[k]!) as Vec3)
+        for (let k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k]!, w[k]!)
+          hi[k] = Math.max(hi[k]!, w[k]!)
+        }
+      }
+  return { lo, hi }
+}
+
 /** Where a new body runs along the frame's normal, as the engine reads the spec (sx-geom face.rs). */
 function range(spec: Extract<StepParams, { op: 'shape.extrude' }>['spec']): [number, number] | null {
   const d = spec.distanceMm
@@ -932,7 +961,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...(p.spec.taperDeg ? { taperDeg: p.spec.taperDeg } : {}), ...(into === null ? {} : { target: into, operation: op }), ...kept })
         if (into !== null) {
           // a join or cut that misses changes nothing; the kernel makes no body then
-          if (!(r as { touches?: boolean }).touches) throw new ExactMissed('The shape no longer reaches the part.')
+          if (!(r as { touches?: boolean }).touches) throw new ExactMissed('The shape no longer reaches the part.', copies ? undefined : filled(s.transform, f, own, z))
           if (copies) missed?.(missedCopies(r, own.length, copies.length))
           out[s.part] = await part(target!, r)
           return out

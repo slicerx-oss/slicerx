@@ -13,7 +13,7 @@ import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, facingFaceIds, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintedFrom, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Plane, type SolidMeasure, type Solids } from './exact'
+import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, facingFaceIds, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintedFrom, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type Box3, type FacePaint, type Plane, type SolidMeasure, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -114,6 +114,44 @@ export function missSentence(report: { miss?: Miss; volumeChangeMm3?: number }, 
   if (m.reason === 'inside') return INSIDE
   if (m.reason === 'apart' && m.gapMm >= GAP_NAMED_MM) return `The shape stops ${m.gapMm.toFixed(1)} mm short of the part.`
   return m.reason === 'apart' && joins ? 'Part of the shape would float off the part, so nothing changed.' : 'The shape only touches the part, so nothing changed.'
+}
+
+const mm2 = (n: number): number => Math.round(n * 100) / 100 + 0
+
+/** A box as a sentence names it: each axis as one number, or from its least to its greatest. */
+function boxText(b: Box3): string {
+  return (['x', 'y', 'z'] as const).map((a, k) => {
+    const [lo, hi] = [mm2(b.lo[k]!), mm2(b.hi[k]!)]
+    return lo === hi ? `${a} ${lo}` : `${a} ${lo} to ${hi}`
+  }).join(', ')
+}
+
+/**
+ * Where a join or cut that missed sits against the part it missed, in a sentence, both boxes in the frame the design
+ * tools read points in: under the part, how far from its box, or, with the boxes meeting, how far short of the part.
+ */
+export function missedWhere(shape: Box3, part: Box3, joins: boolean): string {
+  const at = `The ${joins ? 'join' : 'cut'}'s shape sits at ${boxText(shape)}`
+  if (shape.hi[2] < part.lo[2] - GAP_NAMED_MM) return `${at}, under the part (${boxText(part)}).`
+  const d = Math.hypot(...[0, 1, 2].map((k) => Math.max(0, part.lo[k]! - shape.hi[k]!, shape.lo[k]! - part.hi[k]!)))
+  return d >= GAP_NAMED_MM ? `${at}, ${d.toFixed(1)} mm from the part (${boxText(part)}).` : `${at}, ${d.toFixed(1)} mm short of the part.`
+}
+
+/** Whether a refusal says where a join or cut that missed sat (missedWhere). */
+export const saysWhereMissed = (text: string): boolean => /\bThe (?:join|cut)'s shape sits at /.test(text)
+
+/** A part's box in world at `t`. */
+function boxAt(m: Pick<Flat, 'positions'>, t: Mat4): Box3 {
+  const lo: Vec3 = [Infinity, Infinity, Infinity]
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
+  for (let i = 0; i + 2 < m.positions.length; i += 3) {
+    const w = point(t, m.positions, i)
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k]!, w[k]!)
+      hi[k] = Math.max(hi[k]!, w[k]!)
+    }
+  }
+  return { lo, hi }
 }
 
 /**
@@ -1237,6 +1275,8 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   }
   cacheStep(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, copies: {}, fellBack: [], quiet: [] }, ran: {} })
   const fonts = req.fonts ?? {}
+  // a join or cut that missed, with the box its shape filled: its sentence says where, once the parts are meshes
+  let missedAt: { i: number; s: Step; shape: Box3 } | undefined
   let before: Flat[] | undefined = req.before === 0 ? history.base.map(flat) : req.before !== undefined && req.before <= start && req.before > 0 ? known(req.before - 1) : undefined
   for (let i = 0; i < start; i++) {
     if (steps[i]!.suppressed) continue
@@ -1269,6 +1309,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
     } catch (e) {
       if ((e as { name?: string }).name === 'AbortError') throw e
       status[i] = { state: 'broken', message: e instanceof Error ? e.message : String(e), ...(e instanceof ExactBroken && e.cause ? { cause: e.cause } : {}) }
+      if (e instanceof ExactMissed && e.shape) missedAt = { i, s, shape: e.shape }
       if (req.before !== undefined && req.before > i) before = parts
       break
     }
@@ -1279,6 +1320,13 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   // the result's meshes, made now for kept bodies
   parts = await meshedAll(call, parts)
   if (before) before = await meshedAll(call, before)
+  const target = missedAt && parts[missedAt.s.part]
+  if (missedAt && target?.positions.length && missedAt.s.params.op === 'shape.extrude') {
+    // in the frame the design tools read points in: the plate less the history's landing moves (design-frame.ts)
+    const by = history.placed ?? [0, 0]
+    const back = (b: Box3): Box3 => ({ lo: b.lo.map((c, k) => c - (by[k] ?? 0)) as Vec3, hi: b.hi.map((c, k) => c - (by[k] ?? 0)) as Vec3 })
+    status[missedAt.i] = { state: 'broken', message: missedWhere(back(missedAt.shape), back(boxAt(target, missedAt.s.transform)), missedAt.s.params.spec.operation === 'join') }
+  }
   const made = madeAfter(steps, keys, status, parts)
   // the solids stay in the cache here: the caller gets meshes, and a project or an undo step never holds one
   return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}), ...(found.quiet.length ? { exactLoftsQuiet: found.quiet } : {}), ...(req.exact || req.exactLofts ? { meshParts: meshIndices } : {}) }
