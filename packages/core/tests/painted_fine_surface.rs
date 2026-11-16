@@ -3,7 +3,7 @@
 //! A part with a finely meshed painted top slices in bounded memory. The union of a painted top's triangles keeps
 //! every vertex of the mesh, so a curved edge meshed about once a micrometer stays rough at that scale. Grown by a
 //! grid cell in one pass, such an outline crossed itself so many times that a painted ship of a few hundred thousand
-//! triangles a layer ran the computer out of memory. Before the fix this block peaked at 3.9 GB. The memory ceiling
+//! triangles a layer ran the computer out of memory. Before the fix this block peaked at 4.0 GB. The memory ceiling
 //! is read on Linux, where the process's peak resident memory can be started over and read back.
 
 mod common;
@@ -39,6 +39,9 @@ const W: f64 = 40.0;
 const H: f64 = 2.0;
 /// Points on the rim of the painted disc: about one per micrometer.
 const RIM: u32 = 120_000;
+/// The cosine and sine of one rim step, a full turn over [`RIM`] points, as literals.
+const STEP_COS: f64 = 0.999_999_998_629_221_6;
+const STEP_SIN: f64 = 5.235_987_753_590_529e-5;
 
 /// A fixed jitter for rim point `k`, under half a micrometer either way, the roughness a curved edge meshed that
 /// finely keeps.
@@ -52,19 +55,24 @@ fn jitter(k: u32) -> f64 {
 }
 
 /// The painted top of the block, filament 2: a disc 38 mm across meshed as a fan from its center, its rim sampled
-/// about once a micrometer, as a fine mesh of a curved solid's face is.
+/// about once a micrometer, as a fine mesh of a curved solid's face is. The rim turns one step at a time, so no angle
+/// is computed.
 #[allow(clippy::cast_possible_truncation, reason = "points on a 40 mm block")]
 fn top_paint() -> Vec<PaintFacet> {
     let (c, r) = (W / 2.0, W / 2.0 - 1.0);
-    let rim = |k: u32| {
-        let a = std::f64::consts::TAU * f64::from(k % RIM) / f64::from(RIM);
-        let rr = r + jitter(k % RIM);
-        [(c + rr * a.cos()) as f32, (c + rr * a.sin()) as f32, H as f32]
-    };
+    let mut dir = (1.0f64, 0.0f64);
+    let rim: Vec<[f32; 3]> = (0..RIM)
+        .map(|k| {
+            let rr = r + jitter(k);
+            let p = [(c + rr * dir.0) as f32, (c + rr * dir.1) as f32, H as f32];
+            dir = (dir.0 * STEP_COS - dir.1 * STEP_SIN, dir.0 * STEP_SIN + dir.1 * STEP_COS);
+            p
+        })
+        .collect();
     let center = [c as f32, c as f32, H as f32];
-    (0..RIM)
+    (0..rim.len())
         .map(|k| PaintFacet {
-            v: [center, rim(k), rim(k + 1)],
+            v: [center, rim[k], rim[(k + 1) % rim.len()]],
             state: 2,
         })
         .collect()
