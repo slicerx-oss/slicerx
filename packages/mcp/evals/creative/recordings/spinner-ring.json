@@ -2,122 +2,66 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-10T20:04:06.681Z",
+ "capturedAt": "2026-11-16T07:20:17.554Z",
  "steps": [
   {
-   "text": "I'll plan this first, since the core and band are separate pieces that must print in place with a clearance gap.",
+   "text": "Steps:\n1. Plan the two print-in-place pieces: a core ring and a band that is trapped on it by lips in a groove.\n2. Show the dimension sheet with the fit gaps.\n3. Build both pieces as revolves and check the gaps with the fit check.\n4. Check the design against the plan.\n\nNothing is queued or sent to a printer.",
    "calls": [
     {
      "name": "design.plan",
      "args": {
       "part": "Spinner ring",
       "units": "mm",
+      "detail": "basic",
       "printInPlace": [
        "Core",
        "Band"
       ],
       "features": [
        {
-        "name": "Core ring",
+        "name": "Core",
+        "kind": "revolve",
         "sizes": {
-         "outer_diameter": 24,
-         "inner_diameter": 19,
-         "height": 8
+         "outer_diameter": 27,
+         "bore_diameter": 19,
+         "width": 8,
+         "groove_diameter": 25,
+         "flange_width": 1.5
         }
        },
        {
         "name": "Band",
+        "kind": "revolve",
         "sizes": {
-         "outer_diameter": 28.8,
-         "inner_diameter": 24.8,
-         "lip_inner_diameter": 21,
-         "height": 10.8,
-         "lip_thickness": 1,
-         "gap": 0.4
+         "outer_diameter": 31.8,
+         "inner_diameter": 27.9,
+         "width": 8,
+         "lip_diameter": 25.7,
+         "lip_z_from": 1.95,
+         "lip_z_to": 6.05
         }
        }
       ],
       "overall": {
-       "x": 28.8,
-       "y": 28.8,
-       "z": 10.8
+       "x": 31.8,
+       "y": 31.8,
+       "z": 8
       },
       "holes": [
        {
-        "name": "Finger hole",
+        "name": "Finger bore",
         "diameter": 19
        }
       ],
       "assumptions": [
-       "Core is a ring 24 mm outer diameter, 8 mm wide, with the 19 mm inner diameter given.",
-       "Band is a C-shaped ring wrapping the core, with 1 mm lips at top and bottom reaching in to 21 mm inner diameter to hold the core in place.",
-       "Clearance of 0.4 mm between core and band on every face where they meet, for PLA on a 0.4 mm nozzle.",
-       "Core and band print flat as one plate, with the band's bottom lip on the bed and the core floating 0.4 mm above it."
+       "Bore is the user's 19 mm inner diameter, as given.",
+       "Core: 27 mm outer flanges 1.5 mm wide at each end, 25 mm groove between them, 8 mm total width. Wall values are guesses.",
+       "Band: 31.8 mm outer diameter, 8 mm wide, with two inward lips (25.7 mm bore) that sit in the core's groove between the flanges so the band cannot slide off.",
+       "Gaps for PLA on a 0.4 mm nozzle: 0.45 mm radial between band body and core flange, 0.35 mm radial between lips and groove, 0.45 mm axial above and below the lips.",
+       "Core and band print side by side on the bed, as one plate with no assembly."
       ],
       "questions": [
-       "Is the core width 8 mm and the band 10.8 mm total height, or do you want a different width?",
-       "Is the band's outer wall thickness (2 mm) and outer diameter (28.8 mm) acceptable?"
-      ],
-      "reason": "Spinner ring with a 19 mm inner diameter; the band must spin freely around the core."
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"reason: give a reason only with amends, to change an approved plan. The engine refused this step. Read why, then change the step or build it another way. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
-   ],
-   "calls": [
-    {
-     "name": "design.plan",
-     "args": {
-      "part": "Spinner ring",
-      "units": "mm",
-      "printInPlace": [
-       "Core",
-       "Band"
-      ],
-      "features": [
-       {
-        "name": "Core ring",
-        "sizes": {
-         "outer_diameter": 24,
-         "inner_diameter": 19,
-         "height": 8
-        }
-       },
-       {
-        "name": "Band",
-        "sizes": {
-         "outer_diameter": 28.8,
-         "inner_diameter": 24.8,
-         "lip_inner_diameter": 21,
-         "height": 10.8,
-         "lip_thickness": 1,
-         "gap": 0.4
-        }
-       }
-      ],
-      "overall": {
-       "x": 28.8,
-       "y": 28.8,
-       "z": 10.8
-      },
-      "holes": [
-       {
-        "name": "Finger hole",
-        "diameter": 19
-       }
-      ],
-      "assumptions": [
-       "Core is a ring 24 mm outer diameter, 8 mm wide, with the 19 mm inner diameter given.",
-       "Band is a C-shaped ring wrapping the core, with 1 mm lips at top and bottom reaching in to 21 mm inner diameter to hold the core in place.",
-       "Clearance of 0.4 mm between core and band on every face where they meet, for PLA on a 0.4 mm nozzle.",
-       "Core and band print flat as one plate, with the band's bottom lip on the bed and the core floating 0.4 mm above it."
-      ],
-      "questions": [
-       "Is the core width 8 mm and the band 10.8 mm total height, or do you want a different width?",
-       "Is the band's outer wall thickness (2 mm) and outer diameter (28.8 mm) acceptable?"
+       "Is 8 mm width and 2.5 mm band wall right for comfort, or should the band be wider?"
       ]
      }
     }
@@ -127,7 +71,6 @@
    "seen": [
     "{\"ok\":true,\"summary\":\"Approved as shown. Moving pieces need gaps of at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers) on this printer.\",\"result\":{\"planId\":\"plan_1\",\"accepted\":true,\"gaps\":{\"sideMm\":0.3,\"verticalMm\":0.4}}}"
    ],
-   "text": "The plan is approved. Now the dimension sheet, with the sizes I guessed marked as guesses.",
    "calls": [
     {
      "name": "pilot.sheet",
@@ -138,200 +81,55 @@
        "front",
        "iso"
       ],
-      "part": [
-       {
-        "kind": "extrude",
-        "plane": "xy",
-        "points": [
-         [
-          0,
-          0
-         ],
-         [
-          28.8,
-          0
-         ],
-         [
-          28.8,
-          28.8
-         ],
-         [
-          0,
-          28.8
-         ]
-        ],
-        "from": 0,
-        "to": 0.01
-       }
-      ],
       "dims": [
        {
-        "key": "finger_hole_diameter",
-        "label": "Finger hole (inner diameter)",
+        "key": "bore",
+        "label": "Inner diameter (finger bore)",
         "value": 19,
         "unit": "mm",
-        "source": "asked",
-        "at": {
-         "a": [
-          4.9,
-          14.4,
-          0
-         ],
-         "b": [
-          23.9,
-          14.4,
-          0
-         ],
-         "off": [
-          0,
-          -4,
-          0
-         ]
-        }
+        "source": "asked"
        },
        {
-        "key": "core_outer_diameter",
-        "label": "Core outer diameter",
-        "value": 24,
+        "key": "core_od",
+        "label": "Core flange outer diameter",
+        "value": 27,
         "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          2.4,
-          14.4,
-          0
-         ],
-         "b": [
-          26.4,
-          14.4,
-          0
-         ],
-         "off": [
-          0,
-          -8,
-          0
-         ]
-        }
+        "source": "guess"
        },
        {
-        "key": "core_height",
-        "label": "Core width",
+        "key": "width",
+        "label": "Ring width",
         "value": 8,
         "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          1.4
-         ],
-         "b": [
-          0,
-          0,
-          9.4
-         ],
-         "off": [
-          -3,
-          0,
-          0
-         ]
-        }
+        "source": "guess"
        },
        {
-        "key": "band_outer_diameter",
+        "key": "band_od",
         "label": "Band outer diameter",
-        "value": 28.8,
+        "value": 31.8,
         "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          14.4,
-          0
-         ],
-         "b": [
-          28.8,
-          14.4,
-          0
-         ],
-         "off": [
-          0,
-          4,
-          0
-         ]
-        }
+        "source": "guess"
        },
        {
-        "key": "band_height",
-        "label": "Band total height",
-        "value": 10.8,
+        "key": "band_id",
+        "label": "Band inner diameter",
+        "value": 27.9,
         "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          0,
-          10.8
-         ],
-         "off": [
-          -5,
-          0,
-          0
-         ]
-        }
+        "source": "guess"
        },
        {
-        "key": "lip_inner_diameter",
+        "key": "lip_id",
         "label": "Band lip inner diameter",
-        "value": 21,
+        "value": 25.7,
         "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          5.9,
-          14.4,
-          0
-         ],
-         "b": [
-          22.9,
-          14.4,
-          0
-         ],
-         "off": [
-          0,
-          -12,
-          0
-         ]
-        }
+        "source": "guess"
        },
        {
-        "key": "gap",
-        "label": "Clearance between core and band",
-        "value": 0.4,
+        "key": "flange_w",
+        "label": "Core flange width",
+        "value": 1.5,
         "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          0,
-          0.4
-         ],
-         "off": [
-          -8,
-          0,
-          0
-         ]
-        }
+        "source": "guess"
        }
       ]
      }
@@ -340,76 +138,41 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"finger_hole_diameter\":19,\"core_outer_diameter\":24,\"core_height\":8,\"band_outer_diameter\":28.8,\"band_height\":10.8,\"lip_inner_diameter\":21,\"gap\":0.4,\"clearance\":0.3,\"clearance_vertical\":0.4},\"changed\":[]}}"
+    "{\"ok\":true,\"summary\":\"Confirmed as shown. It showed as a list with no drawing: give part (the part as it will be built) or design on the next sheet, so each row gets its callout\",\"result\":{\"confirmed\":true,\"values\":{\"bore\":19,\"core_od\":27,\"width\":8,\"band_od\":31.8,\"band_id\":27.9,\"lip_id\":25.7,\"flange_w\":1.5,\"clearance\":0.3,\"clearance_vertical\":0.4},\"changed\":[]}}"
    ],
-   "text": "The sheet is confirmed. Building the core first.",
    "calls": [
     {
      "name": "design.new",
      "args": {
       "name": "Spinner ring"
      }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Spinner ring",
-      "name": "Core",
-      "distance_mm": 8,
-      "extent": "oneSide",
-      "operation": "new",
-      "feature": "Core ring",
-      "frame": {
-       "origin": [
-        0,
-        0,
-        1.4
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "sketch",
-       "loops": [
-        {
-         "type": "circle",
-         "center": [
-          0,
-          0
-         ],
-         "diameterMm": 24
-        },
-        {
-         "type": "circle",
-         "center": [
-          0,
-          0
-         ],
-         "diameterMm": 19
-        }
-       ]
-      }
-     }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Started Spinner ring (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Spinner ring\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
-    "{\"ok\":true,\"summary\":\"Extruded: step 1, Sketch extrude 8 mm. The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\",\"result\":{\"design\":\"d1\",\"name\":\"Spinner ring\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Sketch extrude 8 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":8,\"unit\":\"mm\"},\"feature\":\"Core ring\",\"state\":\"done\"},\"minMm\":[-12,-12,1.4],\"sizeMm\":[24,24,8],\"volumeMm3\":1350.479,\"parts\":[{\"index\":0,\"name\":\"Core\",\"slot\":1,\"triangles\":1060,\"minMm\":[-12,-12,1.4],\"sizeMm\":[24,24,8],\"volumeMm3\":1350.479}],\"placedMm\":[128,128],\"landed\":\"The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+    "{\"ok\":true,\"summary\":\"Started Spinner ring (d1)\",\"result\":{\"design\":\"d1\",\"name\":\"Spinner ring\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
    ],
-   "text": "The core is built. Now the band, turned as a C-shaped profile around the axis.",
    "calls": [
     {
      "name": "geom.revolve",
      "args": {
-      "design": "Spinner ring",
-      "name": "Band",
-      "feature": "Band",
+      "design": "d1",
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "axis_deg": 0,
+      "angle_deg": 360,
       "operation": "new",
+      "name": "Core",
+      "feature": "Core",
       "frame": {
        "origin": [
         0,
@@ -418,7 +181,7 @@
        ],
        "normal": [
         0,
-        -1,
+        1,
         0
        ],
        "u": [
@@ -436,40 +199,53 @@
        {
         "points": [
          [
-          10.5,
+          9.5,
           0
          ],
          [
-          14.4,
+          13.5,
           0
          ],
          [
-          14.4,
-          10.8
+          13.5,
+          1.5
          ],
          [
-          10.5,
-          10.8
+          12.5,
+          1.5
          ],
          [
-          10.5,
-          9.8
+          12.5,
+          6.5
          ],
          [
-          12.4,
-          9.8
+          13.5,
+          6.5
          ],
          [
-          12.4,
-          1
+          13.5,
+          8
          ],
          [
-          10.5,
-          1
+          9.5,
+          8
          ]
         ]
        }
-      ],
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Revolved: step 1, Sketch revolve 360°. The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in. The frame's v [0, 0, 1] runs opposite normal × u, so the sketch was mirrored onto the step's frame and each point stays where this frame put it.\",\"result\":{\"design\":\"d1\",\"name\":\"Spinner ring\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smuo69q801\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"feature\":\"Core\",\"state\":\"done\"},\"minMm\":[-13.5,-13.5,0],\"sizeMm\":[27,27,8],\"volumeMm3\":1903.041,\"parts\":[{\"index\":0,\"name\":\"Core\",\"slot\":1,\"triangles\":4700,\"minMm\":[-13.5,-13.5,0],\"sizeMm\":[27,27,8],\"volumeMm3\":1903.041}],\"forms\":[\"Core: turned outline, sharp edges\"],\"placedMm\":[128,128],\"landed\":\"The part was off the bed, so it moved to the plate by (128, 128) mm as a whole. Its coordinates stay the design's own: keep giving points in the frame it was built in.\"}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.revolve",
+     "args": {
+      "design": "d1",
       "axis": {
        "point": [
         0,
@@ -480,30 +256,124 @@
         1
        ]
       },
-      "angle_deg": 360
+      "angle_deg": 360,
+      "operation": "new",
+      "name": "Band",
+      "feature": "Band",
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "loops": [
+       {
+        "points": [
+         [
+          13.95,
+          0
+         ],
+         [
+          15.9,
+          0
+         ],
+         [
+          15.9,
+          8
+         ],
+         [
+          13.95,
+          8
+         ],
+         [
+          13.95,
+          6.05
+         ],
+         [
+          12.85,
+          6.05
+         ],
+         [
+          12.85,
+          1.95
+         ],
+         [
+          13.95,
+          1.95
+         ]
+        ]
+       }
+      ]
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Revolved: step 2, Sketch revolve 360°\",\"result\":{\"design\":\"d1\",\"name\":\"Spinner ring\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q802\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":1,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"feature\":\"Band\",\"state\":\"done\"},\"minMm\":[-14.4,-14.4,0],\"sizeMm\":[28.8,28.8,10.8],\"volumeMm3\":3441.723,\"parts\":[{\"index\":0,\"name\":\"Core\",\"slot\":1,\"triangles\":1060,\"minMm\":[-12,-12,1.4],\"sizeMm\":[24,24,8],\"volumeMm3\":1350.479},{\"index\":1,\"name\":\"Band\",\"slot\":1,\"triangles\":3026,\"minMm\":[-14.4,-14.4,0],\"sizeMm\":[28.8,28.8,10.8],\"volumeMm3\":2091.244}],\"placedMm\":[128,128]}}"
+    "{\"ok\":true,\"summary\":\"Revolved: step 2, Sketch revolve 360°. The frame's v [0, 0, 1] runs opposite normal × u, so the sketch was mirrored onto the step's frame and each point stays where this frame put it.\",\"result\":{\"design\":\"d1\",\"name\":\"Spinner ring\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smuo69q802\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":1,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"feature\":\"Band\",\"state\":\"done\"},\"minMm\":[-15.9,-15.9,0],\"sizeMm\":[31.8,31.8,8],\"volumeMm3\":3745.018,\"parts\":[{\"index\":0,\"name\":\"Core\",\"slot\":1,\"triangles\":4700,\"minMm\":[-13.5,-13.5,0],\"sizeMm\":[27,27,8],\"volumeMm3\":1903.041},{\"index\":1,\"name\":\"Band\",\"slot\":1,\"triangles\":5984,\"minMm\":[-15.9,-15.9,0],\"sizeMm\":[31.8,31.8,8],\"volumeMm3\":1841.977}],\"forms\":[\"Core: turned outline, sharp edges; middle\",\"Band: turned outline, sharp edges; middle\"],\"placedMm\":[128,128]}}"
    ],
-   "text": "Both pieces match the sizes. Next, the gap check between the core and band.",
    "calls": [
     {
      "name": "geom.fit_check",
      "args": {
-      "design": "Spinner ring",
+      "design": "d1",
       "material": "PLA",
       "layer_height_mm": 0.2
+     }
+    },
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_1",
+      "design": "d1"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"2 pieces; no gap under 0.3 mm side by side or 0.4 mm above or below, smallest 0.4 mm\",\"result\":{\"design\":\"d1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":2,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Core\"},{\"body\":1,\"part\":1,\"name\":\"Band\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Core\",\"Band\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[8.965,-7.064,1.4],\"to\":[8.965,-7.064,1]}],\"warnings\":[]}}"
+    "{\"ok\":true,\"summary\":\"2 pieces; no gap under 0.3 mm side by side or 0.4 mm above or below, smallest 0.35 mm\",\"result\":{\"design\":\"d1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":2,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Core\"},{\"body\":1,\"part\":1,\"name\":\"Band\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Core\",\"Band\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.347,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[-4.784,11.548,5.944],\"to\":[-4.916,11.869,5.944]}],\"warnings\":[]}}",
+    "{\"ok\":true,\"summary\":\"Spinner ring (d1, tied to the plan): 1 of 8 checks against plan plan_1 failed: extra hole, 25.7 mm (want no hole (not in the plan), got 25.7 mm diameter). This is not the last check: the plan has one fix round, and it is open. Fix each failed item now (change the part until it has what the plan wants, or, for a planned size the build cannot keep, change the plan with amends), then check plan plan_1 again. Do not stop or ask the person yet; only a second failed check ends the building.\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Spinner ring\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"overall size\",\"want\":\"31.8 x 31.8 x 8 mm\",\"got\":\"31.8 x 31.8 x 8 mm\",\"pass\":true},{\"name\":\"Finger bore\",\"want\":\"19 mm diameter\",\"got\":\"19 mm diameter\",\"pass\":true},{\"name\":\"extra hole, 25.7 mm\",\"want\":\"no hole (not in the plan)\",\"got\":\"25.7 mm diameter\",\"pass\":false},{\"name\":\"feature count\",\"want\":\"2 features, each built by a step tagged with its name\",\"got\":\"2 steps for 2 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1.5 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"2 separate pieces (Core, Band)\",\"got\":\"2 pieces\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.35 mm, between Core and Band\",\"pass\":true}],\"body\":{\"size\":{\"x\":31.8,\"y\":31.8,\"z\":8},\"reach\":{\"x\":{\"lo\":{\"at\":[-15.9,0,0],\"part\":\"Band\"},\"hi\":{\"at\":[15.9,0,0],\"part\":\"Band\"}},\"y\":{\"lo\":{\"at\":[0,-15.9,0],\"part\":\"Band\"},\"hi\":{\"at\":[0,15.9,0],\"part\":\"Band\"}},\"z\":{\"lo\":{\"at\":[-10.44,-8.56,0],\"part\":\"Core\"},\"hi\":{\"at\":[-8.38,-4.48,8],\"part\":\"Core\"}}},\"holes\":[{\"diameterMm\":19.000000048705104},{\"diameterMm\":25.700000354185146}],\"features\":2,\"steps\":[\"Sketch revolve 360°\",\"Sketch revolve 360°\"],\"tags\":[\"Core\",\"Band\"],\"stepIds\":[\"smuo69q801\",\"smuo69q802\"],\"paintTags\":[],\"paintUntagged\":[],\"lofts\":[],\"outlines\":{\"core\":\"other\",\"band\":\"other\"},\"featureHeights\":{\"core\":{\"lo\":0,\"hi\":8},\"band\":{\"lo\":0,\"hi\":8}},\"parts\":[{\"x\":27,\"y\":27,\"z\":8},{\"x\":31.8,\"y\":31.8,\"z\":8}],\"partBoxes\":[{\"name\":\"Core\",\"slot\":1,\"painted\":false,\"min\":[-13.5,-13.5,0],\"max\":[13.5,13.5,8]},{\"name\":\"Band\",\"slot\":1,\"painted\":false,\"min\":[-15.9,-15.9,0],\"max\":[15.9,15.9,8]}],\"watertight\":true,\"minWallMm\":1.5,\"minWallAt\":{\"at\":[-0.32,13.13,0.75],\"part\":\"Core\"},\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"pla\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Core\",\"partName\":\"Core\",\"box\":{\"max\":[13.5,13.5,8],\"min\":[-13.5,-13.5,0]}},{\"part\":1,\"name\":\"Band\",\"partName\":\"Band\",\"box\":{\"max\":[15.899993896484375,15.899993896484375,8],\"min\":[-15.900001525878906,-15.900001525878906,0]}}],\"pieces\":2,\"gaps\":[{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.346569051945694,\"limitMm\":0.3,\"from\":[-4.783543109893799,11.548494338989258,5.94444465637207],\"to\":[-4.916171900198581,11.868681333960676,5.94444465637207],\"direction\":\"xy\"}]},\"painted\":[],\"bandColors\":{}}}}"
+   ],
+   "text": "The spinner ring is built as two pieces, a core and a band, with no assembly needed. The design check reports one item still open, and I have not finished it.\n\n- **Failing item:** the band's inner lip has a 25.7 mm bore, which the check counts as an extra hole. The plan did not list that hole, so the check fails. This is the lip that traps the band in the core's groove, so I believe the part is right and the plan is what's missing. Tell me if you want me to amend the plan to include it.\n- **Gaps:** the smallest gap is 0.35 mm between the core and the band, which meets the 0.3 mm side-by-side limit for PLA on a 0.4 mm nozzle.\n- **Sizes:** the 19 mm bore is yours. Everything else is my guess: the core flange is 27 mm outside, the band is 31.8 mm outside and 8 mm wide, and the lip is 1.5 mm deep at each end.\n\nNothing has been sliced or sent to the printer. When you're happy with the sizes, I can slice it for the P1S and queue it for your approval."
+  },
+  {
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "amends": "plan_1",
+      "changes": [
+       {
+        "feature": "Lip bore",
+        "size": "diameter",
+        "to": 25.7
+       }
+      ],
+      "reason": "The 25.7 mm bore is the band's inward lip, which traps the band in the core groove. It is a designed inner diameter, not an extra hole, so the plan should list it."
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"changes: Lip bore is not a planned feature, the overall size or a row of holes; name one the plan has (Core, Band, overall, Finger bore)\"}"
    ],
    "calls": [
     {
@@ -517,174 +387,14 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Spinner ring (d1, tied to the plan): 1 of 9 checks against plan plan_1 failed: extra hole, 21 mm (want no hole (not in the plan), got 21 mm diameter). This is not the last check: the plan has one fix round, and it is open. Fix each failed item now (change the part until it has what the plan wants, or, for a planned size the build cannot keep, change the plan with amends), then check plan plan_1 again. Do not stop or ask the person yet; only a second failed check ends the building.\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Spinner ring\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"overall size\",\"want\":\"28.8 x 28.8 x 10.8 mm\",\"got\":\"28.8 x 28.8 x 10.8 mm\",\"pass\":true},{\"name\":\"Finger hole\",\"want\":\"19 mm diameter\",\"got\":\"19 mm diameter\",\"pass\":true},{\"name\":\"extra hole, 21 mm\",\"want\":\"no hole (not in the plan)\",\"got\":\"21 mm diameter\",\"pass\":false},{\"name\":\"feature count\",\"want\":\"2 features, each built by a step tagged with its name\",\"got\":\"2 steps for 2 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"2 separate pieces (Core, Band)\",\"got\":\"2 pieces\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.4 mm, between Core and Band\",\"pass\":true},{\"name\":\"planned gaps\",\"want\":\"every gap the plan sets at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"gap 0.4 mm (vertical)\",\"pass\":true}],\"body\":{\"size\":{\"x\":28.8,\"y\":28.8,\"z\":10.8},\"holes\":[{\"diameterMm\":18.999999790654623},{\"diameterMm\":20.999999729511213}],\"features\":2,\"steps\":[\"Sketch extrude 8 mm\",\"Sketch revolve 360°\"],\"tags\":[\"Core ring\",\"Band\"],\"stepIds\":[\"smuo69q801\",\"smuo69q802\"],\"parts\":[{\"x\":24,\"y\":24,\"z\":8},{\"x\":28.8,\"y\":28.8,\"z\":10.8}],\"watertight\":true,\"minWallMm\":1,\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"pla\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Core\",\"partName\":\"Core\"},{\"part\":1,\"name\":\"Band\",\"partName\":\"Band\"}],\"pieces\":2,\"gaps\":[{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.3999999761581421,\"limitMm\":0.4,\"from\":[8.965180034238818,-7.06388692639069,1.399999976158142],\"to\":[8.965180034238818,-7.06388692639069,1],\"direction\":\"z\",\"flat\":true}]}}}}"
+    "{\"ok\":true,\"summary\":\"Spinner ring (d1, tied to the plan): 1 of 8 checks against plan plan_1 failed: extra hole, 25.7 mm (want no hole (not in the plan), got 25.7 mm diameter). The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan plan_1 again returns this same result.\",\"result\":{\"planId\":\"plan_1\",\"design\":\"d1\",\"designName\":\"Spinner ring\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"overall size\",\"want\":\"31.8 x 31.8 x 8 mm\",\"got\":\"31.8 x 31.8 x 8 mm\",\"pass\":true},{\"name\":\"Finger bore\",\"want\":\"19 mm diameter\",\"got\":\"19 mm diameter\",\"pass\":true},{\"name\":\"extra hole, 25.7 mm\",\"want\":\"no hole (not in the plan)\",\"got\":\"25.7 mm diameter\",\"pass\":false},{\"name\":\"feature count\",\"want\":\"2 features, each built by a step tagged with its name\",\"got\":\"2 steps for 2 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1.5 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"2 separate pieces (Core, Band)\",\"got\":\"2 pieces\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.35 mm, between Core and Band\",\"pass\":true}],\"body\":{\"size\":{\"x\":31.8,\"y\":31.8,\"z\":8},\"reach\":{\"x\":{\"lo\":{\"at\":[-15.9,0,0],\"part\":\"Band\"},\"hi\":{\"at\":[15.9,0,0],\"part\":\"Band\"}},\"y\":{\"lo\":{\"at\":[0,-15.9,0],\"part\":\"Band\"},\"hi\":{\"at\":[0,15.9,0],\"part\":\"Band\"}},\"z\":{\"lo\":{\"at\":[-10.44,-8.56,0],\"part\":\"Core\"},\"hi\":{\"at\":[-8.38,-4.48,8],\"part\":\"Core\"}}},\"holes\":[{\"diameterMm\":19.000000048705104},{\"diameterMm\":25.700000354185146}],\"features\":2,\"steps\":[\"Sketch revolve 360°\",\"Sketch revolve 360°\"],\"tags\":[\"Core\",\"Band\"],\"stepIds\":[\"smuo69q801\",\"smuo69q802\"],\"paintTags\":[],\"paintUntagged\":[],\"lofts\":[],\"outlines\":{\"core\":\"other\",\"band\":\"other\"},\"featureHeights\":{\"core\":{\"lo\":0,\"hi\":8},\"band\":{\"lo\":0,\"hi\":8}},\"parts\":[{\"x\":27,\"y\":27,\"z\":8},{\"x\":31.8,\"y\":31.8,\"z\":8}],\"partBoxes\":[{\"name\":\"Core\",\"slot\":1,\"painted\":false,\"min\":[-13.5,-13.5,0],\"max\":[13.5,13.5,8]},{\"name\":\"Band\",\"slot\":1,\"painted\":false,\"min\":[-15.9,-15.9,0],\"max\":[15.9,15.9,8]}],\"watertight\":true,\"minWallMm\":1.5,\"minWallAt\":{\"at\":[-0.32,13.13,0.75],\"part\":\"Core\"},\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"pla\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Core\",\"partName\":\"Core\",\"box\":{\"max\":[13.5,13.5,8],\"min\":[-13.5,-13.5,0]}},{\"part\":1,\"name\":\"Band\",\"partName\":\"Band\",\"box\":{\"max\":[15.899993896484375,15.899993896484375,8],\"min\":[-15.900001525878906,-15.900001525878906,0]}}],\"pieces\":2,\"gaps\":[{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.346569051945694,\"limitMm\":0.3,\"from\":[-4.783543109893799,11.548494338989258,5.94444465637207],\"to\":[-4.916171900198581,11.868681333960676,5.94444465637207],\"direction\":\"xy\"}]},\"painted\":[],\"bandColors\":{}},\"stop\":\"The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan plan_1 again returns this same result.\",\"stepsAtClose\":2}}"
    ],
-   "text": "The check flagged the 21 mm band lip bore, which the plan did not list as a hole. It is a planned size, so I'll amend the plan to include it.",
-   "calls": [
-    {
-     "name": "design.plan",
-     "args": {
-      "amends": "plan_1",
-      "reason": "The band's lips have a 21 mm bore that the plan listed as a size but not as a hole; adding it so the check matches the build.",
-      "part": "Spinner ring",
-      "units": "mm",
-      "printInPlace": [
-       "Core",
-       "Band"
-      ],
-      "features": [
-       {
-        "name": "Core ring",
-        "sizes": {
-         "outer_diameter": 24,
-         "inner_diameter": 19,
-         "height": 8
-        }
-       },
-       {
-        "name": "Band",
-        "sizes": {
-         "outer_diameter": 28.8,
-         "inner_diameter": 24.8,
-         "lip_inner_diameter": 21,
-         "height": 10.8,
-         "lip_thickness": 1,
-         "gap": 0.4
-        }
-       }
-      ],
-      "overall": {
-       "x": 28.8,
-       "y": 28.8,
-       "z": 10.8
-      },
-      "holes": [
-       {
-        "name": "Finger hole",
-        "diameter": 19
-       },
-       {
-        "name": "Band lip bore",
-        "diameter": 21
-       }
-      ],
-      "assumptions": [
-       "Core is a ring 24 mm outer diameter, 8 mm wide, with the 19 mm inner diameter given.",
-       "Band is a C-shaped ring wrapping the core, with 1 mm lips at top and bottom reaching in to 21 mm inner diameter to hold the core in place.",
-       "Clearance of 0.4 mm between core and band on every face where they meet, for PLA on a 0.4 mm nozzle.",
-       "Core and band print flat as one plate, with the band's bottom lip on the bed and the core floating 0.4 mm above it."
-      ],
-      "questions": []
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"holes: an amend changes sizes only; the plan keeps its rows of holes, by name and count. The engine refused this step. Read why, then change the step or build it another way. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
-   ],
-   "text": "An amendment can only change sizes, so I'll submit a fresh plan that lists the lip bore as a hole.",
-   "calls": [
-    {
-     "name": "design.plan",
-     "args": {
-      "part": "Spinner ring",
-      "units": "mm",
-      "printInPlace": [
-       "Core",
-       "Band"
-      ],
-      "features": [
-       {
-        "name": "Core ring",
-        "sizes": {
-         "outer_diameter": 24,
-         "inner_diameter": 19,
-         "height": 8
-        }
-       },
-       {
-        "name": "Band",
-        "sizes": {
-         "outer_diameter": 28.8,
-         "inner_diameter": 24.8,
-         "lip_inner_diameter": 21,
-         "height": 10.8,
-         "lip_thickness": 1,
-         "gap": 0.4
-        }
-       }
-      ],
-      "overall": {
-       "x": 28.8,
-       "y": 28.8,
-       "z": 10.8
-      },
-      "holes": [
-       {
-        "name": "Finger hole",
-        "diameter": 19
-       },
-       {
-        "name": "Band lip bore",
-        "diameter": 21
-       }
-      ],
-      "assumptions": [
-       "Core is a ring 24 mm outer diameter, 8 mm wide, with the 19 mm inner diameter given.",
-       "Band is a C-shaped ring wrapping the core, with 1 mm lips at top and bottom reaching in to 21 mm inner diameter to hold the core in place.",
-       "Clearance of 0.4 mm between core and band on every face where they meet, for PLA on a 0.4 mm nozzle.",
-       "Core and band print flat as one plate, with the band's bottom lip on the bed and the core floating 0.4 mm above it."
-      ],
-      "questions": []
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Approved as shown. Moving pieces need gaps of at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers) on this printer.\",\"result\":{\"planId\":\"plan_2\",\"accepted\":true,\"gaps\":{\"sideMm\":0.3,\"verticalMm\":0.4}}}"
-   ],
-   "calls": [
-    {
-     "name": "design.check",
-     "args": {
-      "planId": "plan_2",
-      "design": "d1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Spinner ring (d1, tied to the plan) matches plan plan_2: all 9 checks pass\",\"result\":{\"planId\":\"plan_2\",\"design\":\"d1\",\"designName\":\"Spinner ring\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"overall size\",\"want\":\"28.8 x 28.8 x 10.8 mm\",\"got\":\"28.8 x 28.8 x 10.8 mm\",\"pass\":true},{\"name\":\"Finger hole\",\"want\":\"19 mm diameter\",\"got\":\"19 mm diameter\",\"pass\":true},{\"name\":\"Band lip bore\",\"want\":\"21 mm diameter\",\"got\":\"21 mm diameter\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"2 features, each built by a step tagged with its name\",\"got\":\"2 steps for 2 features\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"2 separate pieces (Core, Band)\",\"got\":\"2 pieces\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.4 mm, between Core and Band\",\"pass\":true},{\"name\":\"planned gaps\",\"want\":\"every gap the plan sets at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"gap 0.4 mm (vertical)\",\"pass\":true}],\"body\":{\"size\":{\"x\":28.8,\"y\":28.8,\"z\":10.8},\"holes\":[{\"diameterMm\":18.999999790654623},{\"diameterMm\":20.999999729511213}],\"features\":2,\"steps\":[\"Sketch extrude 8 mm\",\"Sketch revolve 360°\"],\"tags\":[\"Core ring\",\"Band\"],\"stepIds\":[\"smuo69q801\",\"smuo69q802\"],\"parts\":[{\"x\":24,\"y\":24,\"z\":8},{\"x\":28.8,\"y\":28.8,\"z\":10.8}],\"watertight\":true,\"minWallMm\":1,\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"pla\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Core\",\"partName\":\"Core\"},{\"part\":1,\"name\":\"Band\",\"partName\":\"Band\"}],\"pieces\":2,\"gaps\":[{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.3999999761581421,\"limitMm\":0.4,\"from\":[8.965180034238818,-7.06388692639069,1.399999976158142],\"to\":[8.965180034238818,-7.06388692639069,1],\"direction\":\"z\",\"flat\":true}]}}}}"
-   ],
-   "text": "All nine checks pass. I'll tie the core width to its step so it stays editable.",
-   "calls": [
-    {
-     "name": "pilot.sheet_bind",
-     "args": {
-      "design": "Spinner ring",
-      "binds": [
-       {
-        "key": "core_height",
-        "step": 1,
-        "scale": 1,
-        "offset": 0
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Tied 1 row to the design\",\"result\":{\"bound\":1}}"
-   ],
-   "text": "The spinner ring is designed and checked. It is two separate pieces, a core and a band, that print flat in place with 0.4 mm clearance and no assembly. Nothing is sliced or queued yet.\n\n- **Core:** 24 mm outer diameter, 8 mm wide, with the 19 mm finger hole.\n- **Band:** 28.8 mm outer diameter, 10.8 mm tall, with 1 mm lips at top and bottom reaching in to a 21 mm bore. The lips hold the core in place.\n- **Gaps:** 0.4 mm between core and band on every face where they meet, which is enough for PLA on your 0.4 mm nozzle.\n\nOnly the 19 mm inner diameter came from you. The core width, band outer diameter, band height, wall thickness and lip size are my guesses; the core width is now editable in the design.\n\nThe first plan check failed on the 21 mm lip bore, so I resubmitted the plan with that bore listed and it passed.\n\nNext step: say the word and I'll slice it for your P1S in PLA."
+   "text": "The spinner ring is built, but the plan check still fails and the one fix round is used, so I've stopped building.\n\n- **What's off:** the band's inward lip has a 25.7 mm bore, and the plan lists only the 19 mm finger bore. The check wants no hole beyond the plan, and the part has the 25.7 mm one.\n- **Why I couldn't fix it:** the plan amend tool can't add a hole row, and the lip bore is needed to trap the band on the core. Removing it would break the spinning band.\n- **Everything else passes:** overall size 31.8 x 31.8 x 8 mm, the 19 mm bore, two separate watertight pieces, 1.5 mm minimum wall, and a 0.35 mm smallest gap, which meets the 0.3 mm side-by-side limit.\n\nHow do you want to go on? I can make a new plan that lists the 25.7 mm lip bore as a planned hole and send it to you for Go, or I can leave the part as it is for now. Nothing has been sliced or queued."
   }
  ],
  "defaultAnswer": true,
+ "midBuildAnswer": true,
  "tabTools": true,
- "samePart": true
+ "samePart": true,
+ "planGoesOn": true
 }
