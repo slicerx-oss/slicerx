@@ -1815,11 +1815,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         if (model !== shown) switched(model)
         shown = model
       }
-      // reasoning an earlier run signed against another system prompt, tool set or model leaves before this request, and
-      // so does this run's own once its system prompt or tools change (pilot.load_tools on a capped chat); a local
+      // reasoning an earlier run signed against another system prompt, tool set or model leaves before this request (a
+      // move up to muninn on the same model keeps it), and so does this run's own once its system prompt or tools change
+      // (pilot.load_tools on a capped chat); a local
       // model's request is not touched (sent is a copy cut to fit, and local models sign nothing)
       // with tool search only the tools that load up front bind it: a deferred tool nothing found yet is not part of it
-      const bound = local ? undefined : bindingKey(model, tier, messages, catalog ? loadedDefs(catalog) : toolDefs)
+      const bound = local ? undefined : bindingKey(model, messages, catalog ? loadedDefs(catalog) : toolDefs)
       if (bound) unbindOldReasoning(messages, runStart, bound)
       const req = {
         model,

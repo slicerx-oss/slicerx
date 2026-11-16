@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Signed reasoning is bound to the system prompt, tools and model of the request it came from, and the provider refuses
-// it (and everything signed after it) once a later request changes any of them. A follow-up whose tool set or model
-// differs from the run before it sends that run without its reasoning; the run in progress keeps its own through its
-// tool loop, and a follow-up that changes nothing keeps all of it.
+// Signed reasoning is bound to the system prompt and tools of the request it came from, and the provider refuses it (and
+// everything signed after it) once a later request changes either. A follow-up whose tool set or model differs from the
+// run before it sends that run without its reasoning; the run in progress keeps its own through its tool loop, and a
+// follow-up that changes neither, a move to muninn on the same model included, keeps all of it.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTransport, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { DEFAULT_CONFIG } from '../src/config'
-import type { LlmMessage } from '../src/provider/types'
+import type { LlmMessage, LlmToolDef } from '../src/provider/types'
 import { encodeToolName } from '../src/provider/openai'
-import { unbindOldReasoning } from '../src/reasoning-binding'
+import { bindingKey, unbindOldReasoning } from '../src/reasoning-binding'
 import { createPilot } from '../src/runtime'
 import { defineTool, type PilotTool, type Toolset } from '../src/tool'
 import { LOAD_TOOLS_TOOL } from '../src/toolsets'
@@ -86,11 +86,18 @@ const CLOUD = { ...DEFAULT_CONFIG, provider: 'mimir-cloud', model: 'claude-haiku
 const PICKED = { ...CLOUD, model: 'claude-haiku-4-5' }
 /** A person's own key on the Messages API, which takes tool search from a chat's first request (tool-search.ts). */
 const SEARCHING = { ...CLOUD, provider: 'anthropic' }
+const HAIKU = 'claude-haiku-5-5'
+const SONNET = 'claude-sonnet-5-5'
+/** Auto on a person's own key: huginn and muninn are two models (models.ts modelFor). */
+const AUTO = { ...SEARCHING, auto: true, models: { huginn: HAIKU, muninn: SONNET } }
 
 const tool = (name: string, toolset?: Toolset): PilotTool<never> =>
   defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: `${name} for the test`, ...(toolset ? { toolset } : {}), input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
 
 /** 150 tools, over the cloud chat's limit of 128: core 10, cad 60, settings 30, printers 20, fleets 15, theme 15. */
+/** A design check that finds the part off its plan, which moves a huginn run up to muninn (runtime.ts). */
+const failedCheck = defineTool({ name: 'design.check', version: '1.0.0', source: 'command', permission: 'read', description: 'design.check for the test', input: z.object({}).passthrough(), run: async () => ({ summary: 'Ship (obj_1): 1 of 6 checks failed', output: { design: 'obj_1', nozzleMm: 0.4, pass: false } }) }) as PilotTool<never>
+
 function overLimit(): PilotTool<never>[] {
   const sets: [string, Toolset, number][] = [
     ['core.t', 'core', 10],
@@ -187,16 +194,72 @@ describe('signed reasoning across runs', () => {
       { think: 'b1', text: 'It is 40 mm tall now.' },
       { think: 'c1', text: 'Here is a 20 mm cylinder.' },
     ])
-    const say = chat(t, [tool('design.new')], () => design)
+    // Auto on a person's own key: muninn and huginn are two models, so a move between them is a change of model
+    const say = chat(t, [tool('design.new')], () => design, AUTO)
     await say('Make me a 30 mm cube')
     design = true
     await say('Make it 10 mm taller')
     await say('Make me a new part: a 20 mm cylinder')
     expect(sent).toHaveLength(3)
-    expect(sent.map((r) => r.headers['x-sx-tier'])).toEqual(['step', 'base', 'step'])
+    expect(sent.map((r) => parsed(r).model)).toEqual([SONNET, HAIKU, SONNET])
     expect(reasoning(sent[1])).toEqual([])
     expect(reasoning(sent[2])).toEqual([])
     expect(replies(sent[2])).toEqual(['Here is a 30 mm cube.', 'It is 40 mm tall now.'])
+  })
+
+  it('a follow-up on the same model keeps the reasoning before it when the tier moves, so its messages go out as before', async () => {
+    let design = false
+    const said: Reply[] = [
+      { think: 'a1', calls: ['design.new'] },
+      { think: 'a2', text: 'Here is the ship.' },
+      { think: 'b1', calls: ['design.check'] },
+      { think: 'b2', text: 'One check failed.' },
+      { think: 'c1', calls: ['design.check'] },
+      { think: 'c2', text: 'It still fails.' },
+      { think: 'd1', text: 'Here are the portholes.' },
+    ]
+    const { t, sent } = proxy(said)
+    const say = chat(t, [tool('design.new'), tool('design.look'), failedCheck], () => design)
+    await say('Make me a Titanic')
+    design = true
+    await say('Add rows of portholes along both sides of the hull.')
+    await say('Add a row of windows along both sides of the deck houses.')
+    await say('Add a row of lifeboats along each side of the top deck.')
+    expect(sent).toHaveLength(7)
+    // a new part starts on muninn, a follow-up on huginn, and the failed check moves each follow-up up to muninn
+    expect(sent.map((r) => r.headers['x-sx-tier'])).toEqual(['step', 'step', 'base', 'step', 'base', 'step', 'base'])
+    // mimir cloud names one model for both tiers, so every request is bound to the same one
+    expect(new Set(sent.map((r) => parsed(r).model))).toEqual(new Set(['claude-haiku-5-5']))
+    // no reasoning ever leaves: each request carries all of it, across the moves up and the runs after them
+    expect(reasoning(sent[6])).toEqual(['a1', 'a2', 'b1', 'b2', 'c1', 'c2'])
+    // each request's messages start with the one before it, byte for byte, so the cached history holds
+    for (let n = 1; n < sent.length; n++) {
+      const before = parsed(sent[n - 1]).messages
+      expect(JSON.stringify(parsed(sent[n]).messages.slice(0, before.length))).toBe(JSON.stringify(before))
+    }
+  })
+})
+
+describe('bindingKey', () => {
+  const ms = (system: string): LlmMessage[] => [{ role: 'system', content: system }, { role: 'user', content: 'one' }]
+  const defs = (description: string): LlmToolDef[] => [{ name: 'part.look', description, parameters: { type: 'object', properties: {} } }]
+  const prefix = (key: string) => key.slice(0, key.indexOf(':'))
+
+  it('is the same for the same system prompt, tools and model, whatever else the request sets', () => {
+    expect(bindingKey('m1', ms('s'), defs('look'))).toBe(bindingKey('m1', [...ms('s'), { role: 'user', content: 'two' }], defs('look')))
+  })
+
+  it('changes with the model in its second part only', () => {
+    const a = bindingKey('m1', ms('s'), defs('look'))
+    const b = bindingKey('m2', ms('s'), defs('look'))
+    expect(b).not.toBe(a)
+    expect(prefix(b)).toBe(prefix(a))
+  })
+
+  it('changes in its first part with the system prompt or the tools', () => {
+    const a = bindingKey('m1', ms('s'), defs('look'))
+    expect(prefix(bindingKey('m1', ms('s2'), defs('look')))).not.toBe(prefix(a))
+    expect(prefix(bindingKey('m1', ms('s'), defs('look again')))).not.toBe(prefix(a))
   })
 })
 
@@ -235,7 +298,7 @@ describe('unbindOldReasoning', () => {
   const said = (think: string, bound: string): LlmMessage => ({ role: 'assistant', content: think, raw: [{ type: 'thinking', thinking: think, signature: 's' }, { type: 'text', text: think }], bound })
   const left = (ms: LlmMessage[]) => ms.flatMap((m) => (m.role === 'assistant' ? (m.raw ?? []).filter((b) => (b as { type: string }).type === 'thinking').map((b) => (b as { thinking: string }).thinking) : []))
 
-  // keys are the system prompt and tools, a colon, then the model and tier (bindingKey)
+  // keys are the system prompt and tools, a colon, then the model (bindingKey)
   const k1 = 'p1:m1'
   const k2 = 'p1:m2'
 
