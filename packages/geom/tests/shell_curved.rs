@@ -258,6 +258,21 @@ fn a_bowl_and_a_leaning_loft_shell_clean_at_thin_and_thick_walls() {
 }
 
 #[test]
+#[cfg_attr(debug_assertions, ignore = "a 2 million cell voxel wall; run with --release")]
+fn a_voxel_wall_that_would_fold_over_is_held_so_its_cavity_is_cut_exactly() {
+    // smoothing turned a few triangles of these walls over, so the cavity crossed itself and took the robust cut
+    for bands in [32, 40] {
+        let open = json!([{ "at": [128, 128, 160], "normal": [0, 0, 1] }]);
+        let shelled = run(
+            "shell",
+            &json!({ "mesh": banded_vase(bands), "open": open, "wallMm": 1.6 }),
+        );
+        assert_eq!(shelled["report"]["boolean"]["engine"], "exact", "{bands} bands");
+        stores_clean(&mesh(&shelled), &format!("{bands} bands"));
+    }
+}
+
+#[test]
 fn a_shell_that_would_not_store_is_refused_at_the_shell_with_its_wall() {
     // a cylinder a kilometer out along x in its own frame, where stored positions step by 0.0625 mm
     let mut can = sx_geom::build::cylinder(&sx_geom::vec3::Frame::WORLD, 15.0, 0.0, 30.0, 64);
