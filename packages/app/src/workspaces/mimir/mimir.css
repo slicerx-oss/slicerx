@@ -360,13 +360,28 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
   .mimir-chat :is(.slide-print-knob, .slide-print-fill) { transition: none; }
   .mimir-chat .slide-print-spin { animation: none; border-right-color: currentColor; }
 }
-:root[data-phone] .mimir-chat .send-rec .send-rec-row { grid-template-columns: minmax(84px, auto) minmax(0, 1fr); min-height: 36px; }
-:root[data-phone] .mimir-chat .send-rec .send-rec-v { white-space: normal; text-align: right; }
+/* on a phone the card has to fit above the composer: its time, filament and plate sit side by side, each label over its
+   value, the spool chips are a little shorter, and the slide's knob and end ring are 44 px targets, inset 3 px each
+   side as slide-to-print.tsx travel() counts */
+:root[data-phone] .mimir-chat .send-rec .sheet-rec-rows { flex-direction: row; gap: var(--s-2); }
+:root[data-phone] .mimir-chat .send-rec .send-rec-row { flex: 1 1 0; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 0; min-height: 0; align-content: start; }
+:root[data-phone] .mimir-chat .send-rec .send-rec-v { white-space: nowrap; text-align: left; }
+:root[data-phone] .mimir-chat .send-chip { min-height: 72px; padding: var(--s-4) var(--s-1) var(--s-1); }
+:root[data-phone] .mimir-chat .send-strip { padding: var(--s-2); }
+:root[data-phone] .mimir-chat .send-chip-spool { width: 26px; height: 26px; }
+:root[data-phone] .mimir-chat .slide-print { height: 50px; }
+:root[data-phone] .mimir-chat .slide-print-fill { width: calc(var(--slide-at) * (100cqw - 52px) + 50px); }
+:root[data-phone] .mimir-chat .slide-print-knob { width: 44px; height: 44px; left: calc(3px + var(--slide-at) * (100cqw - 50px)); top: 2px; }
+:root[data-phone] .mimir-chat .slide-print-end { width: 44px; height: 44px; top: 2px; right: 3px; }
+:root[data-phone] .mimir-chat .slide-print-text { padding: 0 54px; }
 :root[data-phone] .mimir-chat .send-rec-bed { min-height: 44px; align-items: center; }
 :root[data-phone] .mimir-chat .send-rec-bed input { width: 22px; height: 22px; margin: 0; }
 :root[data-phone] .mimir-chat .send-rec-foot { flex-wrap: wrap; }
-:root[data-phone] .mimir-chat .send-rec-foot .lookup-rec-s { flex-basis: 100%; }
-:root[data-phone] .mimir-chat .send-rec-foot .sx-btn { flex: 1; min-height: 44px; }
+/* the status and Not now share a row on a phone, so the card fits above the composer at 360 px; the button keeps its
+   place whatever the status says */
+:root[data-phone] .mimir-chat .send-rec-foot { flex-wrap: nowrap; align-items: center; }
+:root[data-phone] .mimir-chat .send-rec .send-rec-foot .lookup-rec-s { flex: 1 1 0; min-width: 0; }
+:root[data-phone] .mimir-chat .send-rec-foot .sx-btn { flex: none; min-height: 44px; }
 /* The slice card (slice-card.tsx): flat in the conversation. The plate's outline beside the time, filament and cost
    in three equal columns, numbers in the body font with tabular figures; each warning on a line of its own, then the
    stale line, then Open in Slice at the foot, where it keeps its size and place. */

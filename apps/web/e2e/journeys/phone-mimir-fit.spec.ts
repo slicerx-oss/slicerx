@@ -238,7 +238,7 @@ journey.describe('the mimir tab fits a phone', () => {
     await noHorizontalScroll(page)
   })
 
-  journey('the send card fits above the composer at 390 and 360 px, with the bed check and Print in reach', async ({ page }, info) => {
+  journey('the send card fits above the composer at 390 and 360 px, with its spools, the bed check and the slide in reach', async ({ page }, info) => {
     journey.slow()
     await phoneMimir(page)
     await askTab(page, 'Print this on my Bay 6 in green PLA')
@@ -263,16 +263,19 @@ journey.describe('the mimir tab fits a phone', () => {
       expect(c.y).toBeGreaterThanOrEqual(log.y - 0.5)
       await reachable(page, print)
       await reachable(page, bed)
+      await reachable(page, card.locator('[data-testid="mimir-send-spool"]:not([data-empty]):not([data-other])').first())
       expect(await smallTargets(page), `the send card at ${phone.width} px`).toEqual([])
       await noHorizontalScroll(page)
     }
     await shots(page, info, 'print-run-send', async () => {
       await card.evaluate((el) => el.scrollIntoView({ block: 'end' }))
     })
-    // ticking the bed check moves nothing; Print turns on in place and starts the print
+    // picking a spool and ticking the bed check move nothing; the slide's end ring turns on in place and starts the print
     await page.setViewportSize(PHONES[1])
     await card.evaluate((el) => el.scrollIntoView({ block: 'end' }))
     const at = (await print.boundingBox())!
+    await card.locator('[data-testid="mimir-send-spool"]:not([data-empty]):not([data-other])').first().tap()
+    expect(await print.boundingBox()).toEqual(at)
     await bed.tap()
     await expect(bed).toBeChecked()
     await expect(print).toBeEnabled()
