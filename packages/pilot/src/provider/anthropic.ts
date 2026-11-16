@@ -68,12 +68,21 @@ function parseArgs(text: string): unknown {
   }
 }
 
+/** Puts a cache point on a message's last block, turning text content into a block to carry it. */
+function markLast(m: Obj): void {
+  if (typeof m['content'] === 'string') m['content'] = [{ type: 'text', text: m['content'] }]
+  const blocks = m['content'] as Obj[]
+  const b = blocks[blocks.length - 1]
+  if (b) b['cache_control'] = { ...EPHEMERAL }
+}
+
 /** Messages in Anthropic's shape: tool results ride in user messages, consecutive ones merged. */
 function messageList(req: LlmRequest): { system: string; messages: Obj[] } {
   const system: string[] = []
   const messages: Obj[] = []
   const last = (): Obj | undefined => messages[messages.length - 1]
-  for (const m of req.messages) {
+  for (const [i, m] of req.messages.entries()) {
+    const before = messages.length
     switch (m.role) {
       case 'system':
         system.push(m.content)
@@ -116,6 +125,8 @@ function messageList(req: LlmRequest): { system: string; messages: Obj[] } {
         break
       }
     }
+    // the earlier turns' end gets a cache point on its last block, when this message added one
+    if (i === req.cacheAt && messages.length > before) markLast(messages[messages.length - 1]!)
   }
   return { system: system.join('\n\n'), messages }
 }
