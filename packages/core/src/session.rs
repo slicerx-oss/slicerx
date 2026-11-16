@@ -7477,6 +7477,7 @@ impl SliceSession {
                 1 => f64::MAX,
                 _ => 1e-12,
             },
+            wall_anchor_spacings: crate::organic_objects::wall_anchor_spacings(cfg),
             anchors: anchors.clone(),
             anchor_max: cfg.anchor_max_mm(),
         }

@@ -84,10 +84,21 @@ fn area(s: &Shapes) -> f64 {
 /// than `double_wall_mm2` get a second loop outside it. The inner loop starts with an anchor: it continues
 /// along the wall one line further in for up to six line spacings from the point nearest its seam.
 pub(crate) fn branch_walls(polys: &Shapes, w_mm: f64, spacing_mm: f64, double_wall_mm2: f64) -> Vec<Path> {
+    branch_walls_with_anchor(polys, w_mm, spacing_mm, double_wall_mm2, 6.0)
+}
+
+/// [`branch_walls`] with an anchor of up to `anchor_spacings` line spacings.
+pub(crate) fn branch_walls_with_anchor(
+    polys: &Shapes,
+    w_mm: f64,
+    spacing_mm: f64,
+    double_wall_mm2: f64,
+    anchor_spacings: f64,
+) -> Vec<Path> {
     let w = f64::from(u(w_mm));
     let spacing = spacing_mm * SCALE;
     let clip = spacing * 0.15;
-    let anchor_len = spacing * 6.0;
+    let anchor_len = spacing * anchor_spacings;
     let mut out = Vec::new();
     let shrunk = perimeters::offset(&perimeters::union_all(&[polys]), -u(0.5 * w_mm));
     for ex in shrunk {
