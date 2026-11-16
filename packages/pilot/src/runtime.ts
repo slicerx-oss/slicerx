@@ -385,6 +385,12 @@ export const WRAP_NOTE = 'Stop here and reply to the user now, without tools, in
 export const SLOW_DOWN_WAIT_MS = 20_000
 /** A model request lost to the network (no answer at all) is sent once more after this wait, without counting as a turn. */
 export const NETWORK_RETRY_MS = 2_000
+/**
+ * mimir cloud's code for a request its proxy could not get to the model (its own fetch failed before any reply,
+ * supabase/functions/mimir/handler.ts): nothing was generated, so it is sent once more as a network loss is. A second one
+ * in a row shows the proxy's own words.
+ */
+const CLOUD_UNREACHABLE = 'unreachable'
 /** What the run says when the connection dropped twice in a row: plain words, nothing of the transport's. */
 export const NETWORK_LINE = 'The connection to the model dropped twice in a row, so nothing was done this time. Send the message again.'
 
@@ -1927,7 +1933,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
               failed = ev.message
               failedCode = ev.code
               searchRefused = ev.searchRefused === true
-              netDown = networkLost({ message: ev.message })
+              netDown = networkLost({ message: ev.message }) || ev.code === CLOUD_UNREACHABLE
               break
             case 'done':
               raw = ev.raw
@@ -1969,8 +1975,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         break
       }
       if (failed !== null && netDown && !text && toolCalls.length === 0) {
-        // the request never reached the model (the connection dropped): send the same step once more, unseen; a
-        // second loss in a row ends the run with one plain line instead of the transport's words
+        // the request never reached the model (the connection dropped, or mimir cloud could not reach it): send the same
+        // step once more, unseen; a second loss in a row ends the run with one plain line instead of the transport's
+        // words, or with mimir cloud's own words when it could not reach the model again
         if (!netRetried) {
           netRetried = true
           await sleep(NETWORK_RETRY_MS, signal)
@@ -1981,9 +1988,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           step--
           continue
         }
-        emit({ type: 'error', message: NETWORK_LINE, retryable: true, code: 'network' })
-        stopReason = 'error'
-        break
+        if (failedCode !== CLOUD_UNREACHABLE) {
+          emit({ type: 'error', message: NETWORK_LINE, retryable: true, code: 'network' })
+          stopReason = 'error'
+          break
+        }
       }
       if (failed !== null && searchRefused && searching && !searchResent && !text && toolCalls.length === 0) {
         // a proxy deployed before tool search refused the catalog: the chat drops it and sends the same step once more,
