@@ -19,7 +19,7 @@ describe('a part sunk into its support is told its exact fix', () => {
     const r = stackItem(plan, forecastle(12, 15))!
     expect(r.pass).toBe(false)
     expect(r.got).toBe(
-      'Forecastle deck stands on Hull, but its base is 0.61 mm below its top, so 2.39 mm of it shows of a planned 2 mm; make it 2.61 mm tall from its base at z 12, so 2 mm shows above the top of Hull, whose lowest point under it is at z 12.61 mm: with design.edit_step, set the size of the step that makes Forecastle deck to 2.61 mm along z, or move it by [0, 0, 0.61] and set its size to 2 mm along z',
+      "Forecastle deck stands on Hull, but its base sits 0.61 mm below Hull's top, so 2.39 mm of it shows where the plan has 2 mm. Hull's lowest point under it is at z 12.61 mm. With design.edit_step, set the size of the step that makes Forecastle deck to 2.61 mm along z (it grows up from its base at z 12), or move that step by [0, 0, 0.61] and set its size to 2 mm along z.",
     )
   })
 
@@ -33,16 +33,16 @@ describe('a part sunk into its support is told its exact fix', () => {
   it('past the support\'s sides: the move alone, since its sunk part shows there', () => {
     const r = stackItem(plan, forecastle(12, 15, [183, 220]))!
     expect(r.pass).toBe(false)
-    expect(r.got).toMatch(/^Forecastle deck stands on Hull, but its base is \d+(\.\d+)? mm below its top, so [\d.]+ mm of it shows of a planned 2 mm, and it reaches past the sides of Hull, where its sunk part shows; build it from the top of Hull/)
-    expect(r.got).toMatch(/: with design\.edit_step, move the step that makes Forecastle deck by \[0, 0, [\d.]+\] and set its size to 2 mm along z$/)
+    expect(r.got).toMatch(/^Forecastle deck stands on Hull, but its base sits \d+(\.\d+)? mm below Hull's top, so [\d.]+ mm of it shows where the plan has 2 mm, and its sunk part shows past Hull's sides\. Build it up from Hull's top, whose /)
+    expect(r.got).toMatch(/: with design\.edit_step, move the step that makes Forecastle deck by \[0, 0, [\d.]+\] and set its size to 2 mm along z\.$/)
     expect(r.got).not.toContain('from its base at z')
   })
 
   it('STANDS_OFF gives the planned height plus what is sunk, and the base under the top, rounded as the rest of the failure is', () => {
     const top = { z: 12.6123, under: true }
-    expect(STANDS_OFF('Forecastle deck', 'Hull', 0.6123, 2.3877, 2, top)).toContain('make it 2.61 mm tall from its base at z 12, so 2 mm shows above the top of Hull, whose lowest point under it is at z 12.61 mm')
+    expect(STANDS_OFF('Forecastle deck', 'Hull', 0.6123, 2.3877, 2, top)).toContain("Hull's lowest point under it is at z 12.61 mm. With design.edit_step, set the size of the step that makes Forecastle deck to 2.61 mm along z (it grows up from its base at z 12)")
     expect(STANDS_OFF('Mainmast', 'Promenade deck', 1.1, 12.9, 14, { z: 15, under: false }, false)).toBe(
-      'Mainmast stands on Promenade deck, but its base is 1.1 mm below its top, so 12.9 mm of it shows of a planned 14 mm, and it reaches past the sides of Promenade deck, where its sunk part shows; build it from the top of Promenade deck, whose highest point is at z 15 mm: with design.edit_step, move the step that makes Mainmast by [0, 0, 1.1] and set its size to 14 mm along z',
+      "Mainmast stands on Promenade deck, but its base sits 1.1 mm below Promenade deck's top, so 12.9 mm of it shows where the plan has 14 mm, and its sunk part shows past Promenade deck's sides. Build it up from Promenade deck's top, whose highest point is at z 15 mm: with design.edit_step, move the step that makes Mainmast by [0, 0, 1.1] and set its size to 14 mm along z.",
     )
   })
 })
