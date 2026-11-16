@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // An object rebuilt again and again under one id (each step of a design changes its mesh) keeps only what it draws now.
-// A rebuild once kept every build before it alive, from the new part's edges back through each old one, so a long
-// design session held every old mesh's arrays, the paint drawn on them and the renderer's lists of what it last drew.
+// A rebuild once kept every build before it alive. The chain: a part's edges.raycast, an arrow made in buildObject, held
+// buildObject's scope; that scope held the material callback setPlate passed in; the callback shared setPlate's loop
+// block, whose forEach over a kept object's parts held `old`, the entry being replaced; and that entry's edges held the
+// build before it the same way. So a long design session held every old mesh's arrays, the paint drawn on them and
+// the renderer's lists of what each last drew.
 import { setFlagsFromString } from 'node:v8'
 import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
