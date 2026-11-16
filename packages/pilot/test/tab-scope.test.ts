@@ -9,7 +9,7 @@ import { DEFAULT_POLICY, setAssistantBrand, type ApprovalHost, type LlmTransport
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { designSteps, designTier, HUGINN, MANY_STEPS, MUNINN } from '../src/models'
-import { NEW_PROJECT_TOOL, SIZES_ASK, SIZES_REPLY, systemPrompt, tabsLine, VOICE_HEADER } from '../src/prompt'
+import { BUILT_REPLY, MADE_REPLY, NEW_PROJECT_TOOL, SIZES_ASK, SIZES_REPLY, systemPrompt, tabsLine, VOICE_HEADER } from '../src/prompt'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
 import { createPilot, PART_GENERATORS } from '../src/runtime'
 import type { CommandSpec } from '@slicerx/contracts'
@@ -170,8 +170,9 @@ describe('the tab runtime', () => {
     await run(cloud.pilot, 'What does this tab do?')
     const cloudSent = String(cloud.client.requests[0]!.messages[0]!.content)
     expect(cloudSent).not.toContain('The app has these tabs')
-    // the same prompt less the tabs line, where the cloud one also has the sizes line's two cloud-only phrases
-    expect(sent.replace(`\n\n${line}`, '')).toBe(cloudSent.replace(SIZES_ASK, '').replace(SIZES_REPLY, ''))
+    // the same prompt less the tabs line, where the cloud one also has the sizes line's two cloud-only phrases and its
+    // own reply rule for a build
+    expect(sent.replace(`\n\n${line}`, '')).toBe(cloudSent.replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(BUILT_REPLY, MADE_REPLY))
     // no tabs given, no line
     const none = tabPilot([{ text: 'Hi.' }], { config: { provider: 'openai-compatible', model: 'local-model', auto: false } })
     await run(none.pilot, 'What does this tab do?')

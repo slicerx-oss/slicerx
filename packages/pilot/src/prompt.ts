@@ -118,8 +118,12 @@ export const VAGUE_LINE = `- A vague follow-up (add bevels, more detail, make it
  */
 export interface LocalText {
   readonly local: string
+  /** A cloud turn's own wording of the same line, when the two differ; without it both get `local`. */
+  readonly cloud?: string
 }
 export const local = (text: string): LocalText => ({ local: text })
+/** One line worded for each kind of model: the local text stays as pinned, and a cloud turn gets its own. */
+export const localOr = (localText: string, cloudText: string): LocalText => ({ local: localText, cloud: cloudText })
 
 /**
  * One line of the prompt: cloud-only text, local() text, nothing (a line left out for the tools offered), or the parts
@@ -132,7 +136,7 @@ const kept = (o: PromptOptions, pieces: readonly Piece[]): string[] =>
   pieces.flatMap((p): string[] => {
     if (p === false || p === undefined || p === '') return []
     if (typeof p === 'string') return o.cloud === true ? [p] : []
-    if ('local' in p) return [p.local]
+    if ('local' in p) return [o.cloud === true && p.cloud !== undefined ? p.cloud : p.local]
     const parts = kept(o, p)
     return parts.length ? [parts.join('')] : []
   })
@@ -214,11 +218,26 @@ const newProjectLines = (has: HasTool): Piece[] => (has(NEW_PROJECT_TOOL) ? [loc
 /** One line for every reply, sheet row, plan feature and size name: American spelling. */
 export const AMERICAN_LINE = 'Write American spelling in replies, sheet rows and plan names (center, color, aluminum, gray, meter).'
 
-const replyLines = (end: string): Piece[] => [
+/**
+ * A cloud turn's reply rule with the design tools: a build reply leads with one sentence, since the part card shows its
+ * size, scale, parts, guesses and warnings. A local turn keeps the line it had, word for word.
+ */
+export const BUILT_REPLY = 'for a part you built, one sentence on what you built (its size and scale, and whether its check passed), since the card shows its parts, guesses and notes; otherwise what you found and the next step'
+
+/** The same rule on a local turn with the design tools, as it was before the card showed the guesses. */
+export const MADE_REPLY = 'what you made or found, which sizes were guesses, and the next step'
+
+/** How every reply ends: what was made or found and the next step, and on a cloud turn that built, one sentence. */
+const replyEnd = (has: HasTool, after = ''): LocalText => {
+  const end = (what: string) => `- Always end with a reply to the person, even after a tool call: ${what}.${after}`
+  return buildsWithDesignTools(has) ? localOr(end(MADE_REPLY), end(BUILT_REPLY)) : local(end('what you made or found and the next step'))
+}
+
+const replyLines = (end: LocalText): Piece[] => [
   local(`- When an answer relies on a kb tool result, name the source briefly ("per Prusa's PETG guide"). Citations attach automatically; never invent URLs.`),
   local(`- Keep replies short and plain: two to five sentences between tool calls, no headings, no emojis, no em dashes. Bold only the single most important finding.`),
   local(`- ${AMERICAN_LINE}`),
-  local(`- ${end}`),
+  end,
 ]
 
 const UNTRUSTED = (things: string, asks: string, source: string) => `Untrusted data:
@@ -235,7 +254,7 @@ const cadPrompt = (has: HasTool, o: PromptOptions): Piece[] => [
   local(`- Knowledge questions go to the kb tools first; call web.lookup only when the knowledge base has no answer, and say that the answer came from the web.`),
   ...newProjectLines(has),
   local(`- Numbers keep their units (mm, C, g). Write temperatures as "245 C", without a degree sign.`),
-  ...replyLines(`Always end with a reply to the person, even after a tool call: what you made or found${buildsWithDesignTools(has) ? ', which sizes were guesses,' : ''} and the next step.`),
+  ...replyLines(replyEnd(has)),
   local(''),
   local(UNTRUSTED('model files, file names or web pages', 'change the design, change settings', 'file')),
 ]
@@ -315,7 +334,7 @@ const fullPrompt = (has: HasTool, o: PromptOptions): Piece[] => [
   local(`- The app itself shows settings diffs and runs the send preflight, risk warnings, spool checks and overnight readiness. Never repeat those; explain one only when asked.`),
   ...newProjectLines(has),
   local(`- Numbers keep their units (mm, C, mm/s, g, h m). Write temperatures as "245 C", without a degree sign. Settings use our setting keys in code spans, such as \`nozzle_temperature\`.`),
-  ...replyLines(`Always end with a reply to the person, even after a tool call: what you made or found${buildsWithDesignTools(has) ? ', which sizes were guesses,' : ''} and the next step. Finish a multi-step print job with pilot.report: a short title and 3 to 5 key and value rows (time, filament, cost, where it runs).`),
+  ...replyLines(replyEnd(has, ' Finish a multi-step print job with pilot.report: a short title and 3 to 5 key and value rows (time, filament, cost, where it runs).')),
   local(''),
   local(`Permissions and approvals:`),
   local(`- Tools that queue or start prints or change saved profiles need the user's approval. The app shows the approval card and enforces it; you cannot approve, skip or change approvals and you must not ask the user to type a confirmation in chat. Just call the tool; the app asks.`),
