@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { bareFaces, paintFaces, stepName, type PaintTarget } from '@slicerx/cad-history'
-import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, plannedFeature, RefusedPreviews, storedTarget } from '@slicerx/mcp/toolset'
+import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, featureNotExactText, meshedOf, plannedFeature, RefusedPreviews, storedTarget } from '@slicerx/mcp/toolset'
 import { geom } from '../geom/client'
 import { slotCount } from '../filament/slots'
 import { history, inStep } from '../plate/history'
@@ -96,7 +96,14 @@ async function previewOn(i: ReturnType<typeof appPaintPreviewInput.parse>, clien
   catch (error) { throw new LinkError('invalid_input', error instanceof Error ? error.message : String(error)) }
   took(selected)
   // the faces each part's feature steps made, as the object's replay knows them (none when it can't tell)
-  const byFeature = selected.kind === 'feature' ? await (await import('../cad/history/made-by')).featureFaces(e, selected.feature) : undefined
+  const madeBy = selected.kind === 'feature' ? await import('../cad/history/made-by') : undefined
+  // a feature is read from which step made each face, which only an exact solid keeps: a part built as a mesh is refused
+  if (madeBy) {
+    const targeted = i.part === undefined ? e.parts.map((_, k) => k) : [i.part]
+    const mesh = meshedOf(targeted, (await madeBy.meshPartsOf(e)) ?? e.parts.map((_, k) => k))
+    if (mesh !== undefined) throw new LinkError('invalid_input', featureNotExactText(mesh))
+  }
+  const byFeature = madeBy && selected.kind === 'feature' ? await madeBy.featureFaces(e, selected.feature) : undefined
   // a height band's edge lands on its height, as the server's paint.preview picks it, so a thin band prints only its layers
   const maxDepth = i.max_depth ?? (selected.kind === 'height' ? bandDepth(i.part === undefined ? e.parts : [e.parts[i.part]!], e.transform) : undefined)
   const paint: PaintData = { ...e.paint }

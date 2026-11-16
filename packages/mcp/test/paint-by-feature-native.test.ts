@@ -5,16 +5,16 @@
 // (the cut's walls are the cut feature's), and a boss mirrored to the other side, on exact solids and on the mesh. A
 // feature the design has none of is refused with the names it has.
 //
-// Two gaps are pinned here as they are. On exact solids a join clears the key of a face the joined shape sits flat on
-// (the tower's top around the pole's foot) and of faces a mirror image lands flush with, so no feature paints those.
-// On the mesh a body a new extrude, revolve, loft or sweep makes keeps no face keys, so the step after it makes all
-// of them: the mesh tests start from a model, whose faces take the base's keys, and one test pins the gap.
+// One gap is pinned here as it is: on exact solids a join clears the key of a face the joined shape sits flat on (the
+// tower's top around the pole's foot) and of faces a mirror image lands flush with, so no feature paints those. A part
+// built as a mesh is refused: a body a new extrude, revolve, loft or sweep makes there keeps no face keys.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clearReplayCache } from '@slicerx/cad-history'
 import { geomEngine } from '../src/geom'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { GEOM_BUILD, boxStl, built, connect, data, noKernel, text } from './helpers'
+import { featureNotExactText, meshedOf } from '../src/paint-target'
 
 const bin = process.env['SLICERX_SX_GEOM_BIN']
 const mesh = built(bin, GEOM_BUILD)
@@ -158,44 +158,38 @@ describe('paint by feature on exact solids', () => {
 describe('paint by feature on the mesh', () => {
   const skip = !mesh
   const because = skip ? ` (skipped: ${GEOM_BUILD})` : ''
+  // a part built as a mesh keeps no record of which step made each face across a new body, so a feature target is
+  // refused there with the ways that still work, and paints nothing
 
-  it.skipIf(skip)(`a joined pole takes its own color by feature, and the tower under it keeps its own${because}`, async () => {
+  it.skipIf(skip)(`refuses a feature on a design built from a model, a mesh, and paints nothing${because}`, async () => {
     const c = await client()
     const d = await c.model('Tower', 20, 20, 30)
     await c.ok('geom_extrude', pole(d, 10, 10))
-    await poleOnly(c, d)
-    // nothing else painted: the tower is its own filament
-    expect((await c.ok<Regions>('paint_regions', { design: d })).parts[0]!.states.map((s) => s.state)).toEqual([2])
+    const r = await c.call('paint_preview', { design: d, state: 2, target: { kind: 'feature', feature: 'Pole' } })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain(featureNotExactText(0))
+    expect((await c.ok<Regions>('paint_regions', { design: d })).parts[0]?.states ?? []).toEqual([])
   })
 
-  it.skipIf(skip)(`the walls of a row of cut holes paint by the cut feature${because}`, async () => {
-    const c = await client()
-    const d = await c.model('Box', 40, 20, 10)
-    await c.ok('geom_extrude', hole(d, 4, 0))
-    await c.ok('geom_array', holeRow(d, 1))
-    await holeWalls(c, d, 0)
-  })
-
-  it.skipIf(skip)(`a mirrored feature is painted on both sides${because}`, async () => {
-    const c = await client()
-    const d = await c.model('Block', 40, 20, 10)
-    await c.ok('geom_extrude', boss(d, 10, 10))
-    await c.ok('geom_mirror', { design: d, plane: { axis: 'x', at: 20 }, steps: [1] })
-    // each boss's four sides and its top
-    expect(await c.paint(d, 'Boss', 2)).toBeCloseTo(2 * (4 * 4 * 2 + 16), 1)
-    const two = (await c.painted(d, 2))!
-    expect(two.regionCount).toBe(2)
-    expect(two.regions.map((r) => Math.sign(r.boundsMm.min[0] - 20)).sort()).toEqual([-1, 1])
-  })
-
-  it.skipIf(skip)(`a body a new extrude makes keeps no face keys, so the step after it makes them all: the gap${because}`, async () => {
+  it.skipIf(skip)(`refuses a feature on a design that is not exact, where a new extrude starts the body${because}`, async () => {
     const c = await client()
     const d = (await c.ok<{ design: string }>('design_new', { name: 'Tower' })).design
     await c.ok('geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, distance_mm: 30, feature: 'Tower' })
     await c.ok('geom_extrude', pole(d, 0, 0))
-    // the pole's step made every face, the tower's included
-    expect(await c.paint(d, 'Pole', 2)).toBeGreaterThan(4 * 600 + 2 * 400)
-    const r = await c.call('paint_preview', { design: d, state: 3, target: { kind: 'feature', feature: 'Tower' } })
-    expect(text(r)).toContain('The target paints nothing new on this design')
+    for (const feature of ['Pole', 'Tower']) {
+      const r = await c.call('paint_preview', { design: d, state: 2, target: { kind: 'feature', feature } })
+      expect(text(r)).toContain(featureNotExactText(0))
+    }
+    // the other targets still paint it
+    expect(await c.ok<{ areaMm2: number }>('paint_preview', { design: d, state: 2, target: { kind: 'height', above: 30 } })).toMatchObject({ areaMm2: expect.any(Number) })
+  })
+})
+
+describe('the refusal of a feature on a part built as a mesh', () => {
+  it('says it word for word, and finds the first targeted part built as a mesh', () => {
+    expect(featureNotExactText(2)).toBe('target: painting by feature needs a part built as an exact solid, and part 2 is not one; paint it by height, by direction or from a seed point instead')
+    expect(meshedOf([0, 1, 2], [2, 1])).toBe(1)
+    expect(meshedOf([0], [1])).toBeUndefined()
+    expect(meshedOf([0, 1], [])).toBeUndefined()
   })
 })

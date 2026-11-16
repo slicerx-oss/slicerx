@@ -12,7 +12,7 @@ import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import { designArg, designSummary, faceAt, featureArg, withFeature, type Design } from './design-tools'
 import { ToolInputError } from './errors'
-import { bandDepth, layerArg, paintState, plannedFeature, targetArg, storedTarget } from './paint-target'
+import { bandDepth, featureNotExactText, layerArg, meshedOf, paintState, plannedFeature, targetArg, storedTarget } from './paint-target'
 import { RefusedPreviews } from './paint-refused'
 
 export { BAND_EDGE_MM, bandDepth } from './paint-target'
@@ -197,6 +197,12 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
     }
     if (part >= d.parts.length) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
     const parts = part === -1 ? d.parts.map((_, k) => k) : [part]
+    // a feature is read from which step made each face, which only an exact solid keeps: a part built as a mesh (a
+    // design that is not exact, or a part that fell back to the mesh at a step too detailed to stay exact) is refused
+    if (target.kind === 'feature') {
+      const mesh = meshedOf(parts, d.meshParts ?? (d.history.exact ? [] : d.parts.map((_, k) => k)))
+      if (mesh !== undefined) throw new ToolInputError(featureNotExactText(mesh))
+    }
     // a color asked for on a part already painted in bands goes on one band, the one the person most likely means
     if (i.layer === 'color' && target.kind === 'part' && !i.whole) {
       // a part with any band: a state of its own, or the asked color over part of it (the rest its own filament)

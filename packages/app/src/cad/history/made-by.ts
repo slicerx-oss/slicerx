@@ -15,6 +15,8 @@ interface Known {
   made: Record<number, string>
   /** The steps with the face keys the replay found for them: a pull made on a mesh with no keys yet has none saved. */
   steps: Step[]
+  /** The parts the replay built as a mesh, not as an exact solid: every part when it made none exact. */
+  mesh: number[]
 }
 
 // By the parts a replay put on the object: a new result is a new array, so a stale answer is never read.
@@ -24,7 +26,7 @@ async function learn(entry: PlateEntry): Promise<Known | null> {
   const r = await runReplay({ history: entry.history! })
   if (!r.madeBy) return null
   const steps = withStatus(entry.history!.steps, r.status, r.found).map((s, i, all) => withCapKey(s, r.status[i], r.parts, partThrough(all, i, all.length, s.part)))
-  return { faces: r.parts.map((p) => p.faces), triangles: r.parts.map((p) => p.indices.length / 3), made: r.madeBy, steps }
+  return { faces: r.parts.map((p) => p.faces), triangles: r.parts.map((p) => p.indices.length / 3), made: r.madeBy, steps, mesh: r.meshParts ?? r.parts.map((_, i) => i) }
 }
 
 /**
@@ -134,6 +136,12 @@ export async function facesMadeBy(entry: PlateEntry, stepId: string): Promise<{ 
  * The faces of each part that plan feature `feature`'s steps made (cad-history featureSteps), as the object's replay
  * knows them, with the part's face ids by triangle; null when that can't be told.
  */
+/** The parts of the object its replay built as a mesh, not as an exact solid; null when that can't be told. */
+export async function meshPartsOf(entry: PlateEntry): Promise<number[] | null> {
+  const got = entry.history?.steps.length ? await knownFor(entry) : null
+  return got ? got.mesh : null
+}
+
 export async function featureFaces(entry: PlateEntry, feature: string): Promise<{ ids: ArrayLike<number>; faces: Set<number> }[] | null> {
   const got = entry.history?.steps.length ? await knownFor(entry) : null
   if (!got) return null
