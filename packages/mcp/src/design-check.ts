@@ -75,6 +75,17 @@ export function openFacesProblem(plan: Pick<PartPlan, 'part' | 'printInPlace' | 
   return `openFaces: ${missing.join(', ')} ${missing.length === 1 ? 'is no piece' : 'are no pieces'} of this plan; name the part (${plan.part})${plan.printInPlace ? ' or a piece printInPlace names' : ''}`
 }
 
+/** The most things a plan names as left out, and the longest one. */
+export const LEFT_OUT_MAX = 12
+export const LEFT_OUT_CHARS = 60
+
+/**
+ * What design.plan's leftOut says to the model: each thing as a noun phrase with no reason, so the reply's card can
+ * list it and a later step can add it by those words.
+ */
+export const LEFT_OUT_HELP =
+  'The real thing\'s details this part leaves out (too small to print at this size, or not asked for), each a noun phrase with no reason, such as "window panes" or "the weather vane", never "window panes, too small at this scale"; give the reason, if any, in an assumption. Leave it out when nothing is left out'
+
 /**
  * A part as planned before it is built. Every size is in `units`, except a count or an angle among a feature's sizes
  * (the kind its kinds entry states, else kindOf in @slicerx/contracts/size-kind), which no inch plan converts. The
@@ -103,6 +114,8 @@ export const partPlanSchema = z.object({
     .union([z.array(text(60)).min(2).max(30), z.literal(false)])
     .optional()
     .describe('Pieces that print assembled and move, by name (such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8); false if they print separately'),
+  /** What the part leaves out of the real thing, as noun phrases; the mimir tab's card takes it, design.put_plan leaves it out. */
+  leftOut: z.array(text(LEFT_OUT_CHARS)).max(LEFT_OUT_MAX).optional().describe(LEFT_OUT_HELP),
   /** The faces meant to be open (openFacesInput); design.put_plan takes it, the mimir tab's card leaves it out. */
   openFaces: openFacesInput
     .optional()
