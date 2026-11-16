@@ -97,9 +97,9 @@ export function providerPaused(status: number, type?: string, message?: string):
   return /credit balance|billing|payment/i.test(`${type ?? ''} ${message ?? ''}`)
 }
 
-/** One line in the function log per refusal or provider error, as JSON so it can be searched. */
-export function logLine(level: 'info' | 'error', fields: Record<string, unknown>): void {
-  const line = JSON.stringify({ mimir: level === 'error' ? 'provider_error' : 'refusal', ...fields })
+/** One line in the function log per refusal, provider error or history repair, as JSON so it can be searched. */
+export function logLine(level: 'info' | 'error' | 'repair', fields: Record<string, unknown>): void {
+  const line = JSON.stringify({ mimir: level === 'error' ? 'provider_error' : level === 'repair' ? 'repaired' : 'refusal', ...fields })
   if (level === 'error') console.error(line)
   else console.log(line)
 }

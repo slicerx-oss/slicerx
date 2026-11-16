@@ -256,6 +256,8 @@ async function messages(req: Request, env: Env): Promise<Response> {
   const betas = req.headers.get('anthropic-beta')
   const atBase = shape(raw, MODEL, betas)
   if (!atBase.ok) return fail(400, 'invalid_request', atBase.error)
+  // a history kept before the app left unanswered server tool calls out goes without them; the log says how many, never what
+  if (atBase.unanswered > 0) logLine('repair', { code: 'unanswered_server_tool_use', dropped: atBase.unanswered, edition: who.edition ?? (await editionOf(env, tok)), install: await installRef(tok) })
   if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
   // The turn's model, then the request shaped for it: its own reply cap and thinking, which the
   // reservation, the PDF count and the provider all take. A step-up model may drop once to the base

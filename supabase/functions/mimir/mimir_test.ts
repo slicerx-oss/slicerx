@@ -440,6 +440,87 @@ test('a replayed tool search and its references pass back unchanged', () => {
   assert(!shape({ messages: [{ role: 'user', content: [{ type: 'tool_reference', tool_name: 'design_cyl' }] }] }).ok)
 })
 
+// a reply that called a client tool and then started a tool search the provider never ran, as an app kept it
+const THOUGHT = { type: 'thinking', thinking: '', signature: 'c2lnbmVk' }
+const TARGET = { type: 'tool_use', id: 'toolu_target', name: 'run__target', input: { printer: 'A1' } }
+const NEVER = { type: 'server_tool_use', id: 'srvtoolu_never', name: 'tool_search_tool_bm25', input: { query: 'queue a print', limit: 6 } }
+const unansweredChat = (reply: unknown[]) => ({
+  messages: [
+    { role: 'user', content: 'print it on my A1' },
+    { role: 'assistant', content: reply },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_target', content: 'ok' }, { type: 'text', text: 'print it on my A1' }] },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_look', name: 'design_look', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_look', content: 'looks right' }] },
+  ],
+  tools: [TOOL, deferred('design_cyl'), BM25],
+})
+
+test('a tool search no block answers is left out of the history, and nothing else in its message changes', () => {
+  const raw = unansweredChat([THOUGHT, TARGET, NEVER])
+  const s = ok(raw)
+  assertEquals(s.unanswered, 1)
+  const m = s.body['messages'] as Obj[]
+  assertEquals(m[1], { role: 'assistant', content: [THOUGHT, TARGET] })
+  // every other message goes as it would with the reply kept without the search
+  const without = ok(unansweredChat([THOUGHT, TARGET]))
+  assertEquals(without.unanswered, 0)
+  assertEquals(m, without.body['messages'])
+  // the same without thinking
+  assertEquals((ok(unansweredChat([TARGET, NEVER])).body['messages'] as Obj[])[1], { role: 'assistant', content: [TARGET] })
+  // a reply that held only the search goes with it
+  const alone = ok({ messages: [{ role: 'user', content: 'a cube' }, { role: 'assistant', content: [NEVER] }, { role: 'user', content: 'go on' }] })
+  assertEquals(alone.unanswered, 1)
+  assertEquals((alone.body['messages'] as Obj[]).map((x) => x['role']), ['user', 'user'])
+})
+
+test('a tool search answered in its own reply or at the start of the next one is kept', () => {
+  const found = { type: 'tool_search_tool_result', tool_use_id: 'srvtoolu_never', content: { type: 'tool_search_tool_search_result', tool_references: [{ type: 'tool_reference', tool_name: 'design_cyl' }] } }
+  const paired = ok(unansweredChat([THOUGHT, NEVER, found, TARGET]))
+  assertEquals(paired.unanswered, 0)
+  assertEquals((paired.body['messages'] as Obj[])[1], { role: 'assistant', content: [THOUGHT, NEVER, found, TARGET] })
+  // the provider ran the search when the next request went out, and its result opens the next reply
+  const resumed = ok({
+    messages: [
+      { role: 'user', content: 'print it on my A1' },
+      { role: 'assistant', content: [THOUGHT, TARGET, NEVER] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_target', content: 'ok' }] },
+      { role: 'assistant', content: [found, { type: 'tool_use', id: 'toolu_q', name: 'design_cyl', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_q', content: 'done' }] },
+    ],
+    tools: [TOOL, deferred('design_cyl'), BM25],
+  })
+  assertEquals(resumed.unanswered, 0)
+  assertEquals(((resumed.body['messages'] as Obj[])[1]!['content'] as Obj[]).map((b) => b['type']), ['thinking', 'tool_use', 'server_tool_use'])
+})
+
+test('a history repaired of an unanswered tool search logs one line with the edition and install, never the chat', async () => {
+  const h = harness()
+  const logs = await captureLogs(async () => {
+    const res = await handle(post('/v1/messages', unansweredChat([THOUGHT, TARGET, NEVER]), { 'x-sx-install': TOKEN }), h.env)
+    assertEquals(res.status, 200)
+    await res.text()
+    await Promise.all(h.pending)
+  })
+  const sent = h.sent.find((x) => x.url.endsWith('/v1/messages'))!.body
+  assertEquals((sent['messages'] as Obj[])[1], { role: 'assistant', content: [THOUGHT, TARGET] })
+  assert(!JSON.stringify(sent).includes('srvtoolu_never'))
+  const lines = logs.info.filter((l) => l['mimir'] === 'repaired')
+  assertEquals(lines.length, 1)
+  const l = lines[0]!
+  assertEquals([l['code'], l['dropped'], l['edition']], ['unanswered_server_tool_use', 1, 'slicerx'])
+  assertMatch(String(l['install']), /^[0-9a-f]{12}$/)
+  assert(!logs.raw.includes('queue a print') && !logs.raw.includes('print it on my A1'), 'no chat in the log')
+  assert(!logs.raw.includes(TOKEN), 'no install token in the log')
+  // a history with nothing to repair logs nothing
+  const quiet = await captureLogs(async () => {
+    const h2 = harness()
+    const res = await handle(post('/v1/messages', unansweredChat([THOUGHT, TARGET]), { 'x-sx-install': TOKEN }), h2.env)
+    await res.text()
+    await Promise.all(h2.pending)
+  })
+  assertEquals(quiet.info.filter((l) => l['mimir'] === 'repaired'), [])
+})
+
 test('unknown content block types stay refused', () => {
   for (const t of ['tool_definition', 'mcp_tool_use', 'code_execution_tool_result', 'container_upload', 'compaction']) {
     assert(!shape({ messages: [{ role: 'user', content: 'go' }, { role: 'assistant', content: [{ type: t }] }] }).ok, t)
