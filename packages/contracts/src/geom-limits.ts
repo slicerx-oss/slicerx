@@ -116,6 +116,7 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string?]>> = {
   'brep.fillet': ['model', 'Fillet'],
   'brep.chamfer': ['model', 'Chamfer'],
   'brep.push': ['model', 'Push and pull'],
+  'brep.shell': ['model', 'Shell'],
   'brep.hole': ['model', 'Hole'],
   'brep.tessellate': ['model', 'Solid to mesh'],
   'brep.save': ['model', 'Solid save'],
