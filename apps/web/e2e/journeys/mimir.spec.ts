@@ -930,6 +930,10 @@ test.describe('a build reply from mimir cloud', () => {
     await expect(chat.getByRole('button', { name: /^Sources \(\d\)$/ })).toHaveCount(0)
     // the next steps stay below the card
     await expect(chat.getByTestId('mimir-follow').first()).toBeVisible()
+    // the plan's status shows whole beside the line on changing it, never cut short
+    const status = chat.getByTestId('mimir-plan-status').first()
+    await expect(status).toHaveText('Approved as shown')
+    expect(await status.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true)
     const shoot = async (name: string) => {
       if (!shotsOn()) return
       await card.scrollIntoViewIfNeeded()
