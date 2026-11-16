@@ -34,6 +34,11 @@ describe('the line for a follow-up on a built design', () => {
     expect(FOLLOWUP_LINE).toContain('A detail added goes on the filament of the part it sits on: never add a filament or set a color the person did not ask for.')
   })
 
+  it('adds a detail the person names that the design does not have yet, before the reply ends, word for word', () => {
+    const said = 'A detail the person names that the design does not have yet (a part, a rail, a window) is a detail to add: put it in the plan with amends and asked, size it from a stated assumption or a lookup, build it on or beside the part it belongs to, and say what you assumed. Never reply that it is not there.'
+    expect(FOLLOWUP_LINE).toContain(`${said} The reply to a follow-up ends with what changed`)
+  })
+
   it('ends a reply to a request of several things on which were done and which were not', () => {
     expect(FOLLOWUP_LINE).toContain('When the request asks for several things, the reply ends by saying which were done and which were not.')
   })
