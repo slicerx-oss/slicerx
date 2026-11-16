@@ -6908,8 +6908,9 @@ impl SliceSession {
     /// Warnings for features too thin for the walls to print (`WarningCode::ThinWall`): per layer, the parts of
     /// the slice that an opening by the smallest printable width removes (the outer wall width for classic
     /// walls, `min_feature_size` of the nozzle for Arachne and Athena), kept when a piece covers at least
-    /// half a square millimeter so sharp corners do not count. Up to three places are named with the setting
-    /// that would keep them.
+    /// half a square millimeter so sharp corners do not count, and left out when what prints of the layer below
+    /// holds nine tenths of it and the layer above less than a tenth (the last sliver of a sloped top over solid,
+    /// not the top of a thin wall). Up to three places are named with the setting that would keep them.
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_precision_loss,
@@ -6925,34 +6926,61 @@ impl SliceSession {
         };
         let half = mm(min_mm / 2.0).max(1);
         let n = self.plan.count();
-        let lost: Vec<Option<(f64, [f64; 2])>> = par::map_range(0..n, |l| {
+        let slice_of = |l: u32| {
             let z = self.plan.slice_z.get(l as usize).copied().unwrap_or(0.0);
             let mut loops: Vec<Polygon> = Vec::new();
             for p in &self.parts {
                 p.slice(l as usize, z, &mut loops);
             }
-            let slice = perimeters::shapes_from_loops(&loops);
+            perimeters::shapes_from_loops(&loops)
+        };
+        let lost: Vec<Option<(f64, [f64; 2])>> = par::map_range(0..n, |l| {
+            let slice = slice_of(l);
             if slice.is_empty() {
                 return None;
             }
             let kept = perimeters::offset(&perimeters::offset(&slice, -half), half + 2);
             let gone = perimeters::difference(&slice, &kept);
             let scale2 = crate::geom::SCALE * crate::geom::SCALE;
+            // The layers below and above, sliced only for a layer that loses a piece big enough to name.
+            let mut around: Option<(Shapes, Shapes)> = None;
             let mut best: Option<(f64, [f64; 2])> = None;
             for piece in &gone {
                 let one = vec![piece.clone()];
                 let area = shapes_area(&one) / scale2;
-                if area >= 0.5 && best.is_none_or(|(a, _)| area > a) {
-                    let pts = piece.first().map_or(&[][..], Vec::as_slice);
-                    let k = pts.len().max(1) as f64;
-                    let c = pts.iter().fold([0.0, 0.0], |c, p| {
-                        [
-                            c[0] + f64::from(p.x) / crate::geom::SCALE,
-                            c[1] + f64::from(p.y) / crate::geom::SCALE,
-                        ]
-                    });
-                    best = Some((area, [c[0] / k, c[1] / k]));
+                if area < 0.5 || best.is_some_and(|(a, _)| area <= a) {
+                    continue;
                 }
+                // The last sliver of a sloped top: the layer below holds nearly all of it and nothing lies over
+                // it. It is the top of solid, printed by the top layers, not a feature too thin to print.
+                let (below, above) = around.get_or_insert_with(|| {
+                    // Only what prints of the layer below holds it: the top of a wall too thin to print stands on
+                    // that same wall, which the opening removes too.
+                    let below = if l == 0 {
+                        Shapes::new()
+                    } else {
+                        perimeters::offset(&perimeters::offset(&slice_of(l - 1), -half), half + 2)
+                    };
+                    let above = if l + 1 >= n {
+                        Shapes::new()
+                    } else {
+                        slice_of(l + 1)
+                    };
+                    (below, above)
+                });
+                let held = |by: &Shapes| shapes_area(&perimeters::intersection(&one, by)) / scale2 / area;
+                if held(below) >= 0.9 && held(above) < 0.1 {
+                    continue;
+                }
+                let pts = piece.first().map_or(&[][..], Vec::as_slice);
+                let k = pts.len().max(1) as f64;
+                let c = pts.iter().fold([0.0, 0.0], |c, p| {
+                    [
+                        c[0] + f64::from(p.x) / crate::geom::SCALE,
+                        c[1] + f64::from(p.y) / crate::geom::SCALE,
+                    ]
+                });
+                best = Some((area, [c[0] / k, c[1] / k]));
             }
             best
         });
