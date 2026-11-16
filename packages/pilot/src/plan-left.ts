@@ -65,6 +65,8 @@ const BUILDS = /^(design|geom)\./
 interface Step {
   id: string
   feature?: string
+  /** The planned changes (a tilt, a move) an edit of the step carried out, which build no step of their own. */
+  edits?: string[]
 }
 
 interface Reading {
@@ -87,6 +89,13 @@ interface Reading {
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
 
+/** A step row as read: its id, its plan feature tag, and the planned changes an edit of it carried out (edits). */
+function stepOf(id: string, feature: unknown, edits: unknown): Step {
+  const tag = str(feature)
+  const done = Array.isArray(edits) ? edits.flatMap((e) => str(e) ?? []) : []
+  return { id, ...(tag ? { feature: tag } : {}), ...(done.length ? { edits: done } : {}) }
+}
+
 /**
  * A tool result as the run sent it to the model. A long one was cut at 12000 characters and no longer parses: the
  * design summary's fields that come first (design, steps, lastStep) are read from the text then.
@@ -101,11 +110,10 @@ function read(content: string): Reading {
     if (typeof r['steps'] === 'number') reading.steps = r['steps']
     if (Array.isArray(r['steps']))
       reading.rows = r['steps'].flatMap((row) => {
-        const o = row as { id?: unknown; feature?: unknown }
+        const o = row as { id?: unknown; feature?: unknown; edits?: unknown }
         const id = str(o?.id)
         if (!id) return []
-        const feature = str(o.feature)
-        return [feature ? { id, feature } : { id }]
+        return [stepOf(id, o.feature, o.edits)]
       })
     const ls = r['lastStep'] as { index?: unknown; id?: unknown; feature?: unknown } | undefined
     if (ls && typeof ls.index === 'number' && str(ls.id)) {
@@ -160,7 +168,7 @@ function args(call: LlmToolCall): Record<string, unknown> {
  */
 export interface DesignNow {
   design: string
-  steps: readonly { id: string; feature?: string; state?: string }[]
+  steps: readonly { id: string; feature?: string; edits?: string[]; state?: string }[]
   parts: number
 }
 
@@ -172,11 +180,10 @@ export function designNow(content: string): DesignNow | null {
     const design = str(r?.design)
     if (out.ok === false || !design || !Array.isArray(r?.steps) || !Array.isArray(r?.parts)) return null
     const steps = r.steps.flatMap((row) => {
-      const o = row as { id?: unknown; feature?: unknown; state?: unknown } | null
+      const o = row as { id?: unknown; feature?: unknown; edits?: unknown; state?: unknown } | null
       const id = str(o?.id)
       if (!id || o?.state === 'suppressed') return []
-      const feature = str(o?.feature)
-      return [feature ? { id, feature } : { id }]
+      return [stepOf(id, o?.feature, o?.edits)]
     })
     return { design, steps, parts: r.parts.length }
   } catch {
@@ -210,8 +217,8 @@ const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((f)
  * (carriedPlanFrom); null when it needs nothing or nothing can be said. The plan is the last design.plan read the
  * person answered with Go (with their edits). Its
  * part is built in the first design a design or modeling call after the Go names. A feature is done when a step of that
- * design carries its name as the plan feature tag (case, punctuation and plurals aside), the rule design.check holds the
- * part to. A feature with no tagged step is one to build, or one to tag when an untagged step was labeled with its name
+ * design carries its name as the plan feature tag (case, punctuation and plurals aside), or, for a planned change (a
+ * tilt, a move), in its edits, the rule design.check holds the part to. A feature with no tagged step is one to build, or one to tag when an untagged step was labeled with its name
  * (the call's name or label), the hint design.check gives. Null when:
  *  - no plan was approved in this run, or carried from an earlier one;
  *  - design.check stopped the plan (its fix round is used, so mimir tells the person what is off);
@@ -296,7 +303,7 @@ export function planLeft(messages: readonly LlmMessage[], from = 0, now?: Design
     if (call.name === 'design.edit_step' && typeof a['feature'] === 'string' && steps) {
       const at = typeof a['step'] === 'number' ? a['step'] - 1 : steps.findIndex((s) => s.id === a['step'])
       const s = steps[at]
-      if (s) steps[at] = a['feature'].trim() ? { id: s.id, feature: a['feature'].trim() } : { id: s.id }
+      if (s) steps[at] = stepOf(s.id, a['feature'], s.edits)
     }
   })
   if (!plan || stop) return null
@@ -312,7 +319,8 @@ export function planLeft(messages: readonly LlmMessage[], from = 0, now?: Design
   const fix = missed && missed.at > changed ? missed.items : undefined
   const left: PlanLeft = { planId: plan.planId, part: plan.part, ...(design ? { design } : {}), noBody, build: [], tag: [], ...(fix ? { fix } : {}) }
   if (!steps) return noBody || fix ? left : null
-  const tagged = new Set(steps.flatMap((s) => (s.feature ? [nameKey(s.feature)] : [])))
+  // a planned change (a tilt, a move) an edit carried out counts as built, as design.check counts it
+  const tagged = new Set(steps.flatMap((s) => [...(s.feature ? [s.feature] : []), ...(s.edits ?? [])].map(nameKey)))
   // the steps no feature of the plan is tagged on, with what they were called
   const keys = new Set(plan.features.map(nameKey))
   const loose = steps.filter((s) => s.id && !(s.feature && keys.has(nameKey(s.feature)))).map((s) => ({ id: s.id, name: s.feature ?? labels.get(s.id) ?? '' })).filter((s) => s.name)

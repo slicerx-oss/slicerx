@@ -95,6 +95,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     steps: shaping.map((s) => stepName(s)),
     tags: shaping.map((s) => s.feature?.trim() || null),
     stepIds: shaping.map((s) => s.id),
+    ...(d.history.steps.some((s) => !s.suppressed && s.edits?.length) ? { edited: d.history.steps.flatMap((s) => (!s.suppressed && s.edits?.length ? s.edits : [])) } : {}),
     paintTags: d.history.steps.flatMap((s) => (!s.suppressed && s.params.op === 'paint' && s.feature?.trim() ? [{ feature: s.feature.trim(), step: stepName(s) }] : [])),
     // a hint only: a paint step it cannot name is left out rather than failing the check
     paintUntagged: d.history.steps.flatMap((s) => (!s.suppressed && s.params?.op === 'paint' && !s.feature?.trim() ? hintName(s) : [])),

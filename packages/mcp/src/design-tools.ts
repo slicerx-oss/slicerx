@@ -8,7 +8,7 @@ import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { assumptionsInput, changeBroke, colorBands, createPlanRegistry, designCheck, failedBefore, FAILED_BEFORE_SAY, FIX_ROUNDS, fixRoundOpen, NOTES_SAY, hasHookLip, isNamingMiss, nozzleOr, openFacesProblem, type PartPlan, partPlanSchema, type PlanEntry, plannedFloor, plannedHoleMm, PlanOwnedError, type PlanRegistry, printsTogether, stalePlanNote, supersededPlanNote } from './design-check'
+import { assumptionsInput, changeBroke, changeEdit, colorBands, createPlanRegistry, designCheck, failedBefore, FAILED_BEFORE_SAY, FIX_ROUNDS, fixRoundOpen, NOTES_SAY, hasHookLip, isNamingMiss, nameKey, nozzleOr, openFacesProblem, type PartPlan, partPlanSchema, type PlanEntry, plannedFloor, plannedHoleMm, PlanOwnedError, type PlanRegistry, printsTogether, stalePlanNote, supersededPlanNote } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -344,6 +344,8 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
     part: s.part,
     ...(n ? { value: { label: n.label, value: n.value, unit: n.unit } } : {}),
     ...(s.feature ? { feature: s.feature } : {}),
+    // the planned changes (a tilt, a move) an edit of the step carried out, which build no step of their own
+    ...(s.edits?.length ? { edits: s.edits } : {}),
     // steps one call made share a group, and undo and redo take them as one
     ...(s.group ? { group: s.group } : {}),
     state: s.suppressed ? 'suppressed' : (st?.state ?? 'done'),
@@ -610,7 +612,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   const STEPS_TEXT = 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.'
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.8.0',
+    version: '1.9.0',
     source: 'command',
     permission: 'read',
     // a local model gets the steps without the loft stations' words, which only the cloud follow-up guidance uses
@@ -641,9 +643,26 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // a local model edits steps without the section edit, the tilt and the follow-up's size and move, which stay with the cloud ones
   const editLocalInput = editInput.omit({ section: true, size: true, move: true, tilt: true })
 
+  /**
+   * The step with the planned changes this edit carries out on its edits: each feature of a plan tied to the design
+   * whose kind is this change (a tilt or a move: changeEdit) and that no step has built yet, by a tag or an earlier
+   * edit. Such a feature changes features already built, so it has no step of its own (design.check).
+   */
+  function withPlannedEdits(d: Design, s: Step, change: 'tilt' | 'move' | null): Step {
+    if (!change) return s
+    const built = (name: string): boolean => d.history.steps.some((x) => !x.suppressed && [x.feature ?? '', ...(x.edits ?? [])].some((t) => t.trim() && nameKey(t) === nameKey(name)))
+    const names = plans
+      .tiedTo(d.id)
+      .flatMap((id) => plans.get(id)?.plan.features ?? [])
+      .filter((f) => changeEdit(f.kind) === change && !built(f.name))
+      .map((f) => f.name)
+    const fresh = [...new Set(names)].filter((f) => !(s.edits ?? []).some((e) => nameKey(e) === nameKey(f)))
+    return fresh.length ? { ...s, edits: [...(s.edits ?? []), ...fresh] } : s
+  }
+
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.9.1',
+    version: '1.10.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -714,6 +733,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         const { feature: _f, ...rest } = next
         next = i.feature.trim() ? { ...rest, feature: i.feature.trim() } : rest
       }
+      next = withPlannedEdits(d, next, i.tilt && next.tilt ? 'tilt' : i.move?.some((v) => v !== 0) ? 'move' : null)
       const { broken: _b, ...clean } = next
       // the part's span along the axis a size or move works on, before the change, for the paint on it to follow
       const axisOf = i.size ? ({ x: 0, y: 1, z: 2 } as const)[i.size.axis] : 2
