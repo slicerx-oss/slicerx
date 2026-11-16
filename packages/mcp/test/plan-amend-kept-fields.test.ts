@@ -199,7 +199,7 @@ describe('design.put_plan with amends, for a field an amend does not keep', () =
     const plans = createPlanRegistry()
     const set = designToolset(host, {}, { plans, nozzleMm: () => 0.4 })
     const put = set.find((t) => t.name === 'design.put_plan')!
-    expect(put.version).toBe('1.11.0')
+    expect(put.version).toBe('1.12.0')
     plans.put(structuredClone(mine), 'd1', 'client')
     const run = (input: unknown) => put.run(put.input.parse(input) as never, { context: { machine } } as unknown as ToolContext)
     // its plan takes no detail fields; printInPlace is the plan field it takes and an amend keeps

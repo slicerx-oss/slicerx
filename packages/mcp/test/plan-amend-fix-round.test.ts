@@ -10,7 +10,8 @@ import type { ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { createPlanRegistry, fixRoundIsOpen, type PartPlan } from '../src/design-check'
 import { FIX_ROUND_ADDS } from '../src/plan-amend'
-import { createCardPlans, tabToolset } from '../src/toolset'
+import { createCardPlans, designToolset, tabToolset } from '../src/toolset'
+import type { DesignHost } from '@slicerx/cad-history'
 import { STAND_PLAN, standHost } from './stand-host'
 
 const machine: PilotMachine = { printer: 'bambu_a1_mini', material: 'pla', nozzle: 0.4 }
@@ -116,5 +117,35 @@ describe('fixRoundIsOpen', () => {
     plans.checked('plan_1', false, [], ['stands on'])
     plans.close('plan_1', { summary: 'stop', output: {} })
     expect(fixRoundIsOpen(plans.get('plan_1')!)).toBe(false)
+  })
+})
+
+describe("a client's own plan amended with design.put_plan in the fix round", () => {
+  const client = () => {
+    const plans = createPlanRegistry()
+    const put = designToolset({} as DesignHost, {}, { plans }).find((t) => t.name === 'design.put_plan')!
+    const run = (input: unknown) => put.run(put.input.parse(input) as never, {} as ToolContext)
+    plans.put(STAND_PLAN, 'd1', 'client')
+    return { plans, run }
+  }
+  const wider = (plan: PartPlan) => plan.features.map((f) => (f.name === 'Top' ? { ...f, sizes: { ...f.sizes, width: 22 } } : f))
+
+  it('is refused when it adds a feature, with the same words as the card', async () => {
+    const { plans, run } = client()
+    plans.checked('plan_1', false, [], ['stands on'])
+    expect(fixRoundIsOpen(plans.get('plan_1')!)).toBe(true)
+    const plan = { ...STAND_PLAN, features: [...wider(STAND_PLAN), base] }
+    await expect(run({ plan, amends: 'plan_1', reason: 'The top stands on its own base.' })).rejects.toThrow(FIX_ROUND_ADDS(['Top base']))
+    expect(plans.get('plan_1')!.plan.features.map((f) => f.name)).toEqual(['Block', 'Stand', 'Top'])
+  })
+
+  it('still adds a feature before any check has failed, and takes a size change in the round', async () => {
+    const before = client()
+    const added = await before.run({ plan: { ...STAND_PLAN, features: [...wider(STAND_PLAN), base] }, amends: 'plan_1', reason: 'The top stands on its own base.' })
+    expect(added.summary).toMatch(/^Changed plan plan_1/)
+    const inRound = client()
+    inRound.plans.checked('plan_1', false, [], ['stands on'])
+    const sized = await inRound.run({ plan: { ...STAND_PLAN, features: wider(STAND_PLAN) }, amends: 'plan_1', reason: 'The top is a little wider.' })
+    expect(sized.summary).toMatch(/^Changed plan plan_1/)
   })
 })
