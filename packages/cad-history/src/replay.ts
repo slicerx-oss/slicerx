@@ -13,7 +13,7 @@ import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
 import { anchorOf, surfaceMoves } from './surface-follow'
-import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, facingFaceIds, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintedFrom, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Plane, type Solids } from './exact'
+import { addedSolids, bandCrossings, bandFaceIds, bandOf, EXACT_FELL_BACK, EXACT_IMPRINT, EXACT_MESH_FROM_HERE, ExactBroken, ExactMissed, exactOps, exactStep, facePaintOf, facingFaceIds, fromSolid, imprinted, MAX_SOLID_TEXT, meshed, paintedFrom, paintOfFaces, rigidFrame, solidTooBig, tooBigOf, type FacePaint, type Plane, type SolidMeasure, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -486,9 +486,9 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   }
   // a solid too big to keep, by cad-history's own limit or as the engine refused it: never silent, and a design that
   // must stay exact stops here; the sentence to put on the step otherwise
-  const tooBig = (chars: number, limit: number): string => {
-    if (strict) throw new ExactBroken(solidTooBig(chars, true, limit))
-    return solidTooBig(chars, false, limit)
+  const tooBig = (size: number, limit: number, measure?: SolidMeasure): string => {
+    if (strict) throw new ExactBroken(solidTooBig(size, true, limit, measure))
+    return solidTooBig(size, false, limit, measure)
   }
   // A step that works only on mesh parts, and makes no new body, runs on the mesh: there is no exact part to keep.
   const reads = s.part === -1 ? parts : [parts[s.part], ...(p.op === 'boolean' ? p.with.map((i) => parts[i]) : [])]
@@ -506,7 +506,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         // an engine that gives no size and limit (an older one) keeps its own sentence
         const t = tooBigOf(error)
         if (strict && !t) throw new Broken(`Exact operation failed: ${error instanceof Error ? error.message : String(error)}`)
-        found.notes[s.id] = t ? tooBig(t.size, t.limit) : EXACT_FELL_BACK
+        found.notes[s.id] = t ? tooBig(t.size, t.limit, t.measure) : EXACT_FELL_BACK
         found.fellBack.push(s.id)
       },
       solids,
@@ -562,7 +562,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         // a body too big for the engine: the loft runs on the mesh with the size and the limit; any other error is the step's
         const t = tooBigOf(e)
         if (!t) throw e
-        fell(tooBig(t.size, t.limit))
+        fell(tooBig(t.size, t.limit, t.measure))
         refused = true
         r = { mesh: { positions: [], indices: [] } }
       }

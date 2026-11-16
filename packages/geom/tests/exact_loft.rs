@@ -527,7 +527,10 @@ fn printed(reply: &Value, key: &str) -> String {
 fn the_engine_says_which_ops_make_exact_bodies() {
     let ops: Value = serde_json::from_str(&op("exact.ops", &json!({}))).unwrap();
     if sx_brep::KERNEL {
-        assert_eq!(ops, json!({ "ops": ["sketch.loft"] }));
+        assert_eq!(
+            ops,
+            json!({ "ops": ["sketch.loft"], "maxSolid": { "edges": 3300, "controlPoints": 178_000 } })
+        );
     } else {
         assert_eq!(ops, json!({ "ops": [] }));
     }

@@ -580,8 +580,8 @@ const NO_KERNEL: &str = "This build has no exact kernel.";
 /// When the body is made: `body`, its number in the engine's table, and `bodyKeys`, its faces' keys in face order
 /// (0 for none); or, with `save`, `bodySmb`, the body as the text `brep.load` reads, for a caller whose engine does
 /// not outlive the call. Unlike the brep ops, `save` leaves no body in the table and sends no number beside the
-/// text. When it is not made: `exact`, with `made` false and `why` in one sentence. A loft the mesh path can make
-/// is never an error because of the ask.
+/// text, and refuses a body past `exact::sendable`'s counts. When it is not made: `exact`, with `made` false and
+/// `why` in one sentence. Apart from that refusal, a loft the mesh path can make is never an error because of the ask.
 #[cfg(all(feature = "cad", feature = "brep"))]
 fn loft_exact(
     req: &Value,
@@ -607,7 +607,11 @@ fn loft_exact(
         let text = crate::exact::with(handle, |held| held.body.saved(&held.keys));
         crate::exact::free(handle);
         return Ok(match text {
-            Some(Ok(smb)) => json!({ "bodySmb": smb }),
+            // a body too detailed to send back as text is refused, saying what was counted
+            Some(Ok(smb)) => {
+                crate::exact::sendable(&smb)?;
+                json!({ "bodySmb": smb })
+            }
             Some(Err(e)) => not_made(&sentence(&Error::geometry("loft", e.to_string()))),
             None => not_made("The exact body could not be kept."),
         });

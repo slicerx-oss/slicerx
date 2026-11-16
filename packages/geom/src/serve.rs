@@ -9,7 +9,7 @@
 //! buffers as u32, then each buffer as its length (u32) and its bytes. A call is `{"id", "op", "request"}` and its
 //! buffers are the request's `mem:N` files (N counts from 0, each read once), as the browser build has them. The answer
 //! is `{"id", "result"}` with the call's output buffers (`rawOut: N` and the like, numbered as `json::take_out_files`
-//! gives them), `{"id", "error"}` when the call failed, or `{"id", "panic"}` with the panic's message and place. There
+//! gives them), `{"id", "error"}` when the call failed (with `tooBig` too, as `json::error_value` gives it), or `{"id", "panic"}` with the panic's message and place. There
 //! is no other file access, so a path that is not a `mem:N` buffer fails, as in the browser.
 //!
 //! The process writes `HELLO` before its first answer, so a host can pass over anything written ahead of it.
@@ -173,7 +173,13 @@ fn answer(
     let out = json::take_out_files();
     match ran {
         Ok(Ok(result)) => (json!({ "id": id, "result": result }), out),
-        Ok(Err(e)) => (json!({ "id": id, "error": e.to_string() }), Vec::new()),
+        Ok(Err(e)) => {
+            let mut reply = json::error_value(&e);
+            if let Some(fields) = reply.as_object_mut() {
+                fields.insert("id".to_owned(), json!(id));
+            }
+            (reply, Vec::new())
+        }
         Err(payload) => {
             let kept = PANIC.with(|p| p.borrow_mut().take());
             let message = kept.unwrap_or_else(|| {

@@ -5,10 +5,12 @@
 // MAX_SOLID_TEXT when it does not. A solid past it says so with the size and the limit (solidTooBig), whether the
 // replay found it too big itself or the engine refused it (an error reply with `tooBig: { size, limit }`, which the
 // page's geometry client and the worker carry on the Error). An older engine's refusal, with no size and limit,
-// keeps its own sentence. exact-solid-cap.test.ts covers the limit itself.
+// keeps its own sentence. An engine that sends bodies back as text also refuses one past its count of edges or of
+// control points (exact.ops `maxSolid`; `tooBig` with its `measure`), and the step says the count and the limit.
+// exact-solid-cap.test.ts covers the text limit itself.
 import { MessageChannel } from 'node:worker_threads'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { EXACT_FELL_BACK, EXACT_OPS, IDENTITY, MAX_SOLID_TEXT, clearReplayCache, replayHistory, solidTooBig, tooBigOf, withTooBig, type History, type Step, type StepParams } from '@slicerx/cad-history'
+import { EXACT_FELL_BACK, EXACT_OPS, IDENTITY, MAX_SOLID_TEXT, clearReplayCache, exactOps, replayHistory, solidTooBig, tooBigOf, withTooBig, type History, type Step, type StepParams } from '@slicerx/cad-history'
 import { endIdleGeomWorker, geom, setGeomProvider } from '../src/geom/client'
 import { workerLoop, type WorkerJobs, type WorkerMessage } from '../src/geom/worker-loop'
 
@@ -130,6 +132,53 @@ describe("the engine's refusal of an exact loft", () => {
     const r = await replayHistory(lofts(false).call, { history: { version: 1, base: [], steps: [loft] }, exact: true }, kept)
     expect(r.status[0]).toMatchObject({ state: 'broken' })
     expect((r.status[0] as { message: string }).message).toContain(OLD_SENTENCE)
+  })
+})
+
+describe("the engine's count of a body it sends back as text", () => {
+  const ENGINE_EDGES = 'brep: the body is too detailed to save as text (3,412 edges, limit 3,300)'
+  /** An engine that sends bodies back as text and refuses the cut's body past one of its counts. */
+  const counting = (tooBig: { size: number; limit: number; measure: string }) => {
+    const call = async (op: string) => {
+      if (op === EXACT_OPS) return { ops: [], maxSolid: { edges: 3300, controlPoints: 178000 } }
+      if (op === 'brep.tessellate') return { ...tri, ...faces }
+      if (op === 'brep.subtract') throw withTooBig(new Error(ENGINE_EDGES), { error: ENGINE_EDGES, tooBig })
+      if (op.startsWith('brep.')) return { bodySmb: `${op}-solid` }
+      return { mesh: { ...tri, positions: [1, 0, 0, 10, 0, 0, 0, 10, 0] }, removedVolumeMm3: 1 }
+    }
+    return call
+  }
+  const edges = { size: 3412, limit: 3300, measure: 'edges' }
+  const points = { size: 183005, limit: 178000, measure: 'controlPoints' }
+
+  it('past its edges, builds the part as a mesh from that step and says so', async () => {
+    const r = await replayHistory(counting(edges), { history: history(), exact: true })
+    expect(r.status[1]).toEqual({ state: 'done', note: 'This part is now too detailed to stay an exact solid, so from this step on it is built as a mesh. (3,412 edges, limit 3,300.)' })
+    expect(r.exactFellBack).toEqual(['hole-1'])
+  })
+
+  it('past its control points, says them', async () => {
+    const r = await replayHistory(counting(points), { history: history(), exact: true })
+    expect(r.status[1]).toEqual({ state: 'done', note: 'This part is now too detailed to stay an exact solid, so from this step on it is built as a mesh. (183,005 control points, limit 178,000.)' })
+  })
+
+  it('stops a design that must stay exact, with the count and the limit', async () => {
+    const r = await replayHistory(counting(edges), { history: history(true) })
+    expect(r.status[1]).toEqual({ state: 'broken', message: 'this step would make the part too detailed to stay an exact solid (3,412 edges, limit 3,300).' })
+    clearReplayCache()
+    const p = await replayHistory(counting(points), { history: history(true) })
+    expect(p.status[1]).toEqual({ state: 'broken', message: 'this step would make the part too detailed to stay an exact solid (183,005 control points, limit 178,000).' })
+  })
+
+  it('is read with its measure, and a measure the replay does not know is left off', () => {
+    expect(tooBigOf(withTooBig(new Error('x'), { tooBig: edges }))).toEqual(edges)
+    expect(tooBigOf(withTooBig(new Error('x'), { tooBig: { size: 9, limit: 8, measure: 'faces' } }))).toEqual({ size: 9, limit: 8 })
+  })
+
+  it("is the engine's own, as exact.ops gives it", async () => {
+    expect((await exactOps(counting(edges))).maxSolid).toEqual({ edges: 3300, controlPoints: 178000 })
+    expect((await exactOps(async () => ({ ops: [], maxSolid: { edges: 3300 } }))).maxSolid).toBeUndefined()
+    expect((await exactOps(async () => ({ ops: [] }))).maxSolid).toBeUndefined()
   })
 })
 

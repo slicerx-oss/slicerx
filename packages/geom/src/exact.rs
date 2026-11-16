@@ -6,7 +6,7 @@
 //! older solid operations make, which are taken out of their table as soon as they are made. the table is per
 //! thread, as a body cannot leave the thread that made it.
 
-use crate::error::{Error, Result};
+use crate::error::{Error, Measure, Result, TooDetailed};
 use crate::faces::Surface as Kind;
 use crate::json::OutFile;
 use crate::mesh::TriMesh;
@@ -228,6 +228,53 @@ fn carried(req: &Value) -> Result<Option<Carried>> {
 /// `save` is loaded into the table for that one answer; sent to an older operation it is that operation's for the
 /// call.
 pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Result<Value> {
+    let reply = answered(op, req, raw)?;
+    // `save: true` sends each new body back as text, which is refused past either count; the bodies are freed then
+    if op != "save" && req.get("save").and_then(Value::as_bool) == Some(true) {
+        let within = MADE_FIELDS.iter().try_for_each(|field| {
+            reply
+                .get(format!("{field}Smb"))
+                .and_then(Value::as_str)
+                .map_or(Ok(()), sendable)
+        });
+        if let Err(e) = within {
+            for field in MADE_FIELDS {
+                if let Some(handle) = number(&reply, field).and_then(handle_of) {
+                    free(handle);
+                }
+            }
+            return Err(e);
+        }
+    }
+    Ok(reply)
+}
+
+/// The most edges a body sent back as text may have. A body held by number has no such limit.
+pub const MAX_EDGES: u64 = 3_300;
+/// The most control points of spline curves and surfaces a body sent back as text may have.
+pub const MAX_CONTROL_POINTS: u64 = 178_000;
+
+/// The most a body sent back as text may have of each count, as `exact.ops` gives it (`maxSolid`).
+pub(crate) fn max_solid() -> Value {
+    json!({ "edges": MAX_EDGES, "controlPoints": MAX_CONTROL_POINTS })
+}
+
+/// Refuses a body's text (`smb`, as `save` writes it) past either count, naming the first it passed.
+pub(crate) fn sendable(smb: &str) -> Result<()> {
+    let d = sx_brep::detail(smb);
+    for (size, limit, measure) in [
+        (d.edges, MAX_EDGES, Measure::Edges),
+        (d.control_points, MAX_CONTROL_POINTS, Measure::ControlPoints),
+    ] {
+        if size > limit {
+            return Err(Error::TooDetailed(TooDetailed { size, limit, measure }));
+        }
+    }
+    Ok(())
+}
+
+/// [`answer`], before a body sent back as text is counted.
+fn answered(op: &str, req: &Value, raw: bool) -> Result<Value> {
     let sent = if matches!(op, "tessellate" | "info" | "save") {
         carried(req)?
     } else {
@@ -725,6 +772,39 @@ mod tests {
         y: [0.0, 1.0, 0.0],
         z: [0.0, 0.0, 1.0],
     };
+
+    /// a saved body's text with `edges` edges and one spline surface of `across` by `along` control points
+    fn text(edges: u64, across: u64, along: u64) -> String {
+        format!("{edges} Edges In Brep\nObject Type 15002\n{across} {along}\n")
+    }
+
+    #[test]
+    fn a_body_sent_back_as_text_is_refused_past_either_count() {
+        assert!(sendable(&text(MAX_EDGES, 400, 445)).is_ok());
+        let refused = |t: &str| match sendable(t) {
+            Err(Error::TooDetailed(t)) => t,
+            other => panic!("{other:?}"),
+        };
+        let edges = refused(&text(MAX_EDGES + 1, 1, 1));
+        assert_eq!(
+            (edges.size, edges.limit, edges.measure),
+            (3301, 3300, Measure::Edges)
+        );
+        let points = refused(&text(10, 445, 401));
+        assert_eq!(
+            (points.size, points.limit, points.measure),
+            (178_445, 178_000, Measure::ControlPoints)
+        );
+        // past both, the edges are named
+        assert_eq!(refused(&text(4000, 500, 500)).measure, Measure::Edges);
+        assert_eq!(
+            crate::json::error_value(&Error::TooDetailed(edges)),
+            json!({
+                "error": "brep: the body is too detailed to save as text (3,301 edges, limit 3,300)",
+                "tooBig": { "size": 3301, "limit": 3300, "measure": "edges" },
+            })
+        );
+    }
 
     #[test]
     fn a_number_names_a_body_only_when_it_is_whole_and_held() {

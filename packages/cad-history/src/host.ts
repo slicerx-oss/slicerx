@@ -68,6 +68,16 @@ export interface AddOptions {
   group?: string
 }
 
+/** The most an exact part may hold where bodies go between calls as text (DesignHost.solidLimits). */
+export interface SolidLimits {
+  /** The solid's text, in characters. */
+  textChars: number
+  /** Edges, where the engine counts them. */
+  edges?: number
+  /** Control points of the spline curves and surfaces, where the engine counts them. */
+  controlPoints?: number
+}
+
 export interface DesignHost {
   /** Opaque body revision for scoped topology reads; absent on legacy hosts. */
   revision?(id: string): string
@@ -98,6 +108,12 @@ export interface DesignHost {
   trial?(d: Design, part: number, params: StepParams): Promise<HistoryMesh[]>
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
   call(op: string, request: unknown): Promise<unknown>
+  /**
+   * How detailed an exact part may grow where the host's engine sends each body back as text between calls: the
+   * largest text, and the engine's own counts past which it refuses to save one (exactOps). Undefined where the engine
+   * holds bodies by number, which have no such limit.
+   */
+  solidLimits?(): Promise<SolidLimits | undefined>
   /**
    * A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. Its plane is where
    * the sketch stands now (design-frame.ts frameNow): given `design`, in that design's frame; without, in the plate's.

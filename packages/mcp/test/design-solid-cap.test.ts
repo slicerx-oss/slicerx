@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // An exact design whose part's solid grows past the largest solid text a part keeps: the step that grew it is refused
-// with the size and the limit in the reply, and the design is unchanged. One just under the limit goes through.
+// with the size and the limit in the reply, and the design is unchanged. One just under the limit goes through. A
+// client starting an exact design where bodies go between calls as text reads back how detailed its part may grow.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_SOLID_TEXT, clearReplayCache, solidTooBig, tooBigOf, unstopped, type StepParams } from '@slicerx/cad-history'
 import { Designs } from '../src/design'
 import { geomEngine } from '../src/geom'
+import { connect, data, text } from './helpers'
 
 const tri = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }
 const box: StepParams = { op: 'shape.extrude', frame: { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, spec: { distanceMm: 5, operation: 'new' } }
@@ -67,4 +69,32 @@ it.each([
   const e = await geomEngine(process.execPath, 5000)(refusing, {}).catch((x: unknown) => x)
   expect((e as Error).message).toBe(reply.error)
   expect(tooBigOf(e)).toEqual(tooBig)
+})
+
+describe('how detailed an exact part may grow', () => {
+  /** An engine with the exact kernel that sends bodies back as text and counts them (exact.ops `maxSolid`). */
+  const counting = async (op: string) => {
+    if (op === 'brep.count') return { bodies: 0 }
+    if (op === 'exact.ops') return { ops: ['sketch.loft'], maxSolid: { edges: 3300, controlPoints: 178000 } }
+    throw new Error(`unexpected ${op}`)
+  }
+
+  it('is in the reply of a client starting an exact design, and not of a mesh one', async () => {
+    vi.stubEnv('SX_BREP_DEV', '1')
+    const h = await connect({ geomEngine: counting })
+    const r = await h.call('slicerx_design_new', { name: 'Plate', exact: true })
+    expect(r.isError, text(r)).toBeFalsy()
+    expect(data<{ output: { exact: boolean; solidLimits?: unknown } }>(r).output).toMatchObject({ exact: true, solidLimits: { textChars: MAX_SOLID_TEXT, edges: 3300, controlPoints: 178000 } })
+    const mesh = await h.call('slicerx_design_new', { name: 'Mesh' })
+    expect(data<{ output: Record<string, unknown> }>(mesh).output).not.toHaveProperty('solidLimits')
+  })
+
+  it('is the text limit alone from an engine that counts nothing, and none where bodies are held', async () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'design-solid-limits-'))
+    dirs.push(outDir)
+    const policy = { outDir, allowDirs: undefined, allowUrls: false }
+    const older = async (op: string) => (op === 'exact.ops' ? { ops: [] } : { bodies: 0 })
+    expect(await new Designs({ engine: older, policy }).solidLimits()).toEqual({ textChars: MAX_SOLID_TEXT })
+    expect(await new Designs({ engine: counting, keepsBodies: async () => true, policy }).solidLimits()).toBeUndefined()
+  })
 })

@@ -59,9 +59,11 @@ it.skipIf(!exact)(`selects the real native exact path and reads back its represe
   const h = await connect({ geomEngine: async (op, request) => { calls.push(op); return native(op, request) } })
   const created = await h.call('slicerx_design_new', { name: 'Exact bracket', exact: true })
   expect(created.isError, text(created)).toBeFalsy()
-  expect(calls).toEqual(['brep.count'])
-  const d = data<{ output: { design: string; exact: boolean } }>(created).output
+  // the kernel is asked once, and how detailed a part may grow where each body goes back as text
+  expect(calls).toEqual(['brep.count', 'exact.ops'])
+  const d = data<{ output: { design: string; exact: boolean; solidLimits?: unknown } }>(created).output
   expect(d.exact).toBe(true)
+  expect(d.solidLimits).toEqual({ textChars: 8 * 1024 * 1024, edges: 3300, controlPoints: 178000 })
   const extruded = await h.call('slicerx_geom_extrude', { design: d.design, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [15, 5] }, distance_mm: 3 })
   expect(extruded.isError, text(extruded)).toBeFalsy()
   expect(calls).toContain('brep.extrude')

@@ -553,7 +553,12 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             } else {
                 &[]
             };
-            Ok(json!({ "ops": ops }))
+            // a body sent back as text is refused past either count; one held by number never is
+            Ok(if ops.is_empty() {
+                json!({ "ops": ops })
+            } else {
+                json!({ "ops": ops, "maxSolid": crate::exact::max_solid() })
+            })
         }
         #[cfg(feature = "brep")]
         o if o.starts_with("brep.") && ALL_OPERATIONS.iter().any(|(n, _)| *n == o) => {
@@ -1214,8 +1219,16 @@ pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// A failed call's reply: its sentence, and for a body too detailed to send back as text, what was counted
+/// (`tooBig`: `size`, `limit`, `measure`).
 pub fn error_value(e: &Error) -> Value {
-    json!({ "error": e.to_string() })
+    match e {
+        Error::TooDetailed(t) => json!({
+            "error": e.to_string(),
+            "tooBig": { "size": t.size, "limit": t.limit, "measure": t.measure.key() },
+        }),
+        _ => json!({ "error": e.to_string() }),
+    }
 }
 
 /// The mesh of a paint request (`mesh`, placed by `transform` when given) and its layer's texts (`paint`).
