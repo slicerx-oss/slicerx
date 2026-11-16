@@ -305,6 +305,8 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mimir-chat .send-rec .send-rec-foot .lookup-rec-s { flex: 1 1 100%; display: flex; align-items: center; gap: 6px; min-height: 28px; padding-top: 0; font-variant-numeric: tabular-nums; white-space: normal; overflow: visible; -webkit-line-clamp: none; overflow-wrap: anywhere; }
 .mimir-chat .send-rec[data-state="approved"] .send-rec-foot .lookup-rec-s { color: var(--green); }
 .mimir-chat .send-rec[data-send="failed"] .send-rec-foot .lookup-rec-s { color: var(--orange); }
+/* Not now once the slide is done: gone from sight and from the keyboard, its box kept so nothing below moves */
+.mimir-chat .send-rec .send-rec-gone { visibility: hidden; }
 .mimir-chat .send-rec-title { color: var(--t-fg); font: var(--fw-medium) var(--fs-body) / 1.45 var(--f-body); }
 /* The spool strip: an inset box one radius step down, its header line (the unit and printer left, the pick right, both
    one line high so a pick moves nothing) over one row of chips. Every chip keeps room for its check and its border, so

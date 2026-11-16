@@ -4,7 +4,7 @@
 // the print; letting go short of it puts the knob back. The knob is a slider for the keyboard (arrow keys step it,
 // End takes it to the end), and the ring at the end is a button for a person who can't drag. Nothing happens on a
 // bare press of the knob. The track keeps its size in every state; only what is inside it changes.
-import { Icon } from '@slicerx/ui'
+import { Icon, tipAttrs } from '@slicerx/ui'
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
 import { SLIDE_NAME, SLIDE_TO_PRINT } from './send-words'
 
@@ -109,7 +109,7 @@ export function SlideToPrint({ state, printer, label, endLabel, onComplete }: Sl
           </>
         )}
       </span>
-      <button type="button" className="slide-print-end" data-testid="danger-mimir-send-print" aria-label={endLabel} title={endLabel} disabled={!live} onClick={finish}>
+      <button type="button" className="slide-print-end" data-testid="danger-mimir-send-print" aria-label={endLabel} {...tipAttrs({ title: endLabel })} disabled={!live} onClick={finish}>
         {state === 'sending' ? <span className="slide-print-spin" aria-hidden="true" /> : state === 'sent' ? <Icon name="check" size={16} /> : null}
       </button>
       <span

@@ -95,11 +95,17 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-plan-auto` | On a plan card approved at its default size with nobody asked (`data-auto` on `mimir-plan-card`), in place of its buttons: the line saying to ask to resize or change it |
 | `mimir-plan-why` | On a plan change card (`data-amends` holds the approved plan's planId): why the build asks to change the plan |
 | `mimir-plan-was` | Beside a size on a plan change card: the value the approved plan has |
-| `mimir-send` | The send card in place of the approval card for mimir's own printer.queue: the printer, each filament's slot, the time, the grams and the file; `data-request-id` is the request, `data-state` is off, ready, approved or closed |
-| `mimir-send-bed` | The bed tick on `mimir-send`, unchecked on every card; Print stays off until it is ticked |
-| `danger-mimir-send-print` | Print on `mimir-send`: on only with the tick, a passing preflight, a fresh slice, an idle or finished printer and a request that has not expired. It starts a print, so the agent bridge refuses it |
-| `mimir-send-status` | The send card's status beside its buttons: checking, what keeps Print off with the time left, or the answer |
-| `mimir-send-errors` | The lines that keep Print off on `mimir-send`: a stale slice, preflight errors, a busy printer with its time left |
+| `mimir-send` | The send card in place of the approval card for mimir's own printer.queue: the question, the time, the grams, the plate, the printer's spools and the slide; `data-request-id` is the request, `data-state` is off, ready, approved or closed, `data-send` is sending, sent or failed once the slide is done |
+| `mimir-send-title` | The send card's question: "<Part> ready. Send it to <printer>?" |
+| `mimir-send-spools` | The spool strip on `mimir-send`: every slot the printer reports, by unit, under a header with the unit and printer and the pick |
+| `mimir-send-spool` | One spool chip on the strip; `data-slot` is the slot id, `data-empty` an empty slot, `data-other` a spool of another material (neither can be picked), `data-on` the picked one, `data-feeds` the filament it feeds on a plate of two or more |
+| `mimir-send-pick` | The strip header's right side: Choose material, the picked spool ("White PETG · Slot A4"), or the slots in use |
+| `mimir-send-slide` | Slide to print on `mimir-send`; `data-state` is off, ready, sending, sent or failed |
+| `mimir-send-knob` | The slide's knob, a slider: dragged to the end, or End from the keyboard, it starts the print. The agent bridge refuses it |
+| `mimir-send-bed` | The bed tick on `mimir-send`, unchecked on every card; the slide stays off until it is ticked |
+| `danger-mimir-send-print` | The ring at the end of the slide on `mimir-send`, its click target: on only with a spool picked, the tick, a passing preflight, a fresh slice, an idle or finished printer and a request that has not expired. It starts a print, so the agent bridge refuses it |
+| `mimir-send-status` | The send card's status under the slide: checking, what keeps the slide off with the time left, or the answer |
+| `mimir-send-errors` | The lines that keep the slide off on `mimir-send`: a stale slice, preflight errors, a busy printer with its time left |
 | `mimir-send-dev` | On `mimir-send` for a printer with Developer Mode off: the steps to turn it on, and Bambu Connect as the other way |
 | `mimir-slice` | The slice card in the conversation after mimir slices: the plate's outline, the print time, filament and cost, and each warning on a line of its own; `data-stale` once the plate changed after slicing, when it says to slice again |
 | `mimir-slice-open` | Open in Slice on `mimir-slice`: shows that plate in the Slice tab |
@@ -665,7 +671,7 @@ them. `packages/app/test/test-ids.test.ts` keeps this table and its own list the
 | `creator-cancel` | Closes the creator page editor without saving |
 | `model-tool-cancel` | Closes a modeling tool; what was applied stays, and nothing more is undone |
 | `mimir-sheet-cancel` | Answers the size sheet as not confirmed; nothing is built and nothing is removed |
-| `mimir-send-cancel` | Not now on the send card: answers it as not approved, so nothing is sent |
+| `mimir-send-cancel` | Not now on the send card: answers it as not approved, so nothing is sent. Hidden, its place kept, once the slide is done |
 | `step-reading-cancel` | Stops reading a STEP file that is opening; nothing on the plate or on disk is removed |
 | `update-sheet` | The update sheet itself |
 | `update-body` | The sheet body, read for its step |
