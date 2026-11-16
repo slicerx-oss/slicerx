@@ -65,7 +65,10 @@ fn top_paint() -> Vec<PaintFacet> {
         .map(|k| {
             let rr = r + jitter(k);
             let p = [(c + rr * dir.0) as f32, (c + rr * dir.1) as f32, H as f32];
-            dir = (dir.0 * STEP_COS - dir.1 * STEP_SIN, dir.0 * STEP_SIN + dir.1 * STEP_COS);
+            dir = (
+                dir.0 * STEP_COS - dir.1 * STEP_SIN,
+                dir.0 * STEP_SIN + dir.1 * STEP_COS,
+            );
             p
         })
         .collect();
