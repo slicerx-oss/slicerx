@@ -128,9 +128,12 @@ test.describe('exploded view', () => {
     // the base is drawn moved along X
     expect(Math.abs((await exploded(page))[assembly]![0]![0]!)).toBeGreaterThan(10)
     const toolbar = page.getByRole('toolbar', { name: 'Plate tools' })
+    const open = (await page.getByTestId('explode-bar').boundingBox())!
     await toolbar.getByRole('button', { name: 'Brim ears' }).click()
-    // spread goes to 0 and waits, with the hint under it; the bar does not move
+    // spread goes to 0 and waits, with the hint under it; the bar does not move or widen
     await expect(page.getByTestId('explode-hint')).toBeVisible()
+    const held = (await page.getByTestId('explode-bar').boundingBox())!
+    expect([held.x, held.y, held.width].map(Math.round)).toEqual([open.x, open.y, open.width].map(Math.round))
     await expect(page.locator('#explode-spread')).toBeDisabled()
     expect((await appState(page)).explode.spread).toBe(0)
     expect(await exploded(page)).toEqual({})
