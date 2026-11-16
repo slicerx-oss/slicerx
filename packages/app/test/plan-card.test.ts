@@ -440,4 +440,24 @@ describe('a plan change card', () => {
     render(createElement(PlanCard, { askId: 'a', plan: asked, picked: planChoiceId('change', 'plan_1~r2'), actionable: false, amend: { was, why } }))
     expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Not changed, the plan stays as approved')
   })
+
+  it('names where a moved feature stands now and where it stood, beside that feature only', () => {
+    // a bridge's deck planned on its base plate, built on the piers: the change moves it and changes no size
+    const bridge: PartPlan = { planId: 'plan_2', part: 'Bridge', units: 'mm', features: [{ name: 'Base plate', sizes: { length: 120 } }, { name: 'Piers', on: 'Base plate', sizes: { height: 20 } }, { name: 'Deck', on: 'Base plate', sizes: { length: 110 } }], assumptions: [], questions: [] }
+    const moved: PartPlan = { ...bridge, planId: 'plan_2~r2', features: bridge.features.map((f) => (f.name === 'Deck' ? { ...f, on: 'Piers' } : f)) }
+    render(createElement(PlanCard, { askId: 'a', plan: moved, picked: null, actionable: true, onChoose: vi.fn(async () => undefined), amend: { was: bridge, why: 'The deck was built on the piers.' } }))
+    const tags = screen.getAllByTestId('mimir-plan-moved')
+    expect(tags.map((t) => t.textContent)).toEqual(['stands on Piers, was Base plate'])
+    expect(tags[0]!.closest('li')!.textContent).toContain('Deck')
+    expect(screen.queryAllByTestId('mimir-plan-was')).toEqual([])
+  })
+
+  it('shows no moved tag on a change that moves no feature, nor on a plan that is no change', () => {
+    render(createElement(PlanCard, { askId: 'a', plan: asked, picked: null, actionable: true, onChoose: vi.fn(async () => undefined), amend: { was, why } }))
+    expect(screen.queryAllByTestId('mimir-plan-moved')).toEqual([])
+    cleanup()
+    const standing: PartPlan = { ...was, features: was.features.map((f) => (f.name === 'Lid lip' ? { ...f, on: 'Body' } : f)) }
+    render(createElement(PlanCard, { askId: 'a', plan: standing, picked: null, actionable: true, onChoose: vi.fn(async () => undefined) }))
+    expect(screen.queryAllByTestId('mimir-plan-moved')).toEqual([])
+  })
 })
