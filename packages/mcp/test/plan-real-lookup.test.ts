@@ -220,7 +220,7 @@ describe('a lookup whose web answer cites no page', () => {
     expect(t.shown[0]!.real).toEqual(real)
     expect(t.shown[0]!.assumptions).toEqual(['real: Tower height, Merlon height and Merlons (array) spacing are from memory, as the lookup found no source for them'])
     // design.check's reply names them as from memory too, since the lookup read no page
-    expect(realSaid(real, () => undefined)).toBe(', say Tower height, Merlon height and Merlons (array) spacing are from memory, not looked up,')
+    expect(realSaid(real, () => undefined)).toBe(', saying Tower height, Merlon height and Merlons (array) spacing are from memory, not looked up')
   })
 
   it('holds a plan to the figures of a lookup whose search ran, and names no page, when its answer cites none', async () => {
@@ -313,10 +313,10 @@ describe('design.lookup_sizes', () => {
 })
 
 describe("design.check's reply on where the real sizes came from", () => {
-  it('names the sizes from memory, or the page the lookup read', () => {
+  it('names the sizes from memory, and leaves the page the lookup read to the part card', () => {
     const src = (id: string) => (id === 'lookup_1' ? { page: { title: 'Bridge facts' } } : undefined)
-    expect(realSaid(bridge.real, src)).toBe(', say Deck length, Main tower height and Towers (array) spacing are from memory, not looked up,')
-    expect(realSaid(bridge.real!.map((r) => ({ ...r, lookup: 'lookup_1' })), src)).toBe(', say its real sizes were looked up on Bridge facts,')
+    expect(realSaid(bridge.real, src)).toBe(', saying Deck length, Main tower height and Towers (array) spacing are from memory, not looked up')
+    expect(realSaid(bridge.real!.map((r) => ({ ...r, lookup: 'lookup_1' })), src)).toBe('')
     expect(realSaid(bridge.real!.map((r) => ({ ...r, stated: 'the deck is 280 m long' })), src)).toBe('')
     expect(realSaid([], src)).toBe('')
   })
