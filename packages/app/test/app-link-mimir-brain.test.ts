@@ -48,7 +48,7 @@ describe('mimir.brain over the app link', () => {
       name: 'Pilot',
       voice: true,
       toolGroups: { design: true, slicing: true, printers: false, watch: true, paint: true, web: false },
-      cloud: { base: 'claude-haiku-5-5', stepUp: 'sonnet' },
+      cloud: { base: 'claude-haiku-5-5', stepUp: 'sonnet', everyTurn: 'auto' },
       memory: { local: false, sync: 'opt-in' },
       // no knowledge file in this build
       knowledgeDocs: 0,
@@ -74,12 +74,17 @@ describe('mimir.brain over the app link', () => {
     expect(out.knowledgeDocs).toBe(2)
   })
 
+  it('reads an edition that asks for the step-up on every turn', () => {
+    const EVERY: EditionConfig = { ...HARBOR, ai: { ...HARBOR.ai, brain: brainSchema.parse({ cloud: { stepUp: 'sonnet', everyTurn: 'step' } }) } }
+    expect(brainOf(EVERY, null).cloud).toEqual({ base: 'claude-haiku-5-5', stepUp: 'sonnet', everyTurn: 'step' })
+  })
+
   it('the neutral edition reads as the stock mimir', async () => {
     expect(await runCall('mimir.brain', {})).toEqual({
       name: 'mimir',
       voice: false,
       toolGroups: { design: true, slicing: true, printers: true, watch: true, paint: true, web: true },
-      cloud: { base: 'claude-haiku-5-5', stepUp: null },
+      cloud: { base: 'claude-haiku-5-5', stepUp: null, everyTurn: 'auto' },
       memory: { local: true, sync: 'off' },
       knowledgeDocs: 0,
     })

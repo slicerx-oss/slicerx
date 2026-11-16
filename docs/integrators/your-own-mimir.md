@@ -68,6 +68,8 @@ On mimir cloud, the app never sends a model id. It sends one hint per turn (`x-s
 
 The proxy knows your edition from the install's token, which the install got by registering with your edition's registration key. So `cloud.stepUp` in your config (`sonnet` or `none`, default `none`) states what you expect. Setting it can't move your edition onto a larger model or past its caps: the check runs on the server. To change your edition's step-up, ask the SlicerX team. [mimir-cloud.md](mimir-cloud.md) covers the proxy itself.
 
+`cloud.everyTurn` sets which turns send `step`. With `auto` (the default) only deep turns do. With `step`, every turn does, follow-ups and plain questions included, so a step-up edition answers every turn on its step-up model while the caps allow it. `step` needs a `stepUp` model. It changes only the hint: the turn still picks its tools the same way, and the browser build keeps `auto`, since its proxy edition is the web one. Expect a person's daily cap to run out sooner, because each turn costs the step-up model's price.
+
 ## Memory
 
 `memory.local` (default `true`) lets the assistant keep short notes about the person (their printers, filaments, preferences, sizes and what worked) on their computer, one store per edition. mimir asks before it saves a note, unless the person turned that off in Settings > Memory, where they can also see, edit, delete, export and clear their notes. A note that looks like a key, token, access code or serial is refused. With `local: false` mimir has no memory tools and reads no notes.
@@ -85,13 +87,13 @@ The mimir tab saves notes, asking first with a small chip that says where the no
   "name": "mimir",
   "voice": true,
   "toolGroups": { "design": true, "slicing": true, "printers": false, "watch": true, "paint": true, "web": false },
-  "cloud": { "base": "claude-haiku-5-5", "stepUp": "sonnet" },
+  "cloud": { "base": "claude-haiku-5-5", "stepUp": "sonnet", "everyTurn": "auto" },
   "memory": { "local": true, "sync": "opt-in" },
   "knowledgeDocs": 2
 }
 ```
 
-`voice` says whether a voice is set. The answer never has the voice text or the contents of your docs. `knowledgeDocs` counts only your edition's own docs that mimir searches, in the edition file the running build carries. The bundled docs are not counted, and neither is one of yours that shares a bundled doc's id or name (the bundled doc wins). `cloud.base` is the base model mimir cloud answers with, and `cloud.stepUp` is your config's value (`null` for `none`); the proxy still decides. `toolGroups` is the set of switches every mimir in the app applies.
+`voice` says whether a voice is set. The answer never has the voice text or the contents of your docs. `knowledgeDocs` counts only your edition's own docs that mimir searches, in the edition file the running build carries. The bundled docs are not counted, and neither is one of yours that shares a bundled doc's id or name (the bundled doc wins). `cloud.base` is the base model mimir cloud answers with, `cloud.stepUp` is your config's value (`null` for `none`), and `cloud.everyTurn` is `step` or `auto` as your config says; the proxy still decides. `toolGroups` is the set of switches every mimir in the app applies.
 
 `slicerx_mimir_session` reads a conversation back turn by turn, with the same needs. A question mimir asked shows as a step with its `askId`, choices and `picked`. When the person answered it on their paired phone, the step also has `answeredOn`, for example `{ "kind": "phone", "name": "Pocket" }`. A client can turn a waiting question down with `slicerx_mimir_dismiss`, but no tool picks an answer for the person.
 

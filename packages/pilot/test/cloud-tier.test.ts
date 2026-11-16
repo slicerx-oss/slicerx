@@ -62,10 +62,10 @@ const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown
 const NO_APPROVALS = { register: async () => undefined, grant: async () => undefined, deny: async () => undefined } as unknown as ApprovalHost
 const CLOUD = { ...DEFAULT_CONFIG, provider: 'mimir-cloud', model: HAIKU, baseUrl: BASE, billing: 'key' as const, webSearch: false }
 
-async function run(t: LlmTransport, message: string, opts: { design?: boolean; attachments?: PilotAttachment[]; hasDesign?: boolean } = {}): Promise<PilotEvent[]> {
+async function run(t: LlmTransport, message: string, opts: { design?: boolean; attachments?: PilotAttachment[]; hasDesign?: boolean; everyTurn?: boolean } = {}): Promise<PilotEvent[]> {
   const pilot = createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: t },
-    config: CLOUD,
+    config: opts.everyTurn ? { ...CLOUD, cloudEveryTurn: 'step' } : CLOUD,
     policy: DEFAULT_POLICY,
     builtins: false,
     // the mimir tab gives its runtime the design tools, and Auto then routes a build by the request
@@ -89,6 +89,19 @@ describe('the tier header', () => {
     expect(cloudHeaders(undefined, 'ses_1', HUGINN)).toEqual({ 'x-sx-tier': 'base' })
     expect(cloudHeaders(undefined, 'ses_1')).toEqual({ 'x-sx-tier': 'base' })
     expect(cloudHeaders({ on: false, version: '0.2.0' }, 'ses_1', MUNINN)).toEqual({ 'x-sx-tier': 'step', 'x-sx-share': '0' })
+  })
+
+  it('says step on every turn when the edition asks for it, whatever the tier', () => {
+    expect(cloudHeaders(undefined, 'ses_1', HUGINN, 'step')).toEqual({ 'x-sx-tier': 'step' })
+    expect(cloudHeaders(undefined, 'ses_1', undefined, 'step')).toEqual({ 'x-sx-tier': 'step' })
+    expect(cloudHeaders(undefined, 'ses_1', MUNINN, 'step')).toEqual({ 'x-sx-tier': 'step' })
+    expect(cloudHeaders({ on: false, version: '0.2.0' }, 'ses_1', HUGINN, 'step')).toEqual({ 'x-sx-tier': 'step', 'x-sx-share': '0' })
+  })
+
+  it('never goes on another provider\'s request, every turn or not', async () => {
+    const { t, sent } = proxy([{ text: 'Hi.' }])
+    for await (const _ of createTransportClient(t, 'anthropic', { everyTurn: 'step' }).stream({ model: HAIKU, messages: [{ role: 'user', content: 'hi' }], tools: [], tier: HUGINN })) void _
+    expect(sent[0]?.headers['x-sx-tier']).toBeUndefined()
   })
 
   it('never goes on another provider\'s request', async () => {
@@ -202,5 +215,35 @@ describe('the model label', () => {
     expect(cloudModel({ 'x-sx-model': '<b>x</b>' })).toBeUndefined()
     expect(cloudModel({})).toBeUndefined()
     expect(cloudModel(undefined)).toBeUndefined()
+  })
+})
+
+describe('an edition that asks for the stronger model on every turn (ai.brain.cloud.everyTurn step)', () => {
+  it('sends step on the turns Auto keeps on huginn: a question, a picture, a change to the design, a slice', async () => {
+    const question = proxy([{ text: 'Yes, it can.' }])
+    await run(question.t, 'Can the AMS 2 Pro dry nylon?', { everyTurn: true })
+    expect(tiers(question.sent)).toEqual(['step'])
+    const picture = proxy([{ text: 'How thick is the plate?' }])
+    await run(picture.t, 'Model this part from the drawing I attached.', { attachments: [drawing], everyTurn: true })
+    expect(tiers(picture.sent)).toEqual(['step'])
+    for (const message of ['Make it 10 mm taller', 'slice it for the A1', 'Is my printer online?', 'Set infill to 20%']) {
+      const { t, sent } = proxy([{ text: 'Done.' }])
+      await run(t, message, { design: true, hasDesign: true, everyTurn: true })
+      expect(tiers(sent), message).toEqual(['step'])
+    }
+  })
+
+  it('sends step on every request of a run, before and after a struggle', async () => {
+    const fail = { calls: [{ name: 'no_such_tool', args: {} }] }
+    const { t, sent } = proxy([fail, fail, fail, { text: 'Done.' }])
+    await run(t, 'Make my print faster', { everyTurn: true })
+    expect(tiers(sent)).toEqual(['step', 'step', 'step', 'step'])
+  })
+
+  it('names Sonnet once when the proxy answers every turn on it, and Haiku when its limits fall back', async () => {
+    const look = { calls: [{ name: 'no_such_tool', args: {} }] }
+    const { t } = proxy([look, look, { text: 'The bed is too cold.' }], [SONNET, SONNET, HAIKU])
+    const ev = await run(t, 'Is the bed hot enough for PETG?', { everyTurn: true })
+    expect(switches(ev)).toEqual([SONNET, HAIKU])
   })
 })

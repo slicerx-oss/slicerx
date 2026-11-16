@@ -420,7 +420,11 @@ export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknow
     if (ok && llm && chosen) {
       // mimir cloud is billed per token like a key: one model for every turn
       // the edition's brain pack: no web search when its web tools are off, and its models for the person's own key
-      const config: PilotConfig = withBrain(base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' } : paid ? { ...base0, billing: paid } : base0, edition)
+      const branded = withBrain(base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' } : paid ? { ...base0, billing: paid } : base0, edition)
+      // the browser build's mimir cloud answers as the proxy's web edition (slicerx-web), which the edition's everyTurn
+      // does not describe: its turns ask for the stronger model only on muninn, as before
+      const { cloudEveryTurn: _web, ...webConfig } = branded
+      const config: PilotConfig = host.kind === 'web' ? webConfig : branded
       // mimir cloud keeps the session only while the person allows it (Settings > mimir). The person's notes go through
       // the app's one memory handle (the app link and Settings > Memory share it): the tab reads them, and saving one
       // asks first with the memory chip, answered through the app's approvals.

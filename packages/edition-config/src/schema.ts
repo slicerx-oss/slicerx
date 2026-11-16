@@ -181,7 +181,12 @@ export const brainSchema = z.object({
   cloud: z.object({
     /** mimir cloud only: the larger model the proxy may hand a hard question to. none keeps every answer on ai.model. */
     stepUp: z.enum(['sonnet', 'none']).default('none'),
-  }).prefault({}),
+    /**
+     * mimir cloud only: which turns ask the proxy for stepUp's model. step asks on every turn, follow-ups and questions
+     * included; auto asks only on a hard (muninn) turn. The proxy still decides within the edition's limits.
+     */
+    everyTurn: z.enum(['step', 'auto']).default('auto'),
+  }).refine((c) => c.everyTurn !== 'step' || c.stepUp !== 'none', { path: ['everyTurn'], message: "everyTurn 'step' needs a stepUp model (sonnet)" }).prefault({}),
   memory: z.object({
     /** Remember what the person tells the assistant, on their computer. */
     local: z.boolean().default(true),
