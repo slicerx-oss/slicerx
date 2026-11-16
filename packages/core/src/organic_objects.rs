@@ -11,7 +11,10 @@
 //! - objects that are the same after placement (the same mesh, paint, settings and turn, only moved across the bed:
 //!   [`copies`]) are planned once, and every other copy gets that support moved by the distance between them;
 //! - each object's support paths are made in its own frame (patterns anchored on the middle of its own box) and
-//!   moved with it, so every copy prints the same paths on every layer.
+//!   moved with it, so every copy prints the same paths on every layer;
+//! - once every object's support is moved to where it stands, the support that would reach into another object is
+//!   cut back to `support_object_xy_distance` from that object's outline, layer by layer, so a copy with a neighbor
+//!   in reach can print less support than the other copies.
 //!
 //! The plan of one object is the same plan a plate of that object alone gets.
 
@@ -246,6 +249,89 @@ fn cut(s: &Shapes, keep: &Shapes) -> Shapes {
     perimeters::intersection(s, keep)
 }
 
+/// Every object's outline on each object layer, plate frame (`outlines[object][layer]`), and how far another
+/// object's support keeps from it (`support_object_xy_distance`, mm).
+pub(crate) struct Outlines<'a> {
+    pub(crate) layers: &'a [Vec<Shapes>],
+    pub(crate) gap: f64,
+}
+
+/// What an object's support keeps out of on each layer: the other objects' outlines grown by the gap. Each
+/// object's grown outline is made once per layer, and only when some support reaches it.
+struct Neighbors<'a> {
+    outlines: &'a [Vec<Shapes>],
+    gap: i32,
+    /// Per object, per layer, the box of its outline.
+    boxes: Vec<Vec<Option<[i32; 4]>>>,
+    /// The layer `grown` holds, and per object its outline on it grown by the gap, once made.
+    layer: usize,
+    grown: Vec<Option<Shapes>>,
+}
+
+impl<'a> Neighbors<'a> {
+    fn new(o: &Outlines<'a>) -> Self {
+        Self {
+            outlines: o.layers,
+            gap: crate::support::units(o.gap).max(0),
+            boxes: o
+                .layers
+                .iter()
+                .map(|layers| layers.iter().map(|s| perimeters::bounds(s)).collect())
+                .collect(),
+            layer: usize::MAX,
+            grown: Vec::new(),
+        }
+    }
+
+    /// On layer `l`, the area of the other objects that `p`'s support (its printed areas `printed`, planned frame)
+    /// reaches into, grown by the gap and in `p`'s planned frame; None when its support reaches none of them.
+    fn keep_out(&mut self, l: usize, p: &Planned<'_>, printed: &[&Shapes]) -> Option<Shapes> {
+        let d = p.shift;
+        let reach = printed
+            .iter()
+            .filter_map(|s| perimeters::bounds(s))
+            .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])
+            .map(|b| [b[0] + d[0], b[1] + d[1], b[2] + d[0], b[3] + d[1]])?;
+        let g = self.gap.saturating_add(1);
+        let near: Vec<usize> = self
+            .boxes
+            .iter()
+            .enumerate()
+            .filter(|&(k, layers)| {
+                k != usize::from(p.object)
+                    && layers.get(l).copied().flatten().is_some_and(|b| {
+                        reach[0] <= b[2] + g
+                            && b[0] - g <= reach[2]
+                            && reach[1] <= b[3] + g
+                            && b[1] - g <= reach[3]
+                    })
+            })
+            .map(|(k, _)| k)
+            .collect();
+        if near.is_empty() {
+            return None;
+        }
+        if self.layer != l {
+            self.layer = l;
+            self.grown = vec![None; self.outlines.len()];
+        }
+        let mut parts: Vec<Shapes> = Vec::with_capacity(near.len());
+        for k in near {
+            let (Some(slot), Some(outline)) =
+                (self.grown.get_mut(k), self.outlines.get(k).and_then(|o| o.get(l)))
+            else {
+                continue;
+            };
+            parts.push(
+                slot.get_or_insert_with(|| perimeters::offset_round(outline, self.gap))
+                    .clone(),
+            );
+        }
+        let all = union(&parts);
+        (!all.is_empty()).then(|| moved(&all, [-d[0], -d[1]]))
+    }
+}
+
 /// The plate's organic plan from each object's own: on every layer, each object's areas moved to where it stands
 /// and put together (each object's areas kept apart as [`Piece`]s for its paths), and the branches through each raft
 /// layer likewise. `layers` is the number of support layers every plan has.
@@ -253,8 +339,19 @@ fn cut(s: &Shapes, keep: &Shapes) -> Shapes {
 /// A copy's support was planned where the object it copies stands, against the bed border there. Where the copy's
 /// support, moved to it, would reach past the bed (`bed`, mm), it is cut to the bed on its own, in its planned
 /// frame, so its paths stay on the plate.
-pub(crate) fn assemble(layers: usize, plans: &[Planned<'_>], bed: [f64; 4]) -> crate::organic::OrganicPlan {
+///
+/// Each object was planned without the others, so its support can reach into a neighbor. On every layer, where an
+/// object's support, moved to where the object stands, comes within the gap of another object's outline on that
+/// layer (`outlines`), it is cut back to the gap, in its planned frame. A copy is cut by its own neighbors, so
+/// copies with a neighbor in reach can differ from the others; a copy with none keeps the shared areas.
+pub(crate) fn assemble(
+    layers: usize,
+    plans: &[Planned<'_>],
+    bed: [f64; 4],
+    outlines: &Outlines<'_>,
+) -> crate::organic::OrganicPlan {
     let bed = bed.map(crate::support::units);
+    let mut near = Neighbors::new(outlines);
     let mut out = crate::organic::OrganicPlan {
         layers: Vec::with_capacity(layers),
         raft: Vec::new(),
@@ -276,24 +373,34 @@ pub(crate) fn assemble(layers: usize, plans: &[Planned<'_>], bed: [f64; 4]) -> c
                 &planned.base,
                 &planned.bottom_contact,
             ];
-            let (layer, own): (Arc<OrganicLayer>, [Shapes; 5]) =
-                if p.shift != [0, 0] && past_bed(&printed, p.shift, bed) {
-                    let keep = bed_in_frame(bed, p.shift);
-                    let o = planned.as_ref();
-                    let clipped = OrganicLayer {
-                        top_contact: cut(&o.top_contact, &keep),
-                        interface: cut(&o.interface, &keep),
-                        interface_bottom: o.interface_bottom,
-                        base_interface: cut(&o.base_interface, &keep),
-                        base: cut(&o.base, &keep),
-                        bottom_contact: cut(&o.bottom_contact, &keep),
-                        interface_id: o.interface_id,
-                        hang: cut(&o.hang, &keep),
-                    };
-                    (Arc::new(clipped), fields.map(|s| cut(s, &keep)))
-                } else {
-                    (Arc::clone(planned), fields.map(Clone::clone))
+            let keep =
+                (p.shift != [0, 0] && past_bed(&printed, p.shift, bed)).then(|| bed_in_frame(bed, p.shift));
+            let keep_out = near.keep_out(l, p, &printed);
+            let (layer, own): (Arc<OrganicLayer>, [Shapes; 5]) = if keep.is_some() || keep_out.is_some() {
+                let clip = |s: &Shapes| {
+                    let s = keep
+                        .as_ref()
+                        .map_or_else(|| s.clone(), |k| perimeters::intersection(s, k));
+                    match &keep_out {
+                        Some(k) => perimeters::difference(&s, k),
+                        None => s,
+                    }
                 };
+                let o = planned.as_ref();
+                let clipped = OrganicLayer {
+                    top_contact: clip(&o.top_contact),
+                    interface: clip(&o.interface),
+                    interface_bottom: o.interface_bottom,
+                    base_interface: clip(&o.base_interface),
+                    base: clip(&o.base),
+                    bottom_contact: clip(&o.bottom_contact),
+                    interface_id: o.interface_id,
+                    hang: clip(&o.hang),
+                };
+                (Arc::new(clipped), fields.map(clip))
+            } else {
+                (Arc::clone(planned), fields.map(Clone::clone))
+            };
             for (dst, s) in kinds.iter_mut().zip(own) {
                 if !s.is_empty() {
                     dst.push(moved(&s, p.shift));

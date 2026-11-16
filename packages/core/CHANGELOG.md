@@ -6,7 +6,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ### Added
 
-- `organic_per_object`, off by default: on a plate sliced as one, organic tree support is planned object by object. An object's branches avoid only its own layers and the bed border, and merge only with its own branches. Objects that are the same after placement (mesh, paint, settings and turn, moved only across the bed) are planned once, and the other copies get that support moved to where they stand, so every copy prints the same support paths. A copy whose moved support would reach past the bed is cut to the bed on its own, and each object's support carries that object's label (the one skip-object and exclude-object commands use) even where it runs under a neighbor. With it off, output does not change.
+- `organic_per_object`, off by default: on a plate sliced as one, organic tree support is planned object by object. An object's branches avoid only its own layers and the bed border, and merge only with its own branches. Objects that are the same after placement (mesh, paint, settings and turn, moved only across the bed) are planned once, and the other copies get that support moved to where they stand, so every copy prints the same support paths. A copy whose moved support would reach past the bed is cut to the bed on its own, and each object's support carries that object's label (the one skip-object and exclude-object commands use) even where it runs under a neighbor. Each object's support is also cut back to `support_object_xy_distance` from every other object's outline on each layer, so it never prints into a neighbor; a copy with a neighbor that close prints less support than the copies without one. With it off, output does not change.
 
 ### Fixed
 
