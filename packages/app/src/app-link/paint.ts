@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { bareFaces, stepName, type PaintTarget } from '@slicerx/cad-history'
-import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, RefusedPreviews, storedTarget } from '@slicerx/mcp/toolset'
+import { bareFaces, paintFaces, stepName, type PaintTarget } from '@slicerx/cad-history'
+import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, plannedFeature, RefusedPreviews, storedTarget } from '@slicerx/mcp/toolset'
 import { geom } from '../geom/client'
 import { slotCount } from '../filament/slots'
 import { history, inStep } from '../plate/history'
@@ -88,9 +88,15 @@ async function previewOn(i: ReturnType<typeof appPaintPreviewInput.parse>, clien
   if (!e.parts.length || i.part !== undefined && i.part >= e.parts.length) throw new LinkError('invalid_input', 'The part index is outside this object')
   if (i.target.kind === 'seed' && e.parts.length > 1 && i.part === undefined) throw new LinkError('invalid_input', 'Choose a part index for a seed on a multipart object')
   let selected: ReturnType<typeof storedTarget>
-  try { selected = storedTarget(i.target) }
+  // a feature by its name as the object's steps give it, refused with the names it has as the server's paint is
+  try {
+    selected = storedTarget(i.target)
+    if (selected.kind === 'feature') selected = { kind: 'feature', feature: plannedFeature(e.history?.steps ?? [], selected.feature) }
+  }
   catch (error) { throw new LinkError('invalid_input', error instanceof Error ? error.message : String(error)) }
   took(selected)
+  // the faces each part's feature steps made, as the object's replay knows them (none when it can't tell)
+  const byFeature = selected.kind === 'feature' ? await (await import('../cad/history/made-by')).featureFaces(e, selected.feature) : undefined
   // a height band's edge lands on its height, as the server's paint.preview picks it, so a thin band prints only its layers
   const maxDepth = i.max_depth ?? (selected.kind === 'height' ? bandDepth(i.part === undefined ? e.parts : [e.parts[i.part]!], e.transform) : undefined)
   const paint: PaintData = { ...e.paint }
@@ -99,7 +105,10 @@ async function previewOn(i: ReturnType<typeof appPaintPreviewInput.parse>, clien
   for (const [part, mesh] of e.parts.entries()) {
     if (i.part !== undefined && part !== i.part) continue
     const old = e.paint?.[part]?.[i.layer] ?? {}
-    const result = await geom().call<{ changed: Record<string, string>; selectedAreaMm2: number }>('paint.select', { mesh: { positions: mesh.positions, indices: mesh.indices }, transform: e.transform, paint: old, state: i.state, target: selected, ...(maxDepth === undefined ? {} : { maxDepth }) })
+    const faces = byFeature?.[part]
+    const result = selected.kind === 'feature'
+      ? await paintFaces((op, r) => geom().call(op, r), { positions: mesh.positions, indices: mesh.indices, ...(faces ? { faces: { ids: faces.ids, table: [] } } : {}) }, e.transform, faces?.faces ?? new Set(), old, i.state)
+      : await geom().call<{ changed: Record<string, string>; selectedAreaMm2: number }>('paint.select', { mesh: { positions: mesh.positions, indices: mesh.indices }, transform: e.transform, paint: old, state: i.state, target: selected, ...(maxDepth === undefined ? {} : { maxDepth }) })
     const changed = Object.entries(result.changed).filter(([key, value]) => (old[Number(key)] ?? '') !== value).map(([key, value]) => ({ triangle: Number(key), after: value || null }))
     const texts = { ...old }
     for (const { triangle, after } of changed) { if (after) texts[triangle] = after; else delete texts[triangle] }

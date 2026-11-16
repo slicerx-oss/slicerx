@@ -68,3 +68,55 @@ export function usedBy(steps: readonly Pick<Step, 'id' | 'params'>[]): Map<numbe
   }
   return out
 }
+
+/** A plan feature's name as steps and plans are matched by it: case and spacing aside. */
+export const featureKey = (name: string): string => name.trim().replace(/\s+/g, ' ').toLowerCase()
+
+/** The plan features a design's steps build, each once, by the name its first step gives, in build order. */
+export function featureNames(steps: readonly Pick<Step, 'feature'>[]): string[] {
+  const out = new Map<string, string>()
+  for (const s of steps) if (s.feature?.trim() && !out.has(featureKey(s.feature))) out.set(featureKey(s.feature), s.feature.trim())
+  return [...out.values()]
+}
+
+/**
+ * The ids of the steps whose faces are plan feature `feature`'s: the steps tagged with it; the steps a pattern among
+ * them repeats (a row or a mirror counts its steps as its first copy); and every pattern that repeats one of those, as
+ * a row or a mirror of the feature, untagged or tagged with another name. A pattern's copies are faces the pattern
+ * step makes, so a pattern repeating the steps of two features counts for both.
+ */
+export function featureSteps(steps: readonly Pick<Step, 'id' | 'feature' | 'params'>[], feature: string): Set<string> {
+  const key = featureKey(feature)
+  const byId = new Map(steps.map((s) => [s.id, s]))
+  const out = new Set<string>()
+  // down: the tagged steps and, for each pattern reached so, the steps it repeats
+  const down = steps.filter((s) => s.feature && featureKey(s.feature) === key).map((s) => s.id)
+  while (down.length) {
+    const id = down.pop()!
+    if (out.has(id)) continue
+    out.add(id)
+    const p = byId.get(id)?.params
+    if (p?.op === 'pattern') down.push(...p.steps.filter((x) => byId.has(x)))
+  }
+  // up: the patterns that repeat any of them, and the patterns of those
+  for (let more = true; more; ) {
+    more = false
+    for (const s of steps)
+      if (!out.has(s.id) && s.params.op === 'pattern' && s.params.steps.some((x) => out.has(x))) {
+        out.add(s.id)
+        more = true
+      }
+  }
+  return out
+}
+
+/** The faces of `part` (ids in its `faces`) that steps `ids` made, by each face's key and `made` (key to step id). */
+export function facesMadeBySteps(part: Pick<HistoryMesh, 'faces'>, made: ReadonlyMap<number, string>, ids: ReadonlySet<string>): Set<number> {
+  const out = new Set<number>()
+  const keys = part.faces?.keys ?? []
+  keys.forEach((k, face) => {
+    const by = k > 0 ? made.get(k) : undefined
+    if (by && ids.has(by)) out.add(face)
+  })
+  return out
+}

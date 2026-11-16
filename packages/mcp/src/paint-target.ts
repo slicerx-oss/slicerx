@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import type { PaintTarget } from '@slicerx/cad-history'
+import { featureKey, featureNames, type PaintTarget, type Step } from '@slicerx/cad-history'
 import { PAINT_FILAMENT_MAX } from '@slicerx/contracts'
 import { z } from 'zod'
 import { ToolInputError } from './errors'
@@ -13,6 +13,26 @@ export const PAINT_STATE_REFUSAL = `Paint uses filaments 1 to ${PAINT_FILAMENT_M
 
 /** A paint state: for color the filament (1 to 32), seam and support 1 or 2, fuzzy 1; 0 clears. */
 export const paintState = () => z.number().int().min(0).max(PAINT_FILAMENT_MAX, PAINT_STATE_REFUSAL)
+
+/** What a paint target can be, as the paint tools describe their target. */
+export const PAINT_TARGET_TEXT = 'What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from } | { kind: "feature", feature }: every face the steps of that plan feature made, such as a roof, a handle, a pole, a chimney top or a trim, even on a body built from many steps'
+
+/**
+ * Why a paint by feature is refused when the design has no feature by that name: the names it has, as a plan amend
+ * names the features it can change.
+ */
+export const noFeatureText = (feature: string, names: readonly string[]): string => (names.length ? `target: ${feature} is not a planned feature; name one the plan has (${names.join(', ')})` : `target: ${feature} is not a planned feature`)
+
+/**
+ * A paint by feature's feature as the design's steps name it (case and spacing aside), or the refusal listing the names
+ * it has. Paint steps tagged with a feature make no faces, so their names are not offered.
+ */
+export function plannedFeature(steps: readonly Pick<Step, 'feature' | 'params'>[], feature: string): string {
+  const names = featureNames(steps.filter((s) => s.params.op !== 'paint'))
+  const hit = names.find((n) => featureKey(n) === featureKey(feature))
+  if (!hit) throw new ToolInputError(noFeatureText(feature.trim(), names))
+  return hit
+}
 
 export const layerArg = z.enum(['color', 'seam', 'support', 'fuzzy']).default('color').describe('Paint layer: color (state = filament slot), seam (1 seam here, 2 keep it away), support (1 enforcer, 2 blocker) or fuzzy (1 fuzzy skin)')
 
@@ -33,8 +53,9 @@ export const targetArg = z
       mode: z.enum(['smart', 'bucket']).optional().describe('smart (default): across gentle edges; bucket: over the triangles of the seed state'),
     }),
     z.object({ kind: z.literal('replace'), from: paintState().describe('The state replaced by state') }),
+    z.object({ kind: z.literal('feature'), feature: z.string().min(1).max(200) }),
   ])
-  .describe('What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from }')
+  .describe(PAINT_TARGET_TEXT)
 
 type TargetIn = z.infer<typeof targetArg>
 
@@ -80,6 +101,8 @@ export function storedTarget(t: TargetIn): PaintTarget {
       return { kind: 'seed', point: t.point as V3, ...(t.angle_deg !== undefined ? { angleDeg: t.angle_deg } : {}), ...(t.mode ? { mode: t.mode } : {}) }
     case 'replace':
       return { kind: 'replace', from: t.from }
+    case 'feature':
+      return { kind: 'feature', feature: t.feature.trim() }
   }
 }
 

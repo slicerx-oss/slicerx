@@ -5,7 +5,7 @@
 // the step that made each key.
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
-import { keyOfTriangle, madeKeyOfTriangle, partThrough, point, usedBy, type HistoryMesh, type Step, type StepStatus } from '@slicerx/cad-history'
+import { facesMadeBySteps, featureSteps, keyOfTriangle, madeKeyOfTriangle, partThrough, point, usedBy, type HistoryMesh, type Step, type StepStatus } from '@slicerx/cad-history'
 import { runReplay, withStatus } from './ops'
 
 type Faces = HistoryMesh['faces']
@@ -128,4 +128,16 @@ export async function facesMadeBy(entry: PlateEntry, stepId: string): Promise<{ 
     }
   })
   return out
+}
+
+/**
+ * The faces of each part that plan feature `feature`'s steps made (cad-history featureSteps), as the object's replay
+ * knows them, with the part's face ids by triangle; null when that can't be told.
+ */
+export async function featureFaces(entry: PlateEntry, feature: string): Promise<{ ids: ArrayLike<number>; faces: Set<number> }[] | null> {
+  const got = entry.history?.steps.length ? await knownFor(entry) : null
+  if (!got) return null
+  const made = new Map(Object.entries(got.made).map(([k, id]) => [Number(k), id]))
+  const steps = featureSteps(got.steps, feature)
+  return got.faces.map((f) => ({ ids: f?.ids ?? [], faces: f ? facesMadeBySteps({ faces: f }, made, steps) : new Set<number>() }))
 }

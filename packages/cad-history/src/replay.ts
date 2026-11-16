@@ -8,7 +8,7 @@
 import type { EdgeRef, FaceFrame, MovedFace, Vec3 } from './types'
 import { withTilt } from './tilt'
 import { IDENTITY, SEED_FACE_MM, bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, multiply, nearestTriangle, newSlot, point, type History, type HistoryMesh, type LoftProfile, type Mat4, type PaintLayer, type PaintTexts, type PatternCopies, type PrimitiveSpec, type ReplayResult, type SkippedEdge, type Step, type StepParams, type StepStatus } from './model'
-import { madeBy } from './provenance'
+import { facesMadeBySteps, featureSteps, madeBy } from './provenance'
 import { makesBody, placeBody, stepParts, turnedOff } from './numbering'
 import { stepSalt } from './salt'
 import { copiesLanded, repeatProblem, stepCopyMoves, stepPatternProblem } from './pattern'
@@ -398,6 +398,8 @@ interface Found {
   fellBack: string[]
   /** New-body lofts asked exact by `exactLofts` alone that the engine made no body for, with its reason. */
   quiet: { step: string; why: string }[]
+  /** The faces of `part` that a plan feature's steps made, as the steps before the running one left them (paint by feature). */
+  featureFaces?: (feature: string, part: Pick<Flat, 'faces'>) => Set<number>
 }
 
 /**
@@ -743,6 +745,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         // band on the triangles, below)
         let whole: Set<number> | undefined
         let on = part
+        // a plan feature's faces by the steps that made them, whole, on a mesh part and an exact one alike
+        if (target.kind === 'feature') whole = found.featureFaces?.(target.feature, on) ?? new Set()
         if (target.kind === 'height' && (on.smb || on.body !== undefined) && on.faces && solids) {
           const band = bandOf(target)
           const at = bandCrossings(on, s.transform, band)
@@ -848,19 +852,20 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
 
 /**
  * Paints `state` on the whole of faces `ids` of the part, as the engine paints a whole part (paint.select): the
- * triangles' new texts, by the part's own triangle numbers.
+ * triangles' new texts, by the part's own triangle numbers, and the area painted.
  */
-async function paintFaces(engine: EngineCall, part: Flat, transform: Mat4, ids: ReadonlySet<number>, texts: Record<number, string>, state: number): Promise<{ changed: Record<string, string> }> {
+export async function paintFaces(engine: EngineCall, part: Pick<HistoryMesh, 'positions' | 'indices' | 'faces'>, transform: Mat4, ids: ReadonlySet<number>, texts: Record<number, string>, state: number): Promise<{ changed: Record<string, string>; selectedAreaMm2: number }> {
+  if (!ids.size || !part.faces) return { changed: {}, selectedAreaMm2: 0 }
   const tris: number[] = []
   for (let t = 0; t < Math.floor(part.indices.length / 3); t++) if (ids.has(part.faces!.ids[t]!)) tris.push(t)
-  if (!tris.length) return { changed: {} }
+  if (!tris.length) return { changed: {}, selectedAreaMm2: 0 }
   const indices = tris.flatMap((t) => [part.indices[3 * t]!, part.indices[3 * t + 1]!, part.indices[3 * t + 2]!])
   const paint: Record<number, string> = {}
   tris.forEach((t, j) => {
     if (texts[t] !== undefined) paint[j] = texts[t]!
   })
-  const r = (await engine('paint.select', { mesh: { positions: listed(part.positions), indices }, transform, paint, state, target: { kind: 'part' } })) as { changed: Record<string, string> }
-  return { changed: Object.fromEntries(Object.entries(r.changed).map(([j, v]) => [String(tris[Number(j)]), v])) }
+  const r = (await engine('paint.select', { mesh: { positions: listed(part.positions), indices }, transform, paint, state, target: { kind: 'part' } })) as { changed: Record<string, string>; selectedAreaMm2?: number }
+  return { changed: Object.fromEntries(Object.entries(r.changed).map(([j, v]) => [String(tris[Number(j)]), v])), selectedAreaMm2: r.selectedAreaMm2 ?? 0 }
 }
 
 /** A step's params for a copy a pattern makes: without the face and edge keys, which name the original's faces. */
@@ -1181,10 +1186,15 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   const baseKey = k
   // a step's lean is laid on its numbers here, so its key, its pattern copies and what follows it see the lean
   const effective = steps.map((s) => withTilt(followed(s, steps)))
-  for (const s of effective) {
-    k = hash(k, s.suppressed ? `-${s.id}` : JSON.stringify([s.part, s.transform, unkeyed(s.params), s.params.op === 'shape.extrude' && s.params.font ? fontDigest(req.fonts?.[s.params.font]) : 0, s.params.op === 'edge.fillet' || s.params.op === 'edge.chamfer' ? (s.follow ?? 0) : 0]))
+  // paint by feature paints what the steps tagged with it made, so which steps those are is in its key
+  const byFeature = (s: Step, i: number): string[] | 0 => (s.params.op === 'paint' && s.params.target?.kind === 'feature' ? [...featureSteps(effective.slice(0, i), s.params.target.feature)].sort() : 0)
+  effective.forEach((s, i) => {
+    k = hash(k, s.suppressed ? `-${s.id}` : JSON.stringify([s.part, s.transform, unkeyed(s.params), s.params.op === 'shape.extrude' && s.params.font ? fontDigest(req.fonts?.[s.params.font]) : 0, s.params.op === 'edge.fillet' || s.params.op === 'edge.chamfer' ? (s.follow ?? 0) : 0, byFeature(s, i)]))
     keys.push(k)
-  }
+  })
+  // a paint by feature reads which step made each face from the parts after every step before it: a replay that
+  // starts from a kept step needs every step before that one kept too
+  const lastByFeature = effective.findLastIndex((s, i) => !s.suppressed && byFeature(s, i) !== 0)
   // The result kept after step i, when it was made with the keys the steps have now; one made with others goes.
   const known = (i: number): Flat[] | undefined => {
     const key = keys[i]!
@@ -1205,9 +1215,13 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   let parts: Flat[] = history.base.map(flat)
   // how many parts the steps number, the rest set aside by a turned-off step (numbering.ts)
   let numbered = parts.length
+  // the parts after each step, for paint by feature: the kept ones before the start, then each as it runs
+  const after: Flat[][] = []
   for (let i = keys.length - 1; i >= 0; i--) {
+    if (lastByFeature > i && !keys.slice(0, i + 1).every((key) => cache.has(key))) continue
     const hit = known(i)
     if (hit) {
+      if (lastByFeature > i) for (let j = 0; j <= i; j++) after.push(cache.get(keys[j]!)!.map(keyedOnly))
       start = i + 1
       parts = hit
       const learned = learnedAt.get(keys[i]!)
@@ -1235,13 +1249,19 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       // turned off, it still numbers the parts as if it had run, and keeps the parts it would have taken away
       ;({ parts, numbered } = turnedOff(s, { parts, numbered }))
       cacheStep(keys[i]!, parts, { gone, moved, found, ran, numbered })
+      if (lastByFeature > i) after.push(parts.map(keyedOnly))
       continue
     }
+    if (byFeature(s, i)) {
+      let made: Map<number, string> | undefined
+      found.featureFaces = (feature, part) => facesMadeBySteps(part, (made ??= madeBy(effective.slice(0, i), after)), featureSteps(effective.slice(0, i), feature))
+    } else delete found.featureFaces
     if (o.yieldStep) await o.yieldStep(s)
     try {
       const on = stepParts(s, { parts, numbered })
       const out = s.params.op === 'pattern' ? await patternStep(call, s, effective.slice(0, i), on.parts, fonts, moved, gone, found, req.exact, solids, !!history.exact) : await runStep(call, s, on.parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
       ;({ parts, numbered } = on.after(out))
+      if (lastByFeature > i) after.push(parts.map(keyedOnly))
       status[i] = doneStatus(found, s.id)
       const had = keysOf(s.params)
       if (had) ran[s.id] = [had, keysOf(withFound(s.params, found.keys[s.id]))]
@@ -1264,6 +1284,9 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}), ...(found.quiet.length ? { exactLoftsQuiet: found.quiet } : {}), ...(req.exact || req.exactLofts ? { meshParts: meshIndices } : {}) }
 }
 
+/** A part with its faces' keys for madeBy: a kept body not tessellated has its keys alone. */
+const keyedOnly = (p: Flat): Flat => (p.unmeshed ? { ...p, faces: { ids: [], table: [], keys: p.unmeshed } } : p)
+
 /**
  * The step that made each face of the result, by face key (and by the key a face without one came from), from the parts
  * kept after each step that went through.
@@ -1276,8 +1299,7 @@ function madeAfter(steps: readonly Step[], keys: readonly string[], status: read
   for (let i = 0; i <= last; i++) {
     const kept = cache.get(keys[i]!)
     if (!kept) return undefined
-    // a kept body not tessellated has its keys alone
-    after.push(kept.map((p) => (p.unmeshed ? { ...p, faces: { ids: [], table: [], keys: p.unmeshed } } : p)))
+    after.push(kept.map(keyedOnly))
   }
   const all = madeBy(steps.slice(0, last + 1), after)
   const out: Record<number, string> = {}

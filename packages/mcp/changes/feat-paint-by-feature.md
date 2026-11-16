@@ -1,0 +1,5 @@
+### Added
+
+- `slicerx_paint_preview` 1.6.0 takes the target `{ "kind": "feature", "feature": "<name>" }`: every face the steps of that plan feature made, on a body built from many steps. The feature's steps are the steps tagged with it, every row or mirror of them (`slicerx_geom_array` or `slicerx_geom_mirror` with `steps`), and the steps a row tagged with it repeats. The walls and floor a cut makes belong to the cut's feature, and a face it cuts through stays its own feature's. The name matches case and spacing aside. A name the design has no step for is refused with `invalid_input`, listing the feature names it has. `slicerx_paint_apply` adds it as a paint step that finds the feature's faces again on every replay. On exact solids, a face that a join clears the key of (one a joined shape sits flat on, or one a mirror image lands flush with) belongs to no feature. On the mesh, a body that a new extrude, revolve, loft or sweep makes has its faces read as made by the step after it.
+- `slicerx_app_paint_preview` 1.2.0 takes the same feature target on an object in the app, by the steps of its history.
+
