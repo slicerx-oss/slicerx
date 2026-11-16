@@ -9,6 +9,7 @@ import { resolveSlots } from '../../filament/slots'
 import { arrange, landOnBed, placedOnBed } from '../../plate/arrange'
 import { getArrangeOptions, sourceOf } from '../../plate/edit'
 import { inStep } from '../../plate/history'
+import { placedLifted } from '../../plate/lift'
 import { allPlates, newPlateSettings, projectBase } from '../../plate/plates'
 import { bounds, centerOnBed, decompose, dropToBed, identity, modelOrigin, sizeOf, withTrs, type Mat4, type Vec3 } from '../../plate/transform'
 import { GCODE_TEXT_KEYS, trustOptions } from '../../state/actions'
@@ -107,22 +108,23 @@ function setCount(plate: PlateMeta, family: string, count: number, from: PlateEn
   const rootId = base.id
   while (mine.length + fresh.length < count) fresh.push({ ...base, id: uid(rootId), instanceOf: rootId, transform: [...base.transform] })
   const r = arrange(fresh, plate.objects, bed, placeOptions())
-  const placed = fresh.filter((c) => r.transforms[c.id]).map((c) => ({ ...c, transform: r.transforms[c.id]! }))
+  // a new copy is placed, so a design under the bed lifts onto it (plate/lift.ts)
+  const placed = fresh.filter((c) => r.transforms[c.id]).map((c) => placedLifted(c, r.transforms[c.id]!))
   plate.objects = [...plate.objects, ...placed]
   return { off, notAdded: fresh.length - placed.length }
 }
 
 /**
  * Moves the family's objects that hang off the bed or sit in an excluded area onto it: they are not placed yet (a part
- * built by the bed's corner). Each goes to the middle of the bed or the first free spot; locked ones stay. Returns how
- * many found no spot and are still off the bed.
+ * built by the bed's corner). Each goes to the middle of the bed or the first free spot, a design under the bed lifted
+ * onto it (plate/lift.ts); locked ones stay. Returns how many found no spot and are still off the bed.
  */
 function landFamily(plate: PlateMeta, family: string, bed: Bed): number {
   let off = 0
   for (const o of plate.objects) {
     if (familyOf(o) !== family || o.locked || placedOnBed(o, bed)) continue
     const to = landOnBed(o, plate.objects.filter((x) => x.id !== o.id), bed, placeOptions())
-    if (to) plate.objects = plate.objects.map((x) => (x.id === o.id ? { ...x, transform: to } : x))
+    if (to) plate.objects = plate.objects.map((x) => (x.id === o.id ? placedLifted(x, to) : x))
     else off++
   }
   return off

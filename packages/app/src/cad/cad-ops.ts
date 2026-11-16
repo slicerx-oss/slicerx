@@ -13,6 +13,7 @@ import { applyHistory, runReplay, toPart } from './history/ops'
 import { exactSolids } from './history/exact-flag'
 import { commitMade, goneError, placedNow } from './commit'
 import { onSketch } from './sketch-place'
+import { placedLifted } from '../plate/lift'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
@@ -349,9 +350,11 @@ export async function applyArray(host: Loader, objectId: string, spec: ArraySpec
   const r = await arrayCopies({ mesh: wholeMesh(e), transform: e.transform }, spec)
   const root = sourceId(e)
   // The first transform is the original, which stays where it is.
-  // Kept dimensions stay with the original.
-  const { dimensions: _d, ...plain } = e
-  const copies: PlateEntry[] = r.transforms.slice(1).map((t) => ({ ...plain, id: `${root}~${Date.now().toString(36)}a${(++seq).toString(36)}`, instanceOf: root, transform: [...t] }))
+  // Kept dimensions stay with the original, and so do where a design host landed it and the designs that landing moved
+  // over: the copies were laid out, not landed, so undoing a copy's step never moves another design.
+  const { dimensions: _d, landedAt: _l, roomMoves: _r, ...plain } = e
+  // a copy the array puts under the bed is a design placed there, so it lifts onto the bed (lift.ts)
+  const copies: PlateEntry[] = r.transforms.slice(1).map((t) => placedLifted({ ...plain, id: `${root}~${Date.now().toString(36)}a${(++seq).toString(36)}`, instanceOf: root }, t))
   // No copies of an object deleted while they were laid out.
   if (!get().plate.some((p) => p.id === e.id)) throw new Error('That object is gone.')
   set((s) => ({ plate: [...s.plate, ...copies] }))
