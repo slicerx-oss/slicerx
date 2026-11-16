@@ -533,6 +533,8 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
           const chunks: Buffer[] = []
           sock.on('data', (c: Buffer) => chunks.push(c))
           await new Promise<void>((r) => sock.on('end', () => r()))
+          // a slow card (POST /slow uploadMs): the transfer completes that much later
+          if (m.uploadDelayMs > 0) await new Promise((r) => setTimeout(r, m.uploadDelayMs))
           m.upload(name, Buffer.concat(chunks))
           sock.end()
           dataServer?.close()

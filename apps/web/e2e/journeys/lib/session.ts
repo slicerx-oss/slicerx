@@ -70,6 +70,24 @@ export function message(blocks: Block[]): string {
 /** A reply of one line of text. */
 export const answer = (text: string): Block[] => [{ type: 'text', text }]
 
+/** The tool calls a stubbed reply makes, one per round, with ids of their own. */
+let seq = 0
+export const call = (name: string, input: unknown): Block[] => [{ type: 'tool_use', id: `tu_${++seq}`, name, input }]
+
+/**
+ * A stubbed model that plays `steps` in order, then says it is done. A step is played once the conversation holds the
+ * calls of every step before it (their ids are its own), so a note the runtime adds or a chat that carries on from an
+ * earlier one does not throw the order off.
+ */
+export const playbook =
+  (steps: Block[][]) =>
+  (body: ProxyBody): Block[] => {
+    const seen = JSON.stringify(body.messages)
+    const ids = (step: Block[]) => step.flatMap((b) => (b.type === 'tool_use' ? [b.id] : []))
+    const next = steps.find((step) => !ids(step).length || ids(step).some((id) => !seen.includes(`"${id}"`)))
+    return next ?? answer('That is all from me for now.')
+  }
+
 /** What the person last sent, as text (tool results come back as JSON text). */
 export function lastUserText(b: ProxyBody): string {
   const m = b.messages.at(-1)

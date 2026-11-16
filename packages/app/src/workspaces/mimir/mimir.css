@@ -286,8 +286,9 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-chat .plan-rec .plan-rec-row { min-height: 44px; }
 :root[data-phone] .mimir-chat .plan-rec .sheet-rec-field { width: 120px; height: 40px; }
 :root[data-phone] .mimir-chat .plan-rec-foot .sx-btn { min-height: 44px; }
-/* The send card (send-card.tsx): flat like the plan card, rows of label and value, the problems that keep Print off as
-   plain lines, the bed tick on its own line, and a footer whose buttons keep their place and only turn off. */
+/* The send card (send-card.tsx): flat like the plan card, the question, rows of label and value, the printer's spools,
+   the problems that keep the slide off as plain lines, the bed tick on its own line, the slide, and a footer whose
+   button keeps its place and only turns off. */
 .mimir-chat .send-rec { gap: var(--s-2); max-width: 68ch; }
 .mimir-chat .send-rec .send-rec-row { grid-template-columns: minmax(96px, auto) minmax(0, 1fr); }
 .mimir-chat .send-rec .send-rec-v { font-family: var(--f-body); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
@@ -303,6 +304,60 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mimir-chat .send-rec-foot { flex-wrap: wrap; justify-content: flex-end; align-items: center; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
 .mimir-chat .send-rec .send-rec-foot .lookup-rec-s { flex: 1 1 100%; display: flex; align-items: center; gap: 6px; min-height: 28px; padding-top: 0; font-variant-numeric: tabular-nums; white-space: normal; overflow: visible; -webkit-line-clamp: none; overflow-wrap: anywhere; }
 .mimir-chat .send-rec[data-state="approved"] .send-rec-foot .lookup-rec-s { color: var(--green); }
+.mimir-chat .send-rec[data-send="failed"] .send-rec-foot .lookup-rec-s { color: var(--orange); }
+.mimir-chat .send-rec-title { color: var(--t-fg); font: var(--fw-medium) var(--fs-body) / 1.45 var(--f-body); }
+/* The spool strip: an inset box one radius step down, its header line (the unit and printer left, the pick right, both
+   one line high so a pick moves nothing) over one row of chips. Every chip keeps room for its check and its border, so
+   picking one changes only fill and border. */
+.mimir-chat .send-strip { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: color-mix(in srgb, var(--surface-card), var(--surface-page) 55%); }
+.mimir-chat .send-strip-head { display: flex; align-items: center; gap: var(--s-2); min-height: 20px; font: var(--fs-sm) var(--f-body); color: var(--t-mute); }
+.mimir-chat .send-strip-where { display: inline-flex; align-items: baseline; gap: var(--s-1); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mimir-chat .send-strip-unit { color: var(--t-fg); font-weight: var(--fw-semibold); }
+.mimir-chat .send-strip-sep { opacity: 0.6; }
+.mimir-chat .send-strip-pick { margin-left: auto; flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mimir-chat .send-strip-pick[data-on] { color: var(--t-fg); font-weight: var(--fw-medium); }
+.mimir-chat .send-strip-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: var(--s-2); }
+.mimir-chat .send-chip { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 100px; padding: var(--s-5) var(--s-1) var(--s-2); box-sizing: border-box; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: transparent; color: var(--t-fg); font: inherit; cursor: pointer; }
+.mimir-chat .send-chip:hover:not(:disabled) { border-color: color-mix(in srgb, var(--purple) 70%, transparent); background: color-mix(in srgb, var(--purple) 6%, transparent); }
+.mimir-chat .send-chip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.mimir-chat .send-chip:disabled { cursor: default; }
+.mimir-chat .send-chip[data-on] { border-color: color-mix(in srgb, var(--fg) 45%, transparent); background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.mimir-chat .send-chip:is([data-empty], [data-other]) { opacity: 0.45; }
+.mimir-chat .send-chip-n { position: absolute; top: var(--s-1); left: 6px; font: var(--fs-xs) var(--f-body); color: var(--t-mute); font-variant-numeric: tabular-nums; }
+.mimir-chat .send-chip-check { position: absolute; top: var(--s-1); right: 6px; display: inline-flex; width: 14px; height: 14px; align-items: center; justify-content: center; color: var(--green); }
+.mimir-chat .send-chip-feed { font: var(--fw-semibold) var(--fs-xs) var(--f-body); color: var(--t-fg); font-variant-numeric: tabular-nums; }
+.mimir-chat .send-chip-spool { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; margin-bottom: var(--s-1); color: var(--t-mute); }
+.mimir-chat .send-chip-m { font: var(--fw-semibold) var(--fs-md) / 1.2 var(--f-body); }
+.mimir-chat .send-chip-c { min-height: 14px; font: var(--fs-xs) / 1.25 var(--f-body); color: var(--t-mute); max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* The slide (slide-to-print.tsx): a pill track one size in every state. The knob rides on --slide-at (0 to 1) and the
+   ring at the far end is where it lands; after the answer the ring turns green and holds the spinner, then the check. */
+.mimir-chat .slide-print { position: relative; container-type: inline-size; height: 44px; box-sizing: border-box; border: 1px solid var(--line); border-radius: var(--r-pill); background: color-mix(in srgb, var(--surface-card), var(--surface-page) 55%); overflow: hidden; user-select: none; touch-action: none; }
+.mimir-chat .slide-print[data-state="off"] { opacity: 0.55; }
+.mimir-chat .slide-print-fill { position: absolute; inset: 0 auto 0 0; width: calc(var(--slide-at) * (100cqw - 44px) + 42px); border-radius: inherit; background: color-mix(in srgb, var(--purple) 16%, transparent); opacity: 0; transition: width var(--t-fast) ease, opacity var(--t-fast) ease; }
+.mimir-chat .slide-print[data-state="ready"] .slide-print-fill { opacity: 1; }
+.mimir-chat .slide-print[data-dragging] .slide-print-fill { transition: none; }
+.mimir-chat .slide-print:is([data-state="sending"], [data-state="sent"]) { border-color: color-mix(in srgb, var(--green) 40%, transparent); background: color-mix(in srgb, var(--green) 10%, var(--surface-card)); }
+.mimir-chat .slide-print[data-state="failed"] { border-color: color-mix(in srgb, var(--orange) 40%, transparent); }
+.mimir-chat .slide-print-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--s-1); padding: 0 48px; font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--t-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.mimir-chat .slide-print:is([data-state="sending"], [data-state="sent"]) .slide-print-text { color: var(--green); font-weight: var(--fw-semibold); }
+.mimir-chat .slide-print[data-state="failed"] .slide-print-text { color: var(--orange); font-weight: var(--fw-semibold); }
+.mimir-chat .slide-print-knob { position: absolute; top: 3px; left: calc(3px + var(--slide-at) * (100cqw - 42px)); display: inline-flex; width: 36px; height: 36px; align-items: center; justify-content: center; border-radius: 50%; background: color-mix(in srgb, var(--fg) 14%, var(--surface-card)); color: var(--t-fg); cursor: grab; transition: left var(--t-fast) ease; }
+.mimir-chat .slide-print[data-state="ready"] .slide-print-knob { background: var(--purple); color: var(--surface-page); }
+.mimir-chat .slide-print[data-state="off"] .slide-print-knob { cursor: default; }
+.mimir-chat .slide-print[data-dragging] .slide-print-knob { cursor: grabbing; transition: none; }
+.mimir-chat .slide-print-knob:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.mimir-chat .slide-print-knob[hidden] { display: none; }
+.mimir-chat .slide-print-end { position: absolute; top: 3px; right: 3px; display: inline-flex; width: 36px; height: 36px; align-items: center; justify-content: center; padding: 0; border: 1px dashed var(--line); border-radius: 50%; background: transparent; color: var(--surface-page); cursor: pointer; }
+.mimir-chat .slide-print-end:disabled { cursor: default; }
+.mimir-chat .slide-print-end:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.mimir-chat .slide-print:is([data-state="sending"], [data-state="sent"]) .slide-print-end { border: 0; background: var(--green); }
+.mimir-chat .slide-print[data-state="failed"] .slide-print-end { border-style: solid; border-color: var(--orange); }
+.mimir-chat .slide-print-spin { width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: slide-print-spin 0.8s linear infinite; }
+@keyframes slide-print-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .mimir-chat :is(.slide-print-knob, .slide-print-fill) { transition: none; }
+  .mimir-chat .slide-print-spin { animation: none; border-right-color: currentColor; }
+}
 :root[data-phone] .mimir-chat .send-rec .send-rec-row { grid-template-columns: minmax(84px, auto) minmax(0, 1fr); min-height: 36px; }
 :root[data-phone] .mimir-chat .send-rec .send-rec-v { white-space: normal; text-align: right; }
 :root[data-phone] .mimir-chat .send-rec-bed { min-height: 44px; align-items: center; }

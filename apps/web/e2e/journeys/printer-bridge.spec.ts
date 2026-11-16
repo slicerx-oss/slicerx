@@ -3,7 +3,8 @@
 // Journey: the app against a real sx-link and the mock printers, end to end: pair, list, camera, send with preflight and
 // approval on a Klipper printer, the bridge's settings, and, in the Bambu Lab describe, the Print sheet for an A1 with
 // an AMS lite and an A1 mini with only the external spool (slot choice, the .gcode.3mf start, a client's queue send
-// over MCP with its matched slots, a refused start with its reason and the plain G-code offer) and the camera guard.
+// over MCP with its matched slots, mimir's send card with a picked spool and the slide, a refused start with its reason
+// and the plain G-code offer) and the camera guard.
 // The Snapmaker U1 describe checks the Print sheet's toolhead choices and what reaches the printer.
 // The live view of one printer (printer-hud) runs first, on the demo fleet, before the page pairs, and the Print sheet
 // rows and the bridge section that need no hub follow it ('on the demo fleet'). The order is for speed only: every test
@@ -16,13 +17,15 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PrinterHost } from '@slicerx/contracts'
-import { type Locator, type Page, type WebSocketRoute } from '@playwright/test'
+import { type Locator, type Page, type TestInfo, type WebSocketRoute } from '@playwright/test'
 import { ONBOARDING_VERSION } from '../../../../packages/app/src/first-run/onboarding.ts'
 import type { ApprovalDone } from '../../../../packages/connect/link-client/src/index.ts'
 import { bridgeOn, connectApp, ctl, detectorPairing, hub, logOf, mockLog, reportHand, resumeFromCard, sawToast, seed, start, useBridge } from '../bridge-hub'
-import { plateReady } from '../fixtures'
+import { goTab, plateReady } from '../fixtures'
 import { expect, journey as test } from '../journey'
 import { boxOnPlate, calm, command, debugHooks, layeredX, patch, printerHud, sliceLayered, startSlice, toSlice } from './lib/slice'
+import { setScheme } from './lib/cad'
+import { answer, askTab, call, debugOn, emptyMimirTab, playbook, setPilot, shotsDir, shotsOn, signIn, stubProxy } from './lib/session'
 import { setState } from './lib/shell'
 
 // Setup already done, as after any first launch: printer setup opened by a test then records no unfinished onboarding
@@ -154,6 +157,27 @@ async function paired(page: Page): Promise<void> {
   await page.evaluate(() => (window as unknown as { __toasts?: string[] }).__toasts?.splice(0))
 }
 
+/** Makes `printer` the one the plate slices for, from the printer chip, as a person picks it. */
+async function choosePrinter(page: Page, printer: string): Promise<void> {
+  const chip = page.getByTestId('slice-machine-printer')
+  if (((await chip.locator('.printer-name').textContent()) ?? '').trim() !== printer) {
+    await chip.click()
+    await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: new RegExp(`^${printer}\\b`) }).first().click()
+  }
+}
+
+/** The send card at 1440 by 900, in dark and in light, when shots are on (`send-card-<state>-<scheme>.png`). */
+async function sendShots(page: Page, info: TestInfo, card: Locator, state: string): Promise<void> {
+  if (!shotsOn()) return
+  await card.scrollIntoViewIfNeeded()
+  await page.mouse.move(2, 2)
+  for (const scheme of ['dark', 'light'] as const) {
+    await setScheme(page, scheme)
+    await page.screenshot({ path: join(shotsDir(info), `send-card-${state}-${scheme}.png`) })
+  }
+  await setScheme(page, 'dark')
+}
+
 type Sheet = { printer: string; plate: unknown; result: unknown }
 
 /**
@@ -162,11 +186,7 @@ type Sheet = { printer: string; plate: unknown; result: unknown }
  */
 async function sheetOn(page: Page, printer: string): Promise<Locator> {
   await paired(page)
-  const chip = page.getByTestId('slice-machine-printer')
-  if (((await chip.locator('.printer-name').textContent()) ?? '').trim() !== printer) {
-    await chip.click()
-    await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: new RegExp(`^${printer}\\b`) }).first().click()
-  }
+  await choosePrinter(page, printer)
   const current = await page.evaluate((printer) => {
     const w = window as unknown as { __sx: { getState(): { plate: unknown[]; slice: { status: string; stale?: boolean; result?: unknown } } }; __sheet?: Sheet }
     const s = w.__sx.getState()
@@ -785,6 +805,108 @@ test.describe(BAMBU, () => {
       stopWatching()
       await mcp.close()
       await idleAgain('a1')
+    }
+  })
+
+  // mimir's send card on the A1: the strip shows the slots the A1 reports (the empty ones can't be picked), the person
+  // picks a PLA spool other than the one the send matched, ticks the bed and drags the slide to its end. The slide says
+  // Sending while the upload runs, then Sent, and the printer starts from the picked slot: the answer granted the
+  // request made for that slot, the card's own one was turned down, and the guard asked nothing more.
+  test('A1 with an AMS lite: the mimir send card sends from the spool the person picks', async ({ page }, info) => {
+    test.slow()
+    await idleAgain('a1')
+    await paired(page)
+    // the slots the A1 reports: the send matches the first PLA one, the person picks another PLA one
+    const slots = ((await hub.admin.status('a1')) as unknown as { slots: { id: string; material?: string; color?: string }[] }).slots
+    const pla = slots.filter((s) => /^A\d$/.test(s.id) && /^PLA/i.test(s.material ?? ''))
+    const [matched, picked] = pla
+    if (!matched || !picked) throw new Error(`the AMS lite needs two PLA slots: ${JSON.stringify(slots)}`)
+    await choosePrinter(page, 'A1')
+    await debugOn(page)
+    await setPilot(page, 'cloud')
+    await stubProxy(page, playbook([call('slice', {}), call('printer.queue', { printerId: 'a1', plate: 1, slotMap: { '0': matched.id } }), answer('It is on its way to the A1.')]))
+    await signIn(page)
+    await emptyMimirTab(page)
+    await goTab(page, 'prepare')
+    await boxOnPlate(page)
+    await page.getByTestId('tab-mimir').click()
+    await expect(page.getByTestId('mimir-chat')).toBeVisible()
+    await expect(async () => {
+      if ((await page.locator('.mimir-chat-scripted').count()) > 0) await signIn(page)
+      await expect(page.locator('.mimir-chat-scripted')).toHaveCount(0, { timeout: 5_000 })
+    }).toPass({ timeout: 30_000 })
+    await askTab(page, 'Print it on the A1')
+    const card = page.getByTestId('mimir-send').last()
+    await expect(card).toBeVisible({ timeout: 120_000 })
+    await expect(card.getByTestId('mimir-send-title')).toContainText('Send it to A1?')
+    await expect(card.getByTestId('mimir-send-status')).not.toHaveText(/^Checking /, { timeout: 30_000 })
+    // every slot the A1 reports, and only those, each with what it holds; an empty one can't be picked
+    const chips = card.getByTestId('mimir-send-spool')
+    await expect(chips).toHaveCount(slots.length)
+    expect(await chips.evaluateAll((els) => els.map((e) => e.getAttribute('data-slot')))).toEqual(expect.arrayContaining(slots.map((s) => s.id)))
+    for (const s of slots.filter((x) => !x.material)) await expect(card.locator(`[data-testid="mimir-send-spool"][data-slot="${s.id}"]`)).toBeDisabled()
+    await expect(card.getByTestId('mimir-send-pick')).toHaveText('Choose material')
+    await expect(card.getByTestId('danger-mimir-send-print')).toBeDisabled()
+    await sendShots(page, info, card, 'waiting')
+    // the pick names the spool; the tick turns the slide on
+    await card.locator(`[data-testid="mimir-send-spool"][data-slot="${picked.id}"]`).click()
+    await expect(card.getByTestId('mimir-send-pick')).toHaveText(new RegExp(`PLA · Slot ${picked.id}$`))
+    await card.getByTestId('mimir-send-bed').check()
+    const slide = card.getByTestId('mimir-send-slide')
+    await expect(slide).toHaveAttribute('data-state', 'ready', { timeout: 30_000 })
+    await sendShots(page, info, card, 'picked')
+    // every state the slide takes from here on
+    await slide.evaluate((el) => {
+      const w = window as unknown as { __slides: string[] }
+      w.__slides = []
+      new MutationObserver(() => w.__slides.push(el.getAttribute('data-state') ?? '')).observe(el, { attributes: true, attributeFilter: ['data-state'] })
+    })
+    const starts = async () => ((await ctl('/state'))['log'] as string[]).filter((l) => l.startsWith('project_file {'))
+    const before = (await starts()).length
+    // the upload takes a few seconds, so the slide says Sending long enough to see
+    await ctl('/slow', { mock: 'bambu', uploadMs: 4000 })
+    try {
+      // a drag short of the end puts the knob back and sends nothing. The pointer goes to the knob as a person's does
+      // (hover scrolls it clear of the composer and checks nothing lies over it), then the drag is measured from there.
+      const knob = card.getByTestId('mimir-send-knob')
+      await knob.hover()
+      const k = (await knob.boundingBox())!
+      const t = (await slide.boundingBox())!
+      await page.mouse.down()
+      await page.mouse.move(t.x + t.width * 0.4, k.y + k.height / 2, { steps: 8 })
+      await page.mouse.up()
+      await expect(knob).toHaveAttribute('aria-valuenow', '0')
+      expect(await page.evaluate(() => (window as unknown as { __slides: string[] }).__slides)).toEqual([])
+      // all the way: the print goes
+      await knob.hover()
+      await page.mouse.down()
+      await page.mouse.move(t.x + t.width - 6, k.y + k.height / 2, { steps: 12 })
+      await page.mouse.up()
+      await expect(slide).toHaveAttribute('data-state', 'sending')
+      await expect(slide).toHaveText('Sending to A1...')
+      await sendShots(page, info, card, 'sending')
+      await expect(slide).toHaveAttribute('data-state', 'sent', { timeout: 60_000 })
+      await expect(slide).toHaveText('Sent to A1')
+      await expect(card.getByTestId('mimir-send-pick')).toHaveText(new RegExp(`PLA · Slot ${picked.id}$`))
+      await sendShots(page, info, card, 'sent')
+      expect(await page.evaluate(() => (window as unknown as { __slides: string[] }).__slides)).toEqual(['sending', 'sent'])
+      // the printer starts from the picked slot, not the matched one (AMS lite slot A<n> is tray n - 1): the hub took
+      // only the request made for it, as the card's own request named the matched slot
+      await expect.poll(async () => (await starts()).length, { message: 'the printer got a project_file start', timeout: 60_000 }).toBeGreaterThan(before)
+      const start = JSON.parse((await starts()).at(-1)!.slice('project_file '.length)) as { url: string; ams_mapping: number[]; use_ams: boolean }
+      expect(start.url).toMatch(/\.gcode\.3mf$/)
+      expect(start.ams_mapping).toEqual([Number(picked.id.slice(1)) - 1])
+      expect(start.use_ams).toBe(true)
+      expect(start.ams_mapping).not.toEqual([Number(matched.id.slice(1)) - 1])
+      // the slide was the approval: the guard asked nothing more
+      await expect(page.locator('dialog.approve-dialog[open]')).toHaveCount(0)
+      await expect(page.getByTestId('mimir-transcript')).toContainText('It is on its way to the A1.', { timeout: 30_000 })
+    } finally {
+      await ctl('/slow', { mock: 'bambu', uploadMs: 0 })
+      await idleAgain('a1')
+      // the tests after this one start from Prepare with mimir off
+      await setPilot(page, 'off')
+      await goTab(page, 'prepare')
     }
   })
 
