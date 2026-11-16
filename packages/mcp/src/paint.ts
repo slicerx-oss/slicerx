@@ -12,7 +12,7 @@ import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import { designArg, designSummary, faceAt, featureArg, withFeature, type Design } from './design-tools'
 import { ToolInputError } from './errors'
-import { bandDepth, featureNotExactText, layerArg, meshedOf, paintState, plannedFeature, targetArg, storedTarget } from './paint-target'
+import { bandDepth, featureNotExactText, layerArg, meshedOf, paintState, localTargetArg, plannedFeature, targetArg, storedTarget } from './paint-target'
 import { RefusedPreviews } from './paint-refused'
 
 export { BAND_EDGE_MM, bandDepth } from './paint-target'
@@ -162,7 +162,7 @@ export function paintTools(designs: DesignHost): PilotTool<never>[] {
       'See what painting a design would do, without changing it: the triangles, area and connected regions a target paints on each part, and a picture framed on them (the PNG only with image: true). Targets in words: the whole part, faces facing a direction ("the bottom" is direction bottom; "the top cap" is direction top with pick largest), a height band, a point grown into a region (smart fill or bucket), or one state for another. Show the person the preview, then apply it with slicerx_paint_apply and its preview id.',
     input: previewInput,
     // a local model's form leaves out whole, which only the cloud follow-up guidance asks for
-    localInput: previewInput.omit({ whole: true }),
+    localInput: previewInput.omit({ whole: true }).extend({ target: localTargetArg }),
     async run(i, ctx) {
       // the step as far as it was worked out, to name a refused preview by
       let named: Extract<StepParams, { op: 'paint' }> = { op: 'paint', layer: i.layer, state: i.state, target: i.target as PaintTarget }

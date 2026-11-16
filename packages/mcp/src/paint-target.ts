@@ -42,8 +42,8 @@ export function plannedFeature(steps: readonly Pick<Step, 'feature' | 'params'>[
 
 export const layerArg = z.enum(['color', 'seam', 'support', 'fuzzy']).default('color').describe('Paint layer: color (state = filament slot), seam (1 seam here, 2 keep it away), support (1 enforcer, 2 blocker) or fuzzy (1 fuzzy skin)')
 
-export const targetArg = z
-  .discriminatedUnion('kind', [
+/** The targets every form takes: what a part, a direction, a height, a seed or a filament picks. */
+const BASE_TARGETS = [
     z.object({ kind: z.literal('part') }),
     z.object({
       kind: z.literal('direction'),
@@ -59,9 +59,18 @@ export const targetArg = z
       mode: z.enum(['smart', 'bucket']).optional().describe('smart (default): across gentle edges; bucket: over the triangles of the seed state'),
     }),
     z.object({ kind: z.literal('replace'), from: paintState().describe('The state replaced by state') }),
-    z.object({ kind: z.literal('feature'), feature: z.string().min(1).max(200) }),
-  ])
+] as const
+
+export const targetArg = z
+  .discriminatedUnion('kind', [...BASE_TARGETS, z.object({ kind: z.literal('feature'), feature: z.string().min(1).max(200) })])
   .describe(PAINT_TARGET_TEXT)
+
+/**
+ * The target a local model's paint.preview takes: every kind but a feature, as before it, since its row has no room
+ * for the feature's words (packages/pilot/src/local-tools.ts).
+ */
+export const LOCAL_PAINT_TARGET_TEXT = 'What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from }'
+export const localTargetArg = z.discriminatedUnion('kind', [...BASE_TARGETS]).describe(LOCAL_PAINT_TARGET_TEXT)
 
 type TargetIn = z.infer<typeof targetArg>
 
