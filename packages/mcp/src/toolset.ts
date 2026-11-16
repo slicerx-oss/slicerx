@@ -72,7 +72,8 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
  * an approved plan ties to it (withPlanTies), so design.check checks that design, and design.plan refuses a second plan of a part built from one. The app's tab and the creative eval
  * both make their tools here, so the eval offers what the tab offers. `newPlanId` names each plan (default random).
  * `filaments` (the open project's) adds project.add_filament and project.set_filament, and part makers given a slot past
- * the last filament add it, and so does applying color paint in one. The paint tools are the server's, on `host`.
+ * the last filament add it, and so does applying color paint in one, and the paint pictures draw in their colors. The
+ * paint tools are the server's, on `host`.
  */
 export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string; filaments?: FilamentList; bed?: () => Bed | undefined; exactByDefault?: boolean } = {}): PilotTool<never>[] {
   // design.plan names the gaps design.check holds a print-in-place part to: the same nozzle, layer height and material
@@ -81,8 +82,10 @@ export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?:
   // paint.preview, paint.apply and paint.regions paint a design's parts as a step of its history, as on the server
   // design.look draws the design for a cloud model to look at on a vague follow-up (look.ts); a local model is not offered it
   // design.check reads the open project's filament colors, to hold a colored plan's paint to them
+  // and the paint pictures draw in them
   const filaments = opts.filaments
-  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true, exactByDefault: opts.exactByDefault, lookupSource: (id) => card.lookups.source(id), ...(filaments ? { filamentColors: () => filaments.list().map((f) => f.color) } : {}) }), card.lookupTool())), ...paintTools(host), lookTool(host, opts.filaments)]
+  const colors = filaments ? { filamentColors: () => filaments.list().map((f) => f.color) } : {}
+  const tools = [...card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true, exactByDefault: opts.exactByDefault, lookupSource: (id) => card.lookups.source(id), ...colors }), card.lookupTool())), ...paintTools(host, colors), lookTool(host, opts.filaments)]
   // the open project's filaments, where the host has them: the part makers add the ones their slot is past, and two
   // tools add and set them
   return opts.filaments ? [...withNewFilaments(tools, opts.filaments), ...filamentTools(opts.filaments)] : tools
