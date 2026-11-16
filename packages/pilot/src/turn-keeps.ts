@@ -33,6 +33,9 @@ const live = (r: KeptRow): boolean => r.state === 'done'
 const REMOVE = /\b(remove|removing|delete|take (?:off|out|away)|get rid of|drop|without|no more|lose|strip (?:off|away))\b/i
 const words = (s: string): string[] => s.toLowerCase().match(/[a-z]{4,}/g) ?? []
 
+/** Whether the request asks to remove something: a removal word ("remove", "take off", "without"). */
+export const asksToRemove = (request: string): boolean => REMOVE.test(request)
+
 /** Whether the request asks to remove the feature named `key`: a removal word and one of the feature's own words. */
 export function askedToRemove(request: string, key: string): boolean {
   if (!REMOVE.test(request)) return false

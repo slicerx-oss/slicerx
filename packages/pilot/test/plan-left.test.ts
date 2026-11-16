@@ -26,6 +26,8 @@ interface Step {
   name: string
   feature?: string
   made?: string
+  /** Turned off with design.edit_step (suppressed): the step builds nothing. */
+  off?: boolean
 }
 interface Design {
   id: string
@@ -39,7 +41,7 @@ interface Design {
  * lastStep with its id and plan feature, and the parts), enough to replay a recording's calls. `check` is what
  * design.check answers.
  */
-function designTools(check: () => Record<string, unknown> = () => ({ pass: false }), o: { steps?: boolean } = {}): PilotTool<never>[] {
+function designTools(check: () => Record<string, unknown> = () => ({ pass: false }), o: { steps?: boolean; long?: boolean } = {}): PilotTool<never>[] {
   const designs = new Map<string, Design>()
   let ids = 0
   const get = (id: unknown): Design => {
@@ -116,9 +118,10 @@ function designTools(check: () => Record<string, unknown> = () => ({ pass: false
     }),
     tool('design.edit_step', (a) => {
       const d = get(a['design'])
-      const s = d.steps.find((x) => x.id === a['step'])
+      const s = d.steps.find((x) => x.id === a['step']) ?? (typeof a['step'] === 'number' ? d.steps[a['step'] - 1] : undefined)
       if (s && typeof a['feature'] === 'string') s.feature = a['feature']
-      return { summary: 'Edited', output: { ...summary(d), steps: d.steps.map((x, i) => ({ index: i + 1, id: x.id, name: x.name, ...(x.feature ? { feature: x.feature } : {}) })) } }
+      if (s && typeof a['suppressed'] === 'boolean') s.off = a['suppressed']
+      return { summary: 'Edited', output: { ...summary(d), steps: d.steps.map((x, i) => ({ index: i + 1, id: x.id, name: x.name, ...(x.feature ? { feature: x.feature } : {}), state: x.off ? 'suppressed' : 'done' })) } }
     }),
     tool('design.check', (a) => {
       const out: Record<string, unknown> = { planId: a['planId'], design: 'd1', designName: 'Part', chosen: 'tied to the plan', nozzleMm: 0.4, items: [], ...check() }
@@ -129,7 +132,10 @@ function designTools(check: () => Record<string, unknown> = () => ({ pass: false
       ? [
           tool('design.steps', (a) => {
             const d = get(a['design'])
-            return { summary: `${d.steps.length} steps`, output: { ...summary(d), steps: d.steps.map((x, i) => ({ index: i + 1, id: x.id, name: x.name, op: 'shape.extrude', ...(x.feature ? { feature: x.feature } : {}), state: 'done' })) } }
+            const rows = d.steps.map((x, i) => ({ index: i + 1, id: x.id, name: x.name, op: 'shape.extrude', ...(x.feature ? { feature: x.feature } : {}), state: x.off ? 'suppressed' : 'done' }))
+            // a long answer, as a design with lofted steps gets (their stations and the shape words): longer than
+            // a tool result sent to the model keeps
+            return { summary: `${d.steps.length} steps`, output: { ...summary(d), steps: rows, ...(o.long ? { shapeWords: 'w'.repeat(13_000) } : {}) } }
           }),
         ]
       : []),
@@ -878,5 +884,89 @@ describe('a planned change an edit carried out', () => {
     const now = designNow(JSON.stringify({ ok: true, result: { design: 'd1', steps: rows(['Arm lean']), parts: [{ index: 0, name: 'Desk lamp' }] } }))!
     expect(now.steps[1]).toEqual({ id: 's2', feature: 'Arm', edits: ['Arm lean'] })
     expect(planLeft(run(), 1, now)).toBeNull()
+  })
+})
+
+// A follow-up chat on a design whose plan lists a feature the model took away on purpose (undone or turned off, as a
+// "take the openings off" follow-up or a check that would not pass with it): the note never sends mimir on to build it
+// again, nor to build the features that already have a step tagged with their name. A feature truly never built is
+// still named, and one the person asks for again after it was taken away is named again.
+describe('a plan with features taken away on purpose', () => {
+  const PLAN = { part: 'Stand', units: 'mm', features: ['Base', 'Posts'].map((name) => ({ name, kind: 'extrude', sizes: {} })) }
+  // run 1: the plan, both features built and tagged, and a check that passes
+  const BUILT: ScriptStepData[] = [
+    { calls: [call('design.plan', PLAN)] },
+    { calls: [call('design.new', { name: 'Stand' })] },
+    { calls: [call('geom.extrude', { design: 'd1', operation: 'new', name: 'Stand', feature: 'Base' })] },
+    { calls: [call('geom.extrude', { design: 'd1', operation: 'join', part: 0, feature: 'Posts' })] },
+    { calls: [call('design.check', { planId: 'plan_1', design: 'd1' })] },
+    { text: 'The stand is built.' },
+  ]
+  // a follow-up's amend: the same plan with the features it adds
+  const amend = (asked: string, added: string[]) => ({ calls: [call('design.plan', { amends: 'plan_1', asked, features: [...PLAN.features, ...added.map((name) => ({ name, kind: 'extrude', sizes: {} }))] })] })
+  const join = (feature: string) => ({ calls: [call('geom.extrude', { design: 'd1', operation: 'join', part: 0, feature })] })
+  const undo = { calls: [call('design.undo', { design: 'd1' })] }
+  const check = { calls: [call('design.check', { planId: 'plan_1', design: 'd1' })] }
+  /** design.plan answering Go with the plan as sent; run 1's check passes, later ones fail only on what failed before the change. */
+  function tools(o: { long?: boolean } = {}) {
+    let n = 0
+    const plan = defineTool<Args>({ name: 'design.plan', version: '1', description: 'design.plan', source: 'command', permission: 'read', input: z.record(z.string(), z.unknown()), run: async (a) => ({ summary: 'Approved', output: { planId: 'plan_1', accepted: true, edits: { part: 'Stand', features: a['features'] } } }) }) as PilotTool<never>
+    return [plan, ...designTools(() => (n++ === 0 ? { pass: true } : { pass: false, items: [{ name: 'feature count', pass: false }], failedBefore: ['feature count'] }), { steps: true, ...o }).filter((t) => t.name !== 'design.plan')]
+  }
+
+  it('a feature undone in the run and the ones built before get no note, even when the step list runs long', async () => {
+    const client = createScriptedClient([...BUILT, amend('add a rail and a cap', ['Rail', 'Cap']), join('Rail'), join('Cap'), undo, { text: 'The rail is on. The cap would not hold, so I took it off again.' }, { text: 'Spare reply.' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a stand', 'add a rail and a cap'], { tools: tools({ long: true }) })
+    expect(notes(client.requests.at(-1)!.messages)).toEqual([])
+    expect(notices(two!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('a feature turned off in the run gets no note', async () => {
+    const client = createScriptedClient([...BUILT, amend('add a cap', ['Cap']), join('Cap'), { calls: [call('design.edit_step', { design: 'd1', step: 3, suppressed: true })] }, { text: 'I turned the cap off: it hid the posts.' }, { text: 'Spare reply.' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a stand', 'add a cap'], { tools: tools() })
+    expect(notes(client.requests.at(-1)!.messages)).toEqual([])
+    expect(notices(two!)).toEqual([])
+  })
+
+  it('a feature undone in an earlier turn gets no note in a later one', async () => {
+    const client = createScriptedClient(
+      [...BUILT, amend('add a rail', ['Rail']), join('Rail'), undo, check, { text: 'I took the rail off again: it would not pass the wall check.' }, amend('add a handle', ['Rail', 'Handle']), join('Handle'), { text: 'The handle is on.' }, { text: 'Spare reply.' }],
+      { chunk: false },
+    )
+    const [, , three] = await chat(client, ['Make a stand', 'add a rail', 'add a handle'], { tools: tools({ long: true }) })
+    expect(client.requests.flatMap((r) => notes(r.messages))).toEqual([])
+    expect(notices(three!)).toEqual([])
+    expect(client.remaining()).toBe(1)
+  })
+
+  it('a feature truly never built still gets the note, naming only that one', async () => {
+    const client = createScriptedClient([...BUILT, amend('add a rail, a cap and a handle', ['Rail', 'Cap', 'Handle']), join('Rail'), join('Cap'), undo, { text: 'The rail is on; the cap came off again.' }, { text: 'Done.' }], { chunk: false })
+    const [, two] = await chat(client, ['Make a stand', 'add a rail, a cap and a handle'], { tools: tools({ long: true }) })
+    const sent = notes(client.requests.at(-1)!.messages)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toContain('Still to build: Handle.')
+    expect(sent[0]).not.toMatch(/Base|Posts|Rail|Cap/)
+    expect(notices(two!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Handle.' })])
+  })
+
+  describe('then follows the person', () => {
+    const TAKEN: ScriptStepData[] = [...BUILT, amend('add a cap', ['Cap']), join('Cap'), undo, check, { text: 'I took the cap off: it would not hold.' }]
+
+    it('a feature asked for again is named again when the reply would end without it', async () => {
+      const client = createScriptedClient([...TAKEN, amend('put the cap back on', ['Cap']), { text: 'I will put it back.' }, { text: 'Done.' }], { chunk: false })
+      await chat(client, ['Make a stand', 'add a cap', 'put the cap back on'], { tools: tools() })
+      // the note comes in the run that asked for the cap again, as its last message
+      const last = client.requests.at(-1)!.messages
+      expect(last.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('Still to build: Cap.') })
+      expect(client.requests.slice(0, -1).flatMap((r) => notes(r.messages))).toEqual([])
+    })
+
+    it('a later request about something else leaves it off', async () => {
+      const client = createScriptedClient([...TAKEN, amend('make the base wider', ['Cap']), { text: 'The base is wider.' }, { text: 'Spare reply.' }], { chunk: false })
+      await chat(client, ['Make a stand', 'add a cap', 'make the base wider'], { tools: tools() })
+      expect(client.requests.flatMap((r) => notes(r.messages))).toEqual([])
+      expect(client.remaining()).toBe(1)
+    })
   })
 })
