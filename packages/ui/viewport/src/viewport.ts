@@ -1486,11 +1486,13 @@ class ViewportImpl implements Viewport {
         old.group.name = obj.name
         old.group.matrix.fromArray(obj.transform)
         old.group.matrixWorldNeedsUpdate = true
-        obj.parts.forEach((p, i) => {
+        // a loop, not a callback: a callback would hold `old` in this block's scope, which the material callback
+        // below shares, and a new build would keep the one it replaces alive through it
+        for (const [i, p] of obj.parts.entries()) {
           const e = old.parts[i]!
           e.color = p.color
           e.finish = p.finish ?? 'basic'
-        })
+        }
         this.objects.set(obj.id, old)
         kept++
         continue
