@@ -579,6 +579,93 @@ fn box_part(name: &str, lo: [f32; 3], hi: [f32; 3]) -> MeshPart {
     }
 }
 
+/// A block from `lo` to `hi` in X and Y, standing on `lo[2]`, whose top slopes in X from `top[0]` at `lo[0]` to
+/// `top[1]` at `hi[0]`, mm.
+fn sloped_part(name: &str, lo: [f32; 3], hi: [f32; 2], top: [f32; 2]) -> MeshPart {
+    let mut part = box_part(name, lo, [hi[0], hi[1], top[1]]);
+    // The top corners run lo x, hi x, hi x, lo x (see `box_part`).
+    for (p, z) in part.positions[4..].iter_mut().zip([top[0], top[1], top[1], top[0]]) {
+        p[2] = z;
+    }
+    part
+}
+
+/// The thin feature warnings of `parts` as one object, sliced at 0.2 mm layers with classic walls (0.42 mm outer
+/// wall), the walls a sloped top's thin last layer is measured against.
+fn classic_thin_warnings(parts: Vec<MeshPart>) -> Vec<String> {
+    let mesh = Arc::new(Mesh {
+        name: "part".into(),
+        parts,
+        ..Mesh::default()
+    });
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{
+            "id": "a", "name": "a", "mesh": "a",
+            "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 110, 0, 1],
+        }]},
+        "config": {
+            "brim_width": 0, "wall_generator": "classic", "layer_height": 0.2, "initial_layer_print_height": 0.2,
+            "outer_wall_line_width": 0.42,
+        },
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let run = common::run_request(&req, &|_: &str| Ok(Arc::clone(&mesh))).unwrap();
+    run.report
+        .warnings
+        .iter()
+        .filter(|w| w.message.contains("too thin"))
+        .map(|w| w.message.clone())
+        .collect()
+}
+
+/// A 20 mm block whose top slopes 0.076 mm per mm in X up to `peak`, mm.
+fn sloped_block(peak: f32) -> Vec<MeshPart> {
+    vec![sloped_part(
+        "hull",
+        [0.0, 0.0, 0.0],
+        [20.0, 20.0],
+        [peak - 0.076 * 20.0, peak],
+    )]
+}
+
+#[test]
+fn a_thin_wall_still_warns_with_classic_walls() {
+    let got = classic_thin_warnings(vec![
+        box_part("block", [0.0, 0.0, 0.0], [20.0, 20.0, 6.0]),
+        box_part("fin", [25.0, 5.0, 0.0], [25.3, 15.0, 6.0]),
+    ]);
+    assert_eq!(got, vec![THIN_FIN.to_owned()]);
+}
+
+#[test]
+fn a_sloped_top_does_not_warn_for_the_last_sliver_its_layer_below_holds() {
+    // The top rises 0.076 mm per mm to 19.92 mm, so the last layer at 19.9 mm keeps a sliver about 0.27 mm wide
+    // under nothing, standing on the layer below. It is the top of solid, not a feature that will not print.
+    assert_eq!(classic_thin_warnings(sloped_block(19.9205)), Vec::<String>::new());
+}
+
+#[test]
+fn a_sloped_top_with_a_wide_last_layer_stays_silent() {
+    // The control: topped at 19.5 mm, the last layer is about 2.6 mm wide and nothing is thin.
+    assert_eq!(classic_thin_warnings(sloped_block(19.5)), Vec::<String>::new());
+}
+
+#[test]
+fn a_thin_wall_standing_on_a_wide_base_still_warns() {
+    // The fin's first layer stands on the base, and the layers over it cover it: it is a thin wall, not a top.
+    let got = classic_thin_warnings(vec![
+        box_part("base", [0.0, 0.0, 0.0], [20.0, 20.0, 2.0]),
+        box_part("fin", [5.0, 9.85, 2.0], [15.0, 10.15, 6.0]),
+    ]);
+    assert!(got.iter().any(|m| m.contains("thinner than 0.42 mm")), "{got:?}");
+}
+
+/// The thin feature warning of the 0.3 mm fin beside the 20 mm block with classic walls, word for word as before.
+const THIN_FIN: &str = "A feature thinner than 0.42 mm on layers 1 to 30 near X 125.2 Y 120.0 mm is too thin for the walls and \
+                        will not print. Switch the wall generator to Arachne, which prints features down to a quarter \
+                        of the nozzle, or scale the part up.";
+
 /// The thin feature warnings of the 20 mm cube beside a 0.3 mm fin 10 mm long, with Arachne walls and a minimum
 /// feature size of `size`.
 fn thin_warnings(size: &Value) -> Vec<String> {
