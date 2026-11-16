@@ -159,6 +159,11 @@ pub extern "C" fn geom_call() -> u32 {
             .ok_or_else(|| "missing operation name".to_owned())?;
         let op = String::from_utf8_lossy(s.input.get(..split).unwrap_or(&[])).into_owned();
         let req = String::from_utf8_lossy(s.input.get(split + 1..).unwrap_or(&[])).into_owned();
+        #[cfg(feature = "brep")]
+        if let Some(name) = op.strip_prefix("brep.") {
+            // the messages hold no quote or backslash, so they go into the error's JSON as they are
+            exact_bounds(name, &req).map_err(|m| format!("{{\"error\":\"{m}\"}}"))?;
+        }
         // Each buffer is handed over once, without a copy.
         let files = RefCell::new(std::mem::take(&mut s.files));
         let load = |path: &str| -> sx_geom::Result<Vec<u8>> {
@@ -188,6 +193,68 @@ pub extern "C" fn geom_call() -> u32 {
             1
         }
     })
+}
+
+/// The bounds on an exact solid op's request text, checked before it is read, as the kernel's own entry checks them:
+/// the op's name at most 128 bytes, the text at most 32 MiB, 64 nested containers and 1,000,000 values (object keys
+/// are not values).
+#[cfg(feature = "brep")]
+fn exact_bounds(name: &str, req: &str) -> Result<(), &'static str> {
+    if name.len() > 128 {
+        return Err("op: exceeds 128 bytes");
+    }
+    if req.len() > 32 * 1024 * 1024 {
+        return Err("request: exceeds 32 MiB");
+    }
+    let (mut depth, mut values) = (0usize, 0usize);
+    let (mut in_text, mut escaped, mut in_scalar) = (false, false, false);
+    for &b in req.as_bytes() {
+        if in_text {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_text = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => {
+                in_text = true;
+                in_scalar = false;
+                values += 1;
+            }
+            b'[' | b'{' => {
+                in_scalar = false;
+                values += 1;
+                depth += 1;
+                if depth > 64 {
+                    return Err("request: JSON nesting exceeds 64 containers");
+                }
+            }
+            b']' | b'}' | b',' | b' ' | b'\n' | b'\r' | b'\t' => {
+                in_scalar = false;
+                if b == b']' || b == b'}' {
+                    depth = depth.saturating_sub(1);
+                }
+            }
+            // the text before a colon was a key
+            b':' => {
+                in_scalar = false;
+                values = values.saturating_sub(1);
+            }
+            _ if !in_scalar => {
+                in_scalar = true;
+                values += 1;
+            }
+            _ => {}
+        }
+        if values > 1_000_000 {
+            return Err("request: JSON exceeds 1000000 values");
+        }
+    }
+    Ok(())
 }
 
 /// Writes the operation names as a JSON array to the output buffer.

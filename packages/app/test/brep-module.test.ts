@@ -76,15 +76,15 @@ describe.skipIf(!exactBuilt)('B-rep kernel module', () => {
       expect(splitFaces.filter((f) => f.key === top.key)).toHaveLength(2)
       for (const [body, faceKey, reason] of [[cube, absent, 'missing'], [split, top.key, '(split|ambiguous)']] as const) {
         const before = k.call('info', { body }) as Info
-        expect(() => k.call('push', { body, at: [5, 5, 20], normal: [0, 0, 1], distanceMm: 1, faceKey })).toThrow(new RegExp(`^faceReference:.*${reason}.*repair`))
+        expect(() => k.call('push', { body, at: [5, 5, 20], normal: [0, 0, 1], distanceMm: 1, faceKey })).toThrow(new RegExp(`^brep: faceReference:.*${reason}.*repair`))
         expect(k.call('info', { body })).toEqual(before)
       }
-      expect(() => k.call('chamfer', { body: cube, edges: [{ a: [20, 20, 0], b: [20, 20, 20], face: [1, 0, 0], keys: [absent, absent + 1] }], distanceMm: 1 })).toThrow(/^faceReference:.*missing.*repair/)
+      expect(() => k.call('chamfer', { body: cube, edges: [{ a: [20, 20, 0], b: [20, 20, 20], face: [1, 0, 0], keys: [absent, absent + 1] }], distanceMm: 1 })).toThrow(/^brep: faceReference:.*missing.*repair/)
       for (const keys of [null, [], [1], [0, 2], [-1, 2], [1.5, 2], ['1', 2], [2 ** 52, 2]]) {
-        expect(() => k.call('chamfer', { body: cube, edges: [{ a: [20, 20, 0], b: [20, 20, 20], face: [1, 0, 0], keys }], distanceMm: 1 })).toThrow(/^faceReference:.*invalid.*repair/)
+        expect(() => k.call('chamfer', { body: cube, edges: [{ a: [20, 20, 0], b: [20, 20, 20], face: [1, 0, 0], keys }], distanceMm: 1 })).toThrow(/^brep: faceReference:.*invalid.*repair/)
       }
       const front = faces.find((f) => f.surface.normal?.[1] === -1)!
-      expect(() => k.call('chamfer', { body: split, edges: [{ a: [0, 0, 20], b: [6, 0, 20], face: [0, 0, 1], keys: [top.key, front.key] }], distanceMm: 1 })).toThrow(/^faceReference:.*split.*repair/)
+      expect(() => k.call('chamfer', { body: split, edges: [{ a: [0, 0, 20], b: [6, 0, 20], face: [0, 0, 1], keys: [top.key, front.key] }], distanceMm: 1 })).toThrow(/^brep: faceReference:.*split.*repair/)
     } finally {
       for (const body of [split, tool, cube]) k.call('free', { body })
     }
@@ -131,7 +131,7 @@ describe.skipIf(!exactBuilt)('B-rep kernel module', () => {
     // saved by the native build (packages/brep/tests/fixtures), read here
     const native = readFileSync(new URL('../../brep/tests/fixtures/holed-cube.smb', import.meta.url), 'utf8')
     close((k.call('info', { body: { smb: native } }) as Info).volumeMm3, 8000 - Math.PI * 16 * 20)
-    expect(() => k.call('info', { body: { smb: holed.bodySmb.replace('20.5000000000000000', '20.6000000000000000') } })).toThrow(/^body:/)
+    expect(() => k.call('info', { body: { smb: holed.bodySmb.replace('20.5000000000000000', '20.6000000000000000') } })).toThrow(/^brep: body:/)
     for (const b of [cube, holed.body]) k.call('free', { body: b })
   })
 
@@ -176,9 +176,9 @@ describe.skipIf(!exactBuilt)('B-rep kernel module', () => {
     const k = await brep()
     const bodies = () => (k.call('count', {}) as { bodies: number }).bodies
     const before = bodies()
-    expect(() => k.call('box', { min: [0, 0, 0], max: [-1, 2, 2] })).toThrow(/^max:/)
-    expect(() => k.call('info', { body: 123456 })).toThrow(/^body:/)
-    expect(() => k.call('nope', {})).toThrow(/^op:/)
+    expect(() => k.call('box', { min: [0, 0, 0], max: [-1, 2, 2] })).toThrow(/^brep: max:/)
+    expect(() => k.call('info', { body: 123456 })).toThrow(/^brep: body:/)
+    expect(() => k.call('nope', {})).toThrow(/^unknown operation "brep\.nope"/)
     expect(bodies()).toBe(before)
   })
 })

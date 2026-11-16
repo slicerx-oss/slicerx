@@ -38,17 +38,27 @@ lib="${CARGO_TARGET_DIR:-target}"/wasm32-unknown-emscripten/wasm-release/libsx_g
 exports=$(for f in input file call ops out_ptr out_len out_files out_file_ptr out_file_len error_ptr error_len panic_ptr panic_len; do
   printf '_geom_%s,' "$f"
 done)
-mkdir -p "$here/pkg"
 # An ES module that runs in a browser worker and in Node (tests). The kernel recurses deeply, so it gets an 8 MB stack.
 # Link-time optimization makes the code at the link, so the link takes the exception model too: without it a failed
 # kernel call throws past its catch and the reply loses its message. binaryen runs its size passes until they find
 # nothing more.
-start=$(date +%s)
-"$emxx" -Oz -flto -fwasm-exceptions -Wl,--start-group "$lib" "$work/libsx_brep.a" "$work/libsmlib.a" -Wl,--end-group \
-  -o "$here/pkg/sx_geom_exact.mjs" -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,worker,node -sALLOW_MEMORY_GROWTH=1 \
+link="-Oz -flto -fwasm-exceptions -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,worker,node -sALLOW_MEMORY_GROWTH=1 \
   -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=8MB -Wl,-mllvm,-wasm-enable-eh -Wl,-mllvm,-exception-model=wasm \
-  -sEXPORTED_FUNCTIONS="${exports%,}" -sEXPORTED_RUNTIME_METHODS=HEAPU8 -sBINARYEN_EXTRA_PASSES=--converge
+  -sEXPORTED_FUNCTIONS=${exports%,} -sEXPORTED_RUNTIME_METHODS=HEAPU8 -sBINARYEN_EXTRA_PASSES=--converge"
+# the link takes about three minutes, so its output is kept in the work directory with a stamp of what went in, and
+# reused while that is unchanged
+if command -v sha256sum > /dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
+stamp=$( (cat "$lib" "$work/libsx_brep.a" "$work/libsmlib.a"; echo "$link"; "$emxx" --version) | $sum | cut -c1-64)
+out="$work/out"
+start=$(date +%s)
+if [ "$(cat "$out/stamp" 2> /dev/null)" != "$stamp" ]; then
+  rm -rf "$out" && mkdir -p "$out"
+  "$emxx" $link -Wl,--start-group "$lib" "$work/libsx_brep.a" "$work/libsmlib.a" -Wl,--end-group -o "$out/sx_geom_exact.mjs"
+  echo "$stamp" > "$out/stamp"
+fi
 echo "build-exact: link in $(($(date +%s) - start)) s"
+mkdir -p "$here/pkg"
+cp "$out/sx_geom_exact.mjs" "$out/sx_geom_exact.wasm" "$here/pkg/"
 for f in sx_geom_exact.mjs sx_geom_exact.wasm; do
   echo "pkg/$f: $(wc -c < "$here/pkg/$f") bytes, $(gzip -9c "$here/pkg/$f" | wc -c) gzip"
 done
