@@ -77,8 +77,9 @@ describe('the part a reply made', () => {
     const h = handlers()
     render(<TranscriptView transcript={reply()} showThinking={false} approvals={approvals} parts={h} />)
     const card = screen.getByTestId('mimir-part')
-    expect(card.textContent).toContain('Cube created')
-    expect(card.textContent).toContain('Cube 20 x 20 x 20 mm')
+    expect(card.getAttribute('aria-label')).toBe('Cube created')
+    expect(card.querySelector('.part-title')!.textContent).toBe('20 mm cube')
+    expect(within(card).getByTestId('mimir-reply-tags').textContent).toBe('20 x 20 x 20 mm')
     fireEvent.click(within(card).getByRole('button', { name: 'Edit the 20 mm cube' }))
     expect(h.onEdit).toHaveBeenCalledWith('20-mm-cube')
     expect(h.onSelect).not.toHaveBeenCalled()
@@ -217,8 +218,9 @@ describe('a design built step by step', () => {
     expect(cards).toHaveLength(1)
     // the design as its newest step left it: the design id, which is the object's id on the plate, its name and size
     expect(cards[0]!.getAttribute('data-part')).toBe('box-with-lid')
-    expect(cards[0]!.textContent).toContain('Part created')
-    expect(cards[0]!.textContent).toContain('Box with lid 90 x 30 x 20 mm')
+    expect(cards[0]!.getAttribute('aria-label')).toBe('Part created')
+    expect(cards[0]!.querySelector('.part-title')!.textContent).toBe('Box with lid')
+    expect(within(cards[0]!).getByTestId('mimir-reply-tags').textContent).toBe('90 x 30 x 20 mm')
     // every step keeps its row, design.new included
     expect(document.querySelectorAll('.trow')).toHaveLength(5)
     // the card follows the step rows, and the next steps follow the card
@@ -303,7 +305,7 @@ describe('what the built card says the turn did', () => {
     const card = screen.getByTestId('mimir-part')
     expect(card.querySelector('.part-title')!.textContent).toBe('Box with lid updated')
     expect(card.getAttribute('aria-label')).toBe('Box with lid updated')
-    expect(card.textContent).toContain('Box with lid 90 x 30 x 20 mm')
+    expect(within(card).getByTestId('mimir-reply-tags').textContent).toBe('90 x 30 x 20 mm')
     expect(card.textContent).not.toContain('created')
     // a design.new that failed started nothing, so the design was only updated
     cleanup()

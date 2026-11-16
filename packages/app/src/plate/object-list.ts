@@ -139,11 +139,18 @@ export interface ObjectWarning {
   text: string
 }
 
+/** True when the object itself does not fit on the bed where it stands (its brim or skirt aside). */
+export function offTheBed(e: PlateEntry, s: Pick<AppState, 'bed'>): boolean {
+  const b = bounds(e.parts, e.transform)
+  const outline = b && s.bed.round ? reachFrom(e.parts, e.transform, s.bed.widthMm / 2, s.bed.depthMm / 2) : undefined
+  return !!b && !fitsBed(b, s.bed, 0.01, outline)
+}
+
 export function objectWarnings(e: PlateEntry, s: Pick<AppState, 'bed' | 'printerSlots'>, margins: PrintMargins = marginsOf(e)): ObjectWarning[] {
   const out: ObjectWarning[] = []
   const b = bounds(e.parts, e.transform)
   const outline = b && s.bed.round ? reachFrom(e.parts, e.transform, s.bed.widthMm / 2, s.bed.depthMm / 2) : undefined
-  if (b && !fitsBed(b, s.bed, 0.01, outline)) out.push({ kind: 'off-bed', text: 'Off the bed' })
+  if (offTheBed(e, s)) out.push({ kind: 'off-bed', text: 'Off the bed' })
   else if (b && printPastBed(b, s.bed, margins, outline, true)) out.push({ kind: 'off-bed', text: 'Brim or skirt reaches past the bed edge' })
   const have = s.printerSlots.length
   if (have > 0) {
