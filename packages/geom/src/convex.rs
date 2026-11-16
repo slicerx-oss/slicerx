@@ -1102,6 +1102,7 @@ mod tests {
                 ids,
                 table: vec![plane, plane],
                 keys: vec![11, 22],
+                from: vec![],
             }),
             ..TriMesh::new(pos.clone(), vec![[0, 1, 2], [1, 0, 3]])
         };

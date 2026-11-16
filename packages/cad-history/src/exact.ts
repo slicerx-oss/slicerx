@@ -48,9 +48,9 @@ export interface Plane {
 }
 
 /**
- * Paint on an exact part, kept by face: per layer, each face painted whole and its text. A face goes by its key; one
- * whose key is 0 (a face a cut split or a join merged) goes by its place, a point on it and the way it faces, as picks
- * do. A keyed face keeps its place too, for when a later step merges it into a face whose key is 0. Every tessellation makes the part's triangles again, so their paint is made again from this (paintOfFaces).
+ * Paint on an exact part, kept by face: per layer, each face painted whole and its text. A face goes by its key, on
+ * every piece when a cut split it (each piece keeps the key); one whose key is 0 (a join cleared it, as the face lay
+ * flat with a face of the joined shape) goes by its place, a point on it and the way it faces, as picks do. A keyed face keeps its place too, for when a later step merges it into a face whose key is 0. Every tessellation makes the part's triangles again, so their paint is made again from this (paintOfFaces).
  */
 export type FacePaint = Partial<Record<PaintLayer, { key: number; at?: Vec3; normal?: Vec3; text: string }[]>>
 
@@ -417,7 +417,7 @@ export interface Tessellated {
   positions: ArrayLike<number>
   indices: ArrayLike<number>
   faceIds?: ArrayLike<number>
-  faces?: { surface: unknown; key?: number }[] | { table: unknown[]; keys?: number[] }
+  faces?: { surface: unknown; key?: number; from?: number }[] | { table: unknown[]; keys?: number[]; from?: number[] }
   normals?: ArrayLike<number>
 }
 
@@ -449,6 +449,8 @@ export function tessellated(t: Tessellated): Pick<ExactPart, 'positions' | 'indi
   if (!given || !from || from.length !== triangles) return mesh
   const table = Array.isArray(given) ? given.map((f) => f.surface) : [...given.table]
   const keys = Array.isArray(given) ? given.map((f) => f.key ?? 0) : table.map((_, i) => given.keys?.[i] ?? 0)
+  // the key of the face each face came from, where a join cleared its own
+  const came = Array.isArray(given) ? given.map((f) => f.from ?? 0) : table.map((_, i) => given.from?.[i] ?? 0)
   const known = table.length
   const placed = (id: number) => Number.isInteger(id) && id >= 0 && id < known
   let ids = from
@@ -457,10 +459,11 @@ export function tessellated(t: Tessellated): Pick<ExactPart, 'positions' | 'indi
     // a triangle the kernel could not place on a face gets a face of its own kind, with no key
     table.push({ kind: 'other' })
     keys.push(0)
+    came.push(0)
     ids = Array.from(from, (id) => (placed(id) ? id : known))
     break
   }
-  return { ...mesh, faces: { ids, table, ...(keys.some((k) => k) ? { keys } : {}) } }
+  return { ...mesh, faces: { ids, table, ...(keys.some((k) => k) ? { keys } : {}), ...(came.some((k) => k) ? { from: came } : {}) } }
 }
 
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]

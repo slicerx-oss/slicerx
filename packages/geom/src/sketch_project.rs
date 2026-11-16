@@ -1144,6 +1144,7 @@ mod tests {
                     offset: 0.0,
                 }],
                 keys: vec![],
+                from: vec![],
             }),
         };
         let face = FaceRef {

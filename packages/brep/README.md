@@ -106,10 +106,10 @@ Cached objects include the source, recursive wrapper and kernel headers, compile
 
 | File | Bytes | gzip | SHA-256 |
 | --- | --- | --- | --- |
-| `lib/sx_brep.wasm` | 3,260,720 | 1,289,305 | `6a62a54b0c069fb06d3c2ff12a942a21da6e06bdb85f7796c4f91daf9b13419d` |
+| `lib/sx_brep.wasm` | 3,263,941 | 1,290,436 | `abf8e150d1d7ae8aec6efb904f5addb5eb0f38c7cb01f5634ec917e550a1a6d5` |
 | `lib/sx_brep.mjs` | 63,340 | 17,861 | `ecda0a5fb31873ad175525b589c3fc45c98ed0aa967b23186df002eb0997760c` |
 
-Gzip sizes use Node zlib at level 9, matching the web bundle gate. The previous WASM was 1,288,899 bytes by the same method; this build adds 406 bytes and remains below the 1,400,000-byte ceiling.
+Gzip sizes use Node zlib at level 9, matching the web bundle gate. The previous WASM was 1,289,305 bytes by the same method; this build adds 1,131 bytes and remains below the 1,400,000-byte ceiling.
 
 ## Licenses
 

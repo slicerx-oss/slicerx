@@ -814,7 +814,12 @@ fn prism(mesh: &TriMesh, local: &[V3], t: &Turn, r: &Round, facets: usize, wrap:
             ]
         })
         .unwrap_or_default();
-    out.faces = Some(Faces { ids, table, keys });
+    out.faces = Some(Faces {
+        ids,
+        table,
+        keys,
+        from: Vec::new(),
+    });
     out
 }
 

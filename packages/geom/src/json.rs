@@ -1815,6 +1815,50 @@ mod tests {
 
     #[cfg(feature = "cad")]
     #[test]
+    fn the_pieces_of_a_face_a_subtract_splits_say_which_face_they_came_from() {
+        use crate::faces::{Faces, Surface};
+        // the key of each face on the top, and the key of the face it came from (read off the answer as sent)
+        let top = |out: &Value| -> Vec<(u64, u64)> {
+            let f: Faces = serde_json::from_value(out["mesh"]["faces"].clone()).unwrap();
+            let from = |i: usize| out["mesh"]["faces"]["from"][i].as_u64().unwrap_or(0);
+            let mut got: Vec<(u64, u64)> = f
+                .table
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| matches!(s, Surface::Plane { normal, offset } if normal[2] > 0.999 && (offset - 20.0).abs() < 1e-3))
+                .map(|(i, _)| (f.keys[i], from(i)))
+                .collect();
+            got.sort_unstable();
+            got
+        };
+        let cut = |mesh: Value, solid: Value, salt: u64| {
+            run(
+                "subtract",
+                &json!({ "mesh": mesh, "solids": [solid], "withFaces": true, "keySalt": salt }),
+            )
+        };
+        let slot = |x: f64| json!({ "type": "box", "min": [x - 1.0, -1, 15], "max": [x + 1.0, 21, 21] });
+        let hole = json!({ "type": "cylinder", "origin": [10, 10, -1], "axis": [0, 0, 1], "diameterMm": 6.8, "heightMm": 5 });
+        // a pocket from below keys the box as a base and leaves the top whole, with nothing to say where it came from
+        let one = cut(stored(&build::box_mesh([0.0; 3], [40.0, 20.0, 20.0])), hole, 5);
+        let [(key, 0)] = top(&one)[..] else {
+            panic!("one top face: {}", one["mesh"]["faces"])
+        };
+        assert!(
+            key != 0 && one["mesh"]["faces"]["from"].is_null(),
+            "{}",
+            one["mesh"]["faces"]
+        );
+        // a slot across the top splits it: the pieces have no key, and both came from the top
+        let two = cut(one["mesh"].clone(), slot(20.0), 6);
+        assert_eq!(top(&two), [(0, key), (0, key)]);
+        // a second slot splits one piece again: every piece still came from the top, the one left whole too
+        let three = cut(two["mesh"].clone(), slot(30.0), 7);
+        assert_eq!(top(&three), [(0, key), (0, key), (0, key)]);
+    }
+
+    #[cfg(feature = "cad")]
+    #[test]
     fn subtract_keeps_the_keys_of_the_faces_it_leaves_whole() {
         use crate::faces::{Faces, Surface};
         // the answer's faces and the key of each that `pick` matches

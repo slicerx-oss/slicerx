@@ -1265,12 +1265,13 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
 }
 
 /**
- * The step that made each face of the result, by face key, from the parts kept after each step that went through.
+ * The step that made each face of the result, by face key (and by the key a face without one came from), from the parts
+ * kept after each step that went through.
  * Faces of the base are left out. Undefined when a kept result is gone from the cache or the parts have no keys.
  */
 function madeAfter(steps: readonly Step[], keys: readonly string[], status: readonly StepStatus[], parts: readonly Flat[]): Record<number, string> | undefined {
   const last = status.reduce((n, st, i) => (st.state === 'done' || st.state === 'suppressed' ? i : n), -1)
-  if (last < 0 || !parts.some((p) => p.faces?.keys?.length)) return undefined
+  if (last < 0 || !parts.some((p) => p.faces?.keys?.length || p.faces?.from?.length)) return undefined
   const after: Flat[][] = []
   for (let i = 0; i <= last; i++) {
     const kept = cache.get(keys[i]!)
@@ -1280,8 +1281,9 @@ function madeAfter(steps: readonly Step[], keys: readonly string[], status: read
   }
   const all = madeBy(steps.slice(0, last + 1), after)
   const out: Record<number, string> = {}
-  for (const p of parts) for (const k of p.faces?.keys ?? []) {
-    const id = all.get(k)
+  // a face with no key of its own was made by what made the face it came from (faces.from)
+  for (const p of parts) for (const k of [...(p.faces?.keys ?? []), ...(p.faces?.from ?? [])]) {
+    const id = k ? all.get(k) : undefined
     if (id) out[k] = id
   }
   return out

@@ -7,6 +7,9 @@
 
 constexpr unsigned long kSxKeyLow = 20101, kSxKeyHigh = 20102;
 constexpr unsigned kSxKeyHalfBits = 26;
+// A face whose key a join cleared keeps the key it had, as the key of the face it came from, in two more attributes
+// of the same halves: what made the face is still known, while a reference to it asks for repair.
+constexpr unsigned long kSxFromLow = 20105, kSxFromHigh = 20106;
 
 // How far from a plane a face may be, in mm, and still be a plane where faces are sorted into kinds: a tapered
 // extrude makes its flat sides as ruled surfaces, flat to 1e-5 mm. A sorting only, never a check of what the kernel

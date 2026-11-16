@@ -929,6 +929,7 @@ mod tests {
         let faces = Faces {
             ids: vec![0, 0, 1],
             keys: vec![7, 8],
+            from: vec![],
             table: vec![
                 Surface::Plane {
                     normal: [0.0, 0.0, 1.0],

@@ -100,6 +100,7 @@ static_assert(SM_TS_BOUNDARY_PREPARATION == 0 && SM_TS_FACE_TESSELLATION == 1 &&
 static_assert(SM_ANG_TOL_DEG == 0.5, "the kernel's angle tolerance");
 // where a face's key is kept (cpp/sx_keys.h), constants in src/kernel.rs
 static_assert(kSxKeyLow == 20101 && kSxKeyHigh == 20102 && kSxKeyHalfBits == 26, "face keys");
+static_assert(kSxFromLow == 20105 && kSxFromHigh == 20106, "where a face came from");
 static_assert(std::is_base_of<SmAttribute, SmLongAttribute>::value, "a key half is a long attribute");
 // how flat a face sorted with the planes is (cpp/sx_keys.h), constant in src/body.rs
 static_assert(kSxFlatKindMm == 1e-4, "flat faces");
