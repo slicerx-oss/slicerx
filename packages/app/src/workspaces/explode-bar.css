@@ -1,13 +1,12 @@
 /* The Spread control over the view (explode-bar.tsx): one floating bar in the view's top left column. */
-.explode-bar { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-1) var(--s-1) var(--s-3); border-radius: var(--r-md); font-size: var(--fs-md); color: var(--fg); }
-.explode-label { flex: none; font-weight: var(--fw-medium); }
-.explode-bar .explode-range { flex: none; width: 160px; height: 28px; }
+.explode-bar { display: grid; grid-template-columns: repeat(4, auto); align-items: center; column-gap: var(--s-2); row-gap: var(--s-1); padding: var(--s-1) var(--s-1) var(--s-1) var(--s-3); border-radius: var(--r-md); font-size: var(--fs-md); color: var(--fg); }
+.explode-label { font-weight: var(--fw-medium); }
+.explode-bar .explode-range { width: 160px; height: 28px; }
 /* room for "100%" at all times, so the slider and the options never shift as the value changes */
-.explode-value { flex: none; width: 4.5ch; text-align: right; font: var(--fw-medium) var(--fs-md) var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); }
-.explode-axis { flex: none; }
-/* While an edit tool holds the parts home: the hint takes a row of its own under the controls, which stay put. */
-.explode-bar[data-held] { flex-wrap: wrap; row-gap: var(--s-1); }
-.explode-hint { flex: 1 0 100%; margin: 0; padding-bottom: var(--s-1); font-size: var(--fs-sm); color: var(--muted); }
+.explode-value { width: 4.5ch; text-align: right; font: var(--fw-medium) var(--fs-md) var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); }
+/* While an edit tool holds the parts home, the hint takes a row of its own under the controls, which stay put. It spans
+   the controls' columns and contain: inline-size keeps its text out of the bar's width, so the bar never widens. */
+.explode-hint { grid-column: 1 / -1; contain: inline-size; margin: 0; padding-bottom: var(--s-1); font-size: var(--fs-sm); color: var(--muted); }
 .explode-axis > button { min-width: 32px; }
 /* Slice on a desktop: the plate toolbar sits at the top middle of the view (top 56 px at most, 40 px tall), so the bar
    starts under it and never runs beneath it, wherever the toolbar is placed. */
