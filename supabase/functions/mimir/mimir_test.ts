@@ -677,6 +677,93 @@ test('a step-up turn whose PDF count fails goes on the base model', async () => 
   assertEquals(counts(base1), [MODEL])
 })
 
+// A build call (no search) and a size lookup (three web searches), both asking the app's 32,000 reply allowance.
+const BUILD = base({ max_tokens: 32000, tools: [TOOL] })
+const LOOKUP = base({ max_tokens: 32000, tools: [TOOL, { type: 'web_search_20250305', name: 'web_search', max_uses: 3 }] })
+const toModel = (h: ReturnType<typeof harness>) => h.sent.filter((x) => x.url.endsWith('/v1/messages'))
+
+test('each model reserves and answers at its own reply cap', async () => {
+  for (const [model, headers, cap] of [[MODEL, { 'x-sx-install': TOKEN }, 32000], [SONNET, STEP, MAX_OUTPUT]] as const) {
+    for (const [raw, searches] of [[BUILD, 0], [LOOKUP, 3]] as const) {
+      const h = harness({ turnModel: toSonnet })
+      const res = await handle(post('/v1/messages', raw, headers), h.env)
+      assertEquals([res.status, res.headers.get('x-sx-model')], [200, model])
+      await res.text()
+      await Promise.all(h.pending)
+      const r = h.calls.find((c) => c.fn === 'mimir_reserve')!.args
+      const at = `${model} with ${searches} searches`
+      assertEquals(r['p_model'], model, at)
+      assertEquals(r['p_output'], cap, at)
+      assertEquals(r['p_searches'], searches, at)
+      assertEquals(r['p_input'], worstInput(ok(raw, model).promptEstimate, cap, searches), at)
+      const sent = toModel(h).map((x) => [x.body['model'], x.body['max_tokens']])
+      assertEquals(sent, [[model, cap]], at)
+    }
+  }
+  // a small call that asked for no thinking gets the answering model's own form of no thinking
+  const small = base({ max_tokens: 3000 })
+  const step = harness({ turnModel: toSonnet })
+  await (await handle(post('/v1/messages', small, STEP), step.env)).text()
+  assertEquals(toModel(step)[0]!.body['thinking'], { type: 'between_tools' })
+  const plain = harness()
+  await (await handle(post('/v1/messages', small, { 'x-sx-install': TOKEN }), plain.env)).text()
+  assertEquals(toModel(plain)[0]!.body['thinking'], { type: 'disabled' })
+})
+
+test('a step-up turn the daily caps refuse goes on the base model at the base model\'s cap', async () => {
+  const capped = (args: Obj) =>
+    args['p_model'] === SONNET ? Response.json({ message: 'daily limit', hint: 'ip_daily' }, { status: 400 }) : Response.json('55555555-5555-5555-5555-555555555555')
+  for (const [raw, searches] of [[BUILD, 0], [LOOKUP, 3]] as const) {
+    const h = harness({ turnModel: toSonnet, reserve: capped })
+    const res = await handle(post('/v1/messages', raw, STEP), h.env)
+    assertEquals([res.status, res.headers.get('x-sx-model')], [200, MODEL])
+    await res.text()
+    await Promise.all(h.pending)
+    const reserves = h.calls.filter((c) => c.fn === 'mimir_reserve').map((c) => c.args)
+    // the step-up model at its own cap, by bytes and then by the exact count; then the base model at its own
+    assertEquals(reserves.map((a) => [a['p_model'], a['p_output']]), [[SONNET, MAX_OUTPUT], [SONNET, MAX_OUTPUT], [MODEL, 32000]])
+    assertEquals(reserves[0]!['p_input'], worstInput(ok(raw, SONNET).promptEstimate, MAX_OUTPUT, searches))
+    assertEquals(reserves[1]!['p_input'], worstInput(10, MAX_OUTPUT, searches))
+    assertEquals(reserves[2]!['p_input'], worstInput(ok(raw, MODEL).promptEstimate, 32000, searches))
+    // the exact count asked about the step-up model
+    assertEquals(h.sent.filter((x) => x.url.endsWith('/count_tokens')).map((x) => x.body['model']), [SONNET])
+    assertEquals(toModel(h).map((x) => [x.body['model'], x.body['max_tokens']]), [[MODEL, 32000]])
+    assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_model'], MODEL)
+  }
+  // the base model's thinking goes with it: a small no-thinking call is disabled on Haiku, never Sonnet's between_tools
+  const h = harness({ turnModel: toSonnet, reserve: capped })
+  await (await handle(post('/v1/messages', base({ max_tokens: 3000 }), STEP), h.env)).text()
+  assertEquals(h.sent.filter((x) => x.url.endsWith('/count_tokens'))[0]!.body['thinking'], { type: 'between_tools' })
+  assertEquals(toModel(h).map((x) => [x.body['model'], x.body['max_tokens'], x.body['thinking']]), [[MODEL, 3000, { type: 'disabled' }]])
+  // a cut-off reply on the base model settles at the base model's cap
+  const cut = harness({ turnModel: toSonnet, reserve: capped })
+  const cutRes = await handle(post('/v1/messages', BUILD, STEP), cut.env)
+  await cutRes.body!.cancel()
+  await Promise.all(cut.pending)
+  assertEquals(cut.calls.find((c) => c.fn === 'mimir_settle')!.args['p_output'], 32000)
+})
+
+test('a step-up PDF turn counts with the body of the model it reserves for', async () => {
+  const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0x' } }
+  const body = { max_tokens: 3000, messages: [{ role: 'user', content: [pdf, { type: 'text', text: 'Make this.' }] }] }
+  const h = harness({ turnModel: toSonnet, count: (b) => (b['model'] === SONNET ? new Response('{}', { status: 500 }) : Response.json({ input_tokens: 5_000 })) })
+  await (await handle(post('/v1/messages', body, STEP), h.env)).text()
+  await Promise.all(h.pending)
+  assertEquals(h.sent.filter((x) => x.url.endsWith('/count_tokens')).map((x) => [x.body['model'], x.body['thinking']]), [[SONNET, { type: 'between_tools' }], [MODEL, { type: 'disabled' }]])
+  assertEquals(h.calls.filter((c) => c.fn === 'mimir_reserve').map((c) => [c.args['p_model'], c.args['p_input'], c.args['p_output']]), [[MODEL, 5_000, 3000]])
+  assertEquals(toModel(h).map((x) => [x.body['model'], x.body['max_tokens'], x.body['thinking']]), [[MODEL, 3000, { type: 'disabled' }]])
+})
+
+test('a request shape refuses never reaches the database, on a step tier too', async () => {
+  const h = harness({ turnModel: toSonnet })
+  for (const raw of [base({ tools: [{ type: 'web_fetch_20260209', name: 'web_fetch' }] }), { messages: [] }, base({ max_tokens: 32000, system: 7 })]) {
+    const res = await handle(post('/v1/messages', raw, STEP), h.env)
+    assertEquals([res.status, ((await res.json()) as { error: Obj }).error['code']], [400, 'invalid_request'])
+  }
+  assertEquals(h.calls.length, 0)
+  assertEquals(h.sent.length, 0)
+})
+
 test('reserve, settle and save use the turn\'s model', async () => {
   const h = harness({ turnModel: toSonnet })
   await (await handle(post('/v1/messages', base(), STEP), h.env)).text()

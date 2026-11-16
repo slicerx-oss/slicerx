@@ -250,14 +250,23 @@ async function messages(req: Request, env: Env): Promise<Response> {
   } catch {
     return fail(400, 'invalid_request', 'The body is not JSON.')
   }
-  // the client's betas pass only where shape allows them (BETAS); every other provider header is ours
-  const s = shape(raw, MODEL, req.headers.get('anthropic-beta'))
-  if (!s.ok) return fail(400, 'invalid_request', s.error)
+  // the client's betas pass only where shape allows them (BETAS); every other provider header is ours.
+  // Shaped for the base model first: whether a request passes does not depend on the model, and a
+  // refused one never reaches the database.
+  const betas = req.headers.get('anthropic-beta')
+  const atBase = shape(raw, MODEL, betas)
+  if (!atBase.ok) return fail(400, 'invalid_request', atBase.error)
   if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
-  // picked once the request is known to be good, so a refused one never reaches the database. A
-  // step-up model may drop once to the base model below, when the caps or the PDF count refuse it.
+  // The turn's model, then the request shaped for it: its own reply cap and thinking, which the
+  // reservation, the PDF count and the provider all take. A step-up model may drop once to the base
+  // model below, when the caps or the PDF count refuse it, and then goes as the base model's shape.
   let model = await turnModel(env, who, req.headers.get('x-sx-tier'))
-  s.body['model'] = model
+  let s = atBase
+  if (model !== MODEL) {
+    const picked = shape(raw, model, betas)
+    if (!picked.ok) return fail(400, 'invalid_request', picked.error)
+    s = picked
+  }
 
   const reserve = (m: string, prompt: number) =>
     rpc(env, 'mimir_reserve', {
@@ -292,7 +301,7 @@ async function messages(req: Request, env: Env): Promise<Response> {
   }
   const toBase = () => {
     model = MODEL
-    s.body['model'] = MODEL
+    s = atBase
     return reserveAt(MODEL)
   }
   let reserved: string | null
