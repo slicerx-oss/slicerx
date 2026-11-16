@@ -14,9 +14,9 @@ import { objectSlots } from '../../filament/object-nozzle'
 import { effectiveSlot, mapSlot, resolveSlots } from '../../filament/slots'
 import { landOnBed, printsOnBed } from '../../plate/arrange'
 import { getArrangeOptions } from '../../plate/edit'
+import { onBedHeight, placedLifted } from '../../plate/lift'
 import { activeMeta } from '../../plate/plates'
 import { outputKey, planFor, plateInputsKey, sliceInputsKey } from '../../plate/resume-tops'
-import type { Mat4 } from '../../plate/transform'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../../state/store'
 
 /** JSON with object keys sorted, so the same values always give the same text. */
@@ -144,28 +144,38 @@ function moveSlots(t: RunTarget): void {
  * Lands every plate's parts that the bed in the store leaves hanging off it or in an excluded area, themselves or what
  * prints around them (brim, skirt: printsOnBed), with the landing a new part gets (landOnBed): the middle of the bed or
  * the first free spot, clear of the brim and skirt of the parts around it. A part that prints where it stands stays put, and so does a locked one. A part with no room stays where it was.
+ * Height counts only for a design: one under the bed is lifted onto it where it stands, or where it lands (plate/lift.ts),
+ * and a plain model sunk into the bed on purpose stays as it is.
  * Each part is named with its plate. All moves are one store write, so one undo step brings every part back.
  */
 export function landOnNewBed(): RunLanded {
   const s = get()
   const out: RunLanded = { moved: [], offBed: [], ...(s.plates.length > 1 ? { manyPlates: true } : {}) }
+  // whether a part prints where it stands, read at its height on the bed: a plain model's sinking is no reason to move it
+  const prints = (o: PlateEntry) => printsOnBed({ parts: o.parts, transform: onBedHeight(o.parts, o.transform) }, s.bed)
   const land = (objects: PlateEntry[], plate: string): PlateEntry[] => {
-    const off = objects.filter((o) => !o.locked && !printsOnBed(o, s.bed))
-    if (!off.length) return objects
+    const free = objects.filter((o) => !o.locked)
+    const off = free.filter((o) => !prints(o))
+    // a design that prints where it stands but sits under the bed is lifted in place
+    const stays = free.filter((o) => !off.includes(o))
+    const lifted = stays.map((o) => placedLifted(o, o.transform)).filter((o, k) => o.transform[14] !== stays[k]!.transform[14])
+    if (!off.length && !lifted.length) return objects
     // the parts that stay are what the moved ones keep clear of; a part not landed yet is no obstacle
     const placed = objects.filter((o) => !off.includes(o))
-    const to = new Map<string, Mat4>()
+    const to = new Map<string, PlateEntry>(lifted.map((o) => [o.id, o] as const))
+    for (const o of lifted) out.moved.push({ name: o.name, plate })
     for (const o of off) {
       const m = landOnBed(o, placed, s.bed, getArrangeOptions())
       if (!m) {
         out.offBed.push({ name: o.name, plate })
         continue
       }
-      to.set(o.id, m)
-      placed.push({ ...o, transform: m })
+      const at = placedLifted(o, m)
+      to.set(o.id, at)
+      placed.push(at)
       out.moved.push({ name: o.name, plate })
     }
-    return to.size ? objects.map((o) => (to.has(o.id) ? { ...o, transform: to.get(o.id)! } : o)) : objects
+    return to.size ? objects.map((o) => to.get(o.id) ?? o) : objects
   }
   const plate = land(s.plate, s.plates.find((p) => p.id === s.activePlate)?.name ?? '')
   const plates = s.plates.map((p) => (p.id === s.activePlate ? p : { ...p, objects: land(p.objects, p.name) }))

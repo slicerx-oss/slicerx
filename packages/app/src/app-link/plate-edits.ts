@@ -3,9 +3,11 @@
 // Moving, rotating and scaling objects on the shown plate for an agent over the app link (project.move, .rotate and
 // .scale, the same names and arguments as the MCP server's own). Each call is one undo step, and the person sees a
 // toast naming the agent and what it did, with Undo.
+import type { History } from '@slicerx/cad-history'
 import { arrange } from '../plate/arrange'
 import { getArrangeOptions, sourceOf } from '../plate/edit'
 import { history } from '../plate/history'
+import { placedLifted } from '../plate/lift'
 import { bounds, setRotation, setScale, type Mat4, type Vec3 } from '../plate/transform'
 import { get, markStale, set, toast, type PlateEntry } from '../state/store'
 import { LinkError } from './methods-error'
@@ -34,9 +36,12 @@ async function editable(e: PlateEntry): Promise<void> {
   if (get().historyEdit?.objectId === e.id || replaying(e.id)) throw new LinkError('busy', 'the person is changing that object in the app; try again when they are done')
 }
 
-/** Writes new transforms in one store update (one undo step), tells the person, and reads the objects back. */
-function commit(changed: Record<string, Mat4>, said: string, client: string) {
-  const plate = get().plate.map((e) => (changed[e.id] ? { ...e, transform: changed[e.id]! } : e))
+/**
+ * Writes new transforms, and the design histories that go with them (a lift's landing move), in one store update (one
+ * undo step), tells the person, and reads the objects back.
+ */
+function commit(changed: Record<string, Mat4>, said: string, client: string, histories: Record<string, History> = {}) {
+  const plate = get().plate.map((e) => (changed[e.id] ? { ...e, transform: changed[e.id]!, ...(histories[e.id] ? { history: histories[e.id] } : {}) } : e))
   set({ plate })
   markStale()
   toast(`${client} ${said}.`, 'info', { label: 'Undo', run: () => void history().undo() })
@@ -56,6 +61,7 @@ const family = (e: PlateEntry): PlateEntry[] => get().plate.filter((o) => source
 /**
  * project.move: x and y put the center of the object's footprint there, in the plate's coordinates (plate.list's).
  * auto: true puts it in free space among the others instead. It moves this object only; its copies stay where they are.
+ * A design that would sit under the bed where it goes is lifted onto it (plate/lift.ts); a plain model keeps its height.
  */
 export async function move(args: Record<string, unknown>, client: string) {
   const e = find(args['object'])
@@ -74,7 +80,8 @@ export async function move(args: Record<string, unknown>, client: string) {
     to[12] = (to[12] ?? 0) + (args['x'] as number) - (b.min[0] + b.max[0]) / 2
     to[13] = (to[13] ?? 0) + (args['y'] as number) - (b.min[1] + b.max[1]) / 2
   }
-  return commit({ [e.id]: to }, auto ? `moved ${e.name} into free space` : `moved ${e.name}`, client)
+  const placed = placedLifted(e, to)
+  return commit({ [e.id]: placed.transform }, auto ? `moved ${e.name} into free space` : `moved ${e.name}`, client, placed.history && placed.history !== e.history ? { [e.id]: placed.history } : {})
 }
 
 /** project.rotate: degrees about X, then Y, then Z, absolute. The object and its copies are set back down on the bed. */

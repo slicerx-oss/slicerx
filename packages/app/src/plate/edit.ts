@@ -3,10 +3,11 @@
 // Plate edits on the app store. Each one replaces `plate` once, so undo sees one step, and marks a
 // finished slice stale. The math lives in ./transform.
 import type { MeshHandle, MeshPart, PlateCheck } from '@slicerx/contracts'
-import { liftedOnto, placedAfter, withPlaced, type History } from '@slicerx/cad-history'
+import type { History } from '@slicerx/cad-history'
 import { get, markStale, selectedIds, set, toast, type PlateEntry } from '../state/store'
 import { bake, mergeParts, primitive, splitPieces, splitToObjects, type PrimitiveShape } from './mesh-ops'
-import { arrange, ARRANGE_DEFAULTS, fillCount, lowestOf, placeOnPlate, type ArrangeOptions, type ArrangeResult } from './arrange'
+import { arrange, ARRANGE_DEFAULTS, fillCount, placeOnPlate, type ArrangeOptions, type ArrangeResult } from './arrange'
+import { placedLifted } from './lift'
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { arrangeByObject, type Place } from './by-object-arrange'
 import { arrangesInEngine, engineArrange } from './engine-arrange'
@@ -263,7 +264,7 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
 
 /**
  * `transforms` from an arrange of `plate`, with each design (an object with a history) they leave under the bed lifted
- * onto it, as a design's landing lifts one (cad-history liftedOnto): raised only, and a locked one never. The lift
+ * onto it, as every placement lifts one (lift.ts): raised only, and a locked one never. The lift
  * joins the design's landing moves (History.placed), in `history`, so a saved project and the design's next edit read
  * it in the frame it was built in. Any other object keeps the height arrange gives it.
  */
@@ -273,10 +274,10 @@ export function liftArranged(plate: readonly PlateEntry[], transforms: Readonly<
   for (const e of plate) {
     const t = transforms[e.id]
     if (!t || !e.history || e.locked) continue
-    const up = liftedOnto(e.parts, t, { lowest: lowestOf })
-    if (up[14] === t[14]) continue
-    out[e.id] = up
-    history.set(e.id, withPlaced(e.history, placedAfter(e.history.placed, t, up)))
+    const up = placedLifted(e, t)
+    if (up.transform[14] === t[14]) continue
+    out[e.id] = up.transform
+    history.set(e.id, up.history!)
   }
   return { transforms: out, history }
 }
@@ -371,7 +372,8 @@ function copyOf(src: PlateEntry, root: string): PlateEntry {
 
 /**
  * Sets how many copies of an object are on the plate (the object itself counts as one). New copies
- * are arranged into free space; removing takes the newest copies first.
+ * are arranged into free space, a design's lifted onto the bed when it would sit under it (lift.ts); removing takes the
+ * newest copies first.
  */
 export function setInstanceCount(id: string, count: number): boolean {
   const { plate, bed } = get()
@@ -389,7 +391,8 @@ export function setInstanceCount(id: string, count: number): boolean {
   const base = plate.find((p) => p.id === root) ?? src
   const copies = Array.from({ length: count - group.length }, () => copyOf(base, root))
   const r = arrange(copies, plate, bed, placeOptions())
-  const placed = copies.filter((c) => r.transforms[c.id]).map((c) => ({ ...c, transform: r.transforms[c.id]! }))
+  // a new copy is placed, so a design under the bed lifts onto it (locked or not); the object it copies stays put
+  const placed = copies.filter((c) => r.transforms[c.id]).map((c) => placedLifted(c, r.transforms[c.id]!))
   if (placed.length < copies.length) toast(`Room for ${placed.length} more on this bed.`, 'warn')
   if (placed.length === 0) return false
   set({ plate: [...plate, ...placed] })
@@ -397,13 +400,13 @@ export function setInstanceCount(id: string, count: number): boolean {
   return true
 }
 
-/** Puts copies of `src` on the plate at the given places, after the copies it has. */
+/** Puts copies of `src` on the plate at the given places, after the copies it has, a design's lifted onto the bed (lift.ts). */
 function addCopies(src: PlateEntry, transforms: readonly Mat4[]): number {
   const { plate } = get()
   const root = sourceOf(src)
   const base = plate.find((p) => p.id === root) ?? src
   const room = Math.max(0, 200 - plate.filter((p) => sourceOf(p) === root).length)
-  const placed = transforms.slice(0, room).map((t) => ({ ...copyOf(base, root), transform: [...t] }))
+  const placed = transforms.slice(0, room).map((t) => placedLifted(copyOf(base, root), t))
   if (placed.length === 0) return 0
   set({ plate: [...plate, ...placed] })
   markStale()

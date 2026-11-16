@@ -4,12 +4,15 @@
 // (Selection::copy_to_clipboard, paste_objects_from_clipboard and paste_volumes_from_clipboard, Orca v2.4.2).
 // A pasted object keeps its settings, paint, volumes and filament slots. It lands on the current plate at
 // the nearest free spot to where it came from (a group moves as a whole, one bounding box over the other, then
-// finds its spot), so it works across plates. A paste or cut is one undo step: it is one store update.
+// finds its spot), so it works across plates. A pasted design that would sit under the bed is lifted onto it, a copy of
+// a locked one too (plate/lift.ts); a plain model keeps its height. A paste or cut is one undo step: it is one store
+// update.
 // A volume pasted into an object from another object is placed beside the object, as Orca does.
 import type { Bed, SettingValue } from '@slicerx/contracts'
 import { get, markStale, selectedIds, set, toast, type PlateEntry, type PlateVolumeEntry } from '../state/store'
 import { bedCircle, boxInBed } from './bed-shape'
 import { arrange, currentMargins, MARGIN_SAFETY_MM, printSizeOf } from './arrange'
+import { placedLifted } from './lift'
 import { sourceId } from './object-settings'
 import { bounds, compose, identity, type Box, type Mat4 } from './transform'
 
@@ -167,11 +170,11 @@ function pasteObjects(c: Extract<Clipboard, { kind: 'objects' }>): string[] {
     const from: [number, number] = [moved.min[0]! - group.min[0]!, moved.min[1]! - group.min[1]!]
     const dx = from[0] + shift[0]
     const dy = from[1] + shift[1]
-    placed = copies.map((e) => ({ ...e, transform: withOffset(e.transform, dx, dy) }))
+    placed = copies.map((e) => placedLifted(e, withOffset(e.transform, dx, dy)))
   } else {
     // Nothing fits as it is: let arrange find room for each.
     const r = arrange(copies, s.plate, s.bed)
-    placed = copies.filter((e) => r.transforms[e.id]).map((e) => ({ ...e, transform: r.transforms[e.id]! }))
+    placed = copies.filter((e) => r.transforms[e.id]).map((e) => placedLifted(e, r.transforms[e.id]!))
     if (placed.length < copies.length) toast(`Room for ${placed.length} of ${copies.length} on this plate.`, 'warn')
   }
   if (placed.length === 0) return []
