@@ -97,6 +97,10 @@ impl Solid {
     pub(crate) fn lend(&self) -> Result<i64> {
         match *self {}
     }
+
+    pub(crate) fn shelled(&self, _distance: f64, _kept: &[FaceRef<'_>]) -> Result<Self> {
+        match *self {}
+    }
 }
 
 pub(crate) fn take_back(_number: i64) {}

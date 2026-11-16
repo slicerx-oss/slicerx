@@ -447,9 +447,10 @@ it('with kept bodies, a step on the mesh gets the mesh first, and a warm replay 
   expect(e.ops()).toEqual(['brep.extrude', 'brep.subtract', 'brep.tessellate'])
   const r = await replayHistory(e.call, { history: history(box, hole, shell), exact: true }, { keepsBodies: true })
   expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
-  // the warm start has the hole's body, tessellated for the shell, which runs on the mesh
-  expect(e.ops().slice(3)).toEqual(['brep.tessellate', 'shell'])
-  expect(e.sent[3]!.req['body']).toBe(2)
+  // the warm start has the hole's body, tessellated for the shell, which runs on the mesh: the engine is asked once
+  // whether it shells exact solids, and this one does not
+  expect(e.ops().slice(3)).toEqual(['exact.ops', 'brep.tessellate', 'shell'])
+  expect(e.sent[4]!.req['body']).toBe(2)
 })
 
 it('with kept bodies, frees the ones no cached step holds', async () => {
