@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_geom_faces` 1.5.0 (from 1.4.0) names the step that made a face with no key of its own. On a design built as exact solids, a join clears the key of every face that lies flat with a face of the joined shape, even one well apart from it, such as the long sides of a block under a rim whose sides are in the same planes. On a mesh, a subtract that splits a face leaves its pieces without a key. Such a face now gives `from`, the key of the face it came from, and its `madeBy` is the step that made that face. Before, its `madeBy` was `base`. A reference by key to such a face still asks for repair, as before.

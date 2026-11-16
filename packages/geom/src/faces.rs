@@ -141,6 +141,7 @@ impl Faces {
             ids: self.ids.clone(),
             table: self.table.iter().map(|s| s.transformed(m)).collect(),
             keys: self.keys.clone(),
+            from: self.from.clone(),
         }
     }
 }
@@ -156,6 +157,11 @@ pub struct Faces {
     /// (see `with_key_salt`); empty when the faces have none. 0 is no key.
     #[cfg_attr(feature = "cad", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub keys: Vec<u64>,
+    /// For each face in `table`, the key of the face it came from when it has none of its own (a piece of a face a
+    /// cut split): what made it is still known, while a reference to it still asks for repair. Empty when no face
+    /// has one; 0 is none.
+    #[cfg_attr(feature = "cad", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    pub from: Vec<u64>,
 }
 
 impl Faces {
@@ -168,6 +174,12 @@ impl Faces {
         }
         if !self.keys.is_empty() && self.keys.len() != self.table.len() {
             return Err(Error::mesh(what, "faces must have one key per face, or none"));
+        }
+        if !self.from.is_empty() && self.from.len() != self.table.len() {
+            return Err(Error::mesh(
+                what,
+                "faces must say where each face came from, or none",
+            ));
         }
         Ok(())
     }
@@ -185,6 +197,7 @@ impl Faces {
                 .collect(),
             table: self.table.clone(),
             keys: self.keys.clone(),
+            from: self.from.clone(),
         }
         .compacted()
     }
@@ -195,6 +208,7 @@ impl Faces {
         let mut map: HashMap<u32, u32> = HashMap::new();
         let mut table = Vec::new();
         let mut keys = Vec::new();
+        let mut from = Vec::new();
         let ids = self
             .ids
             .iter()
@@ -204,11 +218,22 @@ impl Faces {
                     if let Some(&k) = self.keys.get(id as usize) {
                         keys.push(k);
                     }
+                    if let Some(&k) = self.from.get(id as usize) {
+                        from.push(k);
+                    }
                     (table.len() - 1) as u32
                 })
             })
             .collect();
-        Self { ids, table, keys }
+        if from.iter().all(|&k| k == 0) {
+            from.clear();
+        }
+        Self {
+            ids,
+            table,
+            keys,
+            from,
+        }
     }
 
     /// True when these faces can belong to `mesh`: one id per triangle, every id in the table, and the first
@@ -413,6 +438,7 @@ fn number(
         ids,
         table,
         keys: Vec::new(),
+        from: Vec::new(),
     }
 }
 
@@ -534,10 +560,27 @@ pub fn merge_meeting_planes(mesh: &TriMesh, f: Faces) -> Faces {
             }
         }
     }
+    // one merged from faces without keys came from the smallest of theirs; one with a key needs none
+    let mut from = f.from.clone();
+    if !from.is_empty() {
+        for id in 0..f.table.len() as u32 {
+            let r = root(&mut parent, id) as usize;
+            let k = f.from[id as usize];
+            if k != 0 && (from[r] == 0 || k < from[r]) {
+                from[r] = k;
+            }
+        }
+        for (r, k) in from.iter_mut().enumerate() {
+            if keys.get(r).is_some_and(|&key| key != 0) {
+                *k = 0;
+            }
+        }
+    }
     Faces {
         ids,
         table: f.table,
         keys,
+        from,
     }
     .compacted()
 }
@@ -606,7 +649,8 @@ pub(crate) fn fresh_keys(n: usize) -> Vec<u64> {
 /// and what `from` knew about it holds. Its surface: one found before an earlier answer rounded the corners to f32
 /// holds, where the rounded corners may no longer fit it (a hole's wall). Its key: a face that is all that is left of
 /// a face of `from` keeps that face's key, so a later step's reference to it holds when an earlier step changes; a
-/// face the cut split into pieces gets 0 (no key), so a reference to one of them goes by its place. The faces the cut
+/// face the cut split into pieces gets 0 (no key), so a reference to one of them goes by its place, and the face's key
+/// as `from`, so what made each piece is still known. The faces the cut
 /// made are found from the mesh and get keys of the current step. No keys when neither `from` has them nor a step
 /// is keying (`with_key_salt`).
 #[cfg(feature = "cad")]
@@ -668,6 +712,20 @@ pub(crate) fn faces_after_cut(from: &TriMesh, out: &TriMesh) -> Faces {
             None => fresh.get(id).copied().unwrap_or(0),
         })
         .collect();
+    // a piece came from the face it is a piece of, or from where that face came from when it was a piece itself
+    let came = |o: u32| old.from.get(o as usize).copied().unwrap_or(0);
+    faces.from = from_face
+        .iter()
+        .map(|was| match *was {
+            Some(o) if pieces[&o] == 1 => came(o),
+            Some(o) if old.keys[o as usize] != 0 => old.keys[o as usize],
+            Some(o) => came(o),
+            None => 0,
+        })
+        .collect();
+    if faces.from.iter().all(|&k| k == 0) {
+        faces.from.clear();
+    }
     faces
 }
 

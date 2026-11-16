@@ -103,6 +103,11 @@ mod tests {
     fn saved_text_needs_its_checksum_and_leaves_the_keys_out() {
         assert_eq!(saved_text(&sealed("body\n")), Ok("body\n"));
         assert_eq!(saved_text(&sealed("body\n//sx-brep keys 1 2 3\n")), Ok("body\n"));
+        // the from line after it goes with it
+        assert_eq!(
+            saved_text(&sealed("body\n//sx-brep keys 1 0 3\n//sx-brep from 0 2 0\n")),
+            Ok("body\n")
+        );
         // the keys line counts only at the start of a line
         let inline = "body //sx-brep keys\n";
         assert_eq!(saved_text(&sealed(inline)), Ok(inline));

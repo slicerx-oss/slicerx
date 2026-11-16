@@ -361,6 +361,7 @@ fn remesh_inner(original: &TriMesh, opts: &RemeshOptions) -> Option<TriMesh> {
             ids: out_ids,
             table: f.table.clone(),
             keys: f.keys.clone(),
+            from: f.from.clone(),
         });
     }
     let out = compact(out);
@@ -689,6 +690,7 @@ fn coarsen_inner(original: &TriMesh, by_id: bool, touching: Option<&[(V3, V3)]>)
             ids: out_ids,
             table: f.table.clone(),
             keys: f.keys.clone(),
+            from: f.from.clone(),
         });
     }
     let out = compact(out);
@@ -911,6 +913,7 @@ pub(crate) fn drop_slivers(mesh: &TriMesh) -> Option<TriMesh> {
             ids: keep.iter().map(|&t| f.ids[t]).collect(),
             table: f.table.clone(),
             keys: f.keys.clone(),
+            from: f.from.clone(),
         });
     }
     let out = compact(out);

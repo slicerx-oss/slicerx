@@ -110,30 +110,40 @@ void check(long st, const char* what);
 const ULONG kKeyLow = kSxKeyLow, kKeyHigh = kSxKeyHigh;
 const unsigned long long kKeyHalf = (1ULL << kSxKeyHalfBits) - 1;
 
-unsigned long long face_key(SmFace* f)
+// a 52-bit number kept in the two attributes low and high, 0 for none
+unsigned long long halves(SmFace* f, ULONG low, ULONG high)
 {
     SmTArray<SmAttribute*> as;
     f->GetAttributes(as);
     unsigned long long lo = 0, hi = 0;
     for (ULONG i = 0; i < as.GetSize(); ++i) {
         ULONG id = as[i]->GetAttributeID();
-        if (id == kKeyLow) lo = (unsigned long long)static_cast<SmLongAttribute*>(as[i])->GetValue() & kKeyHalf;
-        if (id == kKeyHigh) hi = (unsigned long long)static_cast<SmLongAttribute*>(as[i])->GetValue() & kKeyHalf;
+        if (id == low) lo = (unsigned long long)static_cast<SmLongAttribute*>(as[i])->GetValue() & kKeyHalf;
+        if (id == high) hi = (unsigned long long)static_cast<SmLongAttribute*>(as[i])->GetValue() & kKeyHalf;
     }
     return (hi << kSxKeyHalfBits) | lo;
 }
 
-void set_key(SmFace* f, unsigned long long key)
+void set_halves(SmFace* f, ULONG low, ULONG high, unsigned long long v)
 {
     SmTArray<SmAttribute*> as;
     f->GetAttributes(as);
     for (ULONG i = 0; i < as.GetSize(); ++i)
-        if (as[i]->GetAttributeID() == kKeyLow || as[i]->GetAttributeID() == kKeyHigh) f->RemoveAttribute(as[i]);
-    if (!key) return;
+        if (as[i]->GetAttributeID() == low || as[i]->GetAttributeID() == high) f->RemoveAttribute(as[i]);
+    if (!v) return;
     SmContext& cx = *SmApiGetOrCreateContext();
-    f->AddAttribute(new (cx) SmLongAttribute(kKeyLow, long(key & kKeyHalf), SM_AB_COPY));
-    f->AddAttribute(new (cx) SmLongAttribute(kKeyHigh, long((key >> kSxKeyHalfBits) & kKeyHalf), SM_AB_COPY));
+    f->AddAttribute(new (cx) SmLongAttribute(low, long(v & kKeyHalf), SM_AB_COPY));
+    f->AddAttribute(new (cx) SmLongAttribute(high, long((v >> kSxKeyHalfBits) & kKeyHalf), SM_AB_COPY));
 }
+
+unsigned long long face_key(SmFace* f) { return halves(f, kKeyLow, kKeyHigh); }
+
+void set_key(SmFace* f, unsigned long long key) { set_halves(f, kKeyLow, kKeyHigh, key); }
+
+// the key of the face a face came from, when a join cleared its own (clear_merge_keys)
+unsigned long long face_from(SmFace* f) { return halves(f, kSxFromLow, kSxFromHigh); }
+
+void set_from(SmFace* f, unsigned long long key) { set_halves(f, kSxFromLow, kSxFromHigh, key); }
 
 // the request's keySalt; each body a call makes gets the next number, as each mesh a step makes does in sx-geom
 struct {
@@ -188,8 +198,24 @@ std::string seal_of(const std::string& text)
     return std::string(kSeal) + hex + "\n";
 }
 
-// the kernel's text drops attributes, so the face keys follow it on a line of their own, in face order
+// the kernel's text drops attributes, so the face keys follow it on a line of their own, in face order, and where
+// each face came from on the line after it when some face has that
 const char* kKeys = "//sx-brep keys";
+const char* kFrom = "//sx-brep from";
+
+// the numbers on the line `tag` starts (at the start of a line), taken out of `text`; none when there is no such line
+std::vector<unsigned long long> take_line(std::string& text, const char* tag)
+{
+    std::vector<unsigned long long> out;
+    size_t at = text.rfind(tag);
+    if (at == std::string::npos || (at != 0 && text[at - 1] != '\n')) return out;
+    size_t end = text.find('\n', at);
+    std::istringstream line(text.substr(at + std::strlen(tag), end == std::string::npos ? std::string::npos : end - at - std::strlen(tag)));
+    unsigned long long v;
+    while (line >> v) out.push_back(v);
+    text.erase(at, end == std::string::npos ? std::string::npos : end + 1 - at);
+    return out;
+}
 
 SmBrep* read_smb(const std::string& sealed, const char* k)
 {
@@ -198,6 +224,8 @@ SmBrep* read_smb(const std::string& sealed, const char* k)
     std::string text = at == std::string::npos ? std::string() : sealed.substr(0, at);
     if (at == std::string::npos || sealed.compare(at, std::string::npos, seal_of(text)) != 0)
         throw Error(k, "not a body sx-brep saved, or changed since");
+    // the from line comes after the keys line, so a reader that knows only keys drops it with them
+    std::vector<unsigned long long> face_from = take_line(text, kFrom);
     std::vector<unsigned long long> face_keys;
     size_t kat = text.rfind(kKeys);
     if (kat != std::string::npos && (kat == 0 || text[kat - 1] == '\n')) {
@@ -226,6 +254,15 @@ SmBrep* read_smb(const std::string& sealed, const char* k)
         }
         for (ULONG i = 0; i < fs.GetSize(); ++i) set_key(fs[i], face_keys[i]);
     }
+    if (!face_from.empty()) {
+        SmTArray<SmFace*> fs;
+        SmApiGetFaces(b, fs);
+        if (fs.GetSize() != face_from.size()) {
+            delete b;
+            throw Error(k, "where its faces came from does not match its faces");
+        }
+        for (ULONG i = 0; i < fs.GetSize(); ++i) set_from(fs[i], face_from[i]);
+    }
     return b;
 }
 
@@ -242,14 +279,17 @@ std::string write_smb(SmBrep* b)
     std::string text = ss.str();
     SmTArray<SmFace*> fs;
     SmApiGetFaces(b, fs);
-    std::string line = kKeys;
-    bool any = false;
+    std::string line = kKeys, from = kFrom;
+    bool any = false, came = false;
     for (ULONG i = 0; i < fs.GetSize(); ++i) {
-        unsigned long long key = face_key(fs[i]);
+        unsigned long long key = face_key(fs[i]), was = face_from(fs[i]);
         any = any || key;
+        came = came || was;
         line += " " + std::to_string(key);
+        from += " " + std::to_string(was);
     }
-    if (any) text += (text.empty() || text.back() == '\n' ? "" : "\n") + line + "\n";
+    if (any || came) text += (text.empty() || text.back() == '\n' ? "" : "\n") + line + "\n";
+    if (came) text += from + "\n";
     return text + seal_of(text);
 }
 
@@ -558,7 +598,17 @@ SmBrep* taper_half(const Value& l, double h, double deg)
     throw Error("taperDeg", "the taper closes the shape before the full distance; use a smaller angle or distance");
 }
 
-// a union can merge coplanar faces without preserving all of their keys
+// the key of a face a join clears: none from now on, and the one it had as where it came from
+void clear_key(SmFace* f)
+{
+    unsigned long long key = face_key(f);
+    if (!key) return;
+    set_from(f, key);
+    set_key(f, 0);
+}
+
+// a union can merge coplanar faces without preserving all of their keys, so each such face's key is cleared; the
+// key it had stays as where it came from
 void clear_merge_keys(SmBrep* a, SmBrep* b)
 {
     SmTArray<SmFace*> af, bf;
@@ -573,8 +623,8 @@ void clear_merge_keys(SmBrep* a, SmBrep* b)
             SmVector3d bn;
             if (!bf[j]->GetSurface() || !bf[j]->GetSurface()->IsPlanar(1e-6, &bo, &bn)) continue;
             if (std::fabs(std::fabs(dot(an, bn)) - 1) < 1e-6 && std::fabs(dot(an, SmVector3d(bo.x - ao.x, bo.y - ao.y, bo.z - ao.z))) < 1e-6) {
-                set_key(af[i], 0);
-                set_key(bf[j], 0);
+                clear_key(af[i]);
+                clear_key(bf[j]);
             }
         }
     }
@@ -962,6 +1012,7 @@ Value tessellate(SmBrep* b, double chord, double angle)
         }
         f.set("surface", sf);
         f.set("key", Value(face_key(fs[i])));
+        if (unsigned long long was = face_from(fs[i])) f.set("from", Value(was));
         faces.push(f);
     }
     pos.kind = idx.kind = ids.kind = Value::Array;

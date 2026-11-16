@@ -40,7 +40,7 @@ export interface HistoryMesh {
   /** Paint on the part; a step that changes its triangles drops it (with a note on the step). */
   paint?: PaintTexts
   /** The engine's faces, with the keys steps name them by (docs/cad-history.md, "Face keys"); a replay keeps them. */
-  faces?: { ids: ArrayLike<number>; table: unknown[]; keys?: number[] }
+  faces?: { ids: ArrayLike<number>; table: unknown[]; keys?: number[]; from?: number[] }
   /** The shape Add shape made the part as; exact replays build it from this when the triangles still fit it. */
   primitive?: PrimitiveSpec
   /**
@@ -427,6 +427,17 @@ export function keyOfTriangle(mesh: Pick<HistoryMesh, 'faces'>, t: number): numb
   const f = mesh.faces
   if (!f?.keys?.length || t < 0) return 0
   return f.keys[f.ids[t] ?? -1] ?? 0
+}
+
+/**
+ * The key that says which step made the face of triangle `t`: the face's own key, or for a face without one (a piece
+ * of a face a cut split, or a face whose key a join cleared) the key of the face it came from (`faces.from`). 0 when
+ * neither is known. Only for what made a face: a reference goes by the face's own key alone.
+ */
+export function madeKeyOfTriangle(mesh: Pick<HistoryMesh, 'faces'>, t: number): number {
+  const f = mesh.faces
+  const face = t < 0 ? -1 : (f?.ids[t] ?? -1)
+  return f?.keys?.[face] || f?.from?.[face] || 0
 }
 
 /** The key of the face that holds the world point `at` facing `normal` (findTriangle), or undefined. */

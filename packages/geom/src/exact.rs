@@ -20,10 +20,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use sx_brep::{Body, Curve, Face, Frame, Mesh, Surface, Tessellation};
 
 /// A body in the table, with the key of each of its faces in face order (none at all for a body without keys). The
-/// keys are the ones on the kernel's faces, read once when the body is held; nothing changes a held body.
+/// keys are the ones on the kernel's faces, read once when the body is held; nothing changes a held body. `from` is
+/// the key of the face each face came from when a join cleared its own (none at all when no face has one).
 pub struct Held {
     pub body: Body,
     pub keys: Vec<u64>,
+    pub from: Vec<u64>,
 }
 
 // the next number, for every thread's table: one is never given out twice in a process
@@ -115,10 +117,10 @@ fn kernel(e: &sx_brep::Error) -> Error {
 }
 
 /// Puts a body in the table under the next number.
-fn keep(body: Body, keys: Vec<u64>) -> Result<u32> {
+fn keep(body: Body, keys: Vec<u64>, from: Vec<u64>) -> Result<u32> {
     let n = u32::try_from(NEXT.fetch_add(1, Ordering::Relaxed))
         .map_err(|_| Error::geometry("brep", "no body numbers are left in this process"))?;
-    TABLE.with(|t| t.borrow_mut().insert(n, Rc::new(Held { body, keys })));
+    TABLE.with(|t| t.borrow_mut().insert(n, Rc::new(Held { body, keys, from })));
     Ok(n)
 }
 
@@ -135,7 +137,7 @@ pub fn hold(mut body: Body, keys: Vec<u64>) -> Result<u32> {
         }
         body.set_keys(&keys).map_err(|e| kernel(&e))?;
     }
-    keep(body, keys)
+    keep(body, keys, Vec::new())
 }
 
 fn get(handle: u32) -> Option<Rc<Held>> {
@@ -247,7 +249,7 @@ pub(crate) fn answer(op: &str, req: &Value, raw: bool) -> Result<Value> {
                 // the text the older `save` writes, keys line and checksum included, so `load` reads it
                 "save" => held
                     .body
-                    .saved(&held.keys)
+                    .saved_with_from(&held.keys, &held.from)
                     .map(|smb| json!({ "smb": smb }))
                     .map_err(|e| kernel(&e)),
                 _ => tessellate(handle, &held, req, raw),
@@ -302,16 +304,18 @@ fn take_over(reply: &mut Value) -> Result<()> {
             continue;
         }
         let taken = sx_brep::handover::adopt(older_number)
-            .and_then(|body| Ok((body.keys()?, body)))
+            .and_then(|body| Ok((body.keys()?, body.came_from()?, body)))
             .map_err(|e| kernel(&e))
-            .and_then(|(keys, body)| {
-                // a body without keys has none in the table either
-                let keys = if keys.iter().all(|&key| key == 0) {
-                    Vec::new()
-                } else {
-                    keys
+            .and_then(|(keys, from, body)| {
+                // a body without keys has none in the table either, and one whose faces came from none no from
+                let none = |v: Vec<u64>| {
+                    if v.iter().all(|&key| key == 0) {
+                        Vec::new()
+                    } else {
+                        v
+                    }
                 };
-                keep(body, keys)
+                keep(body, none(keys), none(from))
             });
         match taken {
             Ok(handle) => kept.push((field, handle)),
@@ -613,12 +617,17 @@ fn tessellate(handle: u32, held: &Held, req: &Value, raw: bool) -> Result<Value>
             .zip(&kinds)
             .enumerate()
             .map(|(i, (s, kind))| {
-                json!({
+                let mut entry = json!({
                     "id": i,
                     "type": if flat.get(i) == Some(&true) { "plane" } else { names(s).1 },
                     "surface": kind,
                     "key": held.keys.get(i).copied().unwrap_or(0),
-                })
+                });
+                // where the face came from only for one that has it, so other answers stay as they were
+                if let (Some(&k), Some(o)) = (held.from.get(i).filter(|&&k| k != 0), entry.as_object_mut()) {
+                    o.insert("from".to_owned(), json!(k));
+                }
+                entry
             })
             .collect();
         return Ok(json!({
@@ -635,6 +644,9 @@ fn tessellate(handle: u32, held: &Held, req: &Value, raw: bool) -> Result<Value>
     let runs: Vec<u32> = mesh.edges.iter().flat_map(|e| e.points.iter().copied()).collect();
     let mut table = Map::new();
     table.insert("table".to_owned(), Value::Array(kinds));
+    if !held.from.is_empty() {
+        table.insert("from".to_owned(), json!(held.from));
+    }
     if !held.keys.is_empty() {
         table.insert("keys".to_owned(), json!(held.keys));
     }
@@ -683,6 +695,7 @@ fn shown(handle: u32, held: &Held, how: &Tessellation) -> Result<Rc<Shown>> {
         || mesh.normals.len() != triangles
         || mesh.faces.iter().any(|&f| f as usize >= faces)
         || (!held.keys.is_empty() && held.keys.len() != faces)
+        || (!held.from.is_empty() && held.from.len() != faces)
         || flat.len() != faces
     {
         return Err(Error::geometry(

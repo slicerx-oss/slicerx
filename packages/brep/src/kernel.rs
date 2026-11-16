@@ -112,6 +112,9 @@ const FLAT_TOL_MM: f64 = 0.01;
 /// (`cpp/sx_keys.h`, which `cpp/sx_kernel.h` checks these against).
 const KEY_LOW: c_ulong = 20101;
 const KEY_HIGH: c_ulong = 20102;
+/// The attributes the key of the face a face came from is kept under, in halves as its key is.
+const FROM_LOW: c_ulong = 20105;
+const FROM_HIGH: c_ulong = 20106;
 const KEY_HALF_BITS: u32 = 26;
 const KEY_HALF: u64 = (1 << KEY_HALF_BITS) - 1;
 
@@ -1112,8 +1115,17 @@ impl Solid {
 
 /// The attributes of `face` that hold a half of its key, each with the id that says which half.
 fn key_halves(
+    kernel: &Held,
+    face: NonNull<ffi::SmFace>,
+) -> Result<Vec<(c_ulong, NonNull<ffi::SmAttribute>)>> {
+    halves(kernel, face, [KEY_LOW, KEY_HIGH])
+}
+
+/// The attributes of `face` with one of the two `ids`, each with its id.
+fn halves(
     _kernel: &Held,
     face: NonNull<ffi::SmFace>,
+    ids: [c_ulong; 2],
 ) -> Result<Vec<(c_ulong, NonNull<ffi::SmAttribute>)>> {
     let mut all = ffi::new_attribute_array();
     // SAFETY: the face belongs to a solid the caller borrows, so it is live.
@@ -1123,7 +1135,7 @@ fn key_halves(
         .filter_map(|attribute| {
             // SAFETY: the kernel just listed it among the face's attributes, so it is live.
             let id = unsafe { attribute.as_ref() }.GetAttributeID().0;
-            (id == KEY_LOW || id == KEY_HIGH).then_some((id, attribute))
+            ids.contains(&id).then_some((id, attribute))
         })
         .collect())
 }
@@ -1144,13 +1156,23 @@ fn key_half(attribute: NonNull<ffi::SmAttribute>) -> u64 {
 impl Solid {
     /// The key on each face, in face order; 0 for a face without one.
     pub(crate) fn keys(&self) -> Result<Vec<u64>> {
+        self.numbers([KEY_LOW, KEY_HIGH])
+    }
+
+    /// The key of the face each face came from when a join cleared its own, in face order; 0 for none.
+    pub(crate) fn came_from(&self) -> Result<Vec<u64>> {
+        self.numbers([FROM_LOW, FROM_HIGH])
+    }
+
+    /// The number each face keeps in the two attributes `ids`, its low half and its high half; 0 for none.
+    fn numbers(&self, ids: [c_ulong; 2]) -> Result<Vec<u64>> {
         let kernel = held();
         self.face_pointers(&kernel)?
             .into_iter()
             .map(|face| {
                 let (mut low, mut high) = (0_u64, 0_u64);
-                for (id, attribute) in key_halves(&kernel, face)? {
-                    if id == KEY_LOW {
+                for (id, attribute) in halves(&kernel, face, ids)? {
+                    if id == ids[0] {
                         low = key_half(attribute);
                     } else {
                         high = key_half(attribute);

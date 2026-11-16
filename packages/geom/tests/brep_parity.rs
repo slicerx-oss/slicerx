@@ -1601,3 +1601,77 @@ fn holes_on_cylinder_faces() {
         assert!(m.is_err(), "the mesh path refuses it too: {hole} {spec}");
     }
 }
+
+#[test]
+fn a_face_a_join_clears_the_key_of_says_which_face_it_came_from_through_text_and_held_bodies() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // a 30 by 10 block, then a rim 3 mm above it whose long sides lie in the planes of the block's (y 0 and 10),
+    // joined through a post so the two are one body
+    let block = made(
+        "box",
+        json!({ "min": [0, 0, 0], "max": [30, 10, 4], "keySalt": 5 }),
+    );
+    let post = made(
+        "box",
+        json!({ "min": [10, 2, 3], "max": [20, 8, 8], "keySalt": 6 }),
+    );
+    let rim = made(
+        "box",
+        json!({ "min": [5, 0, 7], "max": [25, 10, 8], "keySalt": 7 }),
+    );
+    // the key of each face facing -y and the key of the face it came from, in order
+    let sides = |b: &Value| {
+        let t = call("brep.tessellate", &json!({ "body": b }));
+        let mut out: Vec<(u64, u64)> = t["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["surface"]["kind"] == "plane" && f["surface"]["normal"][1].as_f64() == Some(-1.0))
+            .map(|f| (f["key"].as_u64().unwrap(), f["from"].as_u64().unwrap_or(0)))
+            .collect();
+        out.sort_unstable();
+        out
+    };
+    let [(block_front, 0)] = sides(&block)[..] else {
+        panic!("one keyed front: {:?}", sides(&block))
+    };
+    let [(rim_front, 0)] = sides(&rim)[..] else {
+        panic!("one keyed rim front: {:?}", sides(&rim))
+    };
+    let [(post_front, 0)] = sides(&post)[..] else {
+        panic!("one keyed post front: {:?}", sides(&post))
+    };
+    assert!(block_front != 0 && rim_front != 0 && block_front != rim_front);
+    let up = made(
+        "boolean",
+        json!({ "op": "union", "a": block, "b": post, "keySalt": 8 }),
+    );
+    let joined = made(
+        "boolean",
+        json!({ "op": "union", "a": up, "b": rim, "keySalt": 9 }),
+    );
+    // both fronts lost their keys to the join, and each says which face it was
+    // the post's front, 2 mm in, lies in no other plane and keeps its key
+    let mut want = vec![(0, block_front), (0, rim_front), (post_front, 0)];
+    want.sort_unstable();
+    assert_eq!(sides(&joined), want);
+    // a held body says the same, and so does the text it saves
+    let held = call(
+        "brep.boolean",
+        &json!({ "op": "union", "a": up, "b": rim, "keySalt": 9 }),
+    )["body"]
+        .clone();
+    assert_eq!(sides(&held), want);
+    let saved = call("brep.save", &json!({ "body": held }));
+    assert_eq!(sides(&json!({ "smb": saved["smb"].as_str().unwrap() })), want);
+    call("brep.free", &json!({ "body": held }));
+    // a reference by the old key still asks for repair
+    let pushed = sx_geom::json::call(
+        "brep.push",
+        &json!({ "body": joined, "at": [15, 0, 2], "normal": [0, -1, 0], "faceKey": block_front, "distanceMm": 1 }).to_string(),
+    );
+    let error = pushed.expect_err("a cleared key names no face");
+    assert!(error.to_string().contains("repair"), "{error}");
+}

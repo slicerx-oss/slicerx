@@ -8,7 +8,7 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, loftParams, loopStart, profileOffPathMm, projectionsOut, stepName, sweepParams, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, loftParams, loopStart, madeKeyOfTriangle, profileOffPathMm, projectionsOut, stepName, sweepParams, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
 import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit, Placed } from '@slicerx/cad-history'
@@ -817,11 +817,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const faces = defineTool({
     name: 'geom.faces',
-    version: '1.4.0',
+    version: '1.5.0',
     source: 'command',
     permission: 'read',
     description:
-      'List the flat faces of a model or a design, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center; for a design also its part, its face key and the step that made it. Use a face\'s "at" and "normal" with slicerx_geom_face_pick, slicerx_geom_edge_pick or slicerx_geom_push_pull. Curved surfaces show up as many small faces.',
+      'List the flat faces of a model or a design, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center; for a design also its part, its face key and the step that made it (a face with no key, such as a piece of a face a cut split, gives the key it came from as "from"). Use a face\'s "at" and "normal" with slicerx_geom_face_pick, slicerx_geom_edge_pick or slicerx_geom_push_pull. Curved surfaces show up as many small faces.',
     localDescription:
       'List the flat faces of a model or design, largest first: for each a point "at", its outward normal, the axis it faces (+z (top), -x and so on), area and center; for a design also its part, face key and the step that made it. Use its "at" and "normal" with geom.face_pick, geom.edge_pick or geom.push_pull. Curved surfaces show as many small faces.',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, limit: z.number().int().min(1).max(500).default(40), format: z.enum(['flat', 'topology']).default('flat').describe('With a design, topology returns compact revision-bound surface metadata in body-local coordinates, with world placement separately.') }),
@@ -833,7 +833,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const selected = manifest.faces.filter(face => i.part === undefined || face.part === i.part)
         return { summary: `${selected.length} topology faces at body revision ${manifest.revision}`, output: { topology: { ...manifest, faceCount: selected.length, truncated: selected.length > i.limit, faces: selected.slice(0, i.limit) } } }
       }
-      let all: (FaceSummary & { part?: number; key?: number; madeBy?: string })[]
+      let all: (FaceSummary & { part?: number; key?: number; from?: number; madeBy?: string })[]
       if (i.design) {
         const d = designOf(i.design)
         const names = new Map(d.history.steps.map((s) => [s.id, stepName(s)]))
@@ -843,8 +843,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
               ? []
               : flatFaces(partTriangles(bakeMesh(p, d.transform))).map((f) => {
                   const key = keyOfTriangle(p, f.triangle)
-                  const made = key ? d.madeBy[key] : undefined
-                  return { ...f, part, ...(key ? { key } : {}), madeBy: made ? (names.get(made) ?? made) : 'base' }
+                  // a face with no key of its own was made by what made the face it came from
+                  const from = key ? 0 : madeKeyOfTriangle(p, f.triangle)
+                  const made = key || from ? d.madeBy[key || from] : undefined
+                  return { ...f, part, ...(key ? { key } : {}), ...(from ? { from } : {}), madeBy: made ? (names.get(made) ?? made) : 'base' }
                 }),
           )
           .sort((a, b) => b.areaMm2 - a.areaMm2)

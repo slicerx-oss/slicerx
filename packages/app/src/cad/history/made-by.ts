@@ -5,7 +5,7 @@
 // the step that made each key.
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
-import { keyOfTriangle, partThrough, point, usedBy, type HistoryMesh, type Step, type StepStatus } from '@slicerx/cad-history'
+import { keyOfTriangle, madeKeyOfTriangle, partThrough, point, usedBy, type HistoryMesh, type Step, type StepStatus } from '@slicerx/cad-history'
 import { runReplay, withStatus } from './ops'
 
 type Faces = HistoryMesh['faces']
@@ -95,8 +95,11 @@ export async function faceSource(entry: PlateEntry, part: number, triangle: numb
   const got = await knownFor(entry)
   const faces = got?.faces[part]
   const key = faces ? keyOfTriangle({ faces }, triangle) : 0
-  if (!got || !key) return null
-  return { made: got.made[key] ?? 'base', used: usedBy(got.steps).get(key) ?? [] }
+  // a face with no key of its own (a piece a cut split, or one a join cleared) was made by what made the face it came
+  // from, and no step names it
+  const made = faces ? madeKeyOfTriangle({ faces }, triangle) : 0
+  if (!got || !made) return null
+  return { made: got.made[made] ?? 'base', used: key ? (usedBy(got.steps).get(key) ?? []) : [] }
 }
 
 /** The step id that made a face, or `base`, or null; see faceSource. */
@@ -110,15 +113,17 @@ export async function facesMadeBy(entry: PlateEntry, stepId: string): Promise<{ 
   if (!got) return []
   const out: { partIndex: number; triangle: number }[] = []
   got.faces.forEach((f, partIndex) => {
-    if (!f?.keys?.length) return
+    if (!f?.keys?.length && !f?.from?.length) return
     const seen = new Set<number>()
     for (let t = 0; t < got.triangles[partIndex]!; t++) {
       const face = f.ids[t] ?? -1
       if (face < 0 || seen.has(face)) continue
       seen.add(face)
-      const key = f.keys[face] ?? 0
-      if (!key) continue
-      const maker = got.made[key] ?? movedBy(got.steps, usedBy(got.steps).get(key) ?? [])
+      const key = f.keys?.[face] ?? 0
+      // a face without a key of its own goes by the face it came from
+      const made = key || (f.from?.[face] ?? 0)
+      if (!made) continue
+      const maker = got.made[made] ?? (key ? movedBy(got.steps, usedBy(got.steps).get(key) ?? []) : undefined)
       if (maker === stepId) out.push({ partIndex, triangle: t })
     }
   })

@@ -136,8 +136,8 @@ pub struct Solid {
     tables: Vec<Table>,
 }
 
-/// An input mesh's kernel id, its face surfaces and their keys (empty when it has none).
-type Table = (u32, Arc<Vec<Surface>>, Arc<Vec<u64>>);
+/// An input mesh's kernel id, its face surfaces, their keys and where they came from (each empty when it has none).
+type Table = (u32, Arc<Vec<Surface>>, Arc<Vec<u64>>, Arc<Vec<u64>>);
 
 impl Solid {
     pub fn new(mesh: &TriMesh) -> Result<Self> {
@@ -213,6 +213,7 @@ impl Solid {
         let mut ids = vec![0u32; n];
         let mut table = Vec::new();
         let mut keys = Vec::new();
+        let mut from = Vec::new();
         let mut seen: HashMap<(u32, bool, u64), u32> = HashMap::new();
         let starts: Vec<usize> = gl
             .run_index
@@ -229,13 +230,19 @@ impl Solid {
                 *slot = *seen.entry((original, back, face)).or_insert_with(|| {
                     let at = usize::try_from(face).ok();
                     let s = source
-                        .and_then(|(_, tab, _)| at.and_then(|i| tab.get(i)))
+                        .and_then(|(_, tab, _, _)| at.and_then(|i| tab.get(i)))
                         .copied()
                         .unwrap_or(Surface::Other);
                     table.push(if back { s.flipped() } else { s });
                     keys.push(
                         source
-                            .and_then(|(_, _, k)| at.and_then(|i| k.get(i)))
+                            .and_then(|(_, _, k, _)| at.and_then(|i| k.get(i)))
+                            .copied()
+                            .unwrap_or(0),
+                    );
+                    from.push(
+                        source
+                            .and_then(|(_, _, _, k)| at.and_then(|i| k.get(i)))
                             .copied()
                             .unwrap_or(0),
                     );
@@ -249,7 +256,17 @@ impl Solid {
         } else {
             Vec::new()
         };
-        Faces { ids, table, keys }
+        let from = if from.iter().any(|&k| k != 0) {
+            from
+        } else {
+            Vec::new()
+        };
+        Faces {
+            ids,
+            table,
+            keys,
+            from,
+        }
     }
 
     pub fn rebuilt(&self, keep_inverted: bool) -> Result<Self> {
@@ -349,7 +366,12 @@ fn tag(w: &mut TriMesh, gl: &mut MeshGL64) -> Vec<Table> {
     } else {
         faces::fresh_keys(f.table.len())
     };
-    vec![(id, Arc::new(f.table), Arc::new(keys))]
+    let from = if f.from.len() == f.table.len() {
+        f.from
+    } else {
+        Vec::new()
+    };
+    vec![(id, Arc::new(f.table), Arc::new(keys), Arc::new(from))]
 }
 
 #[cfg(not(feature = "cad"))]

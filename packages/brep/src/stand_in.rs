@@ -86,6 +86,10 @@ impl Solid {
         match *self {}
     }
 
+    pub(crate) fn came_from(&self) -> Result<Vec<u64>> {
+        match *self {}
+    }
+
     pub(crate) fn set_keys(&mut self, _keys: &[u64]) -> Result<()> {
         match *self {}
     }

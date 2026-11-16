@@ -97,6 +97,82 @@ fn split_face_key_does_not_choose_a_fragment_even_under_the_old_point() {
 }
 
 #[test]
+fn a_face_a_union_clears_the_key_of_keeps_it_as_where_it_came_from_and_still_asks_for_repair() {
+    let body = |r: Value| r["body"].as_u64().unwrap();
+    let block = body(call(
+        "box",
+        &json!({"min": [0,0,0], "max": [30,10,4], "keySalt": 71}),
+    ));
+    let post = body(call(
+        "box",
+        &json!({"min": [10,2,3], "max": [20,8,8], "keySalt": 72}),
+    ));
+    // a rim above the block whose sides lie in the block's planes, apart from them
+    let rim = body(call(
+        "box",
+        &json!({"min": [5,0,7], "max": [25,10,8], "keySalt": 73}),
+    ));
+    // the key and where it came from of each face facing -y, in order
+    let fronts = |b: &Value| {
+        let mut out: Vec<(u64, u64)> = call("tessellate", &json!({"body": b}))["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["surface"]["normal"][1].as_f64() == Some(-1.0))
+            .map(|f| (f["key"].as_u64().unwrap(), f["from"].as_u64().unwrap_or(0)))
+            .collect();
+        out.sort_unstable();
+        out
+    };
+    let [(block_front, 0)] = fronts(&json!(block))[..] else {
+        panic!("one keyed front")
+    };
+    let [(rim_front, 0)] = fronts(&json!(rim))[..] else {
+        panic!("one keyed rim front")
+    };
+    let [(post_front, 0)] = fronts(&json!(post))[..] else {
+        panic!("one keyed post front")
+    };
+    let up = body(call(
+        "boolean",
+        &json!({"op": "union", "a": block, "b": post, "keySalt": 74}),
+    ));
+    let joined = body(call(
+        "boolean",
+        &json!({"op": "union", "a": up, "b": rim, "keySalt": 75}),
+    ));
+    // the post's front, 2 mm in, lies in no other plane and keeps its key
+    let mut want = vec![(0, block_front), (0, rim_front), (post_front, 0)];
+    want.sort_unstable();
+    assert_eq!(fronts(&json!(joined)), want);
+    // saved and read back, the faces still say where they came from
+    let smb = call("save", &json!({"body": joined}))["smb"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        smb.contains("\n//sx-brep from "),
+        "{}",
+        &smb[smb.len().saturating_sub(200)..]
+    );
+    assert_eq!(fronts(&json!({"smb": smb})), want);
+    // the old key names no face now: a push by it stops for repair
+    let error = sx_brep::call(
+        "push",
+        &json!({"body": joined, "at": [15,0,2], "normal": [0,-1,0], "distanceMm": 1, "faceKey": block_front})
+            .to_string(),
+    )
+    .expect_err("a cleared key must stop for repair");
+    assert!(
+        error.starts_with("faceReference:") && error.contains("repair"),
+        "{error}"
+    );
+    for b in [joined, up, rim, post, block] {
+        call("free", &json!({"body": b}));
+    }
+}
+
+#[test]
 fn missing_edge_face_keys_report_identity_repair_instead_of_mesh_fallback() {
     let b = call("box", &json!({"min": [0,0,0], "max": [20,20,20], "keySalt": 71}))["body"]
         .as_u64()

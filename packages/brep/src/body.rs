@@ -205,6 +205,13 @@ impl Body {
         self.solid.keys()
     }
 
+    /// For each face, in the order of [`Body::faces`], the key of the face it came from when a join cleared its own
+    /// key (it lay flat with a face of the other body); 0 for none. It says what made the face, while a reference by
+    /// key to it asks for repair.
+    pub fn came_from(&self) -> Result<Vec<u64>> {
+        self.solid.came_from()
+    }
+
     /// Writes a key on each face, in the order of [`Body::faces`]; 0 leaves a face without one. Refused, with
     /// nothing changed, unless there is one key for each face and each is below 2^52.
     pub fn set_keys(&mut self, keys: &[u64]) -> Result<()> {
