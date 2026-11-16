@@ -3,15 +3,14 @@
 // Signed reasoning is bound to the request it came from: the system prompt and the tools. When a later request changes
 // either, the provider refuses that reasoning and every block signed after it. So each assistant message with signed
 // reasoning records what it was signed against, and reasoning leaves the history once the request it would go back in
-// differs. It leaves from the oldest end and never comes back, the only removal the provider accepts. An earlier run's
-// reasoning also leaves when the request names another model, whose cache it would not share anyway; anything else the
-// request sets (the tier, the effort, the thinking settings, the output limit) leaves it alone, so a run that moves up
-// to muninn on the same model keeps the chat's reasoning and its cached history. On mimir cloud the tier asks the proxy
-// for another model behind the same request model: the provider sets aside reasoning the answering model cannot read,
-// so that reasoning stays too. The run in progress keeps its own reasoning through its tool loop while its system
-// prompt and tools stay the same (a move to another model mid-run keeps it as well); when they change mid-run, as when
-// pilot.load_tools brings in another toolset on a capped chat, the provider refuses it, so it leaves too. With adaptive
-// thinking the provider takes a tool loop whose newest step has no reasoning, and the model goes on without it.
+// differs. It leaves from the oldest end and never comes back, the only removal the provider accepts. Nothing else the
+// request sets moves it: not the tier, the effort, the thinking settings or the output limit, and not the model. A
+// request to another model is still taken: the provider sets aside, unbilled, any reasoning the answering model cannot
+// read, and the model reads the rest; taking it out here would lose it for the way back. So a run that moves up to
+// muninn, on the same model or another, keeps the chat's reasoning and its cached history. When the system prompt or
+// tools change, as when pilot.load_tools brings in another toolset on a capped chat or a follow-up's line joins the
+// system prompt, the provider refuses it, so it leaves. With adaptive thinking the provider takes a tool loop whose
+// newest step has no reasoning, and the model goes on without it.
 import type { LlmMessage, LlmToolDef } from './provider/types'
 
 const SIGNED = new Set(['thinking', 'redacted_thinking'])
@@ -32,31 +31,24 @@ function fnv(s: string): string {
   return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0')
 }
 
-/**
- * What a request binds the reasoning it gets back to: its system prompt and tools, then the model it names, as two
- * hashes joined by a colon so the run in progress can compare the first alone.
- */
-export function bindingKey(model: string, messages: readonly LlmMessage[], tools: readonly LlmToolDef[]): string {
+/** What a request binds the reasoning it gets back to: a hash of its system prompt and tools. */
+export function bindingKey(messages: readonly LlmMessage[], tools: readonly LlmToolDef[]): string {
   const system = messages.filter((m) => m.role === 'system').map((m) => m.content)
-  return `${fnv(JSON.stringify([system, tools.map((t) => [t.name, t.description, t.parameters])]))}:${fnv(model)}`
+  return fnv(JSON.stringify([system, tools.map((t) => [t.name, t.description, t.parameters])]))
 }
-
-/** The system prompt and tools part of a binding key. */
-const prefixOf = (key: string | undefined): string | undefined => (key?.includes(':') ? key.slice(0, key.indexOf(':')) : undefined)
 
 /**
  * Takes signed reasoning out of the messages when a request bound by `key` would carry reasoning bound to something
  * else: from the newest such message back to the start of the chat, so what stays is an unbroken run up to the present.
- * Before `runStart` another system prompt, tool list or model counts; from `runStart` on (the run in progress) only
- * another system prompt or tool list does. Returns how many messages lost reasoning.
+ * Only another system prompt or tool list counts, before `runStart` and in the run in progress alike; `runStart` is
+ * kept for callers. Returns how many messages lost reasoning.
  */
-export function unbindOldReasoning(messages: LlmMessage[], runStart: number, key: string): number {
-  const prefix = prefixOf(key)
+export function unbindOldReasoning(messages: LlmMessage[], _runStart: number, key: string): number {
   let last = -1
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
     if (m?.role !== 'assistant' || !m.raw?.some(signedBlock)) continue
-    const other = i < runStart ? m.bound !== key : prefixOf(m.bound) !== prefix
+    const other = m.bound !== key
     if (other) {
       last = i
       break

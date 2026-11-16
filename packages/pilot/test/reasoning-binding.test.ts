@@ -187,7 +187,7 @@ describe('signed reasoning across runs', () => {
     expect(reasoning(sent[2])).toEqual(['a1', 'a2'])
   })
 
-  it('a follow-up on another model drops the reasoning before it, and dropped reasoning never comes back', async () => {
+  it('a follow-up on another model keeps the reasoning before it: the provider sets aside what that model cannot read', async () => {
     let design = false
     const { t, sent } = proxy([
       { think: 'a1', text: 'Here is a 30 mm cube.' },
@@ -202,9 +202,14 @@ describe('signed reasoning across runs', () => {
     await say('Make me a new part: a 20 mm cylinder')
     expect(sent).toHaveLength(3)
     expect(sent.map((r) => parsed(r).model)).toEqual([SONNET, HAIKU, SONNET])
-    expect(reasoning(sent[1])).toEqual([])
-    expect(reasoning(sent[2])).toEqual([])
+    expect(reasoning(sent[1])).toEqual(['a1'])
+    expect(reasoning(sent[2])).toEqual(['a1', 'b1'])
     expect(replies(sent[2])).toEqual(['Here is a 30 mm cube.', 'It is 40 mm tall now.'])
+    // each request's messages start with the one before it, byte for byte, across the change of model
+    for (let n = 1; n < sent.length; n++) {
+      const before = parsed(sent[n - 1]).messages
+      expect(JSON.stringify(parsed(sent[n]).messages.slice(0, before.length))).toBe(JSON.stringify(before))
+    }
   })
 
   it('a follow-up on the same model keeps the reasoning before it when the tier moves, so its messages go out as before', async () => {
@@ -243,23 +248,15 @@ describe('signed reasoning across runs', () => {
 describe('bindingKey', () => {
   const ms = (system: string): LlmMessage[] => [{ role: 'system', content: system }, { role: 'user', content: 'one' }]
   const defs = (description: string): LlmToolDef[] => [{ name: 'part.look', description, parameters: { type: 'object', properties: {} } }]
-  const prefix = (key: string) => key.slice(0, key.indexOf(':'))
 
-  it('is the same for the same system prompt, tools and model, whatever else the request sets', () => {
-    expect(bindingKey('m1', ms('s'), defs('look'))).toBe(bindingKey('m1', [...ms('s'), { role: 'user', content: 'two' }], defs('look')))
+  it('is the same for the same system prompt and tools, whatever else the request sets', () => {
+    expect(bindingKey(ms('s'), defs('look'))).toBe(bindingKey([...ms('s'), { role: 'user', content: 'two' }], defs('look')))
   })
 
-  it('changes with the model in its second part only', () => {
-    const a = bindingKey('m1', ms('s'), defs('look'))
-    const b = bindingKey('m2', ms('s'), defs('look'))
-    expect(b).not.toBe(a)
-    expect(prefix(b)).toBe(prefix(a))
-  })
-
-  it('changes in its first part with the system prompt or the tools', () => {
-    const a = bindingKey('m1', ms('s'), defs('look'))
-    expect(prefix(bindingKey('m1', ms('s2'), defs('look')))).not.toBe(prefix(a))
-    expect(prefix(bindingKey('m1', ms('s'), defs('look again')))).not.toBe(prefix(a))
+  it('changes with the system prompt or the tools', () => {
+    const a = bindingKey(ms('s'), defs('look'))
+    expect(bindingKey(ms('s2'), defs('look'))).not.toBe(a)
+    expect(bindingKey(ms('s'), defs('look again'))).not.toBe(a)
   })
 })
 
@@ -298,15 +295,14 @@ describe('unbindOldReasoning', () => {
   const said = (think: string, bound: string): LlmMessage => ({ role: 'assistant', content: think, raw: [{ type: 'thinking', thinking: think, signature: 's' }, { type: 'text', text: think }], bound })
   const left = (ms: LlmMessage[]) => ms.flatMap((m) => (m.role === 'assistant' ? (m.raw ?? []).filter((b) => (b as { type: string }).type === 'thinking').map((b) => (b as { thinking: string }).thinking) : []))
 
-  // keys are the system prompt and tools, a colon, then the model (bindingKey)
-  const k1 = 'p1:m1'
-  const k2 = 'p1:m2'
+  // keys are a hash of the system prompt and tools (bindingKey)
+  const k1 = 'p1'
+  const k2 = 'p2'
 
-  it('removes from the oldest end up to the newest message bound to something else, and leaves the run in progress on another model', () => {
-    const ms: LlmMessage[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'one' }, said('a', k1), { role: 'user', content: 'two' }, said('b', k2), said('c', k1), { role: 'user', content: 'three' }, said('d', k2)]
+  it('removes from the oldest end up to the newest message bound to something else, before the run and in it alike', () => {
+    const ms: LlmMessage[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'one' }, said('a', k1), { role: 'user', content: 'two' }, said('b', k2), said('c', k1), { role: 'user', content: 'three' }, said('d', k1)]
     expect(unbindOldReasoning(ms, 7, k1)).toBe(2)
-    // b is bound to another model, so a and b leave; c is bound to k1 and stays; d is this run's own, signed against the
-    // same system prompt and tools
+    // b was signed against another system prompt or tool list, so a and b leave; c and d are bound to k1 and stay
     expect(left(ms)).toEqual(['c', 'd'])
     expect(ms[4]).toEqual({ role: 'assistant', content: 'b', raw: [{ type: 'text', text: 'b' }] })
   })
@@ -314,7 +310,7 @@ describe('unbindOldReasoning', () => {
   it('removes the run in progress too once its system prompt or tools change, and keeps the tool calls', () => {
     const call = { type: 'tool_use', id: 't1', name: 'pilot__load_tools', input: { toolset: 'project' } }
     const ms: LlmMessage[] = [{ role: 'user', content: 'one' }, said('a', k1), { role: 'user', content: 'two' }, { role: 'assistant', content: '', raw: [{ type: 'thinking', thinking: 'b', signature: 's' }, call], bound: k1 }, { role: 'tool', callId: 't1', content: 'loaded' }]
-    expect(unbindOldReasoning(ms, 3, 'p2:m1')).toBe(2)
+    expect(unbindOldReasoning(ms, 3, 'p2')).toBe(2)
     expect(left(ms)).toEqual([])
     expect(ms[3]).toEqual({ role: 'assistant', content: '', raw: [call] })
   })
