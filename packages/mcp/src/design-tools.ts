@@ -1026,7 +1026,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           const long = Math.round(Math.max(b.x, b.y))
           const printer = ctx?.context?.machine?.printer
           // a note on its looks (a small part that hardly shows) is said too, or the reply would skip it
-          const notes = result.notes?.length ? `. ${NOTES_SAY(result.notes)}` : ''
+          const notes = result.notes?.length ? `. ${NOTES_SAY(result.suggest ?? result.notes)}` : ''
           const real = realSaid((entry.plan as { real?: readonly RealEntry[] }).real, opts.lookupSource)
           return { summary: `${summary}. In the reply, give its size (${long} mm long, ${Math.round(Math.min(b.x, b.y))} mm wide and ${Math.round(b.z)} mm tall, fits ${printer ? `the ${printer}` : 'the bed'})${real} and offer a resize as a follow-up: half size, or a length the person types${notes}`, output }
         }
