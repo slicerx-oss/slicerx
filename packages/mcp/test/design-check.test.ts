@@ -1349,7 +1349,7 @@ describe('a display plan\'s stacked parts', () => {
   it('fails a funnel built from the hull\'s deck, 6.65 mm under the top of the deckhouse it stands on', async () => {
     const item = stands(await ship(14.5, {}))!
     expect(item.pass).toBe(false)
-    expect(item.got).toBe('Funnel 1 stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; make it 21.65 mm tall from its base at z 14.5, so 15 mm shows above the top of Upper deckhouse, whose highest point is at z 21.15 mm: with design.edit_step, set the size of the step that makes Funnel 1 to 21.65 mm along z, or move it by [0, 0, 6.65] and set its size to 15 mm along z')
+    expect(item.got).toBe("Funnel 1 stands on Upper deckhouse, but its base sits 6.65 mm below Upper deckhouse's top, so 8.35 mm of it shows where the plan has 15 mm. Upper deckhouse's highest point is at z 21.15 mm. With design.edit_step, set the size of the step that makes Funnel 1 to 21.65 mm along z (it grows up from its base at z 14.5), or move that step by [0, 0, 6.65] and set its size to 15 mm along z.")
   })
 
   it('passes a funnel built from the top of its deckhouse, and the upper deckhouse its tiers put on the lower one', async () => {
@@ -1370,7 +1370,7 @@ describe('a display plan\'s stacked parts', () => {
     })
     expect(stands(await ship(21.1, planned(21.1), 'Funnels (4)'))).toMatchObject({ got: '2 stacked parts on their supports', pass: true })
     expect(stands(await ship(14.5, planned(14.5), 'Funnels (4)'))).toMatchObject({
-      got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; make it 21.65 mm tall from its base at z 14.5, so 15 mm shows above the top of Upper deckhouse, whose highest point is at z 21.15 mm: with design.edit_step, set the size of the step that makes Funnels (4) to 21.65 mm along z, or move it by [0, 0, 6.65] and set its size to 15 mm along z',
+      got: "Funnels (4) stands on Upper deckhouse, but its base sits 6.65 mm below Upper deckhouse's top, so 8.35 mm of it shows where the plan has 15 mm. Upper deckhouse's highest point is at z 21.15 mm. With design.edit_step, set the size of the step that makes Funnels (4) to 21.65 mm along z (it grows up from its base at z 14.5), or move that step by [0, 0, 6.65] and set its size to 15 mm along z.",
       pass: false,
     })
   })
@@ -1388,7 +1388,7 @@ describe('a display plan\'s stacked parts', () => {
     const row = { kind: 'linear', count: 4, step: [8, 0, 0] }
     expect(stands(await ship(21.1, planned(21.1), 'Funnels (4)', row))).toMatchObject({ got: '2 stacked parts on their supports', pass: true })
     expect(stands(await ship(14.5, planned(14.5), 'Funnels (4)', row))).toMatchObject({
-      got: 'Funnels (4) stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; make it 21.65 mm tall from its base at z 14.5, so 15 mm shows above the top of Upper deckhouse, whose highest point is at z 21.15 mm: with design.edit_step, set the size of the step that makes Funnels (4) to 21.65 mm along z, or move it by [0, 0, 6.65] and set its size to 15 mm along z',
+      got: "Funnels (4) stands on Upper deckhouse, but its base sits 6.65 mm below Upper deckhouse's top, so 8.35 mm of it shows where the plan has 15 mm. Upper deckhouse's highest point is at z 21.15 mm. With design.edit_step, set the size of the step that makes Funnels (4) to 21.65 mm along z (it grows up from its base at z 14.5), or move that step by [0, 0, 6.65] and set its size to 15 mm along z.",
       pass: false,
     })
     // a ring about an upright axis keeps the funnel's height, so the ring stands where the funnel does

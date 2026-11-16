@@ -919,8 +919,14 @@ export interface TopRead {
   under: boolean
 }
 
+/** Texts joined with `sep`, except after a text that ends a sentence with its own period, which takes a space. */
+export const joinEnded = (texts: readonly string[], sep: string): string => texts.reduce((t, x, i) => (i === 0 ? x : `${t}${t.endsWith('.') ? ' ' : sep}${x}`), '')
+
+/** Where the top a stacked part is read against sits: the lowest point of a deck under the part, or the highest point. */
+const topWhere = (top: TopRead): string => (top.under ? 'lowest point under it' : 'highest point')
+
 /** The support a failure names, with the height of the top the part was read against, so the fix needs no reading. */
-const supportTop = (support: string, top: TopRead): string => `${support}, whose ${top.under ? 'lowest point under it' : 'highest point'} is at z ${r2(top.z)} mm`
+const supportTop = (support: string, top: TopRead): string => `${support}, whose ${topWhere(top)} is at z ${r2(top.z)} mm`
 
 /**
  * The failure for a stacked part whose base is sunk below its support's top, with a planned height, and its exact fix.
@@ -930,8 +936,8 @@ const supportTop = (support: string, top: TopRead): string => `${support}, whose
  */
 export const STANDS_OFF = (part: string, support: string, below: number, shows: number, planned: number, top: TopRead, inside = true): string =>
   inside
-    ? `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; make it ${r2(planned + below)} mm tall from its base at z ${r2(top.z - below)}, so ${r2(planned)} mm shows above the top of ${supportTop(support, top)}: with design.edit_step, set the size of the step that makes ${part} to ${r2(planned + below)} mm along z, or move it by [0, 0, ${r2(below)}] and set its size to ${r2(planned)} mm along z`
-    : `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm, and it reaches past the sides of ${support}, where its sunk part shows; build it from the top of ${supportTop(support, top)}: with design.edit_step, move the step that makes ${part} by [0, 0, ${r2(below)}] and set its size to ${r2(planned)} mm along z`
+    ? `${part} stands on ${support}, but its base sits ${r2(below)} mm below ${support}'s top, so ${r2(shows)} mm of it shows where the plan has ${r2(planned)} mm. ${support}'s ${topWhere(top)} is at z ${r2(top.z)} mm. With design.edit_step, set the size of the step that makes ${part} to ${r2(planned + below)} mm along z (it grows up from its base at z ${r2(top.z - below)}), or move that step by [0, 0, ${r2(below)}] and set its size to ${r2(planned)} mm along z.`
+    : `${part} stands on ${support}, but its base sits ${r2(below)} mm below ${support}'s top, so ${r2(shows)} mm of it shows where the plan has ${r2(planned)} mm, and its sunk part shows past ${support}'s sides. Build it up from ${support}'s top, whose ${topWhere(top)} is at z ${r2(top.z)} mm: with design.edit_step, move the step that makes ${part} by [0, 0, ${r2(below)}] and set its size to ${r2(planned)} mm along z.`
 
 /** The failure for a stacked part whose base floats above its support's top, planned height or not. */
 export const STANDS_FLOATS = (part: string, support: string, above: number, top: TopRead): string =>
@@ -1065,7 +1071,7 @@ export function stackItem(plan: Pick<DetailPlan, 'features' | 'tiers' | 'detail'
   return {
     name: 'stands on',
     want: `each stacked part's base on its support's top, within ${STAND_LAYER_MM} mm, its planned height showing above it within ${SCALE_SLACK} times`,
-    got: off.length ? off.join('; ') : `${read.length} stacked ${read.length === 1 ? 'part' : 'parts'} on ${read.length === 1 ? 'its support' : 'their supports'}`,
+    got: off.length ? joinEnded(off, '; ') : `${read.length} stacked ${read.length === 1 ? 'part' : 'parts'} on ${read.length === 1 ? 'its support' : 'their supports'}`,
     pass: off.length === 0,
   }
 }
