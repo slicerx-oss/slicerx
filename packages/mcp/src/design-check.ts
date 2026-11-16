@@ -152,6 +152,8 @@ export interface BodyFacts {
   tags?: (string | null)[] | undefined
   /** Those steps' ids, in order (slicerx_design_edit_step takes a step by id; an index counts paint and suppressed steps too). */
   stepIds?: string[] | undefined
+  /** The planned features a change of a live step carried out (its edits: a tilt or a move design.edit_step applied), by name. */
+  edited?: string[] | undefined
   /** The paint steps tagged with a planned feature (the paint tool's feature), each with its step name. */
   paintTags?: { feature: string; step: string }[] | undefined
   /** The paint steps tagged with no planned feature, each with its id and step name, for the hint to tag one. */
@@ -400,8 +402,22 @@ function nameWords(name: string): Set<string> {
 }
 
 /** A feature name or tag as compared: lower case, words only, plurals made single ("Snap-fit lids" is "snap fit lid"). */
-function nameKey(name: string): string {
+export function nameKey(name: string): string {
   return name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(single).join(' ')
+}
+
+/** A planned feature kind that leans features already built (a tilt, a lean, a rake, a rotation). */
+const TILT_KIND = /\b(?:tilt|lean|rake|raking|rotat)/i
+/** A planned feature kind that moves features already built (a move, a shift). */
+const MOVE_KIND = /\b(?:move|shift)/i
+
+/**
+ * The edit a planned feature of this kind is, when it changes features already built rather than adding a part of its
+ * own: a tilt or a move, as design.edit_step applies them; null for any other kind.
+ */
+export function changeEdit(kind: string | undefined): 'tilt' | 'move' | null {
+  if (!kind) return null
+  return TILT_KIND.test(kind) ? 'tilt' : MOVE_KIND.test(kind) ? 'move' : null
 }
 
 const steps = (n: number): string => `${n} step${n === 1 ? '' : 's'}`
@@ -419,14 +435,19 @@ export const untaggedStepHint = (step: string, name: string, which: string): str
  * plurals aside). A step with no tag is finishing work, such as a fillet, and never stands in for a missing feature. A
  * history with no tag at all (a client that does not pass feature) is matched by step names instead: a step goes to the
  * feature its name shares the most words with (on a tie, the feature with fewer words left over), and a step whose name
- * matches no feature stands for none. Fewer steps than features, or a feature left with none, fails by name.
+ * matches no feature stands for none. Fewer steps than features, or a feature left with none, fails by name. A planned
+ * change to features already built (a tilt or a move, by its kind: changeEdit) needs no step of its own: it counts as
+ * built once design.edit_step applied that change to a step after the plan named it (the step's edits).
  */
 function featureItem(features: string[], body: BodyFacts, read: Bands = { painted: new Map(), why: new Map() }): CheckItem {
   const bands = withPaintSteps(features, body, read)
   const n = features.length
   const m = body.features
-  // a color band painted where and as the plan says needs no step that shapes it
-  const shaped = n - features.filter((f) => bands.painted.has(f)).length
+  // a change to features already built (a tilt or a move design.edit_step applied for it) builds no step of its own
+  const edited = new Set((body.edited ?? []).map(nameKey))
+  // a color band painted where and as the plan says needs no step that shapes it, nor does such a change
+  const done = (f: string): boolean => bands.painted.has(f) || edited.has(nameKey(f))
+  const shaped = n - features.filter(done).length
   const paintedNote = features.filter((f) => bands.painted.has(f)).map((f) => `; ${f} ${bands.painted.get(f)}`).join('')
   const unpaintedNote = features.filter((f) => bands.why.has(f)).map((f) => `; ${f}: ${bands.why.get(f)}`).join('')
   // an untagged paint step goes with a planned band that is not painted as planned, else with a missing feature it
@@ -441,7 +462,7 @@ function featureItem(features: string[], body: BodyFacts, read: Bands = { painte
     })
   }
   if (m < shaped) {
-    const early = paintHintsFor(features.filter((f) => !bands.painted.has(f)))
+    const early = paintHintsFor(features.filter((f) => !done(f)))
     return { name: 'feature count', want: String(n), got: `${steps(m)} for ${n} planned features${paintedNote ? `, ${n - shaped} of them painted bands` : ''}${unpaintedNote}${early.length ? `; ${early.join('; ')}` : ''}`, pass: false }
   }
   // nothing known about the steps but their count
@@ -486,7 +507,7 @@ function featureItem(features: string[], body: BodyFacts, read: Bands = { painte
       else loose.push(step)
     }
   }
-  const missing = features.filter((f, k) => per[k] === 0 && !bands.painted.has(f))
+  const missing = features.filter((f, k) => per[k] === 0 && !done(f))
   const groups = per.map((c, k) => (c > 1 ? `${features[k]} ${c}` : '')).filter(Boolean)
   const want = tagged ? `${n} features, each built by a step tagged with its name` : `${n} features, each built by one or more steps`
   const painted = features.filter((f, k) => per[k] === 0 && bands.painted.has(f)).map((f) => `; ${f} ${bands.painted.get(f)}`).join('')
