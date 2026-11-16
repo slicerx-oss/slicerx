@@ -272,13 +272,15 @@ describe('detailProblem: the rules are about the object', () => {
     // from x 35 to 52 the deck has begun to rise: between its sections at x 30 and 70 it is 16.23 mm at x 52 and higher
     // aft, so a base at 15.9 is sunk into it everywhere; a mast at 18.9 floats over the 16.4 mm deck at x 38
     const r = stackItem(plan, { hull, 'lower deckhouse': lower(15.9), 'aft deckhouse': { lo: 15.9, hi: 19, foot: { x: [35, 52], y: [-7, 7] } }, mainmast: { lo: 18.9, hi: 46, foot: { x: [37, 39], y: [-1, 1] } } })!
-    expect(r.got).toBe("Aft deckhouse stands on Hull, but its base sits 0.33 mm below Hull's top, so 2.77 mm of it shows where the plan has 3.1 mm. Hull's lowest point under it is at z 16.23 mm. With design.edit_step, set the size of the step that makes Aft deckhouse to 3.43 mm along z (it grows up from its base at z 15.9), or move that step by [0, 0, 0.33] and set its size to 3.1 mm along z. Mainmast stands on Hull, but its base is 2.51 mm above its top, so it floats; build it from the top of Hull, whose lowest point under it is at z 16.39 mm: with design.edit_step, move the step that makes Mainmast by [0, 0, -2.51]")
+    // the aft deckhouse is sunk 0.33 mm with 2.77 mm of its planned 3.1 mm showing, within SCALE_SLACK, so it passes
+    // as a seated one does; the mast floats
+    expect(r.got).toBe('Mainmast stands on Hull, but its base is 2.51 mm above its top, so it floats; build it from the top of Hull, whose lowest point under it is at z 16.39 mm: with design.edit_step, move the step that makes Mainmast by [0, 0, -2.51]')
     // a part past the deck's ends, or with no footprint, is read against the support's highest point, as before
     expect(stackItem({ ...plan, features: plan.features.slice(0, 2) }, { hull, 'lower deckhouse': { lo: 15.9, hi: 20 } })!.got).toBe("Lower deckhouse stands on Hull, but its base sits 3.1 mm below Hull's top, so 1 mm of it shows where the plan has 4.1 mm. Hull's highest point is at z 19 mm. With design.edit_step, set the size of the step that makes Lower deckhouse to 7.2 mm along z (it grows up from its base at z 15.9), or move that step by [0, 0, 3.1] and set its size to 4.1 mm along z.")
     expect(stackItem({ ...plan, features: plan.features.slice(0, 2) }, { hull, 'lower deckhouse': { lo: 18.9, hi: 23, foot: { x: [220, 240], y: [-1, 1] } } })).toMatchObject({ pass: true })
   })
 
-  it('passes a part sunk into its support with its planned height showing, inside the support, and fails it short or past the sides', () => {
+  it('passes a part sunk into its support with its planned height showing, inside the support, and fails it short or tall past SCALE_SLACK or past the sides', () => {
     const deck = { axis: 'x' as const, at: [[0, 17.5], [10, 17], [30, 16.5], [70, 16], [150, 16], [185, 16.5], [205, 17.5], [215, 19]] as [number, number][] }
     const hull = { lo: 0, hi: 19, deck }
     const plan = { detail: 'display' as const, features: [{ name: 'Hull', sizes: {} }, { name: 'Lower deckhouse', sizes: { height: 4.1 }, on: 'Hull' }] }
@@ -288,10 +290,13 @@ describe('detailProblem: the rules are about the object', () => {
     expect(stackItem(plan, house(13, 20.1))).toMatchObject({ pass: true, got: '1 stacked part on its support' })
     // within a layer of the planned height either way still passes
     expect(stackItem(plan, house(13, 19.95))!.pass).toBe(true)
-    // sunk and short by more than a layer: built from the wrong height, so it fails as before
-    expect(stackItem(plan, house(13, 19.5))!.got).toBe(STANDS_OFF('Lower deckhouse', 'Hull', 3, 3.5, 4.1, under16))
-    // sunk and tall by more than a layer fails too
-    expect(stackItem(plan, house(13, 20.6))!.pass).toBe(false)
+    // sunk and short or tall within SCALE_SLACK passes, as a seated part does: 3.5 mm and 4.6 mm of a planned 4.1 mm
+    expect(stackItem(plan, house(13, 19.5))!.pass).toBe(true)
+    expect(stackItem(plan, house(13, 20.6))!.pass).toBe(true)
+    // sunk and short past SCALE_SLACK fails with the sunk text: 2.9 mm of a planned 4.1 mm
+    expect(stackItem(plan, house(13, 18.9))!.got).toBe(STANDS_OFF('Lower deckhouse', 'Hull', 3, 2.9, 4.1, under16))
+    // sunk and tall past SCALE_SLACK fails too: 6 mm of a planned 4.1 mm
+    expect(stackItem(plan, house(13, 22))!.pass).toBe(false)
     // sunk with its height showing, but reaching past the deck's end: its sunk part shows below the deck there
     const past = stackItem(plan, house(14, 21.35, [200, 230]))!
     expect(past.pass).toBe(false)

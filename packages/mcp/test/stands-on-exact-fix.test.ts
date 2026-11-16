@@ -16,11 +16,18 @@ const forecastle = (lo: number, hi: number, x: [number, number] = [183, 205]): F
 
 describe('a part sunk into its support is told its exact fix', () => {
   it('inside the support: the height to make it from its base, or the move with its planned height, word for word', () => {
-    const r = stackItem(plan, forecastle(12, 15))!
+    // 3 mm showing of a planned 2 mm is past SCALE_SLACK, so it fails though its sunk part is hidden
+    const r = stackItem(plan, forecastle(12, 15.61))!
     expect(r.pass).toBe(false)
     expect(r.got).toBe(
-      "Forecastle deck stands on Hull, but its base sits 0.61 mm below Hull's top, so 2.39 mm of it shows where the plan has 2 mm. Hull's lowest point under it is at z 12.61 mm. With design.edit_step, set the size of the step that makes Forecastle deck to 2.61 mm along z (it grows up from its base at z 12), or move that step by [0, 0, 0.61] and set its size to 2 mm along z.",
+      "Forecastle deck stands on Hull, but its base sits 0.61 mm below Hull's top, so 3 mm of it shows where the plan has 2 mm. Hull's lowest point under it is at z 12.61 mm. With design.edit_step, set the size of the step that makes Forecastle deck to 2.61 mm along z (it grows up from its base at z 12), or move that step by [0, 0, 0.61] and set its size to 2 mm along z.",
     )
+    // 1.2 mm showing of a planned 2 mm is short past SCALE_SLACK the other way
+    expect(stackItem(plan, forecastle(12, 13.81))!.got).toContain('so 1.2 mm of it shows where the plan has 2 mm. ')
+  })
+
+  it("passes the ship's sunk forecastle deck as built, since 2.39 mm of a planned 2 mm shows above the hull, within SCALE_SLACK as a seated deck is held", () => {
+    expect(stackItem(plan, forecastle(12, 15))).toMatchObject({ pass: true, got: '1 stacked part on its support' })
   })
 
   it('passes once made either way it says', () => {
@@ -40,7 +47,9 @@ describe('a part sunk into its support is told its exact fix', () => {
 
   it('STANDS_OFF gives the planned height plus what is sunk, and the base under the top, rounded as the rest of the failure is', () => {
     const top = { z: 12.6123, under: true }
-    expect(STANDS_OFF('Forecastle deck', 'Hull', 0.6123, 2.3877, 2, top)).toContain("Hull's lowest point under it is at z 12.61 mm. With design.edit_step, set the size of the step that makes Forecastle deck to 2.61 mm along z (it grows up from its base at z 12)")
+    expect(STANDS_OFF('Forecastle deck', 'Hull', 0.6123, 2.3877, 2, top)).toBe(
+      "Forecastle deck stands on Hull, but its base sits 0.61 mm below Hull's top, so 2.39 mm of it shows where the plan has 2 mm. Hull's lowest point under it is at z 12.61 mm. With design.edit_step, set the size of the step that makes Forecastle deck to 2.61 mm along z (it grows up from its base at z 12), or move that step by [0, 0, 0.61] and set its size to 2 mm along z.",
+    )
     expect(STANDS_OFF('Mainmast', 'Promenade deck', 1.1, 12.9, 14, { z: 15, under: false }, false)).toBe(
       "Mainmast stands on Promenade deck, but its base sits 1.1 mm below Promenade deck's top, so 12.9 mm of it shows where the plan has 14 mm, and its sunk part shows past Promenade deck's sides. Build it up from Promenade deck's top, whose highest point is at z 15 mm: with design.edit_step, move the step that makes Mainmast by [0, 0, 1.1] and set its size to 14 mm along z.",
     )
