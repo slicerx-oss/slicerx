@@ -242,7 +242,7 @@ describe('design.put_plan with amends', () => {
 
   it('is 1.6.0, and changes a client plan of a built part with the same rules and no card', async () => {
     const t = tools()
-    expect(t.tool('design.put_plan').version).toBe('1.11.0')
+    expect(t.tool('design.put_plan').version).toBe('1.12.0')
     expect(t.tool('design.check').version).toBe('1.29.0')
     await t.run('design.put_plan', { plan: mine, design: 'd1' })
     const out = await t.run('design.put_plan', { plan: { ...mine, ...taller(box, 34) }, amends: 'box-1', reason: 'The lid adds 4 mm.' })
