@@ -547,10 +547,12 @@ fn extract_surface(field: &[f64], g: &Grid) -> TriMesh {
     ex.mesh
 }
 
+/// the wall smoothed in `iterations` passes, never turning a triangle against the way it faced as extracted
 fn smooth(m: &mut TriMesh, iterations: u32) {
     if iterations == 0 || m.triangles.is_empty() {
         return;
     }
+    let facing: Vec<V3> = m.triangles.iter().map(|&t| m.normal(t)).collect();
     let mut neighbors: Vec<Vec<u32>> = vec![Vec::new(); m.positions.len()];
     for t in &m.triangles {
         for e in 0..3 {
@@ -565,7 +567,7 @@ fn smooth(m: &mut TriMesh, iterations: u32) {
     }
     for _ in 0..iterations {
         for lambda in [0.5, -0.53] {
-            let next: Vec<V3> = m
+            let mut next: Vec<V3> = m
                 .positions
                 .iter()
                 .zip(&neighbors)
@@ -580,6 +582,31 @@ fn smooth(m: &mut TriMesh, iterations: u32) {
                     vec3::add(p, vec3::scale(vec3::sub(avg, p), lambda))
                 })
                 .collect();
+            // a wall folded over itself crosses itself, and its cavity then takes the robust cut: a triangle that
+            // would turn over keeps its corners where they are, which can turn a neighbor, so look again until
+            // none does
+            let mut kept = vec![false; next.len()];
+            loop {
+                let mut held = false;
+                for (tri, &was) in m.triangles.iter().zip(&facing) {
+                    let [a, b, c] = tri.map(|v| next[v as usize]);
+                    // one with no area as extracted faces no way to keep
+                    if vec3::len(was) <= 0.0 || vec3::dot(vec3::tri_normal(a, b, c), was) > 0.0 {
+                        continue;
+                    }
+                    for &v in tri {
+                        let v = v as usize;
+                        if !kept[v] {
+                            kept[v] = true;
+                            next[v] = m.positions[v];
+                            held = true;
+                        }
+                    }
+                }
+                if !held {
+                    break;
+                }
+            }
             m.positions = next;
         }
     }

@@ -312,7 +312,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const hollow = defineTool({
     name: 'geom.hollow',
-    version: '1.3.0',
+    version: '1.3.1',
     source: 'command',
     permission: 'slice',
     description: 'Hollow a solid model to a shell of a given wall thickness, with optional drain holes so resin or trapped material can leave. With "design" it adds a hollow step (wall only); with a model it writes a new STL and a volume report.',
