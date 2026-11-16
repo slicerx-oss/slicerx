@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Tells the slice which printer model it is for: the printer shown in the sidebar (the selected one, else the first
-// idle one), so its bed, speeds, limits and G-code follow the machine.
+// Tells the slice which printer model it is for: the printer shown in the sidebar (the selected one, else the one shown
+// last while it is connected, else the first idle one), so its bed, speeds, limits and G-code follow the machine.
 import { useEffect } from 'react'
 import { set } from '../state/store'
 import type { FleetRow } from '../lib/queries'
