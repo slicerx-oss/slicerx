@@ -480,18 +480,35 @@ const loopConstraint = z
     'Fields by type as for slicerx_geom_sketch_solve, naming the loops: a point is {e: loop, at: start | to | center | arcCenter | point, seg} (to and arcCenter take the segment; point is spline point i, no seg on a spline loop; e -1 at start is the sketch origin), a line, arc or circle is {e: loop, seg} (a circle is seg 0; e -1 seg 0 is the X axis of the sketch, so an angle from it sets the direction of a line). Dimensions (length, distance, horizontalDistance, verticalDistance, lineDistance, radius, diameter, angle) take value, mm or degrees, and offset, mm, where the dimension line sits',
   )
 
-const shape = z
-  .discriminatedUnion('type', [
-    z.object({ type: z.literal('rectangle'), widthMm: z.number().positive(), heightMm: z.number().positive(), cornerRadiusMm: z.number().min(0).optional() }),
-    z.object({ type: z.literal('circle'), diameterMm: z.number().positive() }),
-    z.object({ type: z.literal('slot'), lengthMm: z.number().positive(), widthMm: z.number().positive() }),
-    z.object({ type: z.literal('ellipse'), widthMm: z.number().positive(), heightMm: z.number().positive() }).describe('widthMm along placement x before rotationDeg turns it'),
-    z.object({ type: z.literal('polygon'), sides: z.number().int().min(3).max(256), diameterMm: z.number().positive(), fit: z.enum(['inscribed', 'circumscribed']).optional() }),
-    z.object({ type: z.literal('text'), text: z.string().min(1).max(200), sizeMm: z.number().positive(), letterSpacingMm: z.number().optional(), lineSpacing: z.number().positive().optional(), align: z.enum(['left', 'center', 'right']).optional() }),
-    z.object({ type: z.literal('sketch'), loops: loopsRef }),
-    z.object({ type: z.literal('svg'), svg: z.string().min(1).max(2_000_000), widthMm: z.number().positive(), toleranceMm: z.number().positive().optional() }),
-  ])
-  .describe('What to extrude, in the plane: rectangle, circle, slot, ellipse, polygon or text centered on placement.center, a free sketch of closed loops (as typed), or SVG artwork scaled to widthMm')
+/** A rectangle's cornerRadiusMm, as geom.extrude describes it. */
+export const CORNER_RADIUS_HELP = 'Rounds all four corners by this radius, in mm. Up to half the shorter side; at half, the short ends are full half circles.'
+/** A rectangle's frontRadiusMm and backRadiusMm, as geom.extrude describes them. */
+export const END_RADIUS_HELP = "Rounds only the two corners at the rectangle's front (+x) or back (-x) end by this radius, in mm; up to half the height. A house with a round front and square back takes frontRadiusMm alone."
+const endRadius = z.number().min(0).optional().describe(END_RADIUS_HELP)
+
+const rectangle = z.object({
+  type: z.literal('rectangle'),
+  widthMm: z.number().positive(),
+  heightMm: z.number().positive(),
+  cornerRadiusMm: z.number().min(0).optional().describe(CORNER_RADIUS_HELP),
+})
+/** The shapes geom.extrude takes, with the rectangle `rect` gives. */
+const shapes = <R extends z.ZodObject<z.ZodRawShape>>(rect: R) =>
+  z
+    .discriminatedUnion('type', [
+      rect,
+      z.object({ type: z.literal('circle'), diameterMm: z.number().positive() }),
+      z.object({ type: z.literal('slot'), lengthMm: z.number().positive(), widthMm: z.number().positive() }),
+      z.object({ type: z.literal('ellipse'), widthMm: z.number().positive(), heightMm: z.number().positive() }).describe('widthMm along placement x before rotationDeg turns it'),
+      z.object({ type: z.literal('polygon'), sides: z.number().int().min(3).max(256), diameterMm: z.number().positive(), fit: z.enum(['inscribed', 'circumscribed']).optional() }),
+      z.object({ type: z.literal('text'), text: z.string().min(1).max(200), sizeMm: z.number().positive(), letterSpacingMm: z.number().optional(), lineSpacing: z.number().positive().optional(), align: z.enum(['left', 'center', 'right']).optional() }),
+      z.object({ type: z.literal('sketch'), loops: loopsRef }),
+      z.object({ type: z.literal('svg'), svg: z.string().min(1).max(2_000_000), widthMm: z.number().positive(), toleranceMm: z.number().positive().optional() }),
+    ])
+    .describe('What to extrude, in the plane: rectangle, circle, slot, ellipse, polygon or text centered on placement.center, a free sketch of closed loops (as typed), or SVG artwork scaled to widthMm')
+const shape = shapes(rectangle.extend({ frontRadiusMm: endRadius, backRadiusMm: endRadius }))
+// a local model's rectangle leaves the end radii out: its build turn has no room for fields it is told nothing of
+const localShape = shapes(rectangle)
 
 const operation = z.enum(['new', 'join', 'cut']).default('new').describe('new: a separate body; join: add to target; cut: remove from target')
 /** The filament a new body prints in, as geom.build takes it. */
@@ -997,31 +1014,34 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const extrudeInput = z.object({
+    shape: shape.optional(),
+    sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id instead of shape and frame'),
+    frame: frameRef.optional(),
+    placement: z.object({ center: vec2.optional(), rotationDeg: z.number().optional() }).optional().describe('Where the shape sits in the plane: center [u, v] and rotation, degrees'),
+    distance_mm: z.number().positive().max(10_000),
+    extent: z.enum(['oneSide', 'symmetric', 'twoSides']).default('oneSide').describe('oneSide: distance_mm out from the plane; symmetric: distance_mm to each side; twoSides: distance_mm and distance2_mm'),
+    distance2_mm: z.number().positive().max(10_000).optional().describe('Second distance for extent twoSides'),
+    flip: z.boolean().optional().describe('Reverse the direction. By default new and join go out along the plane normal and cut goes into the face'),
+    taper_deg: z.number().min(-45).max(45).optional().describe('Draft angle; positive narrows away from the plane'),
+    operation,
+    target: modelArg.optional().describe('The model to join to or cut from'),
+    design: designArg.optional(),
+    feature: featureArg,
+    part: partArg,
+    name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
+    slot: slotArg,
+  })
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.13.0',
+    version: '1.14.0',
     source: 'command',
     permission: 'slice',
     description:
       'Extrude a shape on the bed, a plane or a picked face as a new body, joined to a target or cut from it: with "design" a step (join and cut work on "part"), with a model an STL with volume, bounds and watertightness.',
-    ...slotted(z.object({
-      shape: shape.optional(),
-      sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id instead of shape and frame'),
-      frame: frameRef.optional(),
-      placement: z.object({ center: vec2.optional(), rotationDeg: z.number().optional() }).optional().describe('Where the shape sits in the plane: center [u, v] and rotation, degrees'),
-      distance_mm: z.number().positive().max(10_000),
-      extent: z.enum(['oneSide', 'symmetric', 'twoSides']).default('oneSide').describe('oneSide: distance_mm out from the plane; symmetric: distance_mm to each side; twoSides: distance_mm and distance2_mm'),
-      distance2_mm: z.number().positive().max(10_000).optional().describe('Second distance for extent twoSides'),
-      flip: z.boolean().optional().describe('Reverse the direction. By default new and join go out along the plane normal and cut goes into the face'),
-      taper_deg: z.number().min(-45).max(45).optional().describe('Draft angle; positive narrows away from the plane'),
-      operation,
-      target: modelArg.optional().describe('The model to join to or cut from'),
-      design: designArg.optional(),
-      feature: featureArg,
-      part: partArg,
-      name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
-      slot: slotArg,
-    })),
+    input: extrudeInput,
+    // a local model's shape leaves out what its row has no room for (localShape)
+    localInput: slotted(extrudeInput).localInput.extend({ shape: localShape.optional() }),
     async run(i) {
       slotOk(i)
       const spec = { distanceMm: i.distance_mm, extent: i.extent, operation: i.operation, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}), ...(i.flip !== undefined ? { flip: i.flip } : {}), ...(i.taper_deg !== undefined ? { taperDeg: i.taper_deg } : {}) }

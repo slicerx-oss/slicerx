@@ -101,7 +101,7 @@ function keptFeatures(old: Sized, next: Sized): number[] | null {
  * refused. The assumptions and questions are left out, since the card adds lines of its own to them and an amend may
  * say them again in other words; they stay as they are too.
  */
-const KEPT_FIELDS = ['printInPlace', 'detail', 'curved', 'flat', 'proportions', 'repeats', 'colors', 'scale', 'real', 'tiers'] as const
+const KEPT_FIELDS = ['printInPlace', 'detail', 'curved', 'flat', 'proportions', 'repeats', 'colors', 'scale', 'real', 'tiers', 'ends'] as const
 
 /** A value with its object keys in order, and a scale as its number N, so the same value written another way is the same. */
 function canonical(v: unknown, key?: string): unknown {

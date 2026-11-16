@@ -9,7 +9,7 @@
 import { SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { LIP_RISE_MM } from './hook-lip'
-import { type FeatureHeights, type LoftSections, planDetailFields, sectionsProblem, stackItem } from './plan-detail'
+import { type FeatureHeights, type LoftSections, type Outline, planDetailFields, sectionsProblem, squareEndsNotes, stackItem } from './plan-detail'
 
 /** The largest size a plan takes, in its own units. */
 export const PLAN_SIZE_MAX = 10_000
@@ -158,6 +158,8 @@ export interface BodyFacts {
   paintUntagged?: { id: string; step: string }[] | undefined
   /** Each loft step's sections and the feature it was tagged with, read so a display plan's curved bodies are held to change along their length. */
   lofts?: LoftSections[] | undefined
+  /** Each tagged feature's outline from its steps (featureOutlines), by its name in lower case, read so a display plan's flat levels built all square get a note. */
+  outlines?: Record<string, Outline> | undefined
   /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
   parts?: { x: number; y: number; z: number }[] | undefined
   /** Each part's box, filament slot and name, and whether it has color paint, when the design has more than one part. */
@@ -862,7 +864,9 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
 
   // a display or fine model's small parts in the filament of what they sit on vanish: a note, never a failed item, and
   // only once color is in play (colorInPlay): a build nobody asked color of is one default filament, and says nothing
-  const notes = (plan.detail === 'display' || plan.detail === 'fine') && body.partBoxes && colorInPlay(body.partBoxes) ? sameFilament(body.partBoxes) : []
+  const filament = (plan.detail === 'display' || plan.detail === 'fine') && body.partBoxes && colorInPlay(body.partBoxes) ? sameFilament(body.partBoxes) : []
+  // a display or fine plan's flat body with every level built square, where the plan has its ends rounded: a note too
+  const notes = [...filament, ...squareEndsNotes(plan, body.outlines)]
   return { pass: items.every((i) => i.pass), items, ...(notes.length ? { notes } : {}) }
 }
 

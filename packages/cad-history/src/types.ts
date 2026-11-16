@@ -28,7 +28,8 @@ export interface Polygon {
 }
 
 export type Shape =
-  | { type: 'rectangle'; widthMm: number; heightMm: number; cornerRadiusMm?: number }
+  /** frontRadiusMm and backRadiusMm round the two corners at the +x or -x end, in place of cornerRadiusMm there. */
+  | { type: 'rectangle'; widthMm: number; heightMm: number; cornerRadiusMm?: number; frontRadiusMm?: number; backRadiusMm?: number }
   | { type: 'circle'; diameterMm: number }
   | { type: 'slot'; lengthMm: number; widthMm: number }
   /** Width along placement x before its rotation, height across it. */

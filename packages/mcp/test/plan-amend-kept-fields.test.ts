@@ -93,8 +93,8 @@ function tab() {
 }
 
 describe('design.plan with amends, for a field an amend does not keep', () => {
-  it('is 1.19.0', () => {
-    expect(tab().version).toBe('1.19.0')
+  it('is 1.20.0', () => {
+    expect(tab().version).toBe('1.20.0')
   })
 
   it('refuses an amend that only moves the row onto another feature, as no size differs', async () => {

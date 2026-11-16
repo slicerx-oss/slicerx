@@ -67,6 +67,25 @@ const realList = <T extends z.ZodType<{ feature?: string | undefined; size?: str
 /** The card's real sizes: the shared list without a source page, which only a client's own plan gives (design.put_plan). */
 export const cardRealField = (describe: string) => realList(REAL_ENTRY).describe(describe)
 
+/** How a flat level's ends and corners are shaped: rounded or sharp. */
+export const END_SHAPES = ['round', 'square'] as const
+export type EndShape = (typeof END_SHAPES)[number]
+const endShape = z.enum(END_SHAPES)
+/** A flat body's ends: one shape for both, or one each for its front and back. */
+const endsValue = z.union([endShape, z.object({ front: endShape, back: endShape })])
+export type Ends = z.infer<typeof endsValue>
+
+/** A flat body's ends field, as design.plan describes it. */
+export const ENDS_HELP =
+  'Display and fine: how each level\'s ends and corners are shaped, as the real thing\'s are: "round" (a curved front or end, rounded corners), "square" (sharp corners, as on a box or a modern block), or one each for front and back such as {"front": "round", "back": "square"}. Left out at display and fine: round.'
+
+/** The ends a plan's flat body has: as the plan gives them, else round at display and fine; null at basic or with no level. */
+export function bodyEnds(plan: { detail?: DetailLevel | undefined; ends?: Readonly<Record<string, Ends>> | undefined }, body: string): Ends | null {
+  if (plan.detail !== 'display' && plan.detail !== 'fine') return null
+  const key = Object.keys(plan.ends ?? {}).find((k) => k.trim().toLowerCase() === body.trim().toLowerCase())
+  return key !== undefined ? plan.ends![key]! : 'round'
+}
+
 /** The plan fields the detail level adds; each is optional in the shared plan, and the card's input asks for detail. */
 export const planDetailFields = {
   detail: z
@@ -91,12 +110,15 @@ export const planDetailFields = {
     .record(text(60), z.array(text(60)).min(1).max(12))
     .optional()
     .describe('Display and fine: each flat-sided main body\'s levels from the bottom up, each a planned feature, such as {"Tower": ["Lower story", "Upper story"]}: a body the real thing builds in steps or stories lists each level, a single block only itself'),
+  /** Each flat body's ends, by the body's name as flat names it, as design.plan's flat bodies give them (flatLevels); kept, never asked for in this form. */
+  ends: z.record(text(60), endsValue).optional(),
 }
 
 /** One flat-sided main body as design.plan takes it: the feature that builds it and its levels from the bottom up. */
 const FLAT_BODY = z.object({
   feature: text(60).describe('The feature that builds the body'),
   levels: z.array(text(60)).min(1).max(12).describe('Its levels from the bottom up, each a planned feature; a single block lists only itself'),
+  ends: endsValue.optional().describe(ENDS_HELP),
 })
 
 /**
@@ -148,6 +170,8 @@ export function withRealBody<P extends { real?: readonly RealEntry[] | undefined
 export interface FlatLevels {
   flat?: string[] | undefined
   tiers?: Record<string, string[]> | undefined
+  /** The ends each body gives, by the body's name in flat. */
+  ends?: Record<string, Ends> | undefined
 }
 
 /**
@@ -160,10 +184,11 @@ export function flatLevels<P extends { flat?: z.infer<typeof flatInput>; tiers?:
   const flat = plan.flat
   if (!flat?.length || typeof flat[0] === 'string') return plan as Omit<P, 'flat' | 'tiers'> & FlatLevels
   const planned = (n: string): boolean => features.some((f) => f.name.trim().toLowerCase() === n.trim().toLowerCase())
-  const bodies = (flat as z.infer<typeof FLAT_BODY>[]).map((b) => ({ body: !planned(b.feature) && b.levels.every(planned) ? b.levels[0]! : b.feature, levels: b.levels }))
+  const bodies = (flat as z.infer<typeof FLAT_BODY>[]).map((b) => ({ body: !planned(b.feature) && b.levels.every(planned) ? b.levels[0]! : b.feature, levels: b.levels, ends: b.ends }))
   const tiers: Record<string, string[]> = { ...plan.tiers }
   for (const b of bodies) tiers[b.body] = [...b.levels]
-  return { ...plan, flat: bodies.map((b) => b.body), tiers }
+  const ends = Object.fromEntries(bodies.flatMap((b) => (b.ends !== undefined ? [[b.body, b.ends] as const] : [])))
+  return { ...plan, flat: bodies.map((b) => b.body), tiers, ...(Object.keys(ends).length ? { ends } : {}) }
 }
 
 /** A real size as the plan gives it: the feature size it sets, in mm at full size, and where it came from. */
@@ -1076,6 +1101,81 @@ export function loftSections(steps: readonly { params: Record<string, unknown>; 
     out.push({ feature: st.feature?.trim() || null, sections, along })
   }
   return out
+}
+
+/** How the steps tagged with one feature shape its outline: all square, some of it rounded, or another shape. */
+export type Outline = 'square' | 'rounded' | 'other'
+
+/** Steps that leave a body's outline as it is: copies, cuts and holes, paint, names and filaments. */
+const KEEPS_OUTLINE = new Set(['paint', 'pattern', 'mirror', 'array.merged', 'parts.slot', 'parts.name', 'parts.order', 'hole.apply', 'thread.apply', 'subtract', 'face.push', 'plane.cut', 'split'])
+
+/** A sketch loop's outline: square when it is straight lines only, rounded when any of it curves. */
+function loopOutline(l: Record<string, unknown>): Outline {
+  if (Array.isArray(l['points'])) return l['type'] === 'spline' ? 'rounded' : 'square'
+  if (l['type'] === 'circle' || l['type'] === 'ellipse') return 'rounded'
+  if (Array.isArray(l['segments'])) return (l['segments'] as Record<string, unknown>[]).every((g) => g['type'] === undefined || g['type'] === 'line') ? 'square' : 'rounded'
+  return 'other'
+}
+
+/** What one step does to the outline of the feature it builds, or null for a step that leaves it as it is. */
+function stepOutline(params: Record<string, unknown>): Outline | null {
+  const op = params['op']
+  if (typeof op !== 'string' || KEEPS_OUTLINE.has(op)) return null
+  if (op === 'edge.fillet') return 'rounded'
+  if (op === 'shape.extrude') {
+    if ((params['spec'] as { operation?: string } | undefined)?.operation === 'cut') return null
+    const sh = (params['shape'] ?? {}) as Record<string, unknown>
+    if (sh['type'] === 'rectangle') return ['cornerRadiusMm', 'frontRadiusMm', 'backRadiusMm'].some((k) => typeof sh[k] === 'number' && (sh[k] as number) > 0) ? 'rounded' : 'square'
+    if (sh['type'] === 'circle' || sh['type'] === 'slot' || sh['type'] === 'ellipse') return 'rounded'
+    if (sh['type'] === 'sketch') {
+      const all = ((sh['loops'] as Record<string, unknown>[] | undefined) ?? []).filter((l) => !l['construction']).map(loopOutline)
+      return all.includes('rounded') ? 'rounded' : all.length && all.every((o) => o === 'square') ? 'square' : 'other'
+    }
+    return 'other'
+  }
+  if (op === 'parts.add') {
+    const kinds = ((params['parts'] as { primitive?: { type?: string } }[] | undefined) ?? []).map((p) => p.primitive?.type)
+    return kinds.length && kinds.every((k) => k === 'box') ? 'square' : kinds.some((k) => k === 'cylinder' || k === 'cone' || k === 'sphere') ? 'rounded' : 'other'
+  }
+  return 'other'
+}
+
+/**
+ * Each tagged feature's outline from the steps tagged with it, by its name in lower case: rounded when any step rounds
+ * it (a corner or end radius, a curved outline, a fillet), else square when every step that shapes it is square (a
+ * plain rectangle, a straight-sided sketch, a box), else other. Cuts and the steps that keep an outline are left out.
+ */
+export function featureOutlines(steps: readonly { params: Record<string, unknown>; feature?: string | undefined; suppressed?: boolean | undefined }[]): Record<string, Outline> {
+  const out: Record<string, Outline> = {}
+  for (const st of steps) {
+    const f = st.feature?.trim().toLowerCase()
+    if (!f || st.suppressed) continue
+    const o = stepOutline(st.params)
+    if (o === null) continue
+    const was = out[f]
+    out[f] = was === 'rounded' || o === 'rounded' ? 'rounded' : was === 'other' || o === 'other' ? 'other' : 'square'
+  }
+  return out
+}
+
+/** The note on a display or fine plan's flat body whose levels are all built square. */
+export const SQUARE_ENDS_NOTE = (body: string): string =>
+  `Every level of ${body} has square ends. A display model rounds the corners and ends a viewer sees unless the real thing is sharp there. If ${body}'s are rounded, round them with cornerRadiusMm, frontRadiusMm or backRadiusMm.`
+
+/**
+ * The notes for a display or fine plan's flat bodies with rounded ends (bodyEnds: as planned, round when left out)
+ * whose every level was built square (featureOutlines), one each. A body planned square, or with a level not built
+ * yet or built some other way, gets none. A note, never a failed item.
+ */
+export function squareEndsNotes(plan: { detail?: DetailLevel | undefined; flat?: readonly string[] | undefined; tiers?: Readonly<Record<string, readonly string[]>> | undefined; ends?: Readonly<Record<string, Ends>> | undefined }, outlines: Readonly<Record<string, Outline>> | undefined): string[] {
+  if (!outlines) return []
+  return (plan.flat ?? []).flatMap((body) => {
+    const ends = bodyEnds(plan, body)
+    if (ends === null || ends === 'square' || (typeof ends === 'object' && ends.front === 'square' && ends.back === 'square')) return []
+    const key = Object.keys(plan.tiers ?? {}).find((k) => k.trim().toLowerCase() === body.trim().toLowerCase())
+    const levels = key !== undefined ? plan.tiers![key]! : [body]
+    return levels.length && levels.every((l) => outlines[l.trim().toLowerCase()] === 'square') ? [SQUARE_ENDS_NOTE(body)] : []
+  })
 }
 
 /** A section's top, bottom or side moving less than this share of the body's largest cross size is no change. */
