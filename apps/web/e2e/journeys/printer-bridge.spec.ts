@@ -169,10 +169,22 @@ async function choosePrinter(page: Page, printer: string): Promise<void> {
 /** The send card at 1440 by 900, in dark and in light, when shots are on (`send-card-<state>-<scheme>.png`). */
 async function sendShots(page: Page, info: TestInfo, card: Locator, state: string): Promise<void> {
   if (!shotsOn()) return
+  // the slide's press holds the chat where it was while mimir's reply goes on below (the New reply below pill); a
+  // person would follow it, so the shot does, then shows the whole card
+  const pill = page.getByTestId('mimir-reply-pill')
+  const follow = () =>
+    expect(async () => {
+      if ((await pill.count()) > 0) await pill.click({ timeout: 2_000 })
+      await expect(pill).toHaveCount(0, { timeout: 1_000 })
+    }).toPass({ timeout: 15_000 })
+  await follow()
   await card.scrollIntoViewIfNeeded()
   await page.mouse.move(2, 2)
   for (const scheme of ['dark', 'light'] as const) {
     await setScheme(page, scheme)
+    // the reply may have gone on during the last picture
+    await follow()
+    await page.mouse.move(2, 2)
     await page.screenshot({ path: join(shotsDir(info), `send-card-${state}-${scheme}.png`) })
   }
   await setScheme(page, 'dark')
@@ -882,11 +894,17 @@ test.describe(BAMBU, () => {
       await page.mouse.down()
       await page.mouse.move(t.x + t.width - 6, k.y + k.height / 2, { steps: 12 })
       await page.mouse.up()
+      const notNow = card.getByTestId('mimir-send-cancel')
+      const notNowBox = await notNow.boundingBox()
       await expect(slide).toHaveAttribute('data-state', 'sending')
       await expect(slide).toHaveText('Sending to A1...')
+      // nothing is left to decline: Not now goes, and its place stays, so nothing under it moves
+      await expect(notNow).toBeHidden()
+      expect(await notNow.evaluate((el) => el.getBoundingClientRect().height)).toBe(notNowBox?.height)
       await sendShots(page, info, card, 'sending')
       await expect(slide).toHaveAttribute('data-state', 'sent', { timeout: 60_000 })
       await expect(slide).toHaveText('Sent to A1')
+      await expect(notNow).toBeHidden()
       await expect(card.getByTestId('mimir-send-pick')).toHaveText(new RegExp(`PLA · Slot ${picked.id}$`))
       await sendShots(page, info, card, 'sent')
       expect(await page.evaluate(() => (window as unknown as { __slides: string[] }).__slides)).toEqual(['sending', 'sent'])
@@ -901,6 +919,14 @@ test.describe(BAMBU, () => {
       // the slide was the approval: the guard asked nothing more
       await expect(page.locator('dialog.approve-dialog[open]')).toHaveCount(0)
       await expect(page.getByTestId('mimir-transcript')).toContainText('It is on its way to the A1.', { timeout: 30_000 })
+      // starting the print is no plate change: with no printer chosen the app showed the A1 as the first idle one, and
+      // it stays the one shown now that it prints, so the slice above keeps its printer and says nothing about slicing
+      // again (before, the Voron took its place and the slice read as stale)
+      await expect.poll(async () => (await hub.admin.status('a1')).state, { timeout: 30_000 }).not.toBe('idle')
+      await page.waitForTimeout(1_500)
+      const sliced = page.getByTestId('mimir-slice').last()
+      await expect(sliced).not.toHaveAttribute('data-stale')
+      await expect(sliced).not.toContainText('The plate changed after this slice')
     } finally {
       await ctl('/slow', { mock: 'bambu', uploadMs: 0 })
       await idleAgain('a1')

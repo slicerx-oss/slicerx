@@ -174,6 +174,7 @@ describe('the send card', () => {
     expect(spool('1').getAttribute('aria-label')).toBe('External spool: PETG White')
     expect(screen.getByText('The bed is clear and the right build plate is on it')).toBeTruthy()
     expect(screen.getByTestId('mimir-send-cancel').textContent).toBe('Not now')
+    expect(screen.getByTestId('mimir-send-cancel').classList.contains('send-rec-gone')).toBe(false)
     expect(screen.getByTestId('mimir-send-status').textContent).toMatch(/^Pick a spool and tick the bed check to print\. Expires in /)
     expect(slide().getAttribute('data-state')).toBe('off')
   })
@@ -350,6 +351,9 @@ describe('the send card', () => {
     expect(slide().getAttribute('data-state')).toBe('sending')
     expect(slide().textContent).toBe('Sending to Bay 2...')
     expect(spool('A3').disabled).toBe(true)
+    // nothing is left to decline: Not now goes, keeping its place
+    expect(screen.getByTestId('mimir-send-cancel').classList.contains('send-rec-gone')).toBe(true)
+    expect(screen.getByTestId('mimir-send-cancel').getAttribute('aria-hidden')).toBe('true')
   })
 
   it('another spool goes with the answer as the slot map, and the ledger entry is for the request it makes', async () => {
@@ -449,6 +453,7 @@ describe('the send card', () => {
     // nothing on the card answers again (the slot it went from shows on the strip from the fleet: the journeys check it)
     expect(printButton().disabled).toBe(true)
     expect(bedBox().disabled).toBe(true)
+    expect(screen.getByTestId('mimir-send-cancel').classList.contains('send-rec-gone')).toBe(true)
     sent.view.unmount()
     await card({ req, props: { resolution: approved, outcome: { ok: false, summary: 'Preflight failed: Bay 2 is offline. Nothing was sent to the printer.' } } })
     expect(slide().getAttribute('data-state')).toBe('failed')

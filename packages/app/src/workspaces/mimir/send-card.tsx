@@ -267,6 +267,7 @@ function SendCardView({ request, resolution, actionable, onApprove, onCancel, ru
   if (live && check) for (const [i, e] of check.errors.entries()) problems.push(<li key={`e${i}`}>{e}</li>)
 
   const slide = slideState({ done, outcome, answering: answering && !inactive, canPrint })
+  const slid = slide === 'sending' || slide === 'sent' || slide === 'failed'
   const expires = `Expires in ${fmtCountdown(left)}`
   const status = done
     ? slide === 'failed' && outcome
@@ -290,7 +291,7 @@ function SendCardView({ request, resolution, actionable, onApprove, onCancel, ru
   const slideLabel = slide === 'sent' ? SENT(name) : slide === 'failed' ? NOT_SENT_TO(name) : SENDING(name)
 
   return (
-    <div className="lookup-rec sheet-rec send-rec" role="group" aria-label={`${ASSISTANT_NAME} asks: ${title}`} data-testid="mimir-send" data-agent-refuse data-request-id={request.id} data-state={done ? (done.ok ? 'approved' : 'closed') : canPrint ? 'ready' : 'off'} data-send={slide === 'sending' || slide === 'sent' || slide === 'failed' ? slide : undefined}>
+    <div className="lookup-rec sheet-rec send-rec" role="group" aria-label={`${ASSISTANT_NAME} asks: ${title}`} data-testid="mimir-send" data-agent-refuse data-request-id={request.id} data-state={done ? (done.ok ? 'approved' : 'closed') : canPrint ? 'ready' : 'off'} data-send={slid ? slide : undefined}>
       <div className="sheet-rec-head">
         <span className="send-rec-title" data-testid="mimir-send-title" {...tipAttrs(ONLY_YOU())}>
           {title}
@@ -372,7 +373,8 @@ function SendCardView({ request, resolution, actionable, onApprove, onCancel, ru
           {status}
         </span>
         {actionable ? (
-          <Button size="sm" variant="ghost" disabled={!live || answering} data-testid="mimir-send-cancel" onClick={notNow}>
+          // once the slide is done there is nothing to decline: the button goes, and keeps its place so nothing moves
+          <Button size="sm" variant="ghost" className={slid ? 'send-rec-gone' : undefined} aria-hidden={slid || undefined} disabled={!live || answering} data-testid="mimir-send-cancel" onClick={notNow}>
             Not now
           </Button>
         ) : null}
