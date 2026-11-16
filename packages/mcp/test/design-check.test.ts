@@ -1496,12 +1496,11 @@ describe('a stacked part on a hull with a sheer', () => {
   const heights = (all: Step[]) => featureHeights({ history: { base: [], steps: all }, status: all.map(() => ({ state: 'ok' })) } as unknown as HostDesign, all)
   const plan = (parts: Part[]) => ({ detail: 'display' as const, features: [{ name: 'Hull', sizes: {} }, ...parts.map((p) => ({ name: p.feature, sizes: { height: p.height }, on: 'Hull' }))] })
 
-  it('still fails a deckhouse sunk 3 mm into the deck under it', () => {
+  it('passes a deckhouse sunk 3 mm into the deck under it with its planned height showing', () => {
+    // its top is where the plan puts it (4 mm of the planned 4.1 mm shows, within a layer), and the sunk part is hidden
+    // in the deck; a deckhouse sunk and short by more than a layer still fails (plan-detail.test.ts)
     const parts = [lower(13, 7)]
-    expect(stackItem(plan(parts), heights(steps(sheer(RISING), parts)))).toMatchObject({
-      got: 'Lower deckhouse stands on Hull, but its base is 3 mm below its top, so 4 mm of it shows of a planned 4.1 mm; build it from the top of Hull, whose lowest point under it is at z 16 mm',
-      pass: false,
-    })
+    expect(stackItem(plan(parts), heights(steps(sheer(RISING), parts)))).toMatchObject({ got: '1 stacked part on its support', pass: true })
   })
 
   it('reads the deck between sections along the smooth loft, so a foremast seated on it passes', () => {
