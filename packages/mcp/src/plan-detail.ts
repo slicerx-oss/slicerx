@@ -922,9 +922,16 @@ export interface TopRead {
 /** The support a failure names, with the height of the top the part was read against, so the fix needs no reading. */
 const supportTop = (support: string, top: TopRead): string => `${support}, whose ${top.under ? 'lowest point under it' : 'highest point'} is at z ${r2(top.z)} mm`
 
-/** The failure for a stacked part whose base is sunk below its support's top, with a planned height. */
-export const STANDS_OFF = (part: string, support: string, below: number, shows: number, planned: number, top: TopRead): string =>
-  `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; build it from the top of ${supportTop(support, top)}`
+/**
+ * The failure for a stacked part whose base is sunk below its support's top, with a planned height, and its exact fix.
+ * Inside the support's sides (`inside`) the sunk part is hidden, so the part may keep its base and grow by what is sunk
+ * (its planned height plus that), or move up onto the top at its planned height. Past the sides its sunk part shows, so
+ * only the move fixes it.
+ */
+export const STANDS_OFF = (part: string, support: string, below: number, shows: number, planned: number, top: TopRead, inside = true): string =>
+  inside
+    ? `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm; make it ${r2(planned + below)} mm tall from its base at z ${r2(top.z - below)}, so ${r2(planned)} mm shows above the top of ${supportTop(support, top)}: with design.edit_step, set the size of the step that makes ${part} to ${r2(planned + below)} mm along z, or move it by [0, 0, ${r2(below)}] and set its size to ${r2(planned)} mm along z`
+    : `${part} stands on ${support}, but its base is ${r2(below)} mm below its top, so ${r2(shows)} mm of it shows of a planned ${r2(planned)} mm, and it reaches past the sides of ${support}, where its sunk part shows; build it from the top of ${supportTop(support, top)}: with design.edit_step, move the step that makes ${part} by [0, 0, ${r2(below)}] and set its size to ${r2(planned)} mm along z`
 
 /** The failure for a stacked part whose base floats above its support's top, planned height or not. */
 export const STANDS_FLOATS = (part: string, support: string, above: number, top: TopRead): string =>
@@ -1023,7 +1030,7 @@ function standsWrong(part: string, support: string, base: number, shows: number,
   // as planned: the sunk part is hidden in the support, so it passes
   if (base < -STAND_LAYER_MM - 1e-6 && planned !== undefined && inside && showsRight(shows, planned)) return null
   // no height planned: only the base is held, as the plan says nothing of how much should show
-  if (base < -STAND_LAYER_MM - 1e-6) return planned === undefined ? STANDS_BASE_OFF(part, support, -base, top) : STANDS_OFF(part, support, -base, shows, planned, top)
+  if (base < -STAND_LAYER_MM - 1e-6) return planned === undefined ? STANDS_BASE_OFF(part, support, -base, top) : STANDS_OFF(part, support, -base, shows, planned, top, inside)
   if (planned === undefined || (shows >= planned / SCALE_SLACK && shows <= planned * SCALE_SLACK)) return null
   return STANDS_HEIGHT_OFF(part, support, shows, planned, top)
 }
