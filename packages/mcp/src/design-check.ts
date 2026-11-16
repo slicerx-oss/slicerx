@@ -9,7 +9,7 @@
 import { SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { LIP_RISE_MM } from './hook-lip'
-import { type FeatureHeights, type LoftSections, type Outline, planDetailFields, sectionsProblem, squareEndsNotes, stackItem } from './plan-detail'
+import { type FeatureHeights, type LoftSections, type Outline, planDetailFields, sectionsProblem, SQUARE_ENDS_SUGGEST, squareEndsNotes, stackItem } from './plan-detail'
 
 /** The largest size a plan takes, in its own units. */
 export const PLAN_SIZE_MAX = 10_000
@@ -119,7 +119,7 @@ export function tidyPlan<P extends PartPlan>(plan: P): P {
 }
 
 export const checkItemSchema = z.object({ name: z.string(), want: z.string(), got: z.string(), pass: z.boolean(), warning: z.string().optional(), where: z.string().optional(), fix: z.string().optional() })
-export const checkResultSchema = z.object({ pass: z.boolean(), items: z.array(checkItemSchema), notes: z.array(z.string()).optional() })
+export const checkResultSchema = z.object({ pass: z.boolean(), items: z.array(checkItemSchema), notes: z.array(z.string()).optional(), suggest: z.array(z.string()).optional() })
 export type CheckItem = z.infer<typeof checkItemSchema>
 export type CheckResult = z.infer<typeof checkResultSchema>
 
@@ -867,7 +867,9 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   const filament = (plan.detail === 'display' || plan.detail === 'fine') && body.partBoxes && colorInPlay(body.partBoxes) ? sameFilament(body.partBoxes) : []
   // a display or fine plan's flat body with every level built square, where the plan has its ends rounded: a note too
   const notes = [...filament, ...squareEndsNotes(plan, body.outlines)]
-  return { pass: items.every((i) => i.pass), items, ...(notes.length ? { notes } : {}) }
+  // what the reply passes on to the person: the same notes in their words, with no setting names
+  const suggest = [...filament, ...squareEndsNotes(plan, body.outlines, SQUARE_ENDS_SUGGEST)]
+  return { pass: items.every((i) => i.pass), items, ...(notes.length ? { notes, suggest } : {}) }
 }
 
 /** Loose parts: no two bodies above 0 and under the gap a printer keeps open, which neither fuse nor print apart. */

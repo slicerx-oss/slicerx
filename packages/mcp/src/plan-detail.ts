@@ -1166,19 +1166,22 @@ export function featureOutlines(steps: readonly { params: Record<string, unknown
 export const SQUARE_ENDS_NOTE = (body: string): string =>
   `Every level of ${body} has square ends. A display model rounds the corners and ends a viewer sees unless the real thing is sharp there. If ${body}'s are rounded, round them with cornerRadiusMm, frontRadiusMm or backRadiusMm.`
 
+/** The same note as the person reads it, passed on as a suggestion: no setting names. */
+export const SQUARE_ENDS_SUGGEST = (body: string): string => `${body} has square corners; I can round its corners or ends if the real one is rounded.`
+
 /**
  * The notes for a display or fine plan's flat bodies with rounded ends (bodyEnds: as planned, round when left out)
  * whose every level was built square (featureOutlines), one each. A body planned square, or with a level not built
  * yet or built some other way, gets none. A note, never a failed item.
  */
-export function squareEndsNotes(plan: { detail?: DetailLevel | undefined; flat?: readonly string[] | undefined; tiers?: Readonly<Record<string, readonly string[]>> | undefined; ends?: Readonly<Record<string, Ends>> | undefined }, outlines: Readonly<Record<string, Outline>> | undefined): string[] {
+export function squareEndsNotes(plan: { detail?: DetailLevel | undefined; flat?: readonly string[] | undefined; tiers?: Readonly<Record<string, readonly string[]>> | undefined; ends?: Readonly<Record<string, Ends>> | undefined }, outlines: Readonly<Record<string, Outline>> | undefined, say: (body: string) => string = SQUARE_ENDS_NOTE): string[] {
   if (!outlines) return []
   return (plan.flat ?? []).flatMap((body) => {
     const ends = bodyEnds(plan, body)
     if (ends === null || ends === 'square' || (typeof ends === 'object' && ends.front === 'square' && ends.back === 'square')) return []
     const key = Object.keys(plan.tiers ?? {}).find((k) => k.trim().toLowerCase() === body.trim().toLowerCase())
     const levels = key !== undefined ? plan.tiers![key]! : [body]
-    return levels.length && levels.every((l) => outlines[l.trim().toLowerCase()] === 'square') ? [SQUARE_ENDS_NOTE(body)] : []
+    return levels.length && levels.every((l) => outlines[l.trim().toLowerCase()] === 'square') ? [say(body)] : []
   })
 }
 

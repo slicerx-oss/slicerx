@@ -4,7 +4,7 @@
 // whose flat body was built with every level square: read from the steps that built each level, never a failure.
 import { describe, expect, it } from 'vitest'
 import { designCheck, partPlanSchema, type BodyFacts, type PartPlan } from '../src/design-check'
-import { bodyEnds, ENDS_HELP, featureOutlines, flatInput, flatLevels, SQUARE_ENDS_NOTE, squareEndsNotes } from '../src/plan-detail'
+import { bodyEnds, ENDS_HELP, featureOutlines, flatInput, flatLevels, SQUARE_ENDS_NOTE, SQUARE_ENDS_SUGGEST, squareEndsNotes } from '../src/plan-detail'
 import { PlanInputSchema, PlanToolInputSchema } from '../src/tab-tools'
 import { createPlanRegistry } from '../src/design-check'
 import { connect, data, text } from './helpers'
@@ -108,6 +108,19 @@ describe('the note on a flat body built square', () => {
     expect(r.pass).toBe(true)
     expect(r.notes).toEqual([SQUARE_ENDS_NOTE('Lower story')])
     expect(designCheck(cabin, { ...body, outlines: { 'lower story': 'square', 'upper story': 'rounded' } }, 0.4).notes).toBeUndefined()
+  })
+
+  it('passes the person a suggestion in plain words, with no setting names, while the note keeps them', () => {
+    expect(SQUARE_ENDS_SUGGEST('Lower story')).toBe('Lower story has square corners; I can round its corners or ends if the real one is rounded.')
+    const cabin: PartPlan = { planId: 'cabin-2', part: 'Cabin', units: 'mm', assumptions: [], questions: [], features: [{ name: 'Lower story', sizes: { height: 6 } }, { name: 'Upper story', sizes: { height: 6 }, on: 'Lower story' }], ...plan }
+    const body: BodyFacts = { size: { x: 40, y: 20, z: 12 }, holes: [], features: 2, steps: ['Lower story', 'Upper story'], tags: ['Lower story', 'Upper story'], watertight: true, minWallMm: 6, outlines: { 'lower story': 'square', 'upper story': 'square' } }
+    const r = designCheck(cabin, body, 0.4)
+    expect(r.notes).toEqual([SQUARE_ENDS_NOTE('Lower story')])
+    expect(r.suggest).toEqual([SQUARE_ENDS_SUGGEST('Lower story')])
+    // a setting key: a lower-case word with a capital inside it (cornerRadiusMm), or a key with an underscore
+    const key = /\b[a-z]+[A-Z][A-Za-z]*\b|\b[a-z]+_[a-z_]+\b/
+    for (const s of r.suggest!) expect(s).not.toMatch(key)
+    expect(r.notes!.some((n) => key.test(n))).toBe(true)
   })
 })
 
