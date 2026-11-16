@@ -17,6 +17,7 @@ import { filamentTools, withNewFilaments, type FilamentList } from './tab-filame
 import { mimirTabTools, type CardPlans } from './tab-tools'
 
 export { appValueInputs, type AppValuesResult } from './app-values'
+export { appFeatureFilamentInputs } from './app-feature-filaments'
 export { brimEditInput, brimReadInput } from './brim-input'
 export { layerProfileEditInput, layerProfileReadInput } from './layer-profile-input'
 export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, FIX_ROUNDS, MAX_PLANS, nozzleOr, partPlanSchema, PLAN_SIZE_MAX, PlanOwnedError, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanOrigin, type PlanRegistry } from './design-check'

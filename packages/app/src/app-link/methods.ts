@@ -68,6 +68,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'parts.rename': 'edit',
   'project.set_overrides': 'edit',
   'settings.get': 'read',
+  // The Color tab's feature filament table: which filament prints each feature, for the plate or some objects.
+  'feature_filaments.get': 'read',
+  'feature_filaments.set': 'edit',
   // The slice preview only changes what the window shows, never the project.
   'paint.get': 'read',
   'paint.preview': 'read',
@@ -448,6 +451,8 @@ const HANDLERS: Record<string, Handler> = {
   'parts.rename': async (args, client) => (await import('./parts')).partAction('rename', args, client.name, linkLoader),
   'project.set_overrides': async (args, client) => (await import('./project-settings')).editProjectSettings(args, client.name),
   'settings.get': async (args) => (await import('./project-settings')).readProjectSettings(args),
+  'feature_filaments.get': async (args) => (await import('./feature-filaments')).readFeatureFilaments(args),
+  'feature_filaments.set': async (args, client) => (await import('./feature-filaments')).editFeatureFilaments(args, client.name),
   'paint.get': async (args) => (await import('./paint')).readPaint(args),
   'paint.preview': async (args, client) => (await import('./paint')).previewPaint(args, client),
   'paint.from_texture': async (args, client) => (await import('./paint')).previewFromTexture(args, client),

@@ -152,6 +152,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("parts.rename", LinkClass::Edit),
     ("project.set_overrides", LinkClass::Edit),
     ("settings.get", LinkClass::Read),
+    // The Color tab's feature filament table, for the plate or some objects.
+    ("feature_filaments.get", LinkClass::Read),
+    ("feature_filaments.set", LinkClass::Edit),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
     ("paint.get", LinkClass::Read),
@@ -531,6 +534,8 @@ mod tests {
         ("parts.rename", LinkClass::Edit),
         ("project.set_overrides", LinkClass::Edit),
         ("settings.get", LinkClass::Read),
+        ("feature_filaments.get", LinkClass::Read),
+        ("feature_filaments.set", LinkClass::Edit),
         ("paint.get", LinkClass::Read),
         ("paint.preview", LinkClass::Read),
         ("paint.from_texture", LinkClass::Read),

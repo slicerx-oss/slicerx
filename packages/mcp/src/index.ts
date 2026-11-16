@@ -53,6 +53,7 @@ import { appDimensionTools } from './app-dimensions'
 import { appPlateTools } from './app-plates'
 import { appPreviewTools } from './app-preview'
 import { appValueTools } from './app-values'
+import { appFeatureFilamentTools } from './app-feature-filaments'
 import { appHistoryTools } from './app-history'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
 import { cadFiles, geomEngine, geomTools, findSxGeom } from './geom'
@@ -234,8 +235,8 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const mimir = [...appAssistantTools(appLink, productName()), ...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName()), ...mimirTabTools(appLink, productName()), ...mimirMemoryTools(appLink, productName()), ...mimirBrainTools(appLink, productName()), ...mimirRunTools(appLink, productName())]
   // Vault designs as the open app's Vault lists them, read with the app's own store session.
   const vault = appVaultTools(appLink, productName())
-  // The app's plates, and showing one of them as its plate picker does.
-  const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
+  // The app's plates, and showing one of them as its plate picker does; its named values; its feature filament table.
+  const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName()), ...appFeatureFilamentTools(appLink, productName())]
   // The app's window: workspace, tab, selection, plate shown, printer chosen and panels open, and changing what it shows.
   const ui = appUiTools(appLink, productName())
   const history = appHistoryTools(appLink, productName())

@@ -360,6 +360,15 @@ slicerx-mcp call --app app_step_bind '{"design":"obj_1","step":1,"expression":nu
 
 Use the design and step ids from `design_list` and `design_steps`. A null binding keeps the current number. Setting an explicit `value` with `design_edit_step` also clears the binding, as typing a number in the app does; renaming or suppressing the step keeps it. Changes replay affected objects on the shown plate; bindings on other plates report `pending` until those plates are shown. Invalid expressions remain stored as in the values panel. If an edit leaves an expression or replay error, the call fails with the resulting state in `error.details`, including `applied:true`; `app_values` reads that state independently. Invalid binding requests fail before changing the step.
 
+### Feature filaments
+
+`slicerx_app_feature_filaments` reads the open app's feature filament table (the Color tab): for the shown plate, or with `objects` for those objects, which filament prints each feature (outer and inner wall, sparse and solid infill, top and bottom surface, support and support interface) and what each printed with in the current slice. `slicerx_app_feature_filaments_set` sets rows by feature name or setting key: 0 is the object's own filament, a slot from 1, and null goes back to the inherited value. Both need the app link; a set needs its edit grant and the `slice` permission class.
+
+```sh
+slicerx-mcp call --app app_feature_filaments_set '{"filaments":{"sparseInfill":2,"support":2}}' app_feature_filaments
+slicerx-mcp call --app app_feature_filaments_set '{"objects":["obj_1"],"filaments":{"outerWall":0}}'
+```
+
 ## Options
 
 | Flag | Environment | Default |
