@@ -5,10 +5,10 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { exploded, openAssembly, setApp } from '../explode-project'
+import { exploded, openAssembly } from '../explode-project'
 import { expect } from '../fixtures'
 import { journey as test } from '../journey'
-import { settledView, useFileDialogs } from './lib/model'
+import { setState, settledView, useFileDialogs } from './lib/model'
 
 test.use({ journeyPrefs: { workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, autoSliceBySize: false } })
 test.skip(({ isMobile }) => !isMobile, 'Runs at phone width')
@@ -19,7 +19,7 @@ async function shots(page: Page, name: string): Promise<void> {
   const dir = process.env['SX_SHOTS_DIR'] ?? test.info().outputPath()
   mkdirSync(dir, { recursive: true })
   for (const scheme of ['dark', 'light'] as const) {
-    await setApp(page, { scheme, themeFollowsSystem: false })
+    await setState(page, { scheme, themeFollowsSystem: false })
     for (const spread of [0, 60]) {
       await page.locator('#explode-spread').fill(String(spread))
       // no tooltip from the last press, and in Model the view framed on the spread parts
@@ -29,7 +29,7 @@ async function shots(page: Page, name: string): Promise<void> {
       await page.screenshot({ path: join(dir, `${name}-${spread}-${scheme}.png`) })
     }
   }
-  await setApp(page, { scheme: 'dark' })
+  await setState(page, { scheme: 'dark' })
 }
 
 const box = async (page: Page, sel: string) => (await page.locator(sel).first().boundingBox())!
@@ -38,8 +38,8 @@ test.describe('exploded view on a phone', () => {
   for (const mode of ['slice', 'design'] as const) {
     test(`fits the view and spreads the assembly (${mode === 'slice' ? 'Prepare' : 'Model'})`, async ({ page }) => {
       const { assembly } = await openAssembly(page)
-      await setApp(page, { modelMode: mode })
-      await setApp(page, { selection: assembly, selectedIds: [assembly] })
+      await setState(page, { modelMode: mode })
+      await setState(page, { selection: assembly, selectedIds: [assembly] })
       const bar = page.getByTestId('explode-bar')
       await expect(bar).toBeVisible()
       const b = await box(page, '[data-testid="explode-bar"]')
@@ -53,7 +53,7 @@ test.describe('exploded view on a phone', () => {
       expect(await box(page, '[data-testid="explode-axis-radial"]')).toEqual(at)
       await page.getByTestId('explode-axis-radial').click()
       await shots(page, `${mode === 'slice' ? 'prepare' : 'model'}-390`)
-      await setApp(page, { modelMode: 'slice' })
+      await setState(page, { modelMode: 'slice' })
     })
   }
 })
