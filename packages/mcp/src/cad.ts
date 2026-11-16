@@ -1823,7 +1823,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const shell = defineTool({
     name: 'geom.shell',
-    version: '1.6.0',
+    version: '1.6.1',
     source: 'command',
     permission: 'slice',
     description:

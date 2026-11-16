@@ -932,7 +932,17 @@ fn shell_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     let open: Vec<OpenFace> = field_or_default(req, "open")?;
     let wall: f64 = field(req, "wallMm")?;
     let opts: BooleanOptions = field_or_default(req, "options")?;
-    let (m, r) = shell::shell(&it.world(), &open, wall, &opts)?;
+    let (mut m, mut r) = shell::shell(&it.world(), &open, wall, &opts)?;
+    // a cavity that crosses itself takes the robust cut, which leaves slivers and triangles with no area on the
+    // wall's flat patches: they go as a boolean's do. Its flat faces are not filled again, so a clean result stays
+    // as it was
+    if let Some(clean) = crate::remesh::drop_slivers(&m) {
+        let volume = clean.volume();
+        r.volume_change_mm3 += volume - m.volume();
+        r.boolean.volume_mm3 = volume;
+        r.boolean.triangles = clean.triangles.len();
+        m = clean;
+    }
     let m = shell_stored(&it.to_local(&m)?, wall)?;
     let mut v = mesh_report(&m, enc);
     insert(&mut v, "report", to_value(&r)?);

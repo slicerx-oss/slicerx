@@ -8,6 +8,7 @@
 use serde_json::{Value, json};
 use sx_geom::TriMesh;
 use sx_geom::boolean::Solid;
+use sx_geom::fm::Fm;
 
 fn run(op: &str, req: &Value) -> Value {
     serde_json::from_str(&sx_geom::json::call(op, &req.to_string()).unwrap_or_else(|e| panic!("{op}: {e}")))
@@ -152,6 +153,108 @@ fn a_bowl_and_a_cylinder_shell_clean() {
             stores_clean(&mesh(&shelled), &format!("{name} {wall} mm"));
         }
     }
+}
+
+/// the 40 mm hexagon turned `deg` degrees about the z axis
+fn hexagon(deg: f64) -> Vec<[f64; 2]> {
+    (0..6)
+        .map(|i| {
+            let a = (60.0 * f64::from(i) + deg).to_radians();
+            [40.0 * a.m_cos(), 40.0 * a.m_sin()]
+        })
+        .collect()
+}
+
+/// a 160 mm vase turned 15 degrees every 40 mm, as a mesh of `bands` straight bands from hexagon to hexagon,
+/// standing at (128, 128) on the plate
+fn banded_vase(bands: u32) -> Value {
+    let positions: Vec<f64> = (0..=bands)
+        .flat_map(|k| {
+            let z = 160.0 * f64::from(k) / f64::from(bands);
+            hexagon(15.0 * z / 40.0)
+                .into_iter()
+                .flat_map(move |[x, y]| [x, y, z])
+        })
+        .collect();
+    let mut indices: Vec<u32> = Vec::new();
+    for k in 0..bands {
+        for i in 0..6 {
+            let (a, b) = (6 * k + i, 6 * k + (i + 1) % 6);
+            indices.extend([a, b, b + 6, a, b + 6, a + 6]);
+        }
+    }
+    let top = 6 * bands;
+    for i in 1..5 {
+        indices.extend([0, i + 1, i, top, top + i, top + i + 1]);
+    }
+    json!({ "mesh": { "positions": positions, "indices": indices },
+            "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 128, 128, 0, 1] })
+}
+
+/// `body` shelled open at its top at each of `walls`: one closed shell that stores as it is
+fn shells_clean(body: &Value, top: &Value, walls: &[f64], name: &str) {
+    for &wall in walls {
+        let open = json!([{ "at": top, "normal": [0, 0, 1] }]);
+        let shelled = run("shell", &json!({ "mesh": body, "open": open, "wallMm": wall }));
+        assert_eq!(shelled["watertight"], true, "{name} {wall}");
+        assert_eq!(shelled["shells"], 1, "{name} {wall}");
+        stores_clean(&mesh(&shelled), &format!("{name} {wall} mm"));
+    }
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "a 2 million cell voxel wall; run with --release")]
+fn a_twisted_hexagon_vase_with_fewer_rows_shells_clean() {
+    // the voxel wall of these folds over itself once at 1.6 mm, so the cavity is cut by the robust engine, which
+    // left triangles with no area on the wall's flat patches
+    for bands in [32, 40] {
+        shells_clean(
+            &banded_vase(bands),
+            &json!([128, 128, 160]),
+            &[1.6],
+            &format!("{bands} bands"),
+        );
+    }
+    // and a smooth loft through a hexagon every 20 mm, turned 7.5 degrees at each
+    let profiles: Vec<Value> = (0..=8)
+        .map(|k| {
+            let z = 20.0 * f64::from(k);
+            json!({ "frame": level(z), "loops": [{ "points": hexagon(7.5 * f64::from(k)) }] })
+        })
+        .collect();
+    let loft = run("sketch.loft", &json!({ "profiles": profiles, "smooth": true }));
+    let vase =
+        json!({ "mesh": loft["mesh"], "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 128, 128, 0, 1] });
+    shells_clean(&vase, &json!([128, 128, 160]), &[1.6], "smooth, 9 hexagons");
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "a 2 million cell voxel wall; run with --release")]
+fn a_bowl_and_a_leaning_loft_shell_clean_at_thin_and_thick_walls() {
+    let circle = |x: f64, d: f64| json!({ "type": "circle", "center": [x, 0], "diameterMm": d });
+    let bowl = json!([
+        { "frame": level(0.0), "loops": [circle(0.0, 40.0)] },
+        { "frame": level(15.0), "loops": [circle(0.0, 60.0)] },
+        { "frame": level(30.0), "loops": [circle(0.0, 50.0)] },
+    ]);
+    let bowl = run("sketch.loft", &json!({ "profiles": bowl, "smooth": true }));
+    shells_clean(&bowl["mesh"], &json!([0, 0, 30]), &[1.2, 3.0], "bowl");
+    // circles of 40, 44, 32 and 38 mm every 20 mm, their centers off to one side and back
+    let leaning = json!([
+        { "frame": level(0.0), "loops": [circle(0.0, 40.0)] },
+        { "frame": level(20.0), "loops": [circle(10.0, 44.0)] },
+        { "frame": level(40.0), "loops": [circle(-6.0, 32.0)] },
+        { "frame": level(60.0), "loops": [circle(4.0, 38.0)] },
+    ]);
+    let leaning = run("sketch.loft", &json!({ "profiles": leaning, "smooth": true }));
+    let body =
+        json!({ "mesh": leaning["mesh"], "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 90, 0, 1] });
+    shells_clean(
+        &body,
+        &json!([100, 90, 60]),
+        &[1.2, 1.6, 2.0, 3.0],
+        "leaning loft",
+    );
 }
 
 #[test]
