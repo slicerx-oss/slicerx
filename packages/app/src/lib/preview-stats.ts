@@ -82,8 +82,10 @@ export function timeRows(features: readonly FeatureTotals[], timeS: number, prep
 
 export function formatDuration(s: number): string {
   if (!Number.isFinite(s) || s <= 0) return '0m'
-  const h = Math.floor(s / 3600)
-  const m = Math.round((s % 3600) / 60)
+  // round the whole time to minutes first, so 59.6 minutes past an hour carries into the next hour
+  const total = Math.round(s / 60)
+  const h = Math.floor(total / 60)
+  const m = total % 60
   if (h === 0) return m === 0 ? `${Math.max(1, Math.round(s))} s` : `${m}m`
   return `${h}h ${m}m`
 }
