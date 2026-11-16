@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A whole print run from one mimir chat: the part, its slice, the send card with the bed tick, the progress card and
-// the line when the print ends. The web build's demo printers are the printers (Bay 2, a P1S, idle with green PLA in
+// A whole print run from one mimir chat: the part, its slice, the send card with the spool pick, the bed tick and the
+// slide, the progress card and the line when the print ends. The web build's demo printers are the printers (Bay 2, a P1S, idle with green PLA in
 // A2; Bay 6, an H2C, idle with green PLA in A4; Bay 3, an MK4S, paused mid print), so a picker has a choice and a busy
 // printer is there. The demo fleet ticks once a second on the page's own clock; `simClock` takes that tick, so a print
 // finishes in a few seconds. The runout runs on a PrusaLink mock behind a real sx-link (bridge-hub.ts), since the
@@ -19,7 +19,7 @@ import { journey as test, expect } from '../journey'
 import { bridgeOn, ctl, hub, useBridge } from '../bridge-hub'
 import { freshBox } from '../cad-helpers'
 import { goTab, viewportReady } from '../fixtures'
-import { answer, askTab, debugOn, emptyMimirTab, lastUserText, setPilot, shotsDir, shotsOn, setState, signIn, stubProxy, type Block, type ProxyBody } from './lib/session'
+import { answer, askTab, call, debugOn, emptyMimirTab, lastUserText, playbook, setPilot, shotsDir, shotsOn, setState, signIn, stubProxy, type Block, type ProxyBody } from './lib/session'
 
 test.use({ journeyPrefs: { workspace: 'prepare', settingsMode: 'advanced', cadTools: true, pilot: { mode: 'on', provider: 'anthropic' }, scheme: 'dark', themeFollowsSystem: false } })
 test.skip(({ isMobile }) => isMobile, 'Desktop. The phone width is in the screenshots, from the same page')
@@ -66,24 +66,6 @@ async function advance(page: Page, seconds: number, done: () => Promise<boolean>
 
 const transcript = (page: Page) => page.getByTestId('mimir-transcript')
 const sendCard = (page: Page) => page.getByTestId('mimir-send').last()
-
-/** The tool calls a stubbed reply makes, one per round, with ids of their own. */
-let seq = 0
-const call = (name: string, input: unknown): Block[] => [{ type: 'tool_use', id: `tu_${++seq}`, name, input }]
-
-/**
- * A stubbed model that plays `steps` in order, then says it is done. A step is played once the conversation holds the
- * calls of every step before it (their ids are its own), so a note the runtime adds or a chat that carries on from an
- * earlier one does not throw the order off.
- */
-const playbook =
-  (steps: Block[][]) =>
-  (body: ProxyBody): Block[] => {
-    const seen = JSON.stringify(body.messages)
-    const ids = (step: Block[]) => step.flatMap((b) => (b.type === 'tool_use' ? [b.id] : []))
-    const next = steps.find((step) => !ids(step).length || ids(step).some((id) => !seen.includes(`"${id}"`)))
-    return next ?? answer('That is all from me for now.')
-  }
 
 /**
  * What a model does once the part is on the plate: the printer and spool, the slice, then the send. The slice is the
@@ -148,6 +130,12 @@ async function clipConfirmed(page: Page): Promise<void> {
   await expect(sheet).toContainText('Confirmed as shown')
   await expect(sheet).toHaveAttribute('data-auto', '')
   await expect(sheet.getByTestId('mimir-sheet-confirm')).toHaveCount(0)
+}
+
+/** Picks a spool on the send card's strip, as a person does before the slide, and waits until the header names it. */
+async function pickSpool(card: Locator, slot: string, says: string): Promise<void> {
+  await card.locator(`[data-testid="mimir-send-spool"][data-slot="${slot}"]`).click()
+  await expect(card.getByTestId('mimir-send-pick')).toHaveText(says)
 }
 
 /** Waits until the send card has checked the printer as it is now. */
@@ -282,14 +270,17 @@ test.describe('a print run in the mimir chat', () => {
     await expect(slice).not.toHaveAttribute('data-stale')
     const card = sendCard(page)
     await expect(card).toBeVisible({ timeout: 60_000 })
-    await expect(card.locator('[data-row="Printer"]')).toContainText('Bay 6')
-    // the slot and the filament used read apart, the spool by the color it is (green, as asked), and the plate by its name
-    await expect(card.locator('[data-row="Slot"]')).toHaveText(/A4, PLA, Green$/)
+    await expect(card.getByTestId('mimir-send-title')).toHaveText(/ ready\. Send it to Bay 6\?$/)
+    // the spools Bay 6 reports, Choose material until one is picked; the filament used and the plate by its name
+    await expect(card.getByTestId('mimir-send-spool')).toHaveCount(4)
+    await expect(card.getByTestId('mimir-send-pick')).toHaveText('Choose material')
     await expect(card.locator('[data-row="Filament used"]')).toContainText(' g')
     await expect(card.locator('[data-row="Plate"]')).toContainText(/^Plate/)
     await expect(card).not.toContainText('.gcode')
     await checked(card)
     await shots(page, info, 'run-send', card, false)
+    // the spool by the color it is (green, as asked)
+    await pickSpool(card, 'A4', 'Green PLA · Slot A4')
     await card.getByTestId('mimir-send-bed').check()
     await expect(card.getByTestId('danger-mimir-send-print')).toBeEnabled()
     await card.getByTestId('danger-mimir-send-print').click()
@@ -329,7 +320,7 @@ test.describe('a print run in the mimir chat', () => {
     await picker.getByRole('button', { name: 'Bay 6, slot A4: PLA Green' }).click()
     await expect(picker).toHaveAttribute('data-picked', 'pick:bay-6:A4')
     await expect(sendCard(page)).toBeVisible({ timeout: 120_000 })
-    await expect(sendCard(page).locator('[data-row="Printer"]')).toContainText('Bay 6')
+    await expect(sendCard(page).getByTestId('mimir-send-title')).toContainText('Send it to Bay 6?')
     await sendCard(page).getByTestId('mimir-send-cancel').click()
     await expect(sendCard(page)).toHaveAttribute('data-state', 'closed')
     // No printer named, and only one printer online holds the spool asked for (white ASA is in Bay 2 alone): no picker.
@@ -354,7 +345,7 @@ test.describe('a print run in the mimir chat', () => {
     // sliced on the first try: one slice, no refusal about where the part sits, in the chat or a toast
     const card = sendCard(page)
     await expect(card).toBeVisible({ timeout: 60_000 })
-    await expect(card.locator('[data-row="Printer"]')).toContainText('Bay 2')
+    await expect(card.getByTestId('mimir-send-title')).toContainText('Send it to Bay 2?')
     await expect(page.getByTestId('mimir-slice')).toHaveCount(1)
     // the slice preflight's refusal and the words for a part left off the bed
     const where = /printable area|excluded bed area|outside the (?:bed|plate)|safety preflight|off the bed|no room for/i
@@ -367,7 +358,7 @@ test.describe('a print run in the mimir chat', () => {
     await expect(card).toHaveAttribute('data-state', 'closed')
   })
 
-  test('Print stays off until the bed is ticked', async ({ page }, info) => {
+  test('the slide stays off until a spool is picked and the bed is ticked', async ({ page }, info) => {
     test.slow()
     const bodies = await boxInTab(page, printSteps({ printer: 'Bay 2', filaments: [{ material: 'PLA', color: 'green' }] }, 'bay-2', 'Tick the bed check when the plate is clear.'), 'bay-2')
     await askTab(page, 'Print it on Bay 2 in green PLA')
@@ -380,22 +371,31 @@ test.describe('a print run in the mimir chat', () => {
     await expect(page.getByTestId('mimir-target')).toHaveCount(0)
     const card = sendCard(page)
     await expect(card).toBeVisible({ timeout: 60_000 })
-    await expect(card.locator('[data-row="Printer"]')).toContainText('Bay 2')
-    // the box's filament moved to the green spool's slot, so it is filament 2 on this plate
-    await expect(card.locator('[data-row^="Slot"]')).toContainText('A2, PLA, Green')
+    await expect(card.getByTestId('mimir-send-title')).toContainText('Send it to Bay 2?')
     await checked(card)
     const print = card.getByTestId('danger-mimir-send-print')
     const bed = card.getByTestId('mimir-send-bed')
-    // everything else passes: only the tick keeps Print off
+    // the strip is Bay 2's slots as it reports them: the empty one and the ASA spool can't be picked
+    const spool = (slot: string) => card.locator(`[data-testid="mimir-send-spool"][data-slot="${slot}"]`)
+    await expect(card.getByTestId('mimir-send-spool')).toHaveCount(4)
+    await expect(spool('A4')).toBeDisabled()
+    await expect(spool('A4')).toHaveAttribute('aria-label', 'Slot A4: Empty')
+    await expect(spool('A3')).toBeDisabled()
+    // everything else passes: only the pick and the tick keep the slide off
     await expect(card.getByTestId('mimir-send-errors')).toHaveCount(0)
     await expect(bed).not.toBeChecked()
     await expect(print).toBeDisabled()
     await expect(card).toHaveAttribute('data-state', 'off')
-    await expect(card.getByTestId('mimir-send-status')).toContainText('Tick the bed check to print.')
+    await expect(card.getByTestId('mimir-send-status')).toContainText('Pick a spool and tick the bed check to print.')
     await shots(page, info, 'bed-unticked', card, false)
-    // ticked, Print turns on; unticked again, off; the button keeps its box either way
+    // the box's filament moved to the green spool's slot: picking it names it, and nothing on the card moves
     await settled(page)
     const before = await print.boundingBox()
+    const chip = await spool('A2').boundingBox()
+    await pickSpool(card, 'A2', 'Green PLA · Slot A2')
+    expect(await spool('A2').boundingBox()).toEqual(chip)
+    await expect(card.getByTestId('mimir-send-status')).toContainText('Tick the bed check to print.')
+    // ticked, the slide turns on; unticked again, off; the slide keeps its box either way
     await bed.check()
     await expect(print).toBeEnabled()
     await expect(card).toHaveAttribute('data-state', 'ready')
@@ -442,9 +442,10 @@ test.describe('a print run in the mimir chat', () => {
     await expect(card).toBeVisible({ timeout: 60_000 })
     await checked(card)
     const print = card.getByTestId('danger-mimir-send-print')
+    await pickSpool(card, 'A2', 'Green PLA · Slot A2')
     await card.getByTestId('mimir-send-bed').check()
     await expect(print).toBeEnabled()
-    // the part moves after slicing: Print goes off and the card says to slice again
+    // the part moves after slicing: the slide goes off and the card says to slice again
     await movePlate(page)
     await expect(print).toBeDisabled()
     await expect(card.getByTestId('mimir-send-errors')).toContainText('The plate changed after this slice. Slice it again.')
@@ -465,7 +466,7 @@ test.describe('a print run in the mimir chat', () => {
     await expect(page.getByTestId('mimir-progress')).toHaveCount(0)
   })
 
-  test('a busy printer keeps Print off and offers another', async ({ page }, info) => {
+  test('a busy printer keeps the slide off and offers another', async ({ page }, info) => {
     test.slow()
     // Bay 3 is paused mid print, 31% in, so the demo clock never ends its job
     await boxInTab(page, printSteps({ printer: 'Bay 3' }, 'bay-3'), 'bay-3')
@@ -473,7 +474,9 @@ test.describe('a print run in the mimir chat', () => {
     await expect(page.getByTestId('mimir-slice').last()).toBeVisible({ timeout: 120_000 })
     const card = sendCard(page)
     await expect(card).toBeVisible({ timeout: 60_000 })
-    await expect(card.locator('[data-row="Printer"]')).toContainText('Bay 3')
+    await expect(card.getByTestId('mimir-send-title')).toContainText('Send it to Bay 3?')
+    // an MK4S takes filament as the G-code says: no spools to pick
+    await expect(card.getByTestId('mimir-send-spools')).toHaveCount(0)
     await checked(card)
     // the busy line names the state and the time left, and points to another printer
     await expect(card.getByTestId('mimir-send-errors')).toContainText(/Bay 3 is paused, about .+ left\. Pick another printer or wait until it finishes\./)
@@ -500,6 +503,7 @@ test.describe('a print run in the mimir chat', () => {
     await expect(card).toBeVisible({ timeout: 120_000 })
     expect(await placed()).not.toEqual(before)
     await checked(card)
+    await pickSpool(card, 'A2', 'Green PLA · Slot A2')
     await card.getByTestId('mimir-send-bed').check()
     await card.getByTestId('danger-mimir-send-print').click()
     // the click is the approval: the printer guard's own card never opens, and no second send card follows
@@ -507,6 +511,7 @@ test.describe('a print run in the mimir chat', () => {
     await expect(progress).toBeVisible({ timeout: 30_000 })
     await expect(card).toHaveAttribute('data-state', 'approved')
     await expect(card.getByTestId('mimir-send-status')).toContainText('Print approved by you at')
+    await expect(card.getByTestId('mimir-send-slide')).toHaveText('Sent to Bay 2')
     await expect(transcript(page)).toContainText('It is printing on Bay 2.', { timeout: 30_000 })
     await expect(page.locator('dialog.approve-dialog[open]')).toHaveCount(0)
     await expect(page.getByRole('dialog')).toHaveCount(0)

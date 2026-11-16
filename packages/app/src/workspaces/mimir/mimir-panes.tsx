@@ -294,7 +294,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const handlers = useMemo<ApprovalHandlers>(
     () => ({
       // a print or a profile change waits for the person here; mimir can neither approve nor skip it
-      onApprove: (r: ApprovalRequest, o: { bedClear: boolean }) => pilot.resolveApproval(r.id, o.bedClear ? { kind: 'approve', bedClear: true } : { kind: 'approve' }),
+      // a spool the person picked on the send card goes with the answer; the runtime sends from it
+      onApprove: (r: ApprovalRequest, o: { bedClear: boolean; slotMap?: Record<string, string> }) => pilot.resolveApproval(r.id, { kind: 'approve', ...(o.bedClear ? { bedClear: true } : {}), ...(o.slotMap ? { slotMap: o.slotMap } : {}) }),
       onCancel: (r: ApprovalRequest) => pilot.resolveApproval(r.id, { kind: 'deny', reason: 'canceled' }),
       onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(),
       // turning a question down answers it with no pick: the run carries on, unlike Stop
