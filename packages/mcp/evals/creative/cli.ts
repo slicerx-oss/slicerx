@@ -46,7 +46,7 @@ import { createNodeTransport, EVALS_DIR, evalGeom } from '@slicerx/pilot/evals/n
 import { budgetedClient, createBudget, DEFAULT_CAP_USD, DEFAULT_USD_PER_SEARCH, runLive, STOP_MARGIN_USD, type Price } from './live'
 import { CREATIVE_PROMPTS, type CreativePrompt } from './prompts'
 import { loadRecording, saveRecording } from './recordings'
-import { CREATIVE_TAB, DEFAULT_ANSWER, passCounts, replayScored, runPrompt, scoreParts, type CreativeScore, type NoBuild, type PromptRun } from './run'
+import { CREATIVE_TAB, DEFAULT_ANSWER, passCounts, replayScored, runPrompt, scoreParts, staleLines, type CreativeScore, type NoBuild, type PromptRun } from './run'
 
 const PROVIDERS = ['openai', 'anthropic', 'openai-compatible']
 
@@ -139,7 +139,7 @@ const report = (p: CreativePrompt, run: PromptRun): void => {
   // a replay that got the plan_left note its recording never answered stands for no reply of the model's: stale, not scored
   if (mode === 'replay' && !replayScored(run)) {
     stale.push(p.id)
-    console.log(`STALE    ${p.id.padEnd(28)} not scored: ${run.stale}`)
+    for (const line of staleLines(p.id, run)) console.log(line)
     return
   }
   const sc = scoreParts(p, run.parsed, run.parts, run.gaps)

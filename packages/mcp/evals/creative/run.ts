@@ -256,6 +256,14 @@ export function replayScored(run: Pick<PromptRun, 'stale'>): boolean {
   return run.stale !== STALE_PLAN_GOES_ON
 }
 
+/**
+ * The lines the replay report prints for a stale run that is left out of the score: STALE, then the run's error in the
+ * form a broken run's error uses, so a stale run that also diverged still shows where.
+ */
+export function staleLines(id: string, run: Pick<PromptRun, 'stale' | 'error'>): string[] {
+  return [`STALE    ${id.padEnd(28)} not scored: ${run.stale}`, ...(run.error ? [`     error: ${run.error}`] : [])]
+}
+
 /** Whether a request carries mimir's refusal of a design.new that starts the reply's part again. */
 function restartRefused(messages: readonly LlmMessage[]): boolean {
   return messages.some((m) => {
