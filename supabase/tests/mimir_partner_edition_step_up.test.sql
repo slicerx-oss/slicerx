@@ -8,8 +8,8 @@ create extension if not exists pgtap with schema extensions;
 select plan(10);
 
 -- Each row as it stood after 0032, every column but edition. The layermate row here already carries
--- 0033's two new values, and the slicerx row 0034's install day and 0035's three days; everything
--- else in them is unchanged.
+-- 0033's two new values, and the slicerx row the four days 0036 sets, the values it had before 0034;
+-- everything else in them is unchanged.
 create temp table want (edition text primary key, row jsonb not null) on commit drop;
 insert into want values
   ('layermate', '{"enabled": true, "signed_in": false, "ip_in_flight": 10, "ip_per_minute": 60, "net_in_flight": 24,
@@ -19,10 +19,10 @@ insert into want values
     "install_daily_micros": 1000000, "registers_per_ip_day": 3, "registers_per_net_day": 20,
     "register_key_prev_hash": null, "install_store_daily_bytes": 33554432}'),
   ('slicerx', '{"enabled": true, "signed_in": false, "ip_in_flight": 10, "ip_per_minute": 60, "net_in_flight": 24,
-    "share_default": true, "step_up_model": "claude-sonnet-5-5", "ip_daily_micros": 20000000, "net_daily_micros": 40000000,
+    "share_default": true, "step_up_model": "claude-sonnet-5-5", "ip_daily_micros": 2000000, "net_daily_micros": 6000000,
     "call_open_seconds": 420, "edition_in_flight": 400, "install_in_flight": 3, "register_key_hash": null,
-    "registers_per_day": 5000, "install_per_minute": 20, "install_call_micros": 50000, "edition_daily_micros": 100000000,
-    "install_daily_micros": 20000000, "registers_per_ip_day": 3, "registers_per_net_day": 20,
+    "registers_per_day": 5000, "install_per_minute": 20, "install_call_micros": 50000, "edition_daily_micros": 20000000,
+    "install_daily_micros": 1000000, "registers_per_ip_day": 3, "registers_per_net_day": 20,
     "register_key_prev_hash": null, "install_store_daily_bytes": 33554432}'),
   ('slicerx-web', '{"enabled": true, "signed_in": true, "ip_in_flight": 6, "ip_per_minute": 30, "net_in_flight": 12,
     "share_default": false, "step_up_model": null, "ip_daily_micros": 1000000, "net_daily_micros": 3000000,
