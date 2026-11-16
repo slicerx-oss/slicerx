@@ -481,7 +481,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
 
   const queue = defineTool({
     name: 'printer.queue',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'plugin',
     // It uploads and then starts, so it needs start permission; a user who allows queueing has not allowed starts.
     permission: 'start',

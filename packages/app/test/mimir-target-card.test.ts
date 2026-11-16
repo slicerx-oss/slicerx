@@ -4,8 +4,12 @@
 // swatches and words. A tap answers with that spool, an offline printer is not listed, and nothing on it names an
 // internal id. Once settled, the plate points at the printer and its parts move to the picked spool. A new printer
 // whose bed leaves a part hanging off it or in an excluded area lands that part again, as a new part lands.
-import type { Bed, FilamentSlot, PilotChoice } from '@slicerx/contracts'
-import type { RunLanded, RunTarget } from '@slicerx/pilot'
+import type { Bed, FilamentSlot, PilotChoice, PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/contracts'
+import { filamentTools } from '@slicerx/mcp/toolset'
+import { createRunBook, runHandle, runTools, type PilotTool, type RunLanded, type RunTarget, type RunTargetResult, type ToolContext } from '@slicerx/pilot'
+import { objectSlots } from '../src/filament/object-nozzle'
+import { effectiveSlot } from '../src/filament/slots'
+import { appFilaments } from '../src/filament/tab-filaments'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -162,6 +166,72 @@ describe('setTarget', () => {
     const s = get()
     expect(s.plate.map((e) => e.slotOverrides ?? {})).toEqual([{ Body: 3 }, { Body: 4 }, {}])
     expect(s.printerSlots.map((x) => x.id)).toEqual(['A1', 'A2', 'A3', 'A4'])
+  })
+
+  it('a spool named for a painted filament never moves the part under the paint', async () => {
+    const four: FilamentSlot[] = [
+      { id: 'A1', material: 'PLA', color: '#FFFFFF' },
+      { id: 'A2', material: 'PLA', color: '#000000' },
+      { id: 'A3', material: 'PLA', color: '#D02020' },
+      { id: 'A4', material: 'PLA', color: '#D9A441' },
+    ]
+    // one part on filament 1, with color paint on filaments 2 and 3: the plate prints three filaments
+    const paint = { 0: { color: { 0: '8', 1: '0C' } } }
+    set({ plate: [{ ...clip, paint }] })
+    expect(objectSlots(undefined, get().plate[0]!)).toEqual([1, 2, 3])
+    await appPrintRun().setTarget!({ printerId: 'bay-1', slots: { 2: 'A4' }, printerSlots: four })
+    const s = get()
+    // the part stays on filament 1 and the paint keeps its filaments
+    expect(s.plate[0]!.slotOverrides ?? {}).toEqual({})
+    expect(s.plate[0]!.paint).toEqual(paint)
+  })
+})
+
+describe('a project on the spools of a printer, painted and printed', () => {
+  // the printer's AMS holds an off-white, a black, a PETG and a TPU; the external spool holds pure white
+  const atPaint: FilamentSlot[] = [
+    { id: 'A1', material: 'PLA', color: '#FAFAFA' },
+    { id: 'A2', material: 'PLA', color: '#1A1A1F' },
+    { id: 'A3', material: 'PETG', color: '#3B82F6' },
+    { id: 'A4', material: 'TPU', color: '#F97316' },
+    { id: '1', material: 'PLA', color: '#FFFFFF' },
+  ]
+  const A1: PrinterInfo = { id: 'bay-1', name: 'Desk', vendor: 'Bambu Lab', model: 'A1', plugin: 'bambu-lan', nozzleCount: 1, filamentSystem: 'ams' }
+
+  beforeEach(() => {
+    set({ plate: [clip], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', printerId: 'bay-1', printerSlots: atPaint, slotSetup: {}, slotMatch: {} })
+  })
+
+  it('painting red and buff adds those two, keeps the rest, and the part prints from the AMS white', async () => {
+    const [add, setF] = filamentTools(appFilaments)
+    const call = (t: PilotTool<never>, args: Record<string, unknown>) => t.run(t.input.parse(args) as never, {} as never)
+    expect(appFilaments.list().map((f) => `${f.type} ${f.color}`)).toEqual(['PLA #fafafa', 'PLA #1a1a1f', 'PETG #3b82f6', 'TPU #f97316', 'PLA #ffffff'])
+    // what a paint turn asked for: the spool filaments turned into the paint colors, and a second black
+    expect(await call(setF!, { slot: 3, type: 'PLA', color: '#a8261c' })).toMatchObject({ ok: false })
+    expect(await call(setF!, { slot: 4, type: 'PLA', color: '#d9a441' })).toMatchObject({ ok: false })
+    expect(await call(add!, { type: 'PLA', color: '#1c1c1e' })).toMatchObject({ ok: false, summary: expect.stringContaining('filament 2') })
+    // the colors it needs
+    expect(await call(add!, { type: 'PLA', color: '#a8261c' })).toMatchObject({ summary: 'Added filament 6: PLA #a8261c' })
+    expect(await call(add!, { type: 'PLA', color: '#d9a441' })).toMatchObject({ summary: 'Added filament 7: PLA #d9a441' })
+    expect(appFilaments.list().map((f) => f.type)).toEqual(['PLA', 'PLA', 'PETG', 'TPU', 'PLA', 'PLA', 'PLA'])
+    // the hull below the deck black, the waterline red and the funnels buff, on the part's own white
+    set({ plate: [{ ...get().plate[0]!, paint: { 0: { color: { 0: '8', 1: '3C', 2: '4C' } } } }] })
+    const prints = objectSlots(undefined, get().plate[0]!)
+    expect(prints).toEqual([1, 2, 6, 7])
+
+    // by print time the red and the buff are loaded in the AMS
+    const atPrint: FilamentSlot[] = [atPaint[0]!, atPaint[1]!, { id: 'A3', material: 'PLA', color: '#FF0000' }, { id: 'A4', material: 'PLA', color: '#D9A441' }, atPaint[4]!]
+    const printers = { list: async () => [A1], status: async (): Promise<PrinterStatus> => ({ printerId: 'bay-1', state: 'idle', nozzles: [], slots: atPrint, cameraAvailable: false, updatedAt: '2026-10-19T00:00:00.000Z' }) } as unknown as PrinterHost
+    const book = createRunBook({ fingerprint: () => 'fp1', setTarget: appPrintRun().setTarget! }, () => 0)
+    const ctx = { host: { printers }, sessionId: 's', run: runHandle(book, 's') } as unknown as ToolContext
+    const out = await runTools()[0]!.run({ printer: 'my A1', filaments: [{ index: 1, material: 'PLA', color: 'white' }, { index: 2, material: 'PLA', color: 'black' }, { index: 6, material: 'PLA', color: 'red' }, { index: 7, material: 'PLA', color: '#d9a441' }] } as never, ctx)
+    expect((out.output as RunTargetResult).slots.map((r) => `${r.filament} ${r.slot}`)).toEqual(['1 A1', '2 A2', '6 A3', '7 A4'])
+    // the part keeps its own filament, which prints from AMS A1, not the external spool
+    const part = get().plate[0]!
+    expect(part.handle.parts.map((p) => effectiveSlot(part, p))).toEqual([1])
+    expect(get().printerSlots[0]!.id).toBe('A1')
+    // four filaments print, and every one the paint added is used
+    expect(objectSlots(undefined, part)).toEqual([1, 2, 6, 7])
   })
 })
 

@@ -361,9 +361,9 @@ export const LOCAL_TOOLS: Readonly<Record<string, LocalTool>> = {
       'connection.serial',
       'connection.username',
     ] },
-  'project.add_filament': { tokens: 173, description: true, fields: ['color', 'type'] },
+  'project.add_filament': { tokens: 210, description: true, fields: ['color', 'type'] },
   'project.info': { tokens: 98, description: true },
-  'project.set_filament': { tokens: 189, description: true, fields: ['color', 'slot', 'type'] },
+  'project.set_filament': { tokens: 206, description: true, fields: ['color', 'slot', 'type'] },
   'prusalink.status': { tokens: 64, description: true, fields: ['printerId'] },
   'resume_from_layer': { tokens: 274, description: true, fields: [
       'failedLayer',
