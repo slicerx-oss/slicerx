@@ -391,6 +391,7 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mimir-chat .progress-rec-main { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
 .mimir-chat .progress-rec-still { display: block; flex: none; width: 96px; height: 72px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); overflow: hidden; background: var(--line-soft); }
 .mimir-chat .progress-rec-still img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.mimir-chat .progress-rec-still { display: grid; place-items: center; color: var(--t-mute); }
 .mimir-chat .progress-rec-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .mimir-chat .progress-rec-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t-sub); font-size: var(--fs-sm); }
 .mimir-chat .progress-rec-figs { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 var(--s-3); color: var(--t-fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); font-variant-numeric: tabular-nums; }

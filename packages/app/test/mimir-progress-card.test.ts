@@ -6,7 +6,7 @@
 // shows how it ended and stops updating.
 import type { Host, PrintRun, PrinterInfo, PrinterStatus, RunJob } from '@slicerx/contracts'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FeaturesContext } from '../src/features'
@@ -110,6 +110,19 @@ describe('the progress card', () => {
     await act(async () => vi.advanceTimersByTimeAsync(60_000))
     expect(snapshot).not.toHaveBeenCalled()
     expect(card().textContent).toContain('Paused on Bay 2')
+  })
+
+  it('a frame that fails to load shows the camera mark, never a broken image, until the next frame loads', async () => {
+    show(JOB, [{ ...info, status: printing }])
+    await flush()
+    const box = screen.getByTestId('mimir-progress').querySelector('.progress-rec-still')!
+    await act(async () => { fireEvent.error(screen.getByTestId('mimir-progress-still')) })
+    expect(screen.queryByTestId('mimir-progress-still')).toBeNull()
+    expect(box.querySelector('svg')).toBeTruthy()
+    // the next frame is a new picture, so it shows
+    await act(async () => vi.advanceTimersByTimeAsync(30_000))
+    expect(screen.getByTestId('mimir-progress-still').getAttribute('src')).toBe('blob:still-2')
+    cleanup()
   })
 
   it('no still without a camera', async () => {
