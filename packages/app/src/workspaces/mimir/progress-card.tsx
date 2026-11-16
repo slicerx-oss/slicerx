@@ -113,6 +113,9 @@ export function ProgressCard({ run }: RunCardProps) {
   const camera = Boolean(row?.status.cameraAvailable)
   const printing = live?.state === 'printing'
   const still = useStill(job?.printerId ?? '', Boolean(job) && camera && printing && onScreen)
+  // a frame that fails to load (none yet, or a camera that sent nothing) shows the card's surface and the camera mark,
+  // never the browser's broken image; the next frame that loads replaces it
+  const [broken, setBroken] = useState<string | null>(null)
   if (!job) return null
   const name = row?.name || 'your printer'
   const layer = live?.layer ?? job.layer
@@ -129,7 +132,13 @@ export function ProgressCard({ run }: RunCardProps) {
     <div ref={setEl} className="lookup-rec progress-rec" role="group" aria-label={`Print on ${name}`} data-testid="mimir-progress" data-state={state}>
       <div className="progress-rec-main">
         {camera || still ? (
-          <span className="progress-rec-still">{still ? <img data-testid="mimir-progress-still" src={still} alt={`Camera view of ${name}`} /> : null}</span>
+          <span className="progress-rec-still">
+            {still && still !== broken ? (
+              <img data-testid="mimir-progress-still" src={still} alt={`Camera view of ${name}`} onError={() => setBroken(still)} />
+            ) : (
+              <Icon name="camera" size={20} />
+            )}
+          </span>
         ) : null}
         <div className="progress-rec-body">
           <span className="lookup-rec-t">
