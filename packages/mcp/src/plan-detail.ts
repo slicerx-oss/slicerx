@@ -116,7 +116,7 @@ export const planDetailFields = {
 
 /** A flat body's levels, as design.plan describes them. */
 export const LEVELS_HELP =
-  'Its levels from the bottom up, each a planned feature; a single block lists only itself. At display and fine, each level that carries another has a thin roof reaching about one nozzle width past its walls, built with the level, so the level above stands on it and its edge shows.'
+  'Its levels from the bottom up, each a planned feature; a single block lists only itself. At display and fine, each level that carries another level has a thin roof of its own, a layer or two thick, reaching about one nozzle width past its own walls all round, built with the level, so its edge shows however far the level above is set in. A post, leg, pole or handle standing on a level is not a level and adds no roof.'
 
 /** One flat-sided main body as design.plan takes it: the feature that builds it and its levels from the bottom up. */
 const FLAT_BODY = z.object({
