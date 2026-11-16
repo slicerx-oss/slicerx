@@ -1,9 +1,8 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright (C) 2026 The SlicerX contributors
 -- The edition's day counts an open call at no more than install_call_micros, like an install's, so
--- only settled cost uses it up; free mimir is $1 a day per layermate install and $20 per slicerx
--- install (0034), and the layermate edition day is $20 (0033) and the slicerx one $100 (0035). Run
--- with `supabase test db` after `supabase db reset`.
+-- only settled cost uses it up; free mimir is $1 a day per layermate or slicerx install, and each
+-- edition day is $20 (0033, 0036). Run with `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(8);
@@ -26,9 +25,9 @@ $$;
 grant execute on function pg_temp.big(text, text) to service_role;
 
 select is((select array_agg(install_daily_micros order by edition) from public.mimir_limits where edition in ('layermate', 'slicerx')),
-  array[1000000, 20000000]::bigint[], 'a layermate install gets $1 a day of free mimir and a slicerx install $20');
+  array[1000000, 1000000]::bigint[], 'a layermate install and a slicerx install each get $1 a day of free mimir');
 select is((select array_agg(edition_daily_micros order by edition) from public.mimir_limits where edition in ('layermate', 'slicerx')),
-  array[20000000, 100000000]::bigint[], 'the layermate edition gets $20 a day and the slicerx edition $100');
+  array[20000000, 20000000]::bigint[], 'the layermate edition and the slicerx edition each get $20 a day');
 
 -- a $0.30 edition day, smaller than one call's worst case
 update public.mimir_limits set edition_daily_micros = 300000 where edition = 'slicerx';
