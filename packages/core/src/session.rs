@@ -7473,7 +7473,7 @@ impl SliceSession {
             bottom_layers: s.interface_bottom_layers,
             hollow: pattern == "default" || pattern == "hollow",
             double_wall_mm2: match s.tree_settings.wall_count {
-                0 => 0.25 * std::f64::consts::PI * 25.0,
+                0 => crate::organic_objects::auto_double_wall_mm2(cfg),
                 1 => f64::MAX,
                 _ => 1e-12,
             },

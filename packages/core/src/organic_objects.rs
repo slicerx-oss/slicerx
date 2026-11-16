@@ -34,6 +34,21 @@ pub(crate) const KEY: &str = "organic_per_object";
 /// resolves (the same bound the copies of a plate printed by layer use).
 const ROUNDING_MM: f64 = 1e-3;
 
+/// With the switch on and the tree wall count left automatic (0), a hollow branch whose cut, shrunk by half a line,
+/// is larger than this prints a second wall, mm2; smaller ones print one. Measured on plates of eight copies at
+/// 0.12 mm layers with 2 mm branches: trunk cuts 6.3 to 7.2 mm across print one wall, 7.7 mm and wider print two,
+/// which puts the line near a 6.9 mm circle. With the switch off the line stays at a 5 mm circle.
+pub(crate) const DOUBLE_WALL_MM2: f64 = 37.0;
+
+/// The area above which a hollow branch prints a second wall, mm2, for a tree wall count of 0 (automatic).
+pub(crate) fn auto_double_wall_mm2(cfg: &crate::config::PrintConfig) -> f64 {
+    if selected(cfg) {
+        DOUBLE_WALL_MM2
+    } else {
+        0.25 * std::f64::consts::PI * 25.0
+    }
+}
+
 /// True when the settings ask for organic trees planned object by object.
 pub(crate) fn selected(cfg: &crate::config::PrintConfig) -> bool {
     crate::firmware::truthy(cfg, KEY)
@@ -520,4 +535,63 @@ pub(crate) fn island_owners(islands: &Shapes, pieces: &[Piece]) -> Vec<u16> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fm::Fm as _;
+
+    /// A circle of diameter `d` mm, 128 corners, in plate units.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "points of a circle a few mm across, well inside i32 plate units"
+    )]
+    fn circle(d: f64) -> Shapes {
+        let s = crate::geom::SCALE;
+        let ring: Vec<IntPoint<i32>> = (0..128)
+            .map(|k| {
+                let a = std::f64::consts::TAU * f64::from(k) / 128.0;
+                IntPoint::new(
+                    (100.0 * s + 0.5 * d * s * a.m_cos()) as i32,
+                    (100.0 * s + 0.5 * d * s * a.m_sin()) as i32,
+                )
+            })
+            .collect();
+        vec![vec![ring]]
+    }
+
+    /// Closed loops a branch prints: paths that end near where they start, less the anchor tail.
+    fn walls(d: f64, double_mm2: f64) -> usize {
+        crate::treepaths::branch_walls(&circle(d), 0.42, 0.42, double_mm2).len()
+    }
+
+    #[test]
+    fn a_trunk_up_to_about_seven_mm_prints_one_wall_with_the_switch_on() {
+        // 6.3 to 7.2 mm cuts printed one wall where measured.
+        for d in [6.3, 6.8, 7.2] {
+            assert_eq!(walls(d, DOUBLE_WALL_MM2), 1, "{d} mm with the switch on");
+            assert_eq!(
+                walls(d, 0.25 * std::f64::consts::PI * 25.0),
+                2,
+                "{d} mm with the switch off"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wider_trunk_still_prints_two_walls() {
+        for d in [7.7, 9.0] {
+            assert_eq!(walls(d, DOUBLE_WALL_MM2), 2, "{d} mm");
+        }
+    }
+
+    #[test]
+    fn the_wall_line_follows_the_switch() {
+        let off = crate::config::PrintConfig::from_value(&serde_json::json!({})).unwrap();
+        let on = crate::config::PrintConfig::from_value(&serde_json::json!({ "organic_per_object": true }))
+            .unwrap();
+        assert!((auto_double_wall_mm2(&off) - 0.25 * std::f64::consts::PI * 25.0).abs() < 1e-9);
+        assert!((auto_double_wall_mm2(&on) - DOUBLE_WALL_MM2).abs() < 1e-9);
+    }
 }
