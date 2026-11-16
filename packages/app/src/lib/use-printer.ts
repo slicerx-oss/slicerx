@@ -7,13 +7,14 @@ import { useApp } from '../state/store'
 import { EXPORT_PLUGIN, isExportOnly } from './hand-printers'
 import type { ProjectPrinter } from '../state/store'
 
-/** The printer the sidebar shows: the selected one, else the first idle one, else the first. An open project's own printer is listed first. */
+/** The printer the sidebar shows (shownPrinter): the selected one, else the one shown last, else the first idle one, else the first. An open project's own printer is listed first. */
 export function usePrinter(): { rows: FleetRow[]; printer: FleetRow | undefined } {
   const fleet = useFleet()
   const printerId = useApp((s) => s.printerId)
+  const kept = useApp((s) => s.printerModel?.id ?? null)
   const project = useApp((s) => s.projectPrinter)
   const rows = useMemo(() => (project ? [projectRow(project), ...(fleet.data ?? [])] : (fleet.data ?? [])), [project, fleet.data])
-  return { rows, printer: shownPrinter(rows, printerId) }
+  return { rows, printer: shownPrinter(rows, printerId, kept) }
 }
 
 /**
@@ -23,9 +24,10 @@ export function usePrinter(): { rows: FleetRow[]; printer: FleetRow | undefined 
  */
 export function useShownPrinterPick<T>(pick: (printer: FleetRow | undefined) => T): T {
   const printerId = useApp((s) => s.printerId)
+  const kept = useApp((s) => s.printerModel?.id ?? null)
   const project = useApp((s) => s.projectPrinter)
   // Wrapped, so an answer of undefined is told apart from a fleet that has not answered.
-  const fromRows = useCallback((rows: FleetRow[]) => ({ value: pick(shownPrinter(project ? [projectRow(project), ...rows] : rows, printerId)) }), [pick, project, printerId])
+  const fromRows = useCallback((rows: FleetRow[]) => ({ value: pick(shownPrinter(project ? [projectRow(project), ...rows] : rows, printerId, kept)) }), [pick, project, printerId, kept])
   // Until the fleet answers, and with no printer host, there are no rows, as in usePrinter: an open project's printer still shows.
   return (useFleetPick(fromRows) ?? fromRows([])).value
 }
@@ -35,8 +37,14 @@ export function projectRow(p: ProjectPrinter): FleetRow {
   return { id: p.id, name: `${p.model} ${p.nozzle} from ${p.source}`, vendor: p.vendor, model: p.model, plugin: EXPORT_PLUGIN, nozzleCount: 1, status: { printerId: p.id, state: 'idle', nozzles: [], slots: [], cameraAvailable: false, updatedAt: new Date(0).toISOString() } }
 }
 
-export function shownPrinter(rows: FleetRow[], printerId: string | null): FleetRow | undefined {
-  return rows.find((r) => r.id === printerId) ?? rows.find((r) => r.status.state === 'idle') ?? rows[0]
+/**
+ * The chosen printer, else the one shown last (`kept`, the printer the slice follows now) while it is still connected,
+ * else the first idle one, else the first. With nothing chosen, a print started on the shown printer makes it busy; it
+ * stays the one shown, so the slice just sent keeps its printer and never reads as made for another one.
+ */
+export function shownPrinter(rows: FleetRow[], printerId: string | null, kept?: string | null): FleetRow | undefined {
+  const still = kept ? rows.find((r) => r.id === kept && r.status.state !== 'offline') : undefined
+  return rows.find((r) => r.id === printerId) ?? still ?? rows.find((r) => r.status.state === 'idle') ?? rows[0]
 }
 
 /**
