@@ -198,9 +198,23 @@ test.describe('Brim ears', () => {
       // Ctrl and the wheel change the head diameter by 0.1 mm a notch and do not zoom.
       const diameter = async () => Number(/Head diameter\s+(\d+(?:\.\d)?) mm/.exec(await panel.innerText())?.[1])
       const size0 = await diameter()
-      const canvas = await page.locator('.vp-canvas').first().boundingBox()
-      // Below the plate toolbar, on bare view.
-      await page.mouse.move(canvas!.x + canvas!.width / 2, canvas!.y + 120)
+      // On bare view: a point read from the layout, clear of the plate toolbar, the Spread bar and every other control
+      // over the view (the Layered X has two parts, so the Spread bar shows under the toolbar while it is selected).
+      const bare = await page.evaluate(() => {
+        const c = document.querySelector('.vp-canvas')!.getBoundingClientRect()
+        const over = [...document.querySelectorAll('.hud *, [role="toolbar"], [data-testid="explode-bar"], .sx-toasts > *')]
+          .map((el) => el.getBoundingClientRect())
+          .filter((r) => r.width > 0 && r.height > 0)
+        const clear = (x: number, y: number) => over.every((r) => x < r.left - 8 || x > r.right + 8 || y < r.top - 8 || y > r.bottom + 8)
+        for (let y = c.top + 40; y < c.bottom - 40; y += 16) {
+          for (const x of [c.left + c.width / 2, c.left + c.width / 3, c.left + (2 * c.width) / 3]) if (clear(x, y)) return { x, y }
+        }
+        return null
+      })
+      expect(bare, 'a point on the view clear of every control over it').not.toBeNull()
+      await page.mouse.move(bare!.x, bare!.y)
+      // the wheel goes to the view itself: fails here if a control over the view covers the point again
+      expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y) === document.querySelector('.vp-canvas'), bare!)).toBe(true)
       await page.keyboard.down('Control')
       await page.mouse.wheel(0, -120)
       await page.keyboard.up('Control')
