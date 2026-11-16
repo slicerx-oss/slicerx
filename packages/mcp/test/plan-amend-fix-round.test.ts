@@ -9,7 +9,7 @@ import type { PilotMachine } from '@slicerx/contracts'
 import type { ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { createPlanRegistry, fixRoundIsOpen, type PartPlan } from '../src/design-check'
-import { FIX_ROUND_ADDS } from '../src/plan-amend'
+import { amendProblemsText, FIX_ROUND_ADDS } from '../src/plan-amend'
 import { createCardPlans, designToolset, tabToolset } from '../src/toolset'
 import type { DesignHost } from '@slicerx/cad-history'
 import { STAND_PLAN, standHost } from './stand-host'
@@ -41,7 +41,7 @@ describe("a build's amend in the fix round", () => {
     expect(first.summary).toContain('the plan has one fix round, and it is open')
     expect(fixRoundIsOpen(plans.get('plan_1')!)).toBe(true)
     await expect(run('design.plan', { amends: 'plan_1', reason: 'The top stands on its own base.', add: [base] })).rejects.toThrow(
-      "add: the plan's fix round is open, and an amend in it adds no feature, since Top base would be one more feature the check needs a step tagged with its name for; fix the failed items on the part as planned, and for a planned feature built on another planned one, send the features with its on changed and no add",
+      "add: the fix round is open, so this amend can't add a feature; Top base would need its own build step. Fix the failed items on the part as planned. To move a planned feature onto another one, send that feature with its on changed and no add.",
     )
     expect(cards).toEqual([])
     expect(plans.get('plan_1')!.revision).toBeUndefined()
@@ -53,16 +53,24 @@ describe("a build's amend in the fix round", () => {
     await check()
     const two = [base, { ...base, name: 'Stand foot', on: 'Block' }]
     await expect(run('design.plan', { amends: 'plan_1', reason: 'Two more parts.', add: two })).rejects.toThrow(FIX_ROUND_ADDS(['Top base', 'Stand foot']))
-    expect(FIX_ROUND_ADDS(['Top base', 'Stand foot'])).toContain('since Top base and Stand foot would be more features the check needs a step tagged with its name for')
+    expect(FIX_ROUND_ADDS(['Top base', 'Stand foot'])).toBe(
+      "add: the fix round is open, so this amend can't add a feature; Top base and Stand foot would need their own build steps. Fix the failed items on the part as planned. To move a planned feature onto another one, send that feature with its on changed and no add.",
+    )
+    expect(FIX_ROUND_ADDS(['Mainmast base'])).toBe(
+      "add: the fix round is open, so this amend can't add a feature; Mainmast base would need its own build step. Fix the failed items on the part as planned. To move a planned feature onto another one, send that feature with its on changed and no add.",
+    )
+    // the refusal ends in its own period, so a problem after it starts a new sentence with no second period
+    expect(amendProblemsText(['changes: one', FIX_ROUND_ADDS(['Top base']), 'add: two'])).toBe(`changes: one. ${FIX_ROUND_ADDS(['Top base'])} add: two`)
+    expect(FIX_ROUND_ADDS(['Top base', 'Stand foot', 'Mast cap'])).toContain('; Top base, Stand foot and Mast cap would need their own build steps. ')
     await expect(run('design.plan', { amends: 'plan_1', reason: 'A base, and a size that is not there.', add: [base], changes: [{ feature: 'Top', size: 'depth', to: 3 }] })).rejects.toThrow(
-      /changes: Top has no size named depth; change one of its sizes \(width, height\)\. add: the plan's fix round is open/,
+      /changes: Top has no size named depth; change one of its sizes \(width, height\)\. add: the fix round is open/,
     )
   })
 
   it('leaves the amend of the round unused: the move onto another feature it names is taken next, and the check passes', async () => {
     const { run, cards, check } = tab()
     await check()
-    await expect(run('design.plan', { amends: 'plan_1', reason: 'The top stands on its own base.', add: [base] })).rejects.toThrow("add: the plan's fix round is open")
+    await expect(run('design.plan', { amends: 'plan_1', reason: 'The top stands on its own base.', add: [base] })).rejects.toThrow("add: the fix round is open")
     const onStand = STAND_PLAN.features.map((f) => (f.name === 'Top' ? { ...f, on: 'Stand' } : f))
     const r = await run('design.plan', { amends: 'plan_1', reason: 'The top was built on the stand, so it stands on the stand.', features: onStand })
     expect(r.summary).toBe('Plan changed (revision 2): Top on Stand, not Block. Build to it as changed')

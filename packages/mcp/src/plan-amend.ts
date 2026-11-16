@@ -10,6 +10,7 @@
 // adds no feature (FIX_ROUND_ADDS). A change the person asked for (asked) goes in
 // with no card and is not held to the fix round (tab-tools.ts).
 import type { PartPlan, PlanEntry, PlanOrigin } from './design-check'
+import { joinEnded } from './plan-detail'
 
 /** The longest reason an amend takes. */
 export const AMEND_REASON_MAX = 200
@@ -295,7 +296,10 @@ export function amendProblem(planId: string, entry: PlanEntry | undefined, origi
  * nothing in the round builds; a planned feature built on another one moves there with its on instead.
  */
 export const FIX_ROUND_ADDS = (added: readonly string[]): string =>
-  `add: the plan's fix round is open, and an amend in it adds no feature, since ${added.length > 1 ? `${added.slice(0, -1).join(', ')} and ${added.at(-1)!} would be more features` : `${added[0]!} would be one more feature`} the check needs a step tagged with its name for; fix the failed items on the part as planned, and for a planned feature built on another planned one, send the features with its on changed and no add`
+  `add: the fix round is open, so this amend can't add a feature; ${added.length > 1 ? `${added.slice(0, -1).join(', ')} and ${added.at(-1)!} would need their own build steps` : `${added[0]!} would need its own build step`}. Fix the failed items on the part as planned. To move a planned feature onto another one, send that feature with its on changed and no add.`
+
+/** An amend's problems in one refusal, each ended once: a problem that ends in its own period (FIX_ROUND_ADDS) gets no second one. */
+export const amendProblemsText = (off: readonly string[]): string => joinEnded(off, '. ')
 
 /** The reason an amend gives, trimmed; a ToolInputError message when it is missing or empty. */
 export function amendReason(reason: string | undefined): { why: string } | { problem: string } {
