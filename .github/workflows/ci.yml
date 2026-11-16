@@ -249,8 +249,9 @@ jobs:
           fi
 
   web:
-    needs: detect
-    if: needs.detect.outputs.node == 'true' && needs.detect.outputs.queued != 'true'
+    needs: [detect, exact-wasm]
+    # not skipped when exact-wasm fails: the module's download then fails this job
+    if: ${{ !cancelled() && needs.detect.outputs.node == 'true' && needs.detect.outputs.queued != 'true' }}
     runs-on: ubuntu-latest
     # a change to mimir's pilot runs most of the app and pilot tests here, about 20 minutes on a hosted runner
     timeout-minutes: 30
@@ -299,21 +300,13 @@ jobs:
           key: geom
       - if: steps.scope.outputs.engine == 'true'
         run: sh packages/geom/wasm/scripts/build.sh
-      # The full engine with exact solids (one Emscripten module with the SMLib kernel) for the app tests of exact
-      # solids. Emscripten and the kernel's objects are cached; the objects' stamps decide which are built again.
+      # The full engine with exact solids, from the exact-wasm job, for the app tests of exact solids. A missing one
+      # fails this step, so a failed build never passes as skipped tests.
       - if: steps.scope.outputs.engine == 'true'
-        uses: actions/cache@v4
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.cache/slicerx/smlib
-          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
-      - if: steps.scope.outputs.engine == 'true'
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/sx-exact
-          key: exact-wasm-${{ runner.os }}-${{ hashFiles('packages/brep/scripts/wasm-objects.sh', 'packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh', 'packages/brep/cpp/**') }}
-          restore-keys: exact-wasm-${{ runner.os }}-
-      - if: steps.scope.outputs.engine == 'true'
-        run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"
+          name: exact-wasm
+          path: packages/geom/wasm/pkg
       # Chromium for the unit tests that lay out in a real browser (packages/ui setting-row-browser.test.tsx).
       - if: steps.scope.outputs.chromium == 'true'
         id: pw
@@ -868,14 +861,56 @@ jobs:
       - name: The default build has no bridge
         run: node apps/desktop/release/check-agent-bridge.mjs --manifest apps/desktop/src-tauri/Cargo.toml
 
+  # The full engine with exact solids (packages/geom/wasm/scripts/build-exact.sh): sx-geom and the SMLib kernel in one
+  # Emscripten module, for the web and wasm jobs (artifact exact-wasm), and the kernel's wasm tests on it. It runs
+  # whenever either of them does. Emscripten, its system libraries, the kernel's objects and the link's output are
+  # cached in one folder (the objects' and the link's stamps decide what is built again), the SMLib source and cargo
+  # as the other jobs cache them. A cold build measured 7.1 minutes with 4 jobs on a fast Linux machine (kernel objects
+  # 97 s, engine 168 s, link 161 s) without the Emscripten download; the limit allows about four times that for a slower
+  # hosted runner and the download.
+  exact-wasm:
+    needs: detect
+    if: needs.detect.outputs.queued != 'true' && (needs.detect.outputs.node == 'true' || needs.detect.outputs.rust == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: eval "$SX_TOOLCHAIN_INSTALL"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: exact-wasm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/slicerx/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sx-exact
+          key: exact-wasm-${{ runner.os }}-${{ hashFiles('packages/brep/scripts/wasm-objects.sh', 'packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh', 'packages/brep/cpp/**', 'packages/geom/wasm/scripts/build-exact.sh') }}
+          restore-keys: exact-wasm-${{ runner.os }}-
+      - run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exact-wasm
+          path: |
+            packages/geom/wasm/pkg/sx_geom_exact.mjs
+            packages/geom/wasm/pkg/sx_geom_exact.wasm
+          retention-days: 3
+          if-no-files-found: error
+      - run: node --test packages/brep/tests/solids-wasm.mjs
+
   # The engine's WASM module, its size reported against 1444 KB gzip without failing (build-wasm.sh), then the web
   # bundle's size gate (apps/web/scripts/bundle-size.mjs runs at the end of its build).
   # A pull request runs it when its change touches the two wasm crates, a crate they build, a file they read or a
   # non-test file the web build reads (detect's wasm_changed), and always when a browser job needs its modules. When it
   # is skipped, the required check "wasm" counts as passed, as devkit and pgtap do on a pull request.
   wasm:
-    needs: detect
-    if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.queued != 'true' && (needs.detect.outputs.wasm_changed != 'false' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true')
+    needs: [detect, exact-wasm]
+    # not skipped when exact-wasm fails: the module's download then fails this job
+    if: ${{ !cancelled() && needs.detect.outputs.rust == 'true' && needs.detect.outputs.queued != 'true' && (needs.detect.outputs.wasm_changed != 'false' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -904,20 +939,12 @@ jobs:
       # The geometry module the app's worker loads, then both modules for the e2e shards or the smoke job.
       - if: needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true'
         run: sh packages/geom/wasm/scripts/build.sh
-      # The full engine with exact solids, every run: the web build below holds it to its budget, and the kernel's
-      # wasm tests run on it. Emscripten and the kernel's objects are cached; the objects' stamps decide which are built
-      # again.
-      - uses: actions/cache@v4
+      # The full engine with exact solids, from the exact-wasm job: the web build below holds it to its budget, and the
+      # e2e shards get it with the other modules.
+      - uses: actions/download-artifact@v4
         with:
-          path: ~/.cache/slicerx/smlib
-          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
-      - uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/sx-exact
-          key: exact-wasm-${{ runner.os }}-${{ hashFiles('packages/brep/scripts/wasm-objects.sh', 'packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh', 'packages/brep/cpp/**') }}
-          restore-keys: exact-wasm-${{ runner.os }}-
-      - run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"
-      - run: node --test packages/brep/tests/solids-wasm.mjs
+          name: exact-wasm
+          path: packages/geom/wasm/pkg
       - if: needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true'
         uses: actions/upload-artifact@v4
         with:

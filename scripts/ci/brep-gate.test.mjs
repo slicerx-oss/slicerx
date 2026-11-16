@@ -98,10 +98,16 @@ test('the Linux job runs the same build and tests as the other systems', () => {
 })
 
 test('the kernel\'s wasm tests run where the engine with exact solids is built', () => {
-  const wasm = job('wasm')
-  assert.ok(wasm.includes('- run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"'), 'wasm builds the exact module')
-  assert.ok(wasm.includes('- run: node --test packages/brep/tests/solids-wasm.mjs'), 'wasm runs solids-wasm')
-  assert.ok(wasm.indexOf('build-exact.sh') < wasm.indexOf('solids-wasm.mjs'), 'solids-wasm runs after the build')
+  const exact = job('exact-wasm')
+  assert.ok(exact.includes('- run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"'), 'exact-wasm builds the exact module')
+  assert.ok(exact.includes('- run: node --test packages/brep/tests/solids-wasm.mjs'), 'exact-wasm runs solids-wasm')
+  assert.ok(exact.indexOf('build-exact.sh') < exact.indexOf('solids-wasm.mjs'), 'solids-wasm runs after the build')
+  // the web and wasm jobs take the module from it, and a failed build fails them rather than skipping them
+  for (const id of ['web', 'wasm']) {
+    assert.match(job(id), /needs: \[detect, exact-wasm\]/, `${id} needs exact-wasm`)
+    assert.match(job(id), /if: \$\{\{ !cancelled\(\) && /, `${id} runs when exact-wasm failed`)
+    assert.match(job(id), /uses: actions\/download-artifact@v4\n\s+with:\n\s+name: exact-wasm/, `${id} downloads exact-wasm`)
+  }
 })
 
 test('the gate script passes on a skip and fails a wanted build that did not pass', () => {
