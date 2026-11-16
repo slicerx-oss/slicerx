@@ -281,10 +281,10 @@ describe('amend helpers', () => {
   it('reads the changed sizes, and what keeps a plan from being an amend', () => {
     const next = { ...was, holes: [{ name: 'Vent', diameter: 3.4, count: 4 }] }
     expect(amendChanges(was, next).map((c) => changeText(c, 'mm'))).toEqual(['Vent diameter 3 mm to 3.4 mm'])
-    expect(amendShapeProblem(was, { ...was, units: 'in' })).toBe('units: an amend changes sizes only; the plan stays in mm')
-    expect(amendShapeProblem(was, { ...was, holes: [{ name: 'Vent', diameter: 3, count: 5 }] })).toBe('holes: an amend changes sizes only; the plan keeps its rows of holes, by name and count')
-    expect(amendShapeProblem(was, { ...was, overall: undefined })).toBe('overall: an amend changes sizes only; keep the overall size')
-    expect(amendShapeProblem(was, { ...was, features: was.features.map((f, i) => (i === 0 ? { ...f, sizes: { height: 30 } } : f)) })).toBe('features: an amend changes sizes only; Base keeps the sizes height, wall')
+    expect(amendShapeProblem(was, { ...was, units: 'in' })).toBe('units: an amend changes sizes and on only; the plan stays in mm')
+    expect(amendShapeProblem(was, { ...was, holes: [{ name: 'Vent', diameter: 3, count: 5 }] })).toBe('holes: an amend changes sizes and on only; the plan keeps its rows of holes, by name and count')
+    expect(amendShapeProblem(was, { ...was, overall: undefined })).toBe('overall: an amend changes sizes and on only; keep the overall size')
+    expect(amendShapeProblem(was, { ...was, features: was.features.map((f, i) => (i === 0 ? { ...f, sizes: { height: 30 } } : f)) })).toBe('features: an amend changes sizes and on only; Base keeps the sizes height, wall')
     expect(amendShapeProblem(was, next)).toBeNull()
     expect(amendProblem('p', { plan: was, origin: 'card', design: 'd1', stale: true }, 'card')).toBe('amends: the person changed sizes since that plan was approved; make a new plan with the sizes they set')
   })

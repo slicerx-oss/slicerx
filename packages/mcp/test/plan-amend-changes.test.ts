@@ -75,7 +75,7 @@ describe('design.plan with amends and changes', () => {
   it('names a plan field sent with the amend, keeps it as approved, and still changes the sizes', async () => {
     const t = await built()
     const out = await t.run({ amends: 'plan_1', reason: 'A shorter tower.', part: 'Tall tower', colors: { Tower: 'gray' }, proportions: 'stated: about 1 m tall', changes: [{ feature: 'Tower', size: 'height', to: 84 }] })
-    expect(out.summary).toBe('Plan changed (revision 2): Tower height 90 mm to 84 mm. Build to it as changed. Ignored proportions, colors and part: an amend changes sizes only, so the plan keeps them as approved')
+    expect(out.summary).toBe('Plan changed (revision 2): Tower height 90 mm to 84 mm. Build to it as changed. Ignored proportions, colors and part: an amend changes sizes and on only, so the plan keeps them as approved')
     expect((out.output as PlanAnswer).ignored).toEqual(['proportions', 'colors', 'part'])
     expect(t.plan()).not.toHaveProperty('colors')
     expect(t.plan().part).toBe('Stone tower')
@@ -93,7 +93,7 @@ describe('design.plan with amends and changes', () => {
     await expect(t.run({ amends: 'plan_1', reason: 'Wider.', changes: [{ feature: 'Tower', size: 'radius', to: 16 }, { feature: 'Roof', size: 'height', to: 6 }] })).rejects.toThrow(
       'changes: Tower has no size named radius; change one of its sizes (width, depth, height). changes: Roof is not a planned feature, the overall size or a row of holes; name one the plan has (Base, Tower, overall, Window)',
     )
-    await expect(t.run({ amends: 'plan_1', reason: 'Inches.', units: 'in', changes: [{ feature: 'Tower', size: 'height', to: 3 }] })).rejects.toThrow('units: an amend changes sizes only; the plan stays in mm')
+    await expect(t.run({ amends: 'plan_1', reason: 'Inches.', units: 'in', changes: [{ feature: 'Tower', size: 'height', to: 3 }] })).rejects.toThrow('units: an amend changes sizes and on only; the plan stays in mm')
     // a change to the value the plan has already is no change
     await expect(t.run({ amends: 'plan_1', reason: 'Same.', changes: [{ feature: 'Tower', size: 'height', to: 90 }] })).rejects.toThrow('amends: no size differs from the approved plan plan_1')
     expect(t.plan()).toMatchObject({ features: tower.features })

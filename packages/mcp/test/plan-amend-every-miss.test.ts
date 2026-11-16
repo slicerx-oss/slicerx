@@ -38,11 +38,11 @@ const block: PlanInput = {
 }
 
 const SHAPE = {
-  units: 'units: an amend changes sizes only; the plan stays in mm',
-  sizes: 'features: an amend changes sizes only; Block keeps the sizes length, width, height',
-  overall: 'overall: an amend changes sizes only; keep the overall size',
-  holes: 'holes: an amend changes sizes only; the plan keeps its rows of holes, by name and count',
-  recess: 'holes: an amend changes sizes only; Drain takes no recess',
+  units: 'units: an amend changes sizes and on only; the plan stays in mm',
+  sizes: 'features: an amend changes sizes and on only; Block keeps the sizes length, width, height',
+  overall: 'overall: an amend changes sizes and on only; keep the overall size',
+  holes: 'holes: an amend changes sizes and on only; the plan keeps its rows of holes, by name and count',
+  recess: 'holes: an amend changes sizes and on only; Drain takes no recess',
 }
 
 describe('the amend checks name every mismatch', () => {
@@ -58,7 +58,7 @@ describe('the amend checks name every mismatch', () => {
 
   it('amendDropProblem joins each field it would not keep', () => {
     const next = { ...was, holes: [{ name: 'Drain', diameter: 4, count: 3, recess: true }], proportions: 'stated: a 60 cm block', scale: 10 }
-    expect(amendDropProblem(was, next)).toBe(`${SHAPE.recess}. proportions: an amend changes sizes only; leave out proportions. scale: an amend changes sizes only; leave out scale`)
+    expect(amendDropProblem(was, next)).toBe(`${SHAPE.recess}. proportions: an amend changes sizes and on only; leave out proportions. scale: an amend changes sizes and on only; leave out scale`)
   })
 })
 

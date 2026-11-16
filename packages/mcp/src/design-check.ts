@@ -334,6 +334,9 @@ export const SITS_MM = 0.2
 export const SAME_FILAMENT = (part: string | undefined, on: string | undefined, slot: number): string =>
   `${part ?? 'A small part'} is the same filament (${slot}) as ${on ? `${on}, which it sits on` : 'the part it sits on'}, so it will hardly show. Give it another filament, or paint ${on ?? 'that part'} under it.`
 
+/** What a follow-up's check that fails only on items failing before the change says: the change did not cause them. */
+export const FAILED_BEFORE_SAY = 'These items failed before this change too, so the change did not cause them. Keep the change, do not undo it, and say in one line which item was already open; make whatever else the person asked for.'
+
 /** What a passing display check's summary says of its notes, so the reply passes them on (they are not failures). */
 export const NOTES_SAY = (notes: readonly string[]): string => `Say this in the reply too, as a suggestion: ${notes.map((n) => n.replace(/[.\s]+$/, '')).join('; ')}`
 

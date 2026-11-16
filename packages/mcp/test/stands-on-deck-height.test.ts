@@ -22,8 +22,8 @@ describe('stands on, with the height to build from', () => {
       name: 'stands on',
       pass: false,
       got:
-        'Forecastle deck stands on Hull (loft), but its base is 0.34 mm above its top, so it floats; build it from the top of Hull (loft), whose lowest point under it is at z 15.26 mm; ' +
-        'Poop deck stands on Hull (loft), but its base is 0.29 mm above its top, so it floats; build it from the top of Hull (loft), whose lowest point under it is at z 15.31 mm; ' +
+        'Forecastle deck stands on Hull (loft), but its base is 0.34 mm above its top, so it floats; build it from the top of Hull (loft), whose lowest point under it is at z 15.26 mm: with design.edit_step, move the step that makes Forecastle deck by [0, 0, -0.34]; ' +
+        'Poop deck stands on Hull (loft), but its base is 0.29 mm above its top, so it floats; build it from the top of Hull (loft), whose lowest point under it is at z 15.31 mm: with design.edit_step, move the step that makes Poop deck by [0, 0, -0.29]; ' +
         'Mainmast stands on Poop deck, but its base is 0.7 mm below its top, so 11.3 mm of it shows of a planned 12 mm; build it from the top of Poop deck, whose highest point is at z 17.6 mm',
     })
   })
