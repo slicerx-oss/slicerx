@@ -18,7 +18,7 @@ describe.skipIf(noSx())('feature filaments read back', () => {
     const h = await connect({ engine: 'sx', sxBin })
     await h.call('slicerx_project_open', { filament: 'pla' })
     for (let i = 0; i < 2; i++) expect((await h.call('slicerx_project_add_model', { model: join(h.dir, 'cube.stl') })).isError).toBeFalsy()
-    expect((await h.call('slicerx_project_add_filament', { type: 'PLA', color: '#ffffff' })).isError).toBeFalsy()
+    expect((await h.call('slicerx_project_add_filament', { type: 'PLA', color: '#ff5500' })).isError).toBeFalsy()
     const set = await h.call('slicerx_project_set_overrides', { changes: { sparse_infill_filament_id: 2 } })
     expect(set.isError, text(set)).toBeFalsy()
     const own = await h.call('slicerx_project_object_settings', { object: 'obj-2', set: { outer_wall_filament_id: 2, sparse_infill_filament_id: 1 } })
@@ -56,7 +56,7 @@ describe.skipIf(noSx())('feature filaments read back', () => {
       [
         '--import', 'tsx', 'src/cli.ts', '--engine', 'sx', '--sx-bin', sxBin, '--printers', 'off', '--allow-dir', h.dir, '--out-dir', join(h.dir, 'out'), '--profiles-dir', join(h.dir, 'profiles'),
         'call', 'project_open', '{"printer":"bambu_p1s","filament":"pla"}', 'project_add_model', JSON.stringify({ model: join(h.dir, 'cube.stl') }),
-        'project_add_filament', '{"type":"PLA","color":"#ffffff"}', 'project_set_overrides', '{"changes":{"sparse_infill_filament_id":2}}', 'slice',
+        'project_add_filament', '{"type":"PLA","color":"#ff5500"}', 'project_set_overrides', '{"changes":{"sparse_infill_filament_id":2}}', 'slice',
       ],
       { cwd: resolve(__dirname, '..') },
     )

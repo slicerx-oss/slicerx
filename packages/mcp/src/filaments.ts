@@ -2,8 +2,11 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The project's filaments: what the plate calls filament 1, 2, 3, each a material type and a color, as the app's
 // filament rail shows them. A client adds one after the last and changes one's type or color; the slice config
-// carries them as filament_type and filament_colour.
-import { COLOR_SLOT_MAX, productName } from '@slicerx/contracts'
+// carries them as filament_type and filament_colour. The server's project.add_filament and project.set_filament and the
+// mimir tab's tools of the same names keep what the project has by one rule, with the same words: adding a color the
+// project already has in that material (under NEAR_COLOR apart) is refused with the filament to use, and so is
+// changing a filament's material, since its parts and the spool it maps to count on it.
+import { baseMaterial, colorDistance, COLOR_SLOT_MAX, NEAR_COLOR, productName } from '@slicerx/contracts'
 
 /** The most filaments a project holds, as in the app. */
 export const MAX_FILAMENTS = COLOR_SLOT_MAX
@@ -57,4 +60,46 @@ export function listFilaments(setup: Readonly<Record<number, FilamentSetup>>, pr
 /** The default setup of filament `slot`, for one added with nothing given. */
 export function defaultFilament(slot: number, profileType: string): FilamentSetup {
   return { type: profileType, color: DEFAULT_COLORS[(slot - 1) % DEFAULT_COLORS.length]! }
+}
+
+/** A filament by its number, as the server and the mimir tab list them. */
+interface NumberedFilament {
+  slot: number
+  type: string
+  color: string
+}
+
+/** What project.add_filament says about the colors it takes, in the server's and the tab's descriptions. */
+export const ADD_FILAMENT_RULE = 'Add only a color something will print or paint in: a color the project already has in that material, or one close to it, is refused with the filament to use instead.'
+
+/** What project.set_filament changes, the start of the server's and the tab's descriptions. */
+export const SET_FILAMENT_LEAD = 'Change the color of a filament of the open project'
+
+/** What project.set_filament says about a filament's material, in the server's and the tab's descriptions. */
+export const SET_FILAMENT_RULE = 'Its material type stays: a type other than its own is refused, so add a filament with project.add_filament for another material.'
+
+/** The project's filament of `type` under NEAR_COLOR from `color`, the nearest first, if there is one. */
+export function sameFilament<F extends NumberedFilament>(all: readonly F[], type: string, color: string): F | undefined {
+  return all
+    .filter((f) => baseMaterial(f.type) === baseMaterial(type) && colorDistance(f.color, color) < NEAR_COLOR)
+    .sort((a, b) => colorDistance(a.color, color) - colorDistance(b.color, color) || a.slot - b.slot)[0]
+}
+
+/**
+ * Why project.add_filament refuses `patch` on a project with filaments `all`, if it does: a color the project already
+ * has in that material. A new filament with no type given takes `defaultType`; with no color given it takes the default
+ * color for its number and is never refused here.
+ */
+export function addFilamentRefusal(all: readonly NumberedFilament[], patch: { type?: string | undefined; color?: string | undefined }, defaultType: string): string | undefined {
+  if (patch.color === undefined) return undefined
+  const color = filamentColor(patch.color)
+  const same = sameFilament(all, patch.type !== undefined ? filamentType(patch.type) : defaultType, color)
+  return same ? `Filament ${same.slot} is already ${same.type} ${same.color}, close to ${color}: paint or print with filament ${same.slot}. Nothing was added.` : undefined
+}
+
+/** Why project.set_filament refuses `patch` on filament `cur`, if it does: a material type other than its own. */
+export function setFilamentRefusal(cur: NumberedFilament, patch: { type?: string | undefined }): string | undefined {
+  if (patch.type === undefined) return undefined
+  const type = filamentType(patch.type)
+  return baseMaterial(type) !== baseMaterial(cur.type) ? `Filament ${cur.slot} stays ${cur.type}: a filament's material is not changed. For ${type}, add a filament with project.add_filament. Nothing changed.` : undefined
 }

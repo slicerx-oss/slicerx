@@ -73,18 +73,20 @@ describe('project filaments over MCP', () => {
   it('sets 32 filaments and reads every one back', async () => {
     const h = await connect()
     await h.call('slicerx_project_open', { name: 'Thirty-two', printer: 'bambu_p1s', filament: 'pla' })
-    const color = (i: number) => `#${(i * 7).toString(16).padStart(2, '0')}80${(255 - i * 7).toString(16).padStart(2, '0')}`
+    // 80 or more apart in RGB, so no color is near another the project has
+    const hex = (v: number) => v.toString(16).padStart(2, '0')
+    const color = (i: number) => `#${hex((i % 4) * 80)}${hex((Math.floor(i / 4) % 4) * 80)}${hex(Math.floor(i / 16) * 120)}`
     for (let i = 2; i <= 32; i++) {
       const r = await h.call('slicerx_project_add_filament', { type: i % 2 ? 'petg' : 'pla', color: color(i) })
       expect(r.isError, text(r)).toBeFalsy()
       expect(data<Out>(r).output.filament?.slot).toBe(i)
     }
-    const last = await h.call('slicerx_project_set_filament', { slot: 32, type: 'tpu', color: '#123456' })
+    const last = await h.call('slicerx_project_set_filament', { slot: 32, color: '#123456' })
     expect(last.isError, text(last)).toBeFalsy()
     const shown = data<Out>(await h.call('slicerx_project_show')).output.filaments!
     expect(shown).toHaveLength(32)
     expect(shown[16]).toEqual({ slot: 17, type: 'PETG', color: color(17), source: 'set' })
-    expect(shown[31]).toEqual({ slot: 32, type: 'TPU', color: '#123456', source: 'set' })
+    expect(shown[31]).toEqual({ slot: 32, type: 'PLA', color: '#123456', source: 'set' })
   })
 
   it('takes filament 32 and no 33rd in the slice and STEP tools', async () => {
@@ -110,11 +112,75 @@ describe('project filaments over MCP', () => {
     const h = await connect({ engine: 'sx', sxBin })
     await h.call('slicerx_project_open', { printer: 'bambu_p1s', filament: 'pla' })
     await h.call('slicerx_project_add_model', { model: join(h.dir, 'cube.stl') })
-    await h.call('slicerx_project_set_filament', { slot: 1, type: 'PETG', color: '#00ff00' })
-    await h.call('slicerx_project_add_filament', { type: 'PLA', color: '#ffffff' })
+    await h.call('slicerx_project_set_filament', { slot: 1, color: '#00ff00' })
+    await h.call('slicerx_project_add_filament', { type: 'PETG', color: '#ffffff' })
     const sliced = await h.call('slicerx_slice')
     expect(sliced.isError, text(sliced)).toBeFalsy()
   }, sxTimeout)
+})
+
+describe('project filaments the server keeps, as the mimir tab does', () => {
+  /** A project on a printer's spools: PLA white, PLA black, PETG blue and TPU orange, as filaments 1 to 4. */
+  async function spools() {
+    const h = await connect()
+    await h.call('slicerx_project_open', { name: 'Boat', printer: 'bambu_p1s', filament: 'pla' })
+    const steps = [
+      await h.call('slicerx_project_set_filament', { slot: 1, color: '#ffffff' }),
+      await h.call('slicerx_project_add_filament', { type: 'PLA', color: '#1a1a1f' }),
+      await h.call('slicerx_project_add_filament', { type: 'PETG', color: '#3b82f6' }),
+      await h.call('slicerx_project_add_filament', { type: 'TPU', color: '#f97316' }),
+    ]
+    for (const r of steps) expect(r.isError, text(r)).toBeFalsy()
+    return h
+  }
+  const shown = async (h: Awaited<ReturnType<typeof connect>>) => data<Out>(await h.call('slicerx_project_show')).output.filaments!.map((f) => `${f.slot} ${f.type} ${f.color}`)
+  const START = ['1 PLA #ffffff', '2 PLA #1a1a1f', '3 PETG #3b82f6', '4 TPU #f97316']
+
+  it('refuses a color the project already has in that material, naming the filament to use, and adds nothing', async () => {
+    const h = await spools()
+    const near = await h.call('slicerx_project_add_filament', { type: 'PLA', color: '#1C1C1E' })
+    expect(near.isError).toBe(true)
+    expect(data(near)).toMatchObject({ ok: false, summary: 'Filament 2 is already PLA #1a1a1f, close to #1c1c1e: paint or print with filament 2. Nothing was added.' })
+    // with no type, the filament profile's (PLA): an off-white reads as the white the project has
+    const white = await h.call('slicerx_project_add_filament', { color: '#f2f2ee' })
+    expect(white.isError).toBe(true)
+    expect(data(white)).toMatchObject({ ok: false, summary: 'Filament 1 is already PLA #ffffff, close to #f2f2ee: paint or print with filament 1. Nothing was added.' })
+    expect(await shown(h)).toEqual(START)
+  })
+
+  it("refuses a filament's material change and changes nothing, not even the color asked with it", async () => {
+    const h = await spools()
+    const petg = await h.call('slicerx_project_set_filament', { slot: 3, type: 'pla', color: '#a8261c' })
+    expect(petg.isError).toBe(true)
+    expect(data(petg)).toMatchObject({ ok: false, summary: "Filament 3 stays PETG: a filament's material is not changed. For PLA, add a filament with project.add_filament. Nothing changed." })
+    expect(await shown(h)).toEqual(START)
+  })
+
+  it('still takes a recolor, its own material named again, and a new color or another material', async () => {
+    const h = await spools()
+    const recolor = await h.call('slicerx_project_set_filament', { slot: 1, type: 'pla', color: '#f2f2ee' })
+    expect(recolor.isError, text(recolor)).toBeFalsy()
+    expect(text(recolor)).toContain('Filament 1 is PLA #f2f2ee')
+    for (const [type, color] of [['PLA', '#a8261c'], ['PLA', '#d9a441'], ['PETG', '#1c1c1e']] as const) {
+      const r = await h.call('slicerx_project_add_filament', { type, color })
+      expect(r.isError, text(r)).toBeFalsy()
+    }
+    expect(await shown(h)).toEqual(['1 PLA #f2f2ee', '2 PLA #1a1a1f', '3 PETG #3b82f6', '4 TPU #f97316', '5 PLA #a8261c', '6 PLA #d9a441', '7 PETG #1c1c1e'])
+  })
+
+  it('describes the rule in the words the tab tools use', async () => {
+    const { ADD_FILAMENT_RULE, SET_FILAMENT_RULE } = await import('../src/filaments')
+    const { filamentTools } = await import('../src/toolset')
+    const tab = filamentTools({ list: () => [], add: () => undefined, set: () => undefined })
+    const h = await connect()
+    const tools = (await h.client.listTools()).tools
+    const add = tools.find((t) => t.name === 'slicerx_project_add_filament')!
+    const set = tools.find((t) => t.name === 'slicerx_project_set_filament')!
+    expect(add.description).toContain(ADD_FILAMENT_RULE)
+    expect(set.description).toContain(SET_FILAMENT_RULE)
+    expect(tab[0]!.description).toContain(ADD_FILAMENT_RULE)
+    expect(tab[1]!.description).toContain(SET_FILAMENT_RULE)
+  })
 })
 
 describe('project filaments from a shell', () => {

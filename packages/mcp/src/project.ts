@@ -229,8 +229,8 @@ export class McpProject implements PilotProject {
     for (const [k, v] of Object.entries(changes)) this.projectOverrides[k] = toSchemaValue(this.store.setting(k), v)
   }
 
-  /** The filament type the project's filament profile sets, for filaments no client set. */
-  private profileType(): string {
+  /** The filament type the project's filament profile sets, for filaments no client set (and one added with no type). */
+  profileType(): string {
     const t = this.baseConfig()['filament_type']
     const first = Array.isArray(t) ? t[0] : t
     return typeof first === 'string' && first ? first : 'PLA'
