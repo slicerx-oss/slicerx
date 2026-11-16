@@ -314,8 +314,8 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
    one line high so a pick moves nothing) over one row of chips. Every chip keeps room for its check and its border, so
    picking one changes only fill and border. */
 .mimir-chat .send-strip { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: color-mix(in srgb, var(--surface-card), var(--surface-page) 55%); }
-.mimir-chat .send-strip-head { display: flex; align-items: center; gap: var(--s-2); min-height: 20px; font: var(--fs-sm) var(--f-body); color: var(--t-mute); }
-.mimir-chat .send-strip-where { display: inline-flex; align-items: baseline; gap: var(--s-1); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mimir-chat .send-strip-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s-2); min-height: 20px; font: var(--fs-sm) var(--f-body); color: var(--t-mute); }
+.mimir-chat .send-strip-where { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s-1); min-width: 0; }
 .mimir-chat .send-strip-unit { color: var(--t-fg); font-weight: var(--fw-semibold); }
 .mimir-chat .send-strip-sep { opacity: 0.6; }
 .mimir-chat .send-strip-pick { margin-left: auto; flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }

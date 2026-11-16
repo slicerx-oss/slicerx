@@ -28,7 +28,7 @@ import { BED_CLEAR, sendPreflight, type SendCheck } from '../../plate/guard'
 import { sendLedger } from '../../plate/send-ledger'
 import { useApp } from '../../state/store'
 import { plateFingerprint } from './print-run'
-import { pickedLine, slotLabel, spoolUnits, stripHead, type SpoolChip } from './send-spools'
+import { pickedLine, slotInList, slotLabel, spoolUnits, stripHead, type SpoolChip } from './send-spools'
 import { CHIP_NAME, CHOOSE_MATERIAL, EMPTY_SLOT, FILE_UNMATCHED, NOT_SENT_TO, ONLY_YOU, OTHER_MATERIAL, PICK_AND_TICK, PICK_TO_PRINT, PRINT_NOW, SEND_TITLE, SENDING, SENT, SLIDE_STAYS_OFF, SLOTS_IN_USE, TICK_TO_PRINT } from './send-words'
 import { SlideToPrint, type SlideState } from './slide-to-print'
 
@@ -325,7 +325,7 @@ function SendCardView({ request, resolution, actionable, onApprove, onCancel, ru
               <span className="send-strip-printer">{head.printer}</span>
             </span>
             <span className="send-strip-pick" data-testid="mimir-send-pick" data-on={shownChip ? true : undefined} aria-live="polite">
-              {needsPick ? (shownChip ? pickedLine(shownChip) : CHOOSE_MATERIAL) : SLOTS_IN_USE(Object.values(feeds).map(slotLabel))}
+              {needsPick ? (shownChip ? pickedLine(shownChip) : CHOOSE_MATERIAL) : SLOTS_IN_USE(Object.values(feeds).map(slotInList))}
             </span>
           </div>
           <div className="send-strip-chips">
