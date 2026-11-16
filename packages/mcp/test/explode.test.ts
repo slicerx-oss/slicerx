@@ -2,12 +2,18 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Exploded views for clients: design.render draws a design's parts moved apart (the same offsets as the app's Spread
 // control) without touching the design, and the app tools read and set the open app's spread through the app link.
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it, vi } from 'vitest'
 import { explodeOffsets } from '@slicerx/contracts/explode'
 import { appExplodeTools, explodeSummary, type AppExplode } from '../src/app-explode'
 import type { AppLinkCaller } from '../src/app-route'
 import type { Designs } from '../src/design'
 import { designRenderTools, partBox } from '../src/design-render'
+import { createContext, createSlicerxServer } from '../src/index'
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 const block = (x: number, z = 0) => ({ name: `b${x}`, slot: 1 + x / 10, positions: [x, 0, z, x + 10, 0, z, x, 10, z, x, 0, z + 10], indices: [0, 2, 1, 0, 1, 3] })
@@ -114,5 +120,35 @@ describe('app explode tools', () => {
 
   it('says when the spread is not drawn now', () => {
     expect(explodeSummary({ spread: 40, axis: 'z', targets: [{ id: 'k', name: 'Kit', parts: 2 }], shown: false, held: true, drawn: {} })).toBe('Spread 40 percent along Z: Kit (2 parts). Not drawn now: the view shows the toolpaths or an edit tool is open.')
+  })
+
+  it('lists both tools over the official SDK, sets the spread and reads it back as a client would', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sx-explode-client-'))
+    let state: AppExplode = { spread: 0, axis: 'radial', targets: [{ id: 'k', name: 'Kit', parts: 2 }], shown: false, held: false, drawn: {} }
+    const call = vi.fn(async (method: string, args: Record<string, unknown>) => {
+      if (method === 'explode.set') state = { ...state, ...args, shown: true, drawn: { k: [[0, 0, 0], [0, 0, 12.5]] } }
+      return structuredClone(state)
+    })
+    const ctx = await createContext({ printers: 'off', outDir: dir, profilesDir: join(dir, 'profiles') })
+    // the server lists both, link or not
+    expect(ctx.tools.filter((t) => t.name.startsWith('app.explode')).map((t) => t.name)).toEqual(['app.explode', 'app.explode_set'])
+    ctx.tools = appExplodeTools({ call } as unknown as AppLinkCaller, 'SlicerX')
+    const server = createSlicerxServer(ctx)
+    const client = new Client({ name: 'explode-test', version: '1.0.0' })
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    try {
+      await Promise.all([server.connect(a), client.connect(b)])
+      expect((await client.listTools()).tools.filter((t) => t.name.startsWith('slicerx_app_explode')).map((t) => t.name)).toEqual(['slicerx_app_explode', 'slicerx_app_explode_set'])
+      expect(await client.callTool({ name: 'slicerx_app_explode_set', arguments: { spread: 100, axis: 'z' } })).toMatchObject({ structuredContent: { output: { spread: 100, axis: 'z', shown: true, drawn: { k: [[0, 0, 0], [0, 0, 12.5]] } } } })
+      expect(call).toHaveBeenLastCalledWith('explode.set', { spread: 100, axis: 'z' })
+      expect(await client.callTool({ name: 'slicerx_app_explode', arguments: {} })).toMatchObject({ structuredContent: { output: state } })
+      const before = call.mock.calls.length
+      for (const args of [{}, { spread: 101 }, { axis: 'w' }, { spread: '50' }]) expect(await client.callTool({ name: 'slicerx_app_explode_set', arguments: args }), JSON.stringify(args)).toMatchObject({ isError: true })
+      expect(call).toHaveBeenCalledTimes(before)
+    } finally {
+      await client.close()
+      await server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
