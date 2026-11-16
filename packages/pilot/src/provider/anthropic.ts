@@ -136,6 +136,17 @@ export function searchedPages(raw: readonly unknown[] | undefined): { url: strin
   return pages
 }
 
+/**
+ * A reply's content as the chat keeps it: a server tool call the provider never ran (a tool search streamed after a
+ * client tool call, when the reply stopped for the client's call) has no result block in the reply, and the provider
+ * refuses every later request that carries it unanswered, so it is left out. Every other block stays as it came,
+ * thinking included.
+ */
+export function withoutUnansweredServerCalls(raw: readonly unknown[]): unknown[] {
+  const answered = new Set(raw.filter((b) => isObj(b) && /_tool_result$/.test(str(b['type']))).map((b) => str((b as Obj)['tool_use_id'])))
+  return raw.filter((b) => !(isObj(b) && b['type'] === 'server_tool_use' && !answered.has(str(b['id']))))
+}
+
 // No maxTools: the Messages API documents no limit on the number of tools in a request.
 export function createAnthropicAdapter(): LlmAdapter {
   return {
@@ -322,7 +333,7 @@ export function createAnthropicAdapter(): LlmAdapter {
       }
       if (stop === 'end' && sawCall) stop = 'tool_calls'
       yield { type: 'usage', inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, ...(webSearches === undefined ? {} : { webSearches }) }
-      const raw = [...blocks.entries()].sort((a, b) => a[0] - b[0]).map(([, b]) => b)
+      const raw = withoutUnansweredServerCalls([...blocks.entries()].sort((a, b) => a[0] - b[0]).map(([, b]) => b))
       yield { type: 'done', stop, raw }
     },
   }
