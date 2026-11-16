@@ -26,9 +26,11 @@ export function baseKeys(ordinal: number, faces: number): Set<number> {
   return out
 }
 
+// A face's own keys and the keys faces without one came from (faces.from). A key that shows only as a from was made
+// inside the step it first shows after, such as a mirror's image, whose flush faces a join cleared in the same step.
 function keysOf(parts: readonly Pick<HistoryMesh, 'faces'>[]): Set<number> {
   const out = new Set<number>()
-  for (const p of parts) for (const k of p.faces?.keys ?? []) if (k > 0) out.add(k)
+  for (const p of parts) for (const k of [...(p.faces?.keys ?? []), ...(p.faces?.from ?? [])]) if (k > 0) out.add(k)
   return out
 }
 
@@ -110,13 +112,19 @@ export function featureSteps(steps: readonly Pick<Step, 'id' | 'feature' | 'para
   return out
 }
 
-/** The faces of `part` (ids in its `faces`) that steps `ids` made, by each face's key and `made` (key to step id). */
+/**
+ * The faces of `part` (ids in its `faces`) that steps `ids` made, by each face's key and `made` (key to step id). A face
+ * with no key of its own (a piece of a face a cut split, or one a join cleared) goes by the key it came from (`from`).
+ */
 export function facesMadeBySteps(part: Pick<HistoryMesh, 'faces'>, made: ReadonlyMap<number, string>, ids: ReadonlySet<string>): Set<number> {
   const out = new Set<number>()
   const keys = part.faces?.keys ?? []
-  keys.forEach((k, face) => {
+  const from = part.faces?.from ?? []
+  const count = Math.max(keys.length, from.length)
+  for (let face = 0; face < count; face++) {
+    const k = (keys[face] ?? 0) > 0 ? keys[face]! : (from[face] ?? 0)
     const by = k > 0 ? made.get(k) : undefined
     if (by && ids.has(by)) out.add(face)
-  })
+  }
   return out
 }

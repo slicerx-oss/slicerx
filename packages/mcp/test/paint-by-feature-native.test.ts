@@ -5,9 +5,10 @@
 // (the cut's walls are the cut feature's), and a boss mirrored to the other side, on exact solids and on the mesh. A
 // feature the design has none of is refused with the names it has.
 //
-// One gap is pinned here as it is: on exact solids a join clears the key of a face the joined shape sits flat on (the
-// tower's top around the pole's foot) and of faces a mirror image lands flush with, so no feature paints those. A part
-// built as a mesh is refused: a body a new extrude, revolve, loft or sweep makes there keeps no face keys.
+// On exact solids a join clears the key of a face the joined shape sits flat on (the tower's top around the pole's
+// foot) and of faces a mirror image lands flush with; each such face keeps the key it came from, so it paints with the
+// feature that made it. A part built as a mesh is refused: a body a new extrude, revolve, loft or sweep makes there
+// keeps no face keys.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clearReplayCache } from '@slicerx/cad-history'
 import { geomEngine } from '../src/geom'
@@ -115,9 +116,13 @@ describe('paint by feature on exact solids', () => {
     const c = await client()
     const d = await tower(c)
     const area = await poleOnly(c, d)
-    // the tower: its four sides and its bottom. Its top around the pole's foot lost its key to the join, so it stays bare
-    expect(await c.paint(d, 'Tower', 3)).toBeCloseTo(4 * 600 + 400, 1)
-    expect((await c.painted(d, 3))!.regions.every((r) => r.boundsMm.max[2] < 30.01)).toBe(true)
+    // the tower: its four sides, its bottom and its top around the pole's foot, whose key the join cleared and which
+    // still came from the tower's top. The foot is facets a little inside its circle, so a little more than the circle
+    // is left of the top
+    const towerArea = await c.paint(d, 'Tower', 3)
+    expect(towerArea).toBeGreaterThan(4 * 600 + 2 * 400 - 9 * Math.PI)
+    expect(towerArea).toBeLessThan(4 * 600 + 2 * 400 - 9 * Math.PI * 0.97)
+    expect((await c.painted(d, 3))!.regions.some((r) => r.boundsMm.max[2] > 29.99)).toBe(true)
     expect((await c.painted(d, 2))!.areaMm2).toBeCloseTo(area, 1)
   })
 
@@ -133,17 +138,23 @@ describe('paint by feature on exact solids', () => {
     expect((await c.painted(d, 2))!.areaMm2).toBeCloseTo(4 * HOLE_MM2, 1)
   })
 
-  it.skipIf(skip)(`a mirrored feature is painted on both sides, but for the faces the mirror image lands flush with${because}`, async () => {
+  it.skipIf(skip)(`a mirrored feature is painted on both sides, the faces the mirror image lands flush with included${because}`, async () => {
     const c = await client()
     const d = await start(c, 'Block')
     await c.ok('geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, distance_mm: 10, feature: 'Block' })
     await c.ok('geom_extrude', boss(d, -10, 0))
     await c.ok('geom_mirror', { design: d, plane: { axis: 'x', at: 0 }, steps: [2] })
-    // the two bosses' tops and their sides toward y lie flush with the image's, and the join clears their keys: the
-    // sides toward x and away from it, 4 x 2 mm each, are what is left on each boss
-    expect(await c.paint(d, 'Boss', 2)).toBeCloseTo(2 * 2 * 8, 1)
+    // the two bosses' tops and their sides toward y lie flush with the image's, and the join clears their keys; each
+    // keeps the key it came from, so each boss paints whole: its 4 x 4 top and four 4 x 2 sides
+    expect(await c.paint(d, 'Boss', 2)).toBeCloseTo(2 * (16 + 4 * 8), 1)
     const two = (await c.painted(d, 2))!
+    expect(two.regionCount).toBe(2)
     expect(new Set(two.regions.map((r) => Math.sign(r.boundsMm.min[0])))).toEqual(new Set([-1, 1]))
+    // the image's top came from a key made inside the mirror step, so the mirror made it
+    const faces = (await c.ok<{ faces: { center: V3; normal: V3; key?: number; from?: number; madeBy: string }[] }>('geom_faces', { design: d, limit: 100 })).faces
+    const imageTop = faces.find((f) => f.center[0] > 9.99 && f.center[0] < 10.01 && f.center[2] > 11.99)!
+    expect(imageTop).toMatchObject({ from: expect.any(Number), madeBy: 'Mirror of 1 step' })
+    expect(imageTop.key).toBeUndefined()
   })
 
   it.skipIf(skip)(`refuses a feature the design has none of, with the names it has${because}`, async () => {

@@ -817,7 +817,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const faces = defineTool({
     name: 'geom.faces',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'read',
     description:
