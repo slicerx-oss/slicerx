@@ -305,6 +305,13 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `object-select` | The row's button: selects it (Cmd or Ctrl adds it); a double-click or F2 renames it |
 | `object-name` | The object's name in the row |
 | `object-warning` | The row's warning icon (off the bed, a missing filament); `data-kind` names the first, the tooltip lists all |
+| `explode-bar` | The Spread bar over the view, shown while an object with two or more parts is selected; `data-held` while an edit tool holds the parts home |
+| `explode-spread` | Spread: how far the parts move apart, 0 to 100 percent |
+| `explode-axis-radial` | Spread the parts out from the middle of the object |
+| `explode-axis-x` | Spread the parts along X |
+| `explode-axis-y` | Spread the parts along Y |
+| `explode-axis-z` | Spread the parts along Z: the lowest part stays, the others rise |
+| `explode-hint` | The bar's line saying the parts are back in place while an edit tool holds them |
 | `object-lock`, `object-printable` | Lock, and leave out of the print |
 | `object-rename` | The name field that replaces the row's name while renaming |
 | `object-part-slot` | The filament ring of a part in the row's tree, one per part; opens the slot menu |
