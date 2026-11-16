@@ -259,6 +259,12 @@ export interface PilotTool<I = unknown> {
    * exactly the host calls the approval plan lists.
    */
   agentWork?(input: I, ctx: ToolContext): Promise<AgentWork>
+  /**
+   * For a send whose card lets the person pick the spool (printer.queue): the same call fed from the slots the person
+   * picked (0 based filament index to slot id). Throws when the pick cannot be sent, such as a slot the printer does
+   * not report as loaded. Only a person's answer on the card reaches it, never model output.
+   */
+  repick?(input: I, slotMap: Record<string, string>, ctx: ToolContext): Promise<I>
   /** Display form of the arguments, shown as the row's command line. */
   args?(input: I): string
   /** The input as the tool_call event and session log carry it, when the raw input may hold something never to show (a refused secret). */

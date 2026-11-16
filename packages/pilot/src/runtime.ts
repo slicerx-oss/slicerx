@@ -26,7 +26,7 @@ import type {
   SettingsDiff,
   ToolSpec,
 } from '@slicerx/contracts'
-import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams, pluginLoads } from '@slicerx/contracts'
+import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams, pickedRequestId, pluginLoads } from '@slicerx/contracts'
 import { productName } from '@slicerx/contracts'
 import { isGeomStuckFinal } from '@slicerx/contracts/geom-limits'
 import { conversationFileBytes, modelFiles } from './attach'
@@ -1109,7 +1109,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     })
   }
 
-  type Gated = { kind: 'run'; token?: ApprovalToken } | { kind: 'blocked'; message: string; stop: boolean }
+  /** `input`: the call as the person approved it, when their answer changed it (a spool picked on the send card). */
+  type Gated = { kind: 'run'; token?: ApprovalToken; input?: unknown } | { kind: 'blocked'; message: string; stop: boolean }
 
   async function gate(tool: AnyTool, input: unknown, sessionId: string, ctx: ToolContext, emit: (e: PilotEvent) => void, signal: AbortSignal): Promise<Gated> {
     const permission = tool.permissionFor?.(input) ?? tool.permission
@@ -1171,6 +1172,25 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       await opts.host.approvals.deny(request.id, decision.reason).catch(() => undefined)
       emit({ type: 'approval_resolved', requestId: request.id, decision, by: 'user' })
       return { kind: 'blocked', message: `The user declined${decision.reason ? ` (${decision.reason})` : ''}. Nothing was done. Do not retry this step.`, stop: true }
+    }
+    // A spool the person picked on the send card: the same send from that slot, as a request of its own that the
+    // person's answer grants. The card's own request is turned down, so only the picked one can reach the printer.
+    if (decision.slotMap && tool.repick) {
+      try {
+        const picked = await tool.repick(input, decision.slotMap, ctx)
+        const next: ApprovalRequest = { ...(await buildApprovalRequest(tool, picked, ctx, { id: pickedRequestId(request.id), sessionId, expiresAt: request.expiresAt })), origin: 'pilot' }
+        if (askReasons.length) next.lines = [...next.lines, ...askReasons]
+        await opts.host.approvals.register(next)
+        await opts.host.approvals.deny(request.id, 'replaced').catch(() => undefined)
+        const token = await grantApproval(opts.host.approvals, next, decision.bedClear === true)
+        emit({ type: 'approval_resolved', requestId: request.id, decision, by: 'user' })
+        return { kind: 'run', token, input: picked }
+      } catch (e) {
+        undoSend()
+        await opts.host.approvals.deny(request.id, 'failed').catch(() => undefined)
+        emit({ type: 'approval_resolved', requestId: request.id, decision: { kind: 'deny', reason: 'failed' }, by: 'user' })
+        return { kind: 'blocked', message: `${errorText(e)} Nothing was sent. Tell the user what to change; do not retry the same send.`, stop: false }
+      }
     }
     const token = await grantApproval(opts.host.approvals, request, decision.bedClear === true)
     emit({ type: 'approval_resolved', requestId: request.id, decision, by: 'user' })
@@ -1406,14 +1426,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     if (gated.kind === 'blocked') return { message: JSON.stringify({ ok: false, blocked: true, message: gated.message }), stop: gated.stop }
     if (gated.token) ctx.token = gated.token
+    // the call as the person approved it: their spool pick on the send card names the slots it sends from
+    const ran = (gated.input ?? input) as typeof input
 
-    emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
+    emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(ran) ?? ran, args: tool.args?.(ran) ?? argLine(ran) })
     const t0 = now()
     let out: ToolOutput
     // the model's text of a tool's own written refusal, longer than the row's (REFUSAL_TEXT)
     let refusal: string | undefined
     try {
-      out = await tool.run(input, ctx)
+      out = await tool.run(ran, ctx)
     } catch (e) {
       // a tool that throws a refusal of its input (the MCP tools' invalid_input) refused the call, as one that says so
       const refused = (e as { code?: unknown } | null)?.code === 'invalid_input'

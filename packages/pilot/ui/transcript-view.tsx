@@ -21,7 +21,7 @@ import { WorkLoop } from './work-loop'
 import { loopSegments, loopStopped, type Segment } from './work-loop-model'
 
 export interface ApprovalHandlers {
-  onApprove: (request: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
+  onApprove: (request: ApprovalRequest, opts: { bedClear: boolean; slotMap?: Record<string, string> }) => Promise<void>
   onCancel: (request: ApprovalRequest) => Promise<void>
   onEditPlan?: ((request: ApprovalRequest) => void) | undefined
   /**
@@ -92,7 +92,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
           onApprove={approvals.onApprove}
           onCancel={approvals.onCancel}
           onEditPlan={approvals.onEditPlan}
-          {...(Own ? { run: run ?? null } : {})}
+          {...(Own ? { run: run ?? null, outcome: block.callId === undefined ? undefined : (block.outcome ?? null) } : {})}
         />
       )
     }

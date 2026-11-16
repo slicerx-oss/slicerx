@@ -532,6 +532,23 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
         ],
       }
     },
+    // The spool the person picked on the send card: the same send, each filament the card showed fed from the slot
+    // picked for it. Only a slot the printer reports with a spool in it is taken; the request this makes lists the slot
+    // map as any card does, and the person's answer grants it.
+    async repick(i, slotMap, ctx) {
+      const shown = ctx.run?.get().send
+      const name = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)?.name ?? i.printerId
+      const want = Object.keys(shown?.slots ?? {}).map((k) => String(Number(k) - 1))
+      const given = Object.keys(slotMap)
+      if (!shown || shown.printerId !== i.printerId || want.length === 0 || given.length !== want.length || given.some((k) => !want.includes(k))) {
+        throw refusal('pick_mismatch', `The spool picked on the card does not fit this send to ${name}, so nothing was sent.`)
+      }
+      const status = await ctx.host.printers.status(i.printerId).catch(() => null)
+      for (const slot of Object.values(slotMap)) {
+        if (!status?.slots.some((s) => s.id === slot && s.material)) throw refusal('slot_not_loaded', `${name} reports no spool in slot ${slot}, so nothing was sent.`)
+      }
+      return { ...i, slotMap }
+    },
     // Over MCP only a person may approve this; the hub then uploads and starts the same file.
     async agentWork(i, ctx) {
       const plan = await planQueue(shared, ctx, i, true)
