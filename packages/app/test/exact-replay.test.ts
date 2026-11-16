@@ -5,7 +5,7 @@
 // what they send it, and how a step falls back to the mesh when the kernel fails. The kernel itself is tested in
 // packages/brep (cargo) and brep-module.test.ts.
 import { beforeEach, expect, it } from 'vitest'
-import { EXACT_FELL_BACK, EXACT_OPS, IDENTITY, clearReplayCache, replayHistory, stepSalt, type History, type Step, type StepParams } from '@slicerx/cad-history'
+import { EXACT_FELL_BACK, EXACT_OPS, IDENTITY, clearReplayCache, replayHistory, stepSalt, translation, type History, type Step, type StepParams, type Vec3 } from '@slicerx/cad-history'
 import { primitive } from '../src/plate/mesh-ops'
 
 const tri = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }
@@ -179,7 +179,29 @@ it('joins and cuts a sketch on a face into the solid, and a shape that misses br
   const away = async (op: string, req: unknown) => (op === 'brep.extrude' && (req as { target?: unknown }).target ? { touches: false, body: null } : e.call(op, req))
   clearReplayCache()
   const m = await replayHistory(away, { history: history(box, on('cut', 'pocket-1')), exact: true })
-  expect(m.status[1]).toEqual({ state: 'broken', message: 'The shape no longer reaches the part.' })
+  expect(m.status[1]).toEqual({ state: 'broken', message: "The cut's shape sits at x -2 to 2, y -2 to 2, z -3 to 0, 0.0 mm short of the part." })
+})
+
+it('says where a join or cut that misses sits against the part, in the frame the design tools read points in', async () => {
+  // the part is the stand-in kernel's triangle: x 0 to 10, y 0 to 10, z 0
+  const e = engine()
+  const away = async (op: string, req: unknown) => (op === 'brep.extrude' && (req as { target?: unknown }).target ? { touches: false, body: null } : e.call(op, req))
+  const on = (operation: 'join' | 'cut', origin: Vec3, normal: Vec3, u: Vec3, v: Vec3, transform?: number[]) => step('hole-1', { op: 'shape.extrude', frame: { origin, normal, u, v }, shape: { type: 'circle', diameterMm: 2 }, spec: { distanceMm: 2, operation } } as StepParams, transform)
+  const said = async (h: History) => {
+    clearReplayCache()
+    return (await replayHistory(away, { history: h, exact: true })).status[1]
+  }
+  // a cut 140 mm off the part's side runs into the face, from y 150 to 152; a join runs out of it, from 148 to 150
+  const side = (operation: 'join' | 'cut') => on(operation, [5, 150, 0], [0, -1, 0], [1, 0, 0], [0, 0, 1])
+  expect(await said(history(box, side('cut')))).toEqual({ state: 'broken', message: "The cut's shape sits at x 4 to 6, y 150 to 152, z -1 to 1, 140.0 mm from the part (x 0 to 10, y 0 to 10, z 0)." })
+  expect(await said(history(box, side('join')))).toEqual({ state: 'broken', message: "The join's shape sits at x 4 to 6, y 148 to 150, z -1 to 1, 138.0 mm from the part (x 0 to 10, y 0 to 10, z 0)." })
+  // a cut wholly below the part
+  expect(await said(history(box, on('cut', [5, 5, -50], [0, 0, 1], [1, 0, 0], [0, 1, 0])))).toEqual({ state: 'broken', message: "The cut's shape sits at x 4 to 6, y 4 to 6, z -52 to -50, under the part (x 0 to 10, y 0 to 10, z 0)." })
+  // a design moved onto the bed by (20, 30): its steps stand at the plate, and the sentence reads in the design's own
+  // frame, as the points given and the bounds read back do
+  const t = translation([20, 30, 0])
+  const moved: History = { ...history({ ...box, transform: t }, on('cut', [25, 180, 0], [0, -1, 0], [1, 0, 0], [0, 0, 1], t)), placed: [20, 30] }
+  expect(await said(moved)).toEqual({ state: 'broken', message: "The cut's shape sits at x 4 to 6, y 150 to 152, z -1 to 1, 140.0 mm from the part (x 0 to 10, y 0 to 10, z 0)." })
 })
 
 it('sends circles as circles and polygons as their corners, turned and moved as the engine places them', async () => {

@@ -3,7 +3,7 @@
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { flatFaces, frameFor, triangleAt } from '../src/cad'
+import { flatFaces, frameFor, triangleAt, withAxes } from '../src/cad'
 import { readStlPositions } from '../src/mesh'
 import { boxStl, built, connect, data, GEOM_BUILD } from './helpers'
 
@@ -61,6 +61,30 @@ describe('face lookup without the engine', () => {
     const wall = frameFor([0, 0, 0], [0, -1, 0])
     expect(wall.u).toEqual([1, 0, 0])
     expect(wall.v[2]).toBeCloseTo(1)
+    // sx-geom FaceFrame::for_normal on +Y: u is -X, v is normal x u, +Z
+    expect(frameFor([0, 0, 0], [0, 1, 0])).toEqual({ origin: [0, 0, 0], normal: [0, 1, 0], u: [-1, 0, 0], v: [0, 0, 1] })
+  })
+})
+
+describe('a join or cut that missed, on a frame given with no u', () => {
+  const where = "The step did not go through: The cut's shape sits at x -61 to -59, y 10.25 to 11.25, z 8 to 10, 61.0 mm from the part (x 1 to 214, y -11.25 to 11.25, z 0 to 42.56). The design is unchanged."
+  const said = (message: string, frame: Parameters<typeof withAxes>[1]) => (withAxes(new Error(message), frame) as Error).message
+
+  it('says which way the sketch u and v ran, before the design is unchanged', () => {
+    expect(said(where, { origin: [0, 11.25, 0], normal: [0, 1, 0] })).toBe(
+      "The step did not go through: The cut's shape sits at x -61 to -59, y 10.25 to 11.25, z 8 to 10, 61.0 mm from the part (x 1 to 214, y -11.25 to 11.25, z 0 to 42.56). This frame's sketch u runs along -X and v along +Z; give frame.u to choose them. The design is unchanged.",
+    )
+    // an axis off X, Y and Z is named by its direction
+    expect(said("The join's shape sits at x 1, y 2, z 3, 0.0 mm short of the part.", { origin: [0, 0, 0], normal: [1, 1, 0] })).toBe(
+      "The join's shape sits at x 1, y 2, z 3, 0.0 mm short of the part. This frame's sketch u runs along [-0.71, 0.71, 0] and v along +Z; give frame.u to choose them.",
+    )
+  })
+
+  it('adds nothing with u given, with no frame, or to another refusal', () => {
+    expect(said(where, { origin: [0, 11.25, 0], normal: [0, 1, 0], u: [1, 0, 0] })).toBe(where)
+    expect(said(where, undefined)).toBe(where)
+    const short = 'The step did not go through: The shape stops 1.2 mm short of the part. The design is unchanged.'
+    expect(said(short, { origin: [0, 0, 0], normal: [0, 1, 0] })).toBe(short)
   })
 })
 
