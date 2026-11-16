@@ -114,10 +114,14 @@ export const planDetailFields = {
   ends: z.record(text(60), endsValue).optional(),
 }
 
+/** A flat body's levels, as design.plan describes them. */
+export const LEVELS_HELP =
+  'Its levels from the bottom up, each a planned feature; a single block lists only itself. At display and fine, each level that carries another has a thin roof reaching about one nozzle width past its walls, built with the level, so the level above stands on it and its edge shows.'
+
 /** One flat-sided main body as design.plan takes it: the feature that builds it and its levels from the bottom up. */
 const FLAT_BODY = z.object({
   feature: text(60).describe('The feature that builds the body'),
-  levels: z.array(text(60)).min(1).max(12).describe('Its levels from the bottom up, each a planned feature; a single block lists only itself'),
+  levels: z.array(text(60)).min(1).max(12).describe(LEVELS_HELP),
   ends: endsValue.optional().describe(ENDS_HELP),
 })
 
