@@ -53,7 +53,7 @@ describe('a follow-up on a design whose check already failed', () => {
       expect(summary).not.toContain(BROKE)
       expect(summary).not.toContain(UNDO)
       // the result lists the failed item as any failed check does
-      expect(summary).toMatch(/^Stand \(d1, tied to the plan\): 1 of \d+ checks against plan plan_1 failed: stands on \(want .*, got Top stands on Block, but its base is 6 mm above its top[^)]*\) \(plan revision 2\)$/)
+      expect(summary).toMatch(/^Stand \(d1, tied to the plan\): 1 of \d+ checks against plan plan_1 failed: stands on \(want .*, got Top stands on Block, but its base is 6 mm above its top[^)]*\) \(plan revision 2\)\. These items failed before this change too, so the change did not cause them\. Keep the change, do not undo it, and say in one line which item was already open; make whatever else the person asked for\.$/)
     }
   })
 

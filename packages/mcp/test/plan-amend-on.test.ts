@@ -43,8 +43,8 @@ describe('an amend that moves a feature onto another body', () => {
     expect(before.got).toMatch(/^Top stands on Block, but its base is 6 mm above its top/)
     const r = await run('design.plan', { amends: 'plan_1', asked: 'the top sits on the stand', features: onStand(STAND_PLAN) })
     expect(r.ok).not.toBe(false)
-    // nothing but the link changed: the result lists no size, and the plan it returns has the new link
-    expect(r.summary).toBe('Plan changed as asked (revision 2). Build to it as changed')
+    // nothing but the link changed: the result lists the move and no size, and the plan it returns has the new link
+    expect(r.summary).toBe('Plan changed as asked (revision 2): Top on Stand, not Block. Build to it as changed')
     expect((r.output as { edits: PartPlan }).edits.features.find((f) => f.name === 'Top')!.on).toBe('Stand')
     expect(cards).toEqual([])
     expect(plans.get('plan_1')!.plan.features.map((f) => [f.name, f.on])).toEqual([['Block', undefined], ['Stand', 'Block'], ['Top', 'Stand']])
@@ -56,7 +56,7 @@ describe('an amend that moves a feature onto another body', () => {
     expect((await stands()).pass).toBe(false)
     const r = await run('design.plan', { amends: 'plan_1', reason: 'The top was built on the stand, so it stands on the stand.', features: onStand(STAND_PLAN) })
     expect(r.ok).not.toBe(false)
-    expect(r.summary).toBe('Plan changed (revision 2). Build to it as changed')
+    expect(r.summary).toBe('Plan changed (revision 2): Top on Stand, not Block. Build to it as changed')
     expect(cards).toEqual(['Plan change'])
     expect((await stands()).pass).toBe(true)
   })
@@ -71,7 +71,7 @@ describe('an amend that moves a feature onto another body', () => {
     const stands = async () => ((await run('design.check', { planId: 'plan_1' })).output as { items: Item[] }).items.find((i) => i.name === 'stands on')!
     expect((await stands()).pass).toBe(false)
     const r = await run('design.put_plan', { plan: { ...client, features: onStand(client as PartPlan) }, amends: 'plan_1', reason: 'The top stands on the stand.' })
-    expect(r.summary).toMatch(/^Changed plan plan_1 for Stand \(revision 2\)\. Build to it as changed/)
+    expect(r.summary).toMatch(/^Changed plan plan_1 for Stand \(revision 2\): Top on Stand, not Block\. Build to it as changed/)
     expect((await stands()).pass).toBe(true)
     expect(plans.get('plan_1')!.plan.features.find((f) => f.name === 'Top')!.on).toBe('Stand')
   })
@@ -91,17 +91,17 @@ describe('what an amend still cannot carry', () => {
 
   it("refuses a row of holes' recess changed, beside a link that is now taken", () => {
     const next = { ...lidded, features: onStand(lidded), holes: [{ name: 'Lid vent', diameter: 3, count: 2, recess: true }] }
-    expect(amendDropProblem(lidded, next)).toBe('holes: an amend changes sizes only; Lid vent takes no recess')
+    expect(amendDropProblem(lidded, next)).toBe('holes: an amend changes sizes and on only; Lid vent takes no recess')
   })
 
   it("refuses a client's kept field given otherwise, beside a link that is now taken", () => {
-    expect(amendDropProblem(STAND_PLAN, { ...STAND_PLAN, features: onStand(STAND_PLAN), scale: 25 } as PartPlan)).toBe('scale: an amend changes sizes only; leave out scale')
+    expect(amendDropProblem(STAND_PLAN, { ...STAND_PLAN, features: onStand(STAND_PLAN), scale: 25 } as PartPlan)).toBe('scale: an amend changes sizes and on only; leave out scale')
   })
 
   it("refuses a dropped feature, and a build's amend that changes how a feature is made, in the tab, as before", async () => {
     const { run } = tab()
     await expect(run('design.plan', { amends: 'plan_1', asked: 'drop the top', features: STAND_PLAN.features.slice(0, 2) })).rejects.toThrow('features: an amend keeps every planned feature, in order')
     const lofted = onStand(STAND_PLAN).map((f) => (f.name === 'Top' ? { ...f, kind: 'loft' } : f))
-    await expect(run('design.plan', { amends: 'plan_1', reason: 'The top is lofted.', features: lofted })).rejects.toThrow('features: an amend changes sizes only; feature 3 stays "Top"')
+    await expect(run('design.plan', { amends: 'plan_1', reason: 'The top is lofted.', features: lofted })).rejects.toThrow('features: an amend changes sizes and on only; feature 3 stays "Top"')
   })
 })

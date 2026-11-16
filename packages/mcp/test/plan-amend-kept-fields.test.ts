@@ -104,21 +104,21 @@ describe('design.plan with amends, for a field an amend does not keep', () => {
   it('takes an amend that only moves the row onto another feature, listing no size', async () => {
     const t = tab()
     const out = await t.run({ ...row(onDeck), amends: ID, reason })
-    expect(out.summary).toBe('Plan changed (revision 2). Build to it as changed')
+    expect(out.summary).toBe('Plan changed (revision 2): Funnel array on Upper deck house, not Funnel. Build to it as changed')
     expect(funnels(t)).toMatchObject({ on: 'Upper deck house', sizes: { count: 4, spacing: 21 } })
     expect(t.cards).toEqual(['Plan change'])
   })
 
   it('refuses one that moves the row and adds a size, as it keeps its sizes', async () => {
     const t = tab()
-    await expect(t.run({ ...row((r) => ({ ...onDeck(r), sizes: { ...r.sizes, height: 15 } })), amends: ID, reason })).rejects.toThrow('features: an amend changes sizes only; Funnel array keeps the sizes count, spacing')
+    await expect(t.run({ ...row((r) => ({ ...onDeck(r), sizes: { ...r.sizes, height: 15 } })), amends: ID, reason })).rejects.toThrow('features: an amend changes sizes and on only; Funnel array keeps the sizes count, spacing')
     t.unchanged()
   })
 
   it('takes one that moves the row with a spacing change, and the plan keeps both', async () => {
     const t = tab()
     const out = await t.run({ ...row((r) => onDeck(spaced(r))), amends: ID, reason })
-    expect(out.summary).toBe('Plan changed (revision 2): Funnel array spacing 21 mm to 22 mm. Build to it as changed')
+    expect(out.summary).toBe('Plan changed (revision 2): Funnel array on Upper deck house, not Funnel, Funnel array spacing 21 mm to 22 mm. Build to it as changed')
     expect(funnels(t)).toMatchObject({ on: 'Upper deck house', sizes: { spacing: 22 } })
   })
 
@@ -147,25 +147,25 @@ describe('design.plan with amends, for a field an amend does not keep', () => {
     const t = tab()
     const was = structuredClone(t.card.plans.get(ID)!.plan) as unknown as Record<string, unknown>
     const out = await t.run({ ...row(spaced), [field]: value, amends: ID, reason: 'Wider spacing.' })
-    expect(out.summary).toBe(`Plan changed (revision 2): Funnel array spacing 21 mm to 22 mm. Build to it as changed. Ignored ${field}: an amend changes sizes only, so the plan keeps it as approved`)
+    expect(out.summary).toBe(`Plan changed (revision 2): Funnel array spacing 21 mm to 22 mm. Build to it as changed. Ignored ${field}: an amend changes sizes and on only, so the plan keeps it as approved`)
     expect((out.output as PlanAnswer).ignored).toEqual([field])
     expect((t.card.plans.get(ID)!.plan as unknown as Record<string, unknown>)[field]).toEqual(was[field])
     // design.put_plan refuses the same field with the words it always used
-    expect(amendDropProblem(was as unknown as PartPlan, { ...row(spaced), [field]: value } as unknown as PartPlan)).toBe(`${field}: an amend changes sizes only; ${keeps}`)
+    expect(amendDropProblem(was as unknown as PartPlan, { ...row(spaced), [field]: value } as unknown as PartPlan)).toBe(`${field}: an amend changes sizes and on only; ${keeps}`)
   })
 
   it('refuses a hole row whose recess changes with its diameter', async () => {
     const t = tab()
     const vented = { ...liner, holes: [{ name: 'Vent', diameter: 3, count: 4, recess: true }] } as PlanInput
     t.card.plans.put(structuredClone({ planId: ID, ...vented }) as PartPlan, 'd1', 'card')
-    await expect(t.run({ ...vented, holes: [{ name: 'Vent', diameter: 3.4, count: 4 }], amends: ID, reason: 'Wider vents.' })).rejects.toThrow('holes: an amend changes sizes only; Vent keeps recess: true')
+    await expect(t.run({ ...vented, holes: [{ name: 'Vent', diameter: 3.4, count: 4 }], amends: ID, reason: 'Wider vents.' })).rejects.toThrow('holes: an amend changes sizes and on only; Vent keeps recess: true')
     expect(t.card.plans.get(ID)!.plan.holes).toEqual([{ name: 'Vent', diameter: 3, count: 4, recess: true }])
   })
 
   it('takes a change the person asked for that moves the row, with no card', async () => {
     const t = tab()
     const out = await t.run({ ...row((r) => onDeck(spaced(r))), amends: ID, asked: 'put the funnels on the deck house, 22 mm apart' })
-    expect(out.summary).toBe('Plan changed as asked (revision 2): Funnel array spacing 21 mm to 22 mm. Build to it as changed')
+    expect(out.summary).toBe('Plan changed as asked (revision 2): Funnel array on Upper deck house, not Funnel, Funnel array spacing 21 mm to 22 mm. Build to it as changed')
     expect(funnels(t)).toMatchObject({ on: 'Upper deck house', sizes: { spacing: 22 } })
     expect(t.cards).toEqual([])
   })
@@ -203,15 +203,15 @@ describe('design.put_plan with amends, for a field an amend does not keep', () =
     plans.put(structuredClone(mine), 'd1', 'client')
     const run = (input: unknown) => put.run(put.input.parse(input) as never, { context: { machine } } as unknown as ToolContext)
     // its plan takes no detail fields; printInPlace is the plan field it takes and an amend keeps
-    await expect(run({ plan: { ...mine, ...row(spaced), printInPlace: false }, amends: 'liner-1', reason })).rejects.toThrow('printInPlace: an amend changes sizes only; leave out printInPlace')
+    await expect(run({ plan: { ...mine, ...row(spaced), printInPlace: false }, amends: 'liner-1', reason })).rejects.toThrow('printInPlace: an amend changes sizes and on only; leave out printInPlace')
     const vented = { ...mine, holes: [{ name: 'Vent', diameter: 3, count: 4, recess: true }] }
     plans.put(structuredClone(vented), 'd1', 'client')
-    await expect(run({ plan: { ...vented, holes: [{ name: 'Vent', diameter: 3.4, count: 4 }] }, amends: 'liner-1', reason: 'Wider vents.' })).rejects.toThrow('holes: an amend changes sizes only; Vent keeps recess: true')
+    await expect(run({ plan: { ...vented, holes: [{ name: 'Vent', diameter: 3.4, count: 4 }] }, amends: 'liner-1', reason: 'Wider vents.' })).rejects.toThrow('holes: an amend changes sizes and on only; Vent keeps recess: true')
     expect(plans.get('liner-1')!.plan).toEqual(vented)
     expect(plans.get('liner-1')!.revision).toBeUndefined()
     plans.put(structuredClone(mine), 'd1', 'client')
     const out = await run({ plan: moved, amends: 'liner-1', reason })
-    expect(out.summary).toMatch(/^Changed plan liner-1 for Titanic 1:1250 display model \(revision 2\): Funnel array spacing 21 mm to 22 mm\./)
+    expect(out.summary).toMatch(/^Changed plan liner-1 for Titanic 1:1250 display model \(revision 2\): Funnel array on Upper deck house, not Funnel, Funnel array spacing 21 mm to 22 mm\./)
     expect(plans.get('liner-1')!.plan.features.find((f) => f.name === 'Funnel array')!.on).toBe('Upper deck house')
   })
 

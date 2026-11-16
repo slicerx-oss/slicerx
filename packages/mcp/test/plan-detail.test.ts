@@ -247,8 +247,8 @@ describe('detailProblem: the rules are about the object', () => {
     // sunk, with a height planned
     expect(got(15, 14.5, 29.5)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 6.65 mm below its top, so 8.35 mm of it shows of a planned 15 mm; build it from the top of Upper deckhouse, whose highest point is at z 21.15 mm')
     // floating, with a height planned or not
-    expect(got(15, 21.95, 36.95)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 0.8 mm above its top, so it floats; build it from the top of Upper deckhouse, whose highest point is at z 21.15 mm')
-    expect(got(undefined, 21.95, 36.95)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 0.8 mm above its top, so it floats; build it from the top of Upper deckhouse, whose highest point is at z 21.15 mm')
+    expect(got(15, 21.95, 36.95)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 0.8 mm above its top, so it floats; build it from the top of Upper deckhouse, whose highest point is at z 21.15 mm: with design.edit_step, move the step that makes Funnel 1 by [0, 0, -0.8]')
+    expect(got(undefined, 21.95, 36.95)).toBe('Funnel 1 stands on Upper deckhouse, but its base is 0.8 mm above its top, so it floats; build it from the top of Upper deckhouse, whose highest point is at z 21.15 mm: with design.edit_step, move the step that makes Funnel 1 by [0, 0, -0.8]')
     // on the top, its planned height not showing
     expect(got(15, 21.15, 29.5)).toBe('Funnel 1 stands on Upper deckhouse, but 8.35 mm of it shows of a planned 15 mm; make it 15 mm tall above the top of Upper deckhouse, whose highest point is at z 21.15 mm')
     // sunk, with no height planned: the base alone
@@ -271,7 +271,7 @@ describe('detailProblem: the rules are about the object', () => {
     // from x 35 to 52 the deck has begun to rise: between its sections at x 30 and 70 it is 16.23 mm at x 52 and higher
     // aft, so a base at 15.9 is sunk into it everywhere; a mast at 18.9 floats over the 16.4 mm deck at x 38
     const r = stackItem(plan, { hull, 'lower deckhouse': lower(15.9), 'aft deckhouse': { lo: 15.9, hi: 19, foot: { x: [35, 52], y: [-7, 7] } }, mainmast: { lo: 18.9, hi: 46, foot: { x: [37, 39], y: [-1, 1] } } })!
-    expect(r.got).toBe('Aft deckhouse stands on Hull, but its base is 0.33 mm below its top, so 2.77 mm of it shows of a planned 3.1 mm; build it from the top of Hull, whose lowest point under it is at z 16.23 mm; Mainmast stands on Hull, but its base is 2.51 mm above its top, so it floats; build it from the top of Hull, whose lowest point under it is at z 16.39 mm')
+    expect(r.got).toBe('Aft deckhouse stands on Hull, but its base is 0.33 mm below its top, so 2.77 mm of it shows of a planned 3.1 mm; build it from the top of Hull, whose lowest point under it is at z 16.23 mm; Mainmast stands on Hull, but its base is 2.51 mm above its top, so it floats; build it from the top of Hull, whose lowest point under it is at z 16.39 mm: with design.edit_step, move the step that makes Mainmast by [0, 0, -2.51]')
     // a part past the deck's ends, or with no footprint, is read against the support's highest point, as before
     expect(stackItem({ ...plan, features: plan.features.slice(0, 2) }, { hull, 'lower deckhouse': { lo: 15.9, hi: 20 } })!.got).toBe('Lower deckhouse stands on Hull, but its base is 3.1 mm below its top, so 1 mm of it shows of a planned 4.1 mm; build it from the top of Hull, whose highest point is at z 19 mm')
     expect(stackItem({ ...plan, features: plan.features.slice(0, 2) }, { hull, 'lower deckhouse': { lo: 18.9, hi: 23, foot: { x: [220, 240], y: [-1, 1] } } })).toMatchObject({ pass: true })

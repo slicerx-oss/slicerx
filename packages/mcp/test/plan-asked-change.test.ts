@@ -238,7 +238,7 @@ describe('design.plan with amends for a change the person asked for', () => {
     const t = tab()
     const { overall: _o, ...bare } = organizer
     await t.approve(bare as PlanInput)
-    await expect(sent(t, { ...cupsAt(bare as PlanInput, 26), overall: { x: 80, y: 50, z: 30 }, amends: 'plan_1', asked: 'make the pen cups shorter' })).rejects.toThrow('overall: an amend changes sizes only; leave out the overall size')
+    await expect(sent(t, { ...cupsAt(bare as PlanInput, 26), overall: { x: 80, y: 50, z: 30 }, amends: 'plan_1', asked: 'make the pen cups shorter' })).rejects.toThrow('overall: an amend changes sizes and on only; leave out the overall size')
   })
 
   it('lets a build amend add a feature too, on its card', async () => {
