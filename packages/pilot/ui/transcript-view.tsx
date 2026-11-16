@@ -9,8 +9,9 @@ import { SheetRecord } from './sheet-record'
 import { Citations } from './citations'
 import { Diff } from './diff'
 import { ErrorLine, ModelLine, PermLine, PlanList, UsedLine } from './notes'
-import { createdPart, turnPart } from './part'
+import { createdPart, turnPart, type CreatedPart } from './part'
 import { FollowUpChips, PartCard, type PartHandlers } from './part-card'
+import { replyFacts, type ReplyFacts } from './reply-facts'
 import { runShown, type Block, type Transcript } from './reduce'
 import { Say } from './say'
 import { Summary } from './summary'
@@ -119,7 +120,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
  * A turn's blocks in the mimir tab: its working steps folded into loops (work-loop.tsx), the rest as blocks. A loop is
  * live while it is the running turn's last segment; a run stopped in it says so on its line.
  */
-function Segments({ segments, live, stopped, showThinking, approvals, words, parts, transcript, replay }: { segments: Segment[]; live: boolean; stopped: boolean; showThinking: boolean; approvals: ApprovalHandlers; words: StepWords; parts: PartHandlers; transcript: Transcript; replay: boolean }) {
+function Segments({ segments, live, stopped, showThinking, approvals, words, parts, transcript, replay, facts }: { segments: Segment[]; live: boolean; stopped: boolean; showThinking: boolean; approvals: ApprovalHandlers; words: StepWords; parts: PartHandlers; transcript: Transcript; replay: boolean; facts: (part: CreatedPart) => ReplyFacts | undefined }) {
   return (
     <>
       {segments.map((g, k) => {
@@ -129,7 +130,7 @@ function Segments({ segments, live, stopped, showThinking, approvals, words, par
         }
         if (g.kind === 'made') {
           const made = createdPart(g.row)
-          return made ? <PartCard key={g.row.callId} part={made} handlers={parts} /> : null
+          return made ? <PartCard key={g.row.callId} part={made} handlers={parts} facts={facts(made)} /> : null
         }
         const b = g.block
         return <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} {...(b.kind === 'run' ? { run: runShown(b, transcript.printRun), replay } : b.kind === 'approval' && b.builtin === true ? { run: transcript.printRun } : {})} />
@@ -155,20 +156,25 @@ export function TranscriptView({ transcript, showThinking, approvals, words, par
         // each reply that made a part keeps its next steps, bound to that part, once the reply has finished
         const part = parts ? turnPart(t) : null
         const done = t !== last || transcript.status !== 'running'
+        // the turn's part card carries its facts (tags, warnings and Details); its sources move into Details, and the
+        // permission line is dropped, since the card already shows what happened
+        const facts = part && parts ? replyFacts(t, part, parts) : undefined
+        const factsFor = (p: CreatedPart): ReplyFacts | undefined => (facts && p.id === part?.id && !part.built ? facts : undefined)
+        const moved = facts !== undefined && (part?.built === true || words !== undefined)
+        const blocks = part ? t.blocks.filter((b) => b.kind !== 'perm' && !(moved && b.kind === 'citations')) : t.blocks
         return (
           <Fragment key={t.id}>
             {t.user !== null ? <Bubble text={t.user} where={t.where} attachments={t.attachments} /> : null}
             <PilotTurn>
-              {/* the part card already shows what happened, so the turn's permission line is dropped */}
               {words && parts ? (
-                <Segments segments={loopSegments(part ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks, words)} live={t === last && transcript.status === 'running'} stopped={t === last && transcript.status === 'stopped'} showThinking={showThinking} approvals={approvals} words={words} parts={parts} transcript={transcript} replay={t.replay} />
+                <Segments segments={loopSegments(blocks, words)} live={t === last && transcript.status === 'running'} stopped={t === last && transcript.status === 'stopped'} showThinking={showThinking} approvals={approvals} words={words} parts={parts} transcript={transcript} replay={t.replay} facts={factsFor} />
               ) : (
-                (part ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks).map((b) => (
+                blocks.map((b) => (
                   <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} {...(b.kind === 'run' ? { run: runShown(b, transcript.printRun), replay: t.replay } : b.kind === 'approval' && b.builtin === true ? { run: transcript.printRun } : {})} />
                 ))
               )}
               {/* a design built step by step gets one card after its steps */}
-              {part?.built && parts ? <PartCard part={part} handlers={parts} /> : null}
+              {part?.built && parts ? <PartCard part={part} handlers={parts} facts={facts} /> : null}
               {part && parts && done ? <FollowUpChips part={part} handlers={parts} /> : null}
               <UsedLine names={usedNames(t.used, transcript.plugins)} />
             </PilotTurn>

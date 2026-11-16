@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // What the part card and its next steps do in the app: each acts on the part its reply made, by id.
-import type { PartHandlers } from '@slicerx/pilot/ui'
+import type { PartHandlers, ReplyPlan } from '@slicerx/pilot/ui'
 import { beginEdit, toolFor } from '../../cad/history/ops'
+import { offTheBed } from '../../plate/object-list'
 import { fullPlate, get, set, setModelMode } from '../../state/store'
 import { openTransform } from '../prepare/selection-bar'
+import { mimirPlans } from './plans'
 
 type Loader = Parameters<typeof beginEdit>[0]
 
@@ -37,9 +39,27 @@ export async function editPart(host: Loader, id: string): Promise<void> {
 export const EDIT_TIP = { title: 'Edit in Model', body: 'Opens the part in Model at its newest step, to change it by hand.' }
 
 /**
+ * The plan a reply's design was built from, for its card: the plan the turn approved, by its id, or else the newest plan
+ * tied to the design. Null when the tab keeps neither.
+ */
+export function partPlan(planId: string | null, design: string): ReplyPlan | null {
+  const byId = planId ? mimirPlans.get(planId) : undefined
+  if (byId) return byId.plan
+  const tied = mimirPlans.tiedTo(design).at(-1)
+  return tied ? (mimirPlans.get(tied)?.plan ?? null) : null
+}
+
+/** True while the part is on the plate and does not fit on the bed where it stands. */
+export function partOffBed(id: string): boolean {
+  const s = get()
+  const e = s.plate.find((p) => p.id === id)
+  return e ? offTheBed(e, s) : false
+}
+
+/**
  * The card's and steps' actions. Select stays in the tab; Edit goes to Model. A phone has no modeling tools, so its
- * card has no Edit; the body still selects.
+ * card has no Edit; the body still selects. The card reads its part's plan and whether it is off the bed from here.
  */
 export function partHandlers(host: Loader, phone: boolean): PartHandlers {
-  return { ...(phone ? {} : { onEdit: (id: string) => void editPart(host, id), editTip: EDIT_TIP }), onSelect: selectPart, has: hasPart }
+  return { ...(phone ? {} : { onEdit: (id: string) => void editPart(host, id), editTip: EDIT_TIP }), onSelect: selectPart, has: hasPart, plan: partPlan, offBed: partOffBed }
 }

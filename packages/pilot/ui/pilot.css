@@ -411,6 +411,26 @@
 .sx-pilot .part-text{display:flex;flex-direction:column;gap:var(--s-1);flex:1;min-width:0}
 .sx-pilot .part-title{color:var(--t-fg);font:600 15px/1.35 var(--f-body)}
 .sx-pilot .part-sub{color:var(--t-sub);font:400 13.5px/1.35 var(--f-body);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the card's facts: flat tags as info cards are drawn (a hairline, no fill, no lift), numbers in the body font's tabular figures */
+.sx-pilot .part-tags{display:flex;flex-wrap:wrap;gap:var(--s-1)}
+.sx-pilot .part-tag{padding:0 6px;border:1px solid var(--surface-line);border-radius:4px;color:var(--t-sub);font:400 12px/18px var(--f-body);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* what can fail the print: always in view, the alert icon in the warn red */
+.sx-pilot .part-warn{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--s-1)}
+.sx-pilot .part-warn li{display:flex;align-items:flex-start;gap:var(--s-2);color:var(--red-text);font-size:13px;line-height:1.45}
+.sx-pilot .part-warn .sx-ic{flex:none;width:14px;height:14px;margin-top:2px;color:var(--red)}
+/* the quiet Details line and its groups, closed by default */
+.sx-pilot .part-details-h{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;border:0;background:none;padding:2px 0;font:600 12.5px var(--f-body);color:var(--t-mute);cursor:pointer;border-radius:4px}
+.sx-pilot .part-details-h:hover{color:var(--t-sub)}
+.sx-pilot .part-details-h .sx-ic{width:14px;height:14px;transition:transform .15s}
+.sx-pilot .part-details.open .part-details-h .sx-ic{transform:rotate(90deg)}
+.sx-pilot .part-details-l{margin:var(--s-1) 0 0 7px;padding:var(--s-1) 0 var(--s-1) var(--s-4);border-left:1px solid var(--surface-line);display:flex;flex-direction:column;gap:var(--s-2);font-size:13px;line-height:1.45}
+.sx-pilot .part-details-l[hidden]{display:none}
+.sx-pilot .part-details-l>div{display:grid;grid-template-columns:88px minmax(0,1fr);column-gap:var(--s-3);align-items:baseline}
+.sx-pilot .part-details-l dt{grid-column:1;color:var(--t-mute);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.sx-pilot .part-details-l dd{grid-column:2;margin:0;color:var(--t-fg);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.sx-pilot .part-details-l a{color:var(--t-sub);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.sx-pilot .part-details-l a:hover{color:var(--t-fg);text-decoration-color:var(--t-mute)}
+@media (prefers-reduced-motion: reduce){.sx-pilot .part-details-h .sx-ic{transition:none}}
 .sx-pilot .part-gone{margin:0;font-size:13px;color:var(--orange)}
 .sx-pilot .follow{display:flex;flex-direction:column;gap:var(--s-3);margin-top:calc(var(--s-1) * -1)}
 .sx-pilot .follow-reply{display:flex;flex-wrap:wrap;gap:var(--s-2)}

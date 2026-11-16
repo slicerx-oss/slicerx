@@ -145,6 +145,9 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-loop-line` | The done loop's one line ("Built in 14 steps, 2 min 35 s", "Done in ...", "Stopped after ..."); it opens to the steps by part, with a time per part and per step |
 | `mimir-part` | A part card in the conversation: in place of the call that made a part, or after the working loop of the design a reply built (one card per reply); `data-part` is the part's object id on the plate. The body (`Select the <name>`) selects the part and the tab stays; Edit (`Edit the <name>`, none on a phone) opens it in Model at its newest step |
 | `mimir-follow` | A next step chip under a finished reply's part card; `data-request` is the request it sends, absent on Change size, which asks for the size first |
+| `mimir-reply-tags` | The part card's flat tags under its name: the size, the plan's scale (only when the plan has one) and the part count (only past one) |
+| `mimir-reply-warn` | The part card's warnings, a list named Warnings that is always in view: a failed check item, a size kept under the printer's smallest, a step that now needs supports, the part off the bed |
+| `mimir-details` | The part card's Details line, closed on every new reply (`aria-expanded`, `aria-controls`); it opens to the groups that have content: Parts, Colors, Guessed, Left out, Print note and Source (the reply's sources, which then have no line of their own) |
 | `mimir-see-usage` | See usage, on a refusal for a used-up free allowance (`data-code` day_used, edition_day_used or slow_down on the line); opens Settings at Account > Usage |
 
 ## Setup (first run and Printers > Add)

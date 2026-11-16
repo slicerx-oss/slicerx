@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // mimir in the browser build, one tab for designing and slicing: the tab and its dimension sheet (scripted, no model
 // behind them), slicing and a new project from the chat, the top bar's button, then mimir cloud against a stubbed proxy
-// (the notice and switches, files on a message, a refusal with See usage), and the browser build that only models. One
+// (the notice and switches, a build reply's part card with its tags, warnings and Details, files on a message, a
+// refusal with See usage), and the browser build that only models. One
 // page serves them all: a test puts mimir in the state it needs (the connection, the notice, a new conversation) through
 // the store, and the proxy stub is one route whose answers each test swaps (lib/session.ts). The phone leg is in
 // phone-session.spec.ts.
@@ -25,11 +26,13 @@ import { goTab, test as cold, viewportReady } from '../fixtures'
 import {
   answer,
   askTab,
+  type Block,
   closeDialogs,
   debugOn,
   emptyMimirTab,
   lastUserBlocks,
   lastUserText,
+  type ProxyBody,
   setPilot,
   setState,
   shotsDir,
@@ -847,6 +850,104 @@ test.describe('mimir cloud', () => {
     expect(await forgets()).toBe(1)
     expect((await row.boundingBox())!.height).toBe(h)
     await closeDialogs(page)
+  })
+})
+
+/* ------------------------------------------------------------------ a build reply from mimir cloud */
+
+// A build from mimir cloud against a stubbed proxy, over the tab's real tools: the plan (approved as shown, with its
+// scale and what it leaves out), three extrudes, a check that finds the height off, and the one sentence a cloud reply
+// leads with. The part card shows its size, scale and part count as tags and the failed check as a warning, in view at
+// all times; Details starts closed and opens to the plan's parts, guesses and left-out details and the reply's sources,
+// which then have no line of their own. Shots in both themes, Details closed and open.
+test.describe('a build reply from mimir cloud', () => {
+  const LEAD = "Built a lighthouse, 172 mm tall at 1:150, in three parts. One plan check is off, and it isn't sliced yet."
+  const PLAN = {
+    part: 'Lighthouse',
+    units: 'mm',
+    features: [
+      { name: 'Base', kind: 'extrude', sizes: { width: 64, depth: 64, height: 12 } },
+      { name: 'Tower', kind: 'extrude', sizes: { diameter: 40, height: 160 } },
+      { name: 'Gallery', kind: 'extrude', sizes: { diameter: 52, height: 8 } },
+    ],
+    overall: { x: 64, y: 64, z: 180 },
+    assumptions: ['Gallery rail left plain, 3 mm tall'],
+    questions: [],
+    scale: 150,
+    leftOut: ['window panes', 'the weather vane'],
+  }
+
+  test('shows its tags and the failed check in view, with Details closed until opened', async ({ page }, info) => {
+    await ready(page, 'cloud')
+    const bed = (await state(page))['bed'] as { widthMm: number; depthMm: number }
+    const [x, y] = [bed.widthMm / 2, bed.depthMm / 2]
+    const said = (b: ProxyBody, key: string): string | undefined => JSON.stringify(b.messages).match(new RegExp(`\\\\?"${key}\\\\?":\\\\?"([^"\\\\]+)`))?.[1]
+    const bodies = await stubProxy(page, (body) => {
+      const step = body.messages.filter((m) => m.role === 'assistant').length
+      const design = said(body, 'design') ?? ''
+      const call = (name: string, input: unknown): Block[] => [{ type: 'tool_use', id: `tu_${step}`, name, input }]
+      switch (step) {
+        case 0:
+          return [{ type: 'text', text: 'Checking how a tall tower prints first.' }, ...call('kb__search', { query: 'PLA overhang supports' })]
+        case 1:
+          return call('design__plan', PLAN)
+        case 2:
+          return call('design__new', { name: 'Lighthouse' })
+        case 3:
+          return call('geom__extrude', { design, name: 'Base', feature: 'Base', shape: { type: 'rectangle', widthMm: 64, heightMm: 64 }, placement: { center: [x, y] }, distance_mm: 12 })
+        case 4:
+          return call('geom__extrude', { design, name: 'Tower', feature: 'Tower', frame: { origin: [0, 0, 12], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 40 }, placement: { center: [x, y] }, distance_mm: 160 })
+        case 5:
+          return call('geom__extrude', { design, name: 'Gallery', feature: 'Gallery', frame: { origin: [0, 0, 150], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 52 }, placement: { center: [x, y] }, distance_mm: 8 })
+        // checked twice, as after a fix that did not take, so the fix round is used and the reply ends the turn
+        case 6:
+        case 7:
+          return call('design__check', { planId: said(body, 'planId') })
+        default:
+          return answer(LEAD)
+      }
+    })
+    await signIn(page)
+    await emptyMimirTab(page)
+    await askTab(page, "Make a display model of a lighthouse with a keeper's walkway")
+    const chat = page.getByTestId('mimir-chat')
+    await expect(chat).toContainText(LEAD, { timeout: 60_000 })
+    await expect(chat.getByText(LEAD)).toHaveCount(1)
+    // the cloud prompt asks a build reply for one sentence
+    expect(bodies[0]?.system?.map((s) => s.text).join(' ')).toContain('for a part you built, one sentence on what you built (its size and scale, and whether its check passed)')
+    const card = chat.getByTestId('mimir-part').last()
+    await expect(card).toHaveAttribute('aria-label', '3 parts created')
+    await expect(card.locator('.part-title')).toHaveText('Lighthouse')
+    await expect(card.locator('.part-tag')).toHaveText([/^\d+ x \d+ x 172 mm$/, '1:150', '3 parts'])
+    // the failed check is a warning in view, outside the fold
+    const warn = card.getByRole('list', { name: 'Warnings' })
+    await expect(warn).toBeVisible()
+    await expect(warn.getByRole('listitem').first()).toContainText('is off the plan: wanted')
+    // Details starts closed, with its groups out of view; the reply's sources have no line of their own
+    const details = card.getByRole('button', { name: 'Details' })
+    await expect(details).toHaveAttribute('aria-expanded', 'false')
+    await expect(card.getByText('Window panes, the weather vane')).toBeHidden()
+    await expect(chat.getByRole('button', { name: /^Sources \(\d\)$/ })).toHaveCount(0)
+    // the next steps stay below the card
+    await expect(chat.getByTestId('mimir-follow').first()).toBeVisible()
+    const shoot = async (name: string) => {
+      if (!shotsOn()) return
+      await card.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${shotsDir(info)}/${name}.png` })
+    }
+    await shoot('reply-a-dark-closed')
+    await details.click()
+    await expect(details).toHaveAttribute('aria-expanded', 'true')
+    await expect(card.getByText('Window panes, the weather vane')).toBeVisible()
+    await expect(card.locator('.part-details-l dt')).toHaveText(['Parts', 'Guessed', 'Left out', ...((await card.locator('[data-group="printNote"]').count()) ? ['Print note'] : []), ...((await card.locator('[data-group="source"]').count()) ? ['Source'] : [])])
+    await expect(card.locator('[data-group="parts"] dd')).toHaveText('Base, Tower, Gallery')
+    await shoot('reply-a-dark-open')
+    await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ scheme: 'light', themeFollowsSystem: false }))
+    await shoot('reply-a-light-open')
+    await details.click()
+    await expect(details).toHaveAttribute('aria-expanded', 'false')
+    await shoot('reply-a-light-closed')
+    await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ scheme: 'dark', themeFollowsSystem: false }))
   })
 })
 

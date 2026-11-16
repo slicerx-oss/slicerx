@@ -3,7 +3,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button, Icon, tipAttrs } from '@slicerx/ui'
 import { VectorField } from '@slicerx/ui/scrub'
-import { followUps, partLine, partTitle, sizeRequest, type CreatedPart, type FollowUp } from './part'
+import { safeUrl } from './citations'
+import { followUps, partTitle, sizeRequest, type CreatedPart, type FollowUp } from './part'
+import { DETAILS_LABEL, inlineText, replyTags, WARNINGS_LABEL, type FactsHost, type ReplyFacts } from './reply-facts'
 
 /** What the card and chips do. Each names the part it was made for, never the current selection. */
 export interface PartHandlers {
@@ -19,6 +21,10 @@ export interface PartHandlers {
   has?: ((id: string) => boolean) | undefined
   /** Whether the chat's toolset has a tool, so the chips offer only steps it can do. Without it there are no chips. */
   can?: ((tool: string) => boolean) | undefined
+  /** The plan a design was built from, for the card's scale tag and Details. Without it the card reads the turn alone. */
+  plan?: FactsHost['plan']
+  /** Whether a part is off the bed now, which the card warns about. */
+  offBed?: FactsHost['offBed']
 }
 
 /** "The 20 mm cube is no longer in the project, so this step has nothing to change." */
@@ -64,10 +70,17 @@ export function PartGlyph({ part, size }: { part: CreatedPart; size: number }) {
   )
 }
 
-/** The part a reply made: what it is and its size. The body selects it; Edit opens it for editing. */
-export function PartCard({ part, handlers }: { part: CreatedPart; handlers: PartHandlers }) {
+/**
+ * The part a reply made: its name and flat tags (size, scale, part count), then, for a build reply, what can fail the
+ * print, always in view, and the rest under a Details line that starts closed. The body selects the part; Edit opens it
+ * for editing. The card's accessible name says what the turn did ("Part created", "Box with lid updated").
+ */
+export function PartCard({ part, handlers, facts }: { part: CreatedPart; handlers: PartHandlers; facts?: ReplyFacts | undefined }) {
   const [gone, setGone] = useState(false)
+  const [open, setOpen] = useState(false)
+  const detailsId = useId()
   const title = partTitle(part)
+  const tags = facts?.tags ?? replyTags(part)
   const act = (fn: ((id: string) => void) | undefined) => () => {
     if (handlers.has && !handlers.has(part.id)) return setGone(true)
     setGone(false)
@@ -79,8 +92,14 @@ export function PartCard({ part, handlers }: { part: CreatedPart; handlers: Part
         <button type="button" className="part-main" aria-label={`Select the ${part.name}`} {...tipAttrs({ title: 'Select it on the plate' })} onClick={act(handlers.onSelect)}>
           <PartGlyph part={part} size={40} />
           <span className="part-text">
-            <span className="part-title">{title}</span>
-            <span className="part-sub">{partLine(part)}</span>
+            <span className="part-title">{part.updated ? title : part.name}</span>
+            <span className="part-tags" data-testid="mimir-reply-tags">
+              {tags.map((t) => (
+                <span key={t} className="part-tag">
+                  {t}
+                </span>
+              ))}
+            </span>
           </span>
         </button>
         {handlers.onEdit ? (
@@ -89,6 +108,49 @@ export function PartCard({ part, handlers }: { part: CreatedPart; handlers: Part
           </Button>
         ) : null}
       </div>
+      {facts?.warnings.length ? (
+        <ul className="part-warn" aria-label={WARNINGS_LABEL} data-testid="mimir-reply-warn">
+          {facts.warnings.map((w) => (
+            <li key={w}>
+              <Icon name="alert" size={14} />
+              <span>{w}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {facts?.groups.length ? (
+        <div className={open ? 'part-details open' : 'part-details'}>
+          <button type="button" className="part-details-h" data-testid="mimir-details" aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>
+            <Icon name="chevron-right" size={14} />
+            <span>{DETAILS_LABEL}</span>
+          </button>
+          <dl className="part-details-l" id={detailsId} hidden={!open}>
+            {facts.groups.map((g) => (
+              <div key={g.id} data-group={g.id}>
+                <dt>{g.label}</dt>
+                {g.inline ? (
+                  <dd>{inlineText(g.items)}</dd>
+                ) : (
+                  g.items.map((it, k) => {
+                    const href = safeUrl(it.url)
+                    return (
+                      <dd key={k}>
+                        {href ? (
+                          <a href={href} target="_blank" rel="noreferrer noopener">
+                            {it.text}
+                          </a>
+                        ) : (
+                          it.text
+                        )}
+                      </dd>
+                    )
+                  })
+                )}
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
       {gone ? (
         <p className="part-gone" role="status">
           {goneNote(part)}
