@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { ASSEMBLED_LINE, assembledLine, DETAIL_LINE, DISMISSED_LINE, FAMILY_LINE, FOLLOWUP_LINE, LID_IN_PLACE, LID_PUT_ON, local, LOFT_BODY_LINES, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, ROUNDED_ENDS_LINE, SCOPE_LINE, SIZES_ASK, SIZES_REPLY, systemPrompt, VAGUE_LINE, VOICE_HEADER } from '../src/prompt'
+import { ASSEMBLED_LINE, assembledLine, DETAIL_LINE, DISMISSED_LINE, FAMILY_LINE, FOLLOWUP_LINE, LEVEL_LIP_LINE, LID_IN_PLACE, LID_PUT_ON, local, LOFT_BODY_LINES, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, RESHAPE_LINE, ROUNDED_ENDS_LINE, SCOPE_LINE, SIZES_ASK, SIZES_REPLY, systemPrompt, VAGUE_LINE, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 import { turnSet, turnSetTools } from '../src/turnsets'
@@ -244,7 +244,7 @@ describe('the line for parts that move', () => {
   const all = (): boolean => true
   /** The cloud prompt less its cloud-only parts: the line for parts that move, the plan line's pointer to it, the line for a sweep that changes shape and the line for a family. */
   // the line for things made of colored parts names only the tools offered, so it is taken out by its start
-  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${LOFT_BODY_LINES.join('\n')}`, '').replace(`\n${ROUNDED_ENDS_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '')
+  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, '').replace(`\n${RESHAPE_LINE}`, '').replace(`\n${FAMILY_LINE}`, '').replace(`\n${DETAIL_LINE}`, '').replace(`\n${LOFT_BODY_LINES.join('\n')}`, '').replace(`\n${ROUNDED_ENDS_LINE}`, '').replace(`\n${LEVEL_LIP_LINE}`, '').replace(`\n${FOLLOWUP_LINE}`, '').replace(`\n${VAGUE_LINE}`, '').replace(/\n- A thing made of parts in different colors[^\n]*/, '')
 
   it('is one line, in the cloud prompt only, after the check line', () => {
     expect(MOVING_PARTS_LINE).not.toContain('\n')
@@ -369,6 +369,19 @@ describe('the line for rounded corners and ends', () => {
   })
 })
 
+describe('the line for levels with a lip', () => {
+  it('is the drafted sentence, one line in the cloud prompt only, with design.plan, right after the rounded ends line', () => {
+    expect(LEVEL_LIP_LINE).toBe("- Stacked levels each carry a thin roof just wider than their walls, one nozzle width past them: the lip's edge and shadow are what let a viewer read the levels apart.")
+    for (const scope of ['full', 'cad'] as const) {
+      const cloud = systemPrompt(scope, () => true, '', { cloud: true })
+      expect(cloud.split(LEVEL_LIP_LINE)).toHaveLength(2)
+      expect(cloud).toContain(`${ROUNDED_ENDS_LINE}\n${LEVEL_LIP_LINE}\n`)
+      expect(systemPrompt(scope, () => true)).not.toContain(LEVEL_LIP_LINE)
+      expect(systemPrompt(scope, (n) => n !== 'design.plan', '', { cloud: true })).not.toContain(LEVEL_LIP_LINE)
+    }
+  })
+})
+
 describe('the line for a part that fits a family', () => {
   it('is one line in the cloud prompt only, right after the sizes line, and only with pilot.ask and parts.lookup', () => {
     expect(FAMILY_LINE).not.toContain('\n')
@@ -444,17 +457,17 @@ describe('the lines a local model gets', () => {
     for (const scope of ['full', 'cad'] as const) {
       const cloud = systemPrompt(scope, () => true, '', { cloud: true }).split('\n')
       const local = systemPrompt(scope, () => true).split('\n')
-      const cloudOnly = new Set([FAMILY_LINE, DETAIL_LINE, ...LOFT_BODY_LINES, ROUNDED_ENDS_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, assembledLine(() => true)])
+      const cloudOnly = new Set([FAMILY_LINE, DETAIL_LINE, ...LOFT_BODY_LINES, ROUNDED_ENDS_LINE, LEVEL_LIP_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, assembledLine(() => true)])
       // every local line is a cloud line, in the same order, the plan line less its pointer to the moving parts line and
       // its words on a lid that prints in place
       expect(cloud.filter((l) => !cloudOnly.has(l)).map((l) => l.replace(MOVING_PARTS_ORDER, '').replace(LID_IN_PLACE, '').replace(LID_PUT_ON, '').replace(SIZES_ASK, '').replace(SIZES_REPLY, ''))).toEqual(local)
-      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength(6 + LOFT_BODY_LINES.length)
+      expect(cloud.filter((l) => cloudOnly.has(l))).toHaveLength(7 + LOFT_BODY_LINES.length)
     }
   })
 
   it('leaves a line out of the local prompt unless it is marked local, and the marked text is sent as it is', () => {
     expect(local('- A line.')).toEqual({ local: '- A line.' })
     // nothing unmarked: the cloud-only lines are plain strings in prompt.ts, and none of them reaches a local turn
-    for (const line of [FAMILY_LINE, DETAIL_LINE, ROUNDED_ENDS_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, MOVING_PARTS_ORDER.trim(), LID_IN_PLACE.trim(), LID_PUT_ON.trim(), SIZES_ASK.slice(2), SIZES_REPLY.slice(2)]) expect(systemPrompt('full', () => true), line.slice(0, 40)).not.toContain(line)
+    for (const line of [FAMILY_LINE, DETAIL_LINE, ROUNDED_ENDS_LINE, LEVEL_LIP_LINE, MOVING_PARTS_LINE, RESHAPE_LINE, MOVING_PARTS_ORDER.trim(), LID_IN_PLACE.trim(), LID_PUT_ON.trim(), SIZES_ASK.slice(2), SIZES_REPLY.slice(2)]) expect(systemPrompt('full', () => true), line.slice(0, 40)).not.toContain(line)
   })
 })

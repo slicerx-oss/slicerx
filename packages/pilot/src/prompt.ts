@@ -81,6 +81,8 @@ export const DETAIL_LINE = `- A model of a real thing (a car, a plane, a house, 
 // cloud prompt only, with design.plan: a display model's outlines. Without it every level of a stepped body came out
 // as a square block: the tools round corners and ends, but nothing said a display model wants them.
 export const ROUNDED_ENDS_LINE = "- A display model rounds the corners and ends a viewer sees unless the real thing is sharp there: a house or roof level, a cab, a vehicle's nose and tail, a tank or a capsule gets rounded ends or corners, at a radius the real thing's look gives; a box, a book or a modern block stays square."
+// cloud prompt only, beside it: stacked levels read apart only by a lip at each roof
+export const LEVEL_LIP_LINE = "- Stacked levels each carry a thin roof just wider than their walls, one nozzle width past them: the lip's edge and shadow are what let a viewer read the levels apart."
 
 // cloud prompt only, with design.plan and geom.loft: a first build of a body with curved or tapering sides. Without it a
 // curved body came out as a stack of extrudes, or a loft through straight sections whose later cuts left the exact
@@ -165,6 +167,7 @@ const buildLines = (has: HasTool, o: PromptOptions): Piece[] => {
     has('design.plan') && DETAIL_LINE,
     ...(has('design.plan') && has('geom.loft') ? LOFT_BODY_LINES : []),
     has('design.plan') && ROUNDED_ENDS_LINE,
+    has('design.plan') && LEVEL_LIP_LINE,
     ...(has('design.plan') ? [[local(PLAN_LINE), ...PLAN_LID, checks && MOVING_PARTS_ORDER], local(FEATURE_LINE)] : [local(STEPS_LINE)]),
     has('design.plan') && assembledLine(has),
     followUp && FOLLOWUP_LINE,
