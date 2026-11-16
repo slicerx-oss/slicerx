@@ -19,7 +19,8 @@ import { compose } from '../src/plate/transform'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { plateFingerprint } from '../src/workspaces/mimir/print-run'
 import { plateName, SendCard, sendRows, slideState } from '../src/workspaces/mimir/send-card'
-import { pickedLine, spoolUnits } from '../src/workspaces/mimir/send-spools'
+import { pickedLine, slotInList, spoolUnits } from '../src/workspaces/mimir/send-spools'
+import { SLOTS_IN_USE } from '../src/workspaces/mimir/send-words'
 
 const SHA = 'ab'.repeat(32)
 const info: PrinterInfo = { id: 'bay-2', name: 'Bay 2', vendor: 'Bambu Lab', model: 'P1S', plugin: 'bambu-lan', nozzleCount: 1 }
@@ -142,6 +143,8 @@ describe('the send card', () => {
       ['A2', 1],
     ])
     expect(two.some((c) => c.other)).toBe(false)
+    // the header for a plate on two or more filaments lists the bare slots, the external spool by its name
+    expect(SLOTS_IN_USE(['A1', 'A2', '1'].map(slotInList))).toBe('Slots A1, A2, External spool')
   })
 
   it('the slide reads off, ready, sending, sent and not sent from the card and the answer', () => {

@@ -71,6 +71,11 @@ export function slotLabel(id: string): string {
   return id === EXTERNAL_SLOT ? EXTERNAL_SPOOL : SLOT_LABEL(id)
 }
 
+/** A slot inside the header's "Slots A1, A2" list: the bare slot, or "External spool". */
+export function slotInList(id: string): string {
+  return id === EXTERNAL_SLOT ? EXTERNAL_SPOOL : id
+}
+
 /** The header line once a spool is picked: "White PETG · Slot A4". */
 export function pickedLine(chip: Pick<SpoolChip, 'id' | 'material' | 'colorWord'>): string {
   return PICKED_SPOOL(chip.colorWord, chip.material, slotLabel(chip.id))
