@@ -144,17 +144,17 @@ describe('paint by feature on exact solids', () => {
     await c.ok('geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, distance_mm: 10, feature: 'Block' })
     await c.ok('geom_extrude', boss(d, -10, 0))
     await c.ok('geom_mirror', { design: d, plane: { axis: 'x', at: 0 }, steps: [2] })
-    // the two bosses' tops and their sides toward y lie flush with the image's, and the join clears their keys; each
-    // keeps the key it came from, so each boss paints whole: its 4 x 4 top and four 4 x 2 sides
+    // the two bosses' tops and their sides toward y lie flush with the image's, 20 mm apart, so the join keeps their
+    // keys and each boss paints whole: its 4 x 4 top and four 4 x 2 sides
     expect(await c.paint(d, 'Boss', 2)).toBeCloseTo(2 * (16 + 4 * 8), 1)
     const two = (await c.painted(d, 2))!
     expect(two.regionCount).toBe(2)
     expect(new Set(two.regions.map((r) => Math.sign(r.boundsMm.min[0])))).toEqual(new Set([-1, 1]))
-    // the image's top came from a key made inside the mirror step, so the mirror made it
+    // the image's top keeps the key the mirror step gave it, touching nothing, so the mirror made it
     const faces = (await c.ok<{ faces: { center: V3; normal: V3; key?: number; from?: number; madeBy: string }[] }>('geom_faces', { design: d, limit: 100 })).faces
     const imageTop = faces.find((f) => f.center[0] > 9.99 && f.center[0] < 10.01 && f.center[2] > 11.99)!
-    expect(imageTop).toMatchObject({ from: expect.any(Number), madeBy: 'Mirror of 1 step' })
-    expect(imageTop.key).toBeUndefined()
+    expect(imageTop).toMatchObject({ key: expect.any(Number), madeBy: 'Mirror of 1 step' })
+    expect(imageTop.from).toBeUndefined()
   })
 
   it.skipIf(skip)(`refuses a feature the design has none of, with the names it has${because}`, async () => {

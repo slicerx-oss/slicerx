@@ -607,13 +607,24 @@ void clear_key(SmFace* f)
     set_key(f, 0);
 }
 
+// whether two faces' boxes are apart by more than tol on some axis; a box that can't be had counts as meeting
+bool boxes_apart(const SmFace* f, const SmFace* g, double tol)
+{
+    SmPoint3d flo, fhi, glo, ghi;
+    if (SmApiFaceBoundingBox(f, FALSE, flo, fhi) != SM_SUCCESS || SmApiFaceBoundingBox(g, FALSE, glo, ghi) != SM_SUCCESS) return false;
+    return flo.x > ghi.x + tol || glo.x > fhi.x + tol || flo.y > ghi.y + tol || glo.y > fhi.y + tol || flo.z > ghi.z + tol ||
+           glo.z > fhi.z + tol;
+}
+
 // a union can merge coplanar faces without preserving all of their keys, so each such face's key is cleared; the
-// key it had stays as where it came from
+// key it had stays as where it came from. Faces whose boxes stay apart (by more than the kernel's zone tolerance)
+// can't meet, so they keep theirs
 void clear_merge_keys(SmBrep* a, SmBrep* b)
 {
     SmTArray<SmFace*> af, bf;
     SmApiGetFaces(a, af);
     SmApiGetFaces(b, bf);
+    const double tol = std::max(SmTol::GetZoneTol3d(a).val, SmTol::GetZoneTol3d(b).val);
     for (ULONG i = 0; i < af.GetSize(); ++i) {
         SmPoint3d ao;
         SmVector3d an;
@@ -622,7 +633,8 @@ void clear_merge_keys(SmBrep* a, SmBrep* b)
             SmPoint3d bo;
             SmVector3d bn;
             if (!bf[j]->GetSurface() || !bf[j]->GetSurface()->IsPlanar(1e-6, &bo, &bn)) continue;
-            if (std::fabs(std::fabs(dot(an, bn)) - 1) < 1e-6 && std::fabs(dot(an, SmVector3d(bo.x - ao.x, bo.y - ao.y, bo.z - ao.z))) < 1e-6) {
+            if (std::fabs(std::fabs(dot(an, bn)) - 1) < 1e-6 && std::fabs(dot(an, SmVector3d(bo.x - ao.x, bo.y - ao.y, bo.z - ao.z))) < 1e-6 &&
+                !boxes_apart(af[i], bf[j], tol)) {
                 clear_key(af[i]);
                 clear_key(bf[j]);
             }

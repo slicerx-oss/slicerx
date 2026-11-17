@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // What made a face with no key of its own, read back through slicerx_geom_faces on the real engine. On exact solids a
-// join clears the keys of the faces that lie flat with a face of the joined shape, even apart from it: a wall block's
-// long sides lose theirs to a rim joined higher up whose sides are in the same planes. On the mesh a subtract that
+// join clears the keys of the faces that lie flat with a face of the joined shape and meet it: a wall block's long
+// sides lose theirs to a rim joined on top whose sides are in the same planes. On the mesh a subtract that
 // splits a face leaves its pieces without a key. Either way the face says which face it came from (`from`), and the
 // step that made that face is its maker, while a reference by key still asks for repair.
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -51,12 +51,12 @@ const start = async (c: Client, exact: boolean) => {
 // a w by h rectangle extruded up by `distance` from height z, joined on
 const block = (design: string, w: number, h: number, z: number, distance: number) => ({ design, part: 0, operation: 'join', shape: { type: 'rectangle', widthMm: w, heightMm: h }, frame: { origin: [0, 0, z], normal: [0, 0, 1] }, distance_mm: distance })
 
-// a 30 by 10 wall block 4 tall on the box, a block 20 by 8 joined on top of it, then a rim 22 by 10 on that: the rim's
-// long sides lie in the planes of the wall block's, 3 mm above them
-async function rimmed(c: Client, d: string) {
+// a 30 by 10 wall block 4 tall on the box, a block 20 by 8 joined on top of it, then a rim 22 by 10: the rim's long
+// sides lie in the planes of the wall block's, 3 mm above them, or on the wall block and meeting its sides
+async function rimmed(c: Client, d: string, on = false) {
   await c.ok('geom_extrude', block(d, 30, 10, 10, 4))
   await c.ok('geom_extrude', block(d, 20, 8, 14, 3))
-  await c.ok('geom_extrude', block(d, 22, 10, 17, 0.8))
+  await c.ok('geom_extrude', block(d, 22, 10, on ? 14 : 17, 0.8))
   return (await c.sides(d)).filter((f) => Math.abs(Math.abs(f.center[1]) - 5) < 0.01 && f.center[2] < 14)
 }
 
@@ -71,9 +71,9 @@ describe('what made a face with no key of its own, on exact solids', () => {
   const skip = why !== null
   const because = skip ? ` (skipped: ${why})` : ''
 
-  it.skipIf(skip)(`a wall block's sides a rim higher up lies flat with were made by the wall block's step${because}`, async () => {
+  it.skipIf(skip)(`a wall block's sides a rim on it lies flat with were made by the wall block's step${because}`, async () => {
     const c = await client()
-    const walls = await rimmed(c, await start(c, true))
+    const walls = await rimmed(c, await start(c, true), true)
     expect(walls).toHaveLength(2)
     for (const w of walls) {
       // the join cleared the key, and the face still says which face it came from
