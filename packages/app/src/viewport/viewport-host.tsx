@@ -175,6 +175,11 @@ function bakedVolume(v: { part: Parameters<typeof bake>[0]; local: Parameters<ty
   return positions
 }
 
+/** The colors color paint draws in: filament k's for paint on filament k, every slot the project has (exported for tests). */
+export function paintColors(s: AppState): string[] {
+  return resolveSlots(s).map((r) => r.color)
+}
+
 /** What the view draws for the plate: each object and part with the color it shows (exported for tests). */
 export function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
   const slots = resolveSlots(s)
@@ -543,7 +548,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         // A rebuilt scene starts unpainted; otherwise only what changed outside the brush (undo, redo, clear) goes in.
         if (rebuilt) pushPaint(s.plate, null)
         else if (s.plate !== prev.plate && !fromViewport) pushPaint(s.plate, prev.plate)
-        if ((first || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors || rebuilt) && vp.setPaintColors) vp.setPaintColors(resolveSlots(s).map((r) => r.color))
+        if ((first || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors || rebuilt) && vp.setPaintColors) vp.setPaintColors(paintColors(s))
         // A tool change can add a filament the plate's parts do not use, so the marks count too.
         if (first || s.plate !== prev.plate || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors || s.fileSlotTypes !== prev.fileSlotTypes || s.layerMarks !== prev.layerMarks) {
           const slots = resolveSlots(s)

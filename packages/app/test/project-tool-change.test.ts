@@ -91,21 +91,22 @@ describe('a project tool change in the app', () => {
   it('counts the filament it changes to among the plate\'s filaments', { timeout: 120_000 }, async () => {
     await openAndSlice('a1-cc')
     // The box is on filament 2 and the change goes to filament 4: the plate prints both, and filament 4 has a slot.
-    expect(resolveSlots(get()).map((r) => [r.index, r.used])).toEqual([[1, false], [2, true], [3, false], [4, true]])
+    // The file lists five filaments, so the fifth shows too.
+    expect(resolveSlots(get()).map((r) => [r.index, r.used])).toEqual([[1, false], [2, true], [3, false], [4, true], [5, false]])
     expect([...usedSlots(get())].sort()).toEqual([2, 4])
   })
 
   it.skipIf(!existsSync(sxBin))('shows the use of the filament it changes to', { timeout: 120_000 }, async () => {
     const req = await openAndSlice('a1-cc')
     {
-      // The rail's use per slot reads the engine's grams for every slot up to the last, filament 4's too.
+      // The rail's use per slot reads the engine's grams for every slot on the rail, filament 4's too.
       const path = join(dir, 'a1-cc-use.json')
       writeFileSync(path, JSON.stringify({ schemaVersion: 1, meshes: { m: `${join(fixtures, 'a1-cc.3mf')}#1` }, plate: { objects: [{ id: 'm', mesh: 'm' }] }, config: req.config, options: { toolChanges: req.options?.toolChanges ?? [] } }))
       const report = JSON.parse(execFileSync(sxBin, ['slice', '--request', path], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()) as { stats: { filamentG: number[] } }
       const g = report.stats.filamentG
       expect(g[3]).toBeGreaterThan(0)
       const use = slotUsage({ filamentG: g }, Math.max(...resolveSlots(get()).map((r) => r.index)))
-      expect(use).toHaveLength(4)
+      expect(use).toHaveLength(5)
       expect(use[3]!.grams).toBe(g[3])
     }
   })
