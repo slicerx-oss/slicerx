@@ -435,6 +435,7 @@ mod ffi {
         #[cxx_name = "sx_cast"]
         unsafe fn spline_as_curve(curve: *const SmBSplineCurve) -> *const SmCurve;
         fn sx_normal(aux: &SmPolyVertAuxData) -> &SmVector3d;
+        fn sx_faces_a_void(face: &SmFace) -> bool;
         fn sx_uv(aux: &SmPolyVertAuxData, axis: i32) -> f64;
         fn sx_surface_at(
             surface: &SmSurface,
@@ -1507,8 +1508,9 @@ fn index(n: usize) -> Result<u32> {
 impl Solid {
     pub(crate) fn tessellate(&self, params: Params) -> Result<Polygons> {
         let kernel = held();
-        let face_at: HashMap<*mut ffi::SmFace, usize> = self
-            .face_pointers(&kernel)?
+        let pointers = self.face_pointers(&kernel)?;
+        let into_void = faces_into_void(&kernel, &pointers);
+        let face_at: HashMap<*mut ffi::SmFace, usize> = pointers
             .into_iter()
             .enumerate()
             .map(|(i, f)| (f.as_ptr(), i))
@@ -1600,6 +1602,9 @@ impl Solid {
             let Some(&face) = face_at.get(&polygon.GetOriginalFace()) else {
                 return Err(mesh_error("the kernel returned a polygon of no face of the body"));
             };
+            if into_void[face] {
+                turn_back(&mut corners);
+            }
             let face = index(face)?;
             // the kernel's polygons are triangles; one with more corners is fanned from its first
             let last = corners.len().saturating_sub(1);
@@ -1613,6 +1618,33 @@ impl Solid {
             }
         }
         Ok(out)
+    }
+}
+
+/// Which of a body's faces have their surface normal looking into a closed void inside it, in face order. The
+/// kernel's tessellation turns the polygons of every face whose normal side is not the space outside the body, so it
+/// winds these into the material.
+fn faces_into_void(_kernel: &Held, faces: &[NonNull<ffi::SmFace>]) -> Vec<bool> {
+    let mut out = Vec::with_capacity(faces.len());
+    for face in faces {
+        // SAFETY: the face belongs to a live body, and the kernel is held, so nothing changes it.
+        out.push(ffi::sx_faces_a_void(unsafe { face.as_ref() }));
+    }
+    out
+}
+
+/// A polygon of a face the kernel wound into the material, turned back to face out of it, where its surface normal
+/// points; the normals the kernel stored, which it turned with the polygon, are turned back with it.
+fn turn_back(corners: &mut [PolyCorner]) {
+    if let Some(after_first) = corners.get_mut(1..) {
+        after_first.reverse();
+    }
+    for corner in corners {
+        corner.1 = corner.1.map(|n| Vec3 {
+            x: -n.x,
+            y: -n.y,
+            z: -n.z,
+        });
     }
 }
 

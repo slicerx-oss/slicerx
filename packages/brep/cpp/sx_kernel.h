@@ -22,10 +22,13 @@
 #include <SmEdge.h>
 #include <SmExtent2d.h>
 #include <SmFace.h>
+#include <SmFaceuse.h>
 #include <SmLine.h>
 #include <SmMath.h>
 #include <SmPlane.h>
 #include <SmPoly.h>
+#include <SmRegion.h>
+#include <SmShell.h>
 #include <SmSphere.h>
 #include <SmSurfTypes.h>
 #include <SmSurface.h>
@@ -114,6 +117,16 @@ template <class T> std::unique_ptr<T> sx_make() { return std::make_unique<T>(); 
 template <class To, class From> const To* sx_cast(const From* p) { return static_cast<const To*>(p); }
 // public data members
 inline const SmVector3d& sx_normal(const SmPolyVertAuxData& a) { return a.m_vNormal; }
+// whether the side a face's surface normal points to is a closed void inside the body: the kernel's tessellation turns
+// the polygons of every face whose upward side is not the region outside the body, so it winds such a face inward
+inline bool sx_faces_a_void(const SmFace& f)
+{
+    const SmFaceuse* up = f.GetUpwardFaceuse();
+    const SmShell* shell = up != nullptr ? up->GetShell() : nullptr;
+    const SmRegion* region = shell != nullptr ? shell->GetRegion() : nullptr;
+    const SmBrep* brep = f.GetBrep();
+    return region != nullptr && brep != nullptr && region != brep->GetInfiniteRegion() && region->IsVoid() == TRUE;
+}
 inline ULONG sx_failed_face(const SmTessellationFailure& f) { return f.lFaceIndex; }
 inline int sx_failed_stage(const SmTessellationFailure& f) { return static_cast<int>(f.eStage); }
 inline SmLong sx_failed_status(const SmTessellationFailure& f) { return f.eStatus; }
