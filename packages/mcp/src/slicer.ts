@@ -65,7 +65,7 @@ export interface SliceJobObject {
   transform?: number[]
   /** The object's own settings (sx engine). */
   settings?: Record<string, SettingValue>
-  /** The filament (1-based) the whole object prints with, when it is not filament 1 (sx engine). */
+  /** The filament the whole object prints with when a client set one: a loaded filament or a mix's number (sx engine). */
   slot?: number
   /** Cuts, support regions and settings modifiers in the object's own coordinates (sx engine). */
   volumes?: { path: string; role: VolumeRole; name?: string; transform?: number[]; settings?: Record<string, SettingValue> }[]

@@ -155,6 +155,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // The Color tab's feature filament table, for the plate or some objects.
     ("feature_filaments.get", LinkClass::Read),
     ("feature_filaments.set", LinkClass::Edit),
+    // The project's mixed filaments: two loaded filaments printed by layer under a number of their own.
+    ("mixes.get", LinkClass::Read),
+    ("mixes.set", LinkClass::Edit),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
     ("paint.get", LinkClass::Read),
@@ -538,6 +541,8 @@ mod tests {
         ("settings.get", LinkClass::Read),
         ("feature_filaments.get", LinkClass::Read),
         ("feature_filaments.set", LinkClass::Edit),
+        ("mixes.get", LinkClass::Read),
+        ("mixes.set", LinkClass::Edit),
         ("paint.get", LinkClass::Read),
         ("paint.preview", LinkClass::Read),
         ("paint.from_texture", LinkClass::Read),

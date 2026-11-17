@@ -17,6 +17,7 @@ import { STEP_EXTENSIONS } from './toolbox/step-read'
 import type { ProfileCatalog } from './profiles'
 import { readStlPositions, splitBodies } from './mesh'
 import { placementTools } from './placement'
+import { mixedFilamentTools } from './mixed-tools'
 import { McpProject } from './project'
 import { ADD_FILAMENT_RULE, addFilamentRefusal, FILAMENT_TYPES, MAX_FILAMENTS, SET_FILAMENT_LEAD, SET_FILAMENT_RULE, setFilamentRefusal } from './filaments'
 import { validateConfig } from './settings'
@@ -201,7 +202,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const show = defineTool({
     name: 'project.show',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description:
@@ -249,7 +250,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const addFilament = defineTool({
     name: 'project.add_filament',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'settings',
     permission: 'slice',
     description: `Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. Unset, the type is the filament profile's and the color the default for its number. A project holds ${MAX_FILAMENTS} at most. ${ADD_FILAMENT_RULE} Answers with the project, whose filaments list reads it back. Filaments a printer's AMS holds are loaded on the printer, not added here.`,
@@ -381,5 +382,5 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     summary: (i) => `${i.printerId}: sent ${i.line.trim()}`,
   })
 
-  return [open, add, show, setOverrides, addFilament, setFilament, setTool, ...placementTools(deps, need), temperature, filament, filamentChange, home, gcode] as PilotTool<never>[]
+  return [open, add, show, setOverrides, addFilament, setFilament, setTool, ...mixedFilamentTools(need), ...placementTools(deps, need), temperature, filament, filamentChange, home, gcode] as PilotTool<never>[]
 }

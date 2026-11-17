@@ -94,5 +94,6 @@ export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?:
 
 
 export { appUnitInputs, type AppUnits } from './app-units'
+export { appMixInputs, type AppMixes } from './app-mixes'
 export { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, bandDepth, featureNotExactText, meshedOf, plannedFeature, storedTarget } from './app-paint-input'
 export { RefusedPreviews } from './paint-refused'
