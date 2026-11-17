@@ -2703,6 +2703,15 @@ impl Prepared {
     pub fn lighten(&mut self) {
         self.session.lighten();
     }
+
+    /// How much work the collision walks of the slices run on this session have done ([`crate::collide::Work`]). Only
+    /// a build with debug assertions (the tests') keeps the counts; a release build answers 0 throughout.
+    #[doc(hidden)]
+    pub fn collide_work(&self) -> crate::collide::Work {
+        self.session
+            .collide()
+            .map_or_else(crate::collide::Work::default, crate::collide::Model::work)
+    }
 }
 
 /// Prepares `req`'s session ([`build_plate`], then [`build_session`]).

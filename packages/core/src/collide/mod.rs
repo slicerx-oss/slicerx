@@ -427,6 +427,21 @@ impl Meta {
     }
 }
 
+/// How much work the plate check's walks did, counted only in a build with debug assertions (the tests'); a release
+/// build answers 0 throughout. A test bounds it where a clock would move with the machine's load.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Work {
+    /// Triangles of the obstacles' surfaces the queries read.
+    pub reads: u64,
+    /// Triangles the queries tested by their box, read or not.
+    pub looks: u64,
+    /// Entries the obstacles' surface cell lists took as they were made: one per triangle and cell.
+    pub listed: u64,
+    /// Cells of the obstacles' height grids a triangle raised or sampled as the grids were made.
+    pub raised: u64,
+}
+
 /// One finished object as an obstacle.
 struct Obstacle {
     /// The object, its mesh with it until [`Model::free_mesh`] lets it go.
@@ -435,6 +450,10 @@ struct Obstacle {
     grid: OnceLock<Grid>,
     /// The surface by cell, for where a move first meets the part, made on first use.
     surface: OnceLock<grid::Surface>,
+    /// The entries the surface's cell lists took as they were made ([`grid::Count`]).
+    listed: grid::Count,
+    /// The cells the height grid's triangles raised or sampled as it was made.
+    raised: grid::Count,
     top: f32,
     bounds: [f64; 4],
     hull: Vec<[f64; 2]>,
@@ -460,11 +479,13 @@ impl Obstacle {
     }
 
     fn grid(&self) -> &Grid {
-        crate::par::Init::once(&self.grid, || Grid::of_surface(self.surface()))
+        crate::par::Init::once(&self.grid, || Grid::of_surface(self.surface(), &self.raised))
     }
 
     fn surface(&self) -> &grid::Surface {
-        crate::par::Init::once(&self.surface, || grid::Surface::of_object(&self.object()))
+        crate::par::Init::once(&self.surface, || {
+            grid::Surface::of_object(&self.object(), &self.listed)
+        })
     }
 
     /// The object (its mesh empty once [`Model::free_mesh`] let it go).
@@ -534,6 +555,20 @@ impl Model {
             .filter_map(|o| o.surface.get())
             .map(grid::Surface::reads)
             .sum()
+    }
+
+    /// How much work the walks have done on the obstacles so far ([`Work`]).
+    pub(crate) fn work(&self) -> Work {
+        let mut w = Work::default();
+        for o in &self.objects {
+            if let Some(s) = o.surface.get() {
+                w.reads += s.reads();
+                w.looks += s.looks();
+            }
+            w.listed += o.listed.get();
+            w.raised += o.raised.get();
+        }
+        w
     }
 
     /// Lets go of object `j`'s mesh, for a one-shot slice once no walk can read it: the walk of an object never reads
@@ -608,6 +643,8 @@ impl Model {
                 object: std::sync::RwLock::new((*o).clone()),
                 grid: OnceLock::new(),
                 surface: OnceLock::new(),
+                listed: grid::Count::default(),
+                raised: grid::Count::default(),
                 top: top as f32,
                 bounds: [
                     lo[0].floor(),
