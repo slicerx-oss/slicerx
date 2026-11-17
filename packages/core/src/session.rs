@@ -264,8 +264,11 @@ pub struct SliceSession {
     /// `first_layer_info` by settings fingerprint: every layer range asks for it.
     first_info: FirstInfoMemo,
     parts: Vec<PreparedPart>,
-    /// Filament slots in priority order (ascending; a higher slot wins where parts overlap).
+    /// Filament slots in priority order (ascending; a higher slot wins where parts overlap): the loaded filaments,
+    /// a mixed filament's two in its place.
     slots: Vec<u8>,
+    /// The plate's mixed filaments: parts and paint on one print with its filament of each layer.
+    mixes: crate::mixed::Mixes,
     plan: LayerPlan,
     tool_count: u8,
     warnings: Vec<SliceWarning>,
@@ -1836,6 +1839,8 @@ impl SliceSession {
         stop: crate::paint::Stop<'_>,
     ) -> Result<Self> {
         config.check()?;
+        let mixes = crate::mixed::Mixes::of(config)?;
+        feature_mix_check(&mixes, plate, config, ranges)?;
         // Worked out once here, for the prime tower's placement and the session's objects.
         let hulls = hulls.unwrap_or_else(|| crate::firmware::footprints(plate));
         let timer = Timer::start();
@@ -2062,9 +2067,59 @@ impl SliceSession {
             }
             plan
         };
+        // On a plate with mixes, a part or paint on a number past the loaded filaments that no mix names, from 29 up (the
+        // numbers mixes take), prints in filament 1 (a part) or the part's own filament (paint), and says so: a mix
+        // deleted or changed while something stayed on it. A plate without mixes, or without filament_colour, keeps
+        // every number as it is.
+        let loaded = filament_count(config);
+        let orphan = |s: u8| mixes.left_on_mix(s, loaded);
+        let mut dropped: Vec<u8> = Vec::new();
+        let mut moved: Vec<u8> = Vec::new();
+        for r in &mut raw {
+            if orphan(r.0) {
+                moved.push(r.0);
+                r.0 = 1;
+            }
+            if r.3.states().any(orphan) {
+                dropped.extend(r.3.states().filter(|s| orphan(*s)));
+                r.3 = r.3.without_states(orphan);
+            }
+        }
+        for pr in &mut part_regions {
+            if orphan(pr.3.slot) {
+                pr.3.slot = 1;
+            }
+        }
+        for (list, what) in [
+            (&mut moved, "A part on filament"),
+            (&mut dropped, "Paint in filament"),
+        ] {
+            list.sort_unstable();
+            list.dedup();
+            if list.is_empty() {
+                continue;
+            }
+            let names = list.iter().map(u8::to_string).collect::<Vec<_>>().join(", ");
+            let to = if what.starts_with("A part") {
+                "filament 1"
+            } else {
+                "the part's own filament"
+            };
+            warnings.push(SliceWarning {
+                code: WarningCode::UnsupportedSetting,
+                message: format!(
+                    "{what} {names} prints in {to}: no loaded filament or mixed filament has that number"
+                ),
+                layer: None,
+            });
+        }
+        mixes.check_used(
+            raw.iter().flat_map(|r| std::iter::once(r.0).chain(r.3.states())),
+            loaded,
+        )?;
         // sleipnir keeps fixed layers where colors change, and reports what variable layers still
         // cost against fixed ones.
-        let (plan, vary_cost) = keep_color_bands(config, plan, &raw, max_z)?;
+        let (plan, vary_cost) = keep_color_bands(config, plan, &raw, max_z, &mixes)?;
         // No layer's cutting plane meets a model thinner than half the first layer: nothing would print
         // (Orca: "The print is empty").
         if plan.slice_z.is_empty() {
@@ -2101,9 +2156,11 @@ impl SliceSession {
                 }
             }
         }
+        // A mixed filament prints with its two loaded filaments.
         let mut slots: Vec<u8> = parts
             .iter()
             .flat_map(|p| std::iter::once(p.slot).chain(p.paint.states()))
+            .flat_map(|s| mixes.expand(s))
             .collect();
         slots.sort_unstable();
         slots.dedup();
@@ -2131,6 +2188,7 @@ impl SliceSession {
             false,
             &[],
             &crate::toolorder::Choice::of(config, tool_count),
+            &mixes,
         );
         // A tower is only worth its filament where a layer changes tools inside itself. Changes
         // between layers purge into infill and support instead (`prime_tower_always` keeps the
@@ -2201,6 +2259,7 @@ impl SliceSession {
             first_info: FirstInfoMemo::default(),
             parts,
             slots,
+            mixes,
             plan,
             tool_count,
             warnings,
@@ -3285,7 +3344,11 @@ impl SliceSession {
     /// (no part of the session is on it) prints every feature with it, whatever the plate, object, height range or
     /// modifier asks for; the per-feature filaments move the features of the parts' own, unpainted regions only.
     fn feature_tools(&self, cfg: &PrintConfig, slot: u8) -> FeatureTools {
-        if self.parts.iter().any(|p| p.slot == slot) {
+        if self
+            .parts
+            .iter()
+            .any(|p| self.mixes.expand(p.slot).any(|s| s == slot))
+        {
             feature_tools(cfg, slot)
         } else {
             feature_tools_from(|_| None, slot)
@@ -3375,6 +3438,7 @@ impl SliceSession {
             exact,
             &first,
             &crate::toolorder::Choice::of(config, self.tool_count),
+            &self.mixes,
         );
         self.tool_order = order;
         self.tower_top = tower_reach(
@@ -8724,7 +8788,7 @@ impl SliceSession {
                     continue;
                 }
                 own.push((
-                    p.slot,
+                    self.mixes.resolve(p.slot, layer),
                     perimeters::shapes_from_loops_mode(&loops, fam.resolution, fam.slicing, fam.closing),
                 ));
             }
@@ -8780,7 +8844,7 @@ impl SliceSession {
                 if slot == 0 {
                     free.push(sh);
                 } else {
-                    colored.push((slot, sh));
+                    colored.push((self.mixes.resolve(slot, layer), sh));
                 }
             }
             // `mmu_segmented_region_max_width`: painted colors reach only this far
@@ -8835,12 +8899,9 @@ impl SliceSession {
         }
         for &slot in &self.slots {
             loops.clear();
-            for (_, p) in self
-                .parts
-                .iter()
-                .enumerate()
-                .filter(|(k, p)| p.slot == slot && !in_painted.get(*k).copied().unwrap_or(false))
-            {
+            for (_, p) in self.parts.iter().enumerate().filter(|(k, p)| {
+                self.mixes.resolve(p.slot, layer) == slot && !in_painted.get(*k).copied().unwrap_or(false)
+            }) {
                 open_chains += p.slice(layer as usize, z, &mut loops);
             }
             let mut shapes = if loops.is_empty() {
@@ -9017,9 +9078,12 @@ impl SliceSession {
                     if piece.is_empty() {
                         continue;
                     }
-                    let part = self.region_parts.get(k).map(|p| (p, (p.object, p.slot)));
-                    if let Some((p, key)) = part.filter(|(p, _)| p.plain) {
-                        if p.slot == slot {
+                    let part = self
+                        .region_parts
+                        .get(k)
+                        .map(|p| (p, (p.object, self.mixes.resolve(p.slot, layer))));
+                    if let Some((_, key)) = part.filter(|(p, _)| p.plain) {
+                        if key.1 == slot {
                             match kept.iter_mut().find(|(o, _)| *o == key) {
                                 Some((_, s)) => *s = perimeters::union_all(&[&*s, &piece]),
                                 None => kept.push((key, piece)),
@@ -9028,7 +9092,7 @@ impl SliceSession {
                         continue;
                     }
                     if let Some((_, s)) = part
-                        .filter(|(p, _)| p.slot == slot)
+                        .filter(|(_, key)| key.1 == slot)
                         .and_then(|(_, key)| kept.iter().find(|(o, _)| *o == key))
                     {
                         piece = perimeters::difference(&piece, s);
@@ -14630,6 +14694,47 @@ fn feature_tools_from<'v>(
     }
 }
 
+/// Refuses a per-feature filament set to a mixed filament's number, in the plate's settings, an object's, a part's, a
+/// modifier's or a height range's: a feature prints with one loaded filament, so a mix is not one it can take. A
+/// feature filament on a part that is on a mix still prints its feature, and the mix the rest.
+fn feature_mix_check(
+    mixes: &crate::mixed::Mixes,
+    plate: &Plate,
+    config: &PrintConfig,
+    ranges: &[HeightRange],
+) -> Result<()> {
+    if mixes.is_empty() {
+        return Ok(());
+    }
+    let plate_values = FEATURE_KEYS.map(|k| (k, feature_id_of(|name| config.raw.get(name), k)));
+    let mut found = plate_values.into_iter().find(|(_, id)| mixes.get(*id).is_some());
+    let mut values: Vec<&serde_json::Value> = Vec::new();
+    for o in &plate.objects {
+        values.push(&o.settings);
+        values.extend(o.part_settings.iter().map(|(_, s)| s));
+        values.extend(o.volumes.iter().map(|v| &v.settings));
+    }
+    values.extend(ranges.iter().map(|r| &r.settings));
+    for v in values {
+        if found.is_some() {
+            break;
+        }
+        found = FEATURE_KEYS
+            .map(|k| (k, feature_id_of(|name| v.get(name), k)))
+            .into_iter()
+            .find(|(_, id)| mixes.get(*id).is_some());
+    }
+    match found {
+        Some((key, id)) => Err(Error::Config {
+            key,
+            reason: format!(
+                "names mixed filament {id}; a feature prints with one loaded filament, so pick one of those"
+            ),
+        }),
+        None => Ok(()),
+    }
+}
+
 /// True when one of these settings objects puts a feature on a filament of its own.
 fn uses_feature_tools(values: &[&serde_json::Value]) -> bool {
     values.iter().any(|v| {
@@ -14878,7 +14983,7 @@ fn support_slot_asked(cfg: &PrintConfig, key: &str) -> u8 {
 
 /// How many filaments the settings set up: the length of `filament_colour`, which hosts and projects give per
 /// filament. `None` when the settings have no such list, so nothing is checked against it.
-fn filament_count(cfg: &PrintConfig) -> Option<usize> {
+pub(crate) fn filament_count(cfg: &PrintConfig) -> Option<usize> {
     cfg.raw
         .get("filament_colour")
         .and_then(serde_json::Value::as_array)
@@ -15155,10 +15260,12 @@ fn keep_color_bands(
     plan: LayerPlan,
     raw: &[RawPart],
     max_z: f64,
+    mixes: &crate::mixed::Mixes,
 ) -> Result<(LayerPlan, Option<crate::output::VaryLayerCost>)> {
     let mut slots: Vec<u8> = raw
         .iter()
         .flat_map(|r| std::iter::once(r.0).chain(r.3.states()))
+        .flat_map(|s| mixes.expand(s))
         .collect();
     slots.sort_unstable();
     slots.dedup();
@@ -15188,6 +15295,7 @@ fn keep_color_bands(
             false,
             &[],
             &crate::toolorder::Choice::of(config, tools),
+            mixes,
         )
         .0
     };
@@ -15601,6 +15709,7 @@ fn plan_tools(
     only_extra: bool,
     first: &[u8],
     choice: &crate::toolorder::Choice,
+    mixes: &crate::mixed::Mixes,
 ) -> (Vec<Vec<u8>>, Option<u32>, Option<u32>) {
     let n = plan.count() as usize;
     if slots.len() < 2 {
@@ -15651,10 +15760,11 @@ fn plan_tools(
         }
     }
     let present = |l: usize| -> Vec<u8> {
+        let layer = u32::try_from(l).unwrap_or(u32::MAX);
         let mut v: Vec<u8> = spans
             .iter()
             .filter(|(_, a, b)| !only_extra && *a <= l && l <= *b)
-            .map(|s| s.0)
+            .map(|s| mixes.resolve(s.0, layer))
             .chain(extra.get(l).into_iter().flatten().copied())
             .collect();
         v.sort_unstable();
@@ -17508,7 +17618,13 @@ mod color_band_tests {
         let plan = LayerPlan::from_tops(top, &given, 0.04, 0.8).expect("the given tops reach the top");
         assert_eq!(plan.count(), 5);
         let raw = vec![block(1, 0.0, 5.0, top), block(2, 5.0, 10.0, top)];
-        let kept = keep_color_bands(&PrintConfig::default(), plan, &raw, top);
+        let kept = keep_color_bands(
+            &PrintConfig::default(),
+            plan,
+            &raw,
+            top,
+            &crate::mixed::Mixes::default(),
+        );
         let (kept, _) = kept.expect("the plan reaches the top as the given tops did");
         assert_eq!(kept.count(), 5);
     }

@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 771 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 772 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -471,6 +471,7 @@ Alphabetical, each linking to its group file.
 - `min_skirt_length`: Minimum skirt length, [process/adhesion](process-adhesion.md#min_skirt_length)
 - `min_width_top_surface`: Narrowest top surface, [process/quality](process-quality.md#min_width_top_surface)
 - `minimum_sparse_infill_area`: Minimum sparse infill area, [process/strength](process-strength.md#minimum_sparse_infill_area)
+- `mixed_filaments`: Mixed filaments, [process/multimaterial](process-multimaterial.md#mixed_filaments)
 - `mmu_segmented_region_interlocking_depth`: Painted color interlocking depth, [process/advanced](process-advanced.md#mmu_segmented_region_interlocking_depth)
 - `mmu_segmented_region_max_width`: Painted color depth, [process/advanced](process-advanced.md#mmu_segmented_region_max_width)
 - `notes`: Notes, [process/gcode](process-gcode.md#notes)

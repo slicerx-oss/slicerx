@@ -27,6 +27,7 @@
     "./slot-colors": "./js/slot-colors.ts",
     "./hotends": "./js/hotends.ts",
     "./script-keys": "./js/script-keys.ts",
+    "./mixed": "./js/mixed.ts",
     "./defaults.json": "./defaults.json"
   },
   "scripts": {

@@ -144,6 +144,7 @@ mod lightning;
 mod lightning2;
 #[doc(hidden)]
 pub mod mesh;
+pub mod mixed;
 mod monotonic;
 #[doc(hidden)]
 pub mod motion;

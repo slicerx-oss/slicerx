@@ -91,8 +91,14 @@ fn mmu(extra: &[(&str, Value)]) -> Value {
 /// The G-code of the two boxes with `cfg`, centered on a `bed` mm bed.
 #[allow(clippy::needless_pass_by_value, reason = "the callers hand over fresh values")]
 fn slice(cfg: Value, bed: [f64; 2]) -> String {
+    slice_on(cfg, bed, [1, 2])
+}
+
+/// [`slice`] with the boxes on filaments `slots`.
+#[allow(clippy::needless_pass_by_value, reason = "the callers hand over fresh values")]
+fn slice_on(cfg: Value, bed: [f64; 2], slots: [u8; 2]) -> String {
     let (cx, cy) = (bed[0] / 2.0, bed[1] / 2.0);
-    let objects: Vec<Value> = [(8.0, cx - 15.0, 1), (3.0, cx + 15.0, 2)]
+    let objects: Vec<Value> = [(8.0, cx - 15.0, slots[0]), (3.0, cx + 15.0, slots[1])]
         .iter()
         .enumerate()
         .map(|(k, &(h, x, slot))| {
@@ -341,4 +347,30 @@ fn a_layers_first_change_gives_way_to_the_wall_and_the_free_fill() {
         json!(["80", "80"]),
     )]));
     all_in(&held, 80.0, 86.0, "floor 80");
+}
+
+#[test]
+fn a_mixed_filament_changes_on_exactly_the_layers_its_pattern_switches_and_purges_each_as_a_loaded_one() {
+    // Box A (8 mm) on filament 1, box B (3 mm, 15 layers) on a 2:1 mix of filaments 1 and 2, so B prints A, A, B by
+    // layer. A layer changes filament when B's filament there is not the one the layer before ended on: into filament
+    // 2 on B's third layers, and back to 1 on the layer after. Every other layer purges nothing.
+    let cfg = mmu(&[("mixed_filaments", json!(["3:1,2:2,1:Mix"]))]);
+    let mixed = changes(&slice_on(cfg, MMU_BED, [1, 3]));
+    let mut want: Vec<usize> = Vec::new();
+    let mut current = 1u8;
+    for l in 0..40usize {
+        let b = (l < 15).then_some(if (l % 3) == 2 { 2u8 } else { 1u8 });
+        let tools: Vec<u8> = std::iter::once(1u8).chain(b).collect();
+        // The layer starts on the filament it ends on before, and ends on the other one it prints, if any.
+        if let Some(&other) = tools.iter().find(|&&t| t != current) {
+            want.push(l + 1);
+            current = other;
+        }
+    }
+    // The first layer's own tool select is not a change.
+    let got: Vec<usize> = mixed.iter().map(|c| c.layer).filter(|&l| l > 1).collect();
+    assert_eq!(got, want, "layers with a tool change");
+    // Each of those changes purges the flush matrix entry times the multiplier on the tower.
+    let later: Vec<f64> = mixed.iter().filter(|c| c.layer > 1).map(|c| c.total).collect();
+    all_in(&later, 84.0, 90.0, "mix 2:1, matrix 280 x 0.3");
 }

@@ -414,6 +414,7 @@ min_resonance_avoidance_speed	printer	float
 min_skirt_length	process	float
 min_width_top_surface	process	floatOrPercent
 minimum_sparse_infill_area	process	float
+mixed_filaments	process	strings
 mmu_segmented_region_interlocking_depth	process	float
 mmu_segmented_region_max_width	process	float
 notes	process	string

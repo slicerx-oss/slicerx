@@ -173,6 +173,7 @@ min_length_factor
 min_skirt_length
 min_width_top_surface
 minimum_sparse_infill_area
+mixed_filaments
 mmu_segmented_region_interlocking_depth
 mmu_segmented_region_max_width
 notes

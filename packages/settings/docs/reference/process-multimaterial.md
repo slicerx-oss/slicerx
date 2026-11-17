@@ -96,6 +96,18 @@
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
+### `mixed_filaments`
+
+**Mixed filaments**
+
+Two loaded filaments printed on alternating layers in a set ratio, so their colors blend, one entry per mix as id:a,b:ra,rb:name. Parts and paint use the id like a filament number; the app's Mix editor writes this.
+
+- Type: list of strings, one per extruder
+- Default: none (the slice works it out when nothing sets it)
+- Tier: Hidden (profile key), multicolor
+- Changing it redoes: contours
+- mimir class: read (not in the catalog: never written)
+
 ### `ooze_prevention`
 
 **Ooze prevention**
