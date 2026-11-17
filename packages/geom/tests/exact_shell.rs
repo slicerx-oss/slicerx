@@ -4,13 +4,15 @@
 // faces it makes get keys of the step, each of their own; the open faces are found by key or by place, and refused in
 // the mesh shell's words; a box, a cylinder and a cone shelled closed keep a wall within 0.01 mm of the one asked; a
 // curved lofted body open at its end is refused before the kernel is asked, since the kernel leaves such a wall open or
-// fails outright, so a replay runs it on the mesh. A closed shell whose wall strays from the one asked, cannot be read,
-// or whose mesh holds another volume than the body, is refused too. A straight-lofted taper, pushed or not, and a pushed
-// cone shelled closed answer within the step's time limit, held exact or refused.
+// fails outright, so a replay runs it on the mesh. A smooth loft and a ruled taper shelled closed stay exact, the
+// taper with its closed-form volume. A closed shell whose wall strays from the one asked, or cannot be read, is refused
+// too. A cube and a cylinder shelled closed, alone and joined to a box through the wall into the cavity, mesh as the
+// body. A straight-lofted taper, pushed or not, and a pushed cone shelled closed answer within the step's time limit,
+// held exact or refused.
 // Empty without the brep feature, so a workspace test run that names every test target passes over it.
 #![cfg(feature = "brep")]
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use sx_brep::{Body, Mesh, Tessellation};
 use sx_geom::exact as table;
 use sx_geom::fm::Fm;
@@ -93,6 +95,25 @@ fn wall_off(from: &Body, shelled: &Body, wall: f64, below: f64) -> (f64, usize) 
         worst = d.iter().fold(worst, |w, x| w.max((x - wall).abs()));
     }
     (worst, n)
+}
+
+/// `body` shelled closed to `wall` through the engine: held, and its inner side within [`WALL_MM`] of the wall asked.
+fn closed_and_held(body: u32, wall: f64) -> u32 {
+    let shelled = op(
+        "brep.shell",
+        &json!({ "body": body, "wallMm": wall, "keySalt": 8 }),
+    );
+    let hollow = number(&shelled["body"]);
+    let (off, n) = table::with(body, |from| {
+        table::with(hollow, |to| wall_off(&from.body, &to.body, wall, f64::INFINITY))
+    })
+    .flatten()
+    .expect("both held");
+    assert!(
+        n > 100 && off <= WALL_MM,
+        "a {wall} mm wall: {off} mm over {n} points"
+    );
+    hollow
 }
 
 #[test]
@@ -230,26 +251,18 @@ fn a_box_a_cylinder_and_a_cone_shelled_closed_keep_their_wall_within_a_hundredth
     }
 }
 
-/// A smooth loft through a circle, an ellipse and a smaller circle: its closed shell's wall is the one asked, but its
-/// mesh winds part of the cavity the wrong way, so it holds another volume than the body (1497.4 mm3 against 1670.7 at
-/// a 1 mm wall). Closed or open at its end, it is refused in the step's own words and nothing is held, so a replay
-/// shells it on the mesh.
+/// A smooth loft through a circle, an ellipse and a smaller circle: shelled closed, it stays exact with its wall within
+/// a hundredth of the one asked. Open at its end, it is refused in the step's own words and nothing is held, so a
+/// replay shells it on the mesh.
 #[test]
-fn a_curved_lofted_body_shelled_closed_or_open_at_its_end_is_refused() {
+fn a_curved_lofted_body_shelled_closed_stays_exact_and_open_at_its_end_is_refused() {
     if !sx_brep::KERNEL {
         return;
     }
     let body = lofted(&vase(), true);
     for wall in [1.0, 2.0, 3.0] {
+        closed_and_held(body, wall);
         let held = table::count();
-        let closed = refusal(
-            "brep.shell",
-            &json!({ "body": body, "wallMm": wall, "keySalt": 8 }),
-        );
-        assert_eq!(
-            closed,
-            format!("shell: a {wall} mm wall could not be made exact on this body")
-        );
         // open at its top: refused before the kernel is asked, which leaves this wall open along the rim
         let open = refusal(
             "brep.shell",
@@ -367,11 +380,10 @@ fn a_closed_shell_of_a_waisted_ruled_loft_is_refused() {
     table::free(body);
 }
 
-/// A ruled loft through three rectangles, smaller as it rises: its closed shell's wall is the one asked, but its mesh
-/// winds part of the cavity the wrong way and holds another volume than the body (11295.9 mm3 against 2217.2 at a 1 mm
-/// wall), so it is refused in the step's own words and nothing is held.
+/// A ruled loft through three rectangles, smaller as it rises: shelled closed, it stays exact with its wall within a
+/// hundredth of the one asked, and its volume is the closed form's.
 #[test]
-fn a_closed_shell_whose_mesh_holds_another_volume_than_the_body_is_refused() {
+fn a_closed_shell_of_a_ruled_taper_stays_exact() {
     if !sx_brep::KERNEL {
         return;
     }
@@ -387,17 +399,21 @@ fn a_closed_shell_whose_mesh_holds_another_volume_than_the_body_is_refused() {
         ]),
         false,
     );
-    let held = table::count();
-    for wall in [1.0, 2.0, 3.0] {
-        let why = refusal(
-            "brep.shell",
-            &json!({ "body": body, "wallMm": wall, "keySalt": 8 }),
+    for wall in [1.0f64, 2.0, 3.0] {
+        let hollow = closed_and_held(body, wall);
+        // the taper with each side plane moved in by the wall, and its top and bottom: a quadratic in height, so
+        // Simpson's rule is exact
+        let (x, y) = ((1.09f64).sqrt() * wall, (1.04f64).sqrt() * wall);
+        let area = |z: f64| 4.0 * (15.0 - 0.3 * z - x) * (10.0 - 0.2 * z - y);
+        let (low, high) = (wall, 20.0 - wall);
+        let inner = (high - low) / 6.0 * (area(low) + 4.0 * area(f64::midpoint(low, high)) + area(high));
+        let volume = table::with(hollow, |h| h.body.volume().expect("a volume")).expect("held");
+        assert!(
+            (volume - (7840.0 - inner)).abs() <= 1e-6 * 7840.0,
+            "a {wall} mm wall: {volume} mm3 against {}",
+            7840.0 - inner
         );
-        assert_eq!(
-            why,
-            format!("shell: a {wall} mm wall could not be made exact on this body")
-        );
-        assert_eq!(table::count(), held);
+        table::free(hollow);
     }
     table::free(body);
 }
@@ -546,4 +562,94 @@ fn closed_shells_of_tapers_and_pushed_bodies_answer_within_the_time_limit() {
         "closed shells that did not answer held or refused:\n{}",
         wrong.join("\n")
     );
+}
+
+/// How far the engine's mesh of a body may hold another volume than the body, as a share of it: the default chord's
+/// own error.
+const MESH_SHARE: f64 = 1e-3;
+
+/// The engine's mesh of `held` (`brep.tessellate`): its volume, how many shared edges both triangles run the same
+/// way, and how many edges only one triangle has.
+fn mesh_of(held: u32) -> (f64, usize, usize) {
+    let reply = op("brep.tessellate", &json!({ "body": held }));
+    let list = |key: &str| reply[key].as_array().expect("a list").clone();
+    let positions: Vec<f64> = list("positions")
+        .iter()
+        .map(|x| x.as_f64().expect("a number"))
+        .collect();
+    let corners: Vec<usize> = list("indices")
+        .iter()
+        .map(|x| usize::try_from(x.as_u64().expect("an index")).expect("an index"))
+        .collect();
+    let point = |corner: usize| {
+        let at = corner * 3;
+        [positions[at], positions[at + 1], positions[at + 2]]
+    };
+    let (mut volume, mut runs) = (0.0, HashMap::<(usize, usize), Vec<bool>>::new());
+    for triangle in corners.chunks(3) {
+        let [a, b, c] = [point(triangle[0]), point(triangle[1]), point(triangle[2])];
+        let across = [
+            b[1] * c[2] - b[2] * c[1],
+            b[2] * c[0] - b[0] * c[2],
+            b[0] * c[1] - b[1] * c[0],
+        ];
+        volume += (a[0] * across[0] + a[1] * across[1] + a[2] * across[2]) / 6.0;
+        for side in 0..3 {
+            let (from, to) = (triangle[side], triangle[(side + 1) % 3]);
+            runs.entry((from.min(to), from.max(to)))
+                .or_default()
+                .push(from < to);
+        }
+    }
+    let same = runs
+        .values()
+        .filter(|uses| uses.len() == 2 && uses[0] == uses[1])
+        .count();
+    let open = runs.values().filter(|uses| uses.len() == 1).count();
+    (volume, same, open)
+}
+
+/// The engine's mesh of `held` runs every shared edge both ways, has no open edge and holds the body's own volume.
+fn meshes_as_the_body(held: u32, what: &str) {
+    let (mesh, same, open) = mesh_of(held);
+    let body = table::with(held, |h| h.body.volume().expect("a volume")).expect("held");
+    assert!(
+        same == 0 && open == 0 && (mesh - body).abs() <= MESH_SHARE * body,
+        "{what}: mesh {mesh} mm3 against the body's {body}, {same} edges run the same way, {open} open"
+    );
+}
+
+/// A 20 mm cube and a cylinder 20 mm across and 20 mm tall, shelled closed at 1 and 3 mm, then joined to a box through
+/// both walls and the cavity: the cavity's faces look into a closed void, and the mesh the engine answers of each runs
+/// every shared edge both ways and holds the body's volume.
+#[test]
+fn closed_shells_alone_and_joined_to_a_box_through_the_wall_mesh_as_the_body() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let made = |name: &str, request: Value| number(&op(name, &request)["body"]);
+    let cube = made("brep.box", json!({ "min": [0, 0, 0], "max": [20, 20, 20] }));
+    let cylinder = made(
+        "brep.cylinder",
+        json!({ "origin": [0, 0, 0], "axis": [0, 0, 1], "diameterMm": 20, "heightMm": 20 }),
+    );
+    for (name, of, low, high) in [
+        ("a cube", cube, [-5.0, 9.0, 5.0], [25.0, 11.0, 15.0]),
+        ("a cylinder", cylinder, [-15.0, -1.0, 5.0], [15.0, 1.0, 15.0]),
+    ] {
+        for wall in [1.0, 3.0] {
+            let hollow = closed_and_held(of, wall);
+            meshes_as_the_body(hollow, &format!("{name} shelled to {wall} mm"));
+            let bar = made("brep.box", json!({ "min": low, "max": high }));
+            let through = made("brep.boolean", json!({ "a": hollow, "b": bar, "op": "union" }));
+            meshes_as_the_body(
+                through,
+                &format!("{name} shelled to {wall} mm with a box through its wall"),
+            );
+            for n in [hollow, bar, through] {
+                table::free(n);
+            }
+        }
+        table::free(of);
+    }
 }
