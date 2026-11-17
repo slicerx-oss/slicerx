@@ -25,6 +25,7 @@
     "./palette": "./src/palette.ts",
     "./summary": "./src/summary.ts",
     "./spacemouse": "./src/spacemouse.ts",
+    "./space-settings": "./src/space-settings.ts",
     "./mesh-worker": "./src/mesh-worker.ts",
     "./edge-drag": "./src/edge-drag/index.ts"
   },
@@ -64,6 +65,10 @@
         "types": "./dist/spacemouse.d.ts",
         "import": "./dist/spacemouse.js"
       },
+      "./space-settings": {
+        "types": "./dist/space-settings.d.ts",
+        "import": "./dist/space-settings.js"
+      },
       "./mesh-worker": {
         "types": "./dist/mesh-worker.d.ts",
         "import": "./dist/mesh-worker.js"
@@ -77,7 +82,7 @@
   },
   "scripts": {
     "dev": "vite demo --port 5190",
-    "build": "vite build -c vite.lib.config.mjs && node ../../../scripts/emit-types.mjs . index=src/index.ts palette=src/palette.ts summary=src/summary.ts spacemouse=src/spacemouse.ts mesh-worker=src/mesh-worker.ts edge-drag=src/edge-drag/index.ts",
+    "build": "vite build -c vite.lib.config.mjs && node ../../../scripts/emit-types.mjs . index=src/index.ts palette=src/palette.ts summary=src/summary.ts spacemouse=src/spacemouse.ts space-settings=src/space-settings.ts mesh-worker=src/mesh-worker.ts edge-drag=src/edge-drag/index.ts",
     "build:demo": "vite build demo",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",

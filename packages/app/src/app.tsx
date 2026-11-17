@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { AppFeature, Host } from '@slicerx/contracts'
-import { startSpaceMouse } from './viewport/spacemouse'
 import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { AppTooltips } from './lib/tip-host'
@@ -37,6 +36,7 @@ import { isDirty, startDirtyTracking } from './project/unsaved'
 import { noteWorkspaceUp, startChunkReload } from './lib/chunk-reload'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, setModelMode, showsLayers, toast, useApp } from './state/store'
+import { startSpaceMouseWhenOn } from './viewport/spacemouse-state'
 import { hostSlices, mimirOn, setHostSlices, setMimirOn, stayInModel, useCadShown, useModelMode } from './state/model-mode'
 import { setOffered } from './state/offered'
 import { updaterRegistered } from './updates/hold'
@@ -109,8 +109,9 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
     if (have.has(themeIds.dark) && have.has(themeIds.light)) return
     void import('./theme/cache').then((m) => m.cacheThemes(themeIds))
   }, [themeIds, themeCache, userThemes, folderThemes])
-  // The 3D mouse follows its setting from the start, whatever tab opens first (viewport/spacemouse.ts).
-  useEffect(() => startSpaceMouse(), [])
+  // The 3D mouse follows its setting from the start, whatever tab opens first. Its driver (viewport/spacemouse.ts)
+  // loads only once the setting is on, then follows the setting itself.
+  useEffect(() => startSpaceMouseWhenOn(), [])
   const active = theme ?? editionTheme(edition, scheme, chosen)
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } }))
   // The assistant off means off everywhere: no commands, no mimir tab. Not yet connected keeps both, and the tab answers with scripted replies.

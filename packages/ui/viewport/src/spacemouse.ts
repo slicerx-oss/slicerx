@@ -3,7 +3,7 @@
 // 3D mouse (six axis controller) input as data: the HID reports such a device sends, and the camera motion a frame of
 // them asks for. The viewport applies the motion each frame (viewport.ts, stepSpaceMouse); the app reads the device
 // (WebHID in the browser, the desktop shell's HID reader) and hands the raw reports here. No three.js import, so the
-// parser and the mapping are tested without a canvas.
+// parser and the mapping are tested without a canvas. The settings live in space-settings.ts.
 //
 // Report layout (the public HID layout of these devices, usage page 0x01 Generic Desktop, usage 0x08 Multi-axis
 // Controller). Every value is a signed 16-bit little-endian count, about -350 to 350 at full push:
@@ -11,6 +11,8 @@
 //   report 2: rotation RX, RY, RZ (6 bytes).
 //   report 3: buttons, one bit each, bit 0 the first (left) button.
 // Axes as the device reports them: X to the right, Y toward the person, Z down; RX, RY and RZ turn about those axes.
+
+import { SPACE_AXES, SPACE_SENSITIVITY, type SpaceAxis, type SpaceMouseSettings } from './space-settings'
 
 /** One frame of the six axes, in raw device counts. */
 export interface SpaceFrame {
@@ -96,46 +98,7 @@ export function spaceButtonPresses(prev: number, next: number): SpaceButtonActio
   return out
 }
 
-/** The five camera moves a person can tune. Roll (RY) is not used: the camera keeps the plate's up direction. */
-export type SpaceAxis = 'panX' | 'panY' | 'zoom' | 'tilt' | 'spin'
-export const SPACE_AXES: readonly SpaceAxis[] = ['panX', 'panY', 'zoom', 'tilt', 'spin']
-
-export interface SpaceMouseSettings {
-  enabled: boolean
-  /** Speed multiplier, SPACE_SENSITIVITY.min to max. */
-  sensitivity: number
-  /** Axes whose direction is flipped. */
-  invert: Readonly<Record<SpaceAxis, boolean>>
-  /** Only the strongest axis moves the view at a time. */
-  dominantAxis: boolean
-}
-
-export const SPACE_SENSITIVITY = { min: 0.25, max: 4, step: 0.05 } as const
-
-export const DEFAULT_SPACE_MOUSE: Readonly<SpaceMouseSettings> = Object.freeze({
-  enabled: false,
-  sensitivity: 1,
-  invert: Object.freeze({ panX: false, panY: false, zoom: false, tilt: false, spin: false }),
-  dominantAxis: false,
-})
-
-const isRec = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-
-/** Settings read back from storage or an outside caller: each field checked on its own, a bad one falls back to its default. */
-export function normalizeSpaceMouse(v: unknown): SpaceMouseSettings {
-  const r = isRec(v) ? v : {}
-  const d = DEFAULT_SPACE_MOUSE
-  const inv = isRec(r['invert']) ? r['invert'] : {}
-  const s = r['sensitivity']
-  const sensitivity = typeof s === 'number' && Number.isFinite(s) ? Math.min(SPACE_SENSITIVITY.max, Math.max(SPACE_SENSITIVITY.min, s)) : d.sensitivity
-  const invert = Object.fromEntries(SPACE_AXES.map((a) => [a, typeof inv[a] === 'boolean' ? inv[a] : d.invert[a]])) as Record<SpaceAxis, boolean>
-  return {
-    enabled: typeof r['enabled'] === 'boolean' ? r['enabled'] : d.enabled,
-    sensitivity,
-    invert,
-    dominantAxis: typeof r['dominantAxis'] === 'boolean' ? r['dominantAxis'] : d.dominantAxis,
-  }
-}
+export { DEFAULT_SPACE_MOUSE, normalizeSpaceMouse, SPACE_AXES, SPACE_SENSITIVITY, type SpaceAxis, type SpaceMouseSettings } from './space-settings'
 
 /** Share of full push ignored around rest, so a cap at rest or a resting hand does not drift the view. */
 export const SPACE_DEAD_ZONE = 0.06

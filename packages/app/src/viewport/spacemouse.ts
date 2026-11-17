@@ -4,27 +4,21 @@
 // browsers): access is asked for once from the Connect button, and later loads find the same device again through
 // getDevices. The desktop shell registers its own reader (the web view there has no WebHID on macOS or Linux), which
 // sends the same raw reports. Motion goes to the 3D view (viewport-host.tsx, spaceMouseInput); the first button resets
-// the view and the second fits it. Everything here runs only while Settings > Controls > 3D mouse is on.
-import { EMPTY_REPORT_STATE, parseSpaceReportBytes, spaceButtonPresses, SPACE_MOUSE_USAGE, SPACE_MOUSE_VENDORS, type SpaceFrame, type SpaceReportState } from '@slicerx/viewport/spacemouse'
+// the view and the second fits it. Everything here runs only while Settings > Controls > 3D mouse is on, and the module
+// itself loads only then (app.tsx) or from the Connect button; what loads with the app is spacemouse-state.ts.
+import { EMPTY_REPORT_STATE, parseSpaceReportBytes, spaceButtonPresses, SPACE_MOUSE_USAGE, SPACE_MOUSE_VENDORS, type SpaceReportState } from '@slicerx/viewport/spacemouse'
 import { appStore, set, setCamera } from '../state/store'
+import {
+  emitSpaceFrame,
+  registeredSpaceMouseSource,
+  resetSpaceMouseStateForTests,
+  setSpaceMouseStatus,
+  SPACE_MOUSE_OFF,
+  type SpaceMouseSource,
+  type SpaceMouseStatus,
+} from './spacemouse-state'
 
-/** Where the device stands, for the setting's status line. */
-export type SpaceMouseStatus =
-  | { state: 'unsupported' }
-  | { state: 'off' }
-  | { state: 'none' }
-  | { state: 'connected'; name: string }
-  | { state: 'busy'; name?: string }
-  | { state: 'error'; message: string }
-
-/** A way to reach the device: WebHID here, or the desktop shell's reader. */
-export interface SpaceMouseSource {
-  kind: 'webhid' | 'desktop'
-  /** Starts reading: each raw report with its id as the first byte, and each status change. Returns the stop. */
-  start(onReport: (bytes: Uint8Array) => void, onStatus: (s: SpaceMouseStatus) => void): () => void
-  /** Asks the person to pick a device (WebHID; must run from a click or key press). Absent where no picking is needed. */
-  connect?(): Promise<void>
-}
+export { onSpaceMouseFrame, registerSpaceMouseSource, spaceMouseStatus, subscribeSpaceMouseStatus, type SpaceMouseSource, type SpaceMouseStatus } from './spacemouse-state'
 
 // ---------- WebHID ----------
 
@@ -139,57 +133,22 @@ export function webHidSource(nav: unknown = typeof navigator === 'undefined' ? u
   }
 }
 
-// ---------- the source in use and its status ----------
+// ---------- the source in use ----------
 
-let registered: (() => SpaceMouseSource | null) | null = null
-let source: SpaceMouseSource | null | undefined
-/** Fixed objects, so a status read twice is the same value (React's useSyncExternalStore needs that). */
-const UNSUPPORTED: SpaceMouseStatus = Object.freeze({ state: 'unsupported' })
-const OFF: SpaceMouseStatus = Object.freeze({ state: 'off' })
-let status: SpaceMouseStatus = OFF
-const statusListeners = new Set<() => void>()
-const frameListeners = new Set<(f: SpaceFrame) => void>()
+let webHid: SpaceMouseSource | null | undefined
 
-/** The desktop shell's reader, registered before the app starts. Without one the browser's WebHID is used. */
-export function registerSpaceMouseSource(factory: (() => SpaceMouseSource | null) | null): void {
-  registered = factory
-  source = undefined
-}
-
+/** The desktop shell's reader when one is registered, else the browser's WebHID. */
 export function spaceMouseSource(): SpaceMouseSource | null {
-  if (source === undefined) source = registered ? registered() : webHidSource()
-  return source
-}
-
-function setStatus(s: SpaceMouseStatus): void {
-  status = s
-  for (const l of statusListeners) l()
-}
-
-export function spaceMouseStatus(): SpaceMouseStatus {
-  if (!spaceMouseSource()) return UNSUPPORTED
-  return status
-}
-
-export function subscribeSpaceMouseStatus(l: () => void): () => void {
-  statusListeners.add(l)
-  return () => {
-    statusListeners.delete(l)
-  }
-}
-
-/** The 3D view listens here for the device's six axes. */
-export function onSpaceMouseFrame(l: (f: SpaceFrame) => void): () => void {
-  frameListeners.add(l)
-  return () => {
-    frameListeners.delete(l)
-  }
+  const reg = registeredSpaceMouseSource()
+  if (reg !== undefined) return reg
+  if (webHid === undefined) webHid = webHidSource()
+  return webHid
 }
 
 /** Feeds one raw report (id first) through: motion to the 3D view, button presses to the camera. Exported for tests. */
 export function handleSpaceReport(bytes: Uint8Array, prev: SpaceReportState): SpaceReportState {
   const { state, kind } = parseSpaceReportBytes(bytes, prev)
-  if (kind === 'motion') for (const l of frameListeners) l(state.frame)
+  if (kind === 'motion') emitSpaceFrame(state.frame)
   else if (kind === 'buttons') {
     for (const a of spaceButtonPresses(prev.buttons, state.buttons)) setCamera(a === 'fit' ? 'fit' : 'iso')
   }
@@ -212,13 +171,13 @@ function run(enabled: boolean): void {
       (s) => {
         // a device that went away takes its held buttons and axes with it, so the first press after it is back counts
         if (s.state !== 'connected') st = EMPTY_REPORT_STATE
-        setStatus(s)
+        setSpaceMouseStatus(s)
       },
     )
   } else if (!enabled && stop) {
     stop()
     stop = null
-    setStatus(OFF)
+    setSpaceMouseStatus(SPACE_MOUSE_OFF)
   }
 }
 
@@ -242,8 +201,8 @@ export function resetSpaceMouseForTests(): void {
   unwatch?.()
   unwatch = null
   started = false
-  source = undefined
-  status = OFF
+  webHid = undefined
+  resetSpaceMouseStateForTests()
 }
 
 /**
@@ -263,6 +222,6 @@ export async function connectSpaceMouse(): Promise<void> {
   } catch (e) {
     // closing the picker with nothing picked is not an error; anything else is said plainly
     if ((e as { name?: unknown } | null)?.name === 'NotFoundError') return
-    setStatus({ state: 'error', message: "The browser didn't let the app reach the 3D mouse. Reload the page and press Connect 3D mouse again." })
+    setSpaceMouseStatus({ state: 'error', message: "The browser didn't let the app reach the 3D mouse. Reload the page and press Connect 3D mouse again." })
   }
 }

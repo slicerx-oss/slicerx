@@ -8,6 +8,7 @@ import { SpaceMouseSection, spaceMouseStatusText } from '../src/controls/spacemo
 import { loadPrefs, savePrefs } from '../src/state/prefs'
 import { appStore, set } from '../src/state/store'
 import { connectSpaceMouse, handleSpaceReport, HID_FILTERS, isSpaceMouse, onSpaceMouseFrame, registerSpaceMouseSource, reportBytes, resetSpaceMouseForTests, spaceMouseStatus, startSpaceMouse, webHidSource, type SpaceMouseSource, type SpaceMouseStatus } from '../src/viewport/spacemouse'
+import { startSpaceMouseWhenOn } from '../src/viewport/spacemouse-state'
 
 const MULTI_AXIS = [{ usagePage: 0x01, usage: 0x08 }]
 
@@ -223,6 +224,17 @@ describe('3D mouse setting', () => {
     expect(f.calls.start).toBe(1)
     f.status({ state: 'connected', name: 'SpaceMouse Wireless' })
     expect(spaceMouseStatus()).toEqual({ state: 'connected', name: 'SpaceMouse Wireless' })
+  })
+
+  it('loads the reader only once the setting is turned on, and starts it then', async () => {
+    const f = fakeSource()
+    registerSpaceMouseSource(() => f.src)
+    const stopWatch = startSpaceMouseWhenOn()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(f.calls.start).toBe(0)
+    set({ spaceMouse: { ...DEFAULT_SPACE_MOUSE, enabled: true } })
+    await vi.waitFor(() => expect(f.calls.start).toBe(1))
+    stopWatch()
   })
 
   it('is saved through the store', () => {

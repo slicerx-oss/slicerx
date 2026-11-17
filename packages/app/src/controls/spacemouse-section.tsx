@@ -3,7 +3,7 @@
 // Settings > Controls > 3D mouse: on or off, Connect (in the browser, where access is asked for once), how fast it
 // moves the view, which directions are flipped, and dominant axis mode. Changes apply at once.
 import { Button, Field, Range, SettingRow, Switch } from '@slicerx/ui'
-import { DEFAULT_SPACE_MOUSE, SPACE_AXES, SPACE_SENSITIVITY, type SpaceAxis, type SpaceMouseSettings } from '@slicerx/viewport/spacemouse'
+import { DEFAULT_SPACE_MOUSE, SPACE_AXES, SPACE_SENSITIVITY, type SpaceAxis, type SpaceMouseSettings } from '@slicerx/viewport/space-settings'
 import { useState, useSyncExternalStore } from 'react'
 import { set, useApp } from '../state/store'
 import { connectSpaceMouse, spaceMouseSource, spaceMouseStatus, subscribeSpaceMouseStatus, type SpaceMouseStatus } from '../viewport/spacemouse'
