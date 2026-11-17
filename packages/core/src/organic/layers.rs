@@ -144,6 +144,20 @@ fn grow_apart(
     geo::union(&out)
 }
 
+/// How far the top contacts grow past their outline when they are closed into interface (beyond the closing
+/// distance they shrink back by), plate units: one interface line pitch (line spacing over density); planned per
+/// object, only the gap between two interface lines, so a thin contact strip under a sloped or painted wall widens
+/// by that gap on each side instead of a whole pitch.
+fn top_closing(p: &super::Params, per_object: bool) -> f64 {
+    let spacing = geo::sc(p.interface_spacing) as f64;
+    let pitch = spacing / p.top_interface_density;
+    if per_object {
+        (pitch - spacing).max(0.0)
+    } else {
+        pitch
+    }
+}
+
 /// From the drawn branches and the placed roofs to the organic layers of every support layer.
 pub(crate) fn finish(
     inp: &OrganicIn<'_>,
@@ -193,7 +207,7 @@ pub(crate) fn finish(
         let num_bottom_base = 0usize;
         let smoothing = geo::sc(p.interface_spacing) as f64 * 1.5;
         let closing_distance = smoothing;
-        let r_top = geo::sc(p.interface_spacing) as f64 / p.top_interface_density;
+        let r_top = top_closing(p, cfg.per_object);
         let r_bottom = geo::sc(p.interface_spacing) as f64 / p.bottom_interface_density;
         let regularize = |polys: Shapes, r: f64| -> Shapes {
             if polys.is_empty() {
@@ -213,6 +227,13 @@ pub(crate) fn finish(
             let mut bottom_base_proj: Vec<geo::Ring> = Vec::new();
             if num_top > 0 {
                 let top_z = print_z(inter[(ni - 1).min(k + num_top - 1)]);
+                // Planned per object, the top interface reaches `num_top` layers up from this one by height, so
+                // the layer of tips right under a roof prints interface even with no branch layer above it.
+                let top_z = if cfg.per_object {
+                    top_z.max(print_z(il + num_top - 1))
+                } else {
+                    top_z
+                };
                 let top_iface_z = if p.num_top_base_interface_layers > 0 {
                     if num_top_only == 0 {
                         f64::MIN
@@ -438,4 +459,70 @@ pub(crate) fn finish(
         out[l] = Some(ol);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Interface lines 0.4 mm apart center to center at full density, with a 0.5 mm gap between them: a pitch of
+    /// 0.9 mm.
+    fn params() -> super::super::Params {
+        super::super::Params {
+            num_top_interface_layers: 2,
+            num_top_base_interface_layers: 0,
+            num_bottom_interface_layers: 2,
+            has_top_contacts: true,
+            zero_gap_interface_top: false,
+            num_raft_layers: 0,
+            base_angle: 0.0,
+            support_spacing: 0.4,
+            interface_spacing: 0.4,
+            support_width: 0.42,
+            interface_width: 0.42,
+            top_interface_density: 0.4 / 0.9,
+            bottom_interface_density: 0.4 / 0.9,
+            support_density: 0.15,
+            base_rectilinear: false,
+            interface_rectilinear: false,
+        }
+    }
+
+    /// The width of `s`'s box along x, mm.
+    fn width(s: &Shapes) -> f64 {
+        let b = geo::bbox(s).unwrap();
+        (b[2] - b[0]) as f64 / crate::geom::SCALE
+    }
+
+    #[test]
+    fn a_contact_strip_widens_by_the_line_gap_when_planned_per_object() {
+        let p = params();
+        let mm = |v: f64| v / crate::geom::SCALE;
+        assert!(
+            (mm(top_closing(&p, true)) - 0.5).abs() < 1e-3,
+            "{}",
+            mm(top_closing(&p, true))
+        );
+        assert!(
+            (mm(top_closing(&p, false)) - 0.9).abs() < 1e-3,
+            "{}",
+            mm(top_closing(&p, false))
+        );
+        // A contact strip 1.5 mm wide, closed the way the interface layers close it.
+        let strip: Shapes = vec![vec![vec![
+            geo::ip((0, 0)),
+            geo::ip((geo::sc(1.5), 0)),
+            geo::ip((geo::sc(1.5), geo::sc(5.0))),
+            geo::ip((0, geo::sc(5.0))),
+        ]]];
+        let d = geo::sc(p.interface_spacing) as f64 * 1.5;
+        for (per_object, grow) in [(true, 0.5), (false, 0.9)] {
+            let closed = closing(&strip, d + top_closing(&p, per_object), d);
+            let w = width(&closed);
+            assert!(
+                (w - (1.5 + 2.0 * grow)).abs() < 0.01,
+                "per object {per_object}: {w:.3} mm wide"
+            );
+        }
+    }
 }
