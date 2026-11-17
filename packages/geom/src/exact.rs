@@ -461,16 +461,22 @@ fn shelled(handle: u32, held: &Held, req: &Value) -> Result<Value> {
             ),
         ));
     }
-    let refused = |why: &dyn std::fmt::Display| {
+    let body = held.body.shell(wall, &picked).map_err(|e| {
         Error::geometry(
             "shell",
-            format!("a {wall} mm wall could not be made exact on this body ({why})"),
+            format!("a {wall} mm wall could not be made exact on this body ({e})"),
         )
-    };
-    let body = held.body.shell(wall, &picked).map_err(|e| refused(&e))?;
-    // the kernel's own checks pass closed walls that are not the wall asked
-    if picked.is_empty() {
-        wall_holds(&held.body, &body, wall).map_err(|why| refused(&why))?;
+    })?;
+    // the kernel's own checks pass closed walls that are not the wall asked; the refusal is the step's own words and
+    // what was read goes only to the log
+    if picked.is_empty()
+        && let Err(why) = closed_holds(&held.body, &body, wall)
+    {
+        eprintln!("shell: a {wall} mm closed wall read back off: {why}");
+        return Err(Error::geometry(
+            "shell",
+            format!("a {wall} mm wall could not be made exact on this body"),
+        ));
     }
     let keys = carried_keys(&held.body, &body, wall / 2.0)?;
     let number = hold(body, keys.clone())?;
@@ -489,6 +495,12 @@ const WALL_CHORDS_MM: [f64; 4] = [0.05, 0.5, 5.0, 50.0];
 /// The most points of one face the wall is read at.
 #[cfg(feature = "cad")]
 const WALL_POINTS: usize = 400;
+/// Why a closed shell of `from` is not the one asked, read back as [`wall_holds`] reads it.
+#[cfg(feature = "cad")]
+fn closed_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), String> {
+    wall_holds(from, made, wall)
+}
+
 /// A closed shell of `from` read back at points inside each face of `made`: a face on `from` stays on it, and every
 /// other face is `wall` from it, each within [`WALL_MM`]. Why not, in words, otherwise.
 #[cfg(feature = "cad")]

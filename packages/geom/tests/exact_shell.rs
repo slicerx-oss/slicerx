@@ -280,7 +280,7 @@ fn lofted(profiles: Value, smooth: bool) -> u32 {
 }
 
 /// A closed shell whose inner wall strays from the wall asked, though its triangles stay on its own surface, is
-/// refused by the wall read back and not held, so a replay shells it on the mesh.
+/// refused in the step's own words and not held, so a replay shells it on the mesh.
 #[test]
 fn a_closed_shell_whose_wall_strays_from_the_one_asked_is_refused() {
     if !sx_brep::KERNEL {
@@ -299,19 +299,15 @@ fn a_closed_shell_whose_wall_strays_from_the_one_asked_is_refused() {
     );
     let held = table::count();
     let why = refusal("brep.shell", &json!({ "body": body, "wallMm": 2, "keySalt": 8 }));
-    assert!(
-        why.starts_with("shell: a 2 mm wall could not be made exact on this body (its inner wall is ")
-            && why.ends_with(" mm off the wall asked)"),
-        "{why}"
-    );
+    assert_eq!(why, "shell: a 2 mm wall could not be made exact on this body");
     assert_eq!(table::count(), held);
     table::free(body);
 }
 
-/// A ruled loft that narrows and widens again: the kernel makes its closed shell without a word, and the wall read
-/// back refuses it, whether the wall strays or cannot be read at all.
+/// A ruled loft that narrows and widens again: the kernel makes its closed shell without a word, and it is refused
+/// in the step's own words, whether its wall strays or cannot be read at all.
 #[test]
-fn a_closed_shell_of_a_waisted_ruled_loft_is_refused_by_its_wall() {
+fn a_closed_shell_of_a_waisted_ruled_loft_is_refused() {
     if !sx_brep::KERNEL {
         return;
     }
@@ -330,11 +326,9 @@ fn a_closed_shell_of_a_waisted_ruled_loft_is_refused_by_its_wall() {
             "brep.shell",
             &json!({ "body": body, "wallMm": wall, "keySalt": 8 }),
         );
-        assert!(
-            why.starts_with(&format!(
-                "shell: a {wall} mm wall could not be made exact on this body (its inner wall "
-            )),
-            "{why}"
+        assert_eq!(
+            why,
+            format!("shell: a {wall} mm wall could not be made exact on this body")
         );
         assert_eq!(table::count(), held);
     }
