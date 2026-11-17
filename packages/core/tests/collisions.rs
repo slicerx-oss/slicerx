@@ -585,11 +585,30 @@ fn fine_block(width: f32, depth: f32, height: f32, cuts: u32) -> Arc<Mesh> {
     mesh(vec![part])
 }
 
+/// [`run`] on a session kept after the run, and how much work the run's collision walks did
+/// ([`api::Prepared::collide_work`]).
+fn counted(objects: &[(&str, Arc<Mesh>, f32, f32)]) -> (SliceRun, sx_core::collide::Work) {
+    let (mut req, load) = request(objects, json!({}), json!({}));
+    req.config = common::with_base(&req.config);
+    let prepared = api::prepare(&req, &load).unwrap();
+    let r = api::run_prepared(&req, &prepared, &api::NoProgress).unwrap();
+    (r, prepared.collide_work())
+}
+
 #[test]
 fn a_toolhead_hit_on_a_finely_meshed_neighbor_is_found_as_on_a_plain_box_and_quickly() {
     // The toolhead hit of the test above, with the tall box cut into 43,200 triangles. Where the head meets the part
     // is looked up on the mesh at every probe that may strike, so the check must not scan the whole mesh each time:
-    // before, a plate like this took minutes.
+    // before, a plate like this took minutes. The counts of the check's work, kept in a test build, are the bound;
+    // a clock moves with the machine's load. On this plate the walks read 34,318 triangles of the box's surface and
+    // test 7,826,460 by their box (8,416 and 48,232 on the plain box). With every query walking the whole mesh, as
+    // before, they read about 569 million and test about 182 million; with the cell lists gone but the box tests
+    // kept, they read about 387 million and test the same 182 million. Making the obstacles' surface cell lists
+    // takes 65,932 entries and their height grids sample 65,932 cells; each time either is made again adds tens of
+    // thousands, and listing or sampling every cell for every triangle takes about 19 million.
+    // Only the slicing of the mesh itself is not counted. The clock guards that alone, at 120 s, about 6 times the
+    // 20.3 s a hosted Windows runner once took for the whole slice.
+    let started = std::time::Instant::now();
     let plain = run(
         &[
             ("tall", block(20.0, 20.0, 30.0), 60.0, 100.0),
@@ -598,16 +617,15 @@ fn a_toolhead_hit_on_a_finely_meshed_neighbor_is_found_as_on_a_plain_box_and_qui
         json!({}),
         json!({}),
     );
-    let started = std::time::Instant::now();
-    let fine = run(
-        &[
-            ("tall", fine_block(20.0, 20.0, 30.0, 60), 60.0, 100.0),
-            ("low", block(20.0, 20.0, 5.0), 88.0, 100.0),
-        ],
-        json!({}),
-        json!({}),
-    );
-    let took = started.elapsed().as_secs_f64();
+    let fine_plate = [
+        ("tall", fine_block(20.0, 20.0, 30.0, 60), 60.0, 100.0),
+        ("low", block(20.0, 20.0, 5.0), 88.0, 100.0),
+    ];
+    let fine_started = std::time::Instant::now();
+    let fine = run(&fine_plate, json!({}), json!({}));
+    let took = fine_started.elapsed().as_secs_f64();
+    let (counted_run, work) = counted(&fine_plate);
+    assert_eq!(kinds(&counted_run), kinds(&fine));
     let hit = |r: &SliceRun| {
         r.report
             .collisions
@@ -643,7 +661,24 @@ fn a_toolhead_hit_on_a_finely_meshed_neighbor_is_found_as_on_a_plain_box_and_qui
         a.push_mm,
         b.push_mm
     );
-    assert!(took < 20.0, "{took:.1} s");
+    let sx_core::collide::Work {
+        reads,
+        looks,
+        listed,
+        raised,
+    } = work;
+    eprintln!(
+        "fine plate: {took:.2} s, whole test {:.2} s, {reads} reads, {looks} box tests, {listed} cell list entries, \
+         {raised} grid cells",
+        started.elapsed().as_secs_f64()
+    );
+    // Counted only in a build with debug assertions, as the tests run; a release build reads 0 and fails here.
+    assert!(reads > 0 && reads <= 36_000, "{reads} triangle reads");
+    assert!(looks <= 8_100_000, "{looks} triangle box tests");
+    assert!(listed > 0 && listed <= 69_000, "{listed} cell list entries");
+    assert!(raised > 0 && raised <= 69_000, "{raised} grid cells");
+    // The slicing of the mesh, which nothing counts.
+    assert!(took < 120.0, "{took:.1} s");
 }
 
 #[test]

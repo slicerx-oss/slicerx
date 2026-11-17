@@ -34,15 +34,16 @@ impl Grid {
 
     /// The tallest point of `obj` over each cell. A triangle that spans a few cells raises them to its top; a larger
     /// one is clipped to each cell's column, so a long sloped or vertical face raises a cell only as high as it is there.
-    pub(crate) fn of_surface(obj: &Surface) -> Self {
+    /// `raised` counts the cells the triangles raise or sample ([`Count`]).
+    pub(crate) fn of_surface(obj: &Surface, raised: &Count) -> Self {
         let mut g = Self::new(obj.x0, obj.y0, obj.w, obj.h);
         for t in obj.tris.iter().filter_map(|t| obj.corners(t)) {
-            g.raise(&t);
+            g.raise(&t, raised);
         }
         g
     }
 
-    fn raise(&mut self, t: &[[f64; 3]; 3]) {
+    fn raise(&mut self, t: &[[f64; 3]; 3], raised: &Count) {
         let xs = t.map(|p| p[0]);
         let ys = t.map(|p| p[1]);
         let top = t.iter().map(|p| p[2]).fold(f64::MIN, f64::max);
@@ -57,6 +58,7 @@ impl Grid {
         let small = cx1 - cx0 <= 1 && cy1 - cy0 <= 1;
         for cy in cy0..=cy1 {
             for cx in cx0..=cx1 {
+                raised.add();
                 let z = if small {
                     Some(top)
                 } else {
@@ -217,38 +219,40 @@ pub(crate) struct Surface {
     /// takes it once.
     first: Vec<[u32; 2]>,
     /// How many triangles queries have read.
-    reads: Reads,
+    reads: Count,
+    /// How many triangles queries have passed over by their box ([`Self::box_of`]), read or not.
+    looks: Count,
 }
 
-/// A count of triangle reads ([`Surface::reads`]): the plate check's work, which a test can bound where a clock would
-/// move with the machine's load. Only builds with debug assertions keep it; in the others it is empty and counts
-/// nothing.
+/// A count of the plate check's work: triangle reads ([`Surface::reads`]) and box tests, and the cells an obstacle's
+/// surface index and height grid fill as they are made. A test can bound it where a clock would move with the
+/// machine's load. Only builds with debug assertions keep it; in the others it is empty and counts nothing.
 #[derive(Debug, Default)]
-struct Reads(#[cfg(debug_assertions)] std::sync::atomic::AtomicU64);
+pub(crate) struct Count(#[cfg(debug_assertions)] std::sync::atomic::AtomicU64);
 
-impl Reads {
+impl Count {
     #[cfg_attr(
         not(debug_assertions),
         allow(clippy::unused_self, reason = "the counting build adds to self")
     )]
-    fn add(&self) {
+    pub(crate) fn add(&self) {
         #[cfg(debug_assertions)]
         self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[cfg(debug_assertions)]
-    fn get(&self) -> u64 {
+    pub(crate) fn get(&self) -> u64 {
         self.0.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     #[cfg(not(debug_assertions))]
     #[allow(clippy::unused_self, reason = "the counting build reads the count from self")]
-    fn get(&self) -> u64 {
+    pub(crate) fn get(&self) -> u64 {
         0
     }
 }
 
-impl Clone for Reads {
+impl Clone for Count {
     #[cfg(debug_assertions)]
     fn clone(&self) -> Self {
         Self(std::sync::atomic::AtomicU64::new(self.get()))
@@ -267,7 +271,14 @@ impl Surface {
         self.reads.get()
     }
 
-    pub(crate) fn of_object(obj: &PlateObject) -> Self {
+    /// How many triangles queries have tested by their box so far ([`Self::box_of`]); 0 in a build without debug
+    /// assertions, as [`Self::reads`].
+    pub(crate) fn looks(&self) -> u64 {
+        self.looks.get()
+    }
+
+    /// `listed` counts the entries the cell lists take as they are made, one per triangle and cell ([`Count`]).
+    pub(crate) fn of_object(obj: &PlateObject, listed: &Count) -> Self {
         let (mut pts, mut tris) = (Vec::new(), Vec::new());
         let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
         for part in &obj.mesh.parts {
@@ -290,11 +301,12 @@ impl Surface {
                 tris.push(corners.map(|i| u32::try_from(i).unwrap_or(u32::MAX)));
             }
         }
-        Self::of_mesh(pts, tris, lo, hi)
+        Self::of_mesh(pts, tris, lo, hi, listed)
     }
 
-    /// A surface from corners in bed coordinates and triangles over them, `lo` and `hi` the corners' extent on the bed.
-    fn of_mesh(pts: Vec<[f64; 3]>, tris: Vec<[u32; 3]>, lo: [f64; 2], hi: [f64; 2]) -> Self {
+    /// A surface from corners in bed coordinates and triangles over them, `lo` and `hi` the corners' extent on the bed;
+    /// `listed` counts the cell lists' entries.
+    fn of_mesh(pts: Vec<[f64; 3]>, tris: Vec<[u32; 3]>, lo: [f64; 2], hi: [f64; 2], listed: &Count) -> Self {
         if tris.is_empty() {
             return Self::default();
         }
@@ -312,7 +324,8 @@ impl Surface {
             cells: Vec::new(),
             boxes: Vec::with_capacity(tris.len()),
             first: Vec::with_capacity(tris.len()),
-            reads: Reads::default(),
+            reads: Count::default(),
+            looks: Count::default(),
         };
         for (i, t) in tris.iter().enumerate() {
             let Some(t3) = out.corners(t) else {
@@ -341,6 +354,7 @@ impl Surface {
                         continue;
                     };
                     if let Some(c) = cells.get_mut(y * w + x) {
+                        listed.add();
                         c.push(i);
                     }
                 }
@@ -370,6 +384,7 @@ impl Surface {
 
     /// Triangle `i`'s box, as [`Surface::boxes`] holds it.
     fn box_of(&self, i: u32) -> Option<&[f64; 6]> {
+        self.looks.add();
         self.boxes.get(i as usize)
     }
 
@@ -699,8 +714,9 @@ mod tests {
     fn a_long_sloped_face_raises_each_cell_only_as_high_as_it_is_there() {
         let mut g = flat(0, 0, 40, 4, 0.0);
         // a ramp from z 0 at x 0 to z 40 at x 40, 4 mm wide
-        g.raise(&[[0.0, 0.0, 0.0], [40.0, 0.0, 40.0], [40.0, 4.0, 40.0]]);
-        g.raise(&[[0.0, 0.0, 0.0], [40.0, 4.0, 40.0], [0.0, 4.0, 0.0]]);
+        let raised = Count::default();
+        g.raise(&[[0.0, 0.0, 0.0], [40.0, 0.0, 40.0], [40.0, 4.0, 40.0]], &raised);
+        g.raise(&[[0.0, 0.0, 0.0], [40.0, 4.0, 40.0], [0.0, 4.0, 0.0]], &raised);
         assert!((g.at(10.5, 2.0) - 11.0).abs() < 0.01);
         assert!((g.at(39.5, 2.0) - 40.0).abs() < 0.01);
     }
@@ -750,7 +766,7 @@ mod tests {
             lo = [lo[0].min(q[0]), lo[1].min(q[1])];
             hi = [hi[0].max(q[0]), hi[1].max(q[1])];
         }
-        Surface::of_mesh(pts, tris, lo, hi)
+        Surface::of_mesh(pts, tris, lo, hi, &Count::default())
     }
 
     fn soup(d: &mut Draw, n: usize) -> Surface {
