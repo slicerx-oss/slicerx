@@ -107,6 +107,26 @@ describe('app link 3D mouse', () => {
     }
   })
 
+  // The driver loads only once the setting is on (viewport/spacemouse-loader.ts), so nothing has started it here; the
+  // answer still reads the device's status, not the one from before the driver loaded.
+  it('turned on from the link before the driver has loaded, reads back the device status', async () => {
+    registerSpaceMouseSource(() => ({
+      kind: 'desktop',
+      start: (_r, st) => {
+        st({ state: 'none' })
+        return () => {}
+      },
+    }))
+    try {
+      const out = (await runCall('look.set', { spaceMouse: { enabled: true } })) as { spaceMouse: Record<string, unknown> }
+      expect(out.spaceMouse).toMatchObject({ enabled: true, status: 'none' })
+    } finally {
+      set({ spaceMouse: DEFAULT_SPACE_MOUSE })
+      resetSpaceMouseForTests()
+      registerSpaceMouseSource(null)
+    }
+  })
+
   // Turning the 3D mouse on from the link is allowed: it only moves the camera and presses the view buttons. In a
   // browser it reaches only a device the person already granted, and never opens the device picker.
   it('turned on from the link, opens only a device the person already granted and never asks for one', async () => {

@@ -369,7 +369,7 @@ function spaceMousePatch(v: unknown): SpaceMouseSettings {
  * from Settings > Controls (`spaceMouse`: enabled, sensitivity, invert, dominantAxis). Everything is checked before
  * anything changes, and the answer is the preferences read back. Nothing else in Settings is reachable here.
  */
-function setLook(args: Record<string, unknown>) {
+async function setLook(args: Record<string, unknown>) {
   const extra = Object.keys(args).filter((k) => k !== 'modelFraming' && k !== 'toolbarSize' && k !== 'spaceMouse')
   if (extra.length) throw new LinkError('invalid_input', `look.set takes modelFraming, toolbarSize and spaceMouse only, not ${extra.join(', ')}`)
   const { modelFraming, toolbarSize } = args
@@ -388,6 +388,9 @@ function setLook(args: Record<string, unknown>) {
     },
     ...(spaceMouse ? { spaceMouse } : {}),
   })
+  // the driver loads once the setting is on (viewport/spacemouse-loader.ts); the answer waits for it, so the status read
+  // back is the device's own. Loaded here on demand too, so the link code adds nothing to the app's startup code.
+  if (get().spaceMouse.enabled) (await import('../viewport/spacemouse')).startSpaceMouse()
   return lookState()
 }
 
