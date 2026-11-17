@@ -459,9 +459,27 @@ describe('a thing made of colored parts', () => {
     expect(today).not.toContain('project.')
     expect(today.endsWith('unless the person asks for that.')).toBe(true)
     const both = line(cloud())
-    expect(both).toContain("Set those filaments' colors with project.set_filament.")
+    expect(both).toContain("Set those filaments' colors with project.set_filament only while building it, or when the person asks to change that filament.")
     expect(both.endsWith('unless the person asks for that (then project.split_objects).')).toBe(true)
     expect(assembledLine(() => false)).toBe(ASSEMBLED_LINE)
+  })
+
+  it('gives each part its filament when building, and sets a filament color only while building or when asked, word for word', () => {
+    const build = 'Plan and check it as that one assembled model. When you build it, give each part the filament of its color.'
+    const set = "Set those filaments' colors with project.set_filament only while building it, or when the person asks to change that filament."
+    const rest = 'Do not split it into objects or lay its parts out on the plate unless the person asks for that'
+    // offered project.set_filament: the two sentences, in that order
+    expect(line(cloud())).toContain(`${build} ${set} ${rest}`)
+    expect(assembledLine((n) => n === 'project.set_filament')).toContain(`${build} ${set} ${rest}.`)
+    // not offered: only the build sentence, and no word of the filament tool
+    const without = line(cloud((n) => n !== 'project.set_filament'))
+    expect(without).toContain(`${build} ${rest}`)
+    expect(without).not.toContain('set_filament')
+    expect(without).not.toContain('Set those filaments')
+    expect(assembledLine(() => false)).toContain(`${build} ${rest}.`)
+    // the old sentence, which read as the rule for any later request to paint, is gone with or without the tool
+    for (const l of [line(cloud()), without, ASSEMBLED_LINE, assembledLine(() => true)]) expect(l).not.toContain('Painting it means')
+    expect(systemPrompt('full', () => true, '', { cloud: true, followUp: true })).not.toContain('Painting it means')
   })
 
   it('is in the cloud prompt only, and only with design.plan', () => {
