@@ -26,6 +26,14 @@ describe('the line for a follow-up on a built design', () => {
     expect(FOLLOWUP_LINE).toContain('A recolor of a part already painted in bands goes on the band the words name (the bottom: a height band; the whole part: paint.preview with whole) and says which it took')
   })
 
+  it('paints a part or detail recolored on a built design, never changing a filament\'s color, word for word', () => {
+    const said = 'A part or detail recolored on a design already built is painted with the paint tools (paint.preview, then paint.apply, by part or feature), never by changing a filament\'s color, which recolors every part printed in it.'
+    // right after the sentence that keeps what is built in its colors and paint
+    expect(FOLLOWUP_LINE).toContain(`what is built keeps its colors and paint. ${said} A detail added goes on the filament of the part it sits on`)
+    expect(FOLLOWUP_LINE.split(said)).toHaveLength(2)
+    expect(systemPrompt('full', () => true, '', { cloud: true, followUp: true })).toContain(said)
+  })
+
   it('ends the reply on what changed, with no question and no offer to slice or print', () => {
     expect(FOLLOWUP_LINE).toContain('The reply to a follow-up ends with what changed, in a few words: never a question, and no offer to slice or print')
   })
