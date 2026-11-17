@@ -389,6 +389,18 @@ impl Facets {
         mm.iter().map(|f| f.1).chain(placed.iter().map(|f| f.state))
     }
 
+    /// These pieces without the ones whose filament `drop` names: they print as if unpainted, in the part's own
+    /// filament.
+    pub(crate) fn without_states(&self, drop: impl Fn(u8) -> bool) -> Self {
+        match self {
+            Self::Mm(v) => Self::Mm(v.iter().filter(|f| !drop(f.1)).copied().collect()),
+            Self::Placed(v, t) => Self::Placed(
+                Pieces::Own(v.iter().filter(|f| !drop(f.state)).copied().collect()),
+                *t,
+            ),
+        }
+    }
+
     /// The pieces that carry filament `state`, kept the way these are.
     pub(crate) fn with_state(&self, state: u8) -> Self {
         match self {

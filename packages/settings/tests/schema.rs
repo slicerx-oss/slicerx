@@ -29,12 +29,14 @@ fn entries_are_complete_and_unique() {
 /// feature leaves the first layer to `initial_layer_line_width`. An unset brim loop rounding prints an even number of
 /// loops, and an unset object order rule ends each layer at the object nearest the origin. An unset prime tower line
 /// width prints the purge rows at the wall's bead, and an unset first layer infill width prints the first layer's
-/// infill at the first layer's other widths.
-const NO_DEFAULT: [&str; 14] = [
+/// infill at the first layer's other widths. A plate without mixed filaments sends none, so it slices byte for byte
+/// as before.
+const NO_DEFAULT: [&str; 15] = [
     "brim_loop_rounding",
     "skirt_brim_edge",
     "initial_layer_flow_ratio",
     "prime_tower_line_width",
+    "mixed_filaments",
     "initial_layer_infill_line_width",
     "initial_layer_outer_wall_line_width",
     "initial_layer_inner_wall_line_width",

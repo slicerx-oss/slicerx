@@ -1776,6 +1776,14 @@
    "mode": "simple",
    "min": 0.05,
    "max": 1
+  },
+  {
+   "key": "mixed_filaments",
+   "section": "process",
+   "type": "strings",
+   "label": "Mixed filaments",
+   "help": "Two loaded filaments printed on alternating layers in a set ratio, so their colors blend, one entry per mix as id:a,b:ra,rb:name. Parts and paint use the id like a filament number; the app's Mix editor writes this.",
+   "mode": "hidden"
   }
  ],
  "hidden_keys": []

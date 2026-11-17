@@ -397,6 +397,8 @@ impl Usage {
         let mut spans: Vec<(u8, f64, f64)> = Vec::new();
         let mut boxes: Vec<Option<[f64; 4]>> = Vec::new();
         let mut top = 0.0f64;
+        let mixes = crate::mixed::Mixes::of(cfg).unwrap_or_default();
+        let loaded = crate::session::filament_count(cfg);
         let grow = |boxes: &mut Vec<Option<[f64; 4]>>, slot: u8, p: [f64; 3]| {
             let i = usize::from(slot.max(1) - 1);
             if boxes.len() <= i {
@@ -443,7 +445,8 @@ impl Usage {
                 })
                 .collect();
             for part in o.mesh.parts.iter().filter(|p| !p.triangles.is_empty()) {
-                let slot = o.slot_for(&part.name, part.slot);
+                // A number left on a deleted mix prints in filament 1 (the part) or the part's own (its paint).
+                let slot = mixes.part_slot(o.slot_for(&part.name, part.slot), loaded);
                 let (mut lo, mut hi) = (f64::MAX, f64::MIN);
                 let mut footprint = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
                 for &v in &part.positions {
@@ -550,11 +553,29 @@ impl Usage {
                     let (a, b) = ps
                         .iter()
                         .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p[2]), b.max(p[2])));
+                    let state = if mixes.left_on_mix(f.state, loaded) {
+                        slot
+                    } else {
+                        f.state.max(1)
+                    };
                     for p in ps {
-                        grow(&mut boxes, f.state.max(1), p);
+                        grow(&mut boxes, state, p);
                     }
-                    spans.push((f.state.max(1), a, b));
+                    spans.push((state, a, b));
                 }
+            }
+        }
+        // A mixed filament covers its two loaded filaments' boxes, and prints one of them on each layer (below).
+        for i in 0..boxes.len() {
+            let Some(m) = u8::try_from(i + 1).ok().and_then(|s| mixes.get(s)) else {
+                continue;
+            };
+            let Some(Some(b)) = boxes.get_mut(i).map(Option::take) else {
+                continue;
+            };
+            for c in m.components {
+                grow(&mut boxes, c, [b[0], b[1], 0.0]);
+                grow(&mut boxes, c, [b[2], b[3], 0.0]);
             }
         }
         // A plate of one filament prints its skirt with it too: the skirt runs skirt_distance past the parts and
@@ -605,10 +626,11 @@ impl Usage {
                 } else {
                     (first + (l - 1) as f64 * step, first + l as f64 * step)
                 };
+                let layer = u32::try_from(l).unwrap_or(u32::MAX);
                 let mut v: Vec<u8> = spans
                     .iter()
                     .filter(|(_, a, b)| *a < z1 - 1e-9 && *b > z0 + 1e-9)
-                    .map(|s| s.0)
+                    .map(|s| mixes.resolve(s.0, layer))
                     .collect();
                 v.sort_unstable();
                 v.dedup();
@@ -1456,6 +1478,62 @@ mod tests {
             fuzzy_paint: Vec::new(),
             paint_texts: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_mixed_part_counts_as_its_two_filaments_layer_by_layer() {
+        // A box on mix 3 (1:1 of filaments 1 and 2): each layer prints one of the two, and both reach its footprint.
+        let mut part = boxed(0.0, 20.0, 4.0);
+        part.slot = 3;
+        let plate = crate::plate::Plate::single(crate::mesh::Mesh {
+            name: "box".to_owned(),
+            parts: vec![part],
+            ..crate::mesh::Mesh::default()
+        });
+        let cfg = h2d(&[("mixed_filaments", serde_json::json!(["3:1,2:1,1"]))]);
+        let u = Usage::of_plate(&plate, &cfg, &[]);
+        assert!(u.layers.len() > 10);
+        for (l, tools) in u.layers.iter().enumerate().filter(|(_, t)| !t.is_empty()) {
+            assert_eq!(tools, &vec![if l % 2 == 0 { 1 } else { 2 }], "layer {l}");
+        }
+        assert!(u.boxes.first().is_some_and(Option::is_some));
+        assert!(u.boxes.get(1).is_some_and(Option::is_some));
+        assert!(u.boxes.get(2).is_none_or(Option::is_none));
+    }
+
+    #[test]
+    fn a_number_left_on_a_deleted_mix_counts_as_the_filament_it_prints_with() {
+        // Mix 32 on the plate, two filaments loaded: a box left on 31 prints in filament 1, and paint left in 29 on a
+        // box on filament 2 prints in filament 2, so the map counts filaments 1 and 2, never 31 or 29.
+        let mut left = boxed(0.0, 20.0, 4.0);
+        left.slot = 31;
+        let mut painted = boxed(40.0, 60.0, 4.0);
+        painted.slot = 2;
+        painted.name = "painted".to_owned();
+        let v = [painted.positions[0], painted.positions[1], painted.positions[5]];
+        painted.paint.push(crate::paint::PaintFacet { v, state: 29 });
+        let plate = crate::plate::Plate::single(crate::mesh::Mesh {
+            name: "boxes".to_owned(),
+            parts: vec![left, painted],
+            ..crate::mesh::Mesh::default()
+        });
+        let cfg = h2d(&[
+            ("mixed_filaments", serde_json::json!(["32:1,2:1,1"])),
+            ("filament_colour", serde_json::json!(["#FF0000", "#0000FF"])),
+        ]);
+        let u = Usage::of_plate(&plate, &cfg, &[]);
+        assert!(u.boxes.iter().skip(2).all(Option::is_none), "{:?}", u.boxes);
+        assert!(u.boxes.first().is_some_and(Option::is_some));
+        assert!(u.boxes.get(1).is_some_and(Option::is_some));
+        assert!(u.layers.iter().flatten().all(|t| *t <= 2), "{:?}", u.layers);
+        // Without mixes the same numbers are filaments of their own, as before.
+        let plain = Usage::of_plate(
+            &plate,
+            &h2d(&[("filament_colour", serde_json::json!(["#FF0000", "#0000FF"]))]),
+            &[],
+        );
+        assert!(plain.boxes.get(30).is_some_and(Option::is_some));
+        assert!(plain.boxes.get(28).is_some_and(Option::is_some));
     }
 
     /// A 20 mm box on filament 1 at the bed's origin, with a modifier over `x0..x1` carrying `settings`.

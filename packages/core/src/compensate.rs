@@ -346,13 +346,25 @@ fn percent_for(cfg: &PrintConfig, key: &str, slot: u8) -> f64 {
 /// `filament_shrinkage_compensation_z`): 100 over the percentage. Orca (`Print::shrinkage_compensation`)
 /// applies it only when every filament the plate uses shrinks alike.
 pub(crate) fn shrinkage(plate: &crate::plate::Plate, cfg: &PrintConfig) -> Option<[f64; 3]> {
+    // A mixed filament prints with its two loaded filaments, and a number left on a deleted mix with filament 1 (a
+    // part) or the part's own (paint).
+    let mixes = crate::mixed::Mixes::of(cfg).unwrap_or_default();
+    let loaded = crate::session::filament_count(cfg);
     let mut slots: Vec<u8> = Vec::new();
     for obj in &plate.objects {
         for part in &obj.mesh.parts {
-            slots.push(obj.slot_for(&part.name, part.slot));
-            slots.extend(part.paint.iter().map(|f| f.state.max(1)));
+            let own = mixes.part_slot(obj.slot_for(&part.name, part.slot), loaded);
+            slots.push(own);
+            slots.extend(part.paint.iter().map(|f| {
+                if mixes.left_on_mix(f.state, loaded) {
+                    own
+                } else {
+                    f.state.max(1)
+                }
+            }));
         }
     }
+    let mut slots: Vec<u8> = slots.into_iter().flat_map(|s| mixes.expand(s)).collect();
     slots.sort_unstable();
     slots.dedup();
     let first = *slots.first()?;
@@ -421,6 +433,40 @@ mod tests {
 
     fn width(s: &Shapes) -> i32 {
         perimeters::bounds(s).map_or(0, |b| b[2] - b[0])
+    }
+
+    #[test]
+    fn a_mixed_part_shrinks_as_both_its_filaments_do() {
+        // A part on mix 3 of filaments 1 and 2: compensated only when both shrink alike, never as filament 3.
+        let part = crate::mesh::MeshPart {
+            name: "box".to_owned(),
+            slot: 3,
+            positions: vec![
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [0.0, 10.0, 0.0],
+                [0.0, 0.0, 10.0],
+            ],
+            triangles: vec![[0, 2, 1], [0, 1, 3], [1, 2, 3], [0, 3, 2]],
+            ..crate::mesh::MeshPart::default()
+        };
+        let plate = crate::plate::Plate::single(crate::mesh::Mesh {
+            name: "box".to_owned(),
+            parts: vec![part],
+            ..crate::mesh::Mesh::default()
+        });
+        let cfg = |shrink: serde_json::Value| {
+            let mut c = PrintConfig::builtin();
+            c.raw.insert("filament_shrink".into(), shrink);
+            c.raw
+                .insert("mixed_filaments".into(), serde_json::json!(["3:1,2:1,1"]));
+            c
+        };
+        assert!(shrinkage(&plate, &cfg(serde_json::json!(["100%", "98%"]))).is_none());
+        assert!(shrinkage(&plate, &cfg(serde_json::json!(["98%", "100%"]))).is_none());
+        // Filament 3, the mix's number, shrinks alike with 1 here but not with 2.
+        assert!(shrinkage(&plate, &cfg(serde_json::json!(["98%", "100%", "98%"]))).is_none());
+        assert!(shrinkage(&plate, &cfg(serde_json::json!(["98%", "98%"]))).is_some());
     }
 
     #[test]

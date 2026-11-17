@@ -32,12 +32,14 @@ describe('schema', () => {
   })
 
   // The slice works these out when nothing sets them, so a default config leaves them out. An unset first layer flow
-  // ratio prints at 1, and a default would add the key to the settings block of every file.
+  // ratio prints at 1, and a default would add the key to the settings block of every file. A plate without mixed
+  // filaments sends none, so it slices byte for byte as before.
   const NO_DEFAULT = [
     'brim_loop_rounding',
     'skirt_brim_edge',
     'initial_layer_flow_ratio',
     'prime_tower_line_width',
+    'mixed_filaments',
     'initial_layer_infill_line_width',
     'initial_layer_outer_wall_line_width',
     'initial_layer_inner_wall_line_width',
