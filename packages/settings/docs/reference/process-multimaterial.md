@@ -104,7 +104,7 @@ Two loaded filaments printed on alternating layers in a set ratio, so their colo
 
 - Type: list of strings, one per extruder
 - Default: none (the slice works it out when nothing sets it)
-- Tier: Hidden (profile key), multicolor
+- Tier: Hidden (profile key)
 - Changing it redoes: contours
 - mimir class: read (not in the catalog: never written)
 
