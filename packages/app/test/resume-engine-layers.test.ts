@@ -458,6 +458,7 @@ describe('the slice inputs key', () => {
     ['printerSlots', "the printer's slot color", () => slot({ color: '#000000' })],
     ['flush', 'flush', () => grow('flush', { x: 1 })],
     ['tower', 'prime tower', () => grow('tower', { x: 1 })],
+    ['mixes', 'a mix of the two filaments', () => set({ mixes: [{ id: 32, name: 'Sunset', components: [1, 2], ratio: [2, 1] }] })],
     ['userPresets', 'a tuned filament preset value', () => preset('u1', () => ({ values: { filament_shrinkage_compensation_z: [99] } }))],
     ['userPresets', 'a tuned result measured again', () => tuned({ results: { tolerance: { label: 'Tolerance', value: '0.2', at: 1, raw: 0.2 } } })],
     ['userPresets', 'a tuned result measured again with the same value, later', () => tuned({ results: { tolerance: { label: 'Tolerance', value: '0.1', at: 5, raw: 0.1 } } })],
