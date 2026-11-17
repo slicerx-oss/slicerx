@@ -1607,8 +1607,8 @@ fn a_face_a_join_clears_the_key_of_says_which_face_it_came_from_through_text_and
     if !sx_brep::KERNEL {
         return;
     }
-    // a 30 by 10 block, then a rim 3 mm above it whose long sides lie in the planes of the block's (y 0 and 10),
-    // joined through a post so the two are one body
+    // a 30 by 10 block, then a rim on it whose long sides lie in the planes of the block's (y 0 and 10) and meet
+    // them along its top edges, and a post through both
     let block = made(
         "box",
         json!({ "min": [0, 0, 0], "max": [30, 10, 4], "keySalt": 5 }),
@@ -1619,7 +1619,7 @@ fn a_face_a_join_clears_the_key_of_says_which_face_it_came_from_through_text_and
     );
     let rim = made(
         "box",
-        json!({ "min": [5, 0, 7], "max": [25, 10, 8], "keySalt": 7 }),
+        json!({ "min": [5, 0, 4], "max": [25, 10, 5], "keySalt": 7 }),
     );
     // the key of each face facing -y and the key of the face it came from, in order
     let sides = |b: &Value| {
@@ -1652,9 +1652,9 @@ fn a_face_a_join_clears_the_key_of_says_which_face_it_came_from_through_text_and
         "boolean",
         json!({ "op": "union", "a": up, "b": rim, "keySalt": 9 }),
     );
-    // both fronts lost their keys to the join, and each says which face it was
-    // the post's front, 2 mm in, lies in no other plane and keeps its key
-    let mut want = vec![(0, block_front), (0, rim_front), (post_front, 0)];
+    // both fronts lost their keys to the join, and as they meet the kernel merges them into one face, which says it
+    // was the block's front; the post's front, 2 mm in, lies in no other plane and keeps its key
+    let mut want = vec![(0, block_front), (post_front, 0)];
     want.sort_unstable();
     assert_eq!(sides(&joined), want);
     // a held body says the same, and so does the text it saves

@@ -107,10 +107,10 @@ fn a_face_a_union_clears_the_key_of_keeps_it_as_where_it_came_from_and_still_ask
         "box",
         &json!({"min": [10,2,3], "max": [20,8,8], "keySalt": 72}),
     ));
-    // a rim above the block whose sides lie in the block's planes, apart from them
+    // a rim on the block whose sides lie in the block's planes and meet them along its top edges
     let rim = body(call(
         "box",
-        &json!({"min": [5,0,7], "max": [25,10,8], "keySalt": 73}),
+        &json!({"min": [5,0,4], "max": [25,10,5], "keySalt": 73}),
     ));
     // the key and where it came from of each face facing -y, in order
     let fronts = |b: &Value| {
@@ -141,8 +141,10 @@ fn a_face_a_union_clears_the_key_of_keeps_it_as_where_it_came_from_and_still_ask
         "boolean",
         &json!({"op": "union", "a": up, "b": rim, "keySalt": 75}),
     ));
-    // the post's front, 2 mm in, lies in no other plane and keeps its key
-    let mut want = vec![(0, block_front), (0, rim_front), (post_front, 0)];
+    // the block's and the rim's fronts meet, so the kernel merges them into one face, which keeps the block's key as
+    // where it came from; the post's front, 2 mm in, lies in no other plane and keeps its key
+    assert_ne!(block_front, rim_front);
+    let mut want = vec![(0, block_front), (post_front, 0)];
     want.sort_unstable();
     assert_eq!(fronts(&json!(joined)), want);
     // saved and read back, the faces still say where they came from
@@ -207,4 +209,103 @@ fn invalid_edge_keys_require_repair() {
         );
     }
     call("free", &json!({"body": b}));
+}
+
+// the key of the face of `body` that faces along `normal`, from a body that has one such face
+fn key_facing(body: u64, normal: [f64; 3]) -> u64 {
+    let mesh = call("tessellate", &json!({"body": body}));
+    let faces: Vec<&Value> = mesh["faces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| (0..3).all(|k| f["surface"]["normal"][k].as_f64() == Some(normal[k])))
+        .collect();
+    assert_eq!(faces.len(), 1, "{normal:?}");
+    faces[0]["key"].as_u64().unwrap()
+}
+
+fn keys_of(body: u64) -> Vec<u64> {
+    call("tessellate", &json!({"body": body}))["faces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["key"].as_u64().unwrap())
+        .collect()
+}
+
+fn join(a: u64, b: u64, salt: u64) -> u64 {
+    call(
+        "boolean",
+        &json!({"op": "union", "a": a, "b": b, "keySalt": salt}),
+    )["body"]
+        .as_u64()
+        .unwrap()
+}
+
+#[test]
+fn a_join_keeps_the_keys_of_faces_in_one_plane_that_do_not_meet() {
+    // a wall 30 by 10 by 10, a post on it, and a rim on the post 2 mm above the wall whose four sides lie in the
+    // planes of the wall's
+    let wall = call("box", &json!({"min": [0,0,0], "max": [30,10,10], "keySalt": 81}))["body"]
+        .as_u64()
+        .unwrap();
+    let post = call("box", &json!({"min": [12,3,10], "max": [18,7,12], "keySalt": 82}))["body"]
+        .as_u64()
+        .unwrap();
+    let rim = call("box", &json!({"min": [0,0,12], "max": [30,10,14], "keySalt": 83}))["body"]
+        .as_u64()
+        .unwrap();
+    let sides = [
+        [0.0, -1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ];
+    let wall_sides: Vec<u64> = sides.iter().map(|n| key_facing(wall, *n)).collect();
+    let rim_sides: Vec<u64> = sides.iter().map(|n| key_facing(rim, *n)).collect();
+    let posted = join(wall, post, 84);
+    let joined = join(posted, rim, 85);
+    let keys = keys_of(joined);
+    for key in wall_sides.iter().chain(&rim_sides) {
+        assert_eq!(keys.iter().filter(|k| *k == key).count(), 1, "{key} in {keys:?}");
+    }
+    // a reference to a wall side still finds it
+    let pushed = call(
+        "push",
+        &json!({"body": joined, "at": [15,0,5], "normal": [0,-1,0], "distanceMm": 1, "faceKey": wall_sides[0]}),
+    );
+    assert!(pushed["body"].as_u64().is_some(), "{pushed}");
+    for body in [pushed["body"].as_u64().unwrap(), joined, posted, rim, post, wall] {
+        call("free", &json!({"body": body}));
+    }
+}
+
+#[test]
+fn a_join_still_clears_the_keys_of_faces_in_one_plane_that_meet() {
+    // two blocks side by side: their fronts meet along x 30, so the join can make them one face
+    let a = call("box", &json!({"min": [0,0,0], "max": [30,10,10], "keySalt": 91}))["body"]
+        .as_u64()
+        .unwrap();
+    let b = call("box", &json!({"min": [30,0,0], "max": [40,10,10], "keySalt": 92}))["body"]
+        .as_u64()
+        .unwrap();
+    let fronts = [key_facing(a, [0.0, -1.0, 0.0]), key_facing(b, [0.0, -1.0, 0.0])];
+    let joined = join(a, b, 93);
+    let keys = keys_of(joined);
+    for key in fronts {
+        assert!(!keys.contains(&key), "{key} in {keys:?}");
+    }
+    let result = sx_brep::call(
+        "push",
+        &json!({"body": joined, "at": [15,0,5], "normal": [0,-1,0], "distanceMm": 1, "faceKey": fronts[0]})
+            .to_string(),
+    );
+    let error = result.expect_err("a key a join cleared must stop for repair");
+    assert!(
+        error.starts_with("faceReference:") && error.contains("repair"),
+        "{error}"
+    );
+    for body in [joined, b, a] {
+        call("free", &json!({"body": body}));
+    }
 }
