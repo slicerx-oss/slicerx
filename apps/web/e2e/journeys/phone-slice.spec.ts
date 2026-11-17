@@ -75,7 +75,7 @@ test('on a phone each pin is its own tap, close ones open a list, and More and t
   // machine left the finger still on the thumb for more than half a second before it moved (685 ms in one run), and
   // the page rightly took that as a long press and opened the layer menu.
   const cdp = await page.context().newCDPSession(page)
-  const touch = (type: string, touchPoints: { x: number; y: number }[]) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints })
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: { x: number; y: number }[]) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints })
   await Promise.all([touch('touchStart', [from]), ...Array.from({ length: 8 }, (_, i) => touch('touchMove', [{ x: from.x + ((to.x - from.x) * (i + 1)) / 8, y: from.y }])), touch('touchEnd', [])])
   await cdp.detach()
   await expect.poll(() => layerHi(page)).toBeGreaterThan(Math.round(n * 0.6))
