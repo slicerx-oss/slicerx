@@ -493,6 +493,9 @@ const WALL_MM: f64 = 0.01;
 /// coarser one serves where the kernel cannot reach a fine one.
 #[cfg(feature = "cad")]
 const WALL_CHORDS_MM: [f64; 4] = [0.05, 0.5, 5.0, 50.0];
+/// The farthest apart, in mm, the points a shell's wall is read at inside each triangle of its mesh.
+#[cfg(feature = "cad")]
+const WALL_STEP_MM: f64 = 1.0;
 /// The most points of one face the wall is read at.
 #[cfg(feature = "cad")]
 const WALL_POINTS: usize = 400;
@@ -508,21 +511,25 @@ fn closed_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), 
 }
 
 /// A closed shell of `from` read back at points inside each face of `made`: a face on `from` stays on it, and every
-/// other face is `wall` from it, each within [`WALL_MM`]. Why not, in words, otherwise.
+/// other face is `wall` from it, each within [`WALL_MM`]. Why not, in words, otherwise. The points are its mesh's
+/// corners off the edges and points inside each triangle at most [`WALL_STEP_MM`] apart, each found on the face from
+/// its own parameters: the mesh is asked for no largest edge, since the kernel's tessellator never finishes some
+/// bodies' meshes with one (a straight-lofted taper with its top pushed).
 #[cfg(feature = "cad")]
 fn wall_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), String> {
     let unmeasured = || "its inner wall could not be measured".to_owned();
-    let mesh = WALL_CHORDS_MM
+    let (chord_mm, mesh) = WALL_CHORDS_MM
         .iter()
         .find_map(|&chord_mm| {
             made.tessellate(&Tessellation {
                 chord_mm,
-                max_edge_mm: 1.0,
                 ..Tessellation::default()
             })
             .ok()
+            .map(|mesh| (chord_mm, mesh))
         })
         .ok_or_else(unmeasured)?;
+    let shown = made.faces().map_err(|_| unmeasured())?;
     let on_edge: std::collections::HashSet<u32> =
         mesh.edges.iter().flat_map(|e| e.points.iter().copied()).collect();
     let mut faces: Vec<Vec<V3>> = vec![Vec::new(); mesh.surfaces.len()];
@@ -537,6 +544,18 @@ fn wall_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), St
             }
         }
     }
+    for ((t, &f), uv) in mesh.triangles.iter().zip(&mesh.faces).zip(&mesh.uvs) {
+        if let (Some(points), Some(face)) = (faces.get_mut(f as usize), shown.get(f as usize)) {
+            inside_triangle(
+                points,
+                *face,
+                t.map(|i| mesh.positions.get(i as usize).copied().unwrap_or_default()),
+                *uv,
+                chord_mm,
+            )
+            .map_err(|()| unmeasured())?;
+        }
+    }
     let mut worst = 0.0f64;
     for points in &faces {
         let Some(&first) = points.first() else { continue };
@@ -549,6 +568,59 @@ fn wall_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), St
     }
     if worst > WALL_MM {
         return Err(format!("its inner wall is {worst:.3} mm off the wall asked"));
+    }
+    Ok(())
+}
+
+/// Points strictly inside one triangle of `face`'s mesh, at most [`WALL_STEP_MM`] apart, added to `points`: each found
+/// on the face's surface at the triangle's corners' parameters `uv` blended, and kept only when it is within twice the
+/// mesh's chord of the flat triangle, so a triangle whose parameters wrap around a seam adds no point off its own
+/// stretch of the face. A plane's triangle, or one the kernel gave no parameters, adds its flat points only when the
+/// face is a plane, where they are on it.
+#[cfg(feature = "cad")]
+fn inside_triangle(
+    points: &mut Vec<V3>,
+    face: Face<'_>,
+    [a, b, c]: [V3; 3],
+    uv: Option<[[f64; 2]; 3]>,
+    chord_mm: f64,
+) -> std::result::Result<(), ()> {
+    let longest = vec3::len(vec3::sub(a, b))
+        .max(vec3::len(vec3::sub(b, c)))
+        .max(vec3::len(vec3::sub(c, a)));
+    // a triangle split fewer than three times along its longest side has no point strictly inside the split
+    let steps = (longest / WALL_STEP_MM).ceil();
+    if !(3.0..=1e6).contains(&steps) {
+        return Ok(());
+    }
+    let flat = matches!(face.surface(), Surface::Plane { .. });
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "steps is a whole number from 3 to a million"
+    )]
+    let n = steps as usize;
+    for i in 1..n {
+        for j in 1..n - i {
+            #[allow(clippy::cast_precision_loss, reason = "i and j are at most a million")]
+            let (s, r) = (i as f64 / steps, j as f64 / steps);
+            let q = 1.0 - s - r;
+            let at = vec3::add(vec3::add(vec3::scale(a, q), vec3::scale(b, s)), vec3::scale(c, r));
+            if flat {
+                points.push(at);
+                continue;
+            }
+            let Some([ua, ub, uc]) = uv else { return Ok(()) };
+            let p = face
+                .point_at([
+                    ua[0] * q + ub[0] * s + uc[0] * r,
+                    ua[1] * q + ub[1] * s + uc[1] * r,
+                ])
+                .map_err(|_| ())?;
+            if vec3::len(vec3::sub(p, at)) <= 2.0 * chord_mm {
+                points.push(p);
+            }
+        }
     }
     Ok(())
 }
