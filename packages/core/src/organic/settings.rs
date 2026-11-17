@@ -47,10 +47,14 @@ pub(crate) struct Raw {
     /// `support_bed_foot`: trunks on the bed get the foot of `crate::bedfoot` when they are drawn, and the
     /// planner's own widening toward the bed is off.
     pub(crate) bed_foot: bool,
+    /// `organic_per_object`: the trees are planned object by object (`crate::organic_objects`), with the roof
+    /// and first-layer sizes measured for that planning.
+    pub(crate) per_object: bool,
 }
 
 /// `TreeSupportMeshGroupSettings` and `TreeSupportSettings` together.
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools, reason = "one field per tree setting")]
 pub(crate) struct Settings {
     pub(crate) layer_height: i64,
     pub(crate) resolution: i64,
@@ -87,6 +91,8 @@ pub(crate) struct Settings {
     pub(crate) z_distance_bottom_layers: usize,
     /// See [`Raw::bed_foot`].
     pub(crate) bed_foot: bool,
+    /// See [`Raw::per_object`].
+    pub(crate) per_object: bool,
 }
 
 fn round_up_divide(x: i64, y: i64) -> i64 {
@@ -196,6 +202,7 @@ impl Settings {
             z_distance_top_layers,
             z_distance_bottom_layers,
             bed_foot: r.bed_foot,
+            per_object: r.per_object,
         }
     }
 

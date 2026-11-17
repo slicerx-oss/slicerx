@@ -60,6 +60,18 @@ pub(crate) fn wall_anchor_spacings(cfg: &crate::config::PrintConfig) -> f64 {
     if selected(cfg) { WALL_ANCHOR_SPACINGS } else { 6.0 }
 }
 
+/// With the switch on, interface islands smaller than this are filled on their own, mm2: about a 3.2 mm circle,
+/// the size of the tips under a roof. On the object's lattice a tip that small gets a line or none, and the
+/// support base filler joins its lines along the outline into nearly a loop per tip; filled on its own it gets lines
+/// through its middle and a row along each edge. Measured on plates of eight copies at 0.12 mm layers, the tip
+/// layer under a roof then prints about 3 mm of interface per tip (2.9 to 3.3 mm).
+pub(crate) const SMALL_INTERFACE_MM2: f64 = 8.0;
+
+/// The size under which an interface island is filled on its own, mm2 (0: none is).
+pub(crate) fn small_interface_mm2(cfg: &crate::config::PrintConfig) -> f64 {
+    if selected(cfg) { SMALL_INTERFACE_MM2 } else { 0.0 }
+}
+
 /// True when the settings ask for organic trees planned object by object.
 pub(crate) fn selected(cfg: &crate::config::PrintConfig) -> bool {
     crate::firmware::truthy(cfg, KEY)
@@ -641,5 +653,14 @@ mod tests {
         assert!((auto_double_wall_mm2(&on) - DOUBLE_WALL_MM2).abs() < 1e-9);
         assert!((wall_anchor_spacings(&off) - 6.0).abs() < 1e-9);
         assert!((wall_anchor_spacings(&on) - WALL_ANCHOR_SPACINGS).abs() < 1e-9);
+    }
+
+    #[test]
+    fn small_interface_islands_are_filled_on_their_own_with_the_switch_on() {
+        let off = crate::config::PrintConfig::from_value(&serde_json::json!({})).unwrap();
+        let on = crate::config::PrintConfig::from_value(&serde_json::json!({ "organic_per_object": true }))
+            .unwrap();
+        assert!(small_interface_mm2(&off).abs() < 1e-12);
+        assert!((small_interface_mm2(&on) - SMALL_INTERFACE_MM2).abs() < 1e-12);
     }
 }
