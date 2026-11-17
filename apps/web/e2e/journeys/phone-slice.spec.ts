@@ -71,10 +71,12 @@ test('on a phone each pin is its own tap, close ones open a list, and More and t
   const track = (await page.locator('#pv-layer').boundingBox())!
   const from = { x: await thumbX(page, await layerHi(page)), y: track.y + track.height / 2 }
   const to = { x: await thumbX(page, Math.round(n * 0.75)), y: from.y }
+  // The whole drag goes to the browser at once. Sent one event at a time, each after the last was handled, a busy test
+  // machine left the finger still on the thumb for more than half a second before it moved (685 ms in one run), and
+  // the page rightly took that as a long press and opened the layer menu.
   const cdp = await page.context().newCDPSession(page)
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] })
-  for (let t = 1; t <= 8; t++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + ((to.x - from.x) * t) / 8, y: from.y }] })
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  const touch = (type: string, touchPoints: { x: number; y: number }[]) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints })
+  await Promise.all([touch('touchStart', [from]), ...Array.from({ length: 8 }, (_, i) => touch('touchMove', [{ x: from.x + ((to.x - from.x) * (i + 1)) / 8, y: from.y }])), touch('touchEnd', [])])
   await cdp.detach()
   await expect.poll(() => layerHi(page)).toBeGreaterThan(Math.round(n * 0.6))
   await expect(page.getByRole('menu')).toHaveCount(0)
