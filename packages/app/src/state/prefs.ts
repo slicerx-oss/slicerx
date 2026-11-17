@@ -6,7 +6,7 @@
 import { readUnits, type UnitPrefs } from '../cad/units'
 import { FEATURE_FILAMENT_KEYS } from '../plate/feature-filament-keys'
 import { LOOK_IDS, type LookAndFeelChoice, type FirstRunState, type ToolDock } from '@slicerx/contracts'
-import { normalizeSpaceMouse, type SpaceMouseSettings } from '@slicerx/viewport/spacemouse'
+import { normalizeSpaceMouse, type SpaceMouseSettings } from '@slicerx/viewport/space-settings'
 
 /** A model file with several separate bodies opens as one object with parts or as separate objects (state/multi-body.ts). */
 export type MultiBodyPref = 'ask' | 'parts' | 'objects'
