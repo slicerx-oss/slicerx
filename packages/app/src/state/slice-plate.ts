@@ -19,6 +19,7 @@ import { nameOptions, plateConfig } from '../plate/plates'
 import { bedTypeConfig } from '../plate/bed-type'
 import { objectOverrides, partOverridesOf, plateLayerHeightConflict, smartLayerWarning, towerPrints } from '../plate/object-settings'
 import { mixedNozzleConfig } from '../filament/object-nozzle'
+import { printerClash } from '../filament/mixes'
 import { markOpenStage } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
@@ -133,7 +134,8 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
     signal.throwIfAborted()
     const s: AppState = { ...sliceState(get()), resume: null }
     if (!s.plate.some((p) => p.printable !== false)) throw new Error('Nothing on this plate prints')
-    const conflict = plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), resolveConfig(s.easy, s.overrides))
+    // A mix on a number the printer reports, with no free number to move to, names two filaments: the Mixes row's note.
+    const conflict = printerClash(s) ?? plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), resolveConfig(s.easy, s.overrides))
     if (conflict) throw new Error(conflict)
     const { request } = await plateSliceRequest(host, s, signal)
     let sliced
@@ -210,7 +212,8 @@ export async function slicePlate(host: Host, opts: SlicePlateOptions = {}): Prom
   }
   sliceStage(timed, 'ready')
   const base = resolveConfig(s.easy, s.overrides)
-  const conflict = plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), base)
+  // A mix on a number the printer reports, with no free number to move to, names two filaments: the Mixes row's note.
+  const conflict = printerClash(s) ?? plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), base)
   if (conflict) {
     set({ slice: { status: 'error', message: conflict }, preview: null })
     return

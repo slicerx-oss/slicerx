@@ -266,7 +266,7 @@ appStore.subscribe((s, prev) => {
 
 /**
  * When the printer reports filaments up to a mix's number and the mixes cannot move clear of them (too few free
- * numbers above), what to tell the person: that number names both, and parts on it print as the mix until it goes. Null
+ * numbers above), what to tell the person: that number names both, and the slice refuses it until a mix goes. Null
  * when no mix is in the way, or when the mixes can still move ([`clearMixesOfPrinter`] does that).
  */
 export function printerClash(s: Pick<AppState, 'mixes' | 'printerSlots'>): string | null {
