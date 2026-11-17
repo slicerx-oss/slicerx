@@ -20,7 +20,9 @@ export function useResolvedSlots(): ResolvedSlot[] {
   const fileSlotTypes = useApp((s) => s.fileSlotTypes)
   // A project's tool changes add the filaments they change to.
   const layerMarks = useApp((s) => s.layerMarks)
-  return useMemo(() => resolveSlots({ printerSlots, plates, plate, activePlate, slotSetup, slotMatch, fileSlotColors, fileSlotTypes, layerMarks }), [printerSlots, plates, plate, activePlate, slotSetup, slotMatch, fileSlotColors, fileSlotTypes, layerMarks])
+  // A part on a mix prints with the mix's two filaments; the mix's number is not a filament of its own.
+  const mixes = useApp((s) => s.mixes)
+  return useMemo(() => resolveSlots({ printerSlots, plates, plate, activePlate, slotSetup, slotMatch, fileSlotColors, fileSlotTypes, layerMarks, mixes }), [printerSlots, plates, plate, activePlate, slotSetup, slotMatch, fileSlotColors, fileSlotTypes, layerMarks, mixes])
 }
 
 /** The slots the sidebar strip and the part badges share: the project's filaments, capped to the printer's slots when it reports them. */

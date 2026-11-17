@@ -147,7 +147,7 @@ export function mapSlot(plate: Pick<PlateMeta, 'settings'> | undefined, slot: nu
   return plate?.settings.slotMap?.[slot] ?? slot
 }
 
-type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors' | 'fileSlotTypes' | 'layerMarks'>>
+type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors' | 'fileSlotTypes' | 'layerMarks' | 'mixes'>>
 
 /**
  * The model's color for each slot: the project file's filament colors, then for slots the file does not name, the color

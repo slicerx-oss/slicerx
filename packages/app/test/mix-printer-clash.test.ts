@@ -2,7 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A printer that reports filaments up to a mix's number, with no free number above for the mixes to move to: the
 // number names both a loaded filament and the mix, so the slice is refused with the Mixes row's note until a mix goes.
+// A part on a mix leaves the Filament card's spools at the loaded filaments, so a mix's number is not a filament.
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createElement } from 'react'
+import { flushSync } from 'react-dom'
+import { createRoot } from 'react-dom/client'
+import { useResolvedSlots } from '../src/filament/use-slots'
+import { loadedSlotCount, slotCount, usedSlots } from '../src/filament/slots'
 import type { Host, SliceRequest } from '@slicerx/contracts'
 import { printerClash } from '../src/filament/mixes'
 import { slicePlate } from '../src/state/actions'
@@ -44,5 +50,24 @@ describe('a mix on a number the printer reports', () => {
     const { host, requests } = engine()
     await slicePlate(host)
     expect(requests).toHaveLength(1)
+  })
+})
+
+describe('the Filament card with a part on a mix', () => {
+  it('lists the loaded filaments only, not every number up to the mix', () => {
+    set({ slotSetup: { 2: { type: 'PLA', brand: '', color: '#202020' } } as never })
+    let shown: number[] = []
+    const Probe = () => {
+      shown = useResolvedSlots().map((r) => r.index)
+      return null
+    }
+    const root = createRoot(document.createElement('div'))
+    flushSync(() => root.render(createElement(Probe)))
+    flushSync(() => root.unmount())
+    expect(shown).toEqual([1, 2])
+    // The layer pins' loaded filaments and the slice's filaments read the same: the mix's two, never its number.
+    expect(loadedSlotCount(get())).toBe(2)
+    expect(slotCount(get())).toBe(2)
+    expect([...usedSlots(get())].sort()).toEqual([1, 2])
   })
 })
