@@ -2,9 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A held exact body shelled through the engine's own call (brep.shell): the faces it keeps carry their keys and the
 // faces it makes get keys of the step, each of their own; the open faces are found by key or by place, and refused in
-// the mesh shell's words; a curved lofted body shelled closed keeps a wall within 0.01 mm of the one asked, and one open
-// at its end is refused before the kernel is asked, since the kernel leaves such a wall open or fails outright, so a
-// replay runs it on the mesh. A closed shell whose wall strays from the one asked, or cannot be read, is refused too.
+// the mesh shell's words; a box, a cylinder and a cone shelled closed keep a wall within 0.01 mm of the one asked; a
+// curved lofted body open at its end is refused before the kernel is asked, since the kernel leaves such a wall open or
+// fails outright, so a replay runs it on the mesh. A closed shell whose wall strays from the one asked, cannot be read,
+// or whose mesh holds another volume than the body, is refused too.
 // Empty without the brep feature, so a workspace test run that names every test target passes over it.
 #![cfg(feature = "brep")]
 use serde_json::{Value, json};
@@ -190,35 +191,64 @@ fn vase() -> Value {
 }
 
 #[test]
-fn a_curved_lofted_body_shelled_closed_keeps_its_wall_within_a_hundredth_and_one_open_at_its_end_is_refused()
-{
+fn a_box_a_cylinder_and_a_cone_shelled_closed_keep_their_wall_within_a_hundredth() {
     if !sx_brep::KERNEL {
         return;
     }
-    let lofted = op(
-        "sketch.loft",
-        &json!({ "profiles": vase(), "smooth": true, "operation": "new", "exact": true, "keySalt": 7 }),
-    );
-    let body = number(&lofted["body"]);
-    for wall in [0.8, 1.5, 3.0] {
-        let shelled = op(
-            "brep.shell",
-            &json!({ "body": body, "wallMm": wall, "keySalt": 8, "withKeys": true }),
-        );
-        let hollow = number(&shelled["body"]);
-        let (off, n) = table::with(body, |from| {
-            table::with(hollow, |to| wall_off(&from.body, &to.body, wall, f64::INFINITY))
-        })
-        .flatten()
-        .expect("both held");
-        assert!(
-            n > 1000 && off <= WALL_MM,
-            "a {wall} mm wall: {off} mm over {n} points"
-        );
-        table::free(hollow);
-        // open at its top: refused before the kernel is asked, which leaves this wall open along the rim, and nothing
-        // is held
+    let made = [
+        op("brep.box", &json!({ "min": [0, 0, 0], "max": [30, 20, 15] })),
+        op(
+            "brep.primitive",
+            &json!({ "type": "cylinder", "diameterMm": 20, "heightMm": 20 }),
+        ),
+        op(
+            "brep.primitive",
+            &json!({ "type": "cone", "diameterMm": 20, "topDiameterMm": 12, "heightMm": 20 }),
+        ),
+    ];
+    for body in made.iter().map(|m| number(&m["body"])) {
+        for wall in [1.0, 2.0, 3.0] {
+            let shelled = op(
+                "brep.shell",
+                &json!({ "body": body, "wallMm": wall, "keySalt": 8, "withKeys": true }),
+            );
+            let hollow = number(&shelled["body"]);
+            let (off, n) = table::with(body, |from| {
+                table::with(hollow, |to| wall_off(&from.body, &to.body, wall, f64::INFINITY))
+            })
+            .flatten()
+            .expect("both held");
+            assert!(
+                n > 100 && off <= WALL_MM,
+                "a {wall} mm wall: {off} mm over {n} points"
+            );
+            table::free(hollow);
+        }
+        table::free(body);
+    }
+}
+
+/// A smooth loft through a circle, an ellipse and a smaller circle: its closed shell's wall is the one asked, but its
+/// mesh winds part of the cavity the wrong way, so it holds another volume than the body (1497.4 mm3 against 1670.7 at
+/// a 1 mm wall). Closed or open at its end, it is refused in the step's own words and nothing is held, so a replay
+/// shells it on the mesh.
+#[test]
+fn a_curved_lofted_body_shelled_closed_or_open_at_its_end_is_refused() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let body = lofted(vase(), true);
+    for wall in [1.0, 2.0, 3.0] {
         let held = table::count();
+        let closed = refusal(
+            "brep.shell",
+            &json!({ "body": body, "wallMm": wall, "keySalt": 8 }),
+        );
+        assert_eq!(
+            closed,
+            format!("shell: a {wall} mm wall could not be made exact on this body")
+        );
+        // open at its top: refused before the kernel is asked, which leaves this wall open along the rim
         let open = refusal(
             "brep.shell",
             &json!({ "body": body, "open": [{ "at": [0, 0, 20], "normal": [0, 0, 1] }], "wallMm": wall, "keySalt": 8 }),
@@ -317,6 +347,41 @@ fn a_closed_shell_of_a_waisted_ruled_loft_is_refused() {
             level(8.0, &circle(14.0)),
             level(16.0, &circle(20.0)),
             level(24.0, &circle(12.0))
+        ]),
+        false,
+    );
+    let held = table::count();
+    for wall in [1.0, 2.0, 3.0] {
+        let why = refusal(
+            "brep.shell",
+            &json!({ "body": body, "wallMm": wall, "keySalt": 8 }),
+        );
+        assert_eq!(
+            why,
+            format!("shell: a {wall} mm wall could not be made exact on this body")
+        );
+        assert_eq!(table::count(), held);
+    }
+    table::free(body);
+}
+
+/// A ruled loft through three rectangles, smaller as it rises: its closed shell's wall is the one asked, but its mesh
+/// winds part of the cavity the wrong way and holds another volume than the body (11295.9 mm3 against 2217.2 at a 1 mm
+/// wall), so it is refused in the step's own words and nothing is held.
+#[test]
+fn a_closed_shell_whose_mesh_holds_another_volume_than_the_body_is_refused() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let rect = |w: f64, h: f64| {
+        let (x, y) = (w / 2.0, h / 2.0);
+        json!({ "points": [[-x, -y], [x, -y], [x, y], [-x, y]] })
+    };
+    let body = lofted(
+        json!([
+            level(0.0, &rect(30.0, 20.0)),
+            level(10.0, &rect(24.0, 16.0)),
+            level(20.0, &rect(18.0, 12.0))
         ]),
         false,
     );
