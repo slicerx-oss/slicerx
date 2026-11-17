@@ -664,6 +664,40 @@ fn fill(g: &Grid, shapes: &Shapes) -> Vec<bool> {
     out
 }
 
+/// Carries the depth limit's steps (`limit`, [`LayerPaint::depth_steps`]) to the cells next to the outline that `own`
+/// ([`fill`] of it) leaves out, from the outline's cells around each: none when one of them has none, else the farthest
+/// of theirs. [`fill`] counts a center on a shape's right or back edge as outside, so without this the column and row
+/// of cells on those edges of a square, and the cells beside an edge between two centers, count as exposed to every
+/// shell layer, and the paint of a wall stops half a cell short of the outline there.
+#[allow(clippy::indexing_slicing, reason = "rows and columns stay inside the grid")]
+fn edge_limits(g: &Grid, own: &[bool], limit: &mut [u16]) {
+    for iy in 0..g.ny {
+        for ix in 0..g.nx {
+            let c = iy * g.nx + ix;
+            if own[c] {
+                continue;
+            }
+            let mut step: Option<u16> = None;
+            for yy in iy.saturating_sub(1)..=(iy + 1).min(g.ny - 1) {
+                for xx in ix.saturating_sub(1)..=(ix + 1).min(g.nx - 1) {
+                    let k = yy * g.nx + xx;
+                    if own[k] {
+                        let j = limit[k];
+                        step = Some(match step {
+                            Some(0) => 0,
+                            Some(s) if j != 0 => s.max(j),
+                            _ => j,
+                        });
+                    }
+                }
+            }
+            if let Some(j) = step {
+                limit[c] = j;
+            }
+        }
+    }
+}
+
 /// The first row whose center y is at or above `v` (`ny` when none is). Centers rise with the row.
 fn first_row(g: &Grid, v: f64) -> usize {
     let (mut lo, mut hi) = (0, g.ny);
@@ -738,7 +772,8 @@ fn mask_bytes(cells: usize) -> usize {
 /// - sources: a mask a bit a cell per color, the outline's, and the one a painted wall is stamped into;
 /// - depth limit: 2 bytes a cell beside the masks, made with the cells still open and, per shell layer, the cells inside
 ///   it and inside its painted surface (a byte a cell each), and each grid row's crossings with that layer's outline (a
-///   list per row, 24 bytes, and room for up to 8 crossings of 8 bytes);
+///   list per row, 24 bytes, and room for up to 8 crossings of 8 bytes), then the cells inside the outline (a byte a
+///   cell, once those are freed) to carry it to the cells beside the outline ([`edge_limits`]);
 /// - banded: the rows ([`rows_bytes`]); what the band and the traced boundaries add is known once the rows are made
 ///   ([`band_bytes`]);
 /// - full grids: a 4 byte distance grid per color and a 4 byte field per painted color, beside the masks and the limit;
@@ -2001,6 +2036,9 @@ impl LayerPaint<'_> {
         if !self.below.is_empty() {
             apply(&mut limit, self.below, below);
         }
+        if !self.above.is_empty() || !self.below.is_empty() {
+            edge_limits(g, &fill(g, self.shapes), &mut limit);
+        }
         limit
     }
 
@@ -2684,6 +2722,16 @@ mod tests {
             let got = area(&all, slot);
             assert!((got - want).abs() < 4.0, "{slot}: {got}");
         }
+        // Painted one filament on every face, no strip of the part's own filament is left along any edge of the
+        // outline: such a strip prints nothing, but the layer is planned as printing that filament.
+        let one = split(&[&face([138.0, 118.0], [138.0, 138.0], 3), &left, &front, &back]);
+        assert_eq!(
+            one.len(),
+            1,
+            "{:?}",
+            one.iter().map(|(s, sh)| (*s, area_mm2(sh))).collect::<Vec<_>>()
+        );
+        assert!((area(&one, 3) - 400.0).abs() < 1e-6, "{}", area(&one, 3));
     }
 
     /// A painted overhang is a bottom surface in its own color: each layer's strip over it takes the paint, where
