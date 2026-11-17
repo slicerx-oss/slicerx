@@ -32,6 +32,6 @@ describe('a band that stands for a real feature', () => {
       expect(target?.endsWith(BAND), tool.name).toBe(true)
     }
     expect(preview.version).toBe('1.7.0')
-    expect(app.version).toBe('1.3.0')
+    expect(app.version).toBe('1.4.0')
   })
 })

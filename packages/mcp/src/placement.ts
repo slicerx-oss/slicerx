@@ -162,6 +162,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
 
   const objectNozzle = tool({
     name: 'project.object_nozzle',
+    version: '1.1.0',
     description:
       "Print one object with another nozzle, on a printer whose nozzles are not all one size (a two-extruder printer with a filament map, a tool changer, IDEX). nozzle is 1-based: 1 is the left nozzle or tool 1. On a tool changer the object moves to the filament on that tool (filament n prints on tool n). On a two-extruder printer the plate's filament map sends the object's filament to that nozzle; when that filament also prints other objects the call is refused unless it says what to do: new_filament gives the object a copy of its filament on that nozzle; move_filament moves the filament, and every object printed with it, to that nozzle; filament names an existing filament to print with. A move that would put a filament a painted object uses on another nozzle than its other filaments is refused unless confirm_painted is true, naming the painted objects. Answers with the project; slicerx_project_show gives each object's nozzle and nozzleMm, the printer's nozzles and the filament map. With --app it edits the project open in the app.",
     input: z.object({
@@ -185,8 +186,8 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
       if (picks > 1) throw new ToolInputError('Send one of filament, new_filament or move_filament, not several.')
       const count = project.filaments().length
       const { map } = filamentMap(cfg, count)
-      const own = project.objectFilaments(obj.id)
-      const others = (f: number) => project.objects().filter((o) => o.id !== obj.id && project.objectFilaments(o.id).includes(f)).map((o) => o.name)
+      const own = project.printedFilaments(obj.id)
+      const others = (f: number) => project.objects().filter((o) => o.id !== obj.id && project.printedFilaments(o.id).includes(f)).map((o) => o.name)
       const setMap = (next: number[]) => project.setOverrides({ filament_map_mode: 'Manual', filament_map: next })
       const label = `${nozzleName(cfg, i.nozzle)}, ${sizes[i.nozzle - 1]} mm`
       const answer = (summary: string, filament: number, extra: Record<string, unknown> = {}) => done(summary, project, { object: obj.id, nozzle: i.nozzle, nozzleMm: sizes[i.nozzle - 1], filament, ...extra })
@@ -232,7 +233,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
         for (const f of moving) next[f - 1] = i.nozzle
         // A painted object whose filaments would end up on two nozzles: the client says so first.
         const split = project.objects().filter((o) => project.isPainted(o.id)).filter((o) => {
-          const used = project.objectFilaments(o.id)
+          const used = project.printedFilaments(o.id)
           return used.some((f) => moving.includes(f)) && new Set(used.map((f) => extruderOf(cfg, next, f))).size > 1
         }).map((o) => o.name)
         if (split.length && !i.confirm_painted) {
@@ -369,7 +370,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
 
   const duplicate = tool({
     name: 'project.duplicate',
-    version: '1.1.0',
+    version: '1.2.0',
     description:
       'Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows, or around the objects already there when the rows would reach past the bed. On a plate slicerx_arrange laid out, the copy keeps the turnDeg of the object\'s first copy there. A copy with no room on the bed goes to the last plate when it has room and the same printer and settings, else to a new plate; moved lists each one by id and plate. An object too large for an empty plate is refused, with no copy made. For identical copies that always print alike, add the model with copies instead. Answers with the new ids and the project.',
     input: z.object({ object: objectArg, count: z.number().int().min(1).max(50).default(1).describe('How many copies, 1 to 50') }),

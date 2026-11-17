@@ -17,12 +17,12 @@ export function appPaintTools(link: AppLinkCaller | undefined, appName: string):
     }
   }
   return [defineTool({
-    name: 'app.paint', version: '1.0.0', source: 'command', permission: 'read', input: appPaintReadInput,
-    description: `Read an object's color, seam, support or fuzzy paint in ${appName}'s shown plate. Returns per-part states, areas in mm2, connected regions in bed coordinates, available color slot count and a revision. Use an object id from app_history. Reads the live project, including viewport brush strokes.`,
+    name: 'app.paint', version: '1.1.0', source: 'command', permission: 'read', input: appPaintReadInput,
+    description: `Read an object's color, seam, support or fuzzy paint in ${appName}'s shown plate. Returns per-part states, areas in mm2, connected regions in bed coordinates, available color slot count, the shown plate's mixed filaments (colorMixes: number, name, filaments and ratio; paint with a mix's number to print that area in the mix) and a revision. Use an object id from app_history. Reads the live project, including viewport brush strokes.`,
     run: (i) => call('paint.get', i),
   }), defineTool({
-    name: 'app.paint_preview', version: '1.3.0', source: 'command', permission: 'read', input: appPaintPreviewInput,
-    description: `Preview paint on an object in ${appName}'s shown plate without changing it. Target a whole part, direction, height band, seeded smart fill or bucket, or replace a state. Coordinates are bed coordinates in mm. A seed on a multipart object requires part. Returns a preview id, affected area and resulting paint regions. A height band with no max_depth splits triangles deep enough that its edges land within 0.04 mm of the heights given. Color states are existing filament slots; seam/support use 1 or 2; fuzzy uses 1; 0 clears. Apply through app_paint_apply with the same client. Copies keep independent paint, as with the brush.`,
+    name: 'app.paint_preview', version: '1.4.0', source: 'command', permission: 'read', input: appPaintPreviewInput,
+    description: `Preview paint on an object in ${appName}'s shown plate without changing it. Target a whole part, direction, height band, seeded smart fill or bucket, or replace a state. Coordinates are bed coordinates in mm. A seed on a multipart object requires part. Returns a preview id, affected area and resulting paint regions. A height band with no max_depth splits triangles deep enough that its edges land within 0.04 mm of the heights given. Color states are existing filament slots or a mixed filament's number from app_paint colorMixes; seam/support use 1 or 2; fuzzy uses 1; 0 clears. Apply through app_paint_apply with the same client. Copies keep independent paint, as with the brush.`,
     run: (i) => call('paint.preview', i),
   }), defineTool({
     name: 'app.paint_from_texture', version: '1.0.0', source: 'command', permission: 'read', input: appPaintFromTextureInput,

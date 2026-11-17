@@ -45,6 +45,7 @@ import { appPreviewMarkerTools } from './app-preview-markers'
 import { appPreviewPlaybackTools } from './app-preview-playback'
 import { appPreviewGcodeTools } from './app-preview-gcode'
 import { appUnitTools } from './app-units'
+import { appMixTools } from './app-mixes'
 import { appPickFilterTools } from './app-pick-filter'
 import { appBrimTools } from './app-brim'
 import { appLayerProfileTools } from './app-layer-profile'
@@ -249,6 +250,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
     ...appLookTools(appLink, productName()),
     ...appExplodeTools(appLink, productName()),
     ...appUnitTools(appLink, productName()),
+    ...appMixTools(appLink, productName()),
     ...appPickFilterTools(appLink, productName()),
     ...appViewportTools(appLink, productName()),
     ...appBrimTools(appLink, productName()),

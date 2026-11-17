@@ -20,6 +20,7 @@ import { plateCheckOutput, type PlateCheckOutput } from './collide'
 import { areaOrigin } from '@slicerx/threemf/area'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
 import { marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
+import { encodeMixes, leftOnMix, MIX_KEY, mixColor, mixProblem, nextMixId, type MixedFilament } from '@slicerx/settings/mixed'
 import { byObjectPlan, byObjectReadback, objectGetsSupport, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
 import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
@@ -128,6 +129,8 @@ export class McpProject implements PilotProject {
   private filamentSetup: Record<number, FilamentSetup> = {}
   /** The tool of each filament (from 1, index slot - 1) set by hand on a printer whose hotends are its tools; unset is the slicer's pick. */
   private toolMap: number[] | undefined
+  /** The project's mixed filaments, shared by every plate. */
+  private mixList: MixedFilament[] = []
   private ranges: ProjectHeightRange[] = []
   private nextId = 1
   private nextVolume = 1
@@ -241,10 +244,73 @@ export class McpProject implements PilotProject {
     return listFilaments(this.filamentSetup, this.profileType())
   }
 
+  /** The project's mixed filaments: a number means the same mix on every plate, as a loaded filament does. */
+  mixes(): MixedFilament[] {
+    return this.mixList.map((m) => ({ ...m }))
+  }
+
+  /** A mix as a client reads it back: with its predicted color (approximate) and its two filaments' colors. */
+  describeMix(m: MixedFilament): MixedFilament & { color: string; colors: [string, string] } {
+    const color = (n: number) => this.filaments().find((f) => f.slot === n)?.color ?? '#808080'
+    const colors: [string, string] = [color(m.components[0]), color(m.components[1])]
+    return { ...m, color: mixColor(colors, m.ratio), colors }
+  }
+
+  /** Adds a mix to the project, numbered from the top past the loaded filaments. */
+  addMix(patch: { name?: string | undefined; components: [number, number]; ratio: [number, number] }): MixedFilament {
+    const loaded = this.filaments().length
+    const id = nextMixId(this.mixList, loaded)
+    if (id === null) throw new Error(`The project has no free number for another mix: it holds ${this.mixList.length}.`)
+    const m: MixedFilament = { id, name: (patch.name ?? `Mix of ${patch.components[0]} and ${patch.components[1]}`).trim(), components: patch.components, ratio: patch.ratio }
+    const bad = mixProblem(m, [...this.mixList, m], loaded)
+    if (bad) throw new Error(bad)
+    this.mixList = [...this.mixList, m]
+    return m
+  }
+
+  /** Changes mix `id`; what is not given stays. */
+  updateMix(id: number, patch: { name?: string | undefined; components?: [number, number] | undefined; ratio?: [number, number] | undefined }): MixedFilament {
+    const cur = this.mixList.find((m) => m.id === id)
+    if (!cur) throw new Error(`The project has no mix ${id}; slicerx_project_mixed_filaments lists them.`)
+    const m: MixedFilament = { ...cur, ...(patch.name !== undefined ? { name: patch.name.trim() } : {}), ...(patch.components ? { components: patch.components } : {}), ...(patch.ratio ? { ratio: patch.ratio } : {}) }
+    const next = this.mixList.map((o) => (o.id === id ? m : o))
+    const bad = mixProblem(m, next, this.filaments().length)
+    if (bad) throw new Error(bad)
+    this.mixList = next
+    return m
+  }
+
+  /** Removes mix `id`. Objects on it, on every plate, go back to its first filament. */
+  removeMix(id: number): { removed: MixedFilament; moved: number } {
+    const cur = this.mixList.find((m) => m.id === id)
+    if (!cur) throw new Error(`The project has no mix ${id}; slicerx_project_mixed_filaments lists them.`)
+    this.mixList = this.mixList.filter((m) => m.id !== id)
+    let moved = 0
+    for (const e of this.entries.values()) {
+      if (e.filament !== id) continue
+      e.filament = cur.components[0]
+      moved++
+    }
+    return { removed: cur, moved }
+  }
+
+  /** The mixes plate `index`'s objects print with: the ones its slice sends. */
+  private usedMixes(index: number): MixedFilament[] {
+    const used = new Set<number>()
+    for (const item of this.layout.find((p) => p.index === index)?.items ?? []) for (const f of this.objectFilaments(item.objectId)) used.add(f)
+    // Something left on a deleted mix's number: every mix goes, so the engine prints it with the filament it falls back to.
+    if ([...used].some((f) => leftOnMix(this.mixList, f))) return this.mixes()
+    return this.mixList.filter((m) => used.has(m.id))
+  }
+
+
   /** Adds a filament after the last one, with the profile's type and the default color unless given. */
   addFilament(patch: { type?: string | undefined; color?: string | undefined }): ProjectFilament {
     const slot = this.filaments().length + 1
     if (slot > MAX_FILAMENTS) throw new Error(`The project already has ${MAX_FILAMENTS} filaments, the most it holds.`)
+    // A filament never takes a mix's number: mixes count down from 32, filaments up to the lowest of them.
+    const mix = this.mixList.find((m) => m.id === slot)
+    if (mix) throw new Error(`Filament ${slot} is the number of mixed filament "${mix.name}". Remove that mix with slicerx_project_remove_mixed_filament to add more filaments.`)
     return this.setFilament(slot, patch, defaultFilament(slot, this.profileType()))
   }
 
@@ -345,7 +411,9 @@ export class McpProject implements PilotProject {
   config(plateIndex: number): PrintConfig {
     const plate = this.layout.find((p) => p.index === plateIndex)
     const tools = this.toolMap ? { filament_map_mode: 'Manual', filament_nozzle_map: this.toolMap.map((t) => t - 1) } : {}
-    const cfg = { ...this.baseConfig(), ...this.filamentConfig(), ...tools, ...this.projectOverrides, ...(plate?.overrides ?? {}) }
+    // Only the mixes the plate's objects use go to its slice; a plate without one sends none and slices as before.
+    const mixes = this.usedMixes(plateIndex)
+    const cfg = { ...this.baseConfig(), ...this.filamentConfig(), ...tools, ...this.projectOverrides, ...(plate?.overrides ?? {}), ...(mixes.length ? { [MIX_KEY]: encodeMixes(mixes) } : {}) }
     // Nozzles of different sizes on a two-extruder printer: the map goes by hand, so each object's nozzle is known.
     return { ...cfg, ...seededMapConfig(cfg, this.filaments().length) } as PrintConfig
   }
@@ -360,17 +428,41 @@ export class McpProject implements PilotProject {
     return [...new Set([...own, ...parts.flatMap((p) => paintedFilaments(p.paint?.color))])].sort((a, b) => a - b)
   }
 
+  /**
+   * The loaded filaments an object prints with, as the engine prints them: a mix as its two, and a number left on a
+   * deleted mix past the loaded filaments as filament 1 (a part) or the part's own filaments (its paint).
+   */
+  printedFilaments(objectId: string): number[] {
+    const e = this.entries.get(objectId)
+    if (!e) throw new Error(`No object ${objectId}`)
+    const loaded = this.filaments().length
+    const as = (f: number, own: readonly number[]): number[] => {
+      const mix = this.mixList.find((m) => m.id === f)
+      if (mix) return [...mix.components]
+      return leftOnMix(this.mixList, f) && f > loaded ? [...own] : [f]
+    }
+    const parts = e.meshId ? this.host.parts(e.meshId) : []
+    if (!parts.length) return as(e.filament ?? 1, [1])
+    const out = parts.flatMap((p) => {
+      const own = as(e.filament ?? (p.slot || 1), [1])
+      return [...own, ...paintedFilaments(p.paint?.color).flatMap((f) => as(f, own))]
+    })
+    return [...new Set(out)].sort((a, b) => a - b)
+  }
+
   /** Whether the object has color paint on any part. */
   isPainted(objectId: string): boolean {
     const e = this.entries.get(objectId)
     return Boolean(e?.meshId && this.host.parts(e.meshId).some((p) => Object.keys(p.paint?.color ?? {}).length > 0))
   }
 
-  /** Prints every part of an object with filament `slot` (1-based). */
+  /** Prints every part of an object with filament `slot` (1-based): a loaded filament, or one of the project's mixes. */
   setObjectFilament(objectId: string, slot: number): void {
     const e = this.entries.get(objectId)
     if (!e) throw new Error(`No object ${objectId}`)
-    if (!Number.isInteger(slot) || slot < 1 || slot > this.filaments().length) throw new Error(`No filament ${slot}: the project has ${this.filaments().length}. Add one with slicerx_project_add_filament.`)
+    const loaded = this.filaments().length
+    const mix = this.mixList.some((m) => m.id === slot)
+    if (!Number.isInteger(slot) || slot < 1 || (slot > loaded && !mix)) throw new Error(`No filament ${slot}: the project has ${loaded}${this.mixList.length ? ` and mixes ${this.mixList.map((m) => m.id).join(', ')}` : ''}. Add one with slicerx_project_add_filament.`)
     e.filament = slot
   }
 
@@ -379,7 +471,7 @@ export class McpProject implements PilotProject {
     if (!nozzleKind(cfg)) return null
     const sizes = nozzleSizes(cfg)
     const { map } = filamentMap(cfg, this.filaments().length)
-    const used = this.objectFilaments(objectId).map((f) => extruderOf(cfg, map, f))
+    const used = this.printedFilaments(objectId).map((f) => extruderOf(cfg, map, f))
     const first = used[0] ?? 1
     const other = used.find((x) => Math.abs((sizes[x - 1] ?? 0) - (sizes[first - 1] ?? 0)) >= 1e-3)
     const name = this.entries.get(objectId)?.obj.name ?? objectId
@@ -584,6 +676,8 @@ export class McpProject implements PilotProject {
       if (e.rotate) copy.rotate = [...e.rotate]
       if (e.scale) copy.scale = [...e.scale]
       if (e.settings) copy.settings = { ...e.settings }
+      // A copy prints with the filament its original prints with, a mix included (mixes are the project's).
+      if (e.filament !== undefined) copy.filament = e.filament
       if (e.volumes) copy.volumes = e.volumes.map((v) => ({ ...v, id: `vol-${this.nextVolume++}`, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
       this.entries.set(id, copy)
       for (const h of homes) {
@@ -1414,6 +1508,7 @@ export class McpProject implements PilotProject {
       ...this.nozzleReadback(),
       bed: describeBed(this.bed(this.layout[0]?.index ?? 1)),
       plates: this.plates().map((p) => ({ ...p, placements: this.safePlacements(p.index), ...this.safeByObject(p.index) })),
+      ...(this.mixList.length ? { mixed_filaments: this.mixList.map((m) => this.describeMix(m)) } : {}),
       filaments: this.filaments(),
       ...(this.hotends() ? { hotends: this.hotends() } : {}),
       overrides: this.projectOverrides,
