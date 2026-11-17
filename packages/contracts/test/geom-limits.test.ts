@@ -90,6 +90,7 @@ const ENGINE: Record<string, GeomOpClass> = {
   'brep.fillet': 'model',
   'brep.chamfer': 'model',
   'brep.push': 'model',
+  'brep.shell': 'model',
   'brep.hole': 'model',
   'brep.info': 'quick',
   'brep.tessellate': 'model',
