@@ -10,7 +10,7 @@ import { rightClickWords, useCoarsePointer } from '../../lib/phone-layout'
 import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator, Range, Textarea, tipAttrs, type IconName } from '@slicerx/ui'
 import { inOwnTree, useLongPress } from '@slicerx/ui/context-menu'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
-import { resolveSlots } from '../../filament/slots'
+import { loadedSlotCount, resolveSlots } from '../../filament/slots'
 import { Swatch } from '../../parts'
 import { addMark, customGcodeProblem, MARK_LABEL, MARK_Z_TOL, nextSlot, removeMark, setMarkSlot, type LayerMark, type MarkKind } from '../../plate/layer-marks'
 import { toast, useApp } from '../../state/store'
@@ -175,7 +175,7 @@ interface SlotRow {
 }
 /** The loaded filament slots, by their number, color and material; read through one string so the selector stays stable. */
 function useSlotRows(): SlotRow[] {
-  const key = useApp((s) => resolveSlots(s).map((r) => `${r.index}|${r.color}|${r.type}`).join(';'))
+  const key = useApp((s) => resolveSlots(s, loadedSlotCount(s)).map((r) => `${r.index}|${r.color}|${r.type}`).join(';'))
   return useMemo(() => (key ? key.split(';').map((r) => { const [index, color, type] = r.split('|'); return { index: Number(index), color: color ?? '', type: type ?? '' } }) : []), [key])
 }
 

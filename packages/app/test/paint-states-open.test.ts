@@ -20,6 +20,7 @@ const { activeMeta } = await import('../src/plate/plates')
 const { useResolvedSlots } = await import('../src/filament/use-slots')
 const { paintColors } = await import('../src/viewport/viewport-host')
 const { loadFlushData } = await import('../src/filament/flush')
+const { loadedSlotCount, slotCount } = await import('../src/filament/slots')
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: [] })
 const host = { kind: 'web', capabilities: { threads: 1 }, slicer: { loadParts: async (name: string, parts: { name: string; slot?: number }[]) => ({ ...handle(name), parts: parts.map((p) => ({ name: p.name, slot: p.slot ?? 1, triangles: 12 })) }) } } as unknown as Host
@@ -57,6 +58,13 @@ describe('a project painted in filaments its parts do not print with', () => {
     expect(result.current.map((r) => r.used)).toEqual([true, true, true, false])
     // Nothing was left unpainted, so the open says nothing.
     expect(get().toast).toBeNull()
+  })
+
+  it('counts the filaments its part and paint print with as loaded, and the one the file only lists as not', async () => {
+    await open([])
+    // a color change noted on filament 4 says it is not loaded (the layer pins read the loaded slots)
+    expect(slotCount(get())).toBe(4)
+    expect(loadedSlotCount(get())).toBe(3)
   })
 
   it("draws paint in each filament's color, filament 3 in red", async () => {
