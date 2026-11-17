@@ -65,6 +65,9 @@ pub(crate) struct PathsIn {
     pub(crate) double_wall_mm2: f64,
     /// How far the anchor at the start of a branch loop runs along the wall inside it, line spacings.
     pub(crate) wall_anchor_spacings: f64,
+    /// Interface islands smaller than this, mm2, are filled on their own: lines through their middle plus a row
+    /// along each edge, instead of the support base filler on the object's lattice (0: none are).
+    pub(crate) small_interface_mm2: f64,
     /// Where the fill lines are anchored.
     pub(crate) anchors: crate::support::Anchors,
     pub(crate) anchor_max: f64,
@@ -147,6 +150,36 @@ fn contact_fill(area: &Shapes, density: f64, angle: f64, layer: u32, z: f64, p: 
             })
         }),
         ContactFill::Rectilinear => rect(area, s, density, angle, p),
+        ContactFill::SupportBase if p.small_interface_mm2 > 0.0 => {
+            let limit = p.small_interface_mm2 * SCALE * SCALE;
+            let (small, rest): (Shapes, Shapes) = area
+                .iter()
+                .cloned()
+                .partition(|island| super::geo::area(&vec![island.clone()]) < limit);
+            let mut out = p.anchors.fill(&rest, |a, c| {
+                crate::supportfill::support_base(a, s, density, angle, c)
+            });
+            for island in small {
+                let one: Shapes = vec![island];
+                let Some(b) = perimeters::bounds(&one) else {
+                    continue;
+                };
+                let middle = [
+                    f64::from(b[0]) / 2.0 / SCALE + f64::from(b[2]) / 2.0 / SCALE,
+                    f64::from(b[1]) / 2.0 / SCALE + f64::from(b[3]) / 2.0 / SCALE,
+                ];
+                out.extend(crate::patterns::support_lines(
+                    &one,
+                    s,
+                    s / density,
+                    angle,
+                    true,
+                    p.anchor_max,
+                    middle,
+                ));
+            }
+            out
+        }
         ContactFill::SupportBase => p.anchors.fill(area, |a, c| {
             crate::supportfill::support_base(a, s, density, angle, c)
         }),

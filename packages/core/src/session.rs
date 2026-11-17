@@ -7281,6 +7281,7 @@ impl SliceSession {
             top_rate: t.top_rate,
             tip_diameter: t.tip_diameter,
             bed_foot: crate::bedfoot::enabled(cfg),
+            per_object: crate::organic_objects::selected(cfg),
         };
         let brim = self.organic_brim(cfg, input.models.first());
         let inp = crate::organic::OrganicIn {
@@ -7570,6 +7571,7 @@ impl SliceSession {
                 _ => 1e-12,
             },
             wall_anchor_spacings: crate::organic_objects::wall_anchor_spacings(cfg),
+            small_interface_mm2: crate::organic_objects::small_interface_mm2(cfg),
             anchors: anchors.clone(),
             anchor_max: cfg.anchor_max_mm(),
         }
