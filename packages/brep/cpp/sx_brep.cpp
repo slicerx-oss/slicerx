@@ -540,6 +540,7 @@ void join_flat_faces(SmBrep* b, const char* what = "taperDeg")
     SmApiGetFaces(b, fs);
     SmContext& cx = *SmApiGetOrCreateContext();
     std::vector<std::pair<SmVector3d, double>> planes;
+    bool moved = false;
     for (int pass = 0; pass < 2; ++pass) {
         for (ULONG i = 0; i < fs.GetSize(); ++i) {
             SmSurface* s = fs[i]->GetSurface();
@@ -564,9 +565,19 @@ void join_flat_faces(SmBrep* b, const char* what = "taperDeg")
             SmPlane* pl = nullptr;
             check(SmPlane::CreateCanonical(cx, SmAxis2Placement(m, -c * same->second), pl), what);
             check(b->ReplaceSurface(fs[i], pl, FALSE), what);
+            moved = true;
         }
     }
     check(b->RemoveTopologicalEdgesAndVertices(), what);
+    if (!moved) return;
+    // a canonical plane has no end, and a tessellation's longest-edge limit splits all of it: each plane is cut to
+    // its face once faces on one plane are joined
+    SmTArray<SmFace*> joined;
+    SmApiGetFaces(b, joined);
+    for (ULONG i = 0; i < joined.GetSize(); ++i) {
+        SmSurface* s = joined[i]->GetSurface();
+        if (s && s->GetType() == SmPlane_TYPE && !s->IsBounded()) check(joined[i]->ShrinkSurface(), what);
+    }
 }
 
 // one loop from z = 0 to h (below for a negative h), capped, its sides leaning in by deg as they leave z = 0 (out for
