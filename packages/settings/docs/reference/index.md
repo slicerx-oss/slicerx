@@ -12,7 +12,7 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 - [Advanced extrusion](process-advanced.md): 30 settings
 - [G-code](process-gcode.md): 8 settings
 - [Acceleration, jerk and machine limits](process-motion.md): 21 settings
-- [Multi material](process-multimaterial.md): 44 settings
+- [Multi material](process-multimaterial.md): 45 settings
 - [Overhangs and bridges](process-overhangs.md): 30 settings
 - [Profile metadata](process-profile.md): 8 settings
 - [Quality and geometry](process-quality.md): 97 settings
