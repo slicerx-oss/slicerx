@@ -5,13 +5,15 @@
 // the mesh shell's words; a box, a cylinder and a cone shelled closed keep a wall within 0.01 mm of the one asked; a
 // curved lofted body open at its end is refused before the kernel is asked, since the kernel leaves such a wall open or
 // fails outright, so a replay runs it on the mesh. A closed shell whose wall strays from the one asked, cannot be read,
-// or whose mesh holds another volume than the body, is refused too.
+// or whose mesh holds another volume than the body, is refused too. A straight-lofted taper, pushed or not, and a pushed
+// cone shelled closed answer within the step's time limit, held exact or refused.
 // Empty without the brep feature, so a workspace test run that names every test target passes over it.
 #![cfg(feature = "brep")]
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use sx_brep::{Body, Mesh, Tessellation};
 use sx_geom::exact as table;
+use sx_geom::fm::Fm;
 
 /// How far a wall may come out from the thickness asked, in mm.
 const WALL_MM: f64 = 0.01;
@@ -398,4 +400,150 @@ fn a_closed_shell_whose_mesh_holds_another_volume_than_the_body_is_refused() {
         assert_eq!(table::count(), held);
     }
     table::free(body);
+}
+
+/// How long a host lets a modeling call run before it stops it, in seconds: the model class's limit
+/// (`GEOM_CALL_LIMIT_MS.model` in packages/contracts/src/geom-limits.ts).
+const MODEL_LIMIT_S: u64 = 180;
+
+/// The angles a taper's sides lean by in the test below, in degrees.
+const ANGLES: [f64; 7] = [0.0, 5.0, 11.3, 15.0, 20.0, 30.0, 45.0];
+
+/// A body 20 mm tall: a taper (a straight loft from a 24 by 16 mm top down to a base grown by `angle` on each side, its
+/// sides flat) or a cone (a 12 mm top radius, its side leaning out by `angle`), with its top pushed 5 mm up when
+/// `pushed`, as a person's push and pull does. Held.
+fn timed_body(shape: &str, angle: f64, pushed: bool) -> u32 {
+    let grow = 20.0 * angle.to_radians().m_tan();
+    let body = if shape == "taper" {
+        let rect = |hw: f64, hh: f64| json!({ "points": [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] });
+        let lofted = op(
+            "sketch.loft",
+            &json!({
+                "profiles": [level(0.0, &rect(12.0 + grow, 8.0 + grow)), level(20.0, &rect(12.0, 8.0))],
+                "operation": "new", "exact": true, "keySalt": 7
+            }),
+        );
+        number(&lofted["body"])
+    } else {
+        table::hold(
+            Body::cone([0.0; 3], 12.0 + grow, 12.0, 20.0).expect("a cone"),
+            Vec::new(),
+        )
+        .expect("held")
+    };
+    if !pushed {
+        return body;
+    }
+    let up = op(
+        "brep.push",
+        &json!({ "body": body, "at": [0, 0, 20], "normal": [0, 0, 1], "distanceMm": 5 }),
+    );
+    table::free(body);
+    number(&up["body"])
+}
+
+/// One body of the test below shelled closed, named by `SX_TIMED_SHELL` ("shape angle wall pushed|plain"): run by that
+/// test in a process of its own, it prints how the shell answered and how long it took.
+#[test]
+fn timed_shell_case() {
+    let Ok(case) = std::env::var("SX_TIMED_SHELL") else {
+        return;
+    };
+    let [shape, angle, wall, how] = case.split(' ').collect::<Vec<_>>()[..] else {
+        panic!("a case: {case}");
+    };
+    let (angle, wall): (f64, f64) = (angle.parse().expect("an angle"), wall.parse().expect("a wall"));
+    let body = timed_body(shape, angle, how == "pushed");
+    let start = std::time::Instant::now();
+    let reply = sx_geom::json::call(
+        "brep.shell",
+        &json!({ "body": body, "wallMm": wall, "keySalt": 8 }).to_string(),
+    );
+    let ms = start.elapsed().as_secs_f64() * 1e3;
+    match reply {
+        Ok(text) => {
+            let made: Value = serde_json::from_str(&text).expect("a JSON reply");
+            println!("CASE held {ms:.0} ms");
+            table::free(number(&made["body"]));
+        }
+        Err(e) => println!("CASE refused {ms:.0} ms: {e}"),
+    }
+    table::free(body);
+}
+
+/// A straight-lofted taper at each angle of the table and each wall, a taper at 11.3 and 30 degrees with its top
+/// pushed, and a pushed cone, each shelled closed in a process of its own: each answers within the model class's time
+/// limit, held exact (the engine's own read-back passed) or refused in the step's words, and never runs on unanswered.
+/// The kernel's tessellator never finished a pushed taper's mesh when asked for a largest edge, so a shell's read-back
+/// asks for none.
+#[test]
+fn closed_shells_of_tapers_and_pushed_bodies_answer_within_the_time_limit() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let me = std::env::current_exe().expect("this test binary");
+    let mut cases: Vec<String> = ["taper 11.3 2 pushed", "taper 30 2 pushed", "cone 11.3 2 pushed"]
+        .map(str::to_owned)
+        .to_vec();
+    for angle in ANGLES {
+        for wall in [1, 2, 3] {
+            cases.push(format!("taper {angle} {wall} plain"));
+        }
+    }
+    // four cases at a time, each in its own process, one that runs past the limit stopped
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let wrong = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|s| {
+        for _ in 0..4 {
+            s.spawn(|| {
+                while let Some(case) = cases.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) {
+                    let mut child = std::process::Command::new(&me)
+                        .args(["timed_shell_case", "--exact", "--nocapture", "--test-threads=1"])
+                        .env("SX_TIMED_SHELL", case)
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                        .expect("the case runs");
+                    let start = std::time::Instant::now();
+                    while child.try_wait().expect("the case").is_none()
+                        && start.elapsed().as_secs() < MODEL_LIMIT_S
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    let stopped = child.try_wait().expect("the case").is_none();
+                    if stopped {
+                        child.kill().ok();
+                    }
+                    let run = child.wait_with_output().expect("the case ends");
+                    let out = String::from_utf8_lossy(&run.stdout);
+                    // the harness's own words may come first on the case's line
+                    let line = out
+                        .lines()
+                        .find_map(|l| l.split_once("CASE ").map(|(_, rest)| format!("CASE {rest}")))
+                        .unwrap_or_default();
+                    eprintln!("{case}: {line} ({:.1} s)", start.elapsed().as_secs_f64());
+                    let wall = case.split(' ').nth(2).unwrap_or("");
+                    let words = format!("shell: a {wall} mm wall could not be made exact on this body");
+                    let answered = !stopped
+                        && run.status.success()
+                        && (line.starts_with("CASE held")
+                            || line.starts_with("CASE refused") && line.contains(&words));
+                    if !answered {
+                        let why = if stopped {
+                            "no answer within the limit".to_owned()
+                        } else {
+                            format!("{} {line}", run.status)
+                        };
+                        wrong.lock().expect("the list").push(format!("{case}: {why}"));
+                    }
+                }
+            });
+        }
+    });
+    let wrong = wrong.into_inner().expect("the list");
+    assert!(
+        wrong.is_empty(),
+        "closed shells that did not answer held or refused:\n{}",
+        wrong.join("\n")
+    );
 }
