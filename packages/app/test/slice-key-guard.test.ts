@@ -64,6 +64,8 @@ const SEEDED: Partial<Record<keyof AppState, unknown[]>> = {
   flush: [{ multiplier: 1.5, manual: {} }],
   // a history step open for editing: the slice reads the object as it is, here on slot 3, not the rolled-back view
   historyEdit: [{ objectId: 'a', index: 0, original: part('a', 60, 3) }],
+  // the mix a part prints with (on the start with a part on mix 32) at another ratio, and of the two filaments the other way round
+  mixes: [[{ id: 32, name: 'Sunset', components: [1, 2], ratio: [1, 1] }], [{ id: 32, name: 'Sunset', components: [2, 1], ratio: [2, 1] }]],
 }
 
 /** Fields no slice reads, and fields the slice reads but only where another check covers them, with the reason. */
@@ -85,7 +87,9 @@ describe('the slice key', () => {
   // with the slots set up by hand, with none set up (the model's colors and the file's filaments fill them), and with
   // every plate on one slot
   const ONE_SLOT = { plate: [part('a', 60, 1)], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }, { id: 'p2', name: 'Plate 2', objects: [part('c', 60, 1)], settings: {} }] }
-  const STARTS = [{}, { slotSetup: {} }, ONE_SLOT]
+  // and with a part on a mix of the two filaments, which the slice gets as the mixed_filaments setting
+  const MIXED = { plate: [part('a', 60, 1), part('b', 120, 32)], mixes: [{ id: 32, name: 'Sunset', components: [1, 2] as [number, number], ratio: [2, 1] as [number, number] }] }
+  const STARTS = [{}, { slotSetup: {} }, ONE_SLOT, MIXED]
 
   it('on plates of one slot, the nozzle volume and the flush matrix change neither the configuration nor the key', () => {
     // a single-color configuration has no flush volumes (slotConfig), so a new printer's nozzle volume keeps its slice
