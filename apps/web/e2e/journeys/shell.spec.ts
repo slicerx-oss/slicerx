@@ -16,10 +16,11 @@ const sx = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx 
 
 // ---- minimal UI ----------------------------------------------------------------------------------------------
 
-test('The plate tab with an object selected shows 44 controls or fewer, Simple mode', { tag: '@smoke' }, async ({ page }) => {
+test('The plate tab with an object selected shows 45 controls or fewer, Simple mode', { tag: '@smoke' }, async ({ page }) => {
   await exampleX(page)
   await mode(page, 'simple')
   await viewportReady(page)
+  await expect(page.getByTestId('slice-selection-bar')).toHaveCSS('opacity', '1')
   const list = await visibleControls(page)
   console.log('prepare selected', list.length, list.join(' | '))
   // 36: calibration by need added a Tune button on each used filament that is not tuned yet (two on the two-color
@@ -32,7 +33,9 @@ test('The plate tab with an object selected shows 44 controls or fewer, Simple m
   // 42: the plate picker replaces the plate chip, which was a label, with Previous plate, the plate (which opens every
   // plate, with Add plate) and Next plate. They keep their places with one plate, so adding one moves nothing.
   // 44: every loaded spool shows in the Filament section, not only the ones in use (two more on the reference AMS).
-  expect(list.length).toBeLessThanOrEqual(44)
+  // 45: the selection bar's Actions button counts (in Simple mode it holds skip, lock, arrange and transform). The
+  // count is taken once the bar has faded in; before its 120 ms fade-in ended it read 44.
+  expect(list.length).toBeLessThanOrEqual(45)
 })
 
 test('a saved Preview tab opens Slice, with no Preview tab in the bar', async ({ page }) => {
