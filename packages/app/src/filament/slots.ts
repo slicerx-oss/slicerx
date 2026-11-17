@@ -64,15 +64,21 @@ export function toolChangeSlots(s: Partial<Pick<AppState, 'layerMarks'>>, plateI
 }
 
 /**
- * How many slots the project needs: the printer's, every filament the opened file lists, the highest a part, its color
- * paint or a tool change uses, and the highest set by hand.
+ * How many slots are loaded: the printer's, the highest a part, its color paint or a tool change uses, and the highest
+ * set by hand. A filament the opened file only lists is not one of them, so a slot noted on a color change past these
+ * says it is not loaded.
  */
-export function slotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks' | 'fileSlotColors'>>): number {
-  let n = Math.max(s.printerSlots.length, s.fileSlotColors?.length ?? 0)
+export function loadedSlotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks'>>): number {
+  let n = s.printerSlots.length
   for (const p of allPlates(s)) for (const o of p.objects) n = Math.max(n, ...objectSlots(undefined, o))
   for (const p of s.plates) for (const t of toolChangeSlots(s, p.id)) n = Math.max(n, t)
   for (const k of Object.keys(s.slotSetup)) n = Math.max(n, Number(k))
   return Math.min(MAX_SLOTS, Math.max(1, n))
+}
+
+/** How many slots the project has: those loaded, and every filament the opened file lists. */
+export function slotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks' | 'fileSlotColors'>>): number {
+  return Math.min(MAX_SLOTS, Math.max(loadedSlotCount(s), s.fileSlotColors?.length ?? 0))
 }
 
 /**
