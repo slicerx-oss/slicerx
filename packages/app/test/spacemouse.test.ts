@@ -8,7 +8,7 @@ import { SpaceMouseSection, spaceMouseStatusText } from '../src/controls/spacemo
 import { loadPrefs, savePrefs } from '../src/state/prefs'
 import { appStore, set } from '../src/state/store'
 import { connectSpaceMouse, handleSpaceReport, HID_FILTERS, isSpaceMouse, onSpaceMouseFrame, registerSpaceMouseSource, reportBytes, resetSpaceMouseForTests, spaceMouseStatus, startSpaceMouse, webHidSource, type SpaceMouseSource, type SpaceMouseStatus } from '../src/viewport/spacemouse'
-import { startSpaceMouseWhenOn } from '../src/viewport/spacemouse-state'
+import { startSpaceMouseWhenOn } from '../src/viewport/spacemouse-loader'
 
 const MULTI_AXIS = [{ usagePage: 0x01, usage: 0x08 }]
 
