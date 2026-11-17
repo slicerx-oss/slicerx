@@ -23,6 +23,7 @@ import { scanProjectInWorker } from './project-worker-client'
 import { geomMatrix, geomPaint, readWithGeom, type GeomProject } from './geom-project'
 import { withBambuMissingKeys } from '@slicerx/settings/app-defaults'
 import { filePlateBedType, type BedType } from '@slicerx/settings/bed-type'
+import { decodeMixes, MAX_MIXES, MIX_LOWEST_ID, MIX_TOP_ID, type MixedFilament } from '@slicerx/settings/mixed'
 
 export { ProjectReadError, unzipEntries, type ZipLimits } from './unzip'
 export type { PaintOfPart } from './model-scan'
@@ -100,6 +101,8 @@ export interface ImportedProject {
   namedValues: NamedValue[]
   /** The mimir plans from Metadata/slicerx_plans.json, designs by `fileId`; absent when the file has none it can read. */
   plans?: SavedPlans
+  /** The project's mixed filaments (Metadata/slicerx_mixed_filaments.json). */
+  mixes: MixedFilament[]
   /** Why the histories did not open, when a newer SlicerX saved them. */
   historyNote?: string
   /** Why the project's print settings were left out, when its settings file is there but not JSON settings. */
@@ -620,6 +623,26 @@ interface PlateCfg {
   objectIds: string[]
 }
 
+/** The mixes a list of `mixed_filaments` entries gives, keeping only what a slice can use. */
+function usableMixes(v: unknown): MixedFilament[] {
+  if (!Array.isArray(v)) return []
+  // Mixes on the numbers mixes take, of two different filaments that are not mixes, four at most, one per number.
+  const all = decodeMixes(v.filter((e): e is string => typeof e === 'string'))
+  const ok = all.filter((m) => m.id >= MIX_LOWEST_ID && m.id <= MIX_TOP_ID && m.components.every((c) => c < MIX_LOWEST_ID) && m.components[0] !== m.components[1] && !m.components.some((c) => all.some((o) => o.id === c)))
+  return ok.filter((m, i) => ok.findIndex((o) => o.id === m.id) === i).slice(0, MAX_MIXES)
+}
+
+/** The project's mixes from Metadata/slicerx_mixed_filaments.json (`{ "version": 1, "mixes": [...] }`). */
+export function projectMixesOf(bytes: Uint8Array | undefined): MixedFilament[] {
+  if (!bytes) return []
+  try {
+    const v = JSON.parse(new TextDecoder().decode(bytes)) as { mixes?: unknown }
+    return usableMixes(v?.mixes)
+  } catch {
+    return []
+  }
+}
+
 /** A plate's settings from Bambu Studio and Orca's model_settings.config, as both readers give them. */
 function plateCfgOf(name: string, index: number, m: Record<string, string>, objectIds: string[], no?: number): PlateCfg {
   // Bambu Studio's per plate filament map: kept when it was set by hand; an automatic one the slicer picks again.
@@ -998,5 +1021,5 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const standing = new Map(plates.flatMap((p) => p.objects.map((o) => [o.fileId, o.transform] as const)))
   const timeline = histories.size ? parseTimeline(files, fileIds, (id) => standing.get(id)) : null
   // Paint is checked by the open (open-project.ts), against the filaments the project has once it is open.
-  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...plansOf(files, fileIds), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}), ...(readerNote ? { readerNote } : {}) }
+  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), mixes: projectMixesOf(files.get('Metadata/slicerx_mixed_filaments.json')), ...plansOf(files, fileIds), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}), ...(readerNote ? { readerNote } : {}) }
 }

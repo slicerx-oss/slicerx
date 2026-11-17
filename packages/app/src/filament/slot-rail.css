@@ -80,3 +80,19 @@
 .rail-foot .setup-notes { display: flex; margin: 0; }
 .rail-foot .sx-btn { flex: none; }
 .rail-foot-text .sx-linkbtn { font-size: inherit; }
+
+/* Mixed filaments: their spools under the loaded ones, and the editor. */
+.spool-mix .spool-id { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-dialog .mix-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
+.mix-dialog-actions { display: inline-flex; gap: var(--s-2); }
+.mix-preview { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-2); }
+.mix-preview-text { display: grid; gap: var(--s-1); min-width: 0; }
+.mix-color { font-size: var(--fs-sm); color: var(--fg); }
+.mix-hex { font-variant-numeric: tabular-nums; }
+.mix-cost { min-height: 2.6em; margin: var(--s-2) 0 0; color: var(--muted); }
+.mix-cost[data-many] { color: var(--orange); }
+.mix-error { margin: var(--s-1) 0 0; color: var(--red); }
+@media (max-width: 520px) {
+  .mix-dialog .mix-pair { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
+}
+.mix-dialog .mix-pair, .mix-dialog .mix-name { margin-bottom: var(--s-3); }

@@ -4,6 +4,9 @@
 // bed type, print sequence and filament order. The active plate's objects stay in `plate` so the
 // rest of the app keeps working on one plate; the others wait in `plates`.
 import { hotendMapConfig, nozzleMapConfig } from '../filament/nozzle-map'
+import { mixConfig } from '@slicerx/settings/mixed'
+import { usedMixes } from './paint-states'
+import { allPlates } from './all-plates'
 import { get, markStale, selectedIds, set, type AppState, type PlateEntry, type PlateMeta, type PlateSettings } from '../state/store'
 import { quietly } from './history'
 import { plateTower } from './tower'
@@ -201,10 +204,12 @@ export function nameOptions(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'
  * set one, its filament order (slots, 1-based) for the first layer and every other layer. Without an order the
  * engine picks the one with the least flush.
  */
-export function plateConfig(meta: PlateMeta | undefined): Record<string, string | number | number[]> {
+export function plateConfig(meta: PlateMeta | undefined): Record<string, string | number | number[] | string[]> {
   if (!meta) return {}
   const seq = meta.settings.sequence
-  const out: Record<string, string | number | number[]> = { ...(seq ? { print_sequence: seq === 'by-object' ? 'by object' : 'by layer' } : {}), ...nozzleMapConfig(meta), ...hotendMapConfig(meta) }
+  // Only the mixes the plate's objects use go to the slice, and a plate without one sends no mixed_filaments, so it
+  // slices exactly as before.
+  const out: Record<string, string | number | number[] | string[]> = { ...(seq ? { print_sequence: seq === 'by-object' ? 'by object' : 'by layer' } : {}), ...nozzleMapConfig(meta), ...hotendMapConfig(meta), ...mixConfig(usedMixes(allPlates().find((p) => p.id === meta.id) ?? meta, get().mixes)) }
   const order = meta.settings.filamentOrder
   if (order && order.length > 1) {
     out['first_layer_print_sequence'] = [...order]

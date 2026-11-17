@@ -190,3 +190,14 @@ describe('an apply after a refused preview', () => {
     await expect(call('apply', { preview: pv })).rejects.toMatchObject({ code: 'not_found', message: 'No paint preview for this client; preview again' })
   })
 })
+
+it("paints with a mix by its number, lists the mixes, and refuses a number that is neither", async () => {
+  set({ mixes: [{ id: 32, name: 'Purple', components: [1, 2], ratio: [2, 1] }] })
+  const read0 = (await read()).output as unknown as { colorMixes: unknown[] }
+  expect(read0.colorMixes).toEqual([{ id: 32, name: 'Purple', components: [1, 2], ratio: [2, 1] }])
+  const pv = await preview({ state: 32 })
+  await call('apply', { preview: pv.output.preview })
+  // The engine mock writes a state as four times its number.
+  expect(paintedParts(get().plate[0]!)[0]!.paint).toEqual({ color: { 0: '128' } })
+  await expect(preview({ state: 31 })).rejects.toMatchObject({ code: 'invalid_input' })
+})

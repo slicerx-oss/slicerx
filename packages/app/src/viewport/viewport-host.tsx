@@ -13,6 +13,7 @@ import { brandAccent, useEdition } from '../edition'
 import { controlsFor, type ControlsApi } from '../first-run/controls'
 import { onSpaceMouseFrame } from './spacemouse-state'
 import { effectiveSlot, mapSlot, resolveSlots, slotFinish, type ResolvedSlot } from '../filament/slots'
+import { colorsWithMixes, mixOf, mixSwatch } from '../filament/mixes'
 import { activeMeta } from '../plate/plates'
 import { bake } from '../plate/mesh-ops'
 import { objectWarnings } from '../plate/object-list'
@@ -155,6 +156,9 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
 function partColor(s: AppState, slots: ResolvedSlot[], slot: number, modelColor: string, printable = true): string {
   if (!printable) return '#6b6b78'
   const mapped = mapSlot(activeMeta(s), slot)
+  // A part on a mix shows the mix's predicted color.
+  const mix = mixOf(s, mapped)
+  if (mix) return mixSwatch(mix, slots.map((r) => r.color)).color
   const r = slots[mapped - 1]
   return r && (r.source === 'user' || r.source === 'printer' || mapped !== slot) ? r.color : modelColor
 }
@@ -179,9 +183,9 @@ function bakedVolume(v: { part: Parameters<typeof bake>[0]; local: Parameters<ty
   return positions
 }
 
-/** The colors color paint draws in: filament k's for paint on filament k, every slot the project has (exported for tests). */
+/** The colors color paint draws in: filament k's for paint on filament k, every slot the project has, and each mix's predicted color at its number (exported for tests). */
 export function paintColors(s: AppState): string[] {
-  return resolveSlots(s).map((r) => r.color)
+  return colorsWithMixes(s, resolveSlots(s).map((r) => r.color))
 }
 
 /** What the view draws for the plate: each object and part with the color it shows (exported for tests). */
@@ -260,7 +264,7 @@ function geometryKey(s: AppState, shown: ShownTower | null): string {
   const colors = resolveSlots(s).map((r) => r.color).join()
   // The tower's corner and angle are its transform; only its size rebuilds.
   const towerKey = shown ? `tower:${shown.at.width},${shown.at.depth},${shown.heightMm}` : ''
-  return towerKey + '|' + s.plate.map((p) => `${p.id}:${p.handle.id}:${p.printable === false ? 'x' : ''}${JSON.stringify(p.slotOverrides ?? {})}:${(p.volumes ?? []).map((v) => `${v.id}${v.role}${v.local.join()}`).join(';')}`).join('|') + `#${colors}#${JSON.stringify(activeMeta(s)?.settings.slotMap ?? {})}`
+  return towerKey + '|' + s.plate.map((p) => `${p.id}:${p.handle.id}:${p.printable === false ? 'x' : ''}${JSON.stringify(p.slotOverrides ?? {})}:${(p.volumes ?? []).map((v) => `${v.id}${v.role}${v.local.join()}`).join(';')}`).join('|') + `#${colors}#${JSON.stringify(activeMeta(s)?.settings.slotMap ?? {})}#${JSON.stringify(s.mixes)}`
 }
 
 /** Whether the last way focus moved was the Tab key, rather than a press (a pointer, or a script after a key). */

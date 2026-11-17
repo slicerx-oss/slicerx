@@ -355,6 +355,23 @@ export interface PlateSettingsInput {
   layerProfile?: readonly (readonly [number, number])[]
 }
 
+/** A project's mixed filament: the filament number it takes, its two loaded filaments and their ratio in layers. */
+export interface MixInput {
+  id: number
+  name: string
+  components: readonly [number, number]
+  ratio: readonly [number, number]
+}
+
+/**
+ * Metadata/slicerx_mixed_filaments.json: `{ "version": 1, "mixes": [...] }`, each mix as the engine's
+ * `mixed_filaments` entry `id:a,b:ra,rb:name`, or null without a mix so nothing is added.
+ */
+export function mixesJson(mixes: readonly MixInput[] | undefined): string | null {
+  if (!mixes?.length) return null
+  return JSON.stringify({ version: 1, mixes: mixes.map((m) => `${m.id}:${m.components[0]},${m.components[1]}:${m.ratio[0]},${m.ratio[1]}:${m.name}`) })
+}
+
 /**
  * The sequence a plate prints with: its own, or the Print sequence setting in `cfg` (the resolved print settings)
  * when the plate follows it, as Orca's "same as global" does.
@@ -651,6 +668,8 @@ export interface ProjectInput {
    * state only, never chat text. None, or none left once the designs not written are dropped, adds no part.
    */
   plans?: PlansInput
+  /** The project's mixed filaments, written as Metadata/slicerx_mixed_filaments.json. */
+  mixes?: readonly MixInput[]
   /** The design timeline (docs/cad-history.md); without one, the objects' histories are merged by when steps were made. */
   timeline?: Timeline
   /** The model's Title metadata; the first object's name when absent. */
@@ -673,7 +692,7 @@ export interface ProjectInput {
 
 /** The input of a print file without the model (`meshless`): the plates' printing objects become names only. */
 function meshlessInput(input: ProjectInput): ProjectInput {
-  const { meshless: _meshless, objectSettings: _settings, timeline: _timeline, namedValues: _values, plans: _plans, ...rest } = input
+  const { meshless: _meshless, objectSettings: _settings, timeline: _timeline, namedValues: _values, plans: _plans, mixes: _mixes, ...rest } = input
   const title = input.title ?? input.plates[0]?.objects[0]?.name
   return {
     ...rest,
@@ -956,6 +975,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   if (values) files.push({ name: 'Metadata/slicerx_values.json', data: values })
   const plans = plansJson(input.plans, fileIds)
   if (plans) files.push({ name: PLANS_PART, data: plans })
+  const mixes = mixesJson(input.mixes)
+  if (mixes) files.push({ name: 'Metadata/slicerx_mixed_filaments.json', data: mixes })
   const marks = layerMarksXml(input.layerMarks)
   if (marks) files.push({ name: MARKS_PART, data: marks })
   const sliced = Object.entries(input.gcode ?? {}).map(([i, gcode]) => {

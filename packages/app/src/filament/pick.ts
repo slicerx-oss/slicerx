@@ -133,9 +133,11 @@ export function targetSlot(s: Pick<AppState, 'plate' | 'plates' | 'activePlate'>
  * moved. Notes the spool as the one used last on this printer and the objects as picked by hand.
  */
 export function moveToSpool(target: SpoolTarget, slot: number): number {
-  if (!Number.isInteger(slot) || slot < 1 || slot > MAX_SLOTS) return 0
   const s = get()
   const meta = activeMeta(s)
+  // A mix takes a number past the loaded filaments.
+  const mix = s.mixes.some((m) => m.id === slot)
+  if (!Number.isInteger(slot) || slot < 1 || (slot > MAX_SLOTS && !mix)) return 0
   const to = fileSlotFor(meta, slot)
   let moved = 0
   const touched: string[] = []

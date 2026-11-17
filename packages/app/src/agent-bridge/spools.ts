@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The Filament section for an agent: every spool with what it holds, whether it is loaded and how many parts print
-// on it, and the move a click on a spool makes (filament/pick.ts), so a client moves a part or the plate the way a
-// person does and reads the result back.
+// on it, the project's mixes, and the move a click on a spool or a mix makes (filament/pick.ts), so a client moves a
+// part or the plate the way a person does and reads the result back.
 import { activeMeta } from '../plate/plates'
 import { currentTarget, moveToSpool, profileMaterial, spoolParts, spoolPicks, targetSlot, type SpoolTarget } from '../filament/pick'
 import { slotMismatch } from '../filament/rail'
@@ -43,6 +43,8 @@ export function spoolsView(s: AppState): Record<string, unknown> {
         ...(mismatch.has(r.index) ? { mismatch: true } : {}),
       }
     }),
+    // the project's mixes: a spool of their own under the loaded ones, each printing two of them by layer
+    mixes: s.mixes.map((m) => ({ slot: m.id, name: m.name, components: [...m.components], ratio: [...m.ratio], inUse: parts.get(m.id)?.parts ?? 0, parts: parts.get(m.id)?.names ?? [] })),
     // why each object prints on its spool: picked by hand, or picked automatically by color, last used or material
     picks: Object.fromEntries(s.plate.filter((e) => picks[e.id]).map((e) => [e.id, picks[e.id]])),
   }
@@ -54,12 +56,16 @@ function targetJson(t: SpoolTarget): Record<string, unknown> {
   return { kind: 'plate' }
 }
 
-/** A spool by its label ("A3") or slot number. */
+/** A spool by its label ("A3") or slot number, or a mix by its name or number. */
 function slotOf(s: AppState, v: unknown, what: string): number {
   const slots = resolveSlots(s)
-  const hit = typeof v === 'number' ? slots.find((r) => r.index === v) : typeof v === 'string' ? (slots.find((r) => r.label.toLowerCase() === v.trim().toLowerCase()) ?? slots.find((r) => String(r.index) === v.trim())) : undefined
-  if (!hit) throw new BridgeError('not_found', `no ${what} ${String(v)}; the spools are ${slots.map((r) => r.label).join(', ')}`)
-  return hit.index
+  const text = typeof v === 'string' ? v.trim().toLowerCase() : null
+  const hit = typeof v === 'number' ? slots.find((r) => r.index === v) : text !== null ? (slots.find((r) => r.label.toLowerCase() === text) ?? slots.find((r) => String(r.index) === text)) : undefined
+  if (hit) return hit.index
+  const mix = s.mixes.find((m) => m.id === v || (text !== null && (m.name.toLowerCase() === text || String(m.id) === text)))
+  if (mix) return mix.id
+  const mixes = s.mixes.length ? `, and the mixes are ${s.mixes.map((m) => `${m.id} (${m.name})`).join(', ')}` : ''
+  throw new BridgeError('not_found', `no ${what} ${String(v)}; the spools are ${slots.map((r) => r.label).join(', ')}${mixes}`)
 }
 
 /**

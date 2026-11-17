@@ -41,6 +41,9 @@ async function editable(e: PlateEntry) {
   if (target(e.id).locked) throw new LinkError('refused', 'Unlock the object first')
 }
 
+/** The project's mixed filaments, which color paint may use by their numbers. */
+const shownMixes = () => get().mixes.map((m) => ({ id: m.id, name: m.name, components: [...m.components], ratio: [...m.ratio] }))
+
 async function regions(e: PlateEntry, layer: PaintLayerName, paint = e.paint) {
   const parts: { part: number; name: string; states: States; bare?: ReturnType<typeof bareFaces> }[] = []
   for (const [part, mesh] of e.parts.entries()) {
@@ -52,7 +55,7 @@ async function regions(e: PlateEntry, layer: PaintLayerName, paint = e.paint) {
     const bare = bareFaces(mesh, layer)
     parts.push({ part, name: mesh.name, states: result.states, ...(bare.length ? { bare } : {}) })
   }
-  return { object: e.id, name: e.name, layer, colorSlots: slotCount(get()), parts }
+  return { object: e.id, name: e.name, layer, colorSlots: slotCount(get()), colorMixes: shownMixes(), parts }
 }
 
 export async function readPaint(args: Record<string, unknown>) {
@@ -84,7 +87,9 @@ async function previewOn(i: ReturnType<typeof appPaintPreviewInput.parse>, clien
   if ((i.layer === 'seam' || i.layer === 'support') && i.state > 2 || i.layer === 'fuzzy' && i.state > 1) throw new LinkError('invalid_input', 'The state is outside this paint layer')
   const before = stamp()
   const e = target(i.object)
-  if (i.layer === 'color' && i.state > slotCount(get())) throw new LinkError('invalid_input', 'Choose an existing filament slot from app_paint')
+  // A mix paints like a filament, under its own number.
+  const mix = get().mixes.some((m) => m.id === i.state)
+  if (i.layer === 'color' && i.state > slotCount(get()) && !mix) throw new LinkError('invalid_input', 'Choose an existing filament slot or a mix from app_paint')
   if (!e.parts.length || i.part !== undefined && i.part >= e.parts.length) throw new LinkError('invalid_input', 'The part index is outside this object')
   if (i.target.kind === 'seed' && e.parts.length > 1 && i.part === undefined) throw new LinkError('invalid_input', 'Choose a part index for a seed on a multipart object')
   let selected: ReturnType<typeof storedTarget>
@@ -204,5 +209,5 @@ export async function clearLayer(args: Record<string, unknown>, client: LinkClie
     clearPaint(e.id, i.layer)
     toast(`${client.name} cleared ${i.layer} paint on ${e.name}.`, 'info', { label: 'Undo', run: () => void history().undo() })
   }
-  return { summary: `${e.name}: ${i.layer} paint cleared`, output: { ...stamp(), object: e.id, name: e.name, layer: i.layer, colorSlots: slotCount(get()), objectSettings: objectOverrides(get(), target(e.id)), parts: e.parts.map((p, part) => ({ part, name: p.name, states: [] })), changed } }
+  return { summary: `${e.name}: ${i.layer} paint cleared`, output: { ...stamp(), object: e.id, name: e.name, layer: i.layer, colorSlots: slotCount(get()), colorMixes: shownMixes(), objectSettings: objectOverrides(get(), target(e.id)), parts: e.parts.map((p, part) => ({ part, name: p.name, states: [] })), changed } }
 }

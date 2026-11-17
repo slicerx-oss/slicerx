@@ -24,10 +24,11 @@ import { currentHotends, currentMap, hasRack, mapExtruders, mapHotends, masterEx
 import { nozzleLabel, sizesDiffer } from './object-nozzle'
 import { spoolLeft } from './left'
 
-const Dialogs = lazy(() => import('./dialogs').then((m) => ({ default: () => (
+const Dialogs = lazy(() => Promise.all([import('./dialogs'), import('./mix-dialog')]).then(([d, x]) => ({ ...d, ...x })).then((m) => ({ default: () => (
   <>
     <m.SlotDialog />
     <m.FlushDialog />
+    <m.MixDialog />
   </>
 ) })))
 
@@ -98,7 +99,7 @@ function SwapColors({ slots }: { slots: ResolvedSlot[] }) {
 export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'mmu' | 'toolchanger' | undefined }) {
   const printerSlots = useApp((s) => s.printerSlots)
   const slotSetup = useApp((s) => s.slotSetup)
-  const dialogOpen = useApp((s) => s.slotDialog !== null || s.flushOpen)
+  const dialogOpen = useApp((s) => s.slotDialog !== null || s.flushOpen || s.mixDialog !== null)
   const slots = useResolvedSlots()
   const presets = useApp((s) => s.userPresets)
   const profile = useApp((s) => s.profile)
@@ -190,7 +191,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
     >
       {loading ? <SlotRailSkeleton /> : slots.length === 0 ? <SlotRailEmpty /> : (
         <>
-          <SlotRail slots={slots} left={left} badge={tuneBadge} {...(fromPrinter ? {} : { add: <AddFilament count={slots.length} /> })} />
+          <SlotRail slots={slots} left={left} badge={tuneBadge} mixes {...(fromPrinter ? {} : { add: <AddFilament count={slots.length} /> })} />
           <RailFoot fromPrinter={fromPrinter} system={system} edited={edited} />
         </>
       )}

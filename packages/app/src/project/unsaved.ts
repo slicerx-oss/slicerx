@@ -7,7 +7,7 @@ import { allPlates } from '../plate/all-plates'
 import { appStore, get, set, type AppState } from '../state/store'
 
 /** What counts as a project change; slicing state does not. */
-const INPUTS = ['plate', 'plates', 'objectSettings', 'slotSetup', 'layerMarks', 'overrides', 'easy', 'bed'] as const satisfies readonly (keyof AppState)[]
+const INPUTS = ['plate', 'plates', 'objectSettings', 'slotSetup', 'mixes', 'layerMarks', 'overrides', 'easy', 'bed'] as const satisfies readonly (keyof AppState)[]
 
 let dirty = false
 let tracking = false

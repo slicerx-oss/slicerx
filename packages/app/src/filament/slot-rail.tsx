@@ -18,7 +18,10 @@ import { get, set, shownSlice, toast, useApp } from '../state/store'
 import { colorName, railGroups, slotMismatch, slotUsage, type SlotMismatch } from './rail'
 import { currentTarget, moveToSpool, profileMaterial, spoolParts, spoolPicks, targetSlot, type PickWhy, type SpoolTarget } from './pick'
 import { SetupNoteLine, useSetupNotes } from './setup-plan'
-import { MAX_SLOTS, resetSlots, setSlot, type ResolvedSlot } from './slots'
+import { effectiveMode, useLayout } from '../first-run/look'
+import { lowestMix, MAX_SLOTS, resetSlots, setSlot, type ResolvedSlot } from './slots'
+import { mixSwatch, printerClash } from './mixes'
+import { MAX_MIXES } from '@slicerx/settings/mixed'
 import './slot-rail.css'
 
 /** A slot's filament in words: "PLA Matte Black", type, family when it has one, and the nearest plain color name. */
@@ -61,6 +64,8 @@ export interface SlotRailProps {
   badge?: (s: ResolvedSlot) => ReactNode
   /** Shown at the right of the first unit's header in place of its count (Add filament). */
   add?: ReactNode
+  /** The plate's mixed filaments under the spools, with the Mix button that makes one. */
+  mixes?: boolean
 }
 
 /** The target in words: "Cube", "3 objects", "the plate", or the parts on one filament. */
@@ -93,7 +98,7 @@ export function pickNote(o: { spool: Pick<ResolvedSlot, 'label' | 'type'> | unde
   return click
 }
 
-export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
+export function SlotRail({ slots, left, badge, add, mixes: showMixes }: SlotRailProps) {
   const gesture = rightClickWords(useCoarsePointer())
   const hover = useApp((s) => s.hoverSlot)
   const printerSlots = useApp((s) => s.printerSlots)
@@ -118,6 +123,13 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
   const target = currentTarget({ selection, selectedIds, plate, plates, activePlate }, from)
   const on = targetSlot({ plate, plates, activePlate }, target)
   const names = (slot: number) => parts.get(slot)?.names ?? []
+  const mixes = useApp((s) => s.mixes)
+  // Simple mode keeps the Mixes row for a project that has mixes; making one is in Advanced and Expert.
+  const advanced = effectiveMode(useApp((s) => s.settingsMode), useLayout()) !== 'simple'
+  const clash = printerClash({ mixes, printerSlots })
+  const colors = slots.map((s) => s.color)
+  // A filament's short name: its slot label, or a mix's name.
+  const short = (n: number): string => slots.find((s) => s.index === n)?.label ?? mixes.find((m) => m.id === n)?.name ?? String(n)
   const what = targetWords(target, plate, names)
   const bySlot = (n: number | null) => (n === null ? undefined : slots.find((s) => s.index === n))
   // The line names the hovered or focused spool, else the one the target prints with, else the first in use.
@@ -224,6 +236,76 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
             </div>
           </div>
         ))}
+        {showMixes && slots.length >= 2 && (advanced || mixes.length > 0) ? (
+          <div className="slot-rail-group" role="group" aria-label="Mixed filaments" data-testid="slice-filament-mixes">
+            <div className="slot-rail-unit" data-add>
+              <span>Mixes</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="plus"
+                data-testid="slice-filament-mix"
+                disabled={mixes.length >= MAX_MIXES}
+                tip={{ title: 'Mix', body: 'Makes a filament from two loaded ones, printed on alternating layers so their colors blend.', ...(mixes.length >= MAX_MIXES ? { reason: `A plate holds ${MAX_MIXES} mixes at most.` } : {}) }}
+                onClick={() => set({ mixDialog: 'new' })}
+              >
+                Mix
+              </Button>
+            </div>
+            {clash ? (
+              <p className="spool-note" data-other="true" role="alert" data-testid="slice-filament-mix-clash">
+                {clash}
+              </p>
+            ) : null}
+            {mixes.length ? (
+              <div className="spool-grid">
+                {mixes.map((m) => {
+                  const sw = mixSwatch(m, colors)
+                  const n = parts.get(m.id)?.parts ?? 0
+                  const ratio = `${m.ratio[0]}:${m.ratio[1]}`
+                  const words = `${m.name}, mix of ${short(m.components[0])} and ${short(m.components[1])}, ${m.ratio[0]} to ${m.ratio[1]} layers`
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className="spool spool-mix"
+                      aria-label={`${words}${n ? `, ${n === 1 ? '1 part' : `${n} parts`}` : ''}`}
+                      aria-pressed={on === m.id}
+                      data-testid="slice-filament-mix-spool"
+                      data-slot={m.id}
+                      data-parts={n}
+                      {...tipAttrs({ title: words, body: `${n ? '' : 'Not used. '}Click to print ${what} with it. Right-click to edit the mix.` })}
+                      onPointerEnter={() => set({ hoverSlot: m.id })}
+                      onFocus={() => set({ hoverSlot: m.id })}
+                      onBlur={() => set({ hoverSlot: null })}
+                      onClick={(e) => {
+                        if (e.altKey) return selectSlotObjects(m.id, m.name)
+                        if (plate.length === 0) return set({ mixDialog: m.id })
+                        moveToSpool(target, m.id)
+                        if (target.kind === 'filament') setFrom(m.id)
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        set({ mixDialog: m.id })
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+                          e.preventDefault()
+                          set({ mixDialog: m.id })
+                        }
+                      }}
+                    >
+                      <span className="spool-count" aria-hidden="true">{n || ''}</span>
+                      <SwatchRing color={sw.color} size={30} mix={{ a: sw.a, b: sw.b, ratio: m.ratio }} selected={hover === m.id} />
+                      <span className="spool-id">{ratio}</span>
+                      <span className="spool-type">Mix</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div className="spool-target" data-testid="slice-filament-target" data-kind={target.kind}>
         {target.kind === 'filament' && inUse.length <= 3 ? (
@@ -233,7 +315,7 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
             full
             value={String(target.from)}
             onChange={(v) => setFrom(Number(v))}
-            options={inUse.map((n) => ({ value: String(n), label: `Move ${names(n).length === 1 ? names(n)[0] : bySlot(n)?.label ?? n}`, tip: { title: `Parts on ${bySlot(n)?.label ?? n}`, body: names(n).join(', ') }, testId: `slice-filament-target-${n}` }))}
+            options={inUse.map((n) => ({ value: String(n), label: `Move ${names(n).length === 1 ? names(n)[0] : short(n)}`, tip: { title: `Parts on ${short(n)}`, body: names(n).join(', ') }, testId: `slice-filament-target-${n}` }))}
           />
         ) : target.kind === 'filament' ? (
           <label className="spool-target-pick">
@@ -241,7 +323,7 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
             <Select id="spool-from" size="sm" aria-label="Filament to move" value={target.from} onChange={(e) => setFrom(Number(e.target.value))}>
               {inUse.map((n) => (
                 <option key={n} value={n}>
-                  {`${bySlot(n)?.label ?? n}: ${names(n).join(', ')}`}
+                  {`${short(n)}: ${names(n).join(', ')}`}
                 </option>
               ))}
             </Select>
@@ -367,15 +449,21 @@ export function RailFoot({ fromPrinter, system, edited }: RailFootProps) {
   )
 }
 
-/** Add filament's tip: the filament it adds, and once the project is full, why it is off. */
-export function addFilamentTip(count: number): { title: string; body: string; reason?: string } {
+/**
+ * Add filament's tip: the filament it adds, and once the project is full or the next number is a mix's (`mixAt`, the
+ * lowest mix number), why it is off.
+ */
+export function addFilamentTip(count: number, mixAt = Infinity): { title: string; body: string; reason?: string } {
   const tip = { title: 'Add filament', body: `Adds filament ${Math.min(count + 1, MAX_SLOTS)} and opens it to pick the material and color.` }
-  return count >= MAX_SLOTS ? { ...tip, reason: `A project holds ${MAX_SLOTS} filaments at most.` } : tip
+  if (count >= MAX_SLOTS) return { ...tip, reason: `A project holds ${MAX_SLOTS} filaments at most.` }
+  return count + 1 >= mixAt ? { ...tip, reason: `Filament ${count + 1} is a mixed filament's number. Delete that mix to add more filaments.` } : tip
 }
 
 /** Add filament, at the top of the spools so the new one lands below it and nothing above it moves. */
 export function AddFilament({ count }: { count: number }) {
-  const full = count >= MAX_SLOTS
+  const mixAt = useApp((s) => lowestMix(s))
+  const blocked = count + 1 >= mixAt
+  const full = count >= MAX_SLOTS || blocked
   return (
     <Button
       size="sm"
@@ -383,7 +471,7 @@ export function AddFilament({ count }: { count: number }) {
       icon="plus"
       data-testid="slice-filament-add"
       disabled={full}
-      tip={addFilamentTip(count)}
+      tip={addFilamentTip(count, mixAt)}
       onClick={() => addSlot(count + 1)}
     >
       Add filament
