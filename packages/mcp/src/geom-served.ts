@@ -15,6 +15,11 @@ import { ToolInputError } from './models'
 export interface DesignEngine extends EngineCall {
   /** True when the engine runs served, so bodies are held by number; false when each call is a process of its own. */
   keepsBodies(): Promise<boolean>
+  /**
+   * How many times a served process has stopped on its own (a crash, or ended from outside), never counting one this
+   * server ended at a call's time limit. A replay that sees it change ran partly on a process that is gone.
+   */
+  stops(): number
 }
 
 export interface ServedOptions {
@@ -129,10 +134,14 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
   let running: (Job & { done: (frame: Uint8Array) => void; fail: (e: Error) => void }) | null = null
   const queue: Job[] = []
   let seq = 0
+  let stops = 0
+  // the processes this server ended at a call's time limit: their end is no crash
+  const timedOut = new WeakSet<ChildProcess>()
 
   // The process went: the bodies the replay cache names are gone with it.
   const ended = (c: ChildProcess) => {
     if (child !== c) return
+    if (!timedOut.has(c)) stops++
     child = null
     if (generation) clearReplayCache()
     generation = 0
@@ -267,6 +276,7 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
     const from = generation
     hold(c, true)
     const timer = setTimeout(() => {
+      timedOut.add(c)
       c.kill('SIGKILL')
     }, timeoutMs)
     const finish = () => {
@@ -286,7 +296,9 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
       },
       fail: (e) => {
         finish()
-        job.reject(c.signalCode === 'SIGKILL' ? Object.assign(new Error(`sx-geom ${job.op} exceeded its execution deadline (${timeoutMs} ms). Retry the operation.`), { name: 'AbortError' }) : e)
+        // ended here at its limit, or it stopped on its own (a crash, or killed from outside): then it ended before it
+        // answered, which a replay takes as that step's failure
+        job.reject(timedOut.has(c) ? Object.assign(new Error(`sx-geom ${job.op} exceeded its execution deadline (${timeoutMs} ms). Retry the operation.`), { name: 'AbortError' }) : e)
       },
     }
     c.stdin!.write(encodeFrame(JSON.stringify({ id: ++seq, op: job.op, request: request ?? null }), []))
@@ -300,5 +312,6 @@ export function servedGeomEngine(bin: string, o: ServedOptions): DesignEngine {
   // bodies are held only while a served process is up, started here when none is: a replay that starts while the
   // process cannot start again runs as one per call does, its bodies as text
   call.keepsBodies = async () => mode !== 'perCall' && (await ensure())
+  call.stops = () => stops
   return call
 }

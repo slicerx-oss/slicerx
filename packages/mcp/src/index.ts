@@ -216,8 +216,9 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const given = opts.geomEngine as Partial<DesignEngine> | undefined
   const geomCall = opts.geomEngine ?? served
   const keepsBodies = served?.keepsBodies ?? (typeof given?.keepsBodies === 'function' ? given.keepsBodies : undefined)
+  const stops = served?.stops ?? (typeof given?.stops === 'function' ? given.stops : undefined)
   const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project, geom: geomCall })
-  const designs = geomCall ? new Designs({ engine: geomCall, policy, ...(keepsBodies ? { keepsBodies } : {}) }) : undefined
+  const designs = geomCall ? new Designs({ engine: geomCall, policy, ...(keepsBodies ? { keepsBodies } : {}), ...(stops ? { stops } : {}) }) : undefined
   const sketchVia: SketchVia = {}
   const appLink = opts.app !== false ? printers?.appLink : undefined
   if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')

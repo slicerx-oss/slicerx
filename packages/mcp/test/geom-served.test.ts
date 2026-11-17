@@ -3,8 +3,10 @@
 // The design engine served for the whole server (geom-served.ts), against a stand-in sx-geom (served-engine.ts):
 // one process for every call, bodies held there by number and named by that process, a process that stops never sent
 // a number from before it, today's process per call for an sx-geom with no serve mode, and two tool calls at once on
-// one served engine, where no body is freed while another replay still uses it.
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+// one served engine, where no body is freed while another replay still uses it. Then the engine process killed from
+// outside, under a call and between steps: the call says it ended before it answered (only the server's own time limit
+// says the deadline), and a design replays once more on a new process.
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -27,7 +29,7 @@ function setUp() {
   dirs.push(dir)
   const log = join(dir, 'calls.jsonl')
   vi.stubEnv('SX_STANDIN_LOG', log)
-  const read = (): { pid: number; op?: string; body?: unknown; asText?: boolean; freed?: number }[] => {
+  const read = (): { pid: number; op?: string; body?: unknown; asText?: boolean; freed?: number; slow?: string; panic?: boolean }[] => {
     try {
       return readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
     } catch {
@@ -192,4 +194,107 @@ describe('a project read on a served engine', () => {
     })
     expect(() => paintCodes({ paint: { rawBytes: 1 } }, [])).toThrow('The geometry engine named a buffer it did not send: 1')
   })
+})
+
+/** The stand-in process `pid` killed with `signal`, after checking it is still the stand-in this test's server started. */
+function killStandIn(pid: number, signal: NodeJS.Signals): void {
+  const cmd = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').join(' ')
+  if (!cmd.includes('served-engine-cli.ts')) throw new Error(`pid ${pid} is no longer the stand-in: ${cmd}`)
+  process.kill(pid, signal)
+}
+
+const gone = async (pid: number) => {
+  for (let i = 0; i < 200 && existsSync(`/proc/${pid}`) && !/\) Z /.test(readFileSync(`/proc/${pid}/stat`, 'utf8')); i++) await new Promise((r) => setTimeout(r, 25))
+}
+
+/** The log line `pick` finds, once the stand-in has written it. */
+async function logged<T>(read: () => T[], pick: (l: T) => boolean): Promise<T> {
+  for (let i = 0; i < 400; i++) {
+    const l = read().find(pick)
+    if (l) return l
+    await new Promise((r) => setTimeout(r, 25))
+  }
+  throw new Error('the stand-in never logged it')
+}
+
+describe.skipIf(process.platform === 'win32' || !existsSync('/proc/self/cmdline'))('the served design engine killed from outside', () => {
+  it('says a call killed while it runs ended before it answered, and only its own time limit says the deadline', async () => {
+    const { bin, read, dir } = setUp()
+    const slow = join(dir, 'slow')
+    vi.stubEnv('SX_STANDIN_SLOW', slow)
+    const engine = servedGeomEngine(bin, { perCall: geomEngine(bin) })
+    expect(await engine.keepsBodies()).toBe(true)
+    writeFileSync(slow, 'brep.extrude')
+    const running = engine('brep.extrude', { withKeys: true }).catch((e: unknown) => e)
+    const { pid } = await logged(read, (l) => l.slow === 'brep.extrude')
+    killStandIn(pid, 'SIGKILL')
+    const killed = (await running) as Error
+    expect(killed.message).toBe('sx-geom brep.extrude ended before it answered (the engine process stopped). Retry the operation.')
+    expect(killed.name).not.toBe('AbortError')
+    expect(engine.stops()).toBe(1)
+    // the next call runs on a new process
+    expect(((await engine('brep.extrude', { withKeys: true })) as { body: number }).body).toBe(2 * 2 ** 32 + 1)
+
+    // the server's own limit: the deadline, and no stop of the process's own
+    const limited = servedGeomEngine(bin, { perCall: geomEngine(bin), timeoutMs: 500 })
+    expect(await limited.keepsBodies()).toBe(true)
+    writeFileSync(slow, 'brep.extrude')
+    const late = (await limited('brep.extrude', { withKeys: true }).catch((e: unknown) => e)) as Error
+    expect(late.message).toBe('sx-geom brep.extrude exceeded its execution deadline (500 ms). Retry the operation.')
+    expect(late.name).toBe('AbortError')
+    expect(limited.stops()).toBe(0)
+  }, 60_000)
+
+  it('makes the next step of a design whose engine process was killed between steps, on a new process', async () => {
+    const { bin, read } = setUp()
+    vi.stubEnv('SX_BREP_DEV', '1')
+    const h = await connect({ sxGeomBin: bin })
+    const created = await h.call('slicerx_design_new', { name: 'Block', exact: true })
+    const design = data<{ output: { design: string } }>(created).output.design
+    const box = await h.call('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [15, 5] }, distance_mm: 5 })
+    expect(box.isError, text(box)).toBeFalsy()
+    const first = read().filter((l) => l.op).at(-1)!.pid
+    killStandIn(first, 'SIGKILL')
+    await gone(first)
+    const cut = await h.call('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: 3 }, frame: { origin: [5, 5, 5], normal: [0, 0, 1] }, distance_mm: 5, operation: 'cut' })
+    expect(cut.isError, text(cut)).toBeFalsy()
+    // the cut ran with the design's whole history on the new process, and no call named a body of the killed one there
+    const after = read().filter((l) => l.op && l.pid !== first)
+    expect(after.length).toBeGreaterThan(0)
+    expect(new Set(after.map((l) => l.pid)).size).toBe(1)
+  }, 60_000)
+
+  it('makes a step of a design whose engine process was killed while the step ran, on a new process', async () => {
+    const { bin, read, dir } = setUp()
+    const slow = join(dir, 'slow')
+    vi.stubEnv('SX_BREP_DEV', '1')
+    vi.stubEnv('SX_STANDIN_SLOW', slow)
+    const h = await connect({ sxGeomBin: bin })
+    const created = await h.call('slicerx_design_new', { name: 'Block', exact: true })
+    const design = data<{ output: { design: string } }>(created).output.design
+    const box = await h.call('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [15, 5] }, distance_mm: 5 })
+    expect(box.isError, text(box)).toBeFalsy()
+    for (const signal of ['SIGKILL', 'SIGABRT'] as const) {
+      writeFileSync(slow, 'brep.tessellate')
+      const cutting = h.call('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: 3 }, frame: { origin: [signal === 'SIGKILL' ? 5 : 10, 5, 5], normal: [0, 0, 1] }, distance_mm: 5, operation: 'cut' })
+      const { pid } = await logged(read, (l) => l.slow === 'brep.tessellate' && existsSync(`/proc/${l.pid}`))
+      killStandIn(pid, signal)
+      const cut = await cutting
+      expect(cut.isError, `${signal}: ${text(cut)}`).toBeFalsy()
+      expect(read().some((l) => l.op && l.pid !== pid && l.op === 'brep.extrude')).toBe(true)
+    }
+  }, 90_000)
+
+  it('runs a step the engine answers with a panic once, and says the panic', async () => {
+    const { bin, read } = setUp()
+    vi.stubEnv('SX_BREP_DEV', '1')
+    vi.stubEnv('SX_STANDIN_PANIC', 'brep.extrude')
+    const h = await connect({ sxGeomBin: bin })
+    const created = await h.call('slicerx_design_new', { name: 'Block', exact: true })
+    const design = data<{ output: { design: string } }>(created).output.design
+    const box = await h.call('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [15, 5] }, distance_mm: 5 })
+    expect(box.isError).toBe(true)
+    expect(text(box)).toContain('boom at kernel.rs:1:1')
+    expect(read().filter((l) => l.panic)).toHaveLength(1)
+  }, 30_000)
 })

@@ -66,6 +66,17 @@ describe('the shell transport', () => {
     expect(sent.at(-1)).toEqual(['geom_end', undefined])
   })
 
+  it('names the process a call is for in a header, and 0 for a call any process may take', async () => {
+    const sent: unknown[] = []
+    const engine = tauriEngine((async (_cmd: string, _args: unknown, options: unknown) => {
+      sent.push(options)
+      return new Uint8Array([3, 0, 0, 0]).buffer
+    }) as never)
+    await engine.call(new Uint8Array([1]), 3)
+    await engine.call(new Uint8Array([1]))
+    expect(sent).toEqual([{ headers: { 'sx-geom-process': '3' } }, { headers: { 'sx-geom-process': '0' } }])
+  })
+
   it('turns the shell word for an ended process into EngineEnded', async () => {
     const engine = tauriEngine(shell(null, () => Promise.reject('{"ended":true,"code":134}')))
     const e = await engine.call(new Uint8Array(0)).catch((x: unknown) => x)
