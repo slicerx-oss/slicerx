@@ -1603,6 +1603,53 @@ mod tests {
         assert!(why.starts_with("its mesh holds"), "{why}");
     }
 
+    /// A 30 by 20 by 10 mm box open at its top, and its faces other than the top.
+    #[cfg(feature = "cad")]
+    fn open_box() -> (Body, usize) {
+        let body = Body::cuboid([5.0, 6.0, 7.0], [30.0, 20.0, 10.0]).expect("a box");
+        let faces = body.faces().expect("faces");
+        let top = faces
+            .iter()
+            .position(|f| f.distance_to([20.0, 16.0, 17.0]).expect("a distance") < 1e-9)
+            .expect("the top");
+        (body, top)
+    }
+
+    /// The wall read-back of a box shelled open at its top: the kernel's own shell at the wall asked holds; one whose
+    /// inner faces stand 0.05 mm off it, one whose inner faces sit 0.3 mm short of it and so within half of it of the
+    /// faces kept, one left closed across the opening, and the box itself, not hollowed, whose every face lies on its
+    /// own surface, are each refused.
+    #[cfg(feature = "cad")]
+    #[test]
+    fn an_open_shell_whose_wall_is_off_or_whose_opening_is_closed_is_refused() {
+        if !sx_brep::KERNEL {
+            return;
+        }
+        let (body, top) = open_box();
+        let faces = body.faces().expect("faces");
+        let open = [faces[top]];
+        let kept: Vec<Face<'_>> = faces.iter().copied().filter(|f| *f != faces[top]).collect();
+        let wall = |made: &Body, w: f64| wall_holds(&body, &kept, made, w);
+        assert_eq!(wall(&body.shell(2.0, &open).expect("a shell"), 2.0), Ok(()));
+        for (made, asked, what) in [
+            (body.shell(2.05, &open).expect("a shell"), 2.0, "0.05 mm thick"),
+            (body.shell(0.2, &open).expect("a shell"), 0.5, "0.3 mm thin"),
+            (
+                body.shell(2.0, &[]).expect("a shell"),
+                2.0,
+                "closed across the opening",
+            ),
+            (
+                Body::cuboid([5.0, 6.0, 7.0], [30.0, 20.0, 10.0]).expect("a box"),
+                2.0,
+                "not hollowed at all",
+            ),
+        ] {
+            let why = wall(&made, asked).expect_err(what);
+            assert!(why.starts_with("its inner wall is"), "{what}: {why}");
+        }
+    }
+
     #[cfg(feature = "cad")]
     #[test]
     fn the_table_is_written_as_the_faces_type_reads_it() {
