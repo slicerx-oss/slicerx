@@ -439,7 +439,8 @@ fn opened(held: &Held, mesh: &Mesh, open: &[Opening]) -> Result<(Vec<usize>, Vec
 /// (`openKeys`, 0 for one without), and with `withKeys` or `save` the new body's keys or text. With a face open, the
 /// kernel is asked only for a body of planes, cylinders and cones: on other curved faces it can leave the wall open,
 /// or fail outright, so such a body is refused in words first and a replay shells it on the mesh. A closed shell is read
-/// back before it is held, at points inside every face, as the kernel passes walls that are not the one asked.
+/// back before it is held: its wall at points inside every face, and the volume its mesh holds against the body's, as
+/// the kernel passes walls that are not the one asked.
 #[cfg(feature = "cad")]
 fn shelled(handle: u32, held: &Held, req: &Value) -> Result<Value> {
     let wall = req
@@ -495,10 +496,15 @@ const WALL_CHORDS_MM: [f64; 4] = [0.05, 0.5, 5.0, 50.0];
 /// The most points of one face the wall is read at.
 #[cfg(feature = "cad")]
 const WALL_POINTS: usize = 400;
-/// Why a closed shell of `from` is not the one asked, read back as [`wall_holds`] reads it.
+/// How far a closed shell's mesh may hold a volume from the body's, as a share of the body's.
+#[cfg(feature = "cad")]
+const MESH_VOLUME_SHARE: f64 = 0.005;
+
+/// Why a closed shell of `from` is not the one asked: its wall ([`wall_holds`]), then its mesh ([`mesh_holds`]).
 #[cfg(feature = "cad")]
 fn closed_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), String> {
-    wall_holds(from, made, wall)
+    wall_holds(from, made, wall)?;
+    mesh_holds(made)
 }
 
 /// A closed shell of `from` read back at points inside each face of `made`: a face on `from` stays on it, and every
@@ -543,6 +549,30 @@ fn wall_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), St
     }
     if worst > WALL_MM {
         return Err(format!("its inner wall is {worst:.3} mm off the wall asked"));
+    }
+    Ok(())
+}
+
+/// A closed shell's mesh at the default chord read back: the volume its triangles hold is the body's to within
+/// [`MESH_VOLUME_SHARE`]. Why not, in words, otherwise.
+#[cfg(feature = "cad")]
+fn mesh_holds(made: &Body) -> std::result::Result<(), String> {
+    let mesh = made
+        .tessellate(&Tessellation::default())
+        .map_err(|e| e.to_string())?;
+    let volume = made.volume().map_err(|e| e.to_string())?;
+    let held: f64 = mesh
+        .triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|i| mesh.positions.get(i as usize).copied().unwrap_or_default());
+            vec3::dot(a, vec3::cross(b, c)) / 6.0
+        })
+        .sum();
+    if (held - volume).abs() > MESH_VOLUME_SHARE * volume.abs() {
+        return Err(format!(
+            "its mesh holds {held:.1} mm3 and the body {volume:.1} mm3"
+        ));
     }
     Ok(())
 }
