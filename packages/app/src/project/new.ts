@@ -64,6 +64,7 @@ export function clearProject(): void {
     projectFlush: null,
     ...(get().towerFromProject ? { tower: { auto: true, x: 0, y: 0 }, towerFromProject: false, projectTowers: {} } : {}),
     namedValues: [],
+    mixes: [],
     fileSlotColors: [],
     fileSlotVendors: [],
     fileSlotTypes: [],

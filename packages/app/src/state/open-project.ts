@@ -198,6 +198,12 @@ async function addProjectShown(
     return out
   }
   // The app's plate made of each of the file's plates, with the file's plate number (the project's tower spots are per plate).
+  // The file's mixes join the project's: a mix already there, the same, is shared, and one whose number another mix
+  // holds takes a free one, with what the file puts on it.
+  const { mergeMixes } = await import('../filament/mixes')
+  const { remapEntry } = await import('../plate/paint-states')
+  const fileMixes = mergeMixes(get().mixes, project.mixes, Math.max(slotCount(get()), project.colors.length))
+  if (fileMixes.mixes.length !== get().mixes.length) mine(() => set({ mixes: fileMixes.mixes }))
   const madePlates: { id: string; plateNo?: number }[] = []
   // Each plate's objects with the layer height profiles the file gives them, taken once the settings are in.
   const fileProfiles: { plateId: string; objects: import('../plate/layer-profile').FileObjectProfile[] }[] = []
@@ -205,7 +211,7 @@ async function addProjectShown(
     // A project opened as the job keeps the file's plates as they are, empty ones too, so plate N here is plate N in the
     // file. Added to plates the person already has, it brings only the plates with objects on them.
     if (plate.objects.length === 0 && !wasEmpty) continue
-    const made = await entries(plate.objects, loads[i] ?? [])
+    const made = (await entries(plate.objects, loads[i] ?? [])).map((e) => remapEntry(e, fileMixes.map))
     markOpenStage('engine')
     if (i > 0) {
       const id = mine(() => addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}), ...(plate.bedType ? { bedType: plate.bedType } : {}) }))

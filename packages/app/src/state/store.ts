@@ -27,6 +27,7 @@ import { FLUSH_DEFAULTS, type FlushSettings } from '../filament/flush-defaults'
 import type { ExplodeAxis } from '@slicerx/contracts/explode'
 import type { CalibId } from '../calibration/tests'
 import type { SlotSetup } from '../filament/slots'
+import type { MixedFilament } from '@slicerx/settings/mixed'
 import type { UserPreset, PresetKind } from '../presets/store'
 import type { SyncChange, Tombstone } from '../presets/sync'
 import type { LayerMark } from '../plate/layer-marks'
@@ -558,6 +559,13 @@ export interface AppState {
   slotMatch: Record<number, Pick<SlotSetup, 'brand' | 'family' | 'vendor'>>
   /** The slot being edited (1-based) and the flush volume dialog. */
   slotDialog: number | null
+  /**
+   * The project's mixed filaments: two loaded filaments printed on alternating layers in a ratio, under a filament
+   * number of their own that means the same mix on every plate.
+   */
+  mixes: MixedFilament[]
+  /** The mixed filament being edited (its filament number), 'new' for one being made, or null. Not saved. */
+  mixDialog: number | 'new' | null
   /** The filament slot hovered or focused in the Slice sidebar's rail (and the legend): the viewport picks it out. Not saved. */
   hoverSlot: number | null
   /**
@@ -936,6 +944,8 @@ export const appStore = createStore<AppState>()(() => ({
   flush: FLUSH_DEFAULTS,
   slotMatch: {},
   slotDialog: null,
+  mixes: [],
+  mixDialog: null,
   hoverSlot: null,
   explode: { spread: 0, axis: 'radial' },
   explodeHeld: false,

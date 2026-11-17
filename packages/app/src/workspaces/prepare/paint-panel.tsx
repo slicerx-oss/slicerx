@@ -7,6 +7,7 @@ import type { PaintSettings } from '@slicerx/viewport'
 import { Block, Button, Field, Range, Seg, tipAttrs } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { useResolvedSlots } from '../../filament/use-slots'
+import { mixSwatch, stripes } from '../../filament/mixes'
 import { clearPaint, hasPaint } from '../../plate/paint'
 import { getPaintBus, subscribePaintBus } from '../../plate/tools'
 import { Swatch } from '../../parts'
@@ -46,6 +47,7 @@ function useBrush(): PaintSettings | undefined {
 export function PaintPanel() {
   const brush = useBrush()
   const slots = useResolvedSlots()
+  const mixes = useApp((s) => s.mixes)
   const selected = useApp((s) => s.plate.find((p) => p.id === s.selection))
   const painted = hasPaint(selected?.paint)
   const more = useMore('paint')
@@ -62,6 +64,12 @@ export function PaintPanel() {
             <button key={s.index} type="button" role="radio" aria-label={`Filament ${s.index}`} aria-checked={brush.state === s.index && !brush.erase} className="paint-slot" {...tipAttrs({ title: `Filament ${s.index}`, body: s.type })} onClick={() => set({ state: s.index, erase: false })}>
               <Swatch color={s.color} />
               <span className="sx-mono">{s.index}</span>
+            </button>
+          ))}
+          {mixes.map((m) => (
+            <button key={`mix-${m.id}`} type="button" role="radio" aria-label={`Mix ${m.name}`} aria-checked={brush.state === m.id && !brush.erase} className="paint-slot" data-mix="true" {...tipAttrs({ title: `Mix ${m.name}`, body: `${m.ratio[0]}:${m.ratio[1]}, approximately ${mixSwatch(m, slots.map((r) => r.color)).color}` })} onClick={() => set({ state: m.id, erase: false })}>
+              <Swatch color={stripes(m, slots.map((r) => r.color))} />
+              <span>{m.name}</span>
             </button>
           ))}
         </div>

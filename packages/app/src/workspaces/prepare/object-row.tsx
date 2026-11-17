@@ -3,13 +3,14 @@
 // One object in the Objects card: a 36 px row with its thumbnail, name, part colors, a badge for settings of its own,
 // one warning icon, lock and print toggles that show on hover (and stay while on), and a chevron that opens the tree
 // of its parts and volumes. A click selects it, Cmd or Ctrl adds it, a double-click or F2 renames it in place.
-import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, type IconName } from '@slicerx/ui'
+import { Button, Icon, Menu, MenuItem, MenuSeparator, SwatchRing, tipAttrs, type IconName } from '@slicerx/ui'
 import { useContextMenu } from '@slicerx/ui/context-menu'
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { MAX_PART_NAME } from '@slicerx/cad-history'
 import { partBadge, slotLabel } from '../../filament/rail'
 import { effectiveSlot, type ResolvedSlot } from '../../filament/slots'
 import { useResolvedSlots, useStripSlots } from '../../filament/use-slots'
+import { mixSwatch, type MixedFilament } from '../../filament/mixes'
 import { effectiveMode, useLayout } from '../../first-run/look'
 import { partCount, triangles } from '../../lib/estimate-line'
 import { usePhoneLayout } from '../../lib/phone-layout'
@@ -51,7 +52,30 @@ export function overrideText(n: number): string {
 }
 
 /** The filament badge of a part: its swatch and its slot in full, or "?" with a warning when the filament is not one of the project's. */
-function PartSlotBadge({ part, slot, slots, strip, fallback, onOpen }: { part: { name: string }; slot: number; slots: readonly ResolvedSlot[]; strip: readonly ResolvedSlot[]; fallback: string | undefined; onOpen: (at: { x: number; y: number }) => void }) {
+function PartSlotBadge({ part, slot, slots, strip, fallback, mixes, onOpen }: { part: { name: string }; slot: number; slots: readonly ResolvedSlot[]; strip: readonly ResolvedSlot[]; fallback: string | undefined; mixes: readonly MixedFilament[]; onOpen: (at: { x: number; y: number }) => void }) {
+  const mix = mixes.find((m) => m.id === slot)
+  if (mix) {
+    const sw = mixSwatch(mix, slots.map((r) => r.color))
+    return (
+      <button
+        type="button"
+        className="part-slot"
+        data-testid="object-part-slot"
+        data-slot={slot}
+        data-mix="true"
+        aria-haspopup="menu"
+        aria-label={`Filament for ${part.name}: mix ${mix.name}`}
+        {...tipAttrs({ title: `Filament for ${part.name}`, body: `Mix ${mix.name}, ${mix.ratio[0]}:${mix.ratio[1]}` })}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect()
+          onOpen({ x: r.left, y: r.bottom + 4 })
+        }}
+      >
+        <span className="part-slot-n">M</span>
+        <SwatchRing color={sw.color} size={20} mix={{ a: sw.a, b: sw.b, ratio: mix.ratio }} />
+      </button>
+    )
+  }
   const badge = partBadge(slot, strip)
   const s = badge.known ? slots[slot - 1] : undefined
   const warning = `No filament is assigned to ${part.name}. Pick one.`
@@ -92,6 +116,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const developer = effectiveMode(useApp((s) => s.settingsMode), useLayout()) === 'developer'
   const slots = useResolvedSlots()
   const strip = useStripSlots()
+  const mixes = useApp((s) => s.mixes)
   // a phone shows the row and its print toggle; renaming, locking, parts and reordering wait for the desktop
   const phone = usePhoneLayout()
   const [open, setOpen] = useState(false)
@@ -108,10 +133,13 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const dragging = useRef<number | null>(null)
   const host = useHost()
   const parts = p.handle.parts.length
-  const warnings = objectWarnings(p, { bed, printerSlots })
+  const warnings = objectWarnings(p, { bed, printerSlots, mixes })
   const groups = useSimpleGroups()
   const overrides = overrideCount(own, p.partSettings, groups)
-  const colors = p.handle.parts.map((part, i) => slots[effectiveSlot(p, part) - 1]?.color ?? p.colors[i] ?? 'var(--dim)')
+  const colors = p.handle.parts.map((part, i) => {
+    const mix = mixes.find((m) => m.id === effectiveSlot(p, part))
+    return mix ? mixSwatch(mix, slots.map((r) => r.color)).color : (slots[effectiveSlot(p, part) - 1]?.color ?? p.colors[i] ?? 'var(--dim)')
+  })
   const sw = rowSwatches(colors)
   // A search that finds a part or a volume opens the tree to show it.
   const treeOpen = !phone && (open || (searching && !match.self))
@@ -320,7 +348,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
                       {part.name}
                     </button>
                   )}
-                  <PartSlotBadge part={part} slot={effectiveSlot(p, part)} slots={slots} strip={strip} fallback={p.colors[i]} onOpen={(at) => setSlotMenu({ part: part.name, at })} />
+                  <PartSlotBadge part={part} slot={effectiveSlot(p, part)} slots={slots} strip={strip} fallback={p.colors[i]} mixes={mixes} onOpen={(at) => setSlotMenu({ part: part.name, at })} />
                   <Button
                     size="sm"
                     variant="ghost"
@@ -419,6 +447,23 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
               }}
             >
               {s ? slotLabel(s) : `${k + 1}, not set up`}
+            </MenuItem>
+          )
+        })}
+        {mixes.length ? <MenuSeparator /> : null}
+        {mixes.map((m) => {
+          const part = slotMenu ? p.handle.parts.find((x) => x.name === slotMenu.part) : undefined
+          return (
+            <MenuItem
+              key={`mix-${m.id}`}
+              data-testid="object-part-mix"
+              checked={part ? effectiveSlot(p, part) === m.id : false}
+              onClick={() => {
+                if (slotMenu) setPartSlot(p.id, slotMenu.part, m.id)
+                setSlotMenu(null)
+              }}
+            >
+              {`Mix ${m.name}, ${m.ratio[0]}:${m.ratio[1]}`}
             </MenuItem>
           )
         })}

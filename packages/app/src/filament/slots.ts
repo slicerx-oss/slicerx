@@ -8,6 +8,7 @@ import type { FlushSettings } from './flush-defaults'
 import { allPlates } from '../plate/plates'
 import { appStore, get, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
 import { quietly } from '../plate/history'
+import { leftOnMix as leftOnMixRule } from '@slicerx/settings/mixed'
 import { brandAccent } from '../edition'
 import { defaultSlotColors, isHex, normalizeColor } from '@slicerx/settings/slot-colors'
 import { paintStates } from '../export/listing-colors'
@@ -63,32 +64,58 @@ export function toolChangeSlots(s: Partial<Pick<AppState, 'layerMarks'>>, plateI
   return (s.layerMarks?.[plateId] ?? []).flatMap((m) => (m.kind === 'tool_change' && !m.skip && m.slot ? [m.slot] : []))
 }
 
+/** The lowest number a mix takes (Infinity with none): filaments are added only below it. */
+export function lowestMix(s: Partial<Pick<AppState, 'mixes'>>): number {
+  return Math.min(Infinity, ...(s.mixes ?? []).map((m) => m.id))
+}
+
+/** The mix a number names, if any (a mix is no slot of its own: its two loaded filaments are). */
+const mixAt = (s: Partial<Pick<AppState, 'mixes'>>, slot: number) => s.mixes?.find((m) => m.id === slot)
+
+/** Whether `slot` may be a number left on a deleted mix (`leftOnMix` in @slicerx/settings/mixed). */
+const leftOnMix = (s: Partial<Pick<AppState, 'mixes'>>, slot: number): boolean => leftOnMixRule(s.mixes ?? [], slot)
+
+/**
+ * The loaded filaments filament number `slot` prints with, as the engine prints it: a mix's two; a number left on a
+ * deleted mix past the `loaded` filaments prints as `own` (filament 1 for a part, the part's own filaments for paint); else
+ * itself.
+ */
+export function printedFilaments(s: Partial<Pick<AppState, 'mixes'>>, slot: number, loaded: number, own: readonly number[]): number[] {
+  const mix = mixAt(s, slot)
+  if (mix) return [...mix.components]
+  return leftOnMix(s, slot) && slot > loaded ? [...own] : [slot]
+}
+
 /**
  * How many slots are loaded: the printer's, the highest a part, its color paint or a tool change uses, and the highest
  * set by hand. A filament the opened file only lists is not one of them, so a slot noted on a color change past these
- * says it is not loaded.
+ * says it is not loaded. A part or paint on a mix counts the mix's two filaments, and a number left on a deleted mix
+ * counts the filament it prints with.
  */
-export function loadedSlotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks'>>): number {
+export function loadedSlotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks' | 'mixes'>>): number {
   let n = s.printerSlots.length
-  for (const p of allPlates(s)) for (const o of p.objects) n = Math.max(n, ...objectSlots(undefined, o))
+  for (const p of allPlates(s)) for (const o of p.objects) n = Math.max(n, ...objectSlots(undefined, o, s, 0))
+  for (const m of s.mixes ?? []) n = Math.max(n, ...m.components)
   for (const p of s.plates) for (const t of toolChangeSlots(s, p.id)) n = Math.max(n, t)
   for (const k of Object.keys(s.slotSetup)) n = Math.max(n, Number(k))
   return Math.min(MAX_SLOTS, Math.max(1, n))
 }
 
 /** How many slots the project has: those loaded, and every filament the opened file lists. */
-export function slotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks' | 'fileSlotColors'>>): number {
+export function slotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks' | 'fileSlotColors' | 'mixes'>>): number {
   return Math.min(MAX_SLOTS, Math.max(loadedSlotCount(s), s.fileSlotColors?.length ?? 0))
 }
 
 /**
  * The slot every part and its color paint on every plate ends up in, after the plate's own color swaps, and the slots
- * its tool changes print in.
+ * its tool changes print in: a mix as its two filaments, and a number left on a deleted mix as the filament it prints
+ * with.
  */
-export function usedSlots(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'> & Partial<Pick<AppState, 'layerMarks'>>): Set<number> {
+export function usedSlots(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'> & Partial<Pick<AppState, 'layerMarks' | 'mixes' | 'printerSlots' | 'slotSetup'>>): Set<number> {
   const out = new Set<number>()
+  const loaded = s.mixes?.length ? slotCount({ printerSlots: [], slotSetup: {}, ...s }) : MAX_SLOTS
   for (const p of allPlates(s)) {
-    for (const o of p.objects) if (o.printable !== false) for (const slot of objectSlots(p, o)) out.add(slot)
+    for (const o of p.objects) if (o.printable !== false) for (const slot of objectSlots(p, o, s, loaded)) out.add(slot)
     // A tool change goes to the engine as its own filament number, without the plate's swaps.
     if (p.objects.some((o) => o.printable !== false)) for (const t of toolChangeSlots(s, p.id)) out.add(t)
   }
@@ -97,12 +124,18 @@ export function usedSlots(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'> 
 
 /**
  * The engine filaments an object prints with: each part's filament after the object's own picks, and its color paint,
- * after the plate's swaps.
+ * after the plate's swaps; a mix as its two filaments, and a number left on a deleted mix past the `loaded` filaments as
+ * the filament it prints with (filament 1 for a part, the part's own for its paint). The mixes are the project's unless
+ * `s` gives them.
  */
-export function objectSlots(meta: Pick<PlateMeta, 'settings'> | undefined, entry: Pick<PlateEntry, 'slotOverrides' | 'handle' | 'paint'>): number[] {
-  const own = entry.handle.parts.map((part) => effectiveSlot(entry, part))
-  const painted = Object.values(entry.paint ?? {}).flatMap((p) => Object.values(p?.color ?? {}).flatMap(paintStates))
-  return [...new Set([...own, ...painted].map((slot) => mapSlot(meta, slot)))].sort((a, b) => a - b)
+export function objectSlots(meta: Pick<PlateMeta, 'settings'> | undefined, entry: Pick<PlateEntry, 'slotOverrides' | 'handle' | 'paint'>, s: Partial<Pick<AppState, 'mixes'>> = get(), loaded?: number): number[] {
+  const top = loaded ?? (s.mixes?.length ? slotCount(get()) : MAX_SLOTS)
+  const own = entry.handle.parts.map((part) => printedFilaments(s, mapSlot(meta, effectiveSlot(entry, part)), top, [1]))
+  const painted = Object.entries(entry.paint ?? {}).flatMap(([k, p]) => {
+    const mine = own[Number(k)] ?? [1]
+    return Object.values(p?.color ?? {}).flatMap(paintStates).flatMap((slot) => printedFilaments(s, mapSlot(meta, slot), top, mine))
+  })
+  return [...new Set([...own.flat(), ...painted])].sort((a, b) => a - b)
 }
 
 /** The slot a part prints in on its object: the person's choice for that part, else the file's. */
@@ -170,6 +203,8 @@ export function resolved(): ResolvedSlot[] {
 /** Sets a slot by hand. Changing a slot changes the slice, so a finished one goes stale (the store watchers do the rest). */
 export function setSlot(index: number, patch: Partial<SlotSetup>): void {
   if (index < 1 || index > MAX_SLOTS) return
+  // A filament never takes a mix's number: the mixes count down from 32, the filaments up to the lowest of them.
+  if (index >= lowestMix(get())) return
   // A slot past the current count starts from the defaults, which is how "Add filament" makes one.
   const cur = resolved().find((r) => r.index === index) ?? { type: 'PLA', brand: '', color: defaultColors()[(index - 1) % 8]! }
   const next: SlotSetup = { type: cur.type, brand: cur.brand, color: cur.color, ...('family' in cur && cur.family ? { family: cur.family } : {}), ...('vendor' in cur && cur.vendor ? { vendor: cur.vendor } : {}), ...patch }

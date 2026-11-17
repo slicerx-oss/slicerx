@@ -89,7 +89,9 @@ export function togglePrintable(ids: readonly string[] = selectedIds()): boolean
 /** Sends one part of an object to another filament slot. Choosing the file's own slot drops the override. */
 export function setPartSlot(objectId: string, partName: string, slot: number): void {
   const e = get().plate.find((p) => p.id === objectId)
-  if (!e || !Number.isInteger(slot) || slot < 1 || slot > MAX_SLOTS) return
+  // A mix takes a number past the loaded filaments.
+  const mix = get().mixes.some((m) => m.id === slot)
+  if (!e || !Number.isInteger(slot) || slot < 1 || (slot > MAX_SLOTS && !mix)) return
   const base = e.handle.parts.find((p) => p.name === partName)?.slot
   const next = { ...(e.slotOverrides ?? {}) }
   if (base === slot) delete next[partName]
@@ -146,7 +148,7 @@ export function offTheBed(e: PlateEntry, s: Pick<AppState, 'bed'>): boolean {
   return !!b && !fitsBed(b, s.bed, 0.01, outline)
 }
 
-export function objectWarnings(e: PlateEntry, s: Pick<AppState, 'bed' | 'printerSlots'>, margins: PrintMargins = marginsOf(e)): ObjectWarning[] {
+export function objectWarnings(e: PlateEntry, s: Pick<AppState, 'bed' | 'printerSlots'> & Partial<Pick<AppState, 'mixes'>>, margins: PrintMargins = marginsOf(e)): ObjectWarning[] {
   const out: ObjectWarning[] = []
   const b = bounds(e.parts, e.transform)
   const outline = b && s.bed.round ? reachFrom(e.parts, e.transform, s.bed.widthMm / 2, s.bed.depthMm / 2) : undefined
@@ -154,7 +156,10 @@ export function objectWarnings(e: PlateEntry, s: Pick<AppState, 'bed' | 'printer
   else if (b && printPastBed(b, s.bed, margins, outline, true)) out.push({ kind: 'off-bed', text: 'Brim or skirt reaches past the bed edge' })
   const have = s.printerSlots.length
   if (have > 0) {
-    const missing = [...new Set(e.handle.parts.map((p) => effectiveSlot(e, p)).filter((n) => n > have))]
+    // A part on a mix needs the mix's two filaments.
+    const mixes = s.mixes ?? []
+    const needs = (n: number): number[] => mixes.find((m) => m.id === n)?.components ?? [n]
+    const missing = [...new Set(e.handle.parts.flatMap((p) => needs(effectiveSlot(e, p))).filter((n) => n > have))]
     if (missing.length) out.push({ kind: 'filament', text: `Filament ${missing.join(', ')} is not on the printer` })
   }
   return out

@@ -131,6 +131,7 @@ export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pi
     layerMarks: Object.fromEntries(plates.flatMap((p, i) => ((s.layerMarks[p.id] ?? []).length ? [[i, s.layerMarks[p.id]!.map(({ z, kind, gcode, slot, skip }) => ({ z, kind, ...(gcode ? { gcode } : {}), ...(slot ? { slot } : {}), ...(skip ? { skipped: true } : {}) }))]] : []))),
     sx: { ...sharedSource(plates), exportedBy: await exportingUserId() },
     namedValues: s.namedValues,
+    ...(s.mixes.length ? { mixes: s.mixes } : {}),
     timeline: s.timeline,
     ...(opts.withoutHistory ? { history: false } : {}),
     ...(plans ? { plans } : {}),

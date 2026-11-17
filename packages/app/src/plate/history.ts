@@ -7,9 +7,9 @@
 import { appStore, fullPlate, isCadTool, markStale, type AppState } from '../state/store'
 
 /** What one step restores. */
-export type Snapshot = Pick<AppState, 'plate' | 'selection'> & Partial<Pick<AppState, 'selectedIds' | 'plates' | 'activePlate' | 'objectSettings' | 'slotSetup' | 'flush' | 'timeline' | 'rollback'>>
+export type Snapshot = Pick<AppState, 'plate' | 'selection'> & Partial<Pick<AppState, 'selectedIds' | 'plates' | 'activePlate' | 'objectSettings' | 'slotSetup' | 'mixes' | 'flush' | 'timeline' | 'rollback'>>
 
-const KEYS = ['plate', 'selection', 'selectedIds', 'plates', 'activePlate', 'objectSettings', 'slotSetup', 'flush', 'timeline', 'rollback'] as const
+const KEYS = ['plate', 'selection', 'selectedIds', 'plates', 'activePlate', 'objectSettings', 'slotSetup', 'mixes', 'flush', 'timeline', 'rollback'] as const
 
 export interface History {
   /** Counts and an opaque revision for comparing a read with a later command. */
@@ -35,7 +35,7 @@ function snap(s: AppState): Snapshot {
 
 /** Only the plate, its settings and moving the timeline marker count as edits; selection alone does not. */
 function edited(s: AppState, prev: AppState): boolean {
-  return s.plate !== prev.plate || s.plates !== prev.plates || s.objectSettings !== prev.objectSettings || s.slotSetup !== prev.slotSetup || s.flush !== prev.flush || s.rollback !== prev.rollback || s.timeline !== prev.timeline
+  return s.plate !== prev.plate || s.plates !== prev.plates || s.objectSettings !== prev.objectSettings || s.slotSetup !== prev.slotSetup || s.mixes !== prev.mixes || s.flush !== prev.flush || s.rollback !== prev.rollback || s.timeline !== prev.timeline
 }
 
 let quiet = 0

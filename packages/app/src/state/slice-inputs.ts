@@ -4,7 +4,7 @@
 import type { AppState } from './store'
 
 /** Everything a slice reads. A change to any of these changes the print. */
-export const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSettings', 'slotSetup', 'printerSlots', 'flush', 'tower', 'layerMarks', 'calibration', 'userPresets', 'printerId', 'printerNozzles', 'printerExtruders', 'bed', 'profile', 'resume'] as const satisfies readonly (keyof AppState)[]
+export const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSettings', 'slotSetup', 'mixes', 'printerSlots', 'flush', 'tower', 'layerMarks', 'calibration', 'userPresets', 'printerId', 'printerNozzles', 'printerExtruders', 'bed', 'profile', 'resume'] as const satisfies readonly (keyof AppState)[]
 
 /** The layer marks as the engine gets them, as one string to compare: a color change's slot is a note in the project, not part of the print. */
 export const printed = (marks: AppState['layerMarks']): string => JSON.stringify(Object.entries(marks).map(([plate, list]) => [plate, list.map((m) => [m.z, m.kind, m.gcode ?? '', ...(m.kind === 'tool_change' ? [m.slot ?? 0, m.skip ?? ''] : [])])]))

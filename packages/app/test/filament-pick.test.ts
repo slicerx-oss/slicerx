@@ -166,4 +166,19 @@ describe('the agent bridge', () => {
     expect(((await bridge.handle('state', {})) as typeof state).filament.map((f) => f.inUse)).toEqual([3, 0, 0, 0])
     capture.stop()
   })
+
+  it('moves one part onto a mixed filament by its name or number, read back with the mixes', async () => {
+    const capture = installCapture(window)
+    const bridge = createPageBridge(capture)
+    set({ mixes: [{ id: 32, name: 'Sunset', components: [1, 2], ratio: [2, 1] }], plate: [entry('box', [{ name: 'base', slot: 1 }, { name: 'lid', slot: 2 }])] })
+    const moved = (await bridge.handle('move_to_spool', { spool: 'Sunset', object: 'box', part: 'lid' })) as { moved: number; spool: number; mixes: { slot: number; name: string; inUse: number; parts: string[] }[] }
+    expect(moved).toMatchObject({ moved: 1, spool: 32 })
+    expect(moved.mixes).toEqual([{ slot: 32, name: 'Sunset', components: [1, 2], ratio: [2, 1], inUse: 1, parts: ['lid'] }])
+    expect(get().plate[0]!.slotOverrides).toEqual({ lid: 32 })
+    await bridge.handle('move_to_spool', { spool: 32, object: 'box', part: 'base' })
+    expect(get().plate[0]!.slotOverrides).toEqual({ base: 32, lid: 32 })
+    await expect(bridge.handle('move_to_spool', { spool: 'Dusk', object: 'box' })).rejects.toMatchObject({ code: 'not_found', message: expect.stringContaining('the mixes are 32 (Sunset)') })
+    set({ mixes: [] })
+    capture.stop()
+  })
 })

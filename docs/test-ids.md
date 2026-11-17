@@ -227,6 +227,20 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-filament-foot` | The section's last line: how to change a filament and Add filament, or, with `data-from="printer"`, where the printer's slots come from and how to change or add one |
 | `slice-filament-add` | Add filament: adds the next filament and opens it (no printer reports the slots) |
 | `slice-filament-foot-reset` | Reset to printer, in the line under the rail (the printer's slots, one changed here) |
+| `slice-filament-mixes` | The Mixes row under the spools (two filaments or more; in Simple mode only once the project has a mix) |
+| `slice-filament-mix` | Mix, in that row's header: opens the editor for a new mix (four at most) |
+| `slice-filament-mix-spool` | A mix's striped spool, with `data-slot` (its filament number) and `data-parts`; `aria-pressed` when the target prints with it. A click moves the target to it, Alt-click selects the objects on it, right-click opens the editor |
+| `slice-filament-mix-clash` | Under the Mixes row: the printer reports filaments up to a mix's number and the mixes have no free number left |
+| `mix-dialog` | The mix editor |
+| `mix-a`, `mix-b` | Its two filament pickers |
+| `mix-ra`, `mix-rb` | Layers of each filament per cycle |
+| `mix-name` | The mix's name |
+| `mix-preview` | The layer pattern and the approximate color |
+| `mix-cost` | The tool changes and flush the mix adds on the shown plate (`data-many` when they run high) |
+| `mix-error` | Why the mix cannot be saved yet |
+| `mix-save` | Add mix, or Save for a mix being changed |
+| `danger-mix-delete` | Delete mix: parts and paint on it go back to its first filament, in one undo step |
+| `object-part-mix` | A mix in a part's filament menu in the object list |
 | `nozzle-map-sizes-note` | Under Pick nozzles automatically on a two-extruder printer whose nozzles differ in size: why the switch is off and the map is set by hand |
 | `slice-filament-total` | Grams and filament changes from the last slice, in the Filament header |
 | `slice-filament-menu` | The Filament options menu |

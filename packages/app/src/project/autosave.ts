@@ -142,7 +142,7 @@ export function leftoverExample(s: Snapshot): boolean {
 }
 
 /** What an autosave reads: every project input except slicing state. */
-const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSettings', 'slotSetup', 'layerMarks', 'bed'] as const satisfies readonly (keyof AppState)[]
+const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSettings', 'slotSetup', 'mixes', 'layerMarks', 'bed'] as const satisfies readonly (keyof AppState)[]
 
 /**
  * Whether the plates have held anything in this page's session. Until they have, empty plates are the start (the

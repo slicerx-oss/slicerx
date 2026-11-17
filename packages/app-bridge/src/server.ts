@@ -250,9 +250,9 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     {
       title: 'Move to a spool',
       description:
-        'Moves an object (or one of its parts), the parts on one filament, or the whole plate to a loaded spool, as a click on that spool in the Filament section does. Give object (id or name, with part to move one part), from (the filament whose parts move) or plate: true; with none of them it moves what a click would, and refuses on a plate that prints with two or more filaments. Another material than the profile\'s is allowed: the slice uses that spool\'s settings. Returns how many parts moved and the spools as app_spools reads them.',
+        'Moves an object (or one of its parts), the parts on one filament, or the whole plate to a loaded spool or one of the project\'s mixed filaments, as a click on that spool in the Filament section does. Give object (id or name, with part to move one part), from (the filament whose parts move) or plate: true; with none of them it moves what a click would, and refuses on a plate that prints with two or more filaments. Another material than the profile\'s is allowed: the slice uses that spool\'s settings. Returns how many parts moved and the spools as app_spools reads them.',
       inputSchema: {
-        spool: z.union([z.string().min(1).max(16), z.number().int().min(1).max(MAX_FILAMENTS)]).describe('The spool to print with: its label (A3) or slot number'),
+        spool: z.union([z.string().min(1).max(40), z.number().int().min(1).max(MAX_FILAMENTS)]).describe('The spool to print with: its label (A3) or slot number, or a mixed filament by its name or number'),
         object: z.string().min(1).max(200).optional().describe('Object id or name on the shown plate'),
         part: z.string().min(1).max(200).optional().describe('One part of that object, by name'),
         from: z.union([z.string().min(1).max(16), z.number().int().min(1).max(MAX_FILAMENTS)]).optional().describe('Move every part that prints with this filament (label or slot number)'),

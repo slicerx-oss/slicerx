@@ -12,11 +12,22 @@ const MAX_DEPTH = 12
 /** The highest state a paint text names; a higher one reads as unpainted. */
 const MAX_STATE = 32
 
+/** A leaf of `state` in the `paint_*` scheme, first code first: C and the run for 3 and up. */
+function leafCodes(state: number): number[] {
+  if (state < 3) return [state << 2]
+  const out = [12]
+  let m = state - 3
+  for (; m >= 15; m -= 15) out.push(15)
+  out.push(m)
+  return out
+}
+
 /**
- * A `paint_*` text read: its states and the same tree's codes in the escape scheme, codes past the tree left out; null
- * when it does not read.
+ * A `paint_*` text read: its states, the same tree's codes in the escape scheme and in the `paint_*` scheme with each
+ * state passed through `map` (a state it maps past 32 is unpainted), codes past the tree left out; null when it does
+ * not read.
  */
-function read(text: string): { states: number[]; escape: number[] } | null {
+function read(text: string, map: (state: number) => number = (x) => x): { states: number[]; escape: number[]; mapped: number[] } | null {
   const s = text.trim() === 'FC' ? '0FC' : text.trim()
   const codes: number[] = []
   for (let i = s.length - 1; i >= 0; i--) {
@@ -28,12 +39,18 @@ function read(text: string): { states: number[]; escape: number[] } | null {
   let at = 0
   const states: number[] = []
   const escape: number[] = []
+  const mapped: number[] = []
+  const leaf = (state: number) => {
+    states.push(state)
+    const to = map(state)
+    mapped.push(...leafCodes(to > MAX_STATE || to < 0 ? 0 : to))
+  }
   const node = (depth: number): boolean => {
     const code = codes[at++]
     if (code === undefined) return false
     if ((code & 3) === 0) {
       if (code >> 2 !== 3) {
-        states.push(code >> 2)
+        leaf(code >> 2)
         escape.push(code)
         return true
       }
@@ -45,7 +62,7 @@ function read(text: string): { states: number[]; escape: number[] } | null {
         if (c < 15) break
       }
       if (state > MAX_STATE) state = 0
-      states.push(state)
+      leaf(state)
       if (state < 3) escape.push(state << 2)
       else if (state < 17) escape.push(12, state - 3)
       else escape.push(12, 14, (state - 17) & 15, (state - 17) >> 4)
@@ -53,10 +70,28 @@ function read(text: string): { states: number[]; escape: number[] } | null {
     }
     if (depth >= MAX_DEPTH || code >> 2 > 2) return false
     escape.push(code)
+    mapped.push(code)
     for (let k = 0; k <= (code & 3); k++) if (!node(depth + 1)) return false
     return true
   }
-  return codes.length && node(0) ? { states, escape } : null
+  return codes.length && node(0) ? { states, escape, mapped } : null
+}
+
+const hex = (codes: number[]): string =>
+  codes
+    .reverse()
+    .map((d) => d.toString(16).toUpperCase())
+    .join('')
+
+/**
+ * `text` with each piece painted one of `map`'s keys painted its value instead (0 is unpainted; past 32 is unpainted
+ * too). The text as it was when it does not read or nothing changes, and null when no painted piece is left.
+ */
+export function remapPaintText(text: string, map: ReadonlyMap<number, number>): string | null {
+  const r = read(text, (x) => map.get(x) ?? x)
+  if (!r || !r.states.some((x) => map.has(x) && map.get(x) !== x)) return text
+  if (r.states.every((x) => { const to = map.get(x) ?? x; return to <= 0 || to > MAX_STATE })) return null
+  return hex(r.mapped)
 }
 
 /** The highest state a `paint_*` text paints, 0 for none; -1 when it does not read. */
@@ -73,10 +108,5 @@ export function paintTextStates(text: string): number[] {
 /** A `paint_*` text in the escape scheme, or null when it does not read. */
 export function escapeText(text: string): string | null {
   const r = read(text)
-  return r
-    ? r.escape
-        .reverse()
-        .map((d) => d.toString(16).toUpperCase())
-        .join('')
-    : null
+  return r ? hex(r.escape) : null
 }
