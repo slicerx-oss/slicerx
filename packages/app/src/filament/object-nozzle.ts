@@ -9,8 +9,7 @@ import { activeMeta } from '../plate/plates'
 import { setPartSlot } from '../plate/object-list'
 import { get, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
 import { currentMap, mapExtruders, masterExtruder, pickedMap, setSlotNozzle } from './nozzle-map'
-import { paintStates } from '../export/listing-colors'
-import { effectiveSlot, mapSlot, MAX_SLOTS, resolveSlots, setSlot } from './slots'
+import { MAX_SLOTS, objectSlots, resolveSlots, setSlot } from './slots'
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : v === undefined ? [] : [v])
 
@@ -59,16 +58,6 @@ export function extruderOfSlot(cfg: Record<string, unknown>, map: readonly numbe
   const n = nozzleSizes(cfg).length
   if (mapExtruders(cfg) === 2) return map[slot - 1] ?? masterExtruder(cfg)
   return Math.min(Math.max(1, slot), Math.max(1, n))
-}
-
-/**
- * The engine filaments an object prints with: each part's filament after the object's own picks, and its color paint,
- * after the plate's swaps.
- */
-export function objectSlots(meta: Pick<PlateMeta, 'settings'> | undefined, entry: Pick<PlateEntry, 'slotOverrides' | 'handle' | 'paint'>): number[] {
-  const own = entry.handle.parts.map((part) => effectiveSlot(entry, part))
-  const painted = Object.values(entry.paint ?? {}).flatMap((p) => Object.values(p?.color ?? {}).flatMap(paintStates))
-  return [...new Set([...own, ...painted].map((slot) => mapSlot(meta, slot)))].sort((a, b) => a - b)
 }
 
 /** Whether the object has color paint on any part. */

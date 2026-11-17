@@ -153,15 +153,19 @@ describe('reopening a saved project in the app', () => {
     expect(await saveProject(host)).toBe(true)
     const bytes = new Uint8Array(await saved.blob!.arrayBuffer())
     const listed = ((await readProject(bytes, bed)).settings['filament_colour'] as unknown[] | undefined)?.length ?? 0
-    set({ plate: [], slotSetup: slots(reopen), toast: null })
+    return { ...(await openBytes(bytes, 'box.sx3mf', reopen)), listed }
+  }
+  /** Opens `bytes` with `rail` filaments set by hand: the paint it opens with and the toasts. */
+  async function openBytes(bytes: Uint8Array, name: string, rail: number): Promise<{ paint: PlateEntry['paint']; toasts: string[] }> {
+    set({ plate: [], slotSetup: slots(rail), fileSlotColors: [], toast: null })
     const toasts: string[] = []
     const stop = appStore.subscribe((s, prev) => void (s.toast && s.toast !== prev.toast && toasts.push(s.toast.text)))
     try {
-      await openModelBytes(host, 'box.sx3mf', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, undefined, { fresh: true })
+      await openModelBytes(host, name, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, undefined, { fresh: true })
     } finally {
       stop()
     }
-    return { paint: get().plate[0]?.paint, toasts, listed }
+    return { paint: get().plate[0]?.paint, toasts }
   }
   const unpainted = (toasts: string[]) => toasts.filter((t) => /opens unpainted|this project has/.test(t))
 
@@ -191,10 +195,19 @@ describe('reopening a saved project in the app', () => {
     expect(unpainted(back.toasts)).toEqual([])
   })
 
+  it('lists the filament its paint uses past the rail, so the paint opens again', async () => {
+    // Paint on filament 3 with 2 filaments set up: filament 3 is on the rail, so the save lists 3.
+    const paint = { 0: { color: { 2: '0C', 5: '8' } } }
+    const back = await roundTrip(paint, 2)
+    expect(back.listed).toBe(3)
+    expect(back.paint).toEqual(paint)
+    expect(unpainted(back.toasts)).toEqual([])
+  })
+
   it('still leaves paint on a filament the open project does not have off, with its note', async () => {
-    // Paint on filament 3 of a project of 2: paint on 3 goes, on 2 stays.
-    const back = await roundTrip({ 0: { color: { 2: '0C', 5: '8' } } }, 2)
-    expect(back.listed).toBe(2)
+    // A file that lists 2 filaments and has paint on filament 3: paint on 3 goes, on 2 stays.
+    const plate = { id: 'p', name: 'Plate 1', settings: { sequence: 'by-layer' as const }, objects: [twoParts({ 0: { color: { 2: '0C', 5: '8' } } })] }
+    const back = await openBytes(writeProject({ plates: [plate], bed, settings: filaments(2) }), 'two.3mf', 2)
     expect(back.paint).toEqual({ 0: { color: { 5: '8' } } })
     expect(unpainted(back.toasts)).toEqual(['Paint on filament 3 and up opens unpainted: this project has 2 filaments.'])
   })

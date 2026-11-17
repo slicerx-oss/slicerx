@@ -65,6 +65,11 @@ export function paintTextMaxState(text: string): number {
   return r ? Math.max(0, ...r.states) : -1
 }
 
+/** The states a `paint_*` text paints, painted ones only (0 is the part's own filament); none when it does not read. */
+export function paintTextStates(text: string): number[] {
+  return [...new Set(read(text)?.states.filter((x) => x > 0) ?? [])]
+}
+
 /** A `paint_*` text in the escape scheme, or null when it does not read. */
 export function escapeText(text: string): string | null {
   const r = read(text)

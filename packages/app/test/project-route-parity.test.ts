@@ -12,10 +12,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { Host, MeshHandle } from '@slicerx/contracts'
+import type { FilamentSlot, Host, MeshHandle } from '@slicerx/contracts'
 import { createContext, serverTools } from '@slicerx/mcp'
 import { h3cVariantProject, type H3cLayout } from '../../mcp/test/h3c-variant-projects'
 import { KEY as SCRIPT_KEY, scriptKeyProject, START as SCRIPT_START } from '../../mcp/test/script-key-project'
+import { BAND_COLORS, bandedProject, bandTools } from '../../mcp/test/banded-project'
 import { binBuilt, SX_BUILD } from './binaries'
 
 const { openModelBytes } = await import('../src/state/actions')
@@ -55,10 +56,10 @@ async function settled(): Promise<void> {
   }
 }
 
-/** The config the app slices `file` with, opened on a fresh plate with `printer` selected. */
-async function appConfig(file: string, printer: keyof typeof PRINTERS): Promise<Record<string, unknown>> {
+/** The config the app slices `file` with, opened on a fresh plate with `printer` selected (and the slots it reports). */
+async function appConfig(file: string, printer: keyof typeof PRINTERS, printerSlots?: FilamentSlot[]): Promise<Record<string, unknown>> {
   const p = PRINTERS[printer]
-  set((s) => ({ plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', projectSettings: null, projectPrinter: null, projectOpenAsk: null, fileSlotColors: [], printerId: p.id, printerModel: p, printerNozzles: {}, nozzleReported: {}, easyTouched: [], goal: 'standard', goalBase: 'standard', overrides: {}, vouchedGcode: {}, toast: null }))
+  set((s) => ({ ...(printerSlots ? { printerSlots, slotSetup: {}, slotMatch: {} } : {}), plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', projectSettings: null, projectPrinter: null, projectOpenAsk: null, fileSlotColors: [], printerId: p.id, printerModel: p, printerNozzles: {}, nozzleReported: {}, easyTouched: [], goal: 'standard', goalBase: 'standard', overrides: {}, vouchedGcode: {}, toast: null }))
   startProfileSync()
   startProjectPrinterSync()
   await settled()
@@ -226,6 +227,35 @@ describe.skipIf(!binBuilt(sxBin, SX_BUILD))('one project, one printer: the same 
       expect(firstDifference(cliSlice(file, c.profiles, out), mcp.gcode)).toBeNull()
     }, 120_000)
   }
+})
+
+// A project painted in filaments its object does not print with: a column on filament 2 in four bands, painted
+// filaments 1, 2 and 3 from the bottom and the top band left as it is (packages/mcp/test/banded-project.ts). The app and
+// the MCP server send all three filaments, and each band prints on its own: the paint's filament, and filament 2 for
+// the top band. A printer reporting four AMS slots gives the app the same three.
+describe.skipIf(!binBuilt(sxBin, SX_BUILD))('a painted project, band by band, in the app and the MCP server', () => {
+  const AMS: FilamentSlot[] = ['#F2F2F2', '#161616', '#D01010', '#7A1FA0'].map((color, i) => ({ id: `A${i + 1}`, material: 'PLA', color }))
+  const byBand = (gcode: Buffer) => Object.fromEntries(Object.entries(bandTools(gcode.toString())).map(([band, t]) => [band, t.tool]))
+
+  it.each([
+    ['with no printer slots', undefined, BAND_COLORS],
+    ['on a printer that reports four AMS slots', AMS, AMS.map((a) => a.color!)],
+  ] as const)('prints each band in its own filament %s', async (_name, slots, colors) => {
+    const file = join(dir, 'banded.3mf')
+    writeFileSync(file, bandedProject())
+    const out = mkdtempSync(join(dir, 'banded-'))
+    const app = await appConfig(file, 'bambu-a1', slots ? [...slots] : [])
+    expect.soft(app['filament_colour']).toEqual(colors.slice(0, 3).map((c) => c.toLowerCase()))
+    const mcp = await mcpSlice(file, ['machine:bambu-a1'], join(out, 'mcp'))
+    expect.soft((mcp.request['config'] as Record<string, unknown>)['filament_colour']).toEqual(BAND_COLORS.slice(0, 3).map((c) => c.toLowerCase()))
+    const appGcode = appSlice(mcp.request, app, join(out, 'app'))
+    for (const gcode of [mcp.gcode, appGcode]) {
+      expect.soft(gcode.toString()).toMatch(/^; filament_colour = #[0-9a-f]{6};#[0-9a-f]{6};#[0-9a-f]{6}$/m)
+      // T0 is filament 1: white paint, black paint, red paint, then the column's own black
+      expect.soft(byBand(gcode)).toEqual({ 1: 0, 2: 1, 3: 2, 4: 1 })
+    }
+    if (!slots) expect(firstDifference(appGcode, mcp.gcode)).toBeNull()
+  }, 120_000)
 })
 
 // A Bambu Studio project on its own printer opens with its own start G-code when a person may approve it, as the app

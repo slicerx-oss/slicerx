@@ -6,6 +6,7 @@ import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
 import { appMissingKeys, importProject, unmodeledValues, matchProjectPrinter, printerName, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
 import { BED_TYPE_ENGINE, filePlateBedType } from '@slicerx/settings/bed-type'
+import { paintTextStates } from '@slicerx/threemf/paint-text'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { MAX_ENTRY_BYTES, openZip, type ZipReader } from './zip'
@@ -146,7 +147,7 @@ export interface ProjectRead {
    * Another slicer's project (a 3MF, not an .sx3mf) with print settings: its settings as the app's project open reads
    * them (`orca` for a Bambu Studio or Orca project, `prusaslicer` for a PrusaSlicer one), for a slice on a printer the
    * way the app opens it (project-open.ts). `slots` is the last filament slot its parts print with, `used` every slot they
-   * print with.
+   * print with; {@link withPaintSlots} adds the slots its color paint prints with.
    */
   opened?: { from: 'orca' | 'prusaslicer'; settings: Record<string, unknown>; slots: number; used: number[] }
   /** Metadata/model_settings.config, else Metadata/Slic3r_PE_model.config, as the file has it: what objectLayerHeights reads. */
@@ -203,6 +204,43 @@ function toolChangeSlots(text: string | undefined): number[] {
     }
   }
   return out
+}
+
+const PAINT_ATTRS = ['paint_color="', 'slic3rpe:mmu_segmentation="'].map((a) => Buffer.from(a))
+
+/**
+ * `read` with the filaments its project's color paint prints in (`paint_color`, or PrusaSlicer's
+ * `slic3rpe:mmu_segmentation`, in every model part of the file at `path`) among its slots, as the app counts them among
+ * the plate's filaments (slots.ts objectSlots). The rest of the read leaves the geometry alone, so this reads it only
+ * for a project that opens on a printer.
+ */
+export function withPaintSlots(read: ProjectRead, path: string): ProjectRead {
+  if (!read.opened) return read
+  const states = new Set<number>()
+  const zip = openZip(path, basename(path))
+  try {
+    for (const name of zip.names().filter((n) => n.toLowerCase().endsWith('.model'))) {
+      const model = zip.read(name, MAX_ENTRY_BYTES)
+      if (!model) continue
+      // A painted model repeats a few texts on most of its triangles, so each text is read once, without decoding
+      // the whole model to text.
+      const texts = new Set<string>()
+      for (const attr of PAINT_ATTRS) {
+        for (let at = model.indexOf(attr); at >= 0; ) {
+          const end = model.indexOf(0x22, at + attr.length)
+          if (end < 0) break
+          texts.add(model.toString('latin1', at + attr.length, end))
+          at = model.indexOf(attr, end)
+        }
+      }
+      for (const t of texts) for (const st of paintTextStates(t)) states.add(st)
+    }
+  } finally {
+    zip.close()
+  }
+  if (!states.size) return read
+  const used = [...new Set([...read.opened.used, ...states])].sort((a, b) => a - b)
+  return { ...read, opened: { ...read.opened, used, slots: Math.max(read.opened.slots, ...used) } }
 }
 
 /** Keys a project or shared preset may never set: post-processing scripts and credentials (sx-core preflight::is_never_imported). */

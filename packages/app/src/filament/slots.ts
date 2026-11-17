@@ -10,6 +10,7 @@ import { appStore, get, set, type AppState, type PlateEntry, type PlateMeta } fr
 import { quietly } from '../plate/history'
 import { brandAccent } from '../edition'
 import { defaultSlotColors, isHex, normalizeColor } from '@slicerx/settings/slot-colors'
+import { paintStates } from '../export/listing-colors'
 
 // How a slot color reads, shared with the MCP server's project slices.
 export { normalizeColor }
@@ -62,24 +63,40 @@ export function toolChangeSlots(s: Partial<Pick<AppState, 'layerMarks'>>, plateI
   return (s.layerMarks?.[plateId] ?? []).flatMap((m) => (m.kind === 'tool_change' && !m.skip && m.slot ? [m.slot] : []))
 }
 
-/** How many slots the project needs: the printer's, the highest a part or a tool change uses, the highest set by hand. */
-export function slotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks'>>): number {
-  let n = s.printerSlots.length
-  for (const p of allPlates(s)) for (const o of p.objects) for (const part of o.handle.parts) n = Math.max(n, effectiveSlot(o, part))
+/**
+ * How many slots the project needs: the printer's, every filament the opened file lists, the highest a part, its color
+ * paint or a tool change uses, and the highest set by hand.
+ */
+export function slotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks' | 'fileSlotColors'>>): number {
+  let n = Math.max(s.printerSlots.length, s.fileSlotColors?.length ?? 0)
+  for (const p of allPlates(s)) for (const o of p.objects) n = Math.max(n, ...objectSlots(undefined, o))
   for (const p of s.plates) for (const t of toolChangeSlots(s, p.id)) n = Math.max(n, t)
   for (const k of Object.keys(s.slotSetup)) n = Math.max(n, Number(k))
   return Math.min(MAX_SLOTS, Math.max(1, n))
 }
 
-/** The slot every part of every plate ends up in, after the plate's own color swaps, and the slots its tool changes print in. */
+/**
+ * The slot every part and its color paint on every plate ends up in, after the plate's own color swaps, and the slots
+ * its tool changes print in.
+ */
 export function usedSlots(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'> & Partial<Pick<AppState, 'layerMarks'>>): Set<number> {
   const out = new Set<number>()
   for (const p of allPlates(s)) {
-    for (const o of p.objects) if (o.printable !== false) for (const part of o.handle.parts) out.add(mapSlot(p, effectiveSlot(o, part)))
+    for (const o of p.objects) if (o.printable !== false) for (const slot of objectSlots(p, o)) out.add(slot)
     // A tool change goes to the engine as its own filament number, without the plate's swaps.
     if (p.objects.some((o) => o.printable !== false)) for (const t of toolChangeSlots(s, p.id)) out.add(t)
   }
   return out
+}
+
+/**
+ * The engine filaments an object prints with: each part's filament after the object's own picks, and its color paint,
+ * after the plate's swaps.
+ */
+export function objectSlots(meta: Pick<PlateMeta, 'settings'> | undefined, entry: Pick<PlateEntry, 'slotOverrides' | 'handle' | 'paint'>): number[] {
+  const own = entry.handle.parts.map((part) => effectiveSlot(entry, part))
+  const painted = Object.values(entry.paint ?? {}).flatMap((p) => Object.values(p?.color ?? {}).flatMap(paintStates))
+  return [...new Set([...own, ...painted].map((slot) => mapSlot(meta, slot)))].sort((a, b) => a - b)
 }
 
 /** The slot a part prints in on its object: the person's choice for that part, else the file's. */

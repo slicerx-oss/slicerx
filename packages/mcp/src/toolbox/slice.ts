@@ -14,7 +14,7 @@ import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
 import { vaultMark } from '../vault'
 import { readPresetFiles } from '../presets'
-import { importReportLines, objectLayerHeights, readProjectFile, sliceWalls, type WallsNote } from '../projectfile'
+import { importReportLines, objectLayerHeights, readProjectFile, sliceWalls, withPaintSlots, type WallsNote } from '../projectfile'
 import { openProject, projectPrinterUse } from '../project-open'
 import { toSchemaValue } from '../settings'
 import { reviewProjectScripts } from '../project-script-review'
@@ -363,6 +363,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   await profiles.prepare([...args.profiles, ...(args.filaments ?? []).flatMap((s) => (s.profile ? [s.profile] : []))], [project?.model])
   // Another slicer's project on a printer slices with the settings the app opens it with (project-open.ts).
   if (project && projectRead) {
+    // The filaments its color paint prints in count among the project's, as in the app.
+    projectRead = withPaintSlots(projectRead, modelPath)
     const asked = args.overrides?.['nozzle_diameter']
     const mm = Number(Array.isArray(asked) ? asked[0] : asked)
     const opened = await openProject(projectRead, profiles, args.profiles, asked !== undefined && Number.isFinite(mm) && mm > 0 ? mm : undefined, args.plate)
