@@ -9,6 +9,8 @@
 #                                                     and sign the dev kit's sx.exe in place
 #   windows-sign.ps1 -VerifyInstalled                 install the signed setup for this user and check the
 #                                                     installed app and uninstaller (needs -Out from a release)
+#   windows-sign.ps1 -ExactModule                     only build the engine with exact solids into
+#                                                     packages/geom/wasm/pkg, the -Release step of that name
 #
 # Everything about the signing account comes from the environment; nothing secret is in this file or written to
 # disk. Signing uses the Azure sign-in already saved by Connect-AzAccount (Az.Accounts), through the Artifact
@@ -16,12 +18,21 @@
 #
 # -Release builds the exact kernel in (the desktop crate's native-geom feature) unless SX_RELEASE_KERNEL=0 drops it
 # from that build. The kernel's source is fetched with Git's sh (packages/brep/scripts/fetch-smlib.sh).
+#
+# -Release also builds the engine with exact solids (pkg/sx_geom_exact.mjs and .wasm), which the app's geometry worker
+# loads by URL: a page build without them passes and only the app fails, so the release fails instead. Windows has no
+# Emscripten, so it is built in WSL by packages/geom/wasm/scripts/release-exact.sh from this commit, then copied in:
+#   SX_WSL_DISTRO      the WSL distribution (default Ubuntu-24.04), entered as root
+#   SX_WSL_EMSDK       Emscripten 6.0.10 in it, passed as EMSDK (default: release-exact.sh looks for it); never installed
+#   SX_WSL_EXACT_WORK  its work folder, kept between releases (default /root/builds/release-exact)
+# SX_RELEASE_KERNEL=0 drops it with the kernel.
 param(
   [string]$File,
   [switch]$Release,
   [string]$Out,
   [string]$Kit,
-  [switch]$VerifyInstalled
+  [switch]$VerifyInstalled,
+  [switch]$ExactModule
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
@@ -123,6 +134,62 @@ function Sign-One([string]$path) {
   Verify $path
 }
 
+# A build tool's progress on stderr is not a failure: in Windows PowerShell 5.1, with 'Stop', redirected stderr of a
+# native command throws. Each step is judged by its exit code instead.
+function Run([string]$what, [scriptblock]$step) {
+  Write-Host "== $what"
+  $was = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { & $step 2>&1 | ForEach-Object { "$_" } } finally { $ErrorActionPreference = $was }
+  if ($LASTEXITCODE) { throw "$what failed ($LASTEXITCODE)" }
+}
+
+# The engine with exact solids in packages/geom/wasm/pkg: both files there, not empty, and the wasm a wasm module.
+function Check-ExactModule {
+  $pkg = Join-Path $repo 'packages\geom\wasm\pkg'
+  foreach ($f in 'sx_geom_exact.mjs', 'sx_geom_exact.wasm') {
+    $p = Join-Path $pkg $f
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf) -or (Get-Item -LiteralPath $p).Length -eq 0) {
+      throw "No $f in $pkg. The app would build without exact solids and fail when they load; run the exact solids module step (windows-sign.ps1 -ExactModule)."
+    }
+    Write-Host "$f`: $((Get-Item -LiteralPath $p).Length) bytes"
+  }
+  $head = [IO.File]::ReadAllBytes((Join-Path $pkg 'sx_geom_exact.wasm'))[0..3]
+  if (($head -join ',') -ne '0,97,115,109') { throw "$pkg\sx_geom_exact.wasm is not a wasm module." }
+}
+
+# Builds the engine with exact solids in WSL from a tar of HEAD (WSL's git cannot read a Windows checkout, and the tar
+# holds exactly the commit, never local edits), and copies it into packages/geom/wasm/pkg. The files there are removed
+# first, so an older build is never what ships.
+function Build-ExactModule {
+  $distro = if ($env:SX_WSL_DISTRO) { $env:SX_WSL_DISTRO } else { 'Ubuntu-24.04' }
+  # unset, release-exact.sh looks in its usual place; an empty EMSDK counts as unset there
+  $emsdk = if ($env:SX_WSL_EMSDK) { $env:SX_WSL_EMSDK } else { '' }
+  $work = if ($env:SX_WSL_EXACT_WORK) { $env:SX_WSL_EXACT_WORK } else { '/root/builds/release-exact' }
+  $pkg = Join-Path $repo 'packages\geom\wasm\pkg'
+  foreach ($f in 'sx_geom_exact.mjs', 'sx_geom_exact.wasm') { Remove-Item -LiteralPath (Join-Path $pkg $f) -ErrorAction SilentlyContinue }
+  $null = New-Item -ItemType Directory -Force -Path $pkg
+  $changed = @(git -C $repo status --porcelain --untracked-files=no)
+  if ($changed.Count) { Write-Warning "tracked changes are not in the exact solids module, which is built from HEAD: $($changed -join '; ')" }
+  $tar = Join-Path ([IO.Path]::GetTempPath()) ("slicerx-exact-{0}.tar" -f [guid]::NewGuid())
+  try {
+    Run 'exact solids source' { git -C $repo archive --format=tar -o $tar HEAD }
+    # wsl.exe -e runs the command with no shell between, so paths and folders pass as they are
+    $win = @{ tar = $tar; pkg = $pkg; script = (Join-Path $repo 'packages\geom\wasm\scripts\release-exact.sh') }
+    $wsl = @{}
+    foreach ($k in $win.Keys) {
+      $was = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
+      try { $wsl[$k] = ([string](wsl.exe -d $distro -e wslpath -a -u $win[$k] 2>&1)).Trim() } finally { $ErrorActionPreference = $was }
+      if ($LASTEXITCODE -or -not $wsl[$k].StartsWith('/')) { throw "WSL ($distro) could not name $($win[$k]): $($wsl[$k])" }
+    }
+    Run 'exact solids module (WSL)' { wsl.exe -d $distro -u root -e env "EMSDK=$emsdk" sh $wsl.script --work $work --archive $wsl.tar --into $wsl.pkg }
+  } finally {
+    Remove-Item -LiteralPath $tar -ErrorAction SilentlyContinue
+  }
+  Check-ExactModule
+}
+
 function Hash-Into([string]$path) {
   $h = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
   [IO.File]::WriteAllText("$path.sha256", "$h *$([IO.Path]::GetFileName($path))`n", (New-Object Text.UTF8Encoding($false)))
@@ -157,21 +224,13 @@ if ($Release) {
   try {
     if (-not $env:SLICERX_COMMIT) { $env:SLICERX_COMMIT = (git rev-parse HEAD).Trim() }
     $triple = 'x86_64-pc-windows-msvc'
-    # A build tool's progress on stderr is not a failure: in Windows PowerShell 5.1, with 'Stop', redirected
-    # stderr of a native command throws. Each step is judged by its exit code instead.
-    function Run([string]$what, [scriptblock]$step) {
-      Write-Host "== $what"
-      $was = $ErrorActionPreference
-      $ErrorActionPreference = 'Continue'
-      try { & $step 2>&1 | ForEach-Object { "$_" } } finally { $ErrorActionPreference = $was }
-      if ($LASTEXITCODE) { throw "$what failed ($LASTEXITCODE)" }
-    }
     # A release never carries the agent bridge (docs/agent-bridge.md): refuse a bridge environment before building.
     Run 'agent bridge off' { node apps/desktop/release/check-agent-bridge.mjs --env --manifest apps/desktop/src-tauri/Cargo.toml }
     # A release is never a demo build: refuse an environment without the backend variables before building.
     Run 'not a demo build' { node apps/desktop/release/check-demo-data.mjs --env }
     Run 'engine module' { pnpm --filter @slicerx/slicer build:wasm }
     Run 'geometry module' { sh packages/geom/wasm/scripts/build.sh }
+    if ($env:SX_RELEASE_KERNEL -ne '0') { Build-ExactModule } else { Write-Host '== exact solids module: off (SX_RELEASE_KERNEL=0)' }
     Run 'edition config' { pnpm --filter @slicerx/desktop tauri:config }
     Run 'sidecars' { node apps/desktop/release/prepare-sidecars.mjs --target $triple --config apps/desktop/src-tauri/gen/edition.conf.json }
     # The exact kernel: its source at the pinned, hash-checked commit with the routine swap checked (fetch-smlib.sh
@@ -210,6 +269,8 @@ if ($Release) {
     # folders hold only what this build makes.
     $target = Join-Path $repo "target\$triple\release"
     foreach ($b in 'nsis', 'msi') { Remove-Item -LiteralPath "$target\bundle\$b" -Recurse -Force -ErrorAction SilentlyContinue }
+    # the page build takes pkg as it is, so the exact solids files are checked once more right before it
+    if ($env:SX_RELEASE_KERNEL -ne '0') { Check-ExactModule }
     Push-Location apps/desktop
     try { Run 'signed build' { pnpm tauri build --config src-tauri/gen/edition.signed.conf.json --target $triple --bundles 'nsis,msi' } } finally { Pop-Location }
     # The app the installers carry and the frontend inside it, checked for the agent bridge before anything is copied out.
@@ -258,4 +319,9 @@ if ($VerifyInstalled) {
   exit 0
 }
 
-throw 'Give -File <path>, -Release -Out <dir> or -VerifyInstalled -Out <dir>.'
+if ($ExactModule) {
+  Build-ExactModule
+  exit 0
+}
+
+throw 'Give -File <path>, -Release -Out <dir>, -VerifyInstalled -Out <dir> or -ExactModule.'

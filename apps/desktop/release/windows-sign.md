@@ -25,6 +25,9 @@ by itself; it lets the reputation build on the publisher.
   The script never opens a sign-in. When the saved one is missing or expired it stops and says so.
 - For `-Release`, the toolchain of a release build: Rust, pnpm, binaryen's `wasm-opt` (`scripts/install-binaryen.sh`)
   and the `rust-src` component of the pinned toolchain.
+- For the engine with exact solids, which `-Release` builds in WSL (Windows has no Emscripten): a WSL distribution
+  (`SX_WSL_DISTRO`, default Ubuntu-24.04) with the pinned Rust toolchain and its `rust-src`, and Emscripten 6.0.10
+  installed there (`SX_WSL_EMSDK`, else `~/builds/emsdk-6.0.10` of its root user). Nothing is installed for it.
 
 ## Settings
 
@@ -50,12 +53,17 @@ apps\desktop\release\windows-sign.ps1 -Release -Out C:\builds\outgoing\rc8-signe
 
 # Install that setup for this user (silent, no elevation) and check the installed app and uninstaller
 apps\desktop\release\windows-sign.ps1 -VerifyInstalled -Out C:\builds\outgoing\rc8-signed
+
+# Only build the engine with exact solids into packages\geom\wasm\pkg (in WSL), as -Release does
+apps\desktop\release\windows-sign.ps1 -ExactModule
 ```
 
-`-Release` builds the engine and geometry modules, the edition config and the sidecars, signs any sidecar before it
-is packed, then runs `tauri build` with a copy of the edition config that sets `bundle.windows.signCommand` to this
-script. Tauri calls it for the app, the NSIS uninstaller before it goes into the setup, the setup and the MSI. The
-output folder must not exist yet, so a signed release is never overwritten.
+`-Release` builds the engine and geometry modules, the engine with exact solids (in WSL, from a `git archive` of HEAD,
+through `packages/geom/wasm/scripts/release-exact.sh`, then copied into `packages/geom/wasm/pkg` and checked), the
+edition config and the sidecars, signs any sidecar before it is packed, then runs `tauri build` with a copy of the
+edition config that sets `bundle.windows.signCommand` to this script. Tauri calls it for the app, the NSIS uninstaller
+before it goes into the setup, the setup and the MSI. The output folder must not exist yet, so a signed release is
+never overwritten. `-ExactModule` runs only the exact solids step, with no signing.
 
 ## Why it is done this way
 

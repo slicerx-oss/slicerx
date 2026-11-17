@@ -20,8 +20,9 @@
 #                     slicerx-mimir-register-key); without one the app has no mimir cloud
 #   SLICERX_SUPABASE_URL, SLICERX_SUPABASE_ANON_KEY  the backend (required): without both the build would be a demo
 #                     build, which check-demo-data.mjs refuses
-#   SX_RELEASE_KERNEL 0 drops the exact kernel (the desktop crate's native-geom feature) from this build; it is built
-#                     in otherwise
+#   SX_RELEASE_KERNEL 0 drops the exact kernel (the desktop crate's native-geom feature) and the engine with exact
+#                     solids from this build; both are built in otherwise
+#   EMSDK             Emscripten 6.0.10 for the engine with exact solids (default: ~/builds/emsdk-6.0.10)
 set -euo pipefail
 
 identity=${SX_SIGN_IDENTITY:-"Developer ID Application: SEAN LEONARD (X2928JZ7GJ)"}
@@ -78,6 +79,11 @@ if [[ ${SX_RELEASE_KERNEL:-1} != 0 ]]; then
   kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
   export SX_SMLIB_DIR=$kernel SX_BREP_REQUIRE=1
   node apps/desktop/release/kernel-config.mjs --config apps/desktop/src-tauri/gen/edition.conf.json --kernel "$kernel"
+  # The engine with exact solids (pkg/sx_geom_exact.*), which the geometry worker loads by URL: the page builds without
+  # it and only the app would fail, so the release fails here instead. Emscripten 6.0.10 from EMSDK, else
+  # ~/builds/emsdk-6.0.10; never downloaded. Its work folder is SX_EXACT_WORK (default ~/.cache/slicerx/exact-release).
+  say "exact solids module"
+  sh packages/geom/wasm/scripts/release-exact.sh
 else
   say "kernel: off (SX_RELEASE_KERNEL=0)"
 fi
