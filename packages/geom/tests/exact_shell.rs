@@ -237,7 +237,7 @@ fn a_curved_lofted_body_shelled_closed_or_open_at_its_end_is_refused() {
     if !sx_brep::KERNEL {
         return;
     }
-    let body = lofted(vase(), true);
+    let body = lofted(&vase(), true);
     for wall in [1.0, 2.0, 3.0] {
         let held = table::count();
         let closed = refusal(
@@ -301,7 +301,7 @@ fn offset_ellipse(w: f64, h: f64, c: [f64; 2]) -> Value {
     json!({ "type": "ellipse", "center": c, "widthMm": w, "heightMm": h, "angleDeg": 0 })
 }
 
-fn lofted(profiles: Value, smooth: bool) -> u32 {
+fn lofted(profiles: &Value, smooth: bool) -> u32 {
     let made = op(
         "sketch.loft",
         &json!({ "profiles": profiles, "smooth": smooth, "operation": "new", "exact": true, "keySalt": 7 }),
@@ -318,7 +318,7 @@ fn a_closed_shell_whose_wall_strays_from_the_one_asked_is_refused() {
     }
     // a smooth loft through five loops set off to one side as it rises
     let body = lofted(
-        json!([
+        &json!([
             level(0.0, &offset_circle(20.0, [0.0, 0.0])),
             level(6.0, &offset_ellipse(26.0, 18.0, [0.0, 0.0])),
             level(12.0, &offset_circle(18.0, [1.0, 0.0])),
@@ -342,7 +342,7 @@ fn a_closed_shell_of_a_waisted_ruled_loft_is_refused() {
         return;
     }
     let body = lofted(
-        json!([
+        &json!([
             level(0.0, &circle(20.0)),
             level(8.0, &circle(14.0)),
             level(16.0, &circle(20.0)),
@@ -378,7 +378,7 @@ fn a_closed_shell_whose_mesh_holds_another_volume_than_the_body_is_refused() {
         json!({ "points": [[-x, -y], [x, -y], [x, y], [-x, y]] })
     };
     let body = lofted(
-        json!([
+        &json!([
             level(0.0, &rect(30.0, 20.0)),
             level(10.0, &rect(24.0, 16.0)),
             level(20.0, &rect(18.0, 12.0))
