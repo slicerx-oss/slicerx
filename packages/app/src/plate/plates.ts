@@ -200,16 +200,16 @@ export function nameOptions(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'
 }
 
 /**
- * Setting overrides a plate adds to the slice config: its own print sequence when it has one and, when the person
- * set one, its filament order (slots, 1-based) for the first layer and every other layer. Without an order the
- * engine picks the one with the least flush.
+ * Setting overrides a plate adds to the slice config: its own print sequence when it has one, the mixes its objects use
+ * (from `s`, the project's state by default) and, when the person set one, its filament order (slots, 1-based) for the
+ * first layer and every other layer. Without an order the engine picks the one with the least flush.
  */
-export function plateConfig(meta: PlateMeta | undefined): Record<string, string | number | number[] | string[]> {
+export function plateConfig(meta: PlateMeta | undefined, s: Pick<AppState, 'plates' | 'plate' | 'activePlate' | 'mixes'> & Partial<Pick<AppState, 'historyEdit'>> = get()): Record<string, string | number | number[] | string[]> {
   if (!meta) return {}
   const seq = meta.settings.sequence
   // Only the mixes the plate's objects use go to the slice, and a plate without one sends no mixed_filaments, so it
   // slices exactly as before.
-  const out: Record<string, string | number | number[] | string[]> = { ...(seq ? { print_sequence: seq === 'by-object' ? 'by object' : 'by layer' } : {}), ...nozzleMapConfig(meta), ...hotendMapConfig(meta), ...mixConfig(usedMixes(allPlates().find((p) => p.id === meta.id) ?? meta, get().mixes)) }
+  const out: Record<string, string | number | number[] | string[]> = { ...(seq ? { print_sequence: seq === 'by-object' ? 'by object' : 'by layer' } : {}), ...nozzleMapConfig(meta), ...hotendMapConfig(meta), ...mixConfig(usedMixes(allPlates(s).find((p) => p.id === meta.id) ?? meta, s.mixes)) }
   const order = meta.settings.filamentOrder
   if (order && order.length > 1) {
     out['first_layer_print_sequence'] = [...order]

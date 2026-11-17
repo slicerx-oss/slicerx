@@ -36,7 +36,7 @@ function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverride
 export function plateSliceConfig(s: AppState, meta: PlateMeta | undefined): PrintConfig {
   const base = resolveConfig(s.easy, s.overrides)
   // The plate type picks the bed temperatures (the engine's curr_bed_type), so it goes with the plate's other settings.
-  const config = { ...base, ...slotConfig(s, meta?.id), ...plateConfig(meta), ...bedTypeConfig(meta, base) } as Record<string, unknown>
+  const config = { ...base, ...slotConfig(s, meta?.id), ...plateConfig(meta, s), ...bedTypeConfig(meta, base) } as Record<string, unknown>
   // Nozzles of different sizes: the map goes by hand, and a prime tower keeps one layer height.
   const sliced = { ...config, ...mixedNozzleConfig(s, meta, config, towerPrints(s, meta, config)) }
   // A key no setting models that the plate's printer G-code names: the opened project's value, as the engine renders
