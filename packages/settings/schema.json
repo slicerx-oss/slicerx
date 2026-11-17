@@ -2434,7 +2434,6 @@
    "mode": "hidden",
    "group": "multimaterial",
    "invalidates": "contours",
-   "intent": "multicolor",
    "help": "Two loaded filaments printed on alternating layers in a set ratio, so their colors blend, one entry per mix as id:a,b:ra,rb:name. Parts and paint use the id like a filament number; the app's Mix editor writes this."
   },
   {
