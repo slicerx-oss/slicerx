@@ -37,7 +37,7 @@ export { flatFaces }
 
 const vec2 = z.tuple([z.number(), z.number()])
 /** What geom.shell says about its walls: which bodies get exact ones. */
-export const SHELL_WALLS = 'A body whose faces are all flat gets exact walls; on a design with exact solids a curved body does too, unless the exact shell cannot close it, and then it is shelled as a mesh.'
+export const SHELL_WALLS = 'A body whose faces are all flat gets exact walls; on a design with exact solids a curved body does too when it is shelled closed, and with faces left open when its sides are flat or are cylinders and cones. Any other shell is made as a mesh.'
 /** What the app link takes: the UTF-8 bytes of a call's arguments as compact JSON (sx-link app_link.rs, MAX_ARGS). */
 const LINK_ARGS = 64 * 1024
 /** design.sketch_svg's arguments may come to this many bytes; 512 are kept back for numbers the link may write longer. */
@@ -1823,7 +1823,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const shell = defineTool({
     name: 'geom.shell',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description:

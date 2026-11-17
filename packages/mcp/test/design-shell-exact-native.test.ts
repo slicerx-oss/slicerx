@@ -57,5 +57,5 @@ it('says which bodies get exact walls, word for word', async () => {
   // the CAD tools are listed only with an engine; this one is never called
   const h = await connect({ geomEngine: async () => { throw new Error('no engine call to list the tools') } })
   const tool = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_geom_shell')
-  expect(tool?.description).toContain('A body whose faces are all flat gets exact walls; on a design with exact solids a curved body does too, unless the exact shell cannot close it, and then it is shelled as a mesh.')
+  expect(tool?.description).toContain('A body whose faces are all flat gets exact walls; on a design with exact solids a curved body does too when it is shelled closed, and with faces left open when its sides are flat or are cylinders and cones. Any other shell is made as a mesh.')
 })
