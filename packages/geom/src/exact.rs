@@ -633,6 +633,13 @@ fn mesh_holds(made: &Body) -> std::result::Result<(), String> {
         .tessellate(&Tessellation::default())
         .map_err(|e| e.to_string())?;
     let volume = made.volume().map_err(|e| e.to_string())?;
+    volume_held(&mesh, volume)
+}
+
+/// Whether the volume `mesh`'s triangles hold is `volume` to within [`MESH_VOLUME_SHARE`]. Why not, in words,
+/// otherwise.
+#[cfg(feature = "cad")]
+fn volume_held(mesh: &Mesh, volume: f64) -> std::result::Result<(), String> {
     let held: f64 = mesh
         .triangles
         .iter()
@@ -1383,6 +1390,29 @@ mod tests {
         ] {
             assert_eq!(five(&other, [0.0, 0.0, 1.0]), Kind::Other, "{other:?}");
         }
+    }
+
+    /// A box's own mesh holds its volume. The same mesh with one face's triangles turned the other way, as a cavity
+    /// wound the wrong way is, holds another, and the shell's read-back refuses it.
+    #[cfg(feature = "cad")]
+    #[test]
+    fn a_mesh_that_holds_another_volume_than_its_body_is_refused() {
+        if !sx_brep::KERNEL {
+            return;
+        }
+        // off the origin, so every face's triangles count toward the volume
+        let body = Body::cuboid([5.0, 6.0, 7.0], [20.0, 10.0, 4.0]).expect("a box");
+        let mesh = body.tessellate(&Tessellation::default()).expect("a mesh");
+        let volume = body.volume().expect("a volume");
+        assert_eq!(volume_held(&mesh, volume), Ok(()));
+        let mut turned = mesh.clone();
+        for (t, &f) in turned.triangles.iter_mut().zip(&mesh.faces) {
+            if f == 0 {
+                t.swap(1, 2);
+            }
+        }
+        let why = volume_held(&turned, volume).expect_err("another volume");
+        assert!(why.starts_with("its mesh holds"), "{why}");
     }
 
     #[cfg(feature = "cad")]
