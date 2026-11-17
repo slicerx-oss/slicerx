@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The 3D mouse's shared state: the device's status and the listeners for its motion. The registered desktop reader and
-// the loader are in spacemouse-boot.ts, the only part that loads with the app; this module and the device driver
-// (spacemouse.ts: WebHID, report parsing, buttons) load with Settings, the app link or the driver.
+// The 3D mouse's shared state: the registered desktop reader, the device's status and the listeners for its motion. Only
+// the loader (spacemouse-loader.ts) loads with the app; this module and the device driver (spacemouse.ts: WebHID,
+// report parsing, buttons) load with Settings, the app link, the 3D view or the driver.
 import type { SpaceFrame } from '@slicerx/viewport/spacemouse'
-import { registeredSpaceMouseSource, resetSpaceMouseBootForTests } from './spacemouse-boot'
-
-export { registerSpaceMouseSource, registeredSpaceMouseSource, startSpaceMouseWhenOn } from './spacemouse-boot'
 
 /** Where the device stands, for the setting's status line. */
 export type SpaceMouseStatus =
@@ -24,6 +21,22 @@ export interface SpaceMouseSource {
   start(onReport: (bytes: Uint8Array) => void, onStatus: (s: SpaceMouseStatus) => void): () => void
   /** Asks the person to pick a device (WebHID; must run from a click or key press). Absent where no picking is needed. */
   connect?(): Promise<void>
+}
+
+let registered: (() => SpaceMouseSource | null) | null = null
+let desktop: SpaceMouseSource | null | undefined
+
+/** The desktop shell's reader, registered before the app starts. Without one the browser's WebHID is used. */
+export function registerSpaceMouseSource(factory: (() => SpaceMouseSource | null) | null): void {
+  registered = factory
+  desktop = undefined
+}
+
+/** The registered reader: undefined when nothing is registered, null when the shell has none on this system. */
+export function registeredSpaceMouseSource(): SpaceMouseSource | null | undefined {
+  if (!registered) return undefined
+  if (desktop === undefined) desktop = registered()
+  return desktop
 }
 
 /** Fixed objects, so a status read twice is the same value (React's useSyncExternalStore needs that). */
@@ -72,6 +85,6 @@ export function emitSpaceFrame(f: SpaceFrame): void {
 
 /** Tests only: forgets the registered reader's instance and the status, as a fresh page load would. */
 export function resetSpaceMouseStateForTests(): void {
-  resetSpaceMouseBootForTests()
+  desktop = undefined
   status = SPACE_MOUSE_OFF
 }
