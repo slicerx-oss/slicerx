@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The 3D mouse's shared state: the registered desktop reader, the device's status and the listeners for its motion. It
-// is small and loads with the app. The device driver itself (spacemouse.ts: WebHID, report parsing, buttons) loads
-// only once the setting is on or the Connect button is pressed, so the app's startup code stays small.
+// The 3D mouse's shared state: the device's status and the listeners for its motion. The registered desktop reader and
+// the loader are in spacemouse-boot.ts, the only part that loads with the app; this module and the device driver
+// (spacemouse.ts: WebHID, report parsing, buttons) load with Settings, the app link or the driver.
 import type { SpaceFrame } from '@slicerx/viewport/spacemouse'
-import { appStore } from '../state/store'
+import { registeredSpaceMouseSource, resetSpaceMouseBootForTests } from './spacemouse-boot'
+
+export { registerSpaceMouseSource, registeredSpaceMouseSource, startSpaceMouseWhenOn } from './spacemouse-boot'
 
 /** Where the device stands, for the setting's status line. */
 export type SpaceMouseStatus =
@@ -24,27 +26,12 @@ export interface SpaceMouseSource {
   connect?(): Promise<void>
 }
 
-let registered: (() => SpaceMouseSource | null) | null = null
-let desktop: SpaceMouseSource | null | undefined
 /** Fixed objects, so a status read twice is the same value (React's useSyncExternalStore needs that). */
 const UNSUPPORTED: SpaceMouseStatus = Object.freeze({ state: 'unsupported' })
 export const SPACE_MOUSE_OFF: SpaceMouseStatus = Object.freeze({ state: 'off' })
 let status: SpaceMouseStatus = SPACE_MOUSE_OFF
 const statusListeners = new Set<() => void>()
 const frameListeners = new Set<(f: SpaceFrame) => void>()
-
-/** The desktop shell's reader, registered before the app starts. Without one the browser's WebHID is used. */
-export function registerSpaceMouseSource(factory: (() => SpaceMouseSource | null) | null): void {
-  registered = factory
-  desktop = undefined
-}
-
-/** The registered reader: undefined when nothing is registered, null when the shell has none on this system. */
-export function registeredSpaceMouseSource(): SpaceMouseSource | null | undefined {
-  if (!registered) return undefined
-  if (desktop === undefined) desktop = registered()
-  return desktop
-}
 
 /** Whether this browser has WebHID (Chromium-based browsers; not Firefox, Safari or the macOS and Linux web views). */
 export function browserHasWebHid(nav: unknown = typeof navigator === 'undefined' ? undefined : navigator): boolean {
@@ -83,27 +70,8 @@ export function emitSpaceFrame(f: SpaceFrame): void {
   for (const l of frameListeners) l(f)
 }
 
-/**
- * Loads the driver once the 3D mouse setting is on, now or later; from then on the driver follows the setting itself.
- * The app calls it once at start. Returns the stop of the watch.
- */
-export function startSpaceMouseWhenOn(): () => void {
-  let loaded = false
-  const load = () => {
-    if (loaded) return
-    loaded = true
-    unwatch()
-    void import('./spacemouse').then((m) => m.startSpaceMouse())
-  }
-  const unwatch = appStore.subscribe((s) => {
-    if (s.spaceMouse.enabled) load()
-  })
-  if (appStore.getState().spaceMouse.enabled) load()
-  return unwatch
-}
-
 /** Tests only: forgets the registered reader's instance and the status, as a fresh page load would. */
 export function resetSpaceMouseStateForTests(): void {
-  desktop = undefined
+  resetSpaceMouseBootForTests()
   status = SPACE_MOUSE_OFF
 }
