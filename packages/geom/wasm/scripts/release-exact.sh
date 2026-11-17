@@ -6,12 +6,15 @@
 # them by URL, so a page build without them still passes and only the app fails when exact solids load; this step is
 # what stops such a release.
 #   sh packages/geom/wasm/scripts/release-exact.sh [--work <dir>] [--archive <tar> --into <dir>]
+#   sh packages/geom/wasm/scripts/release-exact.sh --check [<dir>]
 # --work      the kernel's objects, the link's output and the engine's cargo target, kept and reused between
 #             releases (default $SX_EXACT_WORK, else ~/.cache/slicerx/exact-release)
 # --archive   a tar of the release's commit (git archive), unpacked fresh into <work>/src and built there. For a
 #             checkout this system cannot build in, such as a Windows one built through WSL (windows-sign.ps1).
 #             Without it, the checkout this script is in is built.
 # --into      also copies the two files into this folder (the other checkout's packages/geom/wasm/pkg)
+# --check     builds nothing: only checks the two files in <dir> (default this checkout's pkg), for a build that got
+#             them from elsewhere (the release workflow)
 # Emscripten 6.0.10 comes from EMSDK, else from ~/builds/emsdk-6.0.10, and its em++ must report that version.
 # Nothing is downloaded for it here: a release never installs a compiler on its own (build-exact.sh would put one in
 # the work directory when EMSDK is unset).
@@ -20,16 +23,34 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 work=${SX_EXACT_WORK:-$HOME/.cache/slicerx/exact-release}
 archive=
 into=
+only_check=
 while [ $# -gt 0 ]; do
   case $1 in
     --work) work=${2:?--work needs a folder}; shift 2 ;;
     --archive) archive=${2:?--archive needs a tar}; shift 2 ;;
     --into) into=${2:?--into needs a folder}; shift 2 ;;
+    --check)
+      only_check=$here/pkg
+      shift
+      if [ $# -gt 0 ]; then only_check=$1; shift; fi
+      ;;
     *) echo "release-exact: unknown argument $1" >&2; exit 2 ;;
   esac
 done
 version=6.0.10
 fail() { echo "release-exact: $*" >&2; exit 1; }
+# A wasm file starts with \0asm; a glue file names the wasm it loads.
+check() {
+  [ -s "$1/sx_geom_exact.mjs" ] && [ -s "$1/sx_geom_exact.wasm" ] || fail "$1 lacks sx_geom_exact.mjs or sx_geom_exact.wasm"
+  [ "$(head -c 4 "$1/sx_geom_exact.wasm" | od -An -c | tr -d ' ')" = '\0asm' ] || fail "$1/sx_geom_exact.wasm is not a wasm module"
+  grep -q sx_geom_exact.wasm "$1/sx_geom_exact.mjs" || fail "$1/sx_geom_exact.mjs does not load sx_geom_exact.wasm"
+}
+sizes() { for f in sx_geom_exact.mjs sx_geom_exact.wasm; do echo "release-exact: $1/$f $(wc -c < "$1/$f" | tr -d ' ') bytes"; done; }
+if [ -n "$only_check" ]; then
+  check "$only_check"
+  sizes "$only_check"
+  exit 0
+fi
 # EMSDK when it is set, else ~/builds/emsdk-$version (the SDK itself, or the emsdk folder inside it), so a release
 # started with a bare environment (launchd, wsl.exe -e) finds it too
 if [ -z "${EMSDK:-}" ]; then
@@ -63,12 +84,6 @@ fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$work/target}"
 sh "$root/packages/geom/wasm/scripts/build-exact.sh" "$work/kernel"
 pkg="$root/packages/geom/wasm/pkg"
-# A wasm file starts with \0asm; a glue file names the wasm it loads.
-check() {
-  [ -s "$1/sx_geom_exact.mjs" ] && [ -s "$1/sx_geom_exact.wasm" ] || fail "$1 lacks sx_geom_exact.mjs or sx_geom_exact.wasm"
-  [ "$(head -c 4 "$1/sx_geom_exact.wasm" | od -An -c | tr -d ' ')" = '\0asm' ] || fail "$1/sx_geom_exact.wasm is not a wasm module"
-  grep -q sx_geom_exact.wasm "$1/sx_geom_exact.mjs" || fail "$1/sx_geom_exact.mjs does not load sx_geom_exact.wasm"
-}
 check "$pkg"
 if [ -n "$into" ]; then
   mkdir -p "$into"
@@ -78,4 +93,4 @@ if [ -n "$into" ]; then
   check "$into"
   pkg=$into
 fi
-for f in sx_geom_exact.mjs sx_geom_exact.wasm; do echo "release-exact: $pkg/$f $(wc -c < "$pkg/$f" | tr -d ' ') bytes"; done
+sizes "$pkg"

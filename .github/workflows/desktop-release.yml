@@ -17,7 +17,9 @@ name: desktop-release
 # No updater artifacts or TAURI_SIGNING_PRIVATE_KEY here: update bundles are signed on the release Mac
 # (apps/desktop/release/updates.md).
 # The exact kernel (the desktop crate's native-geom feature) is built into each leg whose matrix entry has
-# kernel: true; set it to false to drop the kernel from that leg alone.
+# kernel: true; set it to false to drop the kernel from that leg alone. Those legs also ship the engine with exact
+# solids (packages/geom/wasm/pkg/sx_geom_exact.*), built once by the exact-wasm job from this run's commit and checked
+# before the build, since the page would build without it and only the app would fail.
 
 on:
   push:
@@ -44,8 +46,46 @@ jobs:
       - id: v
         run: echo "version=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")" >> "$GITHUB_OUTPUT"
 
+  # The engine with exact solids, built as ci.yml's exact-wasm job builds it: Emscripten (installed at its pinned
+  # version into the work folder by packages/brep/scripts/wasm-objects.sh), its system libraries, the kernel's objects
+  # and the link's output cached in one folder, the SMLib source and cargo cached as the other jobs cache them.
+  exact-wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: exact-wasm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/slicerx/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sx-exact
+          key: exact-wasm-${{ runner.os }}-${{ hashFiles('packages/brep/scripts/wasm-objects.sh', 'packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh', 'packages/brep/cpp/**', 'packages/geom/wasm/scripts/build-exact.sh') }}
+          restore-keys: exact-wasm-${{ runner.os }}-
+      - run: sh packages/geom/wasm/scripts/build-exact.sh "$RUNNER_TEMP/sx-exact"
+      - run: sh packages/geom/wasm/scripts/release-exact.sh --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exact-wasm
+          path: |
+            packages/geom/wasm/pkg/sx_geom_exact.mjs
+            packages/geom/wasm/pkg/sx_geom_exact.wasm
+          retention-days: 3
+          if-no-files-found: error
+
   build:
-    needs: version
+    needs: [version, exact-wasm]
     strategy:
       fail-fast: false
       matrix:
@@ -119,6 +159,17 @@ jobs:
       - run: pnpm --filter @slicerx/slicer build:wasm
       # The CAD engine runs in a worker from its own WASM module; the bundler only ships it when the file exists at build time.
       - run: sh packages/geom/wasm/scripts/build.sh
+      # The engine with exact solids from the exact-wasm job (the same commit), checked before anything builds the page.
+      - name: Engine with exact solids
+        if: matrix.kernel
+        uses: actions/download-artifact@v4
+        with:
+          name: exact-wasm
+          path: packages/geom/wasm/pkg
+      - name: Check the engine with exact solids
+        if: matrix.kernel
+        shell: bash
+        run: sh packages/geom/wasm/scripts/release-exact.sh --check
 
       # Secrets that are absent expand to empty strings. Export a variable only
       # when it has a value, so the Tauri CLI never sees an empty certificate.

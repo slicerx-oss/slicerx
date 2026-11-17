@@ -26,8 +26,11 @@ by itself; it lets the reputation build on the publisher.
 - For `-Release`, the toolchain of a release build: Rust, pnpm, binaryen's `wasm-opt` (`scripts/install-binaryen.sh`)
   and the `rust-src` component of the pinned toolchain.
 - For the engine with exact solids, which `-Release` builds in WSL (Windows has no Emscripten): a WSL distribution
-  (`SX_WSL_DISTRO`, default Ubuntu-24.04) with the pinned Rust toolchain and its `rust-src`, and Emscripten 6.0.10
-  installed there (`SX_WSL_EMSDK`, else `~/builds/emsdk-6.0.10` of its root user). Nothing is installed for it.
+  (`SX_WSL_DISTRO`, else WSL's default one) with the pinned Rust toolchain and its `rust-src`, and Emscripten 6.0.10
+  installed there (`SX_WSL_EMSDK`, else `~/builds/emsdk-6.0.10` of its root user). Nothing is installed for it. The
+  work folder is `SX_WSL_EXACT_WORK`, else `~/.cache/slicerx/exact-release` of that user. A cold first build fetches
+  the pinned, hash-checked SMLib source and the crates of the build-std build, and takes about 5 minutes; later
+  builds reuse the work folder.
 
 ## Settings
 

@@ -22,9 +22,11 @@
 # -Release also builds the engine with exact solids (pkg/sx_geom_exact.mjs and .wasm), which the app's geometry worker
 # loads by URL: a page build without them passes and only the app fails, so the release fails instead. Windows has no
 # Emscripten, so it is built in WSL by packages/geom/wasm/scripts/release-exact.sh from this commit, then copied in:
-#   SX_WSL_DISTRO      the WSL distribution (default Ubuntu-24.04), entered as root
+#   SX_WSL_DISTRO      the WSL distribution (default: WSL's default one), entered as root
 #   SX_WSL_EMSDK       Emscripten 6.0.10 in it, passed as EMSDK (default: release-exact.sh looks for it); never installed
-#   SX_WSL_EXACT_WORK  its work folder, kept between releases (default /root/builds/release-exact)
+#   SX_WSL_EXACT_WORK  its work folder, kept between releases (default: ~/.cache/slicerx/exact-release there)
+# A cold first build fetches the pinned, hash-checked SMLib source and the crates of the build-std build, and takes
+# about 5 minutes; later ones reuse the work folder.
 # SX_RELEASE_KERNEL=0 drops it with the kernel.
 param(
   [string]$File,
@@ -162,10 +164,15 @@ function Check-ExactModule {
 # holds exactly the commit, never local edits), and copies it into packages/geom/wasm/pkg. The files there are removed
 # first, so an older build is never what ships.
 function Build-ExactModule {
-  $distro = if ($env:SX_WSL_DISTRO) { $env:SX_WSL_DISTRO } else { 'Ubuntu-24.04' }
+  # WSL's default distribution unless SX_WSL_DISTRO names one
+  $distro = @()
+  $named = 'the default distribution'
+  if ($env:SX_WSL_DISTRO) { $distro = @('-d', $env:SX_WSL_DISTRO); $named = $env:SX_WSL_DISTRO }
   # unset, release-exact.sh looks in its usual place; an empty EMSDK counts as unset there
   $emsdk = if ($env:SX_WSL_EMSDK) { $env:SX_WSL_EMSDK } else { '' }
-  $work = if ($env:SX_WSL_EXACT_WORK) { $env:SX_WSL_EXACT_WORK } else { '/root/builds/release-exact' }
+  # unset, release-exact.sh keeps its work folder under the WSL user's home (~/.cache/slicerx/exact-release)
+  $work = @()
+  if ($env:SX_WSL_EXACT_WORK) { $work = @('--work', $env:SX_WSL_EXACT_WORK) }
   $pkg = Join-Path $repo 'packages\geom\wasm\pkg'
   foreach ($f in 'sx_geom_exact.mjs', 'sx_geom_exact.wasm') { Remove-Item -LiteralPath (Join-Path $pkg $f) -ErrorAction SilentlyContinue }
   $null = New-Item -ItemType Directory -Force -Path $pkg
@@ -180,10 +187,10 @@ function Build-ExactModule {
     foreach ($k in $win.Keys) {
       $was = $ErrorActionPreference
       $ErrorActionPreference = 'Continue'
-      try { $wsl[$k] = ([string](wsl.exe -d $distro -e wslpath -a -u $win[$k] 2>&1)).Trim() } finally { $ErrorActionPreference = $was }
-      if ($LASTEXITCODE -or -not $wsl[$k].StartsWith('/')) { throw "WSL ($distro) could not name $($win[$k]): $($wsl[$k])" }
+      try { $wsl[$k] = ([string](wsl.exe @distro -e wslpath -a -u $win[$k] 2>&1)).Trim() } finally { $ErrorActionPreference = $was }
+      if ($LASTEXITCODE -or -not $wsl[$k].StartsWith('/')) { throw "WSL ($named) could not name $($win[$k]): $($wsl[$k])" }
     }
-    Run 'exact solids module (WSL)' { wsl.exe -d $distro -u root -e env "EMSDK=$emsdk" sh $wsl.script --work $work --archive $wsl.tar --into $wsl.pkg }
+    Run 'exact solids module (WSL)' { wsl.exe @distro -u root -e env "EMSDK=$emsdk" sh $wsl.script @work --archive $wsl.tar --into $wsl.pkg }
   } finally {
     Remove-Item -LiteralPath $tar -ErrorAction SilentlyContinue
   }
