@@ -7,18 +7,24 @@
 import { EngineEnded, useNativeEngine, type NativeEngine } from '@slicerx/app/geom/native'
 import { invoke as shellInvoke } from './invoke'
 
-type Invoke = <T>(cmd: string, args?: Uint8Array | Record<string, unknown>) => Promise<T>
+type Invoke = <T>(cmd: string, args?: Uint8Array | Record<string, unknown>, options?: { headers: Record<string, string> }) => Promise<T>
 
 /** The developer setting that has the page use the native engine. */
 export const NATIVE_GEOM_KEY = 'sx.nativeGeom'
 
-/** The shell's engine process: each call's frame as a raw body, its answer as raw bytes after the process's number. */
+/** The header that names the process a call is for (geom_host.rs, PROCESS_HEADER). */
+export const PROCESS_HEADER = 'sx-geom-process'
+
+/**
+ * The shell's engine process: each call's frame as a raw body, its answer as raw bytes after the process's number. A
+ * call for one process (it names that process's bodies) says which in a header, and the shell sends it to no other.
+ */
 export function tauriEngine(invoke: Invoke = shellInvoke as Invoke): NativeEngine {
   return {
-    async call(frame) {
+    async call(frame, forProcess = 0) {
       let out: ArrayBuffer
       try {
-        out = await invoke<ArrayBuffer>('geom_call', frame)
+        out = await invoke<ArrayBuffer>('geom_call', frame, { headers: { [PROCESS_HEADER]: String(forProcess) } })
       } catch (e) {
         throw endedOf(e) ?? e
       }

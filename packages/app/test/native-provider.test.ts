@@ -7,6 +7,7 @@
 // build of the engine's serve loop, packages/geom/src/serve.rs) the same provider also runs the real engine in a
 // process of its own, and SX_NATIVE_BENCH=1 prints its times.
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clearReplayCache, HISTORY_VERSION, replayHistory, type EngineCall, type History, type StepParams } from '@slicerx/cad-history'
 import { unpackNormal, type MeshPart } from '@slicerx/contracts'
@@ -196,6 +197,14 @@ describe('native provider', () => {
     // the kernel's message, without the native engine's name for it, as the worker's kernel gives it
     const { body } = await p.call<{ body: number }>('brep.box', {})
     await expect(p.call('brep.info', { body })).rejects.toThrow(/^no such body$/)
+  })
+
+  it('runs a replay step the engine answers with a panic once, as the worker does', async () => {
+    const { engine, seen } = standIn((op) => (op === 'brep.extrude' ? { frame: answerFrame({ id: 1, panic: 'boom at kernel.rs:1:1' }) } : {}))
+    const p = nativeProvider(engine)
+    const r = await p.call<{ status: { state: string; message?: string }[] }>('history.replay', exactBlock())
+    expect(r.status[0]).toMatchObject({ state: 'broken', message: 'Exact operation failed: The geometry engine stopped on an internal error: boom at kernel.rs:1:1' })
+    expect(seen.filter((x) => x.op === 'brep.extrude')).toHaveLength(1)
   })
 
   it('names each body by the process that made it and never sends it to another', async () => {
@@ -558,14 +567,27 @@ const serveBin = process.env['SLICERX_GEOM_SERVE_BIN']
 const serveArgs = JSON.parse(process.env['SLICERX_GEOM_SERVE_ARGS'] ?? '[]') as string[]
 const HELLO = Buffer.from('SXGEOM1\n')
 
-/** The engine's serve loop as a process, the way the desktop app runs it, with the time each call took. */
-function processEngine(): NativeEngine & { times: { op: string; ms: number }[]; pid(): number | undefined } {
+/**
+ * The engine's serve loop as a process, the way the desktop app runs it (geom_host.rs), with the time each call took: a
+ * call for one process goes to no other. `killAt` kills each of the next `times` processes it starts with `signal`,
+ * right after the `at`-th call to it is written, as a crash in the middle of that call.
+ */
+function processEngine(): NativeEngine & { times: { op: string; ms: number }[]; pid(): number | undefined; starts(): number; killAt(at: number, signal: NodeJS.Signals, times?: number): void; kill(signal: NodeJS.Signals): Promise<void> } {
   let child: ChildProcess | null = null
   let generation = 0
   let held: Buffer = Buffer.alloc(0)
   let hello = false
   let waiting: { resolve: (f: Uint8Array) => void; reject: (e: Error) => void } | null = null
   const times: { op: string; ms: number }[] = []
+  const started = new Set<number>()
+  let killer: { at: number; signal: NodeJS.Signals; times: number; seen: number; in: number } | null = null
+  // a signal only to a process this engine started, and still the engine (its command line checked)
+  const signal = (c: ChildProcess, sig: NodeJS.Signals) => {
+    const pid = c.pid!
+    const cmd = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0')
+    if (!started.has(pid) || cmd[0] !== serveBin) throw new Error(`pid ${pid} is not the engine this test started: ${cmd.join(' ')}`)
+    process.kill(pid, sig)
+  }
   const take = () => {
     if (!hello) {
       const at = held.indexOf(HELLO)
@@ -591,6 +613,8 @@ function processEngine(): NativeEngine & { times: { op: string; ms: number }[]; 
   }
   const start = () => {
     const c = spawn(serveBin!, serveArgs, { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, SX_GEOM_SERVE_CHILD: 'plain' } })
+    started.add(c.pid!)
+    c.stdin!.on('error', () => {})
     generation++
     held = Buffer.alloc(0)
     hello = false
@@ -608,7 +632,21 @@ function processEngine(): NativeEngine & { times: { op: string; ms: number }[]; 
   return {
     times,
     pid: () => child?.pid,
-    call(frame) {
+    starts: () => generation,
+    killAt(at, sig, n = 1) {
+      killer = { at, signal: sig, times: n, seen: 0, in: 0 }
+    },
+    async kill(sig) {
+      const c = child
+      if (!c) return
+      await new Promise((resolve) => {
+        c.once('exit', resolve)
+        signal(c, sig)
+      })
+    },
+    call(frame, forProcess = 0) {
+      // its bodies went with that process: it goes to no other
+      if (forProcess !== 0 && (child === null || forProcess !== generation)) return Promise.reject(new EngineEnded(null))
       child ??= start()
       const from = generation
       const op = decodeFrame(frame).answer['op'] as string
@@ -616,6 +654,13 @@ function processEngine(): NativeEngine & { times: { op: string; ms: number }[]; 
       return new Promise((resolve, reject) => {
         waiting = { resolve: (f) => (times.push({ op, ms: performance.now() - t }), resolve({ generation: from, frame: f })), reject }
         child!.stdin!.write(frame)
+        if (killer && killer.times > 0) {
+          if (killer.in !== from) killer = { ...killer, in: from, seen: 0 }
+          if (++killer.seen === killer.at) {
+            killer.times--
+            signal(child!, killer.signal)
+          }
+        }
       })
     },
     async end() {
@@ -776,7 +821,7 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
 
       // the process ends: its body number is never sent to the next one, and a replay there makes its own
       await engine.end()
-      await expect(p.call('brep.tessellate', { body: made.body })).rejects.toThrow(/interrupted/)
+      await expect(p.call('brep.tessellate', { body: made.body })).rejects.toThrow('The geometry engine stopped on an internal error: the engine process ended')
       const again = await p.call<{ body?: number }>('sketch.loft', ask)
       expect(typeof again.body).toBe('number')
       expect(again.body).not.toBe(made.body)
@@ -896,4 +941,85 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
     }
     console.log(rows.join('\n'))
   }, 600_000)
+})
+
+// --- the real engine's process killed under a replay and between replays, as a crash in the kernel ends it
+
+const slab = (z: number) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: [{ points: [[-10, -5], [10, -5], [10, 5], [-10, 5]] }] })
+const plane = (z: number) => ({ origin: [0, 0, z] as [number, number, number], normal: [0, 0, 1] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 1, 0] as [number, number, number] })
+const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+const cutAt = (id: string, z: number, x: number, d: number) => ({ id, part: 0, transform: I, params: { op: 'shape.extrude', frame: plane(z), shape: { type: 'circle', diameterMm: d }, placement: { center: [x, 0] }, spec: { distanceMm: 3, operation: 'cut' } } })
+const joinAt = (id: string, z: number, x: number) => ({ id, part: 0, transform: I, params: { op: 'shape.extrude', frame: plane(z), shape: { type: 'rectangle', widthMm: 4, heightMm: 3 }, placement: { center: [x, 0] }, spec: { distanceMm: 3, operation: 'join' } } })
+/** A box with two cuts and a join, every step on the kernel's bodies; `more` adds a cut. */
+const exactBlock = (more = false) => ({ history: { version: HISTORY_VERSION, base: [], exact: true, steps: [{ id: 'box', part: 0, transform: I, params: { op: 'shape.extrude', frame: plane(0), shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [0, 0] }, spec: { distanceMm: 3, operation: 'new' } } }, cutAt('cut-1', 3, 5, 3), joinAt('join-1', 3, -5), cutAt('cut-2', 3, 10, 2), ...(more ? [cutAt('cut-3', 3, -10, 2)] : [])] }, exact: true })
+/** As the app asks by default: a lofted body, which the replay makes exact, then a cut and a join on it. */
+const loftedBlock = (more = false) => ({ history: { version: HISTORY_VERSION, base: [], steps: [{ id: 'loft', part: 0, transform: I, params: { op: 'sketch.loft', profiles: [slab(0), slab(15)], operation: 'new', name: 'Block' } }, cutAt('cut-1', 15, 3, 3), joinAt('join-1', 15, -5), ...(more ? [cutAt('cut-2', 15, 7, 2)] : [])] } })
+
+type Made = { parts: { positions: ArrayLike<number>; indices: ArrayLike<number>; normals?: ArrayLike<number>; faces?: { keys?: number[] } }[]; status: { state: string; message?: string }[] }
+/** What a person gets of a replay: each step's state and each part's triangles, normals and face keys. */
+const outcome = (r: Made) => ({ status: r.status, parts: r.parts.map((p) => ({ positions: Array.from(p.positions), indices: Array.from(p.indices), normals: Array.from(p.normals ?? []), keys: p.faces?.keys ?? [] })) })
+
+/** The replay of `ask` on a fresh process, as it comes when nothing goes wrong. */
+async function untouched(ask: unknown): Promise<ReturnType<typeof outcome>> {
+  clearReplayCache()
+  const engine = processEngine()
+  try {
+    return outcome(await nativeProvider(engine).call<Made>('history.replay', ask))
+  } finally {
+    await engine.end()
+    clearReplayCache()
+  }
+}
+
+const CRASH = 'The geometry engine stopped on an internal error: the engine process ended'
+
+describe.skipIf(!serveBin || process.env['SX_NATIVE_KERNEL'] !== '1' || !existsSync('/proc/self/cmdline'))('native provider on the real engine, its process killed', () => {
+  for (const [name, design] of [['every step on kernel bodies', exactBlock], ['a lofted body', loftedBlock]] as const) {
+    for (const signal of ['SIGKILL', 'SIGABRT'] as const) {
+      it(`replays ${name} once more from its history when ${signal} ends the process under a step, and gives the same design`, async () => {
+        const want = await untouched(design())
+        const engine = processEngine()
+        const p = nativeProvider(engine)
+        try {
+          engine.killAt(3, signal)
+          const got = await p.call<Made>('history.replay', design())
+          expect(outcome(got)).toEqual(want)
+          expect(engine.starts()).toBe(2)
+        } finally {
+          await engine.end()
+        }
+      }, 120_000)
+    }
+  }
+
+  it("gives the crash's words when the process is killed under the same step again", async () => {
+    const engine = processEngine()
+    const p = nativeProvider(engine)
+    try {
+      engine.killAt(3, 'SIGKILL', 2)
+      const e = (await p.call('history.replay', exactBlock()).catch((x: unknown) => x)) as Error
+      expect(e.message).toBe(CRASH)
+      // run once more, no more: two processes
+      expect(engine.starts()).toBe(2)
+      // and the next replay, on a process left alone, goes through
+      expect((await p.call<Made>('history.replay', exactBlock())).status.every((s) => s.state === 'done')).toBe(true)
+    } finally {
+      await engine.end()
+    }
+  }, 120_000)
+
+  for (const [name, design] of [['every step on kernel bodies', exactBlock], ['a lofted body', loftedBlock]] as const) {
+    it(`makes the next step of ${name} when the process was killed between steps`, async () => {
+      const want = await untouched(design(true))
+      const engine = processEngine()
+      const p = nativeProvider(engine)
+      try {
+        expect((await p.call<Made>('history.replay', design())).status.every((s) => s.state === 'done')).toBe(true)
+        await engine.kill('SIGKILL')
+        expect(outcome(await p.call<Made>('history.replay', design(true)))).toEqual(want)
+      } finally {
+        await engine.end()
+      }
+    }, 120_000)
+  }
 })

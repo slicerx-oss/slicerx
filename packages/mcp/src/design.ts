@@ -22,6 +22,8 @@ export interface DesignDeps {
   policy: PathPolicy
   /** Whether the engine holds bodies between calls (a served engine, geom-served.ts), so replays keep them there. */
   keepsBodies?: () => Promise<boolean>
+  /** How many times the engine's process has stopped on its own (geom-served.ts, DesignEngine.stops). */
+  stops?: () => number
 }
 
 /**
@@ -153,12 +155,30 @@ export class Designs implements DesignHost {
 
   /** A history replayed as this server's replays run, without keeping it (DesignHost.replayed). */
   async replayed(history: History): Promise<Awaited<ReturnType<typeof replayHistory>>> {
-    return replayHistory(this.deps.engine, { history }, await this.held())
+    return this.replayOnce(history, false)
+  }
+
+  /**
+   * The history replayed, and once more from the start when the engine's process stopped on its own under it (a
+   * crash, or ended from outside): the steps' answers do not depend on the process, and its bodies went with it. A
+   * step the engine refused, or a panic it answered, is not run again.
+   */
+  private async replayOnce(history: History, exact: boolean): Promise<Awaited<ReturnType<typeof replayHistory>>> {
+    const go = async () => replayHistory(this.deps.engine, exact ? { history, exact: true } : { history }, await this.held())
+    const stops = this.deps.stops
+    const before = stops?.()
+    try {
+      const r = await go()
+      if (!stops || stops() === before || !r.status.some((s) => s.state === 'broken')) return r
+    } catch (e) {
+      if (!stops || stops() === before || (e as { name?: string }).name === 'AbortError') throw e
+    }
+    return go()
   }
 
   private async run(history: History): Promise<Awaited<ReturnType<typeof replayHistory>>> {
     if (history.exact) await this.exactOpen()
-    const r = await replayHistory(this.deps.engine, { history, exact: history.exact === true }, await this.held())
+    const r = await this.replayOnce(history, history.exact === true)
     if (history.exact) {
       const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')
       // a cause for a developer, when the step's sentence covers more than one (StepStatus.cause)

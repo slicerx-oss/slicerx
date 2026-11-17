@@ -1,0 +1,3 @@
+### Fixed
+
+- On a served sx-geom, when the engine process stops on its own (a crash, or killed from outside) while a design step runs or between steps, the design replays once more from its history on a new process, so the step goes through unless the crash comes again. A step the engine refuses, or one it answers with a panic, is not run again. A call whose process was killed from outside now fails with "sx-geom <op> ended before it answered (the engine process stopped). Retry the operation." and breaks only its step. Before, it said "exceeded its execution deadline (300000 ms)", which now comes only when the server ends a call at its own time limit. No tool's input or answer shape changes, so no tool version moves.

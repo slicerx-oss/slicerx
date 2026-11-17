@@ -5,8 +5,11 @@
 // SX_STANDIN_NO_SERVE=1 is an sx-geom with no serve mode: `serve` is then an operation like any other, read from
 // stdin, which the per-call run would wait on. `test.late` dies mid-answer and leaves the rest of its answer, and an
 // answer of its own, to come after it has ended (SX_STANDIN_LATE_MS later, 1.5 s by default).
+// SX_STANDIN_SLOW=<file>: while the file names an operation, that operation's next call removes the file, logs
+// `{"pid", "slow"}` at once and answers 5 s later, so a test can end the process while the call runs. SX_STANDIN_PANIC=<op>
+// answers each call of that operation with a panic, as the engine answers one it catches.
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { decodeFrame, encodeFrame, HELLO, takeFrame } from '@slicerx/cad-history/served'
 import { standInKernel } from './served-engine'
 
@@ -43,13 +46,27 @@ if (served && once && starts >= 2) {
         })
         return
       }
+      const log = process.env['SX_STANDIN_LOG']
+      if (call['op'] === process.env['SX_STANDIN_PANIC']) {
+        if (log) appendFileSync(log, `${JSON.stringify({ pid: process.pid, op: call['op'], panic: true })}\n`)
+        process.stdout.write(encodeFrame(JSON.stringify({ id: call['id'], panic: 'boom at kernel.rs:1:1' }), []))
+        continue
+      }
+      const slow = process.env['SX_STANDIN_SLOW']
+      const late = slow !== undefined && existsSync(slow) && readFileSync(slow, 'utf8').trim() === call['op']
+      if (late) {
+        rmSync(slow, { force: true })
+        if (log) appendFileSync(log, `${JSON.stringify({ pid: process.pid, slow: call['op'] })}\n`)
+      }
       let reply: Record<string, unknown>
       try {
         reply = { id: call['id'], result: kernel.call(call['op'] as string, (call['request'] ?? {}) as Record<string, unknown>) }
       } catch (e) {
         reply = { id: call['id'], error: (e as Error).message }
       }
-      process.stdout.write(encodeFrame(JSON.stringify(reply), []))
+      const frame = encodeFrame(JSON.stringify(reply), [])
+      if (late) setTimeout(() => process.stdout.write(frame), 5000)
+      else process.stdout.write(frame)
     }
   })
 } else {

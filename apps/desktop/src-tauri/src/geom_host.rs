@@ -7,7 +7,8 @@
 //! no app data. One call runs at a time. The page ends the process when a call runs past its limit or is canceled while
 //! it runs (`geom_end`), and the next call starts another, as the browser ends and starts its worker; a crash in the
 //! engine ends only that process. It exits when the app's end of its pipe closes, when the app goes, and on the app's
-//! exit.
+//! exit. A call that names the bodies of one process says which (`PROCESS_HEADER`), and it never goes to another: a
+//! body that process held is not in the next one.
 
 use std::io::{BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -21,6 +22,8 @@ use tauri::ipc::{InvokeBody, Request, Response};
 pub const ENGINE_ARG: &str = "--sx-geom-engine";
 /// The app's process id, for the engine process to watch.
 const PARENT_ENV: &str = "SX_GEOM_ENGINE_PARENT";
+/// The header a call for one process carries: that process's number, or 0 for any (geom-native.ts, PROCESS_HEADER).
+const PROCESS_HEADER: &str = "sx-geom-process";
 /// What the engine writes before its first answer (`sx_geom::serve::HELLO`).
 const HELLO: &[u8] = sx_geom::serve::HELLO;
 
@@ -95,6 +98,8 @@ pub struct Engine {
     /// The running process, to end it by its handle while a call holds the pipes.
     child: Mutex<Option<(u32, Child)>>,
     generation: AtomicU32,
+    /// The last process that ended and its exit code, for a call meant for it that comes after.
+    ended: Mutex<Option<(u32, Option<i32>)>>,
 }
 
 impl Engine {
@@ -104,6 +109,7 @@ impl Engine {
             pipes: Mutex::new(None),
             child: Mutex::new(None),
             generation: AtomicU32::new(0),
+            ended: Mutex::new(None),
         }
     }
 
@@ -155,10 +161,18 @@ impl Engine {
                 None
             }
         };
-        taken.and_then(|(_, mut child)| {
-            let _ = child.kill();
-            child.wait().ok().and_then(|s| s.code())
-        })
+        let (_, mut child) = taken?;
+        let _ = child.kill();
+        let code = child.wait().ok().and_then(|s| s.code());
+        *lock(&self.ended) = Some((generation, code));
+        code
+    }
+
+    /// What a call meant for process `generation`, which is not running, answers: that it ended, with its code when known.
+    fn gone(&self, generation: u32) -> String {
+        let last = *lock(&self.ended);
+        let code = last.filter(|(g, _)| *g == generation).and_then(|(_, c)| c);
+        serde_json::json!({ "ended": true, "code": code }).to_string()
     }
 
     /// Whether the process `generation` has exited.
@@ -171,8 +185,9 @@ impl Engine {
     }
 
     /// One call: its frame in, and out the number of the process that answered (u32, little-endian) and the answer's
-    /// frame. When the process ends first, the error is `{"ended": true, "code": ...}` as JSON.
-    pub fn call(&self, frame: &[u8]) -> Result<Vec<u8>, String> {
+    /// frame. When the process ends first, the error is `{"ended": true, "code": ...}` as JSON. `for_process`, when not
+    /// 0, is the one process the call may go to; when that one is not running, the call fails the same way unsent.
+    pub fn call(&self, for_process: u32, frame: &[u8]) -> Result<Vec<u8>, String> {
         let mut pipes = lock(&self.pipes);
         // a process that went while no call ran (ended from outside, or crashed between calls) never saw this call:
         // it goes to a new one, as a call queued behind an ended worker goes to the next worker
@@ -181,6 +196,10 @@ impl Engine {
         {
             *pipes = None;
             self.reap(g);
+        }
+        // its bodies went with that process: the call goes nowhere
+        if for_process != 0 && pipes.as_ref().map(|p| p.generation) != Some(for_process) {
+            return Err(self.gone(for_process));
         }
         if pipes.is_none() {
             *pipes = Some(self.start()?);
@@ -272,8 +291,15 @@ pub async fn geom_call(request: Request<'_>, engine: State<'_, Arc<Engine>>) -> 
         return Err("geom_call expects raw bytes".into());
     };
     let frame = bytes.clone();
+    // a header that is missing or not a number asks for no one process, as before it was sent
+    let for_process = request
+        .headers()
+        .get(PROCESS_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0);
     let engine = Arc::clone(&engine);
-    let answer = tauri::async_runtime::spawn_blocking(move || engine.call(&frame))
+    let answer = tauri::async_runtime::spawn_blocking(move || engine.call(for_process, &frame))
         .await
         .map_err(|e| e.to_string())??;
     Ok(Response::new(answer))
@@ -366,8 +392,8 @@ mod tests {
     fn answers_calls_in_one_process() {
         let engine = Engine::new(|| child("plain"));
         let req: Value = serde_json::from_str(TRIANGLE).unwrap();
-        let (g1, a) = answer(&engine.call(&frame(1, "info", &req)).unwrap());
-        let (g2, b) = answer(&engine.call(&frame(2, "info", &req)).unwrap());
+        let (g1, a) = answer(&engine.call(0, &frame(1, "info", &req)).unwrap());
+        let (g2, b) = answer(&engine.call(0, &frame(2, "info", &req)).unwrap());
         assert_eq!((g1, g2), (1, 1));
         assert!(a.get("result").is_some() && b.get("result").is_some(), "{a} {b}");
         engine.end();
@@ -376,11 +402,11 @@ mod tests {
     #[test]
     fn a_crash_fails_the_call_and_the_next_call_starts_another_process() {
         let engine = Engine::new(|| child("abort"));
-        let err = engine.call(&frame(1, "abort", &json!({}))).unwrap_err();
+        let err = engine.call(0, &frame(1, "abort", &json!({}))).unwrap_err();
         let ended: Value = serde_json::from_str(&err).unwrap();
         assert_eq!(ended["ended"], true, "{err}");
         let req: Value = serde_json::from_str(TRIANGLE).unwrap();
-        let (generation, a) = answer(&engine.call(&frame(2, "info", &req)).unwrap());
+        let (generation, a) = answer(&engine.call(0, &frame(2, "info", &req)).unwrap());
         assert_eq!(generation, 2);
         assert!(a.get("result").is_some(), "{a}");
         engine.end();
@@ -390,15 +416,15 @@ mod tests {
     fn ending_a_running_call_frees_the_engine_at_once() {
         let engine = Arc::new(Engine::new(|| child("plain")));
         let req: Value = serde_json::from_str(TRIANGLE).unwrap();
-        engine.call(&frame(1, "info", &req)).unwrap();
+        engine.call(0, &frame(1, "info", &req)).unwrap();
         let running = Arc::clone(&engine);
-        let stuck = std::thread::spawn(move || running.call(&frame(2, "sleep", &json!({}))));
+        let stuck = std::thread::spawn(move || running.call(0, &frame(2, "sleep", &json!({}))));
         std::thread::sleep(Duration::from_millis(300));
         let t = Instant::now();
         engine.end();
         assert!(stuck.join().unwrap().is_err());
         assert!(t.elapsed() < Duration::from_secs(10));
-        let (generation, _) = answer(&engine.call(&frame(3, "info", &req)).unwrap());
+        let (generation, _) = answer(&engine.call(0, &frame(3, "info", &req)).unwrap());
         assert_eq!(generation, 2);
         engine.end();
     }
@@ -407,15 +433,57 @@ mod tests {
     fn a_process_that_went_between_calls_is_replaced_before_the_next_call() {
         let engine = Engine::new(|| child("plain"));
         let req: Value = serde_json::from_str(TRIANGLE).unwrap();
-        engine.call(&frame(1, "info", &req)).unwrap();
+        engine.call(0, &frame(1, "info", &req)).unwrap();
         // ended from outside while no call runs
         if let Some((_, c)) = lock(&engine.child).as_mut() {
             c.kill().unwrap();
             c.wait().unwrap();
         }
-        let (generation, a) = answer(&engine.call(&frame(2, "info", &req)).unwrap());
+        let (generation, a) = answer(&engine.call(0, &frame(2, "info", &req)).unwrap());
         assert_eq!(generation, 2);
         assert!(a.get("result").is_some(), "{a}");
+        engine.end();
+    }
+
+    #[test]
+    fn a_call_for_a_process_that_went_never_reaches_the_next_one() {
+        let engine = Engine::new(|| child("plain"));
+        let req: Value = serde_json::from_str(TRIANGLE).unwrap();
+        let (first, _) = answer(&engine.call(0, &frame(1, "info", &req)).unwrap());
+        assert_eq!(first, 1);
+        // a call for the running process goes to it
+        let (same, _) = answer(&engine.call(first, &frame(2, "info", &req)).unwrap());
+        assert_eq!(same, 1);
+        // the process is killed while no call runs
+        if let Some((_, c)) = lock(&engine.child).as_mut() {
+            c.kill().unwrap();
+            c.wait().unwrap();
+        }
+        // a call for it fails as ended, and starts no process
+        let err = engine.call(first, &frame(3, "info", &req)).unwrap_err();
+        let ended: Value = serde_json::from_str(&err).unwrap();
+        assert_eq!(ended["ended"], true, "{err}");
+        assert!(lock(&engine.child).is_none());
+        // a call for no one process starts the next, and one for the old process still never reaches it
+        let (next, a) = answer(&engine.call(0, &frame(4, "info", &req)).unwrap());
+        assert_eq!(next, 2);
+        assert!(a.get("result").is_some(), "{a}");
+        assert!(engine.call(first, &frame(5, "info", &req)).is_err());
+        let (still, _) = answer(&engine.call(next, &frame(6, "info", &req)).unwrap());
+        assert_eq!(still, 2);
+        engine.end();
+    }
+
+    #[test]
+    fn a_call_for_a_process_that_crashed_under_another_call_never_reaches_the_next_one() {
+        let engine = Engine::new(|| child("abort"));
+        let req: Value = serde_json::from_str(TRIANGLE).unwrap();
+        let (first, _) = answer(&engine.call(0, &frame(1, "info", &req)).unwrap());
+        assert!(engine.call(0, &frame(2, "abort", &json!({}))).is_err());
+        let err = engine.call(first, &frame(3, "info", &req)).unwrap_err();
+        let ended: Value = serde_json::from_str(&err).unwrap();
+        assert_eq!(ended["ended"], true, "{err}");
+        assert!(lock(&engine.child).is_none());
         engine.end();
     }
 

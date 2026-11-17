@@ -10,7 +10,12 @@
 // still running past CANCEL_GRACE_MS after its cancel, or past its time limit, ends the engine process; the next call
 // starts another. A crash in the engine ends only its process and fails the call it was running. The process also
 // ends after IDLE_MS with nothing to do, as the worker does, and with it every kernel body it held: each body number
-// the page sees names the process that made it, so a number from an ended process is never sent to the next one.
+// the page sees names the process that made it, so a number from an ended process is never sent to the next one. A
+// call that names a body says which process it is for, and the host never hands it to another (geom_host.rs).
+//
+// A replay that a crash ends (the process went while one of its calls ran, or before one that names a body could go)
+// runs once more from its history in a new process, as a step's answer does not depend on the process that made it.
+// When that one ends in a crash too, it gives the crash's words. A panic is an answer, not a crash, and never runs again.
 import { clearReplayCache, releaseReplayCache, replayHistory, withTooBig, type ReplayRequest } from '@slicerx/cad-history'
 import { decodeFrame, encodeFrame, namesBody, ownBodies, plainArrays, rawData, rawMeshes, readBuffers, tagBodies } from '@slicerx/cad-history/served'
 import { geomCallLimitMs, geomStuckMessage } from '@slicerx/contracts/geom-limits'
@@ -24,8 +29,10 @@ export interface NativeEngine {
    * Sends one call's frame and answers with the answer's frame and the number of the process that ran it (each new
    * process gets the next number). Rejects with EngineEnded when the process ended before it answered. The answer's
    * frame is the provider's from then on: what it hands to the page may be views of it, so it is never written again.
+   * `forProcess`, when not 0, is the process the call is for (it names that process's bodies): when that one is not the
+   * running process, the call goes to no other and rejects with EngineEnded.
    */
-  call(frame: Uint8Array): Promise<{ generation: number; frame: Uint8Array }>
+  call(frame: Uint8Array, forProcess?: number): Promise<{ generation: number; frame: Uint8Array }>
   /** Ends the engine process now, if one runs; the next call starts another. */
   end(): Promise<void>
 }
@@ -55,13 +62,19 @@ export interface NativeOptions {
   limit?: (op: string) => number
 }
 
+/** One run of a replay: its calls name it, so a canceled replay can end its running call, and a crash under it is kept. */
+interface Run {
+  /** How many crashes the provider had seen when this run began. */
+  since: number
+}
+
 interface Job {
   op: string
   request: unknown
   /** The replay step this call is part of: its time limit and the name its refusal gives. */
   step?: ReplayStep
-  /** The replay this call is part of, so a canceled replay can end its running call. */
-  owner?: object
+  /** The replay run this call is part of. */
+  owner?: Run
   resolve: (v: unknown) => void
   reject: (e: Error) => void
   settled: boolean
@@ -79,6 +92,9 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
   let generation = 0
   let idle: ReturnType<typeof setTimeout> | null = null
   let replays = 0
+  // how many times the process went under a call nobody had given up on, and the words of the last time
+  let crashes = 0
+  let crash: Error | null = null
 
   const settle = (job: Job, error: Error | null, value?: unknown) => {
     if (job.settled) return
@@ -108,11 +124,27 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
   const endRunning = (job: Job) => {
     if (running === job) void engine.end()
   }
+  /** The words for a call whose process went; a call nobody had given up on (canceled, or past its limit) saw a crash. */
+  const ended = (job: Job, e: EngineEnded): Error => {
+    const err = new Error(trapMessage(e.message, 0))
+    if (!job.settled) {
+      crashes++
+      crash = err
+    }
+    return err
+  }
 
-  /** The request as the engine reads it, with its buffers; a body number of an ended process is answered here. */
-  const encode = (job: Job, id: number): Uint8Array => {
+  /** A run of a replay that a crash ended part of. */
+  const crashedUnder = (run: Run | undefined) => run !== undefined && crashes !== run.since
+
+  /**
+   * The request as the engine reads it, with its buffers, and the process it is for when it names a body (else 0); a
+   * body number of an ended process is answered here.
+   */
+  const encode = (job: Job, id: number): { frame: Uint8Array; forProcess: number } => {
     const buffers: Uint8Array[] = []
     let request: unknown
+    let forProcess = 0
     if (job.op.startsWith('brep.')) {
       // the kernel takes the request as it is, as the worker's kernel module does (brep.ts)
       const r = job.request !== null && typeof job.request === 'object' ? { ...(job.request as Record<string, unknown>) } : job.request
@@ -120,8 +152,11 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
         const fields = r as Record<string, unknown>
         if (!ownBodies(fields, generation)) {
           if (job.op === 'brep.free') throw new Answered({ freed: false })
+          // its body went with a process that crashed under this replay: the crash is why
+          if (crash && crashedUnder(job.owner)) throw crash
           throw new Error(INTERRUPTED)
         }
+        if (namesBody(job.request)) forProcess = generation
         // a solid's triangles come back as buffers: normals and face ids too for a body the engine holds itself; a
         // body of the kernel's own table, or one sent as text, answers as before
         if (job.op === 'brep.tessellate' && !('meshOutput' in fields)) fields['meshOutput'] = 'raw'
@@ -130,7 +165,7 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
     } else {
       request = askFaces(plainArrays(rawMeshes(rawData(job.op, job.request, buffers), buffers)))
     }
-    return encodeFrame(JSON.stringify({ id, op: job.op, request: request ?? null }), buffers)
+    return { frame: encodeFrame(JSON.stringify({ id, op: job.op, request: request ?? null }), buffers), forProcess }
   }
 
   /** The answer as the worker gives it: buffers read back, body numbers named by their process, the kernel's own words. */
@@ -156,8 +191,9 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
     clearIdle()
     running = job
     let frame: Uint8Array
+    let forProcess: number
     try {
-      frame = encode(job, ++seq)
+      ;({ frame, forProcess } = encode(job, ++seq))
     } catch (e) {
       running = null
       if (e instanceof Answered) settle(job, null, e.result)
@@ -170,15 +206,16 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
       settle(job, new Error(geomStuckMessage(job.step?.op ?? job.op, ms, job.step?.name)))
       endRunning(job)
     }, ms)
-    engine.call(frame).then(
+    engine.call(frame, forProcess).then(
       ({ generation: from, frame: answer }) => {
         if (from !== generation) {
           // a new process ran it: what the page kept of the one before is gone
           if (generation !== 0) gone()
           generation = from
-          // a body of the process the request was made for could not be in this one
+          // a body of the process the request was made for could not be in this one: that process went, as in a
+          // crash (a host that does not keep a call to its own process)
           if (sentTo !== 0 && job.op.startsWith('brep.') && namesBody(job.request)) {
-            settle(job, new Error(INTERRUPTED))
+            settle(job, ended(job, new EngineEnded(null)))
             return
           }
         }
@@ -191,7 +228,7 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
       (e: unknown) => {
         if (e instanceof EngineEnded) {
           gone()
-          settle(job, new Error(trapMessage(e.message, 0)))
+          settle(job, ended(job, e))
         } else settle(job, e instanceof Error ? e : new Error(String(e)))
       },
     ).finally(() => {
@@ -201,7 +238,7 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
     })
   }
 
-  const engineCall = (op: string, request: unknown, signal?: AbortSignal, step?: ReplayStep, owner?: object): Promise<unknown> => {
+  const engineCall = (op: string, request: unknown, signal?: AbortSignal, step?: ReplayStep, owner?: Run): Promise<unknown> => {
     if (signal?.aborted) return Promise.reject(abortError())
     return new Promise((resolve, reject) => {
       const job: Job = { op, request, resolve, reject, settled: false, ...(step ? { step } : {}), ...(owner ? { owner } : {}) }
@@ -230,20 +267,45 @@ export function nativeProvider(engine: NativeEngine, options: NativeOptions = {}
 
   const replay = (request: unknown, signal?: AbortSignal): Promise<unknown> => {
     if (signal?.aborted) return Promise.reject(abortError())
-    const owner = {}
+    let owner: Run = { since: crashes }
     let step: ReplayStep | undefined
     replays++
     clearIdle()
     // a new lofted body is asked exact here without the developer flag; the worker's replays never ask
-    const run = replayHistory((o, r) => engineCall(o, r, undefined, step, owner), { ...(request as ReplayRequest), exactLofts: true }, {
-      keepsBodies: true,
-      yieldStep: async (s) => {
-        // between steps other calls get the engine, as in the worker (worker-loop.ts)
-        await new Promise((r) => setTimeout(r, 0))
-        if (signal?.aborted) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })
-        step = replayStepOf(s)
-      },
-    }).finally(() => {
+    const once = (run: Run) =>
+      replayHistory((o, r) => engineCall(o, r, undefined, step, run), { ...(request as ReplayRequest), exactLofts: true }, {
+        keepsBodies: true,
+        yieldStep: async (s) => {
+          // between steps other calls get the engine, as in the worker (worker-loop.ts)
+          await new Promise((r) => setTimeout(r, 0))
+          if (signal?.aborted) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })
+          step = replayStepOf(s)
+        },
+      })
+    const isAbort = (e: unknown) => (e as { name?: string } | null)?.name === 'AbortError'
+    const broken = (v: unknown) => ((v as { status?: { state: string }[] } | null)?.status ?? []).some((s) => s.state === 'broken')
+    const run = (async () => {
+      let first: { value: unknown } | { error: unknown }
+      try {
+        first = { value: await once(owner) }
+      } catch (e) {
+        first = { error: e }
+      }
+      // a crash ended part of it: once more from the history, in a new process (the cache went with the old one)
+      const again = crashedUnder(owner) && !('error' in first && isAbort(first.error)) && ('error' in first || broken(first.value))
+      if (!again) {
+        if ('error' in first) throw first.error
+        return first.value
+      }
+      if (signal?.aborted) throw abortError()
+      owner = { since: crashes }
+      try {
+        return await once(owner)
+      } catch (e) {
+        // a crash again: its words, not what the steps after it ran into
+        throw crashedUnder(owner) && crash && !isAbort(e) ? crash : e
+      }
+    })().finally(() => {
       replays--
       armIdle()
     })
