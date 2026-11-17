@@ -438,7 +438,8 @@ fn opened(held: &Held, mesh: &Mesh, open: &[Opening]) -> Result<(Vec<usize>, Vec
 /// (`keySalt`), so it reads as made by it. The reply names the new body (`body`), each open face's key as found
 /// (`openKeys`, 0 for one without), and with `withKeys` or `save` the new body's keys or text. With a face open, the
 /// kernel is asked only for a body of planes, cylinders and cones: on other curved faces it can leave the wall open,
-/// or fail outright, so such a body is refused in words first and a replay shells it on the mesh.
+/// or fail outright, so such a body is refused in words first and a replay shells it on the mesh. A closed shell is read
+/// back before it is held, at points inside every face, as the kernel passes walls that are not the one asked.
 #[cfg(feature = "cad")]
 fn shelled(handle: u32, held: &Held, req: &Value) -> Result<Value> {
     let wall = req
@@ -460,17 +461,78 @@ fn shelled(handle: u32, held: &Held, req: &Value) -> Result<Value> {
             ),
         ));
     }
-    let body = held.body.shell(wall, &picked).map_err(|e| {
+    let refused = |why: &dyn std::fmt::Display| {
         Error::geometry(
             "shell",
-            format!("a {wall} mm wall could not be made exact on this body ({e})"),
+            format!("a {wall} mm wall could not be made exact on this body ({why})"),
         )
-    })?;
+    };
+    let body = held.body.shell(wall, &picked).map_err(|e| refused(&e))?;
+    // the kernel's own checks pass closed walls that are not the wall asked
+    if picked.is_empty() {
+        wall_holds(&held.body, &body, wall).map_err(|why| refused(&why))?;
+    }
     let keys = carried_keys(&held.body, &body, wall / 2.0)?;
     let number = hold(body, keys.clone())?;
     let mut out = json!({ "body": number, "openKeys": open_keys });
     made_extras(&mut out, number, &keys, req)?;
     Ok(out)
+}
+
+/// The farthest a closed shell's inner wall may be from the wall asked, and its outer side from the body, in mm.
+#[cfg(feature = "cad")]
+const WALL_MM: f64 = 0.01;
+/// The chords a shell's wall is read at, finest first: the points of its mesh are on its surface at any chord, so a
+/// coarser one serves where the kernel cannot reach a fine one.
+#[cfg(feature = "cad")]
+const WALL_CHORDS_MM: [f64; 4] = [0.05, 0.5, 5.0, 50.0];
+/// The most points of one face the wall is read at.
+#[cfg(feature = "cad")]
+const WALL_POINTS: usize = 400;
+/// A closed shell of `from` read back at points inside each face of `made`: a face on `from` stays on it, and every
+/// other face is `wall` from it, each within [`WALL_MM`]. Why not, in words, otherwise.
+#[cfg(feature = "cad")]
+fn wall_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), String> {
+    let unmeasured = || "its inner wall could not be measured".to_owned();
+    let mesh = WALL_CHORDS_MM
+        .iter()
+        .find_map(|&chord_mm| {
+            made.tessellate(&Tessellation {
+                chord_mm,
+                max_edge_mm: 1.0,
+                ..Tessellation::default()
+            })
+            .ok()
+        })
+        .ok_or_else(unmeasured)?;
+    let on_edge: std::collections::HashSet<u32> =
+        mesh.edges.iter().flat_map(|e| e.points.iter().copied()).collect();
+    let mut faces: Vec<Vec<V3>> = vec![Vec::new(); mesh.surfaces.len()];
+    let mut seen = std::collections::HashSet::new();
+    for (t, &f) in mesh.triangles.iter().zip(&mesh.faces) {
+        for &v in t {
+            if !on_edge.contains(&v)
+                && seen.insert(v)
+                && let (Some(points), Some(&p)) = (faces.get_mut(f as usize), mesh.positions.get(v as usize))
+            {
+                points.push(p);
+            }
+        }
+    }
+    let mut worst = 0.0f64;
+    for points in &faces {
+        let Some(&first) = points.first() else { continue };
+        let at = |p: V3| from.distance_to(p).map_err(|_| unmeasured());
+        // a face on the body's surface stays on it, and one made inside it is the wall from it
+        let to = if at(first)? < wall / 2.0 { 0.0 } else { wall };
+        for &p in points.iter().step_by(points.len().div_ceil(WALL_POINTS).max(1)) {
+            worst = worst.max((at(p)? - to).abs());
+        }
+    }
+    if worst > WALL_MM {
+        return Err(format!("its inner wall is {worst:.3} mm off the wall asked"));
+    }
+    Ok(())
 }
 
 /// Whether the kernel's shell is asked for a body with a face open when it has faces of this kind.

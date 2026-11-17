@@ -4,8 +4,8 @@
 // faces it makes get keys of the step, each of their own; the open faces are found by key or by place, and refused in
 // the mesh shell's words; a curved lofted body shelled closed keeps a wall within 0.01 mm of the one asked, and one open
 // at its end is refused before the kernel is asked, since the kernel leaves such a wall open or fails outright, so a
-// replay runs it on the mesh. Empty without the brep feature, so a workspace test run that names every test target
-// passes over it.
+// replay runs it on the mesh. A closed shell whose wall strays from the one asked, or cannot be read, is refused too.
+// Empty without the brep feature, so a workspace test run that names every test target passes over it.
 #![cfg(feature = "brep")]
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -257,6 +257,84 @@ fn a_lofted_body_open_at_an_end_is_refused_before_the_kernel_is_asked() {
             open,
             "shell: a 2 mm wall could not be made exact on this body (with a face open, only a body of flat faces, \
              cylinders and cones is shelled exact)"
+        );
+        assert_eq!(table::count(), held);
+    }
+    table::free(body);
+}
+
+fn offset_circle(d: f64, c: [f64; 2]) -> Value {
+    json!({ "type": "circle", "center": c, "diameterMm": d })
+}
+
+fn offset_ellipse(w: f64, h: f64, c: [f64; 2]) -> Value {
+    json!({ "type": "ellipse", "center": c, "widthMm": w, "heightMm": h, "angleDeg": 0 })
+}
+
+fn lofted(profiles: Value, smooth: bool) -> u32 {
+    let made = op(
+        "sketch.loft",
+        &json!({ "profiles": profiles, "smooth": smooth, "operation": "new", "exact": true, "keySalt": 7 }),
+    );
+    number(&made["body"])
+}
+
+/// A closed shell whose inner wall strays from the wall asked, though its triangles stay on its own surface, is
+/// refused by the wall read back and not held, so a replay shells it on the mesh.
+#[test]
+fn a_closed_shell_whose_wall_strays_from_the_one_asked_is_refused() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // a smooth loft through five loops set off to one side as it rises
+    let body = lofted(
+        json!([
+            level(0.0, &offset_circle(20.0, [0.0, 0.0])),
+            level(6.0, &offset_ellipse(26.0, 18.0, [0.0, 0.0])),
+            level(12.0, &offset_circle(18.0, [1.0, 0.0])),
+            level(18.0, &offset_ellipse(20.0, 14.0, [2.0, 1.0])),
+            level(24.0, &offset_circle(12.0, [3.0, 0.0]))
+        ]),
+        true,
+    );
+    let held = table::count();
+    let why = refusal("brep.shell", &json!({ "body": body, "wallMm": 2, "keySalt": 8 }));
+    assert!(
+        why.starts_with("shell: a 2 mm wall could not be made exact on this body (its inner wall is ")
+            && why.ends_with(" mm off the wall asked)"),
+        "{why}"
+    );
+    assert_eq!(table::count(), held);
+    table::free(body);
+}
+
+/// A ruled loft that narrows and widens again: the kernel makes its closed shell without a word, and the wall read
+/// back refuses it, whether the wall strays or cannot be read at all.
+#[test]
+fn a_closed_shell_of_a_waisted_ruled_loft_is_refused_by_its_wall() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let body = lofted(
+        json!([
+            level(0.0, &circle(20.0)),
+            level(8.0, &circle(14.0)),
+            level(16.0, &circle(20.0)),
+            level(24.0, &circle(12.0))
+        ]),
+        false,
+    );
+    let held = table::count();
+    for wall in [1.0, 2.0, 3.0] {
+        let why = refusal(
+            "brep.shell",
+            &json!({ "body": body, "wallMm": wall, "keySalt": 8 }),
+        );
+        assert!(
+            why.starts_with(&format!(
+                "shell: a {wall} mm wall could not be made exact on this body (its inner wall "
+            )),
+            "{why}"
         );
         assert_eq!(table::count(), held);
     }
