@@ -437,10 +437,12 @@ fn opened(held: &Held, mesh: &Mesh, open: &[Opening]) -> Result<(Vec<usize>, Vec
 /// the result on the body's own surface keeps the key it had; every face the wall made gets a key of the step
 /// (`keySalt`), so it reads as made by it. The reply names the new body (`body`), each open face's key as found
 /// (`openKeys`, 0 for one without), and with `withKeys` or `save` the new body's keys or text. With a face open, the
-/// kernel is asked only for a body of planes, cylinders and cones: on other curved faces it can leave the wall open,
-/// or fail outright, so such a body is refused in words first and a replay shells it on the mesh. A closed shell is read
-/// back before it is held: its wall at points inside every face, and the volume its mesh holds against the body's, as
-/// the kernel passes walls that are not the one asked.
+/// kernel is asked only for a body of planes, flat sides, cylinders and cones: on other curved faces it can leave the
+/// wall open, or fail outright, so such a body is refused in words first and a replay shells it on the mesh. Where the
+/// kernel's shell with the face open does not hold, the body is extended past each open face, shelled closed and cut
+/// back ([`extended`]). Every shell is read back before it is held: its wall at points inside every face, measured to
+/// the faces it keeps, and the volume its mesh holds against the body's, as the kernel passes walls that are not the
+/// one asked.
 #[cfg(feature = "cad")]
 fn shelled(handle: u32, held: &Held, req: &Value) -> Result<Value> {
     let wall = req
@@ -453,7 +455,7 @@ fn shelled(handle: u32, held: &Held, req: &Value) -> Result<Value> {
     let (faces, open_keys) = opened(held, &shown.mesh, &open)?;
     let all = held.body.faces().map_err(|e| kernel(&e))?;
     let picked: Vec<Face<'_>> = faces.iter().filter_map(|&i| all.get(i).copied()).collect();
-    if !picked.is_empty() && !all.iter().all(|f| shells_open(&f.surface())) {
+    if !picked.is_empty() && !all.iter().all(|&f| shells_open(f)) {
         return Err(Error::geometry(
             "shell",
             format!(
@@ -462,24 +464,54 @@ fn shelled(handle: u32, held: &Held, req: &Value) -> Result<Value> {
             ),
         ));
     }
-    let body = held.body.shell(wall, &picked).map_err(|e| {
-        Error::geometry(
-            "shell",
-            format!("a {wall} mm wall could not be made exact on this body ({e})"),
-        )
-    })?;
-    // the kernel's own checks pass closed walls that are not the wall asked; the refusal is the step's own words and
-    // what was read goes only to the log
-    if picked.is_empty()
-        && let Err(why) = closed_holds(&held.body, &body, wall)
-    {
-        eprintln!("shell: a {wall} mm closed wall read back off: {why}");
-        return Err(Error::geometry(
-            "shell",
-            format!("a {wall} mm wall could not be made exact on this body"),
-        ));
-    }
-    let keys = carried_keys(&held.body, &body, wall / 2.0)?;
+    let kept: Vec<Face<'_>> = all.iter().copied().filter(|f| !picked.contains(f)).collect();
+    let body = if picked.is_empty() {
+        let body = held.body.shell(wall, &picked).map_err(|e| {
+            Error::geometry(
+                "shell",
+                format!("a {wall} mm wall could not be made exact on this body ({e})"),
+            )
+        })?;
+        // the kernel's own checks pass closed walls that are not the wall asked; the refusal is the step's own words
+        // and what was read goes only to the log
+        if let Err(why) = closed_holds(&held.body, &kept, &body, wall) {
+            eprintln!("shell: a {wall} mm closed wall read back off: {why}");
+            return Err(Error::geometry(
+                "shell",
+                format!("a {wall} mm wall could not be made exact on this body"),
+            ));
+        }
+        body
+    } else {
+        // the kernel's shell with the faces left open, read back as a closed one is; where the side leans in to an
+        // opening the kernel leaves the wall open, so the body is extended past each open face, shelled closed and cut
+        // back
+        // the kernel's refusal keeps its words in the step's; a wall read back off is the step's own words only
+        let own = match held.body.shell(wall, &picked) {
+            Ok(body) => match closed_holds(&held.body, &kept, &body, wall) {
+                Ok(()) => Ok(body),
+                Err(why) => Err((why, None)),
+            },
+            Err(e) => Err((e.to_string(), Some(e.to_string()))),
+        };
+        match own {
+            Ok(body) => body,
+            Err((why, words)) => extended(handle, &shown.mesh, &faces, wall)
+                .map_err(|e| e.to_string())
+                .and_then(|body| closed_holds(&held.body, &kept, &body, wall).map(|()| body))
+                .map_err(|past| {
+                    eprintln!("shell: a {wall} mm wall with a face open: {why}; extended past it: {past}");
+                    Error::geometry(
+                        "shell",
+                        match words {
+                            Some(e) => format!("a {wall} mm wall could not be made exact on this body ({e})"),
+                            None => format!("a {wall} mm wall could not be made exact on this body"),
+                        },
+                    )
+                })?,
+        }
+    };
+    let keys = carried_keys(&held.body, &held.keys, &body, wall / 2.0)?;
     let number = hold(body, keys.clone())?;
     let mut out = json!({ "body": number, "openKeys": open_keys });
     made_extras(&mut out, number, &keys, req)?;
@@ -503,20 +535,24 @@ const WALL_POINTS: usize = 400;
 #[cfg(feature = "cad")]
 const MESH_VOLUME_SHARE: f64 = 0.005;
 
-/// Why a closed shell of `from` is not the one asked: its wall ([`wall_holds`]), then its mesh ([`mesh_holds`]).
+/// Why a shell of `from` is not the one asked: its wall ([`wall_holds`]), then its mesh ([`mesh_holds`]). `kept` are
+/// the faces of `from` the shell leaves closed: every face of a closed shell.
 #[cfg(feature = "cad")]
-fn closed_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), String> {
-    wall_holds(from, made, wall)?;
+fn closed_holds(from: &Body, kept: &[Face<'_>], made: &Body, wall: f64) -> std::result::Result<(), String> {
+    wall_holds(from, kept, made, wall)?;
     mesh_holds(made)
 }
 
-/// A closed shell of `from` read back at points inside each face of `made`: a face on `from` stays on it, and every
-/// other face is `wall` from it, each within [`WALL_MM`]. Why not, in words, otherwise. The points are its mesh's
-/// corners off the edges and points inside each triangle at most [`WALL_STEP_MM`] apart, each found on the face from
-/// its own parameters: the mesh is asked for no largest edge, since the kernel's tessellator never finishes some
-/// bodies' meshes with one (a straight-lofted taper with its top pushed).
+/// A shell of `from` read back at points of each face of `made`: a face on `from`'s surface stays on it, and every
+/// other face is `wall` from the faces of `from` it keeps, `kept`, each within [`WALL_MM`]. A face is read as on the
+/// surface when most of its points are nearer to the faces kept than half the wall, or lie on an open face (the rim
+/// the opening leaves, which must also be no wider than the wall). Why not, in words, otherwise. The points are
+/// its mesh's corners, its edges included so a narrow face along a rim is read as well, and points inside each
+/// triangle at most [`WALL_STEP_MM`] apart, each found on the face from its own parameters: the mesh is asked for no
+/// largest edge, since the kernel's tessellator never finishes some bodies' meshes with one (a straight-lofted taper
+/// with its top pushed).
 #[cfg(feature = "cad")]
-fn wall_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), String> {
+fn wall_holds(from: &Body, kept: &[Face<'_>], made: &Body, wall: f64) -> std::result::Result<(), String> {
     let unmeasured = || "its inner wall could not be measured".to_owned();
     let (chord_mm, mesh) = WALL_CHORDS_MM
         .iter()
@@ -530,14 +566,11 @@ fn wall_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), St
         })
         .ok_or_else(unmeasured)?;
     let shown = made.faces().map_err(|_| unmeasured())?;
-    let on_edge: std::collections::HashSet<u32> =
-        mesh.edges.iter().flat_map(|e| e.points.iter().copied()).collect();
     let mut faces: Vec<Vec<V3>> = vec![Vec::new(); mesh.surfaces.len()];
     let mut seen = std::collections::HashSet::new();
     for (t, &f) in mesh.triangles.iter().zip(&mesh.faces) {
         for &v in t {
-            if !on_edge.contains(&v)
-                && seen.insert(v)
+            if seen.insert((f, v))
                 && let (Some(points), Some(&p)) = (faces.get_mut(f as usize), mesh.positions.get(v as usize))
             {
                 points.push(p);
@@ -557,13 +590,46 @@ fn wall_holds(from: &Body, made: &Body, wall: f64) -> std::result::Result<(), St
         }
     }
     let mut worst = 0.0f64;
+    let on = |p: V3| from.distance_to(p).map_err(|_| unmeasured());
+    // an open face is gone from the shell, so the wall is read to the faces it keeps
+    let all = from.faces().map_err(|_| unmeasured())?;
+    let open: Vec<Face<'_>> = all.iter().copied().filter(|f| !kept.contains(f)).collect();
+    let nearest = |of: &[Face<'_>], p: V3| {
+        of.iter()
+            .map(|f| f.distance_to(p).map_err(|_| unmeasured()))
+            .try_fold(f64::INFINITY, |near, d| d.map(|d| near.min(d)))
+    };
+    let most = |ds: &[f64], under: f64| 2 * ds.iter().filter(|&&d| d < under).count() > ds.len();
     for points in &faces {
-        let Some(&first) = points.first() else { continue };
-        let at = |p: V3| from.distance_to(p).map_err(|_| unmeasured());
-        // a face on the body's surface stays on it, and one made inside it is the wall from it
-        let to = if at(first)? < wall / 2.0 { 0.0 } else { wall };
-        for &p in points.iter().step_by(points.len().div_ceil(WALL_POINTS).max(1)) {
-            worst = worst.max((at(p)? - to).abs());
+        if points.is_empty() {
+            continue;
+        }
+        let read: Vec<V3> = points
+            .iter()
+            .step_by(points.len().div_ceil(WALL_POINTS).max(1))
+            .copied()
+            .collect();
+        let to_kept = read
+            .iter()
+            .map(|&p| nearest(kept, p))
+            .collect::<std::result::Result<Vec<f64>, String>>()?;
+        let to_open = read
+            .iter()
+            .map(|&p| nearest(&open, p))
+            .collect::<std::result::Result<Vec<f64>, String>>()?;
+        // the rim an opening leaves lies on the open face, a face the shell keeps lies on the body's surface, and
+        // either stays on that surface; every other face, one the wall made, is the wall from the faces kept
+        let rim = most(&to_open, WALL_MM);
+        if rim || most(&to_kept, wall / 2.0) {
+            for &p in &read {
+                worst = worst.max(on(p)?);
+            }
+            // and the rim is no wider than the wall, so a face left across the opening is not read as one
+            if rim {
+                worst = to_kept.iter().fold(worst, |w, &d| w.max(d - wall));
+            }
+        } else {
+            worst = to_kept.iter().fold(worst, |w, &d| w.max((d - wall).abs()));
         }
     }
     if worst > WALL_MM {
@@ -656,20 +722,21 @@ fn volume_held(mesh: &Mesh, volume: f64) -> std::result::Result<(), String> {
     Ok(())
 }
 
-/// Whether the kernel's shell is asked for a body with a face open when it has faces of this kind.
+/// Whether the kernel's shell is asked for a body with a face open when it has a face like this: a plane, the flat side
+/// of a straight loft or a tapered extrude ([`sorted_flat`]), a cylinder or a cone.
 #[cfg(feature = "cad")]
-fn shells_open(surface: &Surface) -> bool {
+fn shells_open(face: Face<'_>) -> bool {
     matches!(
-        surface,
+        face.surface(),
         Surface::Plane { .. } | Surface::Cylinder { .. } | Surface::Cone { .. }
-    )
+    ) || sorted_flat(face)
 }
 
 /// The keys of `made`, a body cut from `from`: a face that lies on `from`'s surface keeps the key the kernel carried to
 /// it, and every other face, one the operation made and so at least `apart` mm from that surface, gets a key of the
 /// current step, or none outside one. None at all when neither has any.
 #[cfg(feature = "cad")]
-fn carried_keys(from: &Body, made: &Body, apart: f64) -> Result<Vec<u64>> {
+fn carried_keys(from: &Body, from_keys: &[u64], made: &Body, apart: f64) -> Result<Vec<u64>> {
     let had = made.keys().map_err(|e| kernel(&e))?;
     let mesh = made
         .tessellate(&Tessellation::default())
@@ -688,25 +755,146 @@ fn carried_keys(from: &Body, made: &Body, apart: f64) -> Result<Vec<u64>> {
             *slot = Some((area, m));
         }
     }
+    let from_faces = from.faces().map_err(|e| kernel(&e))?;
     let mut fresh = Vec::new();
-    for slot in &middle {
+    let mut placed = Vec::new();
+    for (slot, &k) in middle.iter().zip(&had) {
         // a face of the body's surface: its middle on that surface, to within the kernel's own tolerance
         let kept = match slot {
             Some((_, m)) => from.distance_to(*m).map_err(|e| kernel(&e))? <= (on + mesh_chord()).min(apart),
             None => false,
         };
+        // one the kernel made anew there, as a cut makes the rim of an opening, takes the key of the face it lies on
+        let mut key = k;
+        if kept
+            && !from_keys.contains(&k)
+            && let Some((_, m)) = slot
+        {
+            let mut nearest = (f64::INFINITY, 0);
+            for (face, &fk) in from_faces.iter().zip(from_keys) {
+                let d = face.distance_to(*m).map_err(|e| kernel(&e))?;
+                if d < nearest.0 {
+                    nearest = (d, fk);
+                }
+            }
+            key = nearest.1;
+        }
         fresh.push(!kept);
+        placed.push(key);
     }
     let new_keys = crate::faces::fresh_keys(fresh.iter().filter(|&&f| f).count());
-    if new_keys.is_empty() && had.iter().all(|&k| k == 0) {
+    if new_keys.is_empty() && placed.iter().all(|&k| k == 0) {
         return Ok(Vec::new());
     }
     let mut next = new_keys.into_iter();
-    Ok(had
+    Ok(placed
         .iter()
         .zip(&fresh)
         .map(|(&k, &is_new)| if is_new { next.next().unwrap_or(0) } else { k })
         .collect())
+}
+
+/// How far past an open face a body is extended before it is shelled closed and cut back, beyond twice the wall, in
+/// mm: far enough that the wall's inner side reaches past the face's plane.
+#[cfg(feature = "cad")]
+const PAST_OPEN_MM: f64 = 1.0;
+
+/// The held body `handle` shelled to `wall` with the faces `open` (indices into its mesh `mesh`) left open, made
+/// without asking the kernel's shell to leave them open: each open face pushed out past itself (a join with its
+/// outline swept along its normal), the body shelled closed, and cut back at each face's plane. Every body made on the
+/// way is freed again.
+#[cfg(feature = "cad")]
+fn extended(handle: u32, mesh: &Mesh, open: &[usize], wall: f64) -> Result<Body> {
+    let at = |i: u32| mesh.positions.get(i as usize).copied().unwrap_or_default();
+    // a point inside each open face and its outward normal: the middle and winding of its largest triangle
+    let mut planes = Vec::new();
+    for &face in open {
+        let mut best: Option<(f64, V3, V3)> = None;
+        for (t, &f) in mesh.triangles.iter().zip(&mesh.faces) {
+            if f as usize != face {
+                continue;
+            }
+            let [a, b, c] = t.map(at);
+            let cross = vec3::cross(vec3::sub(b, a), vec3::sub(c, a));
+            let area = vec3::len(cross);
+            if best.is_none_or(|(most, ..)| area > most)
+                && let Some(n) = vec3::normalize(cross)
+            {
+                best = Some((area, vec3::scale(vec3::add(vec3::add(a, b), c), 1.0 / 3.0), n));
+            }
+        }
+        let (_, point, normal) =
+            best.ok_or_else(|| Error::geometry("shell", "an open face has no triangles"))?;
+        planes.push((point, normal));
+    }
+    let past = 2.0 * wall + PAST_OPEN_MM;
+    let made = Made::default();
+    let mut body = handle;
+    for &(point, normal) in &planes {
+        let reply = handed(
+            "push",
+            &json!({ "body": body, "at": point, "normal": normal, "distanceMm": past }),
+        )?;
+        body = made.take(reply.get("body"))?;
+    }
+    let shelled = with(body, |held| held.body.shell(wall, &[]))
+        .ok_or_else(|| no_such_body("body"))?
+        .map_err(|e| kernel(&e))?;
+    body = made.keep(hold(shelled, Vec::new())?);
+    for &(point, normal) in &planes {
+        let reply = handed(
+            "cut",
+            &json!({ "body": body, "plane": { "point": point, "normal": normal } }),
+        )?;
+        made.take(reply.get("above")).ok();
+        body = made.take(reply.get("below"))?;
+    }
+    made.out(body)
+}
+
+/// The bodies [`extended`] makes on its way, freed when it returns; the one it answers is taken out first.
+#[cfg(feature = "cad")]
+#[derive(Default)]
+struct Made(RefCell<Vec<u32>>);
+
+#[cfg(feature = "cad")]
+impl Made {
+    fn keep(&self, number: u32) -> u32 {
+        self.0.borrow_mut().push(number);
+        number
+    }
+
+    /// The body a reply field names, kept to be freed.
+    fn take(&self, field: Option<&Value>) -> Result<u32> {
+        let number =
+            number_of(field).ok_or_else(|| Error::geometry("shell", "the extended body is missing"))?;
+        Ok(self.keep(number))
+    }
+
+    /// The body `number` taken out of the table, as the one answered.
+    fn out(self, number: u32) -> Result<Body> {
+        self.0.borrow_mut().retain(|&n| n != number);
+        let held = TABLE.with(|t| t.borrow_mut().remove(&number));
+        MESHES.with(|m| m.borrow_mut().retain(|(key, ..)| key.0 != number));
+        held.and_then(|h| Rc::try_unwrap(h).ok())
+            .map(|h| h.body)
+            .ok_or_else(|| Error::geometry("shell", "the extended body is still in use"))
+    }
+}
+
+#[cfg(feature = "cad")]
+impl Drop for Made {
+    fn drop(&mut self) {
+        for &number in self.0.borrow().iter() {
+            free(number);
+        }
+    }
+}
+
+/// a body number as a reply gives it
+#[cfg(feature = "cad")]
+fn number_of(field: Option<&Value>) -> Option<u32> {
+    field.and_then(Value::as_f64).and_then(handle_of)
 }
 
 /// the farthest a triangle's middle sits from its surface at the default chord
@@ -1400,7 +1588,7 @@ mod tests {
         if !sx_brep::KERNEL {
             return;
         }
-        // off the origin, so every face's triangles count toward the volume
+        // off the origin, so every face's triangles add to the volume
         let body = Body::cuboid([5.0, 6.0, 7.0], [20.0, 10.0, 4.0]).expect("a box");
         let mesh = body.tessellate(&Tessellation::default()).expect("a mesh");
         let volume = body.volume().expect("a volume");
