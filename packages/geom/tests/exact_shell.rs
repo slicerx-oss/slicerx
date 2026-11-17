@@ -8,7 +8,8 @@
 // taper with its closed-form volume. A closed shell whose wall strays from the one asked, or cannot be read, is refused
 // too. A cube and a cylinder shelled closed, alone and joined to a box through the wall into the cavity, mesh as the
 // body. A straight-lofted taper, pushed or not, and a pushed cone shelled closed answer within the step's time limit,
-// held exact or refused.
+// held exact or refused. Tapers and cones with an end open hold their wall everywhere, their rim included, or run on
+// the mesh.
 // Empty without the brep feature, so a workspace test run that names every test target passes over it.
 #![cfg(feature = "brep")]
 use serde_json::{Value, json};
@@ -441,11 +442,13 @@ fn timed_body(shape: &str, angle: f64, pushed: bool) -> u32 {
         );
         number(&lofted["body"])
     } else {
-        table::hold(
-            Body::cone([0.0; 3], 12.0 + grow, 12.0, 20.0).expect("a cone"),
-            Vec::new(),
-        )
-        .expect("held")
+        // at no angle the cone is a cylinder
+        let round = if angle.abs() < 1e-9 {
+            Body::cylinder([0.0; 3], 12.0, 20.0)
+        } else {
+            Body::cone([0.0; 3], 12.0 + grow, 12.0, 20.0)
+        };
+        table::hold(round.expect("a cone"), Vec::new()).expect("held")
     };
     if !pushed {
         return body;
@@ -497,7 +500,6 @@ fn closed_shells_of_tapers_and_pushed_bodies_answer_within_the_time_limit() {
     if !sx_brep::KERNEL {
         return;
     }
-    let me = std::env::current_exe().expect("this test binary");
     let mut cases: Vec<String> = ["taper 11.3 2 pushed", "taper 30 2 pushed", "cone 11.3 2 pushed"]
         .map(str::to_owned)
         .to_vec();
@@ -506,16 +508,53 @@ fn closed_shells_of_tapers_and_pushed_bodies_answer_within_the_time_limit() {
             cases.push(format!("taper {angle} {wall} plain"));
         }
     }
-    // four cases at a time, each in its own process, one that runs past the limit stopped
+    let mut wrong = Vec::new();
+    for run in in_their_own_processes("timed_shell_case", "SX_TIMED_SHELL", &cases) {
+        let wall = run.case.split(' ').nth(2).unwrap_or("");
+        let words = format!("shell: a {wall} mm wall could not be made exact on this body");
+        let answered = !run.stopped
+            && run.ok
+            && (run.line.starts_with("CASE held")
+                || run.line.starts_with("CASE refused") && run.line.contains(&words));
+        if !answered {
+            let why = if run.stopped {
+                "no answer within the limit".to_owned()
+            } else {
+                run.line
+            };
+            wrong.push(format!("{}: {why}", run.case));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "closed shells that did not answer held or refused:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// How one case run by [`in_their_own_processes`] ended: stopped at the limit, or ended with or without success, and
+/// the line it printed that starts with `CASE`.
+struct CaseRun {
+    case: String,
+    stopped: bool,
+    ok: bool,
+    line: String,
+}
+
+/// Each of `cases` run by this test binary's test `test` in a process of its own, named by the variable `var`, four at
+/// a time, each stopped at the model class's time limit, so a kernel call that never answers or ends its process
+/// fails only its case. Each case's line and time go to the log as they end.
+fn in_their_own_processes(test: &str, var: &str, cases: &[String]) -> Vec<CaseRun> {
+    let me = std::env::current_exe().expect("this test binary");
     let next = std::sync::atomic::AtomicUsize::new(0);
-    let wrong = std::sync::Mutex::new(Vec::new());
+    let runs = std::sync::Mutex::new(Vec::new());
     std::thread::scope(|s| {
         for _ in 0..4 {
             s.spawn(|| {
                 while let Some(case) = cases.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) {
                     let mut child = std::process::Command::new(&me)
-                        .args(["timed_shell_case", "--exact", "--nocapture", "--test-threads=1"])
-                        .env("SX_TIMED_SHELL", case)
+                        .args([test, "--exact", "--nocapture", "--test-threads=1"])
+                        .env(var, case)
                         .stdout(std::process::Stdio::piped())
                         .stderr(std::process::Stdio::null())
                         .spawn()
@@ -538,28 +577,195 @@ fn closed_shells_of_tapers_and_pushed_bodies_answer_within_the_time_limit() {
                         .find_map(|l| l.split_once("CASE ").map(|(_, rest)| format!("CASE {rest}")))
                         .unwrap_or_default();
                     eprintln!("{case}: {line} ({:.1} s)", start.elapsed().as_secs_f64());
-                    let wall = case.split(' ').nth(2).unwrap_or("");
-                    let words = format!("shell: a {wall} mm wall could not be made exact on this body");
-                    let answered = !stopped
-                        && run.status.success()
-                        && (line.starts_with("CASE held")
-                            || line.starts_with("CASE refused") && line.contains(&words));
-                    if !answered {
-                        let why = if stopped {
-                            "no answer within the limit".to_owned()
-                        } else {
-                            format!("{} {line}", run.status)
-                        };
-                        wrong.lock().expect("the list").push(format!("{case}: {why}"));
-                    }
+                    runs.lock().expect("the list").push(CaseRun {
+                        case: case.clone(),
+                        stopped,
+                        ok: run.status.success(),
+                        line,
+                    });
                 }
             });
         }
     });
-    let wrong = wrong.into_inner().expect("the list");
+    runs.into_inner().expect("the list")
+}
+
+/// The farthest any point of `shelled`'s faces is from where it belongs, read apart from the engine's own read-back
+/// with every vertex of a fine mesh, its edges included so a narrow face at the rim is read too, at most 1500 of them a
+/// face: on `from`'s surface for the rim the opening leaves (a face mostly on the open face through `open`) and for a
+/// face mostly within half the wall of the faces kept, and `wall` from the faces kept for every other face.
+fn worst_off(from: &Body, open: [f64; 3], shelled: &Body, wall: f64) -> f64 {
+    let faces = from.faces().expect("faces");
+    let (opened, kept): (Vec<_>, Vec<_>) = faces
+        .iter()
+        .partition(|f| f.distance_to(open).expect("a distance") <= 1e-6);
+    let nearest = |of: &[&sx_brep::Face<'_>], p: [f64; 3]| {
+        of.iter()
+            .map(|f| f.distance_to(p).expect("a distance"))
+            .fold(f64::INFINITY, f64::min)
+    };
+    let m = shelled
+        .tessellate(&Tessellation {
+            chord_mm: 0.002,
+            ..Tessellation::default()
+        })
+        .expect("a mesh");
+    // and the middle of each triangle on the face itself, so a face meshed only along its edges is read inside too
+    let made = shelled.faces().expect("faces");
+    let mut per: Vec<Vec<[f64; 3]>> = vec![Vec::new(); m.surfaces.len()];
+    let mut seen = HashSet::new();
+    for ((t, &f), uv) in m.triangles.iter().zip(&m.faces).zip(&m.uvs) {
+        for &v in t {
+            if seen.insert((f, v)) {
+                per[f as usize].push(m.positions[v as usize]);
+            }
+        }
+        if let Some([a, b, c]) = uv {
+            let middle = [(a[0] + b[0] + c[0]) / 3.0, (a[1] + b[1] + c[1]) / 3.0];
+            per[f as usize].push(made[f as usize].point_at(middle).expect("a point"));
+        }
+    }
+    let mut worst = 0.0f64;
+    for points in per {
+        let points: Vec<[f64; 3]> = points
+            .iter()
+            .step_by(points.len().div_ceil(1500).max(1))
+            .copied()
+            .collect();
+        let to_kept: Vec<f64> = points.iter().map(|&p| nearest(&kept, p)).collect();
+        let on_open = points.iter().filter(|&&p| nearest(&opened, p) < WALL_MM).count();
+        let near = to_kept.iter().filter(|&&d| d < wall / 2.0).count();
+        if 2 * on_open > points.len() || 2 * near > points.len() {
+            worst = points
+                .iter()
+                .fold(worst, |w, &p| w.max(from.distance_to(p).expect("a distance")));
+        } else {
+            worst = to_kept.iter().fold(worst, |w, &d| w.max((d - wall).abs()));
+        }
+    }
+    worst
+}
+
+/// One case of the open-face table below, named by `SX_SHELL_CASE` ("shape angle wall end"): run by that test in a
+/// process of its own, it prints one line, the exact shell's outcome and time, the farthest its wall strays read apart
+/// from the engine, its volume, and the mesh shell's time on the same body.
+#[test]
+fn open_shell_case() {
+    let Ok(case) = std::env::var("SX_SHELL_CASE") else {
+        return;
+    };
+    let [shape, angle, wall, end] = case.split(' ').collect::<Vec<_>>()[..] else {
+        panic!("a case: {case}");
+    };
+    let (angle, wall): (f64, f64) = (angle.parse().expect("an angle"), wall.parse().expect("a wall"));
+    let body = timed_body(shape, angle, false);
+    let (at, normal) = if end == "top" {
+        ([0.0, 0.0, 20.0], [0, 0, 1])
+    } else {
+        ([0.0, 0.0, 0.0], [0, 0, -1])
+    };
+    let open = json!([{ "at": at, "normal": normal }]);
+    let start = std::time::Instant::now();
+    let reply = sx_geom::json::call(
+        "brep.shell",
+        &json!({ "body": body, "open": open, "wallMm": wall, "keySalt": 8 }).to_string(),
+    );
+    let ms = start.elapsed().as_secs_f64() * 1e3;
+    let tess = op("brep.tessellate", &json!({ "body": body }));
+    let mesh = json!({ "positions": tess["positions"], "indices": tess["indices"] });
+    let start = std::time::Instant::now();
+    let on_mesh = sx_geom::json::call(
+        "shell",
+        &json!({ "mesh": mesh, "open": open, "wallMm": wall }).to_string(),
+    );
+    let mesh_ms = start.elapsed().as_secs_f64() * 1e3;
+    let mesh_ms = if on_mesh.is_ok() {
+        format!("{mesh_ms:.0}")
+    } else {
+        "refused".to_owned()
+    };
+    match reply {
+        Ok(text) => {
+            let made: Value = serde_json::from_str(&text).expect("a JSON reply");
+            let hollow = number(&made["body"]);
+            let (off, volume) = table::with(body, |from| {
+                table::with(hollow, |to| {
+                    (
+                        worst_off(&from.body, at, &to.body, wall),
+                        to.body.volume().expect("a volume"),
+                    )
+                })
+            })
+            .flatten()
+            .expect("both held");
+            println!("CASE exact ms {ms:.0} mesh {mesh_ms} off {off:.3e} volume {volume:.3}");
+            table::free(hollow);
+        }
+        Err(e) => println!("CASE refused ms {ms:.0} mesh {mesh_ms} | {e}"),
+    }
+    table::free(body);
+}
+
+/// The cases of the open-face table the exact shell does not make, which run on the mesh: shape, angle, wall, end.
+const ON_THE_MESH: &[(&str, f64, f64, &str)] = &[];
+
+/// Tapers and cones at each angle of the table, each wall and either end open, each in a process of its own: each is
+/// exact with its wall within 0.01 mm everywhere, its rim included, read apart from the engine, or it is refused in the
+/// step's words, so a replay runs it on the mesh, and only the cases listed are refused.
+#[test]
+fn open_shells_on_tapers_and_cones_hold_their_wall_or_run_on_the_mesh() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let mut cases = Vec::new();
+    for shape in ["taper", "cone"] {
+        for angle in ANGLES {
+            for wall in [1, 2, 3] {
+                for end in ["top", "bottom"] {
+                    cases.push(format!("{shape} {angle} {wall} {end}"));
+                }
+            }
+        }
+    }
+    let mut wrong = Vec::new();
+    for run in in_their_own_processes("open_shell_case", "SX_SHELL_CASE", &cases) {
+        let [shape, angle, wall, end] = run.case.split(' ').collect::<Vec<_>>()[..] else {
+            panic!("a case: {}", run.case);
+        };
+        let (angle, wall): (f64, f64) = (angle.parse().expect("an angle"), wall.parse().expect("a wall"));
+        let listed = ON_THE_MESH.iter().any(|&(s, a, w, e)| {
+            s == shape && (a - angle).abs() < 1e-9 && (w - wall).abs() < 1e-9 && e == end
+        });
+        let words = format!("shell: a {wall} mm wall could not be made exact on this body");
+        let fine = !run.stopped
+            && run.ok
+            && if listed {
+                run.line.starts_with("CASE refused") && run.line.contains(&words)
+            } else {
+                run.line.starts_with("CASE exact")
+                    && run
+                        .line
+                        .split(" off ")
+                        .nth(1)
+                        .and_then(|r| r.split(' ').next())
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .is_some_and(|off| off <= WALL_MM)
+            };
+        if !fine {
+            wrong.push(format!(
+                "{}: {}",
+                run.case,
+                if run.stopped {
+                    "no answer within the limit"
+                } else {
+                    &run.line
+                }
+            ));
+        }
+    }
     assert!(
         wrong.is_empty(),
-        "closed shells that did not answer held or refused:\n{}",
+        "open shells not held to their wall or refused:\n{}",
         wrong.join("\n")
     );
 }
