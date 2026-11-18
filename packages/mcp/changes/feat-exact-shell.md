@@ -1,3 +1,0 @@
-### Changed
-
-- `slicerx_geom_shell` 1.5.0 (from 1.4.0) shells a part of a design with exact solids on the exact kernel, where the engine has it: the wall is the thickness asked at every point, on a curved body too, and the part stays an exact solid. The faces the shell makes read as made by its step. A shell the kernel cannot close still runs on the mesh, and its step says so, as does any shell with a face open on a body with curved faces other than cylinders and cones, such as a lofted body open at its top. Before, every exact part was shelled as a mesh (voxels on a curved body) and was a mesh from that step on. The description says which bodies get exact walls.
