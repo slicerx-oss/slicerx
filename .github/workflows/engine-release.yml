@@ -6,6 +6,8 @@ name: engine-release
 # command line tools and libslicerx (the C ABI, as a shared library with include/slicerx.h) for
 # macOS (universal), Windows (x64) and Linux (x64). Each platform is one archive; SHA256SUMS.txt
 # lists them all. They go to a draft release that a maintainer reviews and publishes by hand.
+# sx-geom carries the exact kernel (SMLib, for its brep.* ops), built from its source; each archive has the kernel's
+# license files in licenses/.
 #
 # Tag engine-v<version> (the workspace version in Cargo.toml), or run it by hand with that tag.
 # The binaries are not signed: macOS marks them quarantined when a browser downloads them
@@ -86,11 +88,29 @@ jobs:
         with:
           key: engine-${{ matrix.name }}
 
+      # The exact kernel: its source at the pinned commit, hash-checked, with the routine swap checked
+      # (packages/brep/scripts/fetch-smlib.sh). SX_BREP_REQUIRE=1 makes a build without it fail instead of building
+      # the stand-in.
+      - name: Kernel source cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/slicerx/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - name: Exact kernel
+        shell: bash
+        run: |
+          kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
+          if [ "$RUNNER_OS" = Windows ]; then kernel=$(cygpath -m "$kernel"); fi
+          { echo "SX_SMLIB_DIR=$kernel"; echo "SX_BREP_REQUIRE=1"; } >> "$GITHUB_ENV"
+
+      # sx-geom builds on its own with the brep feature, so only sx-geom carries the kernel: in one build cargo would
+      # turn it on for the sx-geom that sx and libslicerx use too.
       - name: Build
         shell: bash
         run: |
           for t in ${{ matrix.targets }}; do
-            cargo build --locked --release --target "$t" -p sx-cli -p sx-geom -p sx-link -p sx-ffi
+            cargo build --locked --release --target "$t" -p sx-cli -p sx-link -p sx-ffi
+            cargo build --locked --release --target "$t" -p sx-geom --features brep
           done
 
       - name: Package
@@ -98,7 +118,7 @@ jobs:
         run: |
           name="slicerx-engine-${{ needs.version.outputs.version }}-${{ matrix.name }}"
           stage="dist/$name"
-          mkdir -p "$stage/bin" "$stage/lib" "$stage/include"
+          mkdir -p "$stage/bin" "$stage/lib" "$stage/include" "$stage/licenses"
           bins="sx sx-geom sx-link"
           case "${{ matrix.name }}" in
             macos-universal)
@@ -125,6 +145,10 @@ jobs:
           cp LICENSE-APACHE NOTICE THIRD-PARTY.md "$stage/"
           cp packages/core/ffi/README.md "$stage/README-libslicerx.md"
           cp packages/core/cli/README.md "$stage/README-sx.md"
+          # the kernel's license as its source has it, its NOTICE when it has one, and our notice of the changes
+          cp "$SX_SMLIB_DIR/LICENSE" "$stage/licenses/SMLib-LICENSE.txt"
+          if [ -f "$SX_SMLIB_DIR/NOTICE" ]; then cp "$SX_SMLIB_DIR/NOTICE" "$stage/licenses/SMLib-NOTICE.txt"; fi
+          cp apps/desktop/release/licenses/SMLib.txt "$stage/licenses/SMLib.txt"
           cd dist
           if [ "${{ matrix.name }}" = windows-x64 ]; then
             7z a -tzip "$name.zip" "$name" > /dev/null
@@ -141,6 +165,9 @@ jobs:
           "$dir/sx" slice packages/core/bench/models/x-mark.stl -o "$RUNNER_TEMP/x-mark.gcode"
           test -s "$RUNNER_TEMP/x-mark.gcode"
           "$dir/sx-geom" ops > /dev/null
+          # an exact box only the kernel makes: the stand-in and a build without brep both refuse it
+          echo '{"min":[0,0,0],"max":[10,10,10]}' | "$dir/sx-geom" brep.box > "$RUNNER_TEMP/box.json" || { cat "$RUNNER_TEMP/box.json"; exit 1; }
+          grep -q '"body"' "$RUNNER_TEMP/box.json"
           "$dir/sx-link" --help > /dev/null
 
       - uses: actions/upload-artifact@v4
@@ -177,5 +204,5 @@ jobs:
           else
             gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --draft \
               --title "SlicerX engine $VERSION" \
-              --notes "The sx, sx-geom and sx-link command line tools and libslicerx (the C ABI, with include/slicerx.h) for macOS (universal), Windows (x64) and Linux (x64). SHA256SUMS.txt has the checksums. The binaries are not signed."
+              --notes "The sx, sx-geom and sx-link command line tools and libslicerx (the C ABI, with include/slicerx.h) for macOS (universal), Windows (x64) and Linux (x64). sx-geom carries the exact kernel, with its license files in licenses/. SHA256SUMS.txt has the checksums. The binaries are not signed."
           fi
