@@ -1,3 +1,0 @@
-### Fixed
-
-- `slicerx_design_plan` 1.17.1 (from 1.17.0), in the mimir tab: a change the person asked for (`amends` with `asked`) that sends every feature but leaves out the plan's `overall`, `holes` or `openFaces` takes them from the approved plan. An amend keeps all three (the overall size, each row of holes by name and count, the open faces as they are), so one left out can only mean the plan's own. Before, a change that angled three of a part's features back, sent with every feature and no overall size, was refused with "overall: an amend changes sizes only; keep the overall size". What is sent is used as before: a new overall size is a size change, and an overall size on a plan that has none is still refused.

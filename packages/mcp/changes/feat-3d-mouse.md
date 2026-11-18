@@ -1,3 +1,0 @@
-### Added
-
-- `slicerx_app_look` 1.2.0 reads `spaceMouse`, the 3D mouse setting from Settings, Controls: `enabled`, `sensitivity` (0.25 to 4), `invert` (`panX`, `panY`, `zoom`, `tilt`, `spin`), `dominantAxis`, and `status` (`unsupported`, `off`, `none`, `connected`, `busy` when the device could not be opened, often because its maker's driver keeps it, or `error`) with the `device` name. `slicerx_app_look_set` 1.1.0 takes `spaceMouse` with any of those fields; one left out keeps its value. Turned on, the 3D mouse only moves the camera and presses the view's reset and fit buttons. In the desktop app that starts reading a plugged-in device at once; in a browser only the person can connect a new device, since the browser asks them.
