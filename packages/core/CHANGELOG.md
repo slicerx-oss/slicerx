@@ -7,6 +7,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 ### Fixed
 
 - A plate that prints with some of the loaded filaments heats only those. The switch to the usual nozzle temperature after the first layer, a temperature a height range changes, and a resumed print's start named every filament up to the highest one the plate prints with, so a head the plate never uses was heated (to 210 on a U1 plate in filaments 3 and 5, from the second layer to the end). The custom G-code variable `is_extruder_used` marks only the filaments the plate prints with, so a start G-code that reads it (the Prusa XL's, the Snapmaker J1's and Artisan's) heats and checks those and turns the others off. A plate with one filament, or one that prints with every loaded filament, is unchanged.
+- The custom G-code variable `num_extruders`, and each per filament list the custom G-code reads, cover every filament the settings load (the length of `filament_colour`), not only up to the highest one the plate prints with. A Prusa XL plate in filaments 2 and 4 of five now turns off tool 4 as well as tools 0 and 2. Before, the start G-code's `num_extruders > 4` check skipped it.
+- The print's end runs `filament_end_gcode` for each filament the plate prints with, not for every filament up to the highest one. A shared nozzle still runs it for the filament in the nozzle.
 
 ## [0.2.10] - 2026-11-18
 

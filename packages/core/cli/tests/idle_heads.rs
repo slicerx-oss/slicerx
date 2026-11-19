@@ -3,7 +3,8 @@
 //! A plate that prints with some of the loaded filaments heats only those. Two boxes in filaments 2 and 4, with the
 //! first layer hotter than the rest: the switch to the usual temperature after the first layer, and any temperature a
 //! later layer sets, name tools 1 and 3 only, on the Snapmaker U1 with its own G-code and on a plain printer with none.
-//! A start G-code that asks `is_extruder_used` (the Prusa XL's) heats those two and turns the others off.
+//! A start G-code that asks `is_extruder_used` (the Prusa XL's) heats those two and turns every other loaded one off,
+//! and on the U1 the print's end runs the filament end G-code of the two it printed with only.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -170,10 +171,27 @@ fn check(case: &str, gcode: &str) {
 
 #[test]
 fn a_u1_plate_heats_only_the_filaments_it_prints_with() {
-    let gcode = slice("u1", u1_config(), "klipper", 4);
+    // Each filament's end G-code names its filament; the print's end runs it for the two the plate prints with.
+    let mut cfg = u1_config();
+    cfg.insert(
+        "filament_end_gcode".to_owned(),
+        json!(["; end of 1", "; end of 2", "; end of 3", "; end of 4"]),
+    );
+    let gcode = slice("u1", cfg, "klipper", 4);
     check("u1", &gcode);
     // The start G-code's own turn off of every head stays as the maker wrote it.
     assert!(gcode.contains("M104 S0 T0 A0\nM104 S0 T1 A0\nM104 S0 T2 A0\nM104 S0 T3 A0\n"));
+    let end = &gcode[gcode.rfind(";LAYER_CHANGE").unwrap()..];
+    assert!(
+        end.contains("; end of 2\n; end of 4\n"),
+        "the two printed filaments end"
+    );
+    for n in [1, 3] {
+        assert!(
+            !gcode.contains(&format!("; end of {n}")),
+            "filament {n} never printed"
+        );
+    }
 }
 
 #[test]
@@ -203,15 +221,12 @@ fn a_prusa_xl_start_heats_the_tools_the_plate_prints_with_and_turns_off_the_rest
     check("xl", &gcode);
     let start = &gcode[..gcode.find(";LAYER_CHANGE").unwrap()];
     let has = |line: &str| start.lines().any(|l| l.split(';').next().unwrap().trim() == line);
-    // The template turns a tool off only up to `num_extruders`, the highest filament the plate prints with (4 here),
-    // so tool 4 gets no line at all; it is never heated either.
-    for tool in [0, 2] {
+    // `num_extruders` is the five loaded filaments, so the template reaches tool 4, past the highest one printed.
+    for tool in [0, 2, 4] {
         assert!(
             has(&format!("M104 T{tool} S0")),
             "tool {tool} is turned off:\n{start}"
         );
-    }
-    for tool in [0, 2, 4] {
         assert!(
             !has(&format!("M104 T{tool} S220")),
             "tool {tool} is not heated:\n{start}"
