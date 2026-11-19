@@ -190,6 +190,8 @@ export interface ToolheadRemap {
   map: Record<string, number>
   toolsUsed: number[]
   unusedMapTools: number[]
+  /** Tools the file selects but never extrudes with that the map left out; their references stay as written. */
+  toolsKept?: number[]
   counts: {
     changedLines: number
     toolChanges: number

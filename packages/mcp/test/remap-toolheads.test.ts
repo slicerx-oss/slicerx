@@ -9,8 +9,10 @@ import { describe, expect, it } from 'vitest'
 import { connect, data, noSx, sxBin, sxTimeout, text } from './helpers'
 
 const FIXTURE = resolve(__dirname, '../../connect/tests/fixtures/u1-four-filament.gcode')
+// Filaments 2 and 4 of four print; filament 1 prints 0 g, and the bed check heats and selects T0.
+const SKIP_1 = resolve(__dirname, '../../connect/tests/fixtures/u1-skip-filament-1.gcode')
 
-type Remap = { gcode_path: string; sha256: string; source_sha256: string; tools_used: number[]; counts: { changedLines: number; toolChanges: number; preextrudeIndexes: number } }
+type Remap = { gcode_path: string; sha256: string; source_sha256: string; tools_used: number[]; tools_kept: number[]; counts: { changedLines: number; toolChanges: number; preextrudeIndexes: number } }
 type Err = { error: { code: string; message: string; details?: { line?: number; reason?: string } } }
 
 const sha256 = (b: Buffer | string) => createHash('sha256').update(b).digest('hex')
@@ -65,6 +67,32 @@ describe.skipIf(noSx())('slicerx_remap_toolheads', { timeout: sxTimeout }, () =>
       expect(preextrude).toBeGreaterThanOrEqual(3)
       expect(out.counts.preextrudeIndexes).toBe(preextrude)
       expect(text(r)).toContain(out.sha256)
+    } finally { await h.client.close() }
+  })
+
+  it('keeps a tool the file selects but never prints with, and still refuses a printing tool left out', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      const gcode = join(h.dir, 'u1-skip-1.gcode')
+      copyFileSync(SKIP_1, gcode)
+      const r = await h.call('slicerx_remap_toolheads', { gcode, map: { 1: 0, 3: 2 } })
+      expect(r.isError, text(r)).toBeFalsy()
+      const out = data<Remap>(r)
+      expect(out.tools_used).toEqual([0, 1, 3])
+      expect(out.tools_kept).toEqual([0])
+      const before = readFileSync(gcode, 'utf8').split('\n')
+      const after = readFileSync(out.gcode_path, 'utf8').split('\n')
+      expect(after[117]).toBe('M104 T0 S140')
+      expect(after[122]).toBe('T0')
+      const moved: Record<string, string> = { T1: 'T0', T3: 'T2' }
+      before.forEach((line, n) => {
+        const word = code(line)
+        if (n > 122 && word in moved) expect(code(after[n]!), `line ${n + 1}`).toBe(moved[word])
+      })
+      const refused = await h.call('slicerx_remap_toolheads', { gcode, map: { 3: 2 } })
+      const e = data<Err>(refused).error
+      expect(e.code).toBe('remap_refused')
+      expect(e.details?.reason).toBe('Tool 1 has no selected loaded toolhead')
     } finally { await h.client.close() }
   })
 

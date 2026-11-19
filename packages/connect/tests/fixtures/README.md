@@ -11,3 +11,4 @@ Throwaway certificates and keys made for the tests in `src/tls.rs`. None of them
 # G-code fixtures
 
 - `u1-four-filament.gcode`: four 8 mm boxes, 0.6 mm tall, one filament each, sliced by `sx` with the Snapmaker U1 profile's own G-code (9 tool changes, 7 pre-extrude lines). One comment line of the maker's start G-code is left out. The toolhead remap tests in `src/toolhead_map.rs`, `packages/core/cli/tests/remap_toolheads.rs` and `packages/mcp/test/remap-toolheads.test.ts` use it.
+- `u1-skip-filament-1.gcode`: two 8 mm boxes, 0.6 mm tall, in filaments 2 and 4 of four, sliced by `sx` with the Snapmaker U1 profile's own G-code, so filament 1 prints 0 g. The bed check's two lines (`M104 T0 S140` and `T0`, lines 118 and 123) name T0 where `sx` writes the first printing tool, the way a start G-code with a fixed T0 writes them. The same three test files use it.

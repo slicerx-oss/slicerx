@@ -72,7 +72,7 @@ slicerx-mcp call toolhead_mapping '{"printerId":"u1","needs":[{"tool":0,"materia
 slicerx-mcp call toolhead_mapping '{"printerId":"u1","needs":[{"tool":0,"material":"PLA","color":"#ff0000"}],"selected":{"0":3},"preparePlate":1}'
 ```
 
-For a file and no printer, `sx remap-toolheads <in.gcode> --map 0=2,1=3 -o <out.gcode> [--json]` and the MCP tool `slicerx_remap_toolheads` run the same rewrite and refusals on a sliced file with an explicit map. They add no verification header and keep no spool check, so a map that sends each tool to itself returns the file byte for byte.
+For a file and no printer, `sx remap-toolheads <in.gcode> --map 0=2,1=3 -o <out.gcode> [--json]` and the MCP tool `slicerx_remap_toolheads` run the same rewrite and refusals on a sliced file with an explicit map. They add no verification header and keep no spool check, so a map that sends each tool to itself returns the file byte for byte. A toolhead the file selects but never extrudes with (a `T0` bed check on a plate that prints nothing in filament 1) may be left out of the map and stays as written; a tool that extrudes must be mapped. A prepared send applies the same rule to the job's filaments.
 
 `preparePlate` retains a mapped copy of an already sliced plate for that printer. Its read-back includes the original and prepared hashes and `changedLines` (body lines, excluding the verification header). A later `printer.queue` requires that copy for a U1, except a single-filament job without spool data, and still requires the person's approval. Reslicing discards the prepared copy.
 

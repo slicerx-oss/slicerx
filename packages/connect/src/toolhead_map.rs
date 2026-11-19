@@ -81,10 +81,15 @@ pub fn prepare_toolhead_file(
     if selected.len() != needs.len() || !plan.ready {
         return Err("Choose a loaded toolhead for every job filament before preparing the file".to_owned());
     }
-    let (body, counts, used) = rewrite_text(text, selected).map_err(|refusal| refusal.to_string())?;
-    plan.changed_lines = counts.changed_lines;
+    let rewrite = rewrite_text(text, selected).map_err(|refusal| refusal.to_string())?;
+    plan.changed_lines = rewrite.counts.changed_lines;
     let declared: BTreeSet<_> = needs.iter().map(|need| need.tool).collect();
-    if used != declared {
+    let moved: BTreeSet<_> = rewrite
+        .used
+        .difference(&rewrite.passed_through)
+        .copied()
+        .collect();
+    if moved != declared {
         return Err("The declared job filaments do not match the G-code tool selections".to_owned());
     }
     let map = PreparedToolheadMap {
@@ -99,7 +104,7 @@ pub fn prepare_toolhead_file(
             .collect(),
     };
     let header = serde_json::to_string(&map).map_err(|_| "Could not encode toolhead mapping")?;
-    file.data = format!("{MAP_HEADER}{header}\n{body}").into_bytes();
+    file.data = format!("{MAP_HEADER}{header}\n{}", rewrite.body).into_bytes();
     file.sha256 = crate::types::hex(&Sha256::digest(&file.data));
     Ok((file, plan))
 }
@@ -172,11 +177,15 @@ pub struct Remapped {
     pub counts: RemapCounts,
     /// The logical tools the file selects.
     pub used: BTreeSet<u8>,
+    /// Tools the file selects but never extrudes with that the map leaves out: their references stay as written.
+    pub passed_through: BTreeSet<u8>,
 }
 
 /// Rewrites a sliced U1 file for a map of logical tool to physical toolhead, with the same rewrite and refusals as a
 /// prepared send, and without a printer: no spool data, no mapping header, nothing uploaded. A map that sends every
-/// tool to itself returns the bytes unchanged.
+/// tool to itself returns the bytes unchanged. A tool the file selects but never extrudes with (a start G-code that
+/// heats and selects T0 for the bed check on a plate that prints nothing in filament 1) may be left out of the map:
+/// it stays as written, so that step runs on the head the file names. A tool that extrudes must be in the map.
 pub fn remap_gcode(data: &[u8], selected: &BTreeMap<u8, u8>) -> Result<Remapped, RemapRefusal> {
     if selected.is_empty() {
         return Err("Map at least one tool".to_owned().into());
@@ -195,42 +204,124 @@ pub fn remap_gcode(data: &[u8], selected: &BTreeMap<u8, u8>) -> Result<Remapped,
                 .into(),
         );
     }
-    let (body, counts, used) = rewrite_text(text, selected)?;
-    let data = body.into_bytes();
+    let rewrite = rewrite_text(text, selected)?;
+    let data = rewrite.body.into_bytes();
     Ok(Remapped {
         source_sha256: crate::types::hex(&Sha256::digest(text.as_bytes())),
         sha256: crate::types::hex(&Sha256::digest(&data)),
         data,
-        counts,
-        used,
+        counts: rewrite.counts,
+        used: rewrite.used,
+        passed_through: rewrite.passed_through,
     })
 }
 
-fn rewrite_text(
-    text: &str,
-    selected: &BTreeMap<u8, u8>,
-) -> Result<(String, RemapCounts, BTreeSet<u8>), RemapRefusal> {
-    let mut used = BTreeSet::new();
-    let mut counts = RemapCounts::default();
-    let mut body = String::with_capacity(text.len());
-    for (line_no, line) in text.split_inclusive('\n').enumerate() {
-        let rewritten =
-            rewrite_line(line, selected, &mut used, &mut counts).map_err(|reason| RemapRefusal {
-                line: Some(line_no + 1),
-                reason,
-            })?;
-        counts.changed_lines += usize::from(rewritten != line);
-        body.push_str(&rewritten);
-    }
-    Ok((body, counts, used))
+struct Rewrite {
+    body: String,
+    counts: RemapCounts,
+    used: BTreeSet<u8>,
+    passed_through: BTreeSet<u8>,
 }
 
-fn mapped(index: &str, selected: &BTreeMap<u8, u8>) -> Result<u8, String> {
+/// What the rewrite of one line reads and adds to.
+struct Pass<'a> {
+    selected: &'a BTreeMap<u8, u8>,
+    extruding: &'a BTreeSet<u8>,
+    used: BTreeSet<u8>,
+    passed_through: BTreeSet<u8>,
+    counts: RemapCounts,
+}
+
+fn rewrite_text(text: &str, selected: &BTreeMap<u8, u8>) -> Result<Rewrite, RemapRefusal> {
+    let extruding = extruding_tools(text);
+    let mut pass = Pass {
+        selected,
+        extruding: &extruding,
+        used: BTreeSet::new(),
+        passed_through: BTreeSet::new(),
+        counts: RemapCounts::default(),
+    };
+    let mut body = String::with_capacity(text.len());
+    for (line_no, line) in text.split_inclusive('\n').enumerate() {
+        let rewritten = rewrite_line(line, &mut pass).map_err(|reason| RemapRefusal {
+            line: Some(line_no + 1),
+            reason,
+        })?;
+        pass.counts.changed_lines += usize::from(rewritten != line);
+        body.push_str(&rewritten);
+    }
+    Ok(Rewrite {
+        body,
+        counts: pass.counts,
+        used: pass.used,
+        passed_through: pass.passed_through,
+    })
+}
+
+/// The logical tools that push filament: a move with a positive E (relative, past the last E when absolute, either one
+/// before the file sets M82 or M83) while the tool is selected, or a pre-extrude or flow calibration naming it by
+/// `INDEX=`. Anything that might extrude counts, so a doubtful tool is held to the map. A selection by physical head
+/// (`A0`) ends the logical tool until the next one.
+fn extruding_tools(text: &str) -> BTreeSet<u8> {
+    let mut extruding = BTreeSet::new();
+    let mut tool: Option<u8> = None;
+    let mut relative: Option<bool> = None;
+    let mut e = 0.0_f64;
+    let number = |word: &str, prefix: &str| word.strip_prefix(prefix).and_then(|n| n.parse::<f64>().ok());
+    for line in text.lines() {
+        let code = line.split_once(';').map_or(line, |(code, _)| code);
+        let mut words = code.split_whitespace();
+        let Some(command) = words.next() else { continue };
+        match command {
+            "M82" => relative = Some(false),
+            "M83" => relative = Some(true),
+            "G92" => {
+                if let Some(v) = words.find_map(|w| number(w, "E")) {
+                    e = v;
+                }
+            }
+            "G0" | "G1" | "G2" | "G3" => {
+                if let Some(v) = words.find_map(|w| number(w, "E")) {
+                    let pushed = match relative {
+                        Some(true) => v > 0.0,
+                        Some(false) => v > e,
+                        None => v > 0.0 || v > e,
+                    };
+                    if relative != Some(true) {
+                        e = v;
+                    }
+                    if let Some(tool) = tool.filter(|_| pushed) {
+                        extruding.insert(tool);
+                    }
+                }
+            }
+            "SM_PRINT_PREEXTRUDE_FILAMENT" | "SM_PRINT_FLOW_CALIBRATE" => {
+                if let Some(index) = words.find_map(|w| w.strip_prefix("INDEX=")?.parse().ok()) {
+                    extruding.insert(index);
+                }
+            }
+            _ => {
+                if let Some(index) = command.strip_prefix('T').and_then(|n| n.parse::<u8>().ok()) {
+                    tool = (!words.any(|w| w == "A0")).then_some(index);
+                }
+            }
+        }
+    }
+    extruding
+}
+
+/// The physical toolhead for a logical tool. A tool that never extrudes and that the map leaves out stays as written,
+/// when it names one of the U1's four toolheads.
+fn mapped(index: &str, pass: &mut Pass) -> Result<u8, String> {
     let index: u8 = index.parse().map_err(|_| "Invalid tool index")?;
-    selected
-        .get(&index)
-        .copied()
-        .ok_or_else(|| format!("Tool {index} has no selected loaded toolhead"))
+    if let Some(head) = pass.selected.get(&index) {
+        return Ok(*head);
+    }
+    if index <= 3 && !pass.extruding.contains(&index) {
+        pass.passed_through.insert(index);
+        return Ok(index);
+    }
+    Err(format!("Tool {index} has no selected loaded toolhead"))
 }
 
 fn checked_tool_command(code: &str, command: &str) -> Result<bool, String> {
@@ -310,12 +401,7 @@ fn lowercase_tool_parameter(word: &str, command: &str, tool_command: bool) -> bo
         && word.starts_with(['t', 'a']))
 }
 
-fn rewrite_line(
-    line: &str,
-    selected: &BTreeMap<u8, u8>,
-    used: &mut BTreeSet<u8>,
-    counts: &mut RemapCounts,
-) -> Result<String, String> {
+fn rewrite_line(line: &str, pass: &mut Pass) -> Result<String, String> {
     let code = line.split_once(';').map_or(line, |(code, _)| code);
     let words: Vec<_> = code.split_whitespace().collect();
     let Some(command) = words.first().copied() else {
@@ -338,8 +424,8 @@ fn rewrite_line(
         let replacement = if word_index == 0 && tool_command && !physical {
             let index = word.get(1..).ok_or("Invalid tool selection")?;
             let logical: u8 = index.parse().map_err(|_| "Invalid tool selection")?;
-            used.insert(logical);
-            Some(format!("T{}", mapped(index, selected)?))
+            pass.used.insert(logical);
+            Some(format!("T{}", mapped(index, pass)?))
         } else if word_index > 0
             && matches!(command, "M104" | "M109" | "M116" | "M900")
             && word.starts_with('T')
@@ -347,7 +433,7 @@ fn rewrite_line(
         {
             Some(format!(
                 "T{}",
-                mapped(word.get(1..).ok_or("Invalid indexed temperature")?, selected)?
+                mapped(word.get(1..).ok_or("Invalid indexed temperature")?, pass)?
             ))
         } else if matches!(
             command,
@@ -356,11 +442,11 @@ fn rewrite_line(
         {
             Some(format!(
                 "INDEX={}",
-                mapped(word.trim_start_matches("INDEX="), selected)?
+                mapped(word.trim_start_matches("INDEX="), pass)?
             ))
         } else if word.starts_with("EXTRUDER=extruder") {
             let index = word.trim_start_matches("EXTRUDER=extruder");
-            let target = mapped(if index.is_empty() { "0" } else { index }, selected)?;
+            let target = mapped(if index.is_empty() { "0" } else { index }, pass)?;
             Some(if target == 0 {
                 "EXTRUDER=extruder".to_owned()
             } else {
@@ -398,7 +484,7 @@ fn rewrite_line(
             None
         };
         if let Some(replacement) = replacement.filter(|r| r != word) {
-            *counts.of(command, word_index, word) += 1;
+            *pass.counts.of(command, word_index, word) += 1;
             replacements.push((start, cursor, replacement));
         }
     }
@@ -812,7 +898,7 @@ mod tests {
         let needs = [need(0, "PLA", "ff0000")];
         let selected = BTreeMap::from([(0, 1)]);
         for text in [
-            "T0\nT1\n",
+            "T0\nT1\nG1 X1 E1\n",
             "T0\nCUSTOM TOOL=0\n",
             "T0\nM104S220T0\n",
             "T0\nSET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=0 MAP_EXTRUDER=1\n",
@@ -896,7 +982,7 @@ mod tests {
     fn offline_remap_refuses_what_a_prepared_send_refuses() {
         let selected = BTreeMap::from([(0, 1)]);
         for (text, line) in [
-            ("T0\nT1\n", 2),
+            ("T0\nT1\nG1 X1 E1\n", 2),
             ("T0\nCUSTOM TOOL=0\n", 2),
             ("T0\nM104S220T0\n", 2),
             ("T0\nSET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=0 MAP_EXTRUDER=1\n", 2),
@@ -923,6 +1009,116 @@ mod tests {
             (b"; slicerx_toolhead_map = {}\nT0\n", BTreeMap::from([(0, 1)])),
         ] {
             assert_eq!(remap_gcode(data, &map).unwrap_err().line, None);
+        }
+    }
+
+    #[test]
+    fn a_tool_selected_for_the_bed_check_but_never_printed_stays_as_written() {
+        // A real U1 slice of two boxes in filaments 2 and 4; filament 1 prints 0 g, and the bed check heats and
+        // selects T0 the way a start G-code with a fixed T0 writes it.
+        let source = include_str!("../tests/fixtures/u1-skip-filament-1.gcode");
+        let map = BTreeMap::from([(1, 0), (3, 2)]);
+        let out = remap_gcode(source.as_bytes(), &map).unwrap();
+        let text = std::str::from_utf8(&out.data).unwrap();
+        assert_eq!(out.used, BTreeSet::from([0, 1, 3]));
+        assert_eq!(out.passed_through, BTreeSet::from([0]));
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(lines[117], "M104 T0 S140");
+        assert_eq!(lines[122], "T0");
+        let mut tool = None;
+        let mut preextrude = 0;
+        for (old, new) in source.lines().zip(text.lines()).skip(123) {
+            let old_words: Vec<_> = old.split(';').next().unwrap().split_whitespace().collect();
+            let new_words: Vec<_> = new.split(';').next().unwrap().split_whitespace().collect();
+            match (old_words.as_slice(), new_words.as_slice()) {
+                ([o], [n]) if o.starts_with('T') && o[1..].bytes().all(|b| b.is_ascii_digit()) => {
+                    let to = map[&o[1..].parse::<u8>().unwrap()];
+                    assert_eq!(*n, format!("T{to}"), "{old}");
+                    tool = Some(to);
+                }
+                (_, ["SM_PRINT_PREEXTRUDE_FILAMENT", index]) => {
+                    assert_eq!(index.strip_prefix("INDEX=").unwrap().parse::<u8>().ok(), tool);
+                    preextrude += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(preextrude, 2);
+        assert_eq!(out.counts.preextrude_indexes, 2);
+        // The physical setup at the start stays as sliced.
+        assert!(text.contains("M104 S0 T0 A0\nM104 S0 T1 A0\n"));
+        // Only lines naming a printing tool change: the bed check, auto feed and flow calibration stay as written.
+        for (old, new) in source.lines().zip(text.lines()) {
+            let code = old.split(';').next().unwrap();
+            let printing = code
+                .split_whitespace()
+                .any(|w| ["T1", "T3", "INDEX=1", "INDEX=3"].contains(&w));
+            if !printing {
+                assert_eq!(old, new);
+            }
+        }
+
+        // Filling the tools it leaves out with themselves, a workaround for older builds, writes the same file.
+        let filled = remap_gcode(
+            source.as_bytes(),
+            &BTreeMap::from([(0, 0), (1, 0), (2, 2), (3, 2)]),
+        )
+        .unwrap();
+        assert_eq!(filled.data, out.data);
+        assert!(filled.passed_through.is_empty());
+
+        // A prepared send takes the same file with the two filaments it prints as the job's.
+        let needs = [need(1, "PLA", "00ff00"), need(3, "PLA", "ffff00")];
+        let (prepared, _) = prepare_toolhead_file(file(source), &needs, &heads(), &map).unwrap();
+        assert!(prepared.data.ends_with(&out.data));
+
+        // A tool that prints is still held to the map: filament 2 left out is refused where the file first names it.
+        let refusal = remap_gcode(source.as_bytes(), &BTreeMap::from([(3, 2)])).unwrap_err();
+        assert_eq!(refusal.reason, "Tool 1 has no selected loaded toolhead");
+        assert_eq!(
+            lines[refusal.line.unwrap() - 1].split_whitespace().next(),
+            Some("M104")
+        );
+    }
+
+    #[test]
+    fn only_tools_that_push_filament_must_be_mapped() {
+        let map = BTreeMap::from([(0, 1)]);
+        for (text, passed) in [
+            ("T0\nG1 X1 E1\nT1\nG1 X2\n", &[1][..]),
+            ("T1\nM104 T1 S140\nT0\nG1 X1 E1\n", &[1]),
+            ("M83\nT0\nG1 X1 E1\nT2\nG1 E-0.8\n", &[2]),
+            ("M82\nT1\nG92 E5\nG1 X1 E5\nT0\nG1 X1 E6\n", &[1]),
+            ("M83\nT0\nG1 X1 E1\nT3 A0\nG1 X2 E1\nT3\n", &[3]),
+        ] {
+            let out = remap_gcode(text.as_bytes(), &map).unwrap();
+            assert_eq!(out.passed_through, passed.iter().copied().collect(), "{text}");
+        }
+        // Every form that names a tool stays as written for one that never prints, not only a bare T line.
+        let setup = "M104 T2 S140\nM109 T2 S140\nM116 T2\nM900 T2 K0.02\nT2\n\
+                     SM_PRINT_AUTO_FEED EXTRUDER=2\nSET_PRESSURE_ADVANCE EXTRUDER=extruder2 ADVANCE=0.02\n";
+        let text = format!("{setup}T0\nG1 X1 E1\n");
+        let out = remap_gcode(text.as_bytes(), &map).unwrap();
+        assert_eq!(out.passed_through, BTreeSet::from([2]));
+        assert_eq!(
+            std::str::from_utf8(&out.data).unwrap(),
+            format!("{setup}T1\nG1 X1 E1\n")
+        );
+        assert_eq!(out.counts.changed_lines, 1);
+        for (text, line) in [
+            ("T0\nG1 X1 E1\nT1\nG1 X2 E1\n", 3),
+            ("M83\nT0\nT1\nG1 E0.8\n", 3),
+            ("M82\nT0\nT1\nG92 E5\nG1 X1 E5.1\n", 3),
+            ("T0\nSM_PRINT_PREEXTRUDE_FILAMENT INDEX=2\n", 2),
+            ("T0\nSM_PRINT_FLOW_CALIBRATE INDEX=2\n", 2),
+            // Past the U1's four toolheads a selection is refused even when it never prints.
+            ("T0\nT5\n", 2),
+        ] {
+            assert_eq!(
+                remap_gcode(text.as_bytes(), &map).unwrap_err().line,
+                Some(line),
+                "{text}"
+            );
         }
     }
 
