@@ -731,10 +731,23 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
             c.vars.insert(k.to_owned(), v);
         }
     }
-    // Every extruder a print might use, with the ones on this plate marked.
+    // Every extruder a print might use, with the ones this plate prints with marked. With one filament, or no paths
+    // yet, every loaded filament counts.
+    let prints = crate::gcode::plate_prints(out);
+    let marked = tools > 1 && prints.iter().any(|&p| p);
     c.vars.insert(
         "is_extruder_used".to_owned(),
-        Value::List((0..64).map(|i| Value::Bool(i < tools)).collect()),
+        Value::List(
+            (0..64)
+                .map(|i| {
+                    Value::Bool(if marked {
+                        prints.get(i).copied().unwrap_or(false)
+                    } else {
+                        i < tools
+                    })
+                })
+                .collect(),
+        ),
     );
     plate_vars(&mut c, cfg, out, tools, out.plate_bounds.map(f64::from));
     add_defaults(&mut c, cfg, tools);
