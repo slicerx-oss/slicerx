@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+
+- A plate that prints with some of the loaded filaments heats only those. The switch to the usual nozzle temperature after the first layer, a temperature a height range changes, and a resumed print's start named every filament up to the highest one the plate prints with, so a head the plate never uses was heated (to 210 on a U1 plate in filaments 3 and 5, from the second layer to the end). The custom G-code variable `is_extruder_used` marks only the filaments the plate prints with, so a start G-code that reads it (the Prusa XL's, the Snapmaker J1's and Artisan's) heats and checks those and turns the others off. A plate with one filament, or one that prints with every loaded filament, is unchanged.
+
 ## [0.2.10] - 2026-11-18
 
 ### Added
