@@ -10,15 +10,15 @@ import { serverTool, type ServerToolDeps } from './deps'
 export default (d: ServerToolDeps) => serverTool({
   name: 'remap_toolheads',
   title: 'Remap toolheads in a G-code file',
-  version: '1.0.0',
+  version: '1.1.0',
   source: 'command',
   permission: 'read',
   toolset: 'core',
   ungated: true,
-  description: 'Move the logical tools of a sliced Snapmaker U1 G-code file onto other physical toolheads, with no printer connected: every tool selection (T), indexed temperature (M104, M109, M116 and M900 T), INDEX= on SM_PRINT_PREEXTRUDE_FILAMENT and SM_PRINT_FLOW_CALIBRATE, and EXTRUDER=extruderN moves together, and comments stay as they are. Writes a new file in the server\'s output folder and returns its path, SHA-256 and how many references changed; the original is not changed. A file the rewrite cannot read safely (lowercase or glued tool words, templates, line numbers, indexed tool parameters it does not know, an embedded firmware map, a tool missing from the map) is refused with remap_refused and the line. Does not send or start a print.',
+  description: 'Move the logical tools of a sliced Snapmaker U1 G-code file onto other physical toolheads, with no printer connected: every tool selection (T), indexed temperature (M104, M109, M116 and M900 T), INDEX= on SM_PRINT_PREEXTRUDE_FILAMENT and SM_PRINT_FLOW_CALIBRATE, and EXTRUDER=extruderN moves together, and comments stay as they are. Writes a new file in the server\'s output folder and returns its path, SHA-256 and how many references changed; the original is not changed. A file the rewrite cannot read safely (lowercase or glued tool words, templates, line numbers, indexed tool parameters it does not know, an embedded firmware map, a tool that extrudes but is missing from the map) is refused with remap_refused and the line. A toolhead 0 to 3 the file selects but never extrudes with, such as a start G-code that selects T0 for the bed check on a plate that prints nothing in filament 1, may be left out of the map: it stays as written and tools_kept lists it. Does not send or start a print.',
   input: z.object({
     gcode: z.string().min(1).describe('Path to the sliced .gcode file'),
-    map: z.record(z.string().regex(/^\d+$/), z.number().int().min(0).max(3)).describe('Logical tool (as the file selects it, from 0) to physical toolhead 0 to 3, such as {"0": 2, "1": 3, "2": 0, "3": 1}. Every tool the file selects must be in the map.'),
+    map: z.record(z.string().regex(/^\d+$/), z.number().int().min(0).max(3)).describe('Logical tool (as the file selects it, from 0) to physical toolhead 0 to 3, such as {"0": 2, "1": 3, "2": 0, "3": 1}. Every tool the file extrudes with must be in the map; a tool 0 to 3 it only selects may be left out and stays as written.'),
   }),
   hints: { readOnly: false, destructive: false, idempotent: true, openWorld: false },
   async run(args) {
@@ -34,9 +34,10 @@ export default (d: ServerToolDeps) => serverTool({
     const r = await d.slicer.remapToolheads({ input, output, map })
     const c = r.counts
     const moved = Object.entries(r.map).map(([l, p]) => `${l}>${p}`).join(' ')
+    const kept = r.toolsKept?.length ? ` Kept as written (selected, never extruding): tool ${r.toolsKept.join(', ')}.` : ''
     return {
-      summary: `Remapped ${moved}: ${c.changedLines} lines changed (${c.toolChanges} tool changes, ${c.temperatures} temperatures, ${c.preextrudeIndexes} pre-extrude indexes). SHA-256 ${r.sha256}.`,
-      structured: { gcode_path: r.output, sha256: r.sha256, source_sha256: r.sourceSha256, bytes: r.bytes, map: r.map, tools_used: r.toolsUsed, unused_map_tools: r.unusedMapTools, counts: r.counts },
+      summary: `Remapped ${moved}: ${c.changedLines} lines changed (${c.toolChanges} tool changes, ${c.temperatures} temperatures, ${c.preextrudeIndexes} pre-extrude indexes).${kept} SHA-256 ${r.sha256}.`,
+      structured: { gcode_path: r.output, sha256: r.sha256, source_sha256: r.sourceSha256, bytes: r.bytes, map: r.map, tools_used: r.toolsUsed, unused_map_tools: r.unusedMapTools, tools_kept: r.toolsKept ?? [], counts: r.counts },
     }
   },
 })

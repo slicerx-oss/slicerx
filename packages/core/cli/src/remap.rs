@@ -58,7 +58,7 @@ pub(crate) fn run(args: &[String]) -> ExitCode {
     };
     if args.len() == 1 && matches!(args[0].as_str(), "--help" | "-h") {
         println!(
-            "{USAGE}\n\nRewrites T, M104/M109/M116/M900 T, INDEX= on SM_PRINT_PREEXTRUDE_FILAMENT and SM_PRINT_FLOW_CALIBRATE,\nand EXTRUDER=extruderN for the map, and prints what changed and the output's SHA-256. Comments are kept.\nA file the rewrite cannot read safely is refused (exit 3) and nothing is written."
+            "{USAGE}\n\nRewrites T, M104/M109/M116/M900 T, INDEX= on SM_PRINT_PREEXTRUDE_FILAMENT and SM_PRINT_FLOW_CALIBRATE,\nand EXTRUDER=extruderN for the map, and prints what changed and the output's SHA-256. Comments are kept.\nEvery tool that extrudes must be in the map. A tool 0 to 3 the file selects but never extrudes with (such as\na bed check on T0) may be left out and stays as written.\nA file the rewrite cannot read safely is refused (exit 3) and nothing is written."
         );
         return ExitCode::SUCCESS;
     }
@@ -130,6 +130,7 @@ fn report(map: &BTreeMap<u8, u8>, remapped: &Remapped, output: &str, json_out: b
                 "map": map_json,
                 "toolsUsed": remapped.used,
                 "unusedMapTools": unused,
+                "toolsKept": remapped.passed_through,
                 "counts": c,
             })
         );
@@ -148,6 +149,13 @@ fn report(map: &BTreeMap<u8, u8>, remapped: &Remapped, output: &str, json_out: b
         if !unused.is_empty() {
             let tools: Vec<String> = unused.iter().map(u8::to_string).collect();
             println!("not in the file: tool {}", tools.join(", "));
+        }
+        if !remapped.passed_through.is_empty() {
+            let tools: Vec<String> = remapped.passed_through.iter().map(u8::to_string).collect();
+            println!(
+                "kept as written, selected but never extruding: tool {}",
+                tools.join(", ")
+            );
         }
         println!("sha256 {}  {output}", remapped.sha256);
     }

@@ -283,3 +283,87 @@ fn a_mapped_copy_a_bad_map_and_usage_mistakes_are_refused() {
     }
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_u1_plate_that_prints_nothing_in_filament_1_keeps_its_t0_bed_check() {
+    // Two boxes in filaments 2 and 4: filament 1 prints 0 g, and the bed check heats and selects T0.
+    let source_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../connect/tests/fixtures/u1-skip-filament-1.gcode");
+    let source = std::fs::read_to_string(&source_path).unwrap();
+    let dir = scratch("skip-1");
+    let out = dir.join("out.gcode");
+    let run = sx(&[
+        "remap-toolheads",
+        source_path.to_str().unwrap(),
+        "--map",
+        "1=0,3=2",
+        "-o",
+        out.to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+    assert_eq!(report["toolsUsed"], serde_json::json!([0, 1, 3]));
+    assert_eq!(report["toolsKept"], serde_json::json!([0]));
+    let result = std::fs::read_to_string(&out).unwrap();
+    let mut tool = None;
+    for (n, (old, new)) in source.lines().zip(result.lines()).enumerate() {
+        match selection(old) {
+            Some(0) => assert_eq!(new, old, "line {}", n + 1),
+            Some(1) => assert_eq!(code(new), "T0", "line {}", n + 1),
+            Some(3) => assert_eq!(code(new), "T2", "line {}", n + 1),
+            _ => {}
+        }
+        if let Some(t) = selection(new) {
+            tool = Some(t);
+        }
+        if let Some(index) = param(new, "SM_PRINT_PREEXTRUDE_FILAMENT", "INDEX=") {
+            assert_eq!(Some(index), tool, "line {}", n + 1);
+        }
+    }
+    assert!(result.contains("\nM104 T0 S140\n") && result.contains("\nT0\nG90\nDEFECT_DETECTION_DETECT_BED"));
+
+    let text = sx(&[
+        "remap-toolheads",
+        source_path.to_str().unwrap(),
+        "--map",
+        "1=0,3=2",
+        "-o",
+        out.to_str().unwrap(),
+    ]);
+    let text = String::from_utf8(text.stdout).unwrap();
+    assert!(
+        text.contains("kept as written, selected but never extruding: tool 0"),
+        "{text}"
+    );
+
+    // Filling the tools left out with themselves, the workaround for older builds, writes the same bytes.
+    let filled = dir.join("filled.gcode");
+    let run = sx(&[
+        "remap-toolheads",
+        source_path.to_str().unwrap(),
+        "--map",
+        "0=0,1=0,2=2,3=2",
+        "-o",
+        filled.to_str().unwrap(),
+    ]);
+    assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(std::fs::read_to_string(&filled).unwrap(), result);
+
+    // Filament 2 prints, so a map without it is still refused, and nothing is written.
+    std::fs::remove_file(&out).unwrap();
+    let refused = sx(&[
+        "remap-toolheads",
+        source_path.to_str().unwrap(),
+        "--map",
+        "3=2",
+        "-o",
+        out.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(refused.status.code(), Some(3));
+    let error: serde_json::Value = serde_json::from_slice(&refused.stdout).unwrap();
+    assert_eq!(error["reason"], "Tool 1 has no selected loaded toolhead");
+    assert!(!out.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}

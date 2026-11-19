@@ -4,6 +4,10 @@ Changes to the `sx` command's JSON input and output. Keep a Changelog format; se
 
 ## [Unreleased]
 
+### Fixed
+
+- `sx remap-toolheads` remaps a U1 file whose start G-code selects a tool the plate never extrudes with, such as `T0` for the bed check when filament 1 prints 0 g. A tool 0 to 3 that never extrudes may be left out of `--map` and stays as written; `--json` lists it in the new `toolsKept`. Before, the file was refused with exit 3 ("Tool 0 has no selected loaded toolhead"). A tool that extrudes and is missing from the map is still refused.
+
 ### Added
 
 - `sx slice --request` and `sx check --request` take `plate.placement`: `center` (the default, as before) centers a 3MF plate on the bed as a whole; `keep` slices its build items where the file's transforms put them, from the front left corner of the `printable_area`, with no recentering. With `keep` a part that lands off the printable area exits 3 with a message naming the part and how far it reaches past each edge. An STL or OBJ without a transform is centered under either. `sx schema request` lists the field.
