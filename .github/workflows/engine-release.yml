@@ -72,7 +72,8 @@ jobs:
             os: ubuntu-22.04
             targets: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Windows compiles the exact kernel in about an hour on a hosted runner, after a 15 minute engine build.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
