@@ -1557,11 +1557,15 @@ fn footer_body(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Resul
             b.extend_from_slice(b"M981 S0 P20000 ; close spaghetti detector\n");
         }
         b.extend_from_slice(b";TYPE:Custom\n");
-        // orca's end runs the filament end of the filament in the nozzle on a shared nozzle, else of every one
+        // the end runs the filament end of the filament in the nozzle on a shared nozzle, else of each filament the
+        // plate prints with: one it never printed has nothing to end
         let ends: Vec<u8> = if crate::tower::flag(c, "single_extruder_multi_material") {
             vec![last_tool]
         } else {
-            (1..=out.tool_count.max(1)).collect()
+            let prints = plate_prints(out);
+            (1..=out.tool_count.max(1))
+                .filter(|&slot| prints_slot(&prints, slot))
+                .collect()
         };
         for slot in ends {
             let mut fctx = ctx.clone();
