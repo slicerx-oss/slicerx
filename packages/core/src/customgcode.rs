@@ -475,9 +475,10 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
         extruder: usize::from(first_id),
         ..Context::default()
     };
-    let tools = usize::from(out.tool_count.max(1));
-    let tool_count_f = f64::from(out.tool_count.max(1));
-    let per = |f: &dyn Fn(u8) -> f64| list((1..=out.tool_count.max(1)).map(f));
+    let slots = template_slots(cfg, out);
+    let tools = usize::from(slots);
+    let tool_count_f = f64::from(slots);
+    let per = |f: &dyn Fn(u8) -> f64| list((1..=slots).map(f));
     let n = |v: f64| Value::Num(v);
     let bed = cfg.bed_rect();
     let first_temp = per(&|s| {
@@ -628,7 +629,7 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
         ),
         (
             "during_print_exhaust_fan_speed_num",
-            list((1..=out.tool_count.max(1)).map(|s| {
+            list((1..=slots).map(|s| {
                 (crate::tower::per_slot_raw(cfg, "during_print_exhaust_fan_speed", s, 0.0) / 100.0 * 255.0)
                     .trunc()
             })),
@@ -731,10 +732,23 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
             c.vars.insert(k.to_owned(), v);
         }
     }
-    // Every extruder a print might use, with the ones on this plate marked.
+    // Every extruder a print might use, with the ones this plate prints with marked. With one filament, or no paths
+    // yet, every loaded filament counts.
+    let prints = crate::gcode::plate_prints(out);
+    let marked = tools > 1 && prints.iter().any(|&p| p);
     c.vars.insert(
         "is_extruder_used".to_owned(),
-        Value::List((0..64).map(|i| Value::Bool(i < tools)).collect()),
+        Value::List(
+            (0..64)
+                .map(|i| {
+                    Value::Bool(if marked {
+                        prints.get(i).copied().unwrap_or(false)
+                    } else {
+                        i < tools
+                    })
+                })
+                .collect(),
+        ),
     );
     plate_vars(&mut c, cfg, out, tools, out.plate_bounds.map(f64::from));
     add_defaults(&mut c, cfg, tools);
@@ -1082,12 +1096,20 @@ pub(crate) fn calendar(cfg: &PrintConfig) -> [f64; 6] {
     [year, month, day, rem / 3600, rem % 3600 / 60, rem % 60].map(|v| v as f64)
 }
 
+/// How many filaments the custom G-code sees (`num_extruders` and the length of each per filament list): every
+/// filament the settings load, and at least up to the highest one the plate prints with. A start G-code that turns
+/// off the tools a plate does not use reaches each loaded one.
+fn template_slots(cfg: &PrintConfig, out: &SliceOutput) -> u8 {
+    let loaded = crate::session::filament_count(cfg).map_or(0, |n| u8::try_from(n).unwrap_or(u8::MAX));
+    out.tool_count.max(loaded).max(1)
+}
+
 /// Variables Orca's `GCode::_do_export` sets from the plate and the print (`GCode.cpp`, the block that
 /// fills `placeholder_parser` before the start G-code): retraction on cut and on filament change, the
 /// first filaments, the chamber and the first layer's extents, the calendar. A key the profile itself
 /// has wins over these.
 fn plate_vars(c: &mut Context<'_>, cfg: &PrintConfig, out: &SliceOutput, tools: usize, first: [f64; 4]) {
-    let slots = 1..=out.tool_count.max(1);
+    let slots = 1..=template_slots(cfg, out);
     let n = Value::Num;
     let put = |c: &mut Context<'_>, k: &str, v: Value| {
         if !cfg.raw.contains_key(k) {

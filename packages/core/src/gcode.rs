@@ -1336,8 +1336,9 @@ fn resume_header(
     let _ = writeln!(b, "M140 S{}", bed.round());
     temperature_line(&mut b, flavor, temp.round(), false, None, "");
     // Every other tool the plate uses heats to its own temperature too.
+    let prints = plate_prints(out);
     for slot in 1..=out.tool_count.max(1) {
-        if slot != active {
+        if slot != active && prints_slot(&prints, slot) {
             resume_tool_temp(
                 &mut b,
                 flavor,
@@ -1556,11 +1557,15 @@ fn footer_body(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Resul
             b.extend_from_slice(b"M981 S0 P20000 ; close spaghetti detector\n");
         }
         b.extend_from_slice(b";TYPE:Custom\n");
-        // orca's end runs the filament end of the filament in the nozzle on a shared nozzle, else of every one
+        // the end runs the filament end of the filament in the nozzle on a shared nozzle, else of each filament the
+        // plate prints with: one it never printed has nothing to end
         let ends: Vec<u8> = if crate::tower::flag(c, "single_extruder_multi_material") {
             vec![last_tool]
         } else {
-            (1..=out.tool_count.max(1)).collect()
+            let prints = plate_prints(out);
+            (1..=out.tool_count.max(1))
+                .filter(|&slot| prints_slot(&prints, slot))
+                .collect()
         };
         for slot in ends {
             let mut fctx = ctx.clone();
@@ -1664,6 +1669,8 @@ struct Shared<'c> {
     /// On a printer whose hotends are its tools ([`crate::nozzles::hotend_tools`]): per filament (0-based), the
     /// layer index and path index of the last path it prints, or none when it prints nothing. Empty on other printers.
     last_use: Vec<Option<(u32, usize)>>,
+    /// Per filament (0-based), whether any path of the plate prints with it ([`plate_prints`]).
+    prints: Vec<bool>,
     /// Whether the plate's first layer is in the nozzle wrap check corner
     /// ([`crate::customgcode::in_head_wrap_detect_zone`]), worked out once.
     wrap_corner: std::sync::OnceLock<bool>,
@@ -1691,6 +1698,7 @@ impl<'c> Shared<'c> {
             } else {
                 Vec::new()
             },
+            prints: plate_prints(out),
             wrap_corner: std::sync::OnceLock::new(),
         }
     }
@@ -1970,6 +1978,23 @@ fn settle_units(
             }
         }
     }
+}
+
+/// Per filament (0-based, one per slot), whether any path of the plate prints with it. A filament the plate never
+/// uses gets no temperature of its own: its hotend stays where the start G-code left it.
+pub(crate) fn plate_prints(out: &SliceOutput) -> Vec<bool> {
+    let mut prints = vec![false; usize::from(out.tool_count.max(1))];
+    for p in out.layers.iter().flat_map(|l| &l.paths) {
+        if let Some(slot) = prints.get_mut(usize::from(p.tool.max(1) - 1)) {
+            *slot = true;
+        }
+    }
+    prints
+}
+
+/// Whether a 1-based slot prints on the plate. With one filament it always does.
+fn prints_slot(prints: &[bool], slot: u8) -> bool {
+    prints.len() <= 1 || prints.get(usize::from(slot.max(1) - 1)).copied().unwrap_or(true)
 }
 
 /// Per filament (0-based, `slots` of them), the layer index and path index of the last path it prints.
@@ -2329,7 +2354,7 @@ fn emit_layer(
             PrintConfig::per_slot(&prev.nozzle_temperature, slot, 220.0).round() as i64,
         );
         #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
-        if t != t_prev && !one_nozzle {
+        if t != t_prev && !one_nozzle && prints_slot(&shared.prints, slot) {
             start_temps.push(t);
             if !hotend_temp(b, slot, t) {
                 temperature_line(
@@ -2352,6 +2377,10 @@ fn emit_layer(
         for slot in 1..=out.tool_count.max(1) {
             // With ooze prevention only the active tool changes; the others stay at standby.
             if ooze_prevention(c) && out.tool_count > 1 && slot != l.start_tool.max(1) {
+                continue;
+            }
+            // A filament the plate never prints with is not heated.
+            if !prints_slot(&shared.prints, slot) {
                 continue;
             }
             #[allow(clippy::cast_possible_truncation, reason = "temperatures are small")]
@@ -2539,8 +2568,9 @@ fn emit_layer(
     } else if !start_temps.is_empty() {
         single_temp(&start_temps)
     } else if resume_first {
-        // The resumed start heats every filament's nozzle temperature.
+        // The resumed start heats the nozzle temperature of every filament the plate prints with.
         let all: Vec<i64> = (1..=out.tool_count)
+            .filter(|&slot| prints_slot(&shared.prints, slot))
             .map(|slot| print_temp(c, slot, l.index).round() as i64)
             .collect();
         single_temp(&all)
