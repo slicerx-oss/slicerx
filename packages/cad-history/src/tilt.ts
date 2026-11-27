@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A step's lean (Step.tilt): what an extrude, a loft or an added part (a post, a cylinder) made, turned about its foot
+// A step's lean (Step.tilt): what an extrude, a revolve, a sweep, a loft or an added part (a post, a cylinder) made,
+// turned about its foot
 // so its top leans one way by some degrees; each separate piece of an added part leans about its own foot. A step
 // built on a leaning one leans with it about that step's foot (StepTilt.about). The lean is kept beside the step's
 // own numbers and laid on them as the step replays, so an edit of a size, a move or a section afterwards keeps it, the
 // timeline shows the same steps, and undoing the edit takes it back. A pattern made of the step copies the leaning one.
 import { meshPieces } from '@slicerx/contracts/mesh-pieces'
-import { BED_FRAME, direction, point, type HistoryMesh, type LoftProfile, type Step, type StepParams, type StepTilt } from './model'
+import { BED_FRAME, direction, loopPoints, point, type HistoryMesh, type LoftProfile, type Step, type StepParams, type StepTilt } from './model'
 import { movedParams } from './design-frame'
 import type { Mat4, SketchLoop, Vec2, Vec3 } from './types'
 
@@ -53,7 +54,37 @@ export function tiltFoot(p: StepParams, up: Vec3): Vec3 | null {
     const feet = p.profiles.map((q) => onFrame(q.frame, q.loops.length ? loopCenter(q.loops[0]!) : [0, 0]))
     return feet.length ? feet.reduce((a, b) => (dot(b, up) < dot(a, up) ? b : a)) : null
   }
+  if (p.op === 'sketch.revolve') {
+    // the lower end of the axis over the profile; a revolve whose axis lies over has no one foot
+    const f = p.frame ?? BED_FRAME
+    const at = onFrame(f, p.axis.point)
+    const o = onFrame(f, [0, 0])
+    const tip = onFrame(f, p.axis.direction)
+    const axis = unit([tip[0] - o[0], tip[1] - o[1], tip[2] - o[2]])
+    if (!axis || Math.abs(dot(axis, up)) < UPRIGHT) return null
+    const ts = p.loops.filter((l) => !l.construction).flatMap((l) => sketchPoints(l)).map((q) => {
+      const w = onFrame(f, q)
+      return dot([w[0] - at[0], w[1] - at[1], w[2] - at[2]], axis)
+    })
+    if (!ts.length) return null
+    const ends = [Math.min(...ts), Math.max(...ts)].map((t): Vec3 => [at[0] + axis[0] * t, at[1] + axis[1] * t, at[2] + axis[2] * t])
+    return ends.reduce((a, b) => (dot(b, up) < dot(a, up) ? b : a))
+  }
+  if (p.op === 'sketch.sweep') {
+    // the lowest point of its path, where its section stands
+    const path = p.path.points?.length ? p.path.points : (p.path.loops ?? []).filter((l) => !l.construction).flatMap((l) => sketchPoints(l).map((q) => onFrame(p.path.frame, q)))
+    return path.length ? path.reduce((a, b) => (dot(b, up) < dot(a, up) ? b : a)) : null
+  }
   return null
+}
+
+/** How near upright a revolve's axis stands to have a foot: within about 45 degrees. */
+const UPRIGHT = Math.SQRT1_2
+
+/** A loop's drawn points in its frame's u v, or its middle when it has none. */
+function sketchPoints(l: SketchLoop): Vec2[] {
+  const q = loopPoints(l as unknown as Record<string, unknown>).filter((x) => x.length >= 2) as Vec2[]
+  return q.length ? q : [loopCenter(l)]
 }
 
 /** The turn of `t` about `foot`, as a matrix (column major): `up` leans toward `toward` by t.degrees. */

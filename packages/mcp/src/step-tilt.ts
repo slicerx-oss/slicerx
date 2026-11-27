@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// design.edit_step's tilt: what an extrude, a loft or an added part (a post, a cylinder) made leans one way about its
-// foot (each separate piece of an added part about its own), kept on the step (Step.tilt) so the timeline shows the
+// design.edit_step's tilt: what an extrude, a revolve, a sweep, a loft or an added part (a post, a cylinder) made leans
+// one way about its foot (each separate piece of an added part about its own), kept on the step (Step.tilt) so the timeline shows the
 // same step edited. The steps built on it (standing on its upper half) lean with it about its foot, in the same edit;
 // one that a turn cannot carry (a box cut, a band of paint, a rounded edge) refuses the lean by name. Before it is kept, what the leaning steps make alone, with each copy
 // a pattern of them makes, is measured against what each other step makes alone with its copies: a lean that pushes
@@ -23,7 +23,7 @@ export const tiltInput = z
 
 export type TiltInput = z.infer<typeof tiltInput>
 
-const LEANS = new Set<StepParams['op']>(['shape.extrude', 'sketch.loft', 'parts.add'])
+const LEANS = new Set<StepParams['op']>(['shape.extrude', 'sketch.revolve', 'sketch.sweep', 'sketch.loft', 'parts.add'])
 const SOLID = new Set<StepParams['op']>(['shape.extrude', 'sketch.loft', 'sketch.revolve', 'sketch.sweep', 'parts.add'])
 const r1 = (n: number): number => Math.round(n * 10) / 10
 
@@ -36,9 +36,10 @@ function leanNow(s: Step, t: Vec3): number {
 
 /** The step with its lean set as asked, and what to say; or why it cannot lean. */
 export function tiltedStep(s: Step, t: TiltInput): { step: Step; said: string } | string {
-  if (!LEANS.has(s.params.op)) return 'tilt: only what an extrude, a loft or an added part made leans; change this step another way'
+  if (!LEANS.has(s.params.op)) return 'tilt: only what an extrude, a revolve, a sweep, a loft or an added part made leans; change this step another way'
   const toward = direction(s.transform, TOWARD[t.toward])
   const up = direction(s.transform, [0, 0, 1])
+  if (s.params.op !== 'parts.add' && !tiltFoot(s.params, up)) return `tilt: ${s.params.op === 'sketch.revolve' ? 'this revolve turns about an axis lying over, so it' : 'this step'} has no foot to lean about; change this step another way`
   const was = leanNow(s, toward)
   const deg = t.degrees ?? was + (t.by ?? 0)
   if (Math.abs(deg) > 60) return `tilt: ${r1(deg)} degrees is past the 60 a step leans`

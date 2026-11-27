@@ -639,7 +639,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
       size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
       move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
-      tilt: tiltInput.optional().describe("Lean what an extrude, a loft or an added part made (a post, a pole, a column) about its foot, in place: the step keeps its sizes, the steps built on it (a cap, a top) lean with it, a pattern made of it leans with it, and a later size or move of the step keeps the lean. Refused, naming the step, when the lean would run it into another step's shape, lift it off what it stands on, or leave behind a cut, a band of paint or a rounded edge on its top"),
+      tilt: tiltInput.optional().describe("Lean what an extrude, a revolve, a sweep, a loft or an added part made (a post, a pole, a column) about its foot, in place: the step keeps its sizes, the steps built on it (a cap, a top) lean with it, a pattern made of it leans with it, and a later size or move of the step keeps the lean. Refused, naming the step, when the lean would run it into another step's shape, lift it off what it stands on, or leave behind a cut, a band of paint or a rounded edge on its top"),
       section: sectionInput.optional().describe("Reshape a loft (a car body, fuselage, bottle, vase) by its stations, as slicerx_design_steps lists them front to back; its shapeWords give the edit for what the person said. Parts standing on the body are re-seated on its new top, and the answer says what moved, what now hangs past an edge, and what now needs supports"),
     })
   // a local model edits steps without the section edit, the tilt and the follow-up's size and move, which stay with the cloud ones
@@ -664,7 +664,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.10.0',
+    version: '1.11.0',
     source: 'command',
     permission: 'slice',
     description:

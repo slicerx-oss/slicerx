@@ -249,7 +249,7 @@ describe('design.edit_step tilt', () => {
     await t.ok('slicerx_geom_cut', { design: t.design, part: 0, plane: { axis: 'z', at: 5 }, keep: 'both' })
     const { r } = await t.call('slicerx_design_edit_step', { design: t.design, step: 2, tilt: { toward: 'x', degrees: 10 } })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('only what an extrude, a loft or an added part made leans')
+    expect(text(r)).toContain('only what an extrude, a revolve, a sweep, a loft or an added part made leans')
   })
 })
 
