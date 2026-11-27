@@ -154,9 +154,15 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? [], replayCheck), { chunk: false })
   const inner = opts.client ?? script!
   const steps: EvalStep[] = []
-  // records each request's reply as a step, the shape the scripted client replays (as the creative eval does)
+  // records each request's reply as a step, the shape the scripted client replays (as the creative eval does). It keeps
+  // the model's tool limit and tool search, read at each request as the runtime reads them, so a live run loads the
+  // tab's tools as the app does: on mimir cloud the whole catalog, most of it deferred behind tool search (runtime.ts)
   const client: LlmClient = {
     provider: inner.provider,
+    ...(inner.maxTools === undefined ? {} : { maxTools: inner.maxTools }),
+    get toolSearch(): boolean {
+      return inner.toolSearch === true
+    },
     async *stream(req, signal) {
       const seen = toolResultsSeen(req.messages)
       const step: EvalStep = seen.length ? { seen } : {}
