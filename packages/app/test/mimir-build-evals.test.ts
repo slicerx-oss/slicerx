@@ -24,7 +24,7 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import type { MeshPart, PilotEvent } from '@slicerx/contracts'
+import type { LlmHttpRequest, LlmTransport, MeshPart, PilotEvent } from '@slicerx/contracts'
 import { createScriptedClient, createTransportClient, type LlmMessage } from '@slicerx/pilot'
 import { createNodeTransport } from '@slicerx/pilot/node'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -37,6 +37,7 @@ import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, evalPrice, replaySteps, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, recordLive, refreshScore, rescore, rescoreLine, scoreMoves, summarize } from './mimir-build-evals/recordings'
+import { MAX_LOADED_TOOLS, shape } from '../../../supabase/functions/mimir/shape'
 import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, floorCheck, hingeCheck, hookCheck, lastCheckPass, lidStated, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
@@ -248,6 +249,33 @@ describe('build eval scoring', () => {
       expect(loadRecording(c.id, dir)?.steps).toEqual([{ text: 'half a reply' }])
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('sends the tab\'s tools on mimir cloud as the desktop does: the whole catalog behind tool search, under what the proxy loads up front', async () => {
+    const c = asCase('cloud-tool-search')
+    const sent: LlmHttpRequest[] = []
+    // keeps each request and answers none, so each turn ends after its first request
+    const cloud: LlmTransport = {
+      available: async () => true,
+      // eslint-disable-next-line require-yield
+      async *stream(req) {
+        sent.push(req)
+        throw new Error('not answered in this test')
+      },
+    }
+    await driveCase(c, { client: createTransportClient(cloud, 'mimir-cloud'), timeoutMs: 20_000 })
+    expect(sent.length).toBeGreaterThan(0)
+    for (const [n, req] of sent.entries()) {
+      // the proxy's own check of each request, as mimir cloud runs it before any model call
+      const s = shape(JSON.parse(req.body ?? '{}'), undefined, req.headers['anthropic-beta'])
+      expect(s.ok ? null : s.error, `request ${n + 1}`).toBeNull()
+      const tools = (JSON.parse(req.body ?? '{}') as { tools?: Record<string, unknown>[] }).tools ?? []
+      const loaded = tools.filter((t) => t['defer_loading'] !== true)
+      // the tab offers more than the proxy loads, so the rest waits behind the search tool
+      expect(tools.length, `request ${n + 1}`).toBeGreaterThan(MAX_LOADED_TOOLS)
+      expect(loaded.length, `request ${n + 1}`).toBeLessThanOrEqual(MAX_LOADED_TOOLS)
+      expect(loaded.at(-1)?.['name'], `request ${n + 1}`).toBe('tool_search_tool_bm25')
     }
   }, 30_000)
 
