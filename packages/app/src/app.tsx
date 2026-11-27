@@ -4,7 +4,6 @@ import type { AppFeature, Host } from '@slicerx/contracts'
 import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { AppTooltips } from './lib/tip-host'
-import { startAutoSlice } from './state/auto-slice'
 import { ProfileFollow } from './shell/profile-follow'
 import { Frame, keepPressedControlsInPlace, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
 import { applyType, DEFAULT_THEMES, themeForScheme, themeFromFile } from '@slicerx/ui/theme'
@@ -31,7 +30,6 @@ import { PhoneTabs } from './shell/phone-tabs'
 import { loadApprovalDialog } from './shell/approval-load'
 import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice } from './first-run/look'
 import { useAskForPrinter } from './first-run/ask-printer'
-import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { noteWorkspaceUp, startChunkReload } from './lib/chunk-reload'
 import { useFolderThemes } from './theme/folder'
@@ -39,6 +37,7 @@ import { get, pilotState, pushRecent, set, setModelMode, showsLayers, toast, use
 import { startSpaceMouseWhenOn } from './viewport/spacemouse-loader'
 import { hostSlices, mimirOn, setHostSlices, setMimirOn, stayInModel, useCadShown, useModelMode } from './state/model-mode'
 import { setOffered } from './state/offered'
+import { startAutoSliceLoaded } from './state/auto-slice-load'
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
@@ -195,8 +194,8 @@ function Shell() {
   const assistant = useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
   // Anything that asks for Slice (a key, a link, a saved pref) lands back in Model when the host cannot slice.
   useEffect(() => (hostSlices() ? undefined : stayInModel()), [])
-  // Background slicing after edits (Settings > Auto slice).
-  useEffect(() => (hostSlices() ? startAutoSlice(host) : undefined), [host])
+  // Background slicing after edits (Settings > Auto slice), its code loaded outside the shell's startup code.
+  useEffect(() => (hostSlices() ? startAutoSliceLoaded(host) : undefined), [host])
   // heimdall's plate check after edits to a by-object plate, where the host has one (the desktop). It loads with the
   // app but outside the shell's startup code, as the footprint rule it uses does (apps/web bundle-size budget).
   useEffect(() => {
@@ -590,7 +589,7 @@ function useFileDrops(): void {
     // A drop adds to the plate; a file the system hands over starts a new project.
     const off = host.files.onOpenRequest((refs, how) => {
       set({ workspace: 'prepare' })
-      void addFileRefs(host, refs, { fresh: how !== 'drop' })
+      void import('./state/actions').then((m) => m.addFileRefs(host, refs, { fresh: how !== 'drop' }))
     })
     return () => {
       window.removeEventListener('dragenter', enter)

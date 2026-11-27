@@ -84,8 +84,11 @@ let pending: () => boolean = () => false
 /** Whether auto slice has a slice about to start (its pause after an edit, or a big slice waiting on the fit check). */
 export const autoSlicePending = (): boolean => pending()
 
-/** Starts watching the store. Returns the stop function. */
-export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWaitMs = FIT_WAIT_MS): () => void {
+/**
+ * Starts watching the store. Returns the stop function. `since` is the state when the watch was asked for: the app
+ * loads this code after it mounts, so a change that landed meanwhile counts as one change from `since` to now.
+ */
+export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWaitMs = FIT_WAIT_MS, since?: AppState): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   let waiting: (() => void) | null = null
   // The run of the slice it has started that is not running yet (it waits on the profile first), 0 for none: set until
@@ -207,7 +210,7 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     clear()
     timer = setTimeout(() => run(), 0)
   }
-  const unsubscribe = appStore.subscribe((s, prev) => {
+  const changedFrom = (s: AppState, prev: AppState): void => {
     if (!s.autoSlice) {
       checkLanded = false
       heldForAgent = false
@@ -250,7 +253,10 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     // Mid-drag the slice would be thrown away on the next move; the release starts it.
     if (s.liveEdit) return
     timer = setTimeout(() => run(), delayMs)
-  })
+  }
+  const unsubscribe = appStore.subscribe(changedFrom)
+  const now = appStore.getState()
+  if (since && since !== now) changedFrom(now, since)
   return () => {
     clear()
     unsubscribe()

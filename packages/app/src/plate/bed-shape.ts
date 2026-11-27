@@ -9,6 +9,7 @@ import { point } from './bed-origin'
 
 // The box packer's bed checks (@slicerx/settings/box-pack), shared with the MCP server's arrange.
 export { bedCircle, boxInBed, type Circle } from '@slicerx/settings/box-pack'
+export { circleArea } from './circle-area'
 
 /** Fewest points that read as a circle: a square or an octagon cut from a rectangle printer stays a rectangle. */
 const MIN_RING_POINTS = 12
@@ -31,18 +32,5 @@ export function circleOfArea(area: unknown): Circle | null {
   const r = radii.reduce((a, b) => a + b, 0) / radii.length
   if (radii.some((x) => Math.abs(x - r) > r * RING_TOLERANCE)) return null
   return { cx, cy, r: Math.max(w, d) / 2 }
-}
-
-/** A ring of points around a circle of `diameter` mm whose box starts at 0, 0: the printable area of a round bed. */
-export function circleArea(diameter: number, points = 72): [number, number][] {
-  const r = diameter / 2
-  return Array.from({ length: points }, (_, i) => {
-    const a = (i / points) * Math.PI * 2
-    return [round3(r + r * Math.cos(a)), round3(r + r * Math.sin(a))] as [number, number]
-  })
-}
-
-function round3(v: number): number {
-  return Math.round(v * 1000) / 1000
 }
 

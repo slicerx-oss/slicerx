@@ -6,6 +6,8 @@
 import type { Bed, MeshPart } from '@slicerx/contracts'
 import { boxInBed } from './bed-shape'
 
+export { modelOrigin } from './model-origin'
+
 export type Mat4 = number[]
 export type Vec3 = [number, number, number]
 
@@ -161,11 +163,6 @@ function translate(m: Mat4, d: Vec3): Mat4 {
 export function dropToBed(parts: readonly Pick<MeshPart, 'positions'>[], m: Mat4): Mat4 {
   const b = bounds(parts, m)
   return b ? translate(m, [0, 0, -b.min[2]]) : m
-}
-
-/** Where Model counts positions from: the grid center, the middle of the bed. Slice counts from the bed's front left corner. */
-export function modelOrigin(bed: Pick<Bed, 'widthMm' | 'depthMm'>): Vec3 {
-  return [bed.widthMm / 2, bed.depthMm / 2, 0]
 }
 
 /** Moves the object so its bounds are centered on the bed in X and Y. */

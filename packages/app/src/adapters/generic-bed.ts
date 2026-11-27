@@ -3,7 +3,7 @@
 // The bed a plate slices for when no printer is selected, or the selected one matches no profile. The plate, the
 // engine's printable area and the safety preflight all read it from here, so they cannot disagree.
 import type { Bed, SettingValue } from '@slicerx/contracts'
-import { circleArea } from '../plate/bed-shape'
+import { circleArea } from '../plate/circle-area'
 
 export const GENERIC_BED: Readonly<Bed> = { widthMm: 256, depthMm: 256, heightMm: 256 }
 
