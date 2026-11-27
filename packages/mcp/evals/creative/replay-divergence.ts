@@ -11,6 +11,20 @@ import type { ScriptStepData } from '@slicerx/pilot/evals'
 /** A recorded reply, with the tool results the model had just read when it wrote it (absent in older recordings). */
 export interface RecordedStep extends ScriptStepData {
   seen?: string[]
+  /** What the provider said the request cost (a live capture only): input tokens with the cache reads and writes in them, and output tokens with any thinking. */
+  usage?: StepUsage
+}
+
+export interface StepUsage {
+  input: number
+  output: number
+  cacheRead?: number
+  cacheWrite?: number
+}
+
+/** A usage event as a recording keeps it. */
+export function stepUsage(ev: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }): StepUsage {
+  return { input: ev.inputTokens, output: ev.outputTokens, ...(ev.cacheReadTokens === undefined ? {} : { cacheRead: ev.cacheReadTokens }), ...(ev.cacheWriteTokens === undefined ? {} : { cacheWrite: ev.cacheWriteTokens }) }
 }
 
 // ids the app makes from the time and a counter: designs and objects (obj_...), plans (plan_...), volumes and plates,
@@ -23,10 +37,12 @@ export const MADE_ID = /\b(?:obj|plan|vol|plate)_[0-9a-z~]+\b|\b[sd](?=[0-9a-z]*
 /**
  * Adds one streamed event of a live reply to the step that records it: its text, its tool calls, and whether it stopped
  * at the output limit. The runtime acts on that stop (it asks again after a reply cut off with nothing said, and a run
- * cut once goes on from a reply that leaves its design empty), so a replay has to stop there too.
+ * cut once goes on from a reply that leaves its design empty), so a replay has to stop there too. A live capture (`live`)
+ * also keeps what the provider said the request cost (cost.ts reads it); a replay's usage is the script's, never kept.
  */
-export function recordEvent(step: RecordedStep, ev: LlmEvent): void {
+export function recordEvent(step: RecordedStep, ev: LlmEvent, live = false): void {
   if (ev.type === 'text') step.text = (step.text ?? '') + ev.delta
+  if (ev.type === 'usage' && live) step.usage = stepUsage(ev)
   if (ev.type === 'tool_call') {
     let args: Record<string, unknown> = {}
     try {
