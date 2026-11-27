@@ -298,10 +298,11 @@ export async function tiltProblem(host: DesignHost, d: Design, group: readonly L
 /**
  * The steps a lean asked of step k turns, with how they stand to it: the step itself; for a pattern, the steps it
  * repeats that lean (each copy then leans about its own foot, as a pattern of a leaning step does); for a merged array,
- * the step that made the part it copies; for separate copies, they and the step that made the part they copy (copy 1).
+ * the step that made the part it copies; for separate copies, they and the step that made the part they copy (copy 1);
+ * for any other step, it and each later array of separate copies of the part it made (`copies`, leaning as it leans).
  * Or why none can lean.
  */
-function leanLeads(d: Design, k: number): { k: number; how?: string }[] | string {
+function leanLeads(d: Design, k: number): { k: number; how?: string; copies?: true }[] | string {
   const all = d.history.steps
   const s = all[k]!
   const p = s.params
@@ -310,12 +311,23 @@ function leanLeads(d: Design, k: number): { k: number; how?: string }[] | string
     return leads.length ? leads.map((j) => ({ k: j, how: 'which it repeats' })) : 'tilt: none of the steps this pattern repeats can lean; change it another way'
   }
   const made = p.op === 'array.merged' ? s.part : p.op === 'parts.add' && p.copyOf ? p.copyOf.part : null
-  if (made === null) return [{ k }]
+  if (made === null) return [{ k }, ...storedCopies(d, k).map((j) => ({ k: j, copies: true as const }))]
   const own = p.op === 'parts.add' ? [{ k }] : []
   const maker = made >= 0 ? makers(d, k)[made] : null
   const j = maker ? all.findIndex((x) => x.id === maker.id) : -1
   if (j < 0) return own.length ? own : 'tilt: this array copies a part no step made (it came in as a mesh), so nothing in it leans; change it another way'
   return [...own, { k: j, how: 'which made the part it copies' }]
+}
+
+/** The later arrays of separate copies (parts.add with copyOf) whose part copied step k made. */
+function storedCopies(d: Design, k: number): number[] {
+  const id = d.history.steps[k]!.id
+  const out: number[] = []
+  for (const [j, x] of d.history.steps.entries()) {
+    if (j <= k || x.suppressed || x.params.op !== 'parts.add' || !x.params.copyOf) continue
+    if (makers(d, j)[x.params.copyOf.part]?.id === id) out.push(j)
+  }
+  return out
 }
 
 /**
@@ -332,13 +344,14 @@ export async function leanEdit(host: DesignHost, d: Design, k: number, next: Ste
   for (const lead of leads) {
     if (group.some((g) => g.k === lead.k)) continue
     const was = lead.k === k ? next : all[lead.k]!
-    const r = tiltedStep(was, t)
+    // stored copies take the lean the part they copy now has, each copy about its own foot
+    const r = tiltedStep(was, lead.copies ? { toward: t.toward, degrees: group[0]?.now.tilt?.degrees ?? 0 } : t)
     const name = `step ${lead.k + 1}, ${stepName(was)}`
     if (typeof r === 'string') return lead.how ? `tilt: ${name}, ${lead.how}, cannot lean: ${r.replace(/^tilt: /, '')}` : r
     const c = await carriedSteps(host, d, lead.k, r.step)
     if (typeof c === 'string') return c
     group.push({ k: lead.k, was, now: r.step }, ...c.filter((x) => !group.some((g) => g.k === x.k)))
-    said.push(lead.how ? `${name}, ${lead.how}, ${r.said.replace(/^it /, '')}` : r.said)
+    if (!lead.copies) said.push(lead.how ? `${name}, ${lead.how}, ${r.said.replace(/^it /, '')}` : r.said)
     carried.push(...c.map((x) => x.k).filter((j) => !carried.includes(j)))
   }
   const why = await tiltProblem(host, d, group)
