@@ -225,7 +225,7 @@ const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((f)
  * design given when the run's calls name none. A feature built and tagged in an earlier run then counts as built.
  */
 export function planLeft(messages: readonly LlmMessage[], from = 0, now?: DesignNow): PlanLeft | null {
-  from = carriedPlanFrom(messages, from) ?? from
+  from = carriedPlanFrom(messages, from) ?? followedPlanFrom(messages, from) ?? from
   const calls = new Map<string, LlmToolCall>()
   let plan: { planId: string; part: string; features: string[]; amended: boolean } | undefined
   let design: string | undefined
@@ -380,6 +380,41 @@ export function carriedPlanFrom(messages: readonly LlmMessage[], runStart: numbe
     started = true
   }
   return last.at
+}
+
+/** Calls that look at a design or save it without changing it, beside READS. */
+const LOOKS: ReadonlySet<string> = new Set(['design.look', 'design.render', 'design.get_plan', 'design.lookup_sizes', 'design.save', 'geom.render', 'geom.paint_regions', 'geom.face_pick', 'geom.sketch_check', 'geom.layers_plan'])
+
+/**
+ * Where to read an approved plan from for a follow-up on its design: the message that called design.plan in an earlier
+ * run of the chat, when that call was the chat's last design.plan before this run and the person approved it with Go,
+ * and this run changes the design its part was built in (the first design a design or modeling call named after it).
+ * Undefined otherwise, as for a run that shows a plan of its own, works only on another design, or only reads.
+ */
+export function followedPlanFrom(messages: readonly LlmMessage[], runStart: number): number | undefined {
+  const calls = new Map<string, { call: LlmToolCall; at: number }>()
+  let last: { at: number; approved: boolean } | undefined
+  let design: string | undefined
+  let changed = false
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!
+    if (m.role === 'assistant') for (const c of m.toolCalls ?? []) calls.set(c.id, { call: c, at: i })
+    if (m.role !== 'tool') continue
+    const c = calls.get(m.callId)
+    if (!c) continue
+    const r = read(m.content)
+    if (c.call.name === 'design.plan') {
+      // a plan shown in this run is this run's own: planLeft reads it from the run's messages
+      if (c.at >= runStart) return undefined
+      last = { at: c.at, approved: r.ok && r.accepted === true && r.planId !== undefined }
+      design = undefined
+      continue
+    }
+    if (!last || !BUILDS.test(c.call.name) || !r.ok || !r.design) continue
+    design ??= r.design
+    if (i >= runStart && r.design === design && !READS.has(c.call.name) && !LOOKS.has(c.call.name)) changed = true
+  }
+  return last?.approved && changed ? last.at : undefined
 }
 
 /** Calls whose answer's lastStep is a step already there, not one they built: an undo, an edit, a move of the timeline marker. */
