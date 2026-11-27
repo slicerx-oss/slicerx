@@ -356,26 +356,41 @@ function sameTuple(s: Record<string, unknown>): Record<string, unknown> {
   return out
 }
 
-/**
- * The tool as a local model gets it (runtime.ts): its localDescription when it has one, else its description only when
- * its row in LOCAL_TOOLS (local-tools.ts) says so, and its input schema (its localInput when it has one) without the
- * keywords that say nothing (leanSchema) and with only the field descriptions its row lists. Text that is not listed
- * reaches cloud turns only. The tool takes and checks exactly the same input either way; a cloud model and MCP clients
- * get toolSpec.
- */
-export function localToolDef(t: PilotTool<never> | PilotTool<unknown>): { name: string; description: string; parameters: ToolSpec['inputSchema'] } {
-  const shown = t.localInput ? { ...t, input: t.localInput } : t
-  const spec = toolSpec(shown as PilotTool<unknown>)
+/** `t`'s published input schema (toolSpec) without the keywords that say nothing (leanSchema). */
+function leanInput(t: PilotTool<unknown>): unknown {
+  const spec = toolSpec(t)
   let input: unknown
   try {
-    input = z.toJSONSchema(shown.input as z.ZodType, { target: 'draft-2020-12', unrepresentable: 'any', io: 'input' })
+    input = z.toJSONSchema(t.input as z.ZodType, { target: 'draft-2020-12', unrepresentable: 'any', io: 'input' })
   } catch {
     // no input form: every object keeps additionalProperties as published
     input = undefined
   }
+  return leanSchema(spec.inputSchema, input)
+}
+
+/**
+ * The tool as a local model gets it (runtime.ts): its localDescription when it has one, else its description only when
+ * its row in LOCAL_TOOLS (local-tools.ts) says so, and its input schema (its localInput when it has one) without the
+ * keywords that say nothing (leanSchema) and with only the field descriptions its row lists. Text that is not listed
+ * reaches cloud turns only. The tool takes and checks exactly the same input either way; a cloud model gets
+ * cloudToolDef and MCP clients get toolSpec.
+ */
+export function localToolDef(t: PilotTool<never> | PilotTool<unknown>): { name: string; description: string; parameters: ToolSpec['inputSchema'] } {
+  const shown = (t.localInput ? { ...t, input: t.localInput } : t) as PilotTool<unknown>
   const row = LOCAL_TOOLS[t.name]
   const description = t.localDescription ?? (row?.description ? t.description : '')
-  return { name: t.name, description, parameters: keepDescriptions(leanSchema(spec.inputSchema, input), new Set(row?.fields ?? [])) as ToolSpec['inputSchema'] }
+  return { name: t.name, description, parameters: keepDescriptions(leanInput(shown), new Set(row?.fields ?? [])) as ToolSpec['inputSchema'] }
+}
+
+/**
+ * The tool as a cloud model gets it (runtime.ts): its description and every field description as published, and its
+ * input schema without the keywords that say nothing (leanSchema), which every request carries otherwise. The tool takes
+ * and checks exactly the same input as with toolSpec, which MCP clients get.
+ */
+export function cloudToolDef(t: PilotTool<never> | PilotTool<unknown>): { name: string; description: string; parameters: ToolSpec['inputSchema'] } {
+  const spec = toolSpec(t as PilotTool<unknown>)
+  return { name: spec.name, description: spec.description, parameters: leanInput(t as PilotTool<unknown>) as ToolSpec['inputSchema'] }
 }
 
 /** Default display form of arguments: `--key value` pairs, quoted when they contain spaces. */
