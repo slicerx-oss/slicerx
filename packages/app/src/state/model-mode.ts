@@ -8,7 +8,8 @@
 import { useSyncExternalStore } from 'react'
 import { editionHasCad, useEdition } from '../edition'
 import { isPhoneLayout, usePhoneLayout } from '../lib/phone-layout'
-import { modelOrigin, type Vec3 } from '../plate/transform'
+import { modelOrigin } from '../plate/model-origin'
+import type { Vec3 } from '../plate/transform'
 import { appStore, get, set, setModelMode, useApp, type ModelMode } from './store'
 
 /** Whether the host can slice; set once from its capabilities when the app starts (app.tsx). */
