@@ -1120,10 +1120,8 @@ impl Map {
                     d > 0.0 && d < len
                 })
                 .collect();
-            c.sort_by(|&x, &y| {
-                (x - from)
-                    .rem_euclid(o.total())
-                    .total_cmp(&(y - from).rem_euclid(o.total()))
+            crate::order::sort_by_key(&mut c, |&x| {
+                crate::order::f64_key((x - from).rem_euclid(o.total()))
             });
             let kinds = std::iter::once(from)
                 .chain(c.iter().copied())
@@ -1396,7 +1394,7 @@ pub(super) fn matched(profiles: &[Profile], closed: bool, density: &Density) -> 
             own: vec![false; count],
         });
     }
-    rails.sort_by(|x, y| x.at[0].total_cmp(&y.at[0]));
+    crate::order::sort_by_key(&mut rails, |x| crate::order::f64_key(x.at[0]));
     if closed {
         let around = map(count - 1, 0);
         if rails

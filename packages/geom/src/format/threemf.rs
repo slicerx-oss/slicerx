@@ -427,7 +427,7 @@ fn fill_facets(e: &Value, o: &mut MeshObject) -> bool {
                     Some((t, text))
                 })
                 .collect();
-            got.sort_by_key(|(t, _)| *t);
+            crate::order::sort_by_key(&mut got, |(t, _)| u64::from(*t));
             got.dedup_by_key(|(t, _)| *t);
             *layer = got;
         }

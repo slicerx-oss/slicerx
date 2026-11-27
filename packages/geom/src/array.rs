@@ -599,7 +599,7 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
                     .then_some((r, k, n[0] * mid[0] + n[1] * mid[1] < 0.0))
             })
             .collect();
-    sides.sort_by(|a, b| a.2.cmp(&b.2).then(a.0.total_cmp(&b.0)));
+    crate::order::sort_by_key(&mut sides, |s| (u64::from(s.2), crate::order::f64_key(s.0)));
     let wall: HashSet<usize> = sides.iter().map(|s| s.1).collect();
     // corners on a flat face across the axis, and the faces that are no wall at each corner
     let mut flat = vec![false; local.len()];
@@ -644,7 +644,7 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
             hs.sort_by(f64::total_cmp);
             hs.dedup_by(|b, a| *b - *a < ROUND_TOL);
             let eps = ROUND_TOL / radius;
-            corners.sort_by(|a, b| a[1].m_atan2(a[0]).total_cmp(&b[1].m_atan2(b[0])));
+            crate::order::sort_by_key(&mut corners, |p| crate::order::f64_key(p[1].m_atan2(p[0])));
             let mut angles: Vec<f64> = corners.iter().map(|p| p[1].m_atan2(p[0])).collect();
             angles.dedup_by(|b, a| *b - *a < eps);
             let gap = angles

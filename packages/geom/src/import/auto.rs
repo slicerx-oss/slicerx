@@ -393,7 +393,7 @@ pub(crate) fn edge_shells(m: &TriMesh) -> Vec<TriMesh> {
         .filter_map(|r| groups.remove(&r))
         .map(|tris| m.subset(&tris))
         .collect();
-    out.sort_by_key(|s| std::cmp::Reverse(s.triangles.len()));
+    crate::order::sort_by_key(&mut out, |s| u64::MAX - s.triangles.len() as u64);
     out
 }
 

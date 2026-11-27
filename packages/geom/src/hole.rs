@@ -196,7 +196,7 @@ pub fn find_on_axis(mesh: &TriMesh, at: V3, axis: V3) -> Result<Hole> {
             Some((radius, t))
         })
         .collect();
-    round.sort_by(|a, b| a.0.total_cmp(&b.0));
+    crate::order::sort_by_key(&mut round, |r| crate::order::f64_key(r.0));
     let mut why = None;
     for (_, t) in round {
         match find(mesh, u32::try_from(t).unwrap_or(u32::MAX), at) {

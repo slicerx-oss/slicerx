@@ -266,7 +266,13 @@ fn shell_triangles(mesh: &TriMesh) -> Vec<Vec<[u32; 3]>> {
         groups.entry(find(&mut parent, t[0])).or_default().push(*t);
     }
     let mut out: Vec<Vec<[u32; 3]>> = groups.into_values().collect();
-    out.sort_by_key(|g| (std::cmp::Reverse(g.len()), g.first().copied()));
+    // largest first, then by the first triangle (a group without one first)
+    crate::order::sort_by_key(&mut out, |g| {
+        let (head, tail) = g.first().map_or((0, 0), |t| {
+            (1 << 32 | u64::from(t[0]), u64::from(t[1]) << 32 | u64::from(t[2]))
+        });
+        (u64::MAX - g.len() as u64, head, tail)
+    });
     out
 }
 
@@ -352,7 +358,7 @@ impl RawModel {
                     }
                 }
                 let split = by_slot.len() > 1;
-                by_slot.sort_by_key(|(s, _)| *s);
+                crate::order::sort_by_key(&mut by_slot, |(s, _)| u64::from(*s));
                 for (slot, tris) in by_slot {
                     let mesh = self.compact(&tris);
                     if let Some(b) = mesh.bounds() {
@@ -476,7 +482,7 @@ pub(crate) fn build_palette(counts: &[([u8; 3], usize)], max: usize) -> (Vec<[u8
             .max();
         let Some(((_, ch), bi)) = pick else { break };
         let mut b = boxes.swap_remove(bi);
-        b.sort_by_key(|&j| counts[j].0[ch]);
+        crate::order::sort_by_key(&mut b, |&j| u64::from(counts[j].0[ch]));
         let total: usize = b.iter().map(|&j| counts[j].1.max(1)).sum();
         let (mut acc, mut cut) = (0, 1);
         for (n, &j) in b.iter().enumerate() {
@@ -490,7 +496,7 @@ pub(crate) fn build_palette(counts: &[([u8; 3], usize)], max: usize) -> (Vec<[u8
         boxes.push(b);
         boxes.push(right);
     }
-    boxes.sort_by_key(|b| b.iter().copied().min().unwrap_or(0));
+    crate::order::sort_by_key(&mut boxes, |b| b.iter().copied().min().unwrap_or(0) as u64);
     let mut palette = Vec::new();
     let mut slot_of = vec![0; counts.len()];
     for (pi, b) in boxes.iter().enumerate() {

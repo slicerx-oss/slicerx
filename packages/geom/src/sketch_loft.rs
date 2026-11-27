@@ -1333,9 +1333,8 @@ pub(crate) fn resample(ring: &[V2], n: usize, closed: bool) -> Vec<V2> {
     let mut counts: Vec<usize> = shares.iter().map(|s| s.floor() as usize).collect();
     let mut left = extra - counts.iter().sum::<usize>();
     let mut order: Vec<usize> = (0..sides).collect();
-    order.sort_by(|&a, &b| {
-        let (ra, rb) = (shares[a] - shares[a].floor(), shares[b] - shares[b].floor());
-        rb.total_cmp(&ra).then(a.cmp(&b))
+    crate::order::sort_by_key(&mut order, |&a| {
+        (crate::order::f64_key_rev(shares[a] - shares[a].floor()), a as u64)
     });
     for &i in &order {
         if left == 0 {

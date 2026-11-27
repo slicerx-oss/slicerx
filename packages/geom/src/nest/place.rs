@@ -949,7 +949,7 @@ impl Nester {
                 }
             })
             .collect();
-        idx.sort_by(|&a, &b| size[b].total_cmp(&size[a]).then(a.cmp(&b)));
+        crate::order::sort_by_key(&mut idx, |&a| (crate::order::f64_key_rev(size[a]), a as u64));
         if let Order::Defer(k) = o {
             let n = idx.len();
             idx.rotate_left(k.min(n));
@@ -1151,10 +1151,9 @@ impl Nester {
             .flatten()
             .map(|p| (self.score(score, &bb.shifted(*p), pile), *p))
             .collect();
-        cands.sort_by(|a, c| {
-            a.0.total_cmp(&c.0)
-                .then(a.1[1].total_cmp(&c.1[1]))
-                .then(a.1[0].total_cmp(&c.1[0]))
+        crate::order::sort_by_key(&mut cands, |(s, p)| {
+            use crate::order::f64_key;
+            (f64_key(*s), f64_key(p[1]), f64_key(p[0]))
         });
         if self.opts.skirt && !self.zone_hulls.is_empty() {
             return cands
@@ -1219,7 +1218,9 @@ impl Nester {
             }
             if m > 1 && !scored.is_empty() {
                 // refine round the two best coarse turns
-                scored.sort_by(|a, c| a.0.total_cmp(&c.0).then(a.1.cmp(&c.1)));
+                crate::order::sort_by_key(&mut scored, |&(s, t)| {
+                    (crate::order::f64_key(s), t.cast_unsigned() ^ 1 << 63)
+                });
                 let all = self.shapes[b].turns.clone();
                 let mut extra: Vec<i64> = Vec::new();
                 for &(_, t) in scored.iter().take(2) {

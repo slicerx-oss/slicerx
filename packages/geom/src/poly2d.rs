@@ -214,12 +214,9 @@ pub fn triangulate(poly: &Polygon) -> Result<Vec<[u32; 3]>> {
         }
         offset += h.len();
     }
-    holes.sort_by(|&a, &b| {
-        let (pa, pb) = (
-            ear.p(&pts, ear.rightmost(&pts, a)),
-            ear.p(&pts, ear.rightmost(&pts, b)),
-        );
-        pb[0].total_cmp(&pa[0]).then(pb[1].total_cmp(&pa[1]))
+    crate::order::sort_by_key(&mut holes, |&h| {
+        let p = ear.p(&pts, ear.rightmost(&pts, h));
+        (crate::order::f64_key_rev(p[0]), crate::order::f64_key_rev(p[1]))
     });
     let mut start = start;
     for h in holes {

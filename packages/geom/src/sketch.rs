@@ -919,7 +919,7 @@ fn crossings(rings: &[&[V2]], eps: f64) -> Vec<(usize, usize, usize, usize)> {
             edges.push((a[0].min(b[0]), a[0].max(b[0]), ri, i));
         }
     }
-    edges.sort_by(|x, y| x.0.total_cmp(&y.0));
+    crate::order::sort_by_key(&mut edges, |x| crate::order::f64_key(x.0));
     let mut out = Vec::new();
     let mut active: Vec<usize> = Vec::new();
     for k in 0..edges.len() {
@@ -1082,7 +1082,9 @@ pub fn check_with(loops: &[Loop], spline_tol: f64) -> SketchCheck {
             ));
         }
     }
-    issues.sort_by_key(|i| (i.loop_index, i.segment));
+    crate::order::sort_by_key(&mut issues, |i| {
+        (i.loop_index as u64, i.segment.map_or(0, |s| s as u64 + 1))
+    });
     let good: Vec<usize> = (0..rings.len()).filter(|&i| !bad[i]).collect();
     let infos = loop_infos(&rings, &good);
     let polygons = if issues.is_empty() {

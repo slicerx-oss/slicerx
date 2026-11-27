@@ -742,7 +742,7 @@ fn faces_under(from: &TriMesh, old: &Faces, out: &TriMesh) -> Vec<Option<u32>> {
             (t, vec3::scale(vec3::add(vec3::add(a, b), c), 1.0 / 3.0))
         })
         .collect();
-    mids.sort_by(|p, q| p.1[0].total_cmp(&q.1[0]));
+    crate::order::sort_by_key(&mut mids, |p| crate::order::f64_key(p.1[0]));
     let tol = (from.bounds().map_or(1.0, |b| b.diagonal()) * 1e-6).max(1e-5);
     let mut under = vec![None::<u32>; out.triangles.len()];
     for (t, &tri) in from.triangles.iter().enumerate() {

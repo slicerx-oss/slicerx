@@ -263,7 +263,9 @@ pub fn cross(o: Pt, a: Pt, b: Pt) -> f64 {
 /// convex hull, counterclockwise, no collinear points
 pub fn hull(pts: &[Pt]) -> Ring {
     let mut p: Vec<Pt> = pts.to_vec();
-    p.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    crate::order::sort_by_key(&mut p, |q| {
+        (crate::order::f64_key(q[0]), crate::order::f64_key(q[1]))
+    });
     p.dedup();
     if p.len() < 3 {
         return p;

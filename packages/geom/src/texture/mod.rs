@@ -683,7 +683,9 @@ fn sampled_colors(
             (c, w)
         })
         .collect();
-    out.sort_by_key(|c| c.0);
+    crate::order::sort_by_key(&mut out, |c| {
+        u64::from(c.0[0]) << 16 | u64::from(c.0[1]) << 8 | u64::from(c.0[2])
+    });
     out
 }
 

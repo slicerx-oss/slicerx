@@ -168,7 +168,7 @@ pub fn fit_check_items(items: &[TriMesh], opts: &FitOptions) -> Result<FitReport
         }
     }
     // pieces joined through other bodies are one piece; of the rest, the closest pair per two pieces
-    loose.sort_by(|x, y| x.gap_mm.total_cmp(&y.gap_mm));
+    crate::order::sort_by_key(&mut loose, |x| crate::order::f64_key(x.gap_mm));
     let mut told = std::collections::HashSet::new();
     for l in loose {
         let (a, b) = (root(&mut piece, l.parts[0]), root(&mut piece, l.parts[1]));
@@ -177,7 +177,7 @@ pub fn fit_check_items(items: &[TriMesh], opts: &FitOptions) -> Result<FitReport
         }
     }
     let pieces = (0..piece.len()).filter(|&i| root(&mut piece, i) == i).count();
-    gaps.sort_by(|x, y| x.gap_mm.total_cmp(&y.gap_mm));
+    crate::order::sort_by_key(&mut gaps, |x| crate::order::f64_key(x.gap_mm));
     gaps.truncate(MAX_GAPS);
     let warnings = gaps.iter().map(sentence).collect();
     Ok(FitReport {
@@ -684,7 +684,7 @@ fn seg_hits_tri(p: V3, q: V3, sp: Sign, sq: Sign, t: &[V3; 3]) -> Option<V3> {
 fn coplanar_hit(p: V3, q: V3, t: &[V3; 3]) -> Option<V3> {
     let n = vec3::cross(vec3::sub(t[1], t[0]), vec3::sub(t[2], t[0]));
     let mut axes = [0, 1, 2];
-    axes.sort_by(|&i, &j| n[j].abs().total_cmp(&n[i].abs()));
+    crate::order::sort3_by_key(&mut axes, |&i| crate::order::f64_key_rev(n[i].abs()));
     let (drop, turn) = axes.into_iter().find_map(|k| {
         let flat = |v: V3| Vec2::new(v[(k + 1) % 3], v[(k + 2) % 3]);
         let s = orient2d(flat(t[0]), flat(t[1]), flat(t[2]));
