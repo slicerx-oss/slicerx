@@ -16,7 +16,7 @@ import type { MemoryStore } from '../src/memory/facts'
 import { encodeToolName } from '../src/provider/openai'
 import { createScriptedClient } from '../src/provider/scripted'
 import { surfaceTools } from '../src/surfaces'
-import { defineTool, localToolDef, toolSpec, type PilotTool } from '../src/tool'
+import { cloudToolDef, defineTool, localToolDef, toolSpec, type PilotTool } from '../src/tool'
 import { askTool, lookupTool, sheetBindTool, sheetTool } from '../src/tools/ask'
 import { memoryTools } from '../src/tools/memory'
 import { turnSetTool } from '../src/turnsets'
@@ -126,6 +126,37 @@ describe('the local form of every tool', () => {
     })
     // the published schema is as it was: closed objects and the safe integer range
     expect(toolSpec(probe).inputSchema).toMatchObject({ additionalProperties: false, properties: { n: { maximum: Number.MAX_SAFE_INTEGER }, open: { additionalProperties: false }, id: { minLength: 1 } } })
+  })
+})
+
+describe('the cloud form of every tool', () => {
+  it('keeps the description and every field description, and drops the same keywords the local form drops', async () => {
+    for (const t of await everyTool()) {
+      const spec = toolSpec(t)
+      const cloud = cloudToolDef(t)
+      expect(cloud.name, t.name).toBe(spec.name)
+      expect(cloud.description, t.name).toBe(spec.description)
+      expect(describedPaths(cloud.parameters), t.name).toEqual(describedPaths(spec.inputSchema))
+      // nothing new and nothing changed: every keyword and value is in the published schema
+      const full = new Set(paths(plainTuples(spec.inputSchema)))
+      expect(paths(cloud.parameters).filter((p) => !full.has(p)), t.name).toEqual([])
+      expect(JSON.stringify(cloud.parameters).length, t.name).toBeLessThanOrEqual(JSON.stringify(spec.inputSchema).length)
+    }
+  })
+
+  it('takes the same input as the local form of a tool with no local input or local description, every description kept', () => {
+    const t = defineTool({
+      name: 'test.cloud',
+      version: '1.0.0',
+      description: 'A tool.',
+      source: 'command',
+      permission: 'read',
+      input: z.object({ part: z.string().min(1).describe('The part'), point: z.tuple([z.number(), z.number()]), n: z.number().int().optional() }),
+      async run() {
+        return { summary: 'ok' }
+      },
+    })
+    expect(cloudToolDef(t)).toEqual({ name: 'test.cloud', description: 'A tool.', parameters: { type: 'object', properties: { part: { description: 'The part', type: 'string' }, point: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 }, n: { type: 'integer' } }, required: ['part', 'point'] } })
   })
 })
 

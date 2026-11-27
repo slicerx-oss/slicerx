@@ -48,7 +48,7 @@ import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type Tool
 import { searchedPages } from './provider/anthropic'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
-import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
+import { argLine, ASK_DISMISSED, ASK_SAID_MAX, cloudToolDef, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
 import { askedTools, capLine, capTools, LOAD_TOOLS_TOOL, loadFits, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnKind, turnNeeds, type StickyToolsets, type ToolCapReport, type TurnKind } from './toolsets'
 import { designMade, inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
@@ -1781,10 +1781,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (searching) {
         dropUnanswered(sessionId, messages)
         const before = catalogs.get(sessionId)
-        const next = catalogStep(before, turn.map((t) => ({ name: t.name, def: () => {
-          const s = toolSpec(t)
-          return { name: s.name, description: s.description, parameters: s.inputSchema }
-        } })))
+        const next = catalogStep(before, turn.map((t) => ({ name: t.name, def: () => cloudToolDef(t) })))
         const last = messages[messages.length - 1]?.role
         if (before && next.add.length + next.remove.length > 0) {
           // a change goes right after the person's words or a tool's answer, the only places the provider takes one; it
@@ -1840,8 +1837,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         visible = capped.tools
         loader = undefined
       }
-      // a local model gets each tool's local form (tool.ts): its short description and a schema without empty keywords
-      const toolDefs = catalog ? catalog.defs : local ? visible.map((t) => localToolDef(t)) : visible.map((t) => toolSpec(t)).map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
+      // a local model gets each tool's local form (tool.ts): its short description and a schema without empty keywords;
+      // a cloud model gets the whole description with that same lean schema (cloudToolDef)
+      const toolDefs = catalog ? catalog.defs : local ? visible.map((t) => localToolDef(t)) : visible.map((t) => cloudToolDef(t))
       // A local model has a small context and its runner cuts an overlong prompt from the start.
       const sent = local ? fitContext(messages, toolDefs, MIMIR_CONTEXT).messages : messages
       let text = ''
