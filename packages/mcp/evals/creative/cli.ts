@@ -49,6 +49,7 @@ import { costClient, costTable, recordedUsage, sessionCost, type CallCost, type 
 import { budgetedClient, createBudget, DEFAULT_CAP_USD, DEFAULT_USD_PER_SEARCH, runLive, STOP_MARGIN_USD, type Price } from './live'
 import { CREATIVE_PROMPTS, type CreativePrompt } from './prompts'
 import { loadRecording, saveRecording } from './recordings'
+import { capturedModels } from './replay-divergence'
 import { CREATIVE_TAB, DEFAULT_ANSWER, passCounts, replayScored, runPrompt, scoreParts, staleLines, type CreativeScore, type NoBuild, type PromptRun } from './run'
 
 const PROVIDERS = ['openai', 'anthropic', 'openai-compatible']
@@ -145,7 +146,8 @@ const broken: string[] = []
 const report = (p: CreativePrompt, run: PromptRun): void => {
   // a run the budget stopped ends partway, which is not what the model would do: it is never saved
   if (mode === 'live' && flag('record') && run.steps.length && !run.error && !budget.stopped) {
-    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true, midBuildAnswer: true } : {}), tabTools: true, samePart: true, ...(run.planGoesOn ? { planGoesOn: true } : {}) })
+    const m = capturedModels(run.steps, model ?? '')
+    saveRecording(p.id, { status: 'recorded', model: m.model, ...(m.requestModels ? { requestModels: m.requestModels } : {}), provider, capturedAt: new Date().toISOString(), steps: m.steps, ...(defaultAnswer ? { defaultAnswer: true, midBuildAnswer: true } : {}), tabTools: true, samePart: true, ...(run.planGoesOn ? { planGoesOn: true } : {}) })
   }
   // a replay that got the plan_left note its recording never answered stands for no reply of the model's: stale, not scored
   if (mode === 'replay' && !replayScored(run)) {

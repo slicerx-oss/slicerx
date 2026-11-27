@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { EvalStep } from './drive'
+import { capturedModels } from '../../../mcp/evals/creative/replay-divergence'
 import type { CaseScore, Verdict } from './score'
 
 export const RECORDINGS_DIR = join(__dirname, 'recordings')
@@ -76,7 +77,8 @@ export function saveRecording(id: string, rec: BuildRecording, dir = RECORDINGS_
  */
 export function recordLive(id: string, run: { steps: EvalStep[]; score: CaseScore; error?: string }, from: { model: string; provider: string; stopped: boolean }, dir = RECORDINGS_DIR): boolean {
   if (!run.steps.length || run.error || from.stopped) return false
-  saveRecording(id, { model: from.model, provider: from.provider, capturedAt: new Date().toISOString(), steps: run.steps, score: summarize(run.score), midBuildAnswer: true }, dir)
+  const m = capturedModels(run.steps, from.model)
+  saveRecording(id, { model: m.model, ...(m.requestModels ? { requestModels: m.requestModels } : {}), provider: from.provider, capturedAt: new Date().toISOString(), steps: m.steps, score: summarize(run.score), midBuildAnswer: true }, dir)
   return true
 }
 

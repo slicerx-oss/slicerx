@@ -222,7 +222,7 @@ describe('build eval scoring', () => {
     expect(n).toBeGreaterThan(10)
   }, 30_000)
 
-  it('says the budget stopped a run, and a stopped run is not saved as a recording', async () => {
+  it('says the budget stopped a run, a stopped run is not saved as a recording, and a saved one keeps the model of each reply', async () => {
     const c = asCase('budget-stop')
     const budget = createBudget(0.5)
     budget.spentUsd = 0.5 - STOP_MARGIN_USD
@@ -247,6 +247,10 @@ describe('build eval scoring', () => {
       expect(loadRecording(c.id, dir)).toBeNull()
       expect(recordLive(c.id, stopped, { model: EVAL_MODEL, provider: 'anthropic', stopped: false }, dir)).toBe(true)
       expect(loadRecording(c.id, dir)?.steps).toEqual([{ text: 'half a reply' }])
+      // a capture on mimir cloud keeps the model of each reply as the recording's list, not on its steps
+      const moved = { ...stopped, steps: [{ text: 'a', model: 'claude-haiku-5-5' }, { text: 'b', model: 'claude-sonnet-5-5' }] }
+      expect(recordLive(c.id, moved, { model: EVAL_MODEL, provider: 'mimir-cloud', stopped: false }, dir)).toBe(true)
+      expect(loadRecording(c.id, dir)).toMatchObject({ model: 'claude-haiku-5-5+claude-sonnet-5-5', requestModels: ['claude-haiku-5-5', 'claude-sonnet-5-5'], steps: [{ text: 'a' }, { text: 'b' }] })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

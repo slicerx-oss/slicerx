@@ -13,6 +13,8 @@ export interface RecordedStep extends ScriptStepData {
   seen?: string[]
   /** What the provider said the request cost (a live capture only): input tokens with the cache reads and writes in them, and output tokens with any thinking. */
   usage?: StepUsage
+  /** The model that answered (a live capture on mimir cloud only), until the recording is saved: capturedModels moves it to the recording's requestModels. */
+  model?: string
 }
 
 export interface StepUsage {
@@ -43,6 +45,7 @@ export const MADE_ID = /\b(?:obj|plan|vol|plate)_[0-9a-z~]+\b|\b[sd](?=[0-9a-z]*
 export function recordEvent(step: RecordedStep, ev: LlmEvent, live = false): void {
   if (ev.type === 'text') step.text = (step.text ?? '') + ev.delta
   if (ev.type === 'usage' && live) step.usage = stepUsage(ev)
+  if (ev.type === 'model' && live) step.model = ev.model
   if (ev.type === 'tool_call') {
     let args: Record<string, unknown> = {}
     try {
@@ -54,6 +57,20 @@ export function recordEvent(step: RecordedStep, ev: LlmEvent, live = false): voi
     ;(step.calls ??= []).push({ name: ev.call.name, args })
   }
   if (ev.type === 'done' && ev.stop === 'length') step.cut = true
+}
+
+/**
+ * A live capture's steps as a recording keeps them, with the model behind each request (cost.ts requestModels). When
+ * every kept reply named its model, the recording lists them in request order and its label is the names it used, joined
+ * by '+'; otherwise it keeps `label` and no list. A refused request got no reply and has no step, so it has no entry
+ * either, which is what the cost meter reads once it drops the 'refused' entries.
+ */
+export function capturedModels<S extends { model?: string }>(steps: readonly S[], label: string): { steps: Omit<S, 'model'>[]; model: string; requestModels?: string[] } {
+  const bare = steps.map(({ model: _model, ...rest }) => rest)
+  const names = steps.map((s) => s.model)
+  if (!steps.length || names.some((m) => !m)) return { steps: bare, model: label }
+  const list = names as string[]
+  return { steps: bare, model: [...new Set(list)].join('+'), requestModels: list }
 }
 
 /**
