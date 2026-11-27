@@ -129,6 +129,18 @@ describe('what counts as taken away', () => {
     expect(lostFeatures(start, [row('a', 'Body')], 'thin the rail')).toEqual({ removed: ['Rail'] })
     expect(lostFeatures(start, [row('a', 'Body'), row('b', 'Rail', 'broken')], 'thin the rail')?.removed).toEqual(['Rail'])
   })
+  it('names paint a rollback dropped, step by step, and not paint put back', () => {
+    const row = (id: string, name: string, op = 'paint'): KeptRow => ({ id, name, op, state: 'done' })
+    const base = row('s1', 'Extrude 1', 'shape.extrude')
+    const start = [base, row('s2', 'Paint from a point filament 2'), row('s3', 'Paint from a point filament 2'), row('s4', 'Paint the top filament 3')]
+    // one of two picked-point paints of one filament gone, and the top paint gone
+    expect(lostFeatures(start, [base, row('s5', 'Paint from a point filament 2')], 'make the legs taller')).toEqual({ removed: ['Paint the top filament 3', 'Paint from a point filament 2'] })
+    // both picked-point paints put back after the rollback, and the top paint too
+    expect(lostFeatures(start, [base, row('s5', 'Paint from a point filament 2'), row('s6', 'Paint from a point filament 2'), row('s7', 'Paint the top filament 3')], 'make the legs taller')).toBeNull()
+    // a broken paint step is paint lost
+    expect(lostFeatures(start, [...start.slice(0, 3), { ...start[3]!, state: 'broken' }], 'make the legs taller')).toEqual({ removed: ['Paint the top filament 3'] })
+  })
+
   it('reads a removal ask by its words', () => {
     expect(askedToRemove('remove the front pole', 'Front pole')).toBe(true)
     expect(askedToRemove('take off the rails', 'Side rail')).toBe(true)
