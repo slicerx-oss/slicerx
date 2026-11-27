@@ -5,7 +5,7 @@
 // differ in a way that matters, the replay says so by name, so a recording gone stale surfaces as "replay diverged at
 // request N" and not later as a part that was never built or a part that is gone. Used by both replay harnesses (the
 // creative eval's run.ts and the mimir build eval's drive.ts). Test code only.
-import type { LlmMessage } from '@slicerx/pilot'
+import type { LlmEvent, LlmMessage } from '@slicerx/pilot'
 import type { ScriptStepData } from '@slicerx/pilot/evals'
 
 /** A recorded reply, with the tool results the model had just read when it wrote it (absent in older recordings). */
@@ -19,6 +19,33 @@ export interface RecordedStep extends ScriptStepData {
 // be all letters, and a sketch id missed there kept the recording's id in the next call. They change every run, so they
 // never count.
 export const MADE_ID = /\b(?:obj|plan|vol|plate)_[0-9a-z~]+\b|\b[sd](?=[0-9a-z]*\d)[0-9a-z]{9,}\b|(?<="(?:id|sketch|step)":")[sd][0-9a-z]{9,}(?=")/g
+
+/**
+ * Adds one streamed event of a live reply to the step that records it: its text, its tool calls, and whether it stopped
+ * at the output limit. The runtime acts on that stop (it asks again after a reply cut off with nothing said, and a run
+ * cut once goes on from a reply that leaves its design empty), so a replay has to stop there too.
+ */
+export function recordEvent(step: RecordedStep, ev: LlmEvent): void {
+  if (ev.type === 'text') step.text = (step.text ?? '') + ev.delta
+  if (ev.type === 'tool_call') {
+    let args: Record<string, unknown> = {}
+    try {
+      const parsed: unknown = JSON.parse(ev.call.arguments || '{}')
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) args = parsed as Record<string, unknown>
+    } catch {
+      args = { unparsed: ev.call.arguments }
+    }
+    ;(step.calls ??= []).push({ name: ev.call.name, args })
+  }
+  if (ev.type === 'done' && ev.stop === 'length') step.cut = true
+}
+
+/**
+ * Whether a recorded reply is kept: one that said or called something, and one cut off at the output limit with
+ * nothing to show, since the runtime answers that one with a note the replay must send at the same point. A web lookup
+ * is never kept (the scripted client answers those itself).
+ */
+export const keptStep = (req: { webSearch?: boolean }, step: RecordedStep): boolean => !req.webSearch && Boolean(step.text || step.calls || step.cut)
 
 /** The tool results after the last assistant message: what the model read just before this reply. */
 export function toolResultsSeen(messages: readonly LlmMessage[]): string[] {

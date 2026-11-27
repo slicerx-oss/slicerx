@@ -15,6 +15,8 @@ export interface ScriptStepData {
   reasoning?: string
   text?: string
   calls?: ScriptCall[]
+  /** The reply stopped at the output limit, so it ends as a cut-off reply does ('length'). */
+  cut?: boolean
 }
 
 export type ScriptStep = ScriptStepData | ((messages: LlmMessage[]) => ScriptStepData)
@@ -86,7 +88,7 @@ export function createScriptedClient(steps: ScriptStep[], opts: ScriptedOptions 
         yield { type: 'tool_call', call: { id: `call_${++callSeq}`, name: c.name, arguments: JSON.stringify(c.args) } }
       }
       yield { type: 'usage', inputTokens: 400 + JSON.stringify(req.messages).length / 4, outputTokens: 40 + (step.text?.length ?? 0) / 4 }
-      yield { type: 'done', stop: step.calls?.length ? 'tool_calls' : 'end' }
+      yield { type: 'done', stop: step.cut ? 'length' : step.calls?.length ? 'tool_calls' : 'end' }
     },
   }
 }

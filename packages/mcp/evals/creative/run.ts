@@ -15,7 +15,7 @@ import { createCardPlans, createPlanRegistry, tabToolset, type FilamentList } fr
 import { headlessDesignHost, plainBed } from './design-host'
 import { bedFit, bodyCount, closure, minWall, movingGaps, type BuildVolume, type GapReport } from './mesh-checks'
 import type { CreativePrompt } from './prompts'
-import { createReplayCheck, replayRequests, toolResultsSeen, type RecordedStep } from './replay-divergence'
+import { createReplayCheck, keptStep, recordEvent, replayRequests, toolResultsSeen, type RecordedStep } from './replay-divergence'
 
 /** The tab's design tools (design.* and geom.*), the one way it builds a part. */
 export const isDesignTool = (name: string): boolean => name.startsWith('design.') || name.startsWith('geom.')
@@ -318,21 +318,11 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
       const step: RecordedStep = seen.length ? { seen } : {}
       try {
         for await (const ev of inner.stream(req, signal)) {
-          if (ev.type === 'text') step.text = (step.text ?? '') + ev.delta
-          if (ev.type === 'tool_call') {
-            let args: Record<string, unknown> = {}
-            try {
-              const parsed: unknown = JSON.parse(ev.call.arguments || '{}')
-              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) args = parsed as Record<string, unknown>
-            } catch {
-              args = { unparsed: ev.call.arguments }
-            }
-            ;(step.calls ??= []).push({ name: ev.call.name, args })
-          }
+          recordEvent(step, ev)
           yield ev
         }
       } finally {
-        if (!req.webSearch && (step.text || step.calls)) steps.push(step)
+        if (keptStep(req, step)) steps.push(step)
       }
     },
   }

@@ -17,7 +17,7 @@ import type { ScriptStep, ScriptStepData } from '../../../pilot/src/provider/scr
 import type { LlmMessage } from '../../../pilot/src/provider/types'
 import { HAIKU_5_5, type Price } from '../../../mcp/evals/creative/live'
 import type { BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
-import { createReplayCheck, MADE_ID, toolResultsSeen } from '../../../mcp/evals/creative/replay-divergence'
+import { createReplayCheck, keptStep, MADE_ID, recordEvent, toolResultsSeen } from '../../../mcp/evals/creative/replay-divergence'
 import { builtinCommands } from '../../src/commands/builtin'
 import { currentEdition } from '../../src/edition'
 import { editionToolGroups, withBrain } from '../../src/pilot-connect/brain'
@@ -162,21 +162,11 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
       const step: EvalStep = seen.length ? { seen } : {}
       try {
         for await (const ev of inner.stream(req, signal)) {
-          if (ev.type === 'text') step.text = (step.text ?? '') + ev.delta
-          if (ev.type === 'tool_call') {
-            let args: Record<string, unknown> = {}
-            try {
-              const parsed: unknown = JSON.parse(ev.call.arguments || '{}')
-              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) args = parsed as Record<string, unknown>
-            } catch {
-              args = { unparsed: ev.call.arguments }
-            }
-            ;(step.calls ??= []).push({ name: ev.call.name, args })
-          }
+          recordEvent(step, ev)
           yield ev
         }
       } finally {
-        if (!req.webSearch && (step.text || step.calls)) steps.push(step)
+        if (keptStep(req, step)) steps.push(step)
       }
     },
   }
