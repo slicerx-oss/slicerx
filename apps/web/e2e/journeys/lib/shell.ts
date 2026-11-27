@@ -270,6 +270,9 @@ export const H2D: HandPrinter = { id: 'e2e-h2d', name: 'Two nozzles', profileId:
 /** The printer the sidebar tests start on: the reference printer with its AMS. */
 export const BAY_1 = 'bay-1'
 
+/** The printer a fresh start opens on: the P1S, with its own spools loaded. */
+export const BAY_2 = 'bay-2'
+
 /**
  * The printers the sidebar journeys add by hand. The app lists its printers when it loads, so they are in the page's
  * prefs from the start (`test.use({ journeyPrefs: { handPrinters: HAND_PRINTERS, ... } })`) and a test only picks one.

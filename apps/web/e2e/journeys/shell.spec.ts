@@ -7,7 +7,7 @@
 import { type Locator, type Page } from '@playwright/test'
 import { pushTop, steps } from '../cad-helpers'
 import { addMenu, expect, panesSettled, sliceCount, sliced, viewportReady, viewSized } from '../fixtures'
-import { atSize, box, command, dismiss, exampleX, goSlice, layoutReset, mode, postToast, setState, settingsReset, slicedBox, sliceNow, test, toastAwayFromPlate, visibleControls } from './lib/shell'
+import { atSize, BAY_2, box, command, dismiss, exampleX, goSlice, layoutReset, mode, postToast, setState, settingsReset, slicedBox, sliceNow, test, toastAwayFromPlate, usePrinter, visibleControls } from './lib/shell'
 
 test.skip(({ isMobile }) => isMobile, 'Desktop window; the phone legs are in phone-shell.spec.ts')
 
@@ -16,10 +16,22 @@ const sx = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx 
 
 // ---- minimal UI ----------------------------------------------------------------------------------------------
 
-test('The plate tab with an object selected shows 45 controls or fewer, Simple mode', { tag: '@smoke' }, async ({ page }) => {
+/**
+ * The plate tab as a fresh start shows it: the example plate with its object selected, Simple mode, the printer a fresh
+ * start opens on (Bay 2, the P1S) and no open note. The page is shared with the tests before this one, which can leave
+ * Bay 1 (the X1 Carbon) selected and the note of a file they opened under the printer card, and its Dismiss button
+ * would count. The note is cleared in the store, as a new page has it, not closed from the page.
+ */
+async function freshPlateTab(page: Page): Promise<void> {
+  await setState(page, { openNote: null })
   await exampleX(page)
   await mode(page, 'simple')
+  await usePrinter(page, BAY_2)
   await viewportReady(page)
+}
+
+test('The plate tab with an object selected shows 45 controls or fewer, Simple mode', { tag: '@smoke' }, async ({ page }) => {
+  await freshPlateTab(page)
   await expect(page.getByTestId('slice-selection-bar')).toHaveCSS('opacity', '1')
   const list = await visibleControls(page)
   console.log('prepare selected', list.length, list.join(' | '))
