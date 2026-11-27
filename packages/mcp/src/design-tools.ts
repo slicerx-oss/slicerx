@@ -18,7 +18,7 @@ import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, und
 import { realMemoryNote, realSizeProblem, type RealEntry } from './plan-detail'
 import { meshStats } from './mesh'
 import { movedStep, sizedStep } from './step-reshape'
-import { carriedSteps, leanRow, tiltedStep, tiltInput, tiltProblem, type Leaning } from './step-tilt'
+import { leanEdit, leanRow, tiltInput, type Leaning } from './step-tilt'
 import { FORMS_MAX, partForms } from './part-form'
 import { bodyOf, sectionEdited, SHAPE_WORDS, stationRows } from './section-edit'
 import { withThinNote } from './section-width'
@@ -639,7 +639,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
       size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
       move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
-      tilt: tiltInput.optional().describe("Lean what an extrude, a revolve, a sweep, a loft or an added part made (a post, a pole, a column) about its foot, in place: the step keeps its sizes, the steps built on it (a cap, a top) lean with it, a pattern made of it leans with it, and a later size or move of the step keeps the lean. Refused, naming the step, when the lean would run it into another step's shape, lift it off what it stands on, or leave behind a cut, a band of paint or a rounded edge on its top"),
+      tilt: tiltInput.optional().describe("Lean what an extrude, a revolve, a sweep, a loft or an added part made (a post, a pole, a column) about its foot, in place: the step keeps its sizes, the steps built on it (a cap, a top) lean with it, a pattern made of it leans with it, and a later size or move of the step keeps the lean. Refused, naming the step, when the lean would run it into another step's shape, lift it off what it stands on, or leave behind a cut, a band of paint or a rounded edge on its top. Asked of a pattern or an array step, it leans the steps the pattern repeats or the step that made the part the array copies, and every copy leans about its own foot"),
       section: sectionInput.optional().describe("Reshape a loft (a car body, fuselage, bottle, vase) by its stations, as slicerx_design_steps lists them front to back; its shapeWords give the edit for what the person said. Parts standing on the body are re-seated on its new top, and the answer says what moved, what now hangs past an edge, and what now needs supports"),
     })
   // a local model edits steps without the section edit, the tilt and the follow-up's size and move, which stay with the cloud ones
@@ -664,7 +664,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.11.0',
+    version: '1.12.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -684,20 +684,17 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         next = { ...unbound, params: r.params }
         said.push(`${r3(r.was)} mm to ${r3(i.size.mm)} mm along ${i.size.axis}`)
       }
-      // the steps built on a leaning step lean with it, in the same replay
+      // the steps a lean turns (a pattern's or an array's own steps among them) and those built on them, in the same replay
       let carried: Leaning[] = []
+      let leaned = false
       if (i.tilt) {
         if (i.section) throw new ToolInputError('tilt: lean a step in an edit of its own, not with a section edit')
-        const r = tiltedStep(next, i.tilt)
+        const r = await leanEdit(designs, d, k, next, i.tilt)
         if (typeof r === 'string') throw new ToolInputError(r)
-        const c = await carriedSteps(designs, d, k, r.step)
-        if (typeof c === 'string') throw new ToolInputError(c)
-        const why = await tiltProblem(designs, d, [{ k, was: next, now: r.step }, ...c])
-        if (why) throw new ToolInputError(why)
-        next = r.step
-        carried = c
-        said.push(r.said)
-        if (c.length) said.push(`${c.length === 1 ? 'step' : 'steps'} ${c.map((x) => x.k + 1).join(', ')} built on it ${c.length === 1 ? 'leans' : 'lean'} with it`)
+        next = r.group.find((g) => g.k === k)?.now ?? next
+        carried = r.group.filter((g) => g.k !== k)
+        leaned = r.group.some((g) => !!g.now.tilt)
+        said.push(...r.said)
       }
       if (i.section) {
         if (s.params.op !== 'sketch.loft') throw new ToolInputError('section: only a loft is edited by its sections; change this step by size, move or value')
@@ -735,7 +732,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         const { feature: _f, ...rest } = next
         next = i.feature.trim() ? { ...rest, feature: i.feature.trim() } : rest
       }
-      next = withPlannedEdits(d, next, i.tilt && next.tilt ? 'tilt' : i.move?.some((v) => v !== 0) ? 'move' : null)
+      next = withPlannedEdits(d, next, leaned ? 'tilt' : i.move?.some((v) => v !== 0) ? 'move' : null)
       const { broken: _b, ...clean } = next
       // the part's span along the axis a size or move works on, before the change, for the paint on it to follow
       const axisOf = i.size ? ({ x: 0, y: 1, z: 2 } as const)[i.size.axis] : 2

@@ -34,14 +34,14 @@ function madeAs(s: Step): { word: string; plain: boolean } {
 }
 
 /**
- * For each part now, the step that made it, followed through the history with replay's own part numbers (cad-history
- * numbering.ts): a new body is placed as replay places it, and a turned-off step sets parts aside as replay does. A part
- * of the history's base, or one no step can be told for, is null.
+ * For each part now, or before step `upTo` when given, the step that made it, followed through the history with replay's
+ * own part numbers (cad-history numbering.ts): a new body is placed as replay places it, and a turned-off step sets parts
+ * aside as replay does. A part of the history's base, or one no step can be told for, is null.
  */
-export function makers(d: Design): (Step | null)[] {
+export function makers(d: Design, upTo?: number): (Step | null)[] {
   const none = () => d.parts.map(() => null)
   let at: Numbering<Step | null> = numbering(d.history.base.map(() => null))
-  for (const [i, s] of d.history.steps.entries()) {
+  for (const [i, s] of d.history.steps.slice(0, upTo).entries()) {
     // replay stops at a broken step, and every step after it is skipped
     const state = d.status[i]?.state
     if (state === 'broken' || state === 'skipped') break
@@ -58,10 +58,10 @@ export function makers(d: Design): (Step | null)[] {
     else if (p.op === 'plane.cut' && p.keep === 'both') out.splice(s.part + 1, 0, out[s.part] ?? null)
     else if (p.op === 'parts.order') out = p.order.map((k) => out[k] ?? null)
     // how many pieces a split makes only the engine knows
-    else if (p.op === 'split') return none()
+    else if (p.op === 'split') return upTo === undefined ? none() : []
     at = on.after(out)
   }
-  return at.parts.length === d.parts.length ? at.parts : none()
+  return upTo !== undefined || at.parts.length === d.parts.length ? at.parts : none()
 }
 
 type Box = { lo: number[]; hi: number[] }

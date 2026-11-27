@@ -1,0 +1,3 @@
+### Changed
+
+- `slicerx_design_edit_step` 1.12.0 leans a pattern or an array step with `tilt`. A pattern leans the steps it repeats, a merged array leans the step that made the part it copies, and separate copies lean together with the part they copy. Each copy leans about its own foot. Before, a pattern or merged array step was refused, and separate copies leaned while the part they copied stayed upright. A pattern of steps that cannot lean is refused with "none of the steps this pattern repeats can lean". A merged array's copies are now checked against the other steps, and a copy that would run into one is refused with the copy named.

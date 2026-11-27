@@ -6,8 +6,10 @@
 // one that a turn cannot carry (a box cut, a band of paint, a rounded edge) refuses the lean by name. Before it is kept, what the leaning steps make alone, with each copy
 // a pattern of them makes, is measured against what each other step makes alone with its copies: a lean that pushes
 // one of them into another step's shape, or lifts it off everything it stood on, is refused with that step by name.
-import { direction, invert, multiply, nearestFoot, partFeet, replayOn, stepCopyMoves, stepName, tiltFoot, withTilt, type Design, type DesignHost, type HistoryMesh, type Step, type StepParams, type StepTilt, type Vec3 } from '@slicerx/cad-history'
+// Asked of a pattern or an array step, the lean turns the steps it repeats or the step that made the part it copies.
+import { bakeMesh, direction, invert, multiply, nearestFoot, partFeet, partThrough, replayOn, stepCopyMoves, stepName, tiltFoot, withTilt, type Design, type DesignHost, type HistoryMesh, type Mat4, type Step, type StepParams, type StepTilt, type Vec3 } from '@slicerx/cad-history'
 import { z } from 'zod'
+import { makers } from './part-form'
 
 export const TILT_TOWARD = ['x', '-x', 'y', '-y'] as const
 export type TiltToward = (typeof TILT_TOWARD)[number]
@@ -50,24 +52,37 @@ export function tiltedStep(s: Step, t: TiltInput): { step: Step; said: string } 
 }
 
 /**
- * What the step makes on its own, as new bodies: its own, and one for each copy every live pattern of it on its part
- * makes, so a leaning step leans its copies too and another step's copies stand where they stand. Null when one does
- * not go through alone.
+ * Each copy of step s, as the move that lands it in the design's frame: one for each copy every live pattern of it
+ * makes, and every merged array of the part it works on or made after it (the array copies the whole part, the step
+ * with it), as cad-history patternStep moves them.
  */
-async function alone(host: DesignHost, s: Step, steps: readonly Step[]): Promise<HistoryMesh[] | null> {
+function copyMoves(d: Design, s: Step): Mat4[] {
+  const steps = d.history.steps
+  const i = steps.findIndex((x) => x.id === s.id)
+  const out: Mat4[] = []
+  for (const [j, x] of steps.entries()) {
+    const p = x.params
+    if (x.suppressed || (p.op !== 'pattern' && p.op !== 'array.merged')) continue
+    const copies = p.op === 'pattern' ? x.part === s.part && p.steps.includes(s.id) : i >= 0 && j > i && (x.part === -1 || (s.part >= 0 ? partThrough(steps, i, j, s.part) === x.part : makers(d, j)[x.part]?.id === s.id))
+    if (copies) for (const move of stepCopyMoves(p.spec)) out.push(multiply(invert(x.transform), multiply(move, x.transform)))
+  }
+  return out
+}
+
+/**
+ * What the step makes on its own, as new bodies: its own and, with the design, one for each copy a pattern of it or an
+ * array of its part makes (copyMoves), so a leaning step leans its copies too and another step's copies stand where
+ * they stand. Null when one does not go through alone.
+ */
+async function alone(host: DesignHost, s: Step, d: Design | null): Promise<HistoryMesh[] | null> {
   const p = withTilt(s).params
   const params = (p.op === 'shape.extrude' ? { ...p, spec: { ...p.spec, operation: 'new' } } : { ...p, operation: 'new' }) as StepParams
-  const at = [s.transform]
-  for (const x of steps) {
-    if (x.params.op !== 'pattern' || x.suppressed || x.part !== s.part || !x.params.steps.includes(s.id)) continue
-    const fromWorld = invert(x.transform)
-    // each copy as the pattern lands it: the step's own frame moved by the copy's move (cad-history patternStep)
-    for (const move of stepCopyMoves(x.params.spec)) at.push(multiply(s.transform, invert(multiply(fromWorld, multiply(move, x.transform)))))
-  }
+  // a copy of an added part is its meshes moved; of any other step, the step run in its own frame moved
+  const copies = (d ? copyMoves(d, s) : []).map((m) => (params.op === 'parts.add' ? { transform: s.transform, params: { ...params, parts: params.parts.map((q) => bakeMesh(q, m)) } } : { transform: multiply(s.transform, invert(m)), params }))
   const out: HistoryMesh[] = []
-  for (const [k, transform] of at.entries()) {
+  for (const [k, at] of [{ transform: s.transform, params }, ...copies].entries()) {
     try {
-      const r = await replayOn(host, { version: 1, base: [], steps: [{ id: `${s.id}~${k}`, part: 0, transform, params }] })
+      const r = await replayOn(host, { version: 1, base: [], steps: [{ id: `${s.id}~${k}`, part: 0, ...at }] })
       if (r.status[0]?.state !== 'done' || !r.parts.length) return null
       out.push(...r.parts)
     } catch {
@@ -167,7 +182,7 @@ export async function carriedSteps(host: DesignHost, d: Design, k: number, now: 
     before.push({ k: j, was: x, now: now.tilt ? { ...x, tilt: { ...now.tilt, about: x.tilt!.about!, ...(x.tilt!.feet ? { feet: x.tilt!.feet } : {}) } } : upright })
   }
   if (!now.tilt) return before
-  const base = await alone(host, was, [])
+  const base = await alone(host, was, null)
   if (!base?.length) return []
   const up = now.tilt.up
   const height = (m: HistoryMesh): [number, number] => {
@@ -201,7 +216,7 @@ export async function carriedSteps(host: DesignHost, d: Design, k: number, now: 
     if (before.some((b) => b.k === j)) continue
     if (x.suppressed || !samePart(x, was) || x.params.op === 'pattern' || x.params.op === 'array.merged' || d.status[j]?.state === 'broken') continue
     if (SOLID.has(x.params.op) && !isCut(x)) {
-      const bodies = await alone(host, x, [])
+      const bodies = await alone(host, x, null)
       if (!bodies?.length) continue
       let on: { holder: Box; mine: Box } | null = null
       for (const b of bodies) {
@@ -245,7 +260,7 @@ export async function tiltProblem(host: DesignHost, d: Design, group: readonly L
   const before: HistoryMesh[] = []
   const after: HistoryMesh[] = []
   for (const g of group) {
-    const [b, a] = await Promise.all([alone(host, g.was, all), alone(host, g.now, all)])
+    const [b, a] = await Promise.all([alone(host, g.was, d), alone(host, g.now, d)])
     if (!a) return `tilt: leaning that far, step ${g.k + 1} no longer goes through on its own; lean it less`
     if (!b || b.length !== a.length) return null
     before.push(...b)
@@ -259,7 +274,7 @@ export async function tiltProblem(host: DesignHost, d: Design, group: readonly L
     let stands = 0
     for (const [j, x] of all.entries()) {
       if (members.has(j) || x.suppressed || !samePart(x, lead.was) || !SOLID.has(x.params.op) || isCut(x) || d.status[j]?.state === 'broken') continue
-      for (const them of (await alone(host, x, all)) ?? []) {
+      for (const them of (await alone(host, x, d)) ?? []) {
         const was0 = near(boxOf(them), boxOf(mine), 0.05)
         if (!near(boxOf(them), reach[c]!, 1)) {
           if (was0) stood++
@@ -278,6 +293,58 @@ export async function tiltProblem(host: DesignHost, d: Design, group: readonly L
   }
   if (hits.length) return `tilt: leaning that way runs it into ${hits.join(' and ')}; lean it less, the other way, or move it first`
   return null
+}
+
+/**
+ * The steps a lean asked of step k turns, with how they stand to it: the step itself; for a pattern, the steps it
+ * repeats that lean (each copy then leans about its own foot, as a pattern of a leaning step does); for a merged array,
+ * the step that made the part it copies; for separate copies, they and the step that made the part they copy (copy 1).
+ * Or why none can lean.
+ */
+function leanLeads(d: Design, k: number): { k: number; how?: string }[] | string {
+  const all = d.history.steps
+  const s = all[k]!
+  const p = s.params
+  if (p.op === 'pattern') {
+    const leads = p.steps.map((id) => all.findIndex((x) => x.id === id)).filter((j) => j >= 0 && !all[j]!.suppressed && LEANS.has(all[j]!.params.op))
+    return leads.length ? leads.map((j) => ({ k: j, how: 'which it repeats' })) : 'tilt: none of the steps this pattern repeats can lean; change it another way'
+  }
+  const made = p.op === 'array.merged' ? s.part : p.op === 'parts.add' && p.copyOf ? p.copyOf.part : null
+  if (made === null) return [{ k }]
+  const own = p.op === 'parts.add' ? [{ k }] : []
+  const maker = made >= 0 ? makers(d, k)[made] : null
+  const j = maker ? all.findIndex((x) => x.id === maker.id) : -1
+  if (j < 0) return own.length ? own : 'tilt: this array copies a part no step made (it came in as a mesh), so nothing in it leans; change it another way'
+  return [...own, { k: j, how: 'which made the part it copies' }]
+}
+
+/**
+ * design.edit_step's tilt of step k, as `next` (step k with this edit's other changes so far): every step it leans
+ * (leanLeads) with the lean asked, the steps built on each, and what to say; or why it cannot be kept.
+ */
+export async function leanEdit(host: DesignHost, d: Design, k: number, next: Step, t: TiltInput): Promise<{ group: Leaning[]; said: string[] } | string> {
+  const leads = leanLeads(d, k)
+  if (typeof leads === 'string') return leads
+  const all = d.history.steps
+  const group: Leaning[] = []
+  const said: string[] = []
+  const carried: number[] = []
+  for (const lead of leads) {
+    if (group.some((g) => g.k === lead.k)) continue
+    const was = lead.k === k ? next : all[lead.k]!
+    const r = tiltedStep(was, t)
+    const name = `step ${lead.k + 1}, ${stepName(was)}`
+    if (typeof r === 'string') return lead.how ? `tilt: ${name}, ${lead.how}, cannot lean: ${r.replace(/^tilt: /, '')}` : r
+    const c = await carriedSteps(host, d, lead.k, r.step)
+    if (typeof c === 'string') return c
+    group.push({ k: lead.k, was, now: r.step }, ...c.filter((x) => !group.some((g) => g.k === x.k)))
+    said.push(lead.how ? `${name}, ${lead.how}, ${r.said.replace(/^it /, '')}` : r.said)
+    carried.push(...c.map((x) => x.k).filter((j) => !carried.includes(j)))
+  }
+  const why = await tiltProblem(host, d, group)
+  if (why) return why
+  if (carried.length) said.push(`${carried.length === 1 ? 'step' : 'steps'} ${carried.map((j) => j + 1).join(', ')} built on it ${carried.length === 1 ? 'leans' : 'lean'} with it`)
+  return { group, said }
 }
 
 /** A leaning step's lean for the steps list: degrees and the way it leans, as the tilt edit takes them. */
