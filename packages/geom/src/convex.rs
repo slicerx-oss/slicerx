@@ -721,7 +721,7 @@ fn walk_face(
         ends[re].push((se, false, ci));
     }
     for e in &mut ends {
-        e.sort_by(|a, b| a.0.total_cmp(&b.0));
+        crate::order::sort_by_key(e, |x| crate::order::f64_key(x.0));
     }
     let mut corner_ix: HashMap<(usize, usize), u32> = HashMap::new();
     let mut used = vec![false; chains.len()];
@@ -756,7 +756,7 @@ fn walk_face(
                 .map(|(k, &sc)| ((sc - s_exit).rem_euclid(total), k))
                 .filter(|&(off, _)| off > eps && off < span - eps)
                 .collect();
-            between.sort_by(|a, b| a.0.total_cmp(&b.0));
+            crate::order::sort_by_key(&mut between, |x| crate::order::f64_key(x.0));
             for (_, k) in between {
                 let ix = *corner_ix
                     .entry((ring, k))

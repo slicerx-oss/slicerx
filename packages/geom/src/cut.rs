@@ -88,9 +88,9 @@ pub fn section(mesh: &TriMesh, plane: &Plane) -> Section {
     let mut rings = Vec::new();
     let mut open_chains = 0;
     let mut keys: Vec<Key> = next.keys().copied().collect();
-    keys.sort_by_key(|k| match *k {
-        Key::Vertex(v) => (0, v, 0),
-        Key::Edge(a, b) => (1, a, b),
+    crate::order::sort_by_key(&mut keys, |k| match *k {
+        Key::Vertex(v) => (u64::from(v), 0),
+        Key::Edge(a, b) => (1 << 32 | u64::from(a), u64::from(b)),
     });
     for start in keys {
         let Some(mut at) = next.remove(&start) else {
@@ -435,7 +435,7 @@ fn dovetail(f: &Frame, w: f64, h: f64, tan: f64, length: f64, grow: f64) -> Conv
 
 fn auto_centers(sec: &Section, need: f64, spec: &ConnectorSpec) -> Vec<V2> {
     let mut polys: Vec<&Polygon> = sec.polygons.iter().collect();
-    polys.sort_by(|a, b| b.area().total_cmp(&a.area()));
+    crate::order::sort_by_key(&mut polys, |p| crate::order::f64_key_rev(p.area()));
     let cap = need * 1.5;
     let mut out = Vec::new();
     let push = |q: V2, out: &mut Vec<V2>| {

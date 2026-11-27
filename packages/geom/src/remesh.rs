@@ -413,7 +413,7 @@ fn flat_regions(mesh: &TriMesh, ids: Option<&Vec<u32>>, dist_tol: f64) -> Option
         vec3::len(vec3::cross(vec3::sub(b, a), vec3::sub(c, a)))
     };
     let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&x, &y| area(y).total_cmp(&area(x)).then(x.cmp(&y)));
+    crate::order::sort_by_key(&mut order, |&x| (crate::order::f64_key_rev(area(x)), x as u64));
     let mut region_of = vec![usize::MAX; n];
     let mut regions: Vec<Region> = Vec::new();
     for start in order {
@@ -848,11 +848,9 @@ pub(crate) fn drop_slivers(mesh: &TriMesh) -> Option<TriMesh> {
                 continue;
             }
             let p = m.corners(tri);
-            let mut by_length: Vec<usize> = (0..3).collect();
-            by_length.sort_by(|&x, &y| {
-                let lx = vec3::len(vec3::sub(p[(x + 1) % 3], p[x]));
-                let ly = vec3::len(vec3::sub(p[(y + 1) % 3], p[y]));
-                lx.total_cmp(&ly)
+            let mut by_length = [0, 1, 2];
+            crate::order::sort3_by_key(&mut by_length, |&x| {
+                crate::order::f64_key(vec3::len(vec3::sub(p[(x + 1) % 3], p[x])))
             });
             let collapse = by_length.iter().find_map(|&k| {
                 let (a, b) = (tri[k], tri[(k + 1) % 3]);

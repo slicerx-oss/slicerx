@@ -288,7 +288,12 @@ pub fn generate(req: &CalibRequest) -> Result<CalibModel> {
 }
 
 fn settings(pairs: &[(&str, Value)]) -> Settings {
-    pairs.iter().map(|(k, v)| ((*k).to_string(), v.clone())).collect()
+    // filled one entry at a time: collecting would sort with a copy of std's sort of its own
+    let mut s = Settings::new();
+    for (k, v) in pairs {
+        s.insert((*k).to_string(), v.clone());
+    }
+    s
 }
 
 fn round6(v: f64) -> f64 {

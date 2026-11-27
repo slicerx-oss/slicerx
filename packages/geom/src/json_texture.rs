@@ -178,7 +178,7 @@ pub(crate) fn paint_texture_op(req: &Value, files: FileLoader<'_>) -> Result<Val
         "textured": true,
         "parts": out.parts.iter().map(|p| json!({
             "slot": p.slot,
-            "paint": p.paint.iter().map(|(k, v)| (k.to_string(), Value::from(v.clone()))).collect::<serde_json::Map<_, _>>(),
+            "paint": crate::json::object(p.paint.iter().map(|(k, v)| (k, Value::from(v.clone())))),
             "painted": p.paint.len(),
         })).collect::<Vec<_>>(),
         "slots": out.area_mm2.iter().enumerate().filter(|(_, a)| **a > 1e-9).map(|(i, a)| json!({ "slot": i + 1, "areaMm2": (a * 100.0).round() / 100.0 })).collect::<Vec<_>>(),

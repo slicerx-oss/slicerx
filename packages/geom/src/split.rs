@@ -138,8 +138,7 @@ pub fn split_to_fit(mesh: &TriMesh, opts: &SplitOptions) -> Result<SplitResult> 
             }
         }
     }
-    out.parts
-        .sort_by(|a, b| b.mesh.volume().total_cmp(&a.mesh.volume()));
+    crate::order::sort_by_key(&mut out.parts, |p| crate::order::f64_key_rev(p.mesh.volume()));
     Ok(out)
 }
 

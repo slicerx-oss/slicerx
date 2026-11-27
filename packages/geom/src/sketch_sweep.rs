@@ -760,7 +760,7 @@ fn neighbors_apart(mesh: &TriMesh, rings: &[Vec<V3>], lens: &[usize], size: f64)
 /// Whether every two of the triangles `which` of `tris` whose `boxes` (grown by `tol`) meet, meet at most where they
 /// share corners, shown by `corners_apart`. The boxes are swept along x.
 fn pairs_apart(at: &[V3], tris: &[[u32; 3]], boxes: &[(V3, V3)], which: &mut [usize], tol: f64) -> bool {
-    which.sort_by(|&a, &b| boxes[a].0[0].total_cmp(&boxes[b].0[0]));
+    crate::order::sort_by_key(which, |&a| crate::order::f64_key(boxes[a].0[0]));
     for (k, &ta) in which.iter().enumerate() {
         let (alo, ahi) = boxes[ta];
         for &tb in &which[k + 1..] {
@@ -1056,7 +1056,7 @@ fn axis_of(given: &[V3]) -> Option<(V3, V3)> {
     // a quadric of revolution has two equal eigenvalues; the axis is the third's vector
     let (val, vec) = eigen(quad);
     let mut order = [0, 1, 2];
-    order.sort_by(|&i, &j| val[i].total_cmp(&val[j]));
+    crate::order::sort3_by_key(&mut order, |&i| crate::order::f64_key(val[i]));
     let [l0, l1, l2] = order.map(|i| val[i]);
     let one = if l1 - l0 < l2 - l1 { order[2] } else { order[0] };
     // and a second from the way the path bends, which leans to the axis as it winds round it

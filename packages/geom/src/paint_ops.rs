@@ -280,10 +280,12 @@ fn region_of(m: &TriMesh, tris: Vec<u32>, area: impl Fn(u32) -> f64) -> Region {
 }
 
 fn by_size(mut r: Vec<Region>) -> Vec<Region> {
-    r.sort_by(|a, b| {
-        b.area_mm2
-            .total_cmp(&a.area_mm2)
-            .then(a.triangles.first().cmp(&b.triangles.first()))
+    // largest first, then by the first triangle (a region without one first)
+    crate::order::sort_by_key(&mut r, |g| {
+        (
+            crate::order::f64_key_rev(g.area_mm2),
+            g.triangles.first().map_or(0, |&t| u64::from(t) + 1),
+        )
     });
     r
 }
@@ -500,11 +502,13 @@ pub fn select(
     }
     let (picked, regions) = pick_whole(m, texts, target, count)?;
     let new_text = text_of(Node::Leaf(state));
-    let changed = picked
-        .iter()
-        .filter(|t| texts.get(t).cloned().unwrap_or_default() != new_text)
-        .map(|&t| (t, new_text.clone()))
-        .collect();
+    // filled one entry at a time: collecting would sort with a copy of std's sort of its own
+    let mut changed = BTreeMap::new();
+    for &t in &picked {
+        if texts.get(&t).cloned().unwrap_or_default() != new_text {
+            changed.insert(t, new_text.clone());
+        }
+    }
     let area_mm2 = regions.iter().map(|r| r.area_mm2).sum();
     Ok(Selection {
         changed,

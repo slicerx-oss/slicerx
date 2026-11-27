@@ -1245,16 +1245,32 @@ fn paint_input(
             .map_err(|_| Error::invalid("transform", "needs 16 numbers, column-major"))?;
         m = crate::xform::transformed(&m, &t);
     }
-    let paint: std::collections::BTreeMap<String, String> = field_or_default(req, "paint")?;
-    let paint = paint
-        .into_iter()
-        .map(|(k, t)| {
-            k.parse::<u32>()
-                .map(|i| (i, t))
-                .map_err(|_| Error::invalid("paint", format!("{k} is not a triangle index")))
-        })
-        .collect::<Result<_>>()?;
+    let paint = paint_by_triangle(field_or_default(req, "paint")?)?;
     Ok((m, paint))
+}
+
+/// a paint map's triangle keys as numbers. filled one entry at a time: collecting pairs into a map sorts them with a
+/// copy of std's sort for each place that does it
+fn paint_by_triangle(
+    paint: std::collections::BTreeMap<String, String>,
+) -> Result<std::collections::BTreeMap<u32, String>> {
+    let mut out = std::collections::BTreeMap::new();
+    for (k, t) in paint {
+        let i = k
+            .parse::<u32>()
+            .map_err(|_| Error::invalid("paint", format!("{k} is not a triangle index")))?;
+        out.insert(i, t);
+    }
+    Ok(out)
+}
+
+/// a JSON object of pairs, keyed by each key's text, filled one entry at a time as [`paint_by_triangle`] is
+pub(crate) fn object<K: std::fmt::Display>(pairs: impl IntoIterator<Item = (K, Value)>) -> Value {
+    let mut m = serde_json::Map::new();
+    for (k, v) in pairs {
+        m.insert(k.to_string(), v);
+    }
+    Value::Object(m)
 }
 
 /// The largest regions as JSON (at most 20), so a reply stays small.
@@ -1362,7 +1378,7 @@ fn paint_select_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let depth: u32 = field_or(req, "maxDepth", paint_ops::DEFAULT_DEPTH)?;
     let sel = paint_ops::select(&m, &paint, &target, state, depth.min(10))?;
     Ok(json!({
-        "changed": sel.changed.iter().map(|(k, v)| (k.to_string(), Value::from(v.clone()))).collect::<serde_json::Map<_, _>>(),
+        "changed": object(sel.changed.iter().map(|(k, v)| (k, Value::from(v.clone())))),
         "changedTriangles": sel.changed.len(),
         "selectedAreaMm2": (sel.area_mm2 * 100.0).round() / 100.0,
         "regionCount": sel.regions.len(),
@@ -1413,15 +1429,7 @@ fn render_object(v: &Value, files: FileLoader<'_>) -> Result<render::Object> {
         Some(c) => Some(hex_color(&c).ok_or_else(|| Error::invalid("color", format!("{c} is not #rrggbb")))?),
         None => None,
     };
-    let paint: std::collections::BTreeMap<String, String> = field_or_default(v, "paint")?;
-    let paint = paint
-        .into_iter()
-        .map(|(k, t)| {
-            k.parse::<u32>()
-                .map(|i| (i, t))
-                .map_err(|_| Error::invalid("paint", format!("{k} is not a triangle index")))
-        })
-        .collect::<Result<_>>()?;
+    let paint = paint_by_triangle(field_or_default(v, "paint")?)?;
     Ok(render::Object {
         mesh,
         transform,
@@ -1465,7 +1473,7 @@ fn render_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
         "framedMm": { "min": s.framed.min, "max": s.framed.max },
         "objects": s.objects,
         "triangles": s.triangles,
-        "paintedAreaMm2": s.painted_mm2.iter().map(|(k, v)| (k.to_string(), json!((v * 100.0).round() / 100.0))).collect::<serde_json::Map<_, _>>(),
+        "paintedAreaMm2": object(s.painted_mm2.iter().map(|(k, v)| (k, json!((v * 100.0).round() / 100.0)))),
         "badPaint": s.bad_paint,
     });
     if field_or(req, "image", false)?

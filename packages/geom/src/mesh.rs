@@ -526,7 +526,7 @@ impl TriMesh {
             .filter_map(|r| groups.remove(&r))
             .map(|idx| self.subset_of(&idx))
             .collect();
-        out.sort_by_key(|m| std::cmp::Reverse(m.triangles.len()));
+        crate::order::sort_by_key(&mut out, |m| u64::MAX - m.triangles.len() as u64);
         out
     }
 

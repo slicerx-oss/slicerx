@@ -1127,10 +1127,10 @@ fn along_line(faces: &Faces<'_>, n: usize, e: &EdgeRef, face: V3, tol: f64) -> R
         }
     }
     let mut pairs: Vec<_> = pieces.into_iter().collect();
-    pairs.sort_by_key(|(k, _)| *k);
+    crate::order::sort_by_key(&mut pairs, |((a, b), _)| (*a as u64, *b as u64));
     let mut out = Vec::new();
     for ((r0, r1), mut list) in pairs {
-        list.sort_by(|x, y| x.0.total_cmp(&y.0));
+        crate::order::sort_by_key(&mut list, |x| crate::order::f64_key(x.0));
         // runs without gaps
         let mut runs: Vec<Piece> = Vec::new();
         for pc in list {
@@ -1387,7 +1387,9 @@ fn chains(geoms: &[Geom], nums: &[usize]) -> std::result::Result<Vec<(Chain, boo
     }
     let mut next: Vec<[Option<usize>; 2]> = vec![[None; 2]; geoms.len()];
     let mut joints: Vec<&Vec<(usize, usize)>> = at.values().filter(|l| l.len() > 1).collect();
-    joints.sort_by_key(|l| l.iter().map(|x| x.0).min());
+    crate::order::sort_by_key(&mut joints, |l| {
+        l.iter().map(|x| x.0).min().map_or(0, |m| m as u64 + 1)
+    });
     for list in joints {
         let names = || {
             let mut l: Vec<String> = list.iter().map(|&(i, _)| nums[i].to_string()).collect();
@@ -1885,7 +1887,7 @@ fn keys_at(mesh: &TriMesh, e: &EdgeRef) -> Option<[u64; 2]> {
     if sides.len() != 2 {
         return None;
     }
-    sides.sort_by(|a, b| b.1.total_cmp(&a.1));
+    crate::order::sort_by_key(&mut sides, |s| crate::order::f64_key_rev(s.1));
     Some([sides[0].0, sides[1].0])
 }
 
@@ -2093,7 +2095,7 @@ fn tools_skipping(
                         refs[i] = t.refs[k];
                     }
                     t.refs = refs;
-                    skipped.sort_by_key(|x| x.index);
+                    crate::order::sort_by_key(&mut skipped, |x| x.index as u64);
                 }
                 return Ok((t, skipped));
             }

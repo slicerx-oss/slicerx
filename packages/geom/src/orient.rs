@@ -419,7 +419,7 @@ fn flat_regions(mesh: &TriMesh) -> Vec<V3> {
             merged.push((b.normal, b.area));
         }
     }
-    merged.sort_by(|p, q| q.1.total_cmp(&p.1));
+    crate::order::sort_by_key(&mut merged, |m| crate::order::f64_key_rev(m.1));
     // a flat region needs about 2 percent of the surface to be worth a try
     merged
         .into_iter()
@@ -433,7 +433,7 @@ pub fn rank(mesh: &TriMesh, opts: &OrientOptions, max_candidates: usize) -> Vec<
         .iter()
         .map(|o| analyze(mesh, o, opts))
         .collect();
-    reports.sort_by(|a, b| a.score.total_cmp(&b.score));
+    crate::order::sort_by_key(&mut reports, |r| crate::order::f64_key(r.score));
     reports
 }
 
