@@ -43,6 +43,8 @@ export function summarize(s: CaseScore): ScoreSummary {
 
 export interface BuildRecording {
   model: string
+  /** The model of each request, with 'refused' for one the proxy refused (it has no step); see cost.ts requestModels. */
+  requestModels?: string[]
   provider: string
   capturedAt: string
   steps: EvalStep[]

@@ -138,7 +138,7 @@ function sizeOf(parts: readonly MeshPart[]): [number, number, number] {
  * in the project, as a design on the app's plate is. `tab` overrides the surface (the browser build: slices false) and
  * the edition.
  */
-export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHosts = {}, tab: { slices: boolean; edition?: EditionConfig; commands?: readonly CommandSpec[] } = CREATIVE_TAB) {
+export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHosts = {}, tab: { slices: boolean; edition?: EditionConfig; commands?: readonly CommandSpec[] } = CREATIVE_TAB, model?: string) {
   const geom = hosts.geom
   // the engine as the app's worker calls it: every mesh asked for with its faces
   const engine: EngineCall = (op, request) => (geom ? geom.run(op, request && typeof request === 'object' && !Array.isArray(request) ? { ...request, withFaces: true } : request) : Promise.reject(new Error(NO_ENGINE)))
@@ -165,7 +165,7 @@ export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHos
   const designs = headlessDesignHost(engine, { changed, bed: (id) => plainBed(bed, () => designs.list().filter((d) => d.id !== id && d.parts.length).map((d) => ({ parts: d.parts, transform: movedBy(d.transform, d.placed) }))) })
   let plans = 0
   const tools = tabToolset(designs, createCardPlans(createPlanRegistry()), { nozzleMm: () => p.machine.nozzle, newPlanId: () => `plan_${++plans}`, filaments: evalFilaments(designs), exactByDefault: false })
-  const env = createEvalEnv({ client, machine: p.machine, objects: [], hosts: () => hosts, tools, tab: { slices: tab.slices, edition: tab.edition ?? CREATIVE_TAB.edition, ...(tab.commands ? { commands: [...tab.commands] } : {}) } })
+  const env = createEvalEnv({ client, ...(model ? { model } : {}), machine: p.machine, objects: [], hosts: () => hosts, tools, tab: { slices: tab.slices, edition: tab.edition ?? CREATIVE_TAB.edition, ...(tab.commands ? { commands: [...tab.commands] } : {}) } })
   project = env.project
   return { ...env, designs, tools }
 }
@@ -292,18 +292,25 @@ function restartRefused(messages: readonly LlmMessage[]): boolean {
  * `planGoesOn` unset). A run that ends early says why in `error`: an error the chat showed, the step cap, or a cancel
  * the eval did not ask for; so does a replay that leaves recorded replies unused. The eval never records such a run.
  */
-export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; planGoesOn?: boolean; midBuildAnswer?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
+export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; model?: string; wrap?: (replay: LlmClient) => LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; planGoesOn?: boolean; midBuildAnswer?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
   const script = opts.client ? undefined : createScriptedClient(opts.steps ?? [], { chunk: false })
-  const inner = opts.client ?? script!
+  // a replay may be wrapped (cost.ts costClient runs it as mimir cloud's client)
+  const inner = opts.client ?? (opts.wrap ? opts.wrap(script!) : script!)
   const steps: ScriptStepData[] = []
   // a replay compares the tool results it gets with the ones its recording saw (recordings made before they were kept skip it)
   const replayCheck = createReplayCheck()
   const replayed = replayRequests(opts.steps ?? [], replayCheck)
   // a replay that met the refusal of a restarted part: the recording's later steps no longer stand for a live run
   let restarted = false
-  // Records each request's reply as a step, the shape the scripted client replays.
+  // Records each request's reply as a step, the shape the scripted client replays. It keeps the model's tool limit and
+  // tool search, read at each request as the runtime reads them, so a run on mimir cloud loads the tab's tools as the
+  // app does: the whole catalog, most of it deferred behind tool search (runtime.ts)
   const client: LlmClient = {
     provider: inner.provider,
+    ...(inner.maxTools === undefined ? {} : { maxTools: inner.maxTools }),
+    get toolSearch(): boolean {
+      return inner.toolSearch === true
+    },
     async *stream(req, signal) {
       // a recording captured since the refusal (samePart) saw it live, so meeting it again is the recorded reply
       if (!opts.client && opts.samePart !== true && restartRefused(req.messages)) restarted = true
@@ -318,7 +325,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
       const step: RecordedStep = seen.length ? { seen } : {}
       try {
         for await (const ev of inner.stream(req, signal)) {
-          recordEvent(step, ev)
+          // a live capture keeps what the provider said the request cost (cost.ts reads it)
+          recordEvent(step, ev, opts.client !== undefined)
           yield ev
         }
       } finally {
@@ -331,7 +339,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   // every geometry call carries the prompt's deadline, also the ones that read the parts back after the run
   const engine = opts.geom
   const geom: ToolHost['geom'] = engine && { run: (op, input, signal) => engine.run(op, input, signal ? AbortSignal.any([signal, ac.signal]) : ac.signal) }
-  const env = creativeEnv(p, client, geom ? { geom } : {})
+  // the model the chat is configured for, so the runtime offers tool search where the model takes it
+  const env = creativeEnv(p, client, geom ? { geom } : {}, CREATIVE_TAB, opts.model)
   // what was on the plate before the prompt's message, such as a part an earlier message built (tests)
   await opts.before?.(env)
   const events: PilotEvent[] = []

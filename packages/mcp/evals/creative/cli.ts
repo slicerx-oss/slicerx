@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // pnpm --filter @slicerx/mcp eval:creative [--prompt id,id] [--log] [--change "what changed"] [--no-default-answer]
+//   [--cost [file]]: also count each replayed request's tokens and dollars as mimir cloud would bill them (cost.ts),
+//   with the replay run as mimir cloud's client (tool search on) on the recording's model, and write them as JSON
 //   [--summary file]: also write the counts as JSON (scored, passed, stale, broken, skipped, waiting, all), for
 //   scripts/ci/creative-guard.mjs
 //   live: --mode live --model id --usd-in n --usd-out n [--cap-usd 1.50] [--record]
@@ -43,6 +45,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import { join } from 'node:path'
 import { createTransportClient, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, type LlmClient } from '@slicerx/pilot'
 import { createNodeTransport, EVALS_DIR, evalGeom } from '@slicerx/pilot/evals/node'
+import { costClient, costTable, recordedUsage, sessionCost, type CallCost, type SessionCost } from './cost'
 import { budgetedClient, createBudget, DEFAULT_CAP_USD, DEFAULT_USD_PER_SEARCH, runLive, STOP_MARGIN_USD, type Price } from './live'
 import { CREATIVE_PROMPTS, type CreativePrompt } from './prompts'
 import { loadRecording, saveRecording } from './recordings'
@@ -125,6 +128,14 @@ if (mode === 'live') {
   client = budgetedClient(base, model, price, budget)
 }
 
+// --cost [file]: a replay that also counts each request's tokens and dollars, and writes them to the file as JSON
+const costOut = flag('cost') ? (arg('cost') ?? '').replace(/^--.*/, '') : undefined
+const costs: { session: SessionCost; calls: CallCost[]; recorded?: ReturnType<typeof recordedUsage> }[] = []
+if (costOut !== undefined && mode === 'live') {
+  console.error('--cost counts a replay; a live run reports its own spend.')
+  process.exit(2)
+}
+
 const fmt = (name: string, c: { pass: boolean; detail: string } | undefined): string => (c ? `${name} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')
 const scores: { id: string; score: CreativeScore; calls: number; noBuild?: NoBuild; answered: boolean; asks: number }[] = []
 const waiting: string[] = []
@@ -156,7 +167,7 @@ const report = (p: CreativePrompt, run: PromptRun): void => {
   }
 }
 if (client) {
-  for await (const { prompt, run } of runLive(selected, { geom, client, budget, defaultAnswer })) report(prompt, run)
+  for await (const { prompt, run } of runLive(selected, { geom, client, budget, ...(model ? { model } : {}), defaultAnswer })) report(prompt, run)
 } else {
   for (const p of selected) {
     const rec = loadRecording(p.id)
@@ -170,8 +181,20 @@ if (client) {
       console.log(`SKIP ${p.id.padEnd(28)} recorded (${rec.model}), but there is no geometry engine to build it`)
       continue
     }
-    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true, planGoesOn: rec.planGoesOn === true, midBuildAnswer: rec.midBuildAnswer === true }))
+    // --cost runs the replay as mimir cloud's client on the recording's model and counts every request (cost.ts)
+    const calls: CallCost[] = []
+    const cost = costOut === undefined ? {} : { model: rec.model, wrap: (c: LlmClient) => costClient(c, calls, new Set([p.prompt, DEFAULT_ANSWER])) }
+    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true, planGoesOn: rec.planGoesOn === true, midBuildAnswer: rec.midBuildAnswer === true, ...cost }))
+    if (costOut !== undefined) {
+      const recorded = recordedUsage(rec.steps)
+      costs.push({ session: sessionCost(p.id, calls, rec), calls, ...(recorded ? { recorded } : {}) })
+    }
   }
+}
+if (costOut !== undefined) {
+  console.log(`\ntokens and dollars per session, as mimir cloud would bill the replayed requests (cost.ts):\n${costTable(costs.map((c) => c.session))}`)
+  for (const c of costs) if (c.recorded) console.log(`${c.session.id}: its live capture reported ${c.recorded.requests} requests, ${c.recorded.input} input tokens (${c.recorded.cacheRead} read from the cache, ${c.recorded.cacheWrite} written) and ${c.recorded.output} output`)
+  if (costOut) writeFileSync(costOut, `${JSON.stringify(costs, null, 1)}\n`)
 }
 
 // a run that passed after the eval answered it is never counted with one that passed on its own: two counts, two rates

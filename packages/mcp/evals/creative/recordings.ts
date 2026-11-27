@@ -18,6 +18,11 @@ export interface CapturedRecording {
   status: 'recorded'
   /** The model and provider that answered. */
   model: string
+  /**
+   * The model of each request, where a capture kept them (cost.ts requestModels): a request the proxy refused is
+   * 'refused' and has no step.
+   */
+  requestModels?: string[]
   provider: string
   /** When the live run captured it, ISO time. */
   capturedAt: string
@@ -78,6 +83,11 @@ export function parseRecording(text: string, where = 'recording'): Recording {
       if (!Array.isArray(s['seen']) || s['seen'].some((r) => typeof r !== 'string')) throw new Error(`${where}: step ${i + 1} seen must be a list of tool results`)
       step.seen = s['seen'] as string[]
     }
+    const u = s['usage']
+    if (u !== undefined) {
+      if (!isObj(u) || typeof u['input'] !== 'number' || typeof u['output'] !== 'number' || ['cacheRead', 'cacheWrite'].some((k) => u[k] !== undefined && typeof u[k] !== 'number')) throw new Error(`${where}: step ${i + 1} usage needs input and output token counts`)
+      step.usage = { input: u['input'], output: u['output'], ...(typeof u['cacheRead'] === 'number' ? { cacheRead: u['cacheRead'] } : {}), ...(typeof u['cacheWrite'] === 'number' ? { cacheWrite: u['cacheWrite'] } : {}) }
+    }
     if (s['calls'] !== undefined) {
       if (!Array.isArray(s['calls'])) throw new Error(`${where}: step ${i + 1} calls must be a list`)
       step.calls = s['calls'].map((c, k) => {
@@ -89,6 +99,11 @@ export function parseRecording(text: string, where = 'recording'): Recording {
   })
   for (const k of ['defaultAnswer', 'tabTools', 'samePart', 'planGoesOn', 'midBuildAnswer'] as const) if (v[k] !== undefined && typeof v[k] !== 'boolean') throw new Error(`${where}: ${k} must be true or false`)
   const rec: CapturedRecording = { status: 'recorded', model: String(v['model']), provider: String(v['provider']), capturedAt: String(v['capturedAt']), steps }
+  const rm = v['requestModels']
+  if (rm !== undefined) {
+    if (!Array.isArray(rm) || rm.some((m) => typeof m !== 'string')) throw new Error(`${where}: requestModels must be a list of model names`)
+    rec.requestModels = rm as string[]
+  }
   if (v['defaultAnswer'] === true) rec.defaultAnswer = true
   if (v['tabTools'] === true) rec.tabTools = true
   if (v['samePart'] === true) rec.samePart = true

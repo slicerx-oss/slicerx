@@ -15,9 +15,9 @@ import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG
 import printerModels from '@slicerx/settings/printer-models.json' with { type: 'json' }
 import type { ScriptStep, ScriptStepData } from '../../../pilot/src/provider/scripted'
 import type { LlmMessage } from '../../../pilot/src/provider/types'
-import { HAIKU_5_5, type Price } from '../../../mcp/evals/creative/live'
+import { MODEL_PRICES, SONNET_5_5, type Price } from '../../../mcp/evals/creative/live'
 import type { BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
-import { createReplayCheck, keptStep, MADE_ID, recordEvent, toolResultsSeen } from '../../../mcp/evals/creative/replay-divergence'
+import { createReplayCheck, keptStep, MADE_ID, recordEvent, toolResultsSeen, type StepUsage } from '../../../mcp/evals/creative/replay-divergence'
 import { builtinCommands } from '../../src/commands/builtin'
 import { currentEdition } from '../../src/edition'
 import { editionToolGroups, withBrain } from '../../src/pilot-connect/brain'
@@ -36,17 +36,10 @@ import { checkCalls, classifyNoBuild, placed, scoreCase, type CaseScore, type Ch
 /** The model the eval runs on unless told otherwise: the tab's Haiku. */
 export const EVAL_MODEL = 'claude-haiku-5-5'
 
-/**
- * Sonnet 5.5 at the rates mimir cloud bills it (supabase/migrations/0028_mimir_step_up.sql, the mimir_prices row for
- * claude-sonnet-5-5): $2 and $10 per million input and output tokens at every prompt length, so the long rates past
- * its 1M context equal the base ones, and $0.01 a hosted web search ($10 per 1,000). The budget bills cache writes at
- * 1.25x and reads at 0.1x the input rate as it does for Haiku; Sonnet's own cache reads are 0.05x, so they count high,
- * never low, as mimir cloud's do.
- */
-export const SONNET_5_5: Price = { usdIn: 2, usdOut: 10, usdPerSearch: 0.01, long: { above: 1_000_000, usdIn: 2, usdOut: 10 } }
+export { SONNET_5_5 }
 
-/** The models a live run may use, each with the price its budget counts at. */
-export const EVAL_PRICES: Readonly<Record<string, Price>> = { [EVAL_MODEL]: HAIKU_5_5, 'claude-sonnet-5-5': SONNET_5_5 }
+/** The models a live run may use, each with the price its budget counts at (live.ts MODEL_PRICES). */
+export const EVAL_PRICES: Readonly<Record<string, Price>> = MODEL_PRICES
 
 /** The price a live run on `model` counts its spend at; a model with no price here is refused. */
 export function evalPrice(model: string): Price {
@@ -92,6 +85,8 @@ export function buildVolume(printer: string): BuildVolume {
 /** A recorded reply, with the tool results the model had just read when it wrote it. */
 export interface EvalStep extends ScriptStepData {
   seen?: string[]
+  /** What the provider said the request cost, kept by a live capture (creative replay-divergence.ts StepUsage). */
+  usage?: StepUsage
 }
 
 /**
@@ -101,7 +96,7 @@ export interface EvalStep extends ScriptStepData {
  */
 export function replaySteps(steps: readonly EvalStep[], check = createReplayCheck()): ScriptStep[] {
   const ids = new Map<string, string>()
-  return steps.map(({ seen, ...step }, index) => (messages: LlmMessage[]): ScriptStepData => {
+  return steps.map(({ seen, usage: _usage, ...step }, index) => (messages: LlmMessage[]): ScriptStepData => {
     // a result that differs from the one the recording saw ends the replay there, saying where
     const diverged = check.step(index, seen, messages)
     if (diverged) return { text: diverged }
@@ -140,7 +135,7 @@ export interface CaseRun {
  * gets the asked nudge once, when the run has had no nudge yet; a second ask ends the run. A replay sends it only for a
  * recording captured with it (`midBuildAnswer`): one from before ended at that question live, and ends there again.
  */
-export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?: EvalStep[]; model?: string; timeoutMs?: number; midBuildAnswer?: boolean }): Promise<CaseRun> {
+export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?: EvalStep[]; wrap?: (replay: LlmClient) => LlmClient; model?: string; timeoutMs?: number; midBuildAnswer?: boolean }): Promise<CaseRun> {
   setHostSlices(true)
   clearPlans()
   // designs an earlier drive started and never built on wait in the host; let them go, as clearing a project does
@@ -152,7 +147,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   history().clear()
   const replayCheck = createReplayCheck()
   const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? [], replayCheck), { chunk: false })
-  const inner = opts.client ?? script!
+  // a replay may be wrapped (creative cost.ts costClient runs it as mimir cloud's client)
+  const inner = opts.client ?? (opts.wrap ? opts.wrap(script!) : script!)
   const steps: EvalStep[] = []
   // records each request's reply as a step, the shape the scripted client replays (as the creative eval does). It keeps
   // the model's tool limit and tool search, read at each request as the runtime reads them, so a live run loads the
@@ -168,7 +164,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
       const step: EvalStep = seen.length ? { seen } : {}
       try {
         for await (const ev of inner.stream(req, signal)) {
-          recordEvent(step, ev)
+          // a live capture keeps what the provider said the request cost (creative cost.ts reads it)
+          recordEvent(step, ev, opts.client !== undefined)
           yield ev
         }
       } finally {
