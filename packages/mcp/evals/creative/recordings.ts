@@ -72,6 +72,8 @@ export function parseRecording(text: string, where = 'recording'): Recording {
     const step: RecordedStep = {}
     if (typeof s['text'] === 'string') step.text = s['text']
     if (typeof s['reasoning'] === 'string') step.reasoning = s['reasoning']
+    if (s['cut'] !== undefined && typeof s['cut'] !== 'boolean') throw new Error(`${where}: step ${i + 1} cut must be true or false`)
+    if (s['cut'] === true) step.cut = true
     if (s['seen'] !== undefined) {
       if (!Array.isArray(s['seen']) || s['seen'].some((r) => typeof r !== 'string')) throw new Error(`${where}: step ${i + 1} seen must be a list of tool results`)
       step.seen = s['seen'] as string[]
