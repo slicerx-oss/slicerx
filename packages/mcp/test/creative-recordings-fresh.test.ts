@@ -14,22 +14,35 @@ import { runPrompt } from '../evals/creative/run'
 import { liveEngine } from './geom-engine'
 
 /**
- * Recordings left out here, each with why: captured again on a branch that has not landed yet (the line goes when it
- * lands), or not captured again yet.
+ * Recordings left out here, each with why: not captured again yet. They are not in the list of cases below at all.
  */
 const ELSEWHERE: Record<string, string> = {
   'gear-pair': 'not captured again yet: two live runs stopped at their cost cap before the model finished',
 }
 
-// Paused. The CAD engine is moving to exact solids, and that moves what the design tools return (a fit check that
-// read two parts as touching now reads a gap), so these recordings no longer replay. They are captured again once that
-// work has landed, and this goes back to describe.skipIf(!liveEngine): the replays build real geometry, so they run
-// where the engine is built (the web job), and skip on the replay job.
-describe.skip('creative eval recordings on the current code', () => {
+/**
+ * Recordings paused by name: each shows up below as a skipped case, with why and what puts it back. Where a recapture is
+ * open, the line goes when it lands.
+ */
+const PAUSED: Record<string, string> = {
+  'planetary-gear': 'the gear-mesh check now refuses its recorded tooth counts; needs a new capture',
+  'flexi-fish': 'exact solids changed its fit check (8 pieces, 0.4 mm limit); needs a new capture',
+}
+
+// the replays build real geometry, so they run where the engine is built (the web job), and skip on the replay job
+describe.skipIf(!liveEngine)('creative eval recordings on the current code', () => {
+  it('every paused name is a recording that exists', () => {
+    const ids = new Set(CREATIVE_PROMPTS.map((p) => p.id))
+    for (const id of [...Object.keys(ELSEWHERE), ...Object.keys(PAUSED)]) expect(ids.has(id), `${id} is not a creative prompt`).toBe(true)
+  })
   const geom = liveEngine ? evalGeom() : undefined
   for (const p of CREATIVE_PROMPTS) {
     const rec = loadRecording(p.id)
     if (rec.status !== 'recorded' || p.id in ELSEWHERE) continue
+    if (p.id in PAUSED) {
+      it.skip(`${p.id} replays as captured (paused: ${PAUSED[p.id]})`, () => {})
+      continue
+    }
     it(`${p.id} replays as captured`, { timeout: 60_000 }, async () => {
       // a recording keeps what the model read before each reply (seen), so the replay can tell where it parts from it;
       // one from before that cannot be checked, and a replay of it can fail far from the cause
