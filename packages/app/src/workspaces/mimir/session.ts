@@ -37,6 +37,7 @@ import { areaSize } from '../../plate/bed-origin'
 import { setMimirLink, type MimirLink } from './connection'
 import { bundledKb } from './kb'
 import { cardPlans } from './plan-tool'
+import { mimirEvents } from './event-tap'
 import { mimirPlans } from './plans'
 import { answersReachTheirRun, forgetReplaced, retire } from './answers'
 import { appPrintRun } from './print-run'
@@ -48,7 +49,8 @@ import { checkedDesign, standingPlan, withPlanState } from './plan-state'
 import { agentCall, agentWaits } from '../../state/auto-slice'
 import { fitToolRan } from '../../plate/fit-state'
 
-export const mimirLogs = createMemorySessionStore()
+// every logged event also reaches the tap's listeners (event-tap.ts), as it is emitted
+export const mimirLogs = mimirEvents.wrap(createMemorySessionStore())
 
 /** The person's messages per session, in order. */
 export const mimirMessages = new Map<string, { text: string; attachments: string[] }[]>()
