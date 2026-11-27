@@ -166,6 +166,8 @@ export interface BodyFacts {
   tags?: (string | null)[] | undefined
   /** Those steps' ids, in order (slicerx_design_edit_step takes a step by id; an index counts paint and suppressed steps too). */
   stepIds?: string[] | undefined
+  /** Those of the steps that built nothing as the design is now, by their place in steps: broken, or skipped after one. */
+  unbuilt?: { at: number; state: 'broken' | 'skipped' }[] | undefined
   /** The planned features a change of a live step carried out (its edits: a tilt or a move design.edit_step applied), by name. */
   edited?: string[] | undefined
   /** The paint steps tagged with a planned feature (the paint tool's feature), each with its step name. */
@@ -468,6 +470,9 @@ function featureItem(features: string[], body: BodyFacts, read: Bands = { painte
   if (!body.steps) return { name: 'feature count', want: String(n), got: String(m), pass: true }
   const per = features.map(() => 0)
   const tagged = (body.tags ?? []).some((t) => typeof t === 'string' && t.trim() !== '')
+  const unbuilt = new Map((body.unbuilt ?? []).map((u) => [u.at, u.state]))
+  // a planned feature whose tagged step built nothing, by name key: that step's place and state
+  const downs = new Map<string, { at: number; state: 'broken' | 'skipped' }>()
   const loose: string[] = []
   let untagged = 0
   // untagged steps by their place in the history (1 based), for the hint to tag one rather than build it again
@@ -478,9 +483,15 @@ function featureItem(features: string[], body: BodyFacts, read: Bands = { painte
       const t = body.tags?.[i]
       if (typeof t !== 'string' || !t.trim()) bare.push(i + 1)
     })
-    ;(body.tags ?? []).slice(0, body.steps.length).forEach((t) => {
+    ;(body.tags ?? []).slice(0, body.steps.length).forEach((t, i) => {
       if (typeof t !== 'string' || !t.trim()) return void untagged++
       const key = nameKey(t)
+      // a step that built nothing (broken, or skipped after a broken step) builds no feature
+      const down = unbuilt.get(i)
+      if (down) {
+        if (keys.includes(key) && !downs.has(key)) downs.set(key, { at: i, state: down })
+        return
+      }
       let hit = false
       keys.forEach((k, j) => {
         if (k !== key) return
@@ -492,7 +503,8 @@ function featureItem(features: string[], body: BodyFacts, read: Bands = { painte
     untagged += Math.max(0, body.steps.length - (body.tags?.length ?? 0))
   } else {
     const fw = features.map(nameWords)
-    for (const step of body.steps) {
+    for (const [i, step] of body.steps.entries()) {
+      if (unbuilt.has(i)) continue
       const sw = nameWords(step)
       let best = -1
       let bestShared = 0
@@ -532,8 +544,18 @@ function featureItem(features: string[], body: BodyFacts, read: Bands = { painte
     : []
   const paintHints = paintHintsFor(missing)
   const allHints = [...hints, ...paintHints]
+  // a feature tagged only on steps that built nothing is named with the step, not as never built
+  const none = missing.filter((f) => !downs.has(nameKey(f)))
+  const downNote = missing
+    .filter((f) => downs.has(nameKey(f)))
+    .map((f) => {
+      const x = downs.get(nameKey(f))!
+      const id = body.stepIds?.[x.at]
+      return `; ${f} is not built: its step ${id ? `"${id}" ` : ''}(${body.steps![x.at]}) ${x.state === 'broken' ? 'is broken' : 'did not run, after a broken step'}`
+    })
+    .join('')
   const got = tagged
-    ? `${m} steps, none tagged for ${missing.join(', ')}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}${allHints.length ? `; ${allHints.join('; ')}` : ''}`
+    ? `${m} steps${none.length ? `, none tagged for ${none.join(', ')}` : ''}${downNote}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}${allHints.length ? `; ${allHints.join('; ')}` : ''}`
     : `${m} steps, none for ${missing.join(', ')}${loose.length ? `; ${quoted} match${loose.length === 1 ? 'es' : ''} no planned feature` : ''}; pass feature on each step to tie it to the plan${paintHints.length ? `; ${paintHints.join('; ')}` : ''}`
   return { name: 'feature count', want, got: `${got}${unpainted}`, pass: false }
 }

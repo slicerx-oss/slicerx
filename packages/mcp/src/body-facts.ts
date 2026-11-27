@@ -95,6 +95,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     steps: shaping.map((s) => stepName(s)),
     tags: shaping.map((s) => s.feature?.trim() || null),
     stepIds: shaping.map((s) => s.id),
+    ...unbuiltOf(d, shaping),
     ...(d.history.steps.some((s) => !s.suppressed && s.edits?.length) ? { edited: d.history.steps.flatMap((s) => (!s.suppressed && s.edits?.length ? s.edits : [])) } : {}),
     paintTags: d.history.steps.flatMap((s) => (!s.suppressed && s.params.op === 'paint' && s.feature?.trim() ? [{ feature: s.feature.trim(), step: stepName(s) }] : [])),
     // a hint only: a paint step it cannot name is left out rather than failing the check
@@ -118,6 +119,16 @@ export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits
     ...(opts.floor ? { floor: floorFacts(world, d.parts.map((p) => p.name), opts.floor.plannedHoleMm) } : {}),
     ...(opts.bands ? await paintFacts(host, d, world, opts.bands) : {}),
   }
+}
+
+/** The shaping steps that built nothing as the design is now: broken, or skipped after a broken step. */
+function unbuiltOf(d: HostDesign, shaping: readonly Step[]): Pick<BodyFacts, 'unbuilt'> {
+  const at = new Map(d.history.steps.map((s, i) => [s.id, d.status[i]?.state]))
+  const out = shaping.flatMap((s, k) => {
+    const state = at.get(s.id)
+    return state === 'broken' || state === 'skipped' ? [{ at: k, state }] : []
+  })
+  return out.length ? { unbuilt: out } : {}
 }
 
 /**
