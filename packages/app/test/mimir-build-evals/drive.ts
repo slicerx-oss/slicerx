@@ -17,7 +17,7 @@ import type { ScriptStep, ScriptStepData } from '../../../pilot/src/provider/scr
 import type { LlmMessage } from '../../../pilot/src/provider/types'
 import { HAIKU_5_5, type Price } from '../../../mcp/evals/creative/live'
 import type { BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
-import { createReplayCheck, MADE_ID, toolResultsSeen } from '../../../mcp/evals/creative/replay-divergence'
+import { createReplayCheck, MADE_ID, stepUsage, toolResultsSeen, type StepUsage } from '../../../mcp/evals/creative/replay-divergence'
 import { builtinCommands } from '../../src/commands/builtin'
 import { currentEdition } from '../../src/edition'
 import { editionToolGroups, withBrain } from '../../src/pilot-connect/brain'
@@ -92,6 +92,8 @@ export function buildVolume(printer: string): BuildVolume {
 /** A recorded reply, with the tool results the model had just read when it wrote it. */
 export interface EvalStep extends ScriptStepData {
   seen?: string[]
+  /** What the provider said the request cost, kept by a live capture (creative replay-divergence.ts StepUsage). */
+  usage?: StepUsage
 }
 
 /**
@@ -101,7 +103,7 @@ export interface EvalStep extends ScriptStepData {
  */
 export function replaySteps(steps: readonly EvalStep[], check = createReplayCheck()): ScriptStep[] {
   const ids = new Map<string, string>()
-  return steps.map(({ seen, ...step }, index) => (messages: LlmMessage[]): ScriptStepData => {
+  return steps.map(({ seen, usage: _usage, ...step }, index) => (messages: LlmMessage[]): ScriptStepData => {
     // a result that differs from the one the recording saw ends the replay there, saying where
     const diverged = check.step(index, seen, messages)
     if (diverged) return { text: diverged }
@@ -140,7 +142,7 @@ export interface CaseRun {
  * gets the asked nudge once, when the run has had no nudge yet; a second ask ends the run. A replay sends it only for a
  * recording captured with it (`midBuildAnswer`): one from before ended at that question live, and ends there again.
  */
-export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?: EvalStep[]; model?: string; timeoutMs?: number; midBuildAnswer?: boolean }): Promise<CaseRun> {
+export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?: EvalStep[]; wrap?: (replay: LlmClient) => LlmClient; model?: string; timeoutMs?: number; midBuildAnswer?: boolean }): Promise<CaseRun> {
   setHostSlices(true)
   clearPlans()
   // designs an earlier drive started and never built on wait in the host; let them go, as clearing a project does
@@ -152,7 +154,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   history().clear()
   const replayCheck = createReplayCheck()
   const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? [], replayCheck), { chunk: false })
-  const inner = opts.client ?? script!
+  // a replay may be wrapped (creative cost.ts costClient runs it as mimir cloud's client)
+  const inner = opts.client ?? (opts.wrap ? opts.wrap(script!) : script!)
   const steps: EvalStep[] = []
   // records each request's reply as a step, the shape the scripted client replays (as the creative eval does). It keeps
   // the model's tool limit and tool search, read at each request as the runtime reads them, so a live run loads the
@@ -169,6 +172,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
       try {
         for await (const ev of inner.stream(req, signal)) {
           if (ev.type === 'text') step.text = (step.text ?? '') + ev.delta
+          // a live capture keeps what the provider said the request cost (creative cost.ts reads it)
+          if (ev.type === 'usage' && opts.client) step.usage = stepUsage(ev)
           if (ev.type === 'tool_call') {
             let args: Record<string, unknown> = {}
             try {

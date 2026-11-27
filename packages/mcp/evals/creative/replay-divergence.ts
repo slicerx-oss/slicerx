@@ -11,6 +11,20 @@ import type { ScriptStepData } from '@slicerx/pilot/evals'
 /** A recorded reply, with the tool results the model had just read when it wrote it (absent in older recordings). */
 export interface RecordedStep extends ScriptStepData {
   seen?: string[]
+  /** What the provider said the request cost (a live capture only): input tokens with the cache reads and writes in them, and output tokens with any thinking. */
+  usage?: StepUsage
+}
+
+export interface StepUsage {
+  input: number
+  output: number
+  cacheRead?: number
+  cacheWrite?: number
+}
+
+/** A usage event as a recording keeps it. */
+export function stepUsage(ev: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }): StepUsage {
+  return { input: ev.inputTokens, output: ev.outputTokens, ...(ev.cacheReadTokens === undefined ? {} : { cacheRead: ev.cacheReadTokens }), ...(ev.cacheWriteTokens === undefined ? {} : { cacheWrite: ev.cacheWriteTokens }) }
 }
 
 // ids the app makes from the time and a counter: designs and objects (obj_...), plans (plan_...), volumes and plates,

@@ -146,6 +146,11 @@ export function budgetedClient(base: LlmClient, model: string, price: Price, bud
   let tokensPerByte = FIRST_TOKENS_PER_BYTE
   return {
     provider: base.provider,
+    // the model client's tool limit and tool search pass through, so a live run sends what the app sends (runtime.ts)
+    ...(base.maxTools === undefined ? {} : { maxTools: base.maxTools }),
+    get toolSearch(): boolean {
+      return base.toolSearch === true
+    },
     async *stream(req, signal) {
       const ask = { ...req, model }
       if (!canStart(budget)) {
@@ -183,13 +188,13 @@ export function budgetedClient(base: LlmClient, model: string, price: Price, bud
 }
 
 /** Runs the prompts in order on a budgeted client; no prompt starts once the budget says stop, and the run ends there. */
-export async function* runLive(prompts: readonly CreativePrompt[], opts: { geom: ToolHost['geom']; client: LlmClient; budget: Budget; timeoutMs?: number; defaultAnswer?: boolean }): AsyncGenerator<{ prompt: CreativePrompt; run: PromptRun }> {
+export async function* runLive(prompts: readonly CreativePrompt[], opts: { geom: ToolHost['geom']; client: LlmClient; budget: Budget; model?: string; timeoutMs?: number; defaultAnswer?: boolean }): AsyncGenerator<{ prompt: CreativePrompt; run: PromptRun }> {
   for (const prompt of prompts) {
     if (!canStart(opts.budget)) {
       opts.budget.stopped = true
       return
     }
-    const run = await runPrompt(prompt, { geom: opts.geom, client: opts.client, ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }), ...(opts.defaultAnswer === undefined ? {} : { defaultAnswer: opts.defaultAnswer }) })
+    const run = await runPrompt(prompt, { geom: opts.geom, client: opts.client, ...(opts.model ? { model: opts.model } : {}), ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }), ...(opts.defaultAnswer === undefined ? {} : { defaultAnswer: opts.defaultAnswer }) })
     yield { prompt, run }
     if (opts.budget.stopped) return
   }

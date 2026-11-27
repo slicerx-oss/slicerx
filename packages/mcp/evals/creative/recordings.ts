@@ -76,6 +76,11 @@ export function parseRecording(text: string, where = 'recording'): Recording {
       if (!Array.isArray(s['seen']) || s['seen'].some((r) => typeof r !== 'string')) throw new Error(`${where}: step ${i + 1} seen must be a list of tool results`)
       step.seen = s['seen'] as string[]
     }
+    const u = s['usage']
+    if (u !== undefined) {
+      if (!isObj(u) || typeof u['input'] !== 'number' || typeof u['output'] !== 'number' || ['cacheRead', 'cacheWrite'].some((k) => u[k] !== undefined && typeof u[k] !== 'number')) throw new Error(`${where}: step ${i + 1} usage needs input and output token counts`)
+      step.usage = { input: u['input'], output: u['output'], ...(typeof u['cacheRead'] === 'number' ? { cacheRead: u['cacheRead'] } : {}), ...(typeof u['cacheWrite'] === 'number' ? { cacheWrite: u['cacheWrite'] } : {}) }
+    }
     if (s['calls'] !== undefined) {
       if (!Array.isArray(s['calls'])) throw new Error(`${where}: step ${i + 1} calls must be a list`)
       step.calls = s['calls'].map((c, k) => {
