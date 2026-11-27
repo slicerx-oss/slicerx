@@ -1,5 +1,5 @@
 {
- "model": "claude-haiku-5-5+claude-sonnet-5-5",
+ "model": "claude-haiku-5-5+claude-sonnet-5-5+refused",
  "requestModels": [
   "claude-haiku-5-5",
   "claude-haiku-5-5",
@@ -22,58 +22,84 @@
   "claude-haiku-5-5",
   "claude-haiku-5-5",
   "claude-haiku-5-5",
+  "claude-haiku-5-5",
+  "claude-haiku-5-5",
+  "claude-haiku-5-5",
+  "claude-haiku-5-5",
+  "claude-haiku-5-5",
+  "claude-haiku-5-5",
   "claude-sonnet-5-5",
   "claude-sonnet-5-5",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5-5",
+  "refused",
   "claude-sonnet-5-5",
   "claude-sonnet-5-5",
   "claude-sonnet-5-5"
  ],
  "provider": "mimir-cloud",
- "capturedAt": "2026-11-12T08:42:27.181Z",
+ "capturedAt": "2026-11-27T12:13:41.434Z",
  "steps": [
   {
-   "text": "Here's the plan I'll follow. Nothing gets queued or sliced unless you ask.\n\n1. Plan the box, lid and pin hinge, with the lid printing in place on its hinge.\n2. Confirm the sizes on a sheet.\n3. Build the base, the hinge knuckles, the lid and the pin, then check the part against the plan.",
    "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Hinged box"
+     }
+    },
     {
      "name": "design.plan",
      "args": {
       "part": "Hinged box with pin hinge",
       "units": "mm",
+      "detail": "basic",
       "overall": {
        "x": 80,
        "y": 50,
        "z": 35
       },
-      "detail": "basic",
-      "printInPlace": [
-       "Base",
-       "Lid"
-      ],
       "features": [
        {
-        "name": "Base shell",
-        "kind": "extrude and shell",
+        "name": "Base box",
+        "kind": "extrude",
         "sizes": {
          "length": 80,
          "width": 50,
-         "height": 30,
-         "wall": 2
+         "height": 32.6
+        }
+       },
+       {
+        "name": "Base cavity",
+        "kind": "cut",
+        "sizes": {
+         "length": 76,
+         "width": 46,
+         "depth": 30.6
+        }
+       },
+       {
+        "name": "Back wall relief",
+        "kind": "cut",
+        "sizes": {
+         "length": 44,
+         "width": 5,
+         "height": 2.2
         }
        },
        {
         "name": "Base knuckles",
-        "kind": "extrude (cylinder)",
+        "kind": "extrude",
         "sizes": {
-         "diameter": 6,
-         "length": 15
+         "knuckle diameter": 4,
+         "knuckle length": 18,
+         "block height": 2.6
+        }
+       },
+       {
+        "name": "Hinge pin",
+        "kind": "extrude",
+        "sizes": {
+         "pin diameter": 1.6,
+         "length": 44
         }
        },
        {
@@ -82,139 +108,189 @@
         "sizes": {
          "length": 80,
          "width": 50,
-         "thickness": 5
+         "thickness": 2
         }
        },
        {
-        "name": "Lid knuckle",
-        "kind": "extrude (cylinder)",
+        "name": "Lid knuckles",
+        "kind": "extrude",
         "sizes": {
-         "diameter": 6,
-         "length": 50
-        }
-       },
-       {
-        "name": "Hinge pin",
-        "kind": "extrude (cylinder)",
-        "sizes": {
-         "diameter": 2,
-         "length": 80
-        }
-       },
-       {
-        "name": "Hinge gap",
-        "kind": "clearance",
-        "sizes": {
-         "gap": 0.4
+         "knuckle diameter": 4,
+         "bore diameter": 2.4,
+         "length": 43.2
         }
        }
       ],
-      "assumptions": [
-       "Outer box 80 x 50 x 30 mm with 2 mm walls and an open top; the 5 mm lid sits on the rim, so closed height is 35 mm.",
-       "Pin hinge along the back edge (Y = 50): two base knuckles of 15 mm at the ends, one 50 mm lid knuckle in the middle, a 2 mm pin through all of them.",
-       "Hinge axis about 3 mm in from the back edge, at the top of the base wall.",
-       "Knuckles and lid print in place with 0.4 mm gaps where they meet, for PLA on the 0.4 mm nozzle.",
-       "Lid is a plain plate with no lip, and it clears the base knuckles with 0.4 mm gaps.",
-       "No latch or catch; the lid is held shut by its own weight."
+      "printInPlace": [
+       "Base",
+       "Lid"
       ],
-      "questions": [
-       "Should the lid have a lip that drops into the box opening?",
-       "Do you want a latch or snap on the front edge?"
-      ]
+      "assumptions": [
+       "Pin hinge on the back top edge: the pin is fixed to the base's two end knuckles, and the lid's middle knuckles turn on it.",
+       "Lid prints closed, sitting 0.4 mm above the rim on the base, with the knuckle gaps at 0.4 mm; supports are needed under the lid.",
+       "Lid plate notched at the back corners where the base knuckles sit, so the back corners of the box are open by about 5.6 mm.",
+       "Walls and floor 2 mm; knuckle wall 0.8 mm; no latch or detent."
+      ],
+      "leftOut": [
+       "living hinge",
+       "lid detent or latch",
+       "rounded corners"
+      ],
+      "proportions": "[\"User-given size: 80 by 50 by 35 mm, 2 mm walls\"]",
+      "realBody": {
+       "feature": "Base box",
+       "size": "length",
+       "mm": 80,
+       "source": "stated",
+       "stated": "80 by 50 by 35 mm"
+      }
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Approved as shown. Moving pieces need gaps of at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers) on this printer.\",\"result\":{\"planId\":\"plan_mwdas80q1114m\",\"accepted\":true,\"gaps\":{\"sideMm\":0.3,\"verticalMm\":0.4}}}"
+    "{\"ok\":true,\"summary\":\"Started Hinged box (obj_mwyxy1ced1)\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":true,\"summary\":\"Approved as shown. Moving pieces need gaps of at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers) on this printer.\",\"result\":{\"planId\":\"plan_mwyxy1co10xi0\",\"accepted\":true,\"gaps\":{\"sideMm\":0.3,\"verticalMm\":0.4}}}"
    ],
-   "text": "The plan is approved. Next, the dimension sheet for the sizes.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 32.6,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Base",
+      "feature": "Base box",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 80,
+       "heightMm": 50
+      },
+      "placement": {
+       "center": [
+        40,
+        25
+       ],
+       "rotationDeg": 0
+      }
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 30.6,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0,
+      "feature": "Base cavity",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 76,
+       "heightMm": 46
+      },
+      "placement": {
+       "center": [
+        40,
+        25
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        2
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"blocked\":true,\"message\":\"Nothing was built. Before a new part, show its sizes with pilot.sheet, then send the same call again with the sheet's values. The sheet waits for the person only when it has fits or they asked to see the sizes; any other sheet shows and you build at once. A size the person gave in the request goes on the sheet as asked, and a looked-up size names its source with sourceTitle or sourceUrl.\"}",
+    "{\"ok\":false,\"summary\":\"The step did not go through: The part this step works on is gone. The design is unchanged. An earlier step removed or merged the part this step works on. Check the design's parts as they are now and send the step for one that is there. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
+   ],
    "calls": [
     {
      "name": "pilot.sheet",
      "args": {
-      "title": "Hinged box, dimensions",
+      "title": "Hinged box, base and lid",
       "views": [
        "top",
        "front",
        "side",
        "iso"
       ],
+      "part": [
+       {
+        "plane": "xy",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          80,
+          0
+         ],
+         [
+          80,
+          50
+         ],
+         [
+          0,
+          50
+         ]
+        ],
+        "from": 0,
+        "to": 32.6
+       }
+      ],
       "dims": [
        {
         "key": "length",
-        "label": "Outer length",
+        "label": "Overall length",
         "value": 80,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
           0,
-          0,
+          -4,
           0
          ],
          "b": [
           80,
-          0,
+          -4,
           0
          ]
         }
        },
        {
         "key": "width",
-        "label": "Outer width",
+        "label": "Overall width",
         "value": 50,
         "unit": "mm",
-        "source": "asked",
+        "source": "guess",
         "at": {
          "a": [
-          0,
+          84,
           0,
           0
          ],
          "b": [
-          0,
+          84,
           50,
           0
-         ]
-        }
-       },
-       {
-        "key": "base_height",
-        "label": "Base height",
-        "value": 30,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          0,
-          0,
-          30
-         ]
-        }
-       },
-       {
-        "key": "lid_thickness",
-        "label": "Lid thickness",
-        "value": 5,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          80,
-          0,
-          30
-         ],
-         "b": [
-          80,
-          0,
-          35
          ]
         }
        },
@@ -227,51 +303,13 @@
         "at": {
          "a": [
           0,
-          0,
-          15
+          25,
+          0
          ],
          "b": [
           2,
-          0,
-          15
-         ]
-        }
-       },
-       {
-        "key": "knuckle_diameter",
-        "label": "Knuckle diameter",
-        "value": 6,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          47,
-          27
-         ],
-         "b": [
-          0,
-          47,
-          33
-         ]
-        }
-       },
-       {
-        "key": "pin_diameter",
-        "label": "Pin diameter",
-        "value": 2,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          47,
-          30
-         ],
-         "b": [
-          80,
-          47,
-          30
+          25,
+          0
          ]
         }
        }
@@ -282,32 +320,18 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Confirmed as shown. It showed as a list with no drawing: give part (the part as it will be built) or design on the next sheet, so each row gets its callout\",\"result\":{\"confirmed\":true,\"values\":{\"length\":80,\"width\":50,\"base_height\":30,\"lid_thickness\":5,\"wall\":2,\"knuckle_diameter\":6,\"pin_diameter\":2,\"clearance\":0.3,\"clearance_vertical\":0.4},\"changed\":[]}}"
-   ],
-   "text": "The sizes are confirmed. Starting the base.",
-   "calls": [
-    {
-     "name": "design.new",
-     "args": {
-      "name": "Hinged box"
-     }
-    },
-    {
-     "name": "design.list",
-     "args": {}
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Started Hinged box (obj_mwdasb3xd1)\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
-    "{\"ok\":true,\"summary\":\"1 design\",\"result\":{\"designs\":[{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}]}}"
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"length\":80,\"width\":50,\"wall\":2,\"clearance\":0.3,\"clearance_vertical\":0.4},\"changed\":[]}}"
    ],
    "calls": [
     {
      "name": "geom.extrude",
      "args": {
-      "design": "obj_mwdasb3xd1",
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 32.6,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Base",
+      "feature": "Base box",
       "shape": {
        "type": "rectangle",
        "widthMm": 80,
@@ -319,769 +343,6 @@
         25
        ],
        "rotationDeg": 0
-      },
-      "distance_mm": 30,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Base",
-      "feature": "Base shell"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Extruded: step 1, Rectangle extrude 30 mm\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smwdascna1\",\"name\":\"Rectangle extrude 30 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":30,\"unit\":\"mm\"},\"feature\":\"Base shell\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,30],\"volumeMm3\":120000,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":12,\"minMm\":[0,0,0],\"sizeMm\":[80,50,30],\"volumeMm3\":120000}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.shell",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "part": 0,
-      "open": [
-       {
-        "at": [
-         40,
-         25,
-         30
-        ],
-        "normal": [
-         0,
-         0,
-         1
-        ]
-       }
-      ],
-      "wall_mm": 2,
-      "feature": "Base shell"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Shelled: step 2, Shell, 2 mm walls, 1 open face\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smwdasdo82\",\"name\":\"Shell, 2 mm walls, 1 open face\",\"op\":\"shell\",\"part\":0,\"value\":{\"label\":\"Wall\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Base shell\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,30],\"volumeMm3\":22112,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":28,\"minMm\":[0,0,0],\"sizeMm\":[80,50,30],\"volumeMm3\":22112}]}}"
-   ],
-   "text": "Base shell done. Now the two base knuckles at the back edge.",
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "solids": [
-       {
-        "type": "cylinder",
-        "origin": [
-         0,
-         47,
-         30
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "diameterMm": 6,
-        "heightMm": 15
-       },
-       {
-        "type": "cylinder",
-        "origin": [
-         65,
-         47,
-         30
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "diameterMm": 6,
-        "heightMm": 15
-       }
-      ],
-      "name": "Base knuckles",
-      "slot": 1,
-      "feature": "Base knuckles"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Built: step 3, Add Base knuckles\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smwdasgsr3\",\"name\":\"Add Base knuckles\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Base knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22953.129,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":28,\"minMm\":[0,0,0],\"sizeMm\":[80,50,30],\"volumeMm3\":22112},{\"index\":1,\"name\":\"Base knuckles\",\"slot\":1,\"triangles\":216,\"minMm\":[0,44,27],\"sizeMm\":[80,6,6],\"volumeMm3\":841.129}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.boolean",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "op": "union",
-      "part": 0,
-      "with_parts": [
-       1
-      ],
-      "feature": "Base knuckles"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Union: step 4, Join 1 part\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smwdasiaw4\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":0,\"feature\":\"Base knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22791.004,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1016,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22791.004}]}}"
-   ],
-   "text": "Base knuckles are fused into the base. Now the lid: a plate with clearance cutouts over the base knuckles, plus the middle knuckle, raised 0.4 mm above the rim so it prints in place.",
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "solids": [
-       {
-        "type": "box",
-        "min": [
-         0,
-         0,
-         30.4
-        ],
-        "max": [
-         80,
-         50,
-         35
-        ]
-       },
-       {
-        "type": "cylinder",
-        "origin": [
-         15.3,
-         47,
-         30
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "diameterMm": 6,
-        "heightMm": 49.4
-       }
-      ],
-      "subtract": [
-       {
-        "type": "box",
-        "min": [
-         0,
-         43.6,
-         26
-        ],
-        "max": [
-         15.3,
-         50.5,
-         33.4
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         64.7,
-         43.6,
-         26
-        ],
-        "max": [
-         80,
-         50.5,
-         33.4
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         15,
-         43,
-         0
-        ],
-        "max": [
-         65,
-         50.5,
-         30.4
-        ]
-       }
-      ],
-      "name": "Lid",
-      "slot": 1,
-      "feature": "Lid plate"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"boolean: the mesh is not closed (it has holes or open edges); repair it first. The engine refused this step. Read why, then change the step or build it another way. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
-   ],
-   "text": "The engine refused that combined build. I'll retry once, splitting it into the plate first.",
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "solids": [
-       {
-        "type": "box",
-        "min": [
-         0,
-         0,
-         30.4
-        ],
-        "max": [
-         80,
-         50,
-         35
-        ]
-       }
-      ],
-      "subtract": [
-       {
-        "type": "box",
-        "min": [
-         0,
-         43.6,
-         26
-        ],
-        "max": [
-         15.3,
-         50.5,
-         33.4
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         64.7,
-         43.6,
-         26
-        ],
-        "max": [
-         80,
-         50.5,
-         33.4
-        ]
-       }
-      ],
-      "name": "Lid",
-      "slot": 1,
-      "feature": "Lid plate"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Built: step 5, Add Lid\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smwdasyni5\",\"name\":\"Add Lid\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":40603.485,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1016,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22791.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":56,\"minMm\":[0,0,30.4],\"sizeMm\":[80,50,4.6],\"volumeMm3\":17812.481}]}}"
-   ],
-   "text": "The lid plate built. Now the middle lid knuckle, cut back so it clears the base wall.",
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "solids": [
-       {
-        "type": "cylinder",
-        "origin": [
-         15.3,
-         47,
-         30
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "diameterMm": 6,
-        "heightMm": 49.4
-       }
-      ],
-      "subtract": [
-       {
-        "type": "box",
-        "min": [
-         15,
-         43,
-         0
-        ],
-        "max": [
-         65,
-         50.5,
-         30.4
-        ]
-       }
-      ],
-      "name": "Lid knuckle",
-      "slot": 1,
-      "feature": "Lid knuckle"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Built: step 6, Add Lid knuckle\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smwdat0876\",\"name\":\"Add Lid knuckle\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Lid knuckle\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":41178.345,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1016,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22791.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":56,\"minMm\":[0,0,30.4],\"sizeMm\":[80,50,4.6],\"volumeMm3\":17812.481},{\"index\":2,\"name\":\"Lid knuckle\",\"slot\":1,\"triangles\":120,\"minMm\":[15.3,44.045,30.4],\"sizeMm\":[49.4,5.91,2.6],\"volumeMm3\":574.86}]}}"
-   ],
-   "text": "Joining the lid knuckle into the lid, then boring the pin clearance through it.",
-   "calls": [
-    {
-     "name": "geom.boolean",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "op": "union",
-      "part": 1,
-      "with_parts": [
-       2
-      ],
-      "feature": "Lid knuckle"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"The step did not go through: boolean: the mesh is not closed (it has holes or open edges); repair it first. The design is unchanged. The engine refused this step. Read why, then change the step or build it another way. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
-   ],
-   "text": "The knuckle mesh isn't closed. I'll repair it and try the join again.",
-   "calls": [
-    {
-     "name": "geom.repair",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "part": 2,
-      "close_holes": true,
-      "fix_normals": true,
-      "feature": "Lid knuckle"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"A repair step on a design takes the default options; leave close_holes, max_hole_edges and fix_normals out\"}"
-   ],
-   "calls": [
-    {
-     "name": "geom.repair",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "part": 2,
-      "feature": "Lid knuckle"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Repaired: step 7, Repair\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smwdat99p8\",\"name\":\"Repair\",\"op\":\"repair\",\"part\":2,\"feature\":\"Lid knuckle\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":41178.345,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1016,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22791.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":56,\"minMm\":[0,0,30.4],\"sizeMm\":[80,50,4.6],\"volumeMm3\":17812.481},{\"index\":2,\"name\":\"Lid knuckle\",\"slot\":1,\"triangles\":120,\"minMm\":[15.3,44.045,30.4],\"sizeMm\":[49.4,5.91,2.6],\"volumeMm3\":574.86}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.boolean",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "op": "union",
-      "part": 1,
-      "with_parts": [
-       2
-      ],
-      "feature": "Lid knuckle"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"The step did not go through: boolean: the mesh is not closed (it has holes or open edges); repair it first. The design is unchanged. The engine refused this step. Read why, then change the step or build it another way. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
-   ],
-   "text": "Still refused. I'll check which piece is open before retrying.",
-   "calls": [
-    {
-     "name": "geom.info",
-     "args": {
-      "design": "obj_mwdasb3xd1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"3 parts, not closed (6 open edges)\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"parts\":[{\"part\":0,\"name\":\"Base\",\"slot\":1,\"areaMm2\":22970.094822525112,\"bounds\":{\"max\":[80,50,33],\"min\":[0,0,0]},\"components\":1,\"edges\":{\"boundaryEdges\":0,\"nonManifoldEdges\":0,\"flippedEdges\":0},\"triangles\":1016,\"vertices\":510,\"volumeMm3\":22791.003774469067,\"watertight\":true},{\"part\":1,\"name\":\"Lid\",\"slot\":1,\"areaMm2\":9196.000099182129,\"bounds\":{\"max\":[80,50,35],\"min\":[0,0,30.399999618530273]},\"components\":1,\"edges\":{\"boundaryEdges\":6,\"nonManifoldEdges\":0,\"flippedEdges\":0},\"triangles\":56,\"vertices\":31,\"volumeMm3\":17812.48095001205,\"watertight\":false},{\"part\":2,\"name\":\"Lid knuckle\",\"slot\":1,\"areaMm2\":740.0584960037963,\"bounds\":{\"max\":[64.69999694824219,49.95492935180664,33],\"min\":[15.300000190734863,44.04507064819336,30.399999618530273]},\"components\":1,\"edges\":{\"boundaryEdges\":0,\"nonManifoldEdges\":0,\"flippedEdges\":0},\"triangles\":120,\"vertices\":62,\"volumeMm3\":574.860454163904,\"watertight\":true}]}}"
-   ],
-   "text": "The lid plate is the open piece. Repairing it.",
-   "calls": [
-    {
-     "name": "geom.repair",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "part": 1,
-      "feature": "Lid plate"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Repaired: step 8, Repair\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smwdatbv210\",\"name\":\"Repair\",\"op\":\"repair\",\"part\":1,\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":41178.345,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1016,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22791.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":58,\"minMm\":[0,0,30.4],\"sizeMm\":[80,50,4.6],\"volumeMm3\":17812.481},{\"index\":2,\"name\":\"Lid knuckle\",\"slot\":1,\"triangles\":120,\"minMm\":[15.3,44.045,30.4],\"sizeMm\":[49.4,5.91,2.6],\"volumeMm3\":574.86}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.boolean",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "op": "union",
-      "part": 1,
-      "with_parts": [
-       2
-      ],
-      "feature": "Lid knuckle"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Union: step 9, Join 1 part\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smwdatcnw11\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":1,\"feature\":\"Lid knuckle\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":40603.485,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1016,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22791.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":478,\"minMm\":[0,0,30.4],\"sizeMm\":[80,50,4.6],\"volumeMm3\":17812.481}]}}"
-   ],
-   "text": "Lid joined. Now boring the pin clearance through the lid knuckle.",
-   "calls": [
-    {
-     "name": "geom.hole",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "center": [
-       64.7,
-       47,
-       30
-      ],
-      "axis": [
-       -1,
-       0,
-       0
-      ],
-      "diameter_mm": 2.8,
-      "part": 1,
-      "label": "Pin clearance 2.8 mm",
-      "feature": "Hinge pin"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"center: the hole's axis line through (64.7, 47, 30) meets no face of the part; give its center on the face it starts at. The engine refused this step. Read why, then change the step or build it another way. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
-   ],
-   "text": "The pin bore didn't land because the lid knuckle's remaining material sits above the pin axis. I'll run the plan check to see where the part stands.",
-   "calls": [
-    {
-     "name": "design.check",
-     "args": {
-      "planId": "plan_mwdas80q1114m",
-      "design": "obj_mwdasb3xd1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"Nothing was checked. Hinged box with pin hinge prints in place, so its gaps are looked at first: run the fit check on the design Hinged box as it is now, with every planned piece, fix any gap it flags, then check again.\"}"
-   ],
-   "calls": [
-    {
-     "name": "geom.fit_check",
-     "args": {
-      "design": "obj_mwdasb3xd1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"2 pieces; no gap under 0.3 mm side by side or 0.4 mm above or below, smallest 0.4 mm\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":2,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Base\"},{\"body\":1,\"part\":1,\"name\":\"Lid\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Base\",\"Lid\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.4,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[0,26,30],\"to\":[0,26,30.4]}],\"warnings\":[]}}"
-   ],
-   "calls": [
-    {
-     "name": "design.check",
-     "args": {
-      "planId": "plan_mwdas80q1114m",
-      "design": "obj_mwdasb3xd1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Hinged box (obj_mwdasb3xd1, tied to the plan): 1 of 7 checks against plan plan_mwdas80q1114m failed: feature count (want 6 features, each built by a step tagged with its name, got 9 steps, none tagged for Hinge pin, Hinge gap). This is not the last check: the plan has one fix round, and it is open. Fix each failed item now (change the part until it has what the plan wants, or, for a planned size the build cannot keep, change the plan with amends), then check plan plan_mwdas80q1114m again. Do not stop or ask the person yet; only a second failed check ends the building.\",\"result\":{\"planId\":\"plan_mwdas80q1114m\",\"design\":\"obj_mwdasb3xd1\",\"designName\":\"Hinged box\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"overall size\",\"want\":\"80 x 50 x 35 mm\",\"got\":\"80 x 50 x 35 mm\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"6 features, each built by a step tagged with its name\",\"got\":\"9 steps, none tagged for Hinge pin, Hinge gap\",\"pass\":false},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1.6 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"2 separate pieces (Base, Lid)\",\"got\":\"2 pieces\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.4 mm, between Base and Lid\",\"pass\":true},{\"name\":\"planned gaps\",\"want\":\"every gap the plan sets at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"gap 0.4 mm (vertical)\",\"pass\":true}],\"body\":{\"size\":{\"x\":80,\"y\":50,\"z\":35},\"holes\":[],\"features\":9,\"steps\":[\"Rectangle extrude 30 mm\",\"Shell, 2 mm walls, 1 open face\",\"Add Base knuckles\",\"Join 1 part\",\"Add Lid\",\"Add Lid knuckle\",\"Repair\",\"Repair\",\"Join 1 part\"],\"tags\":[\"Base shell\",\"Base shell\",\"Base knuckles\",\"Base knuckles\",\"Lid plate\",\"Lid knuckle\",\"Lid knuckle\",\"Lid plate\",\"Lid knuckle\"],\"stepIds\":[\"smwdascna1\",\"smwdasdo82\",\"smwdasgsr3\",\"smwdasiaw4\",\"smwdasyni5\",\"smwdat0876\",\"smwdat99p8\",\"smwdatbv210\",\"smwdatcnw11\"],\"lofts\":[],\"parts\":[{\"x\":80,\"y\":50,\"z\":33},{\"x\":80,\"y\":50,\"z\":4.6}],\"watertight\":true,\"minWallMm\":1.6,\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"PLA\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Base\",\"partName\":\"Base\"},{\"part\":1,\"name\":\"Lid\",\"partName\":\"Lid\"}],\"pieces\":2,\"gaps\":[{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.39999961853027344,\"limitMm\":0.4,\"from\":[0,26,30],\"to\":[0,26,30.399999618530273],\"direction\":\"z\",\"flat\":true}]}}}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.subtract",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "part": 0,
-      "solids": [
-       {
-        "type": "box",
-        "min": [
-         15,
-         47.9,
-         26
-        ],
-        "max": [
-         65,
-         50.5,
-         31
-        ]
-       }
-      ],
-      "label": "Wall notch for lid knuckle",
-      "feature": "Hinge gap"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Subtracted: step 10, Wall notch for lid knuckle\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smwdau1my12\",\"name\":\"Wall notch for lid knuckle\",\"op\":\"subtract\",\"part\":0,\"value\":{\"label\":\"Width\",\"value\":50,\"unit\":\"mm\"},\"feature\":\"Hinge gap\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":40203.485,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":914,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22391.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":478,\"minMm\":[0,0,30.4],\"sizeMm\":[80,50,4.6],\"volumeMm3\":17812.481}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "solids": [
-       {
-        "type": "cylinder",
-        "origin": [
-         15.3,
-         47,
-         30
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "diameterMm": 6,
-        "heightMm": 49.4
-       }
-      ],
-      "name": "Lid knuckle full",
-      "slot": 1,
-      "feature": "Lid knuckle"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Built: step 11, Add Lid knuckle full\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":11,\"lastStep\":{\"index\":11,\"id\":\"smwdau47013\",\"name\":\"Add Lid knuckle full\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Lid knuckle\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":41588.545,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":914,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22391.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":478,\"minMm\":[0,0,30.4],\"sizeMm\":[80,50,4.6],\"volumeMm3\":17812.481},{\"index\":2,\"name\":\"Lid knuckle full\",\"slot\":1,\"triangles\":108,\"minMm\":[15.3,44,27],\"sizeMm\":[49.4,6,6],\"volumeMm3\":1385.06}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.boolean",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "op": "union",
-      "part": 1,
-      "with_parts": [
-       2
-      ],
-      "feature": "Lid knuckle"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Union: step 12, Join 1 part\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":12,\"lastStep\":{\"index\":12,\"id\":\"smwdau57a14\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":1,\"feature\":\"Lid knuckle\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":41013.684,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":914,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22391.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":424,\"minMm\":[0,0,27],\"sizeMm\":[80,50,8],\"volumeMm3\":18622.68}]}}"
-   ],
-   "text": "Now the pin bore through the lid, 2.8 mm for a 0.4 mm gap around the pin.",
-   "calls": [
-    {
-     "name": "geom.subtract",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "part": 1,
-      "solids": [
-       {
-        "type": "cylinder",
-        "origin": [
-         15,
-         47,
-         30
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "diameterMm": 2.8,
-        "heightMm": 50
-       }
-      ],
-      "label": "Pin bore 2.8 mm",
-      "feature": "Hinge pin"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Subtracted: step 13, Pin bore 2.8 mm\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":13,\"lastStep\":{\"index\":13,\"id\":\"smwdau6pb15\",\"name\":\"Pin bore 2.8 mm\",\"op\":\"subtract\",\"part\":1,\"value\":{\"label\":\"Diameter\",\"value\":2.8,\"unit\":\"mm\"},\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":40715.017,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":914,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22391.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":552,\"minMm\":[0,0,27],\"sizeMm\":[80,50,8],\"volumeMm3\":18324.013}]}}"
-   ],
-   "text": "Now the pin, fused into the base knuckles.",
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "solids": [
-       {
-        "type": "cylinder",
-        "origin": [
-         0,
-         47,
-         30
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "diameterMm": 2,
-        "heightMm": 80
-       }
-      ],
-      "name": "Hinge pin",
-      "slot": 1,
-      "feature": "Hinge pin"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Built: step 14, Add Hinge pin\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":14,\"lastStep\":{\"index\":14,\"id\":\"smwdau8cz16\",\"name\":\"Add Hinge pin\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":40959.934,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":914,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22391.004},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":552,\"minMm\":[0,0,27],\"sizeMm\":[80,50,8],\"volumeMm3\":18324.013},{\"index\":2,\"name\":\"Hinge pin\",\"slot\":1,\"triangles\":60,\"minMm\":[0,46,29],\"sizeMm\":[80,2,2],\"volumeMm3\":244.917}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.boolean",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "op": "union",
-      "part": 0,
-      "with_parts": [
-       2
-      ],
-      "feature": "Hinge pin"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Union: step 15, Join 1 part\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":15,\"lastStep\":{\"index\":15,\"id\":\"smwdau9e217\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":0,\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":40868.09,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1508,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22544.077},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":552,\"minMm\":[0,0,27],\"sizeMm\":[80,50,8],\"volumeMm3\":18324.013}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.fit_check",
-     "args": {
-      "design": "obj_mwdasb3xd1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"1 piece; 1 gap under the limit: Base and Lid touch at (64.7, 47, 27), 0.0 mm; moving pieces need 0.3 mm or more\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":1,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Base\"},{\"body\":1,\"part\":1,\"name\":\"Lid\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Base\",\"Lid\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"where\":\"at (64.7, 47, 27)\",\"from\":[64.7,47,27],\"to\":[64.7,47,27]}],\"warnings\":[\"Base and Lid touch at (64.7, 47, 27), 0.0 mm; moving pieces need 0.3 mm or more\"]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.interference",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "a": 0,
-      "b": 1
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"part 0 (Base) and part 1 (Lid) touch (clearance 0)\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"a\":0,\"b\":1,\"interferes\":false,\"overlap_mm3\":0,\"clearance_mm\":0,\"from\":[64.7,47,27],\"to\":[64.7,47,27]}}"
-   ],
-   "text": "The base and lid touch at one point at the end of the lid knuckle. I'll trim that end back a little more.",
-   "calls": [
-    {
-     "name": "geom.subtract",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "part": 1,
-      "solids": [
-       {
-        "type": "box",
-        "min": [
-         64.4,
-         43,
-         26
-        ],
-        "max": [
-         65.3,
-         51,
-         33.4
-        ]
-       }
-      ],
-      "label": "Trim lid knuckle end",
-      "feature": "Hinge gap"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Subtracted: step 16, Trim lid knuckle end\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":16,\"lastStep\":{\"index\":16,\"id\":\"smwdaumwp18\",\"name\":\"Trim lid knuckle end\",\"op\":\"subtract\",\"part\":1,\"value\":{\"label\":\"Width\",\"value\":0.9,\"unit\":\"mm\"},\"feature\":\"Hinge gap\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":40857.603,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1508,\"minMm\":[0,0,0],\"sizeMm\":[80,50,33],\"volumeMm3\":22544.077},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":3540,\"minMm\":[0,0,27],\"sizeMm\":[80,50,8],\"volumeMm3\":18313.526}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.fit_check",
-     "args": {
-      "design": "obj_mwdasb3xd1"
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"1 piece; 1 gap under the limit: Base and Lid touch at (15.3, 44.7, 28.1), 0.0 mm; moving pieces need 0.3 mm or more\",\"result\":{\"design\":\"obj_mwdasb3xd1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":1,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Base\"},{\"body\":1,\"part\":1,\"name\":\"Lid\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Base\",\"Lid\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"where\":\"at (15.3, 44.7, 28.1)\",\"from\":[15.3,44.655,28.13],\"to\":[15.3,44.655,28.13]}],\"warnings\":[\"Base and Lid touch at (15.3, 44.7, 28.1), 0.0 mm; moving pieces need 0.3 mm or more\"]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.measure",
-     "args": {
-      "design": "obj_mwdasb3xd1",
-      "snap_mm": 0,
-      "section": {
-       "part": 0,
-       "plane": {
-        "origin": [
-         15.15,
-         47,
-         30
-        ],
-        "normal": [
-         1,
-         0,
-         0
-        ]
-       }
       }
      }
     }
@@ -1089,29 +350,1170 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Section of part 0 (Base): 207.061 mm2 in 2 regions\",\"result\":{\"section\":{\"design\":\"obj_mwdasb3xd1\",\"part\":0,\"area_mm2\":207.061,\"outline_mm\":214.243,\"regions\":2,\"holes\":0,\"loops\":[{\"outer\":[[15.15,2,15.765],[15.15,2,17.112],[15.15,2,23.567],[15.15,2,24.604],[15.15,2,26.693],[15.15,2,28.907],[15.15,2,30],[15.15,1.15,30],[15.15,0,30],[15.15,0,28.55],[15.15,0,25.958],[15.15,0,23.107],[15.15,0,22.916],[15.15,0,22.811],[15.15,0,22.334],[15.15,0,16.224],[15.15,0,7.407],[15.15,0,0],[15.15,4.042,0],[15.15,21.952,0],[15.15,28.048,0],[15.15,45.958,0],[15.15,50,0],[15.15,50,6.858],[15.15,50,15.662],[15.15,50,22.244],[15.15,50,22.756],[15.15,50,23.073],[15.15,50,25.031],[15.15,50,25.527],[15.15,50,25.691],[15.15,50,25.982],[15.15,50,26],[15.15,49.989,26],[15.15,49.978,26],[15.15,49.918,26],[15.15,49.846,26],[15.15,48.14,26],[15.15,48,26],[15.15,48,25.572],[15.15,48,25.119],[15.15,48,24.301],[15.15,48,22.565],[15.15,48,13.475],[15.15,48,13.2],[15.15,48,2],[15.15,43.279,2],[15.15,28.058,2],[15.15,21.942,2],[15.15,6.721,2],[15.15,2,2],[15.15,2,14.039]],\"holes\":[]},{\"outer\":[[15.15,47.924,29.617],[15.15,47.924,29.618],[15.15,48,30],[15.15,48,30.001],[15.15,47.924,30.383],[15.15,47.923,30.384],[15.15,47.707,30.707],[15.15,47.706,30.708],[15.15,47.383,30.924],[15.15,47.382,30.924],[15.15,47,31],[15.15,46.999,31],[15.15,46.617,30.924],[15.15,46.616,30.923],[15.15,46.293,30.707],[15.15,46.292,30.706],[15.15,46.076,30.383],[15.15,46.076,30.382],[15.15,46,30],[15.15,46,29.999],[15.15,46.076,29.617],[15.15,46.077,29.616],[15.15,46.293,29.293],[15.15,46.294,29.292],[15.15,46.617,29.076],[15.15,46.618,29.076],[15.15,47,29],[15.15,47.001,29],[15.15,47.383,29.076],[15.15,47.384,29.077],[15.15,47.707,29.293],[15.15,47.708,29.294]],\"holes\":[]}]}}}"
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Rectangle extrude 32.6 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smwyxy6772\",\"name\":\"Rectangle extrude 32.6 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":32.6,\"unit\":\"mm\"},\"feature\":\"Base box\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,32.6],\"volumeMm3\":130399.994,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":12,\"minMm\":[0,0,0],\"sizeMm\":[80,50,32.6],\"volumeMm3\":130399.994}],\"forms\":[\"Base: box, plain block\"]}}"
    ],
    "calls": [
     {
-     "name": "design.check",
+     "name": "geom.extrude",
      "args": {
-      "planId": "plan_mwdas80q1114m",
-      "design": "obj_mwdasb3xd1"
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 30.6,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0,
+      "feature": "Base cavity",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 76,
+       "heightMm": 46
+      },
+      "placement": {
+       "center": [
+        40,
+        25
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        32.6
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "flip": true
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Hinged box (obj_mwdasb3xd1, tied to the plan): 2 of 7 checks against plan plan_mwdas80q1114m failed: pieces (want 2 separate pieces (Base, Lid), got 1 piece: Base and Lid touch at (15.3, 44.7, 28.1), so they print as one piece; leave the planned gap between them); gaps (want at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers), got Base and Lid touch at (15.3, 44.7, 28.1), 0.0 mm; this print-in-place plan needs 0.3 mm or more). The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan plan_mwdas80q1114m again returns this same result.\",\"result\":{\"planId\":\"plan_mwdas80q1114m\",\"design\":\"obj_mwdasb3xd1\",\"designName\":\"Hinged box\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"overall size\",\"want\":\"80 x 50 x 35 mm\",\"got\":\"80 x 50 x 35 mm\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"6 features, each built by a step tagged with its name\",\"got\":\"16 steps for 6 features (Base shell 2, Base knuckles 2, Lid plate 2, Lid knuckle 5, Hinge pin 3, Hinge gap 2)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"1.59 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"2 separate pieces (Base, Lid)\",\"got\":\"1 piece: Base and Lid touch at (15.3, 44.7, 28.1), so they print as one piece; leave the planned gap between them\",\"pass\":false},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"Base and Lid touch at (15.3, 44.7, 28.1), 0.0 mm; this print-in-place plan needs 0.3 mm or more\",\"pass\":false},{\"name\":\"planned gaps\",\"want\":\"every gap the plan sets at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"gap 0.4 mm (vertical)\",\"pass\":true}],\"body\":{\"size\":{\"x\":80,\"y\":50,\"z\":35},\"holes\":[{\"diameterMm\":2.800001322628065}],\"features\":16,\"steps\":[\"Rectangle extrude 30 mm\",\"Shell, 2 mm walls, 1 open face\",\"Add Base knuckles\",\"Join 1 part\",\"Add Lid\",\"Add Lid knuckle\",\"Repair\",\"Repair\",\"Join 1 part\",\"Wall notch for lid knuckle\",\"Add Lid knuckle full\",\"Join 1 part\",\"Pin bore 2.8 mm\",\"Add Hinge pin\",\"Join 1 part\",\"Trim lid knuckle end\"],\"tags\":[\"Base shell\",\"Base shell\",\"Base knuckles\",\"Base knuckles\",\"Lid plate\",\"Lid knuckle\",\"Lid knuckle\",\"Lid plate\",\"Lid knuckle\",\"Hinge gap\",\"Lid knuckle\",\"Lid knuckle\",\"Hinge pin\",\"Hinge pin\",\"Hinge pin\",\"Hinge gap\"],\"stepIds\":[\"smwdascna1\",\"smwdasdo82\",\"smwdasgsr3\",\"smwdasiaw4\",\"smwdasyni5\",\"smwdat0876\",\"smwdat99p8\",\"smwdatbv210\",\"smwdatcnw11\",\"smwdau1my12\",\"smwdau47013\",\"smwdau57a14\",\"smwdau6pb15\",\"smwdau8cz16\",\"smwdau9e217\",\"smwdaumwp18\"],\"lofts\":[],\"parts\":[{\"x\":80,\"y\":50,\"z\":33},{\"x\":80,\"y\":50,\"z\":8}],\"watertight\":true,\"minWallMm\":1.586,\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"PLA\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Base\",\"partName\":\"Base\"},{\"part\":1,\"name\":\"Lid\",\"partName\":\"Lid\"}],\"pieces\":1,\"gaps\":[{\"bodies\":[0,1],\"kind\":\"fused\",\"gapMm\":0,\"limitMm\":0.3,\"from\":[15.300000190734863,44.65450668334961,28.12952995300293],\"to\":[15.300000190734863,44.65450668334961,28.12952995300293],\"direction\":\"xy\",\"where\":\"at (15.3, 44.7, 28.1)\"}]}},\"stop\":\"The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan plan_mwdas80q1114m again returns this same result.\"}}"
+    "{\"ok\":false,\"summary\":\"The step did not go through: The shape only touches the part, so nothing changed. The design is unchanged.\"}"
    ],
-   "text": "The box and hinge are built, but the hinge fails two plan checks, so I'm stopping and not calling it done. The lid and base fuse at one point. I used my one fix round and can't build further under this plan.\n\n**What's built:**\n- **Base:** 80 x 50 x 30 mm with 2 mm walls, open top, two 15 mm end knuckles (6 mm diameter) at the back edge, a 2 mm pin through the knuckles, and a notch in the back wall so the lid knuckle clears it.\n- **Lid:** a 4.6 mm plate raised 0.4 mm above the rim, so the closed box is 80 x 50 x 35 mm. It has a 49.4 mm middle knuckle bored to 2.8 mm for the pin, with 0.3 mm side gaps to the base knuckles.\n\n**What failed:**\n- **Pieces:** the plan wants 2 separate pieces (Base, Lid). The part has 1, because the base and lid touch at (15.3, 44.7, 28.1). That's the lid knuckle's end near x = 15.3.\n- **Gaps:** the plan wants at least 0.3 mm side by side and 0.4 mm above or below. That contact point has 0.0 mm. Every other gap measures 0.4 mm.\n\nOverall size, wall thickness (1.6 mm) and watertightness all pass.\n\n**Print notes:** the middle of the lid knuckle will print unsupported, and the 80 mm pin will bridge over the cavity. Expect to turn on supports or clean the hinge up.\n\nDo you want me to start a new, corrected plan that I'd rebuild with a larger gap at the knuckle ends, or would you rather open the part in Model and fix that spot by hand? I haven't sliced or queued anything."
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 30.6,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0,
+      "feature": "Base cavity",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 76,
+       "heightMm": 46
+      },
+      "placement": {
+       "center": [
+        40,
+        25
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        32.6
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 2, Rectangle cut 30.6 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smwyxy9ab4\",\"name\":\"Rectangle cut 30.6 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":30.6,\"unit\":\"mm\"},\"feature\":\"Base cavity\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,32.6],\"volumeMm3\":23422.399,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":516,\"minMm\":[0,0,0],\"sizeMm\":[80,50,32.6],\"volumeMm3\":23422.399}],\"forms\":[\"Base: box, plain block\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 2.2,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0,
+      "feature": "Back wall relief",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 44,
+       "heightMm": 5
+      },
+      "placement": {
+       "center": [
+        40,
+        47.5
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        32.6
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 18,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 0,
+      "feature": "Base knuckles",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 3, Rectangle cut 2.2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smwyxydww5\",\"name\":\"Rectangle cut 2.2 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":2.2,\"unit\":\"mm\"},\"feature\":\"Back wall relief\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,32.6],\"volumeMm3\":23228.799,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":964,\"minMm\":[0,0,0],\"sizeMm\":[80,50,32.6],\"volumeMm3\":23228.799}],\"forms\":[\"Base: box, plain block\"]}}",
+    "{\"ok\":true,\"summary\":\"Joined: step 4, Circle extrude 18 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smwyxydxs6\",\"name\":\"Circle extrude 18 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":18,\"unit\":\"mm\"},\"feature\":\"Base knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23431.729,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1236,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23431.729}],\"forms\":[\"Base: box, 1 joined on (boxes), plain block\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 18,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 0,
+      "feature": "Base knuckles",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        62,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 4.6,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 0,
+      "feature": "Base knuckles",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 18,
+       "heightMm": 5
+      },
+      "placement": {
+       "center": [
+        9,
+        47.5
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        28
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 4.6,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 0,
+      "feature": "Base knuckles",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 18,
+       "heightMm": 5
+      },
+      "placement": {
+       "center": [
+        71,
+        47.5
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        28
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 5, Circle extrude 18 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smwyxyi6q7\",\"name\":\"Circle extrude 18 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":18,\"unit\":\"mm\"},\"feature\":\"Base knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23634.659,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1500,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23634.659}],\"forms\":[\"Base: box, 2 joined on (boxes), plain block\"]}}",
+    "{\"ok\":true,\"summary\":\"Joined: step 6, Rectangle extrude 4.6 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smwyxyi8c8\",\"name\":\"Rectangle extrude 4.6 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":4.6,\"unit\":\"mm\"},\"feature\":\"Base knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23793.869,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1464,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23793.869}],\"forms\":[\"Base: box, 3 joined on (boxes), plain block\"]}}",
+    "{\"ok\":true,\"summary\":\"Joined: step 7, Rectangle extrude 4.6 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smwyxyi9f9\",\"name\":\"Rectangle extrude 4.6 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":4.6,\"unit\":\"mm\"},\"feature\":\"Base knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23953.079,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":732,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23953.079}],\"forms\":[\"Base: box, 4 joined on (boxes), plain block\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 44,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 0,
+      "feature": "Hinge pin",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 1.6
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        18,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Lid",
+      "feature": "Lid plate",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           0,
+           0
+          ],
+          [
+           80,
+           0
+          ],
+          [
+           80,
+           44.4
+          ],
+          [
+           62,
+           44.4
+          ],
+          [
+           62,
+           50
+          ],
+          [
+           18,
+           50
+          ],
+          [
+           18,
+           44.4
+          ],
+          [
+           0,
+           44.4
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        33
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 8, Circle extrude 44 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smwyxyn1j10\",\"name\":\"Circle extrude 44 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":44,\"unit\":\"mm\"},\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block\"]}}",
+    "{\"ok\":true,\"summary\":\"Extruded: step 9, Sketch extrude 2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smwyxyn2i11\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31637.779,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":904,\"minMm\":[0,0,33],\"sizeMm\":[80,50,2],\"volumeMm3\":7596.8}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: extruded outline, sharp edges; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 43.2,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 1,
+      "feature": "Lid knuckles",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 4
+        },
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 2.4
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        18.4,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 10, Sketch extrude 43.2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smwyxyp6112\",\"name\":\"Sketch extrude 43.2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":43.2,\"unit\":\"mm\"},\"feature\":\"Lid knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31811.218,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1088,\"minMm\":[0,0,31],\"sizeMm\":[80,50,4],\"volumeMm3\":7770.239}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: extruded outline, 1 joined on, sharp edges; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"1 piece; 1 gap under the limit: Base and Lid touch at (18, 45, 33), where faces square to x meet, 0.0 mm; moving pieces need 0.3 mm or more\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":1,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Base\"},{\"body\":1,\"part\":1,\"name\":\"Lid\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Base\",\"Lid\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"where\":\"at (18, 45, 33), where faces square to x meet\",\"from\":[18,45,33],\"to\":[18,45,33]}],\"warnings\":[\"Base and Lid touch at (18, 45, 33), where faces square to x meet, 0.0 mm; moving pieces need 0.3 mm or more\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Sketch extrude 43.2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smwyxyn2i11\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31637.779,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":904,\"minMm\":[0,0,33],\"sizeMm\":[80,50,2],\"volumeMm3\":7596.8}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: extruded outline, sharp edges; middle\"]}}",
+    "{\"ok\":true,\"summary\":\"Removed Sketch extrude 2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smwyxyn1j10\",\"name\":\"Circle extrude 44 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":44,\"unit\":\"mm\"},\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Lid",
+      "feature": "Lid plate",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           0,
+           0
+          ],
+          [
+           80,
+           0
+          ],
+          [
+           80,
+           44.4
+          ],
+          [
+           61.6,
+           44.4
+          ],
+          [
+           61.6,
+           50
+          ],
+          [
+           18.4,
+           50
+          ],
+          [
+           18.4,
+           44.4
+          ],
+          [
+           0,
+           44.4
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        33
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Extruded: step 9, Sketch extrude 2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smwyxyw2m13\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31628.819,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":904,\"minMm\":[0,0,33],\"sizeMm\":[80,50,2],\"volumeMm3\":7587.84}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: extruded outline, sharp edges; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 43.2,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 1,
+      "feature": "Lid knuckles",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 4
+        },
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 2.4
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        18.4,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 10, Sketch extrude 43.2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smwyxyxc914\",\"name\":\"Sketch extrude 43.2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":43.2,\"unit\":\"mm\"},\"feature\":\"Lid knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31802.258,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1160,\"minMm\":[0,0,31],\"sizeMm\":[80,50,4],\"volumeMm3\":7761.279}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: extruded outline, 1 joined on, sharp edges; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"1 piece; 1 gap under the limit: Base and Lid touch at (18.4, 46.2, 33), 0.0 mm; moving pieces need 0.3 mm or more\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":1,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Base\"},{\"body\":1,\"part\":1,\"name\":\"Lid\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Base\",\"Lid\"],\"kind\":\"fused\",\"direction\":\"xy\",\"gap_mm\":0,\"limit_mm\":0.3,\"verdict\":\"fuses\",\"where\":\"at (18.4, 46.2, 33)\",\"from\":[18.4,46.2,33],\"to\":[18.4,46.2,33]}],\"warnings\":[\"Base and Lid touch at (18.4, 46.2, 33), 0.0 mm; moving pieces need 0.3 mm or more\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Sketch extrude 43.2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smwyxyw2m13\",\"name\":\"Sketch extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31628.819,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":904,\"minMm\":[0,0,33],\"sizeMm\":[80,50,2],\"volumeMm3\":7587.84}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: extruded outline, sharp edges; middle\"]}}",
+    "{\"ok\":true,\"summary\":\"Removed Sketch extrude 2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smwyxyn1j10\",\"name\":\"Circle extrude 44 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":44,\"unit\":\"mm\"},\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Lid",
+      "feature": "Lid plate",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 80,
+       "heightMm": 44.4
+      },
+      "placement": {
+       "center": [
+        40,
+        22.2
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        33
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Extruded: step 9, Rectangle extrude 2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smwyxz8p015\",\"name\":\"Rectangle extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31144.979,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":844,\"minMm\":[0,0,33],\"sizeMm\":[80,44.4,2],\"volumeMm3\":7104}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, plain block; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 0.8,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 1,
+      "feature": "Lid plate",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 43.2,
+       "heightMm": 6
+      },
+      "placement": {
+       "center": [
+        40,
+        47
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        34.2
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 43.2,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 1,
+      "feature": "Lid knuckles",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 4
+        },
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 2.4
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        18.4,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 10, Rectangle extrude 0.8 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smwyxzbbc16\",\"name\":\"Rectangle extrude 0.8 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":0.8,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31338.515,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1324,\"minMm\":[0,0,33],\"sizeMm\":[80,50,2],\"volumeMm3\":7297.536}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, 1 joined on (boxes), plain block; middle\"]}}",
+    "{\"ok\":false,\"summary\":\"The step did not go through: boolean: the result is unsafe at mesh storage precision (collapsed triangles); change the cut or placement. The design is unchanged. The cut or join left faces that line up or slivers. For a cut, extend the cutting shape about 0.05 mm past the faces it meets; for a join, overlap the bodies about 0.05 mm rather than letting faces just touch. Try again once, and tell the person in plain words if it still fails; never quote the engine text or its setting names.\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 43.3,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 1,
+      "feature": "Lid knuckles",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 4
+        },
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 2.4
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        18.35,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 11, Sketch extrude 43.3 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":11,\"lastStep\":{\"index\":11,\"id\":\"smwyxzejw18\",\"name\":\"Sketch extrude 43.3 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":43.3,\"unit\":\"mm\"},\"feature\":\"Lid knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31609.355,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1868,\"minMm\":[0,0,31],\"sizeMm\":[80,50,4],\"volumeMm3\":7568.376}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, 2 joined on, sharp edges; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"2 pieces; no gap under 0.3 mm side by side or 0.4 mm above or below, smallest 0.4 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":2,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Base\"},{\"body\":1,\"part\":1,\"name\":\"Lid\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Base\",\"Lid\"],\"kind\":\"apart\",\"direction\":\"z\",\"gap_mm\":0.395,\"limit_mm\":0.4,\"verdict\":\"slides\",\"from\":[40,47.566,32.434],\"to\":[40,47.845,32.155]}],\"warnings\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Sketch extrude 43.3 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smwyxzbbc16\",\"name\":\"Rectangle extrude 0.8 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":0.8,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31338.515,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1324,\"minMm\":[0,0,33],\"sizeMm\":[80,50,2],\"volumeMm3\":7297.536}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, 1 joined on (boxes), plain block; middle\"]}}",
+    "{\"ok\":true,\"summary\":\"Removed Rectangle extrude 0.8 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smwyxz8p015\",\"name\":\"Rectangle extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31144.979,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":844,\"minMm\":[0,0,33],\"sizeMm\":[80,44.4,2],\"volumeMm3\":7104}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, plain block; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Rectangle extrude 2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smwyxyn1j10\",\"name\":\"Circle extrude 44 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":44,\"unit\":\"mm\"},\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":948,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24040.979}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block\"]}}",
+    "{\"ok\":true,\"summary\":\"Removed Circle extrude 44 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smwyxyi9f9\",\"name\":\"Rectangle extrude 4.6 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":4.6,\"unit\":\"mm\"},\"feature\":\"Base knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23953.079,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":732,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":23953.079}],\"forms\":[\"Base: box, 4 joined on (boxes), plain block\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 44,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 0,
+      "feature": "Hinge pin",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 1.5
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        18,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 8, Circle extrude 44 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smwyxzm2g19\",\"name\":\"Circle extrude 44 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":44,\"unit\":\"mm\"},\"feature\":\"Hinge pin\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24030.182,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":920,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24030.182}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Lid",
+      "feature": "Lid plate",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 80,
+       "heightMm": 44.4
+      },
+      "placement": {
+       "center": [
+        40,
+        22.2
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        33
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Extruded: step 9, Rectangle extrude 2 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":9,\"lastStep\":{\"index\":9,\"id\":\"smwyxznlu20\",\"name\":\"Rectangle extrude 2 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":2,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31134.182,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":920,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24030.182},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":844,\"minMm\":[0,0,33],\"sizeMm\":[80,44.4,2],\"volumeMm3\":7104}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, plain block; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 0.8,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 1,
+      "feature": "Lid plate",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 43.2,
+       "heightMm": 6
+      },
+      "placement": {
+       "center": [
+        40,
+        47
+       ],
+       "rotationDeg": 0
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        34.2
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 43.3,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 1,
+      "feature": "Lid knuckles",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 4
+        },
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 2.4
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        18.35,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 10, Rectangle extrude 0.8 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smwyxzpmi21\",\"name\":\"Rectangle extrude 0.8 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":0.8,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31327.718,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":920,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24030.182},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1324,\"minMm\":[0,0,33],\"sizeMm\":[80,50,2],\"volumeMm3\":7297.536}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, 1 joined on (boxes), plain block; middle\"]}}",
+    "{\"ok\":true,\"summary\":\"Joined: step 11, Sketch extrude 43.3 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":11,\"lastStep\":{\"index\":11,\"id\":\"smwyxzpng22\",\"name\":\"Sketch extrude 43.3 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":43.3,\"unit\":\"mm\"},\"feature\":\"Lid knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31598.558,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":920,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24030.182},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1868,\"minMm\":[0,0,31],\"sizeMm\":[80,50,4],\"volumeMm3\":7568.376}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, 2 joined on, sharp edges; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"2 pieces; no gap under 0.3 mm side by side or 0.4 mm above or below, smallest 0.35 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":2,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Base\"},{\"body\":1,\"part\":1,\"name\":\"Lid\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Base\",\"Lid\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.35,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[62,45.045,32.6],\"to\":[61.65,45.045,32.6]}],\"warnings\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_mwyxy1co10xi0",
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Hinged box (obj_mwyxy1ced1, tied to the plan): 1 of 7 checks against plan plan_mwyxy1co10xi0 failed: minimum wall (want at least 0.8 mm (twice the 0.4 mm nozzle), got 0.8 mm). This is not the last check: the plan has one fix round, and it is open. Fix each failed item now (change the part until it has what the plan wants, or, for a planned size the build cannot keep, change the plan with amends), then check plan plan_mwyxy1co10xi0 again. Do not stop or ask the person yet; only a second failed check ends the building.\",\"result\":{\"planId\":\"plan_mwyxy1co10xi0\",\"design\":\"obj_mwyxy1ced1\",\"designName\":\"Hinged box\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"overall size\",\"want\":\"80 x 50 x 35 mm\",\"got\":\"80 x 50 x 35 mm\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"7 features, each built by a step tagged with its name\",\"got\":\"11 steps for 7 features (Base knuckles 4, Lid plate 2)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"0.8 mm\",\"pass\":false,\"where\":\"The thinnest wall is in Lid, near (32.78, 45.98, 31.77) mm.\",\"fix\":\"Make it at least 0.8 mm thick there. A lip, rim, post or arm needs that thickness too, and a cut must stop at least 0.8 mm short of the far side.\"},{\"name\":\"pieces\",\"want\":\"2 separate pieces (Base, Lid)\",\"got\":\"2 pieces\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.35 mm, between Base and Lid\",\"pass\":true},{\"name\":\"floor\",\"want\":\"closed at the bottom, with the plan's 4.4 mm floor (depth 30.6 mm under the 35 mm height): the cavity opens only where the plan opens it\",\"got\":\"closed: solid across the bottom face at z 0, 31\",\"pass\":true}],\"body\":{\"size\":{\"x\":80,\"y\":50,\"z\":35},\"reach\":{\"x\":{\"lo\":{\"at\":[0,50,0],\"part\":\"Base\"},\"hi\":{\"at\":[80,0,0],\"part\":\"Base\"}},\"y\":{\"lo\":{\"at\":[0,0,0],\"part\":\"Base\"},\"hi\":{\"at\":[0,50,0],\"part\":\"Base\"}},\"z\":{\"lo\":{\"at\":[0,50,0],\"part\":\"Base\"},\"hi\":{\"at\":[0,47,35],\"part\":\"Base\"}}},\"holes\":[{\"diameterMm\":2.3999998864119716}],\"features\":11,\"steps\":[\"Rectangle extrude 32.6 mm\",\"Rectangle cut 30.6 mm\",\"Rectangle cut 2.2 mm\",\"Circle extrude 18 mm\",\"Circle extrude 18 mm\",\"Rectangle extrude 4.6 mm\",\"Rectangle extrude 4.6 mm\",\"Circle extrude 44 mm\",\"Rectangle extrude 2 mm\",\"Rectangle extrude 0.8 mm\",\"Sketch extrude 43.3 mm\"],\"tags\":[\"Base box\",\"Base cavity\",\"Back wall relief\",\"Base knuckles\",\"Base knuckles\",\"Base knuckles\",\"Base knuckles\",\"Hinge pin\",\"Lid plate\",\"Lid plate\",\"Lid knuckles\"],\"stepIds\":[\"smwyxy6772\",\"smwyxy9ab4\",\"smwyxydww5\",\"smwyxydxs6\",\"smwyxyi6q7\",\"smwyxyi8c8\",\"smwyxyi9f9\",\"smwyxzm2g19\",\"smwyxznlu20\",\"smwyxzpmi21\",\"smwyxzpng22\"],\"paintTags\":[],\"paintUntagged\":[],\"lofts\":[],\"outlines\":{\"base box\":\"square\",\"base knuckles\":\"rounded\",\"hinge pin\":\"rounded\",\"lid plate\":\"square\",\"lid knuckles\":\"rounded\"},\"featureHeights\":{\"base box\":{\"lo\":0,\"hi\":32.6},\"base knuckles\":{\"lo\":28,\"hi\":32.6},\"lid plate\":{\"lo\":33,\"hi\":35}},\"parts\":[{\"x\":80,\"y\":50,\"z\":35},{\"x\":80,\"y\":50,\"z\":4}],\"partBoxes\":[{\"name\":\"Base\",\"slot\":1,\"painted\":false,\"min\":[0,0,0],\"max\":[80,50,35]},{\"name\":\"Lid\",\"slot\":1,\"painted\":false,\"min\":[0,0,31],\"max\":[80,50,35]}],\"watertight\":true,\"minWallMm\":0.798,\"minWallAt\":{\"at\":[32.78,45.98,31.77],\"part\":\"Lid\"},\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"PLA\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Base\",\"partName\":\"Base\",\"box\":{\"max\":[80,50,35],\"min\":[0,0,0]}},{\"part\":1,\"name\":\"Lid\",\"partName\":\"Lid\",\"box\":{\"max\":[80,50,35],\"min\":[0,0,31]}}],\"pieces\":2,\"gaps\":[{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.34999847412109375,\"limitMm\":0.3,\"from\":[62,45.04475021362305,32.599998474121094],\"to\":[61.650001525878906,45.04475021362305,32.599998474121094],\"direction\":\"xy\"}]},\"floor\":{\"plannedHoleMm\":0,\"parts\":[{\"name\":\"Base\",\"faceZ\":0,\"openings\":[]},{\"name\":\"Lid\",\"faceZ\":31,\"openings\":[]}]}}}}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Sketch extrude 43.3 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":10,\"lastStep\":{\"index\":10,\"id\":\"smwyxzpmi21\",\"name\":\"Rectangle extrude 0.8 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":0.8,\"unit\":\"mm\"},\"feature\":\"Lid plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":31327.718,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":920,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24030.182},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1324,\"minMm\":[0,0,33],\"sizeMm\":[80,50,2],\"volumeMm3\":7297.536}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, 1 joined on (boxes), plain block; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mwyxy1ced1",
+      "distance_mm": 43.3,
+      "extent": "oneSide",
+      "operation": "join",
+      "target": "obj_mwyxy1ced1",
+      "part": 1,
+      "feature": "Lid knuckles",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 4.2
+        },
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 2.4
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        18.35,
+        47,
+        33
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 11, Sketch extrude 43.3 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"name\":\"Hinged box\",\"exact\":false,\"steps\":11,\"lastStep\":{\"index\":11,\"id\":\"smwyxzvvp23\",\"name\":\"Sketch extrude 43.3 mm\",\"op\":\"shape.extrude\",\"part\":1,\"value\":{\"label\":\"Distance\",\"value\":43.3,\"unit\":\"mm\"},\"feature\":\"Lid knuckles\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[80,50,35.1],\"volumeMm3\":31641.036,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":920,\"minMm\":[0,0,0],\"sizeMm\":[80,50,35],\"volumeMm3\":24030.182},{\"index\":1,\"name\":\"Lid\",\"slot\":1,\"triangles\":1386,\"minMm\":[0,0,30.9],\"sizeMm\":[80,50,4.2],\"volumeMm3\":7610.854}],\"forms\":[\"Base: box, 5 joined on (boxes), plain block; middle\",\"Lid: box, 2 joined on, sharp edges; middle\"]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fit_check",
+     "args": {
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"2 pieces; no gap under 0.3 mm side by side or 0.4 mm above or below, smallest 0.35 mm\",\"result\":{\"design\":\"obj_mwyxy1ced1\",\"limits\":{\"side_mm\":0.3,\"vertical_mm\":0.4,\"material\":\"PLA\",\"nozzle_mm\":0.4,\"layer_height_mm\":0.2},\"pieces\":2,\"bodies\":[{\"body\":0,\"part\":0,\"name\":\"Base\"},{\"body\":1,\"part\":1,\"name\":\"Lid\"}],\"gaps\":[{\"bodies\":[0,1],\"names\":[\"Base\",\"Lid\"],\"kind\":\"apart\",\"direction\":\"xy\",\"gap_mm\":0.35,\"limit_mm\":0.3,\"verdict\":\"slides\",\"from\":[62,45.045,32.6],\"to\":[61.65,45.045,32.6]}],\"warnings\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_mwyxy1co10xi0",
+      "design": "obj_mwyxy1ced1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Hinged box (obj_mwyxy1ced1, tied to the plan) matches plan plan_mwyxy1co10xi0: all 7 checks pass\",\"result\":{\"planId\":\"plan_mwyxy1co10xi0\",\"design\":\"obj_mwyxy1ced1\",\"designName\":\"Hinged box\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":true,\"items\":[{\"name\":\"overall size\",\"want\":\"80 x 50 x 35 mm\",\"got\":\"80 x 50 x 35.1 mm\",\"pass\":true},{\"name\":\"feature count\",\"want\":\"7 features, each built by a step tagged with its name\",\"got\":\"11 steps for 7 features (Base knuckles 4, Lid plate 2)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"0.8 mm\",\"pass\":true},{\"name\":\"pieces\",\"want\":\"2 separate pieces (Base, Lid)\",\"got\":\"2 pieces\",\"pass\":true},{\"name\":\"gaps\",\"want\":\"at least 0.3 mm side by side and 0.4 mm above or below between moving pieces (PLA, 0.4 mm nozzle, 0.2 mm layers)\",\"got\":\"smallest gap 0.35 mm, between Base and Lid\",\"pass\":true},{\"name\":\"floor\",\"want\":\"closed at the bottom, with the plan's 4.4 mm floor (depth 30.6 mm under the 35 mm height): the cavity opens only where the plan opens it\",\"got\":\"closed: solid across the bottom face at z 0, 30.9\",\"pass\":true}],\"body\":{\"size\":{\"x\":80,\"y\":50,\"z\":35.1},\"reach\":{\"x\":{\"lo\":{\"at\":[0,50,0],\"part\":\"Base\"},\"hi\":{\"at\":[80,0,0],\"part\":\"Base\"}},\"y\":{\"lo\":{\"at\":[0,0,0],\"part\":\"Base\"},\"hi\":{\"at\":[0,50,0],\"part\":\"Base\"}},\"z\":{\"lo\":{\"at\":[0,50,0],\"part\":\"Base\"},\"hi\":{\"at\":[18.35,47,35.1],\"part\":\"Lid\"}}},\"holes\":[{\"diameterMm\":2.3999998864119716}],\"features\":11,\"steps\":[\"Rectangle extrude 32.6 mm\",\"Rectangle cut 30.6 mm\",\"Rectangle cut 2.2 mm\",\"Circle extrude 18 mm\",\"Circle extrude 18 mm\",\"Rectangle extrude 4.6 mm\",\"Rectangle extrude 4.6 mm\",\"Circle extrude 44 mm\",\"Rectangle extrude 2 mm\",\"Rectangle extrude 0.8 mm\",\"Sketch extrude 43.3 mm\"],\"tags\":[\"Base box\",\"Base cavity\",\"Back wall relief\",\"Base knuckles\",\"Base knuckles\",\"Base knuckles\",\"Base knuckles\",\"Hinge pin\",\"Lid plate\",\"Lid plate\",\"Lid knuckles\"],\"stepIds\":[\"smwyxy6772\",\"smwyxy9ab4\",\"smwyxydww5\",\"smwyxydxs6\",\"smwyxyi6q7\",\"smwyxyi8c8\",\"smwyxyi9f9\",\"smwyxzm2g19\",\"smwyxznlu20\",\"smwyxzpmi21\",\"smwyxzvvp23\"],\"paintTags\":[],\"paintUntagged\":[],\"lofts\":[],\"outlines\":{\"base box\":\"square\",\"base knuckles\":\"rounded\",\"hinge pin\":\"rounded\",\"lid plate\":\"square\",\"lid knuckles\":\"rounded\"},\"featureHeights\":{\"base box\":{\"lo\":0,\"hi\":32.6},\"base knuckles\":{\"lo\":28,\"hi\":32.6},\"lid plate\":{\"lo\":33,\"hi\":35}},\"parts\":[{\"x\":80,\"y\":50,\"z\":35},{\"x\":80,\"y\":50,\"z\":4.2}],\"partBoxes\":[{\"name\":\"Base\",\"slot\":1,\"painted\":false,\"min\":[0,0,0],\"max\":[80,50,35]},{\"name\":\"Lid\",\"slot\":1,\"painted\":false,\"min\":[0,0,30.9],\"max\":[80,50,35.1]}],\"watertight\":true,\"minWallMm\":0.8,\"minWallAt\":{\"at\":[47.2,44.93,34.6],\"part\":\"Lid\"},\"fit\":{\"limits\":{\"sideMm\":0.3,\"verticalMm\":0.4,\"material\":\"PLA\",\"nozzleMm\":0.4,\"layerHeightMm\":0.2},\"bodies\":[{\"part\":0,\"name\":\"Base\",\"partName\":\"Base\",\"box\":{\"max\":[80,50,35],\"min\":[0,0,0]}},{\"part\":1,\"name\":\"Lid\",\"partName\":\"Lid\",\"box\":{\"max\":[80,50,35.099998474121094],\"min\":[0,0,30.899999618530273]}}],\"pieces\":2,\"gaps\":[{\"bodies\":[0,1],\"kind\":\"apart\",\"gapMm\":0.34999847412109375,\"limitMm\":0.3,\"from\":[62,45.04475021362305,32.599998474121094],\"to\":[61.650001525878906,45.04475021362305,32.599998474121094],\"direction\":\"xy\"}]},\"floor\":{\"plannedHoleMm\":0,\"parts\":[{\"name\":\"Base\",\"faceZ\":0,\"openings\":[]},{\"name\":\"Lid\",\"faceZ\":30.9,\"openings\":[]}]}}}}"
+   ],
+   "text": "I built the hinged box as two separate pieces, a base and a lid. The size, fit and plan checks all passed. It's 80 by 50 by 35.1 mm, with 2 mm walls and floor. I haven't sliced or printed it.\n\n- **Hinge:** The pin hinge runs along the back top edge. A 1.5 mm pin is fixed to the base's two end knuckles, and the lid's middle knuckles turn on it.\n- **Gaps:** The smallest gap between the pieces is 0.35 mm, which is enough for them to move after printing.\n- **Lid:** The lid prints closed, sitting 0.4 mm above the rim, so it needs supports underneath.\n- **Open back corners:** The two back corners of the lid are cut away around the end knuckles, so about 5.6 mm of the box opening stays uncovered there.\n- **Not included:** There is no latch and no rounded corners."
   }
  ],
  "score": {
-  "pass": false,
-  "verdict": "fail",
-  "geometry": false,
+  "pass": true,
+  "verdict": "pass",
+  "geometry": true,
   "built": true,
   "refused": false,
   "extra": 0,
@@ -1122,7 +1524,7 @@
    "minWall": true,
    "bedFit": true,
    "sizes": true,
-   "lid": false,
+   "lid": true,
    "hinge": true
   }
  }

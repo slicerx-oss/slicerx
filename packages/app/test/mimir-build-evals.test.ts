@@ -967,12 +967,10 @@ const SLOW_REPLAYS = new Set(['twisted-vase', 'flared-vase'])
 const slowEvals = process.env['SX_SLOW_EVALS'] === '1'
 
 /**
- * Cases whose recording holds an engine answer that has since been corrected, so they no longer replay. hinged-box: its
- * fit check was recorded as "Base and Lid touch, 0.0 mm", a false contact from a number read one unit in the last place
- * off; read exactly, the check answers a 0.38 mm gap, which is what the design has. Each is captured again once the
- * exact solid work has landed, and leaves this list then.
+ * Cases whose recording holds an engine answer that has since been corrected, so they no longer replay. Each is captured
+ * again and leaves this list then.
  */
-const PAUSED_REPLAYS = new Set(['hinged-box'])
+const PAUSED_REPLAYS = new Set<string>([])
 
 describe.skipIf(live || !liveEngine)('a question asked after a build', () => {
   beforeAll(async () => setGeomProvider(await wasmGeom()))
