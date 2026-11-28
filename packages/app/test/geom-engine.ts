@@ -10,6 +10,7 @@ import { gunzipSync, gzipSync, inflateRawSync } from 'node:zlib'
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'
 import { clearReplayCache } from '@slicerx/cad-history'
 import { setGeomProvider, type GeomProvider } from '../src/geom/client'
+import { madeIdKind } from '../../mcp/evals/creative/replay-divergence'
 
 export interface Recorded { op: string; request: unknown; reply?: unknown; error?: string }
 
@@ -140,17 +141,18 @@ function zipEntries(o: Record<string, unknown>): Record<string, unknown> | null 
 }
 
 /**
- * An id the app makes from the time and a counter (`d<time><n>`, `s<time><n>`, `obj_<time>c<n>`). Tests fix the
- * time, but the counter runs on across tests, so one test's ids depend on how many ran before it.
+ * An id the app makes from the time and a counter (`d<time><n>`, `s<time><n>`, `obj_<time>c<n>`). Both the time
+ * and the counter differ from the run that recorded a reply: the counter runs on across tests, and the time runs on.
  */
 const GENERATED_ID = /^[a-z][a-z_~-]*[0-9a-z]{6,}[a-z~][0-9a-z]+$|^[a-z][a-z_]*[0-9a-z]{7,}$/
 
 /**
- * Walks a recorded request beside the live one and pairs up generated ids that differ only in their counter
- * (same length give or take a digit, same leading characters). Everything else must match exactly.
+ * Walks a recorded request beside the live one and pairs up generated ids that differ in their time and counter
+ * (same length give or take a digit, same kind by madeIdKind, never the time in them). Everything else must match
+ * exactly.
  */
 function pairIds(rec: unknown, now: unknown, ids: Map<string, string>): void {
-  if (typeof rec === 'string' && typeof now === 'string' && rec !== now && GENERATED_ID.test(rec) && GENERATED_ID.test(now) && rec.slice(0, 5) === now.slice(0, 5) && Math.abs(rec.length - now.length) <= 1) {
+  if (typeof rec === 'string' && typeof now === 'string' && rec !== now && GENERATED_ID.test(rec) && GENERATED_ID.test(now) && madeIdKind(rec) === madeIdKind(now) && Math.abs(rec.length - now.length) <= 1) {
     ids.set(rec, now)
     return
   }

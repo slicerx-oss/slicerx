@@ -35,6 +35,13 @@ export function stepUsage(ev: { inputTokens: number; outputTokens: number; cache
 export const MADE_ID = /\b(?:obj|plan|vol|plate)_[0-9a-z~]+\b|\b[sd](?=[0-9a-z]*\d)[0-9a-z]{9,}\b|(?<="(?:id|sketch|step)":")[sd][0-9a-z]{9,}(?=")/g
 
 /**
+ * What a made id is, for pairing a recorded one with the one a new run made: the word before its separator (obj, plan,
+ * vol, plate) or its first letter (s for a step or sketch, d for a dimension, g for a group). The time that follows is
+ * left out, since it runs on: an id made a week after the recording starts with other letters.
+ */
+export const madeIdKind = (id: string): string => /^([a-z]+)[_~-]/.exec(id)?.[1] ?? id.charAt(0)
+
+/**
  * Adds one streamed event of a live reply to the step that records it: its text, its tool calls, and whether it stopped
  * at the output limit. The runtime acts on that stop (it asks again after a reply cut off with nothing said, and a run
  * cut once goes on from a reply that leaves its design empty), so a replay has to stop there too. A live capture (`live`)

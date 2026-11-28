@@ -17,7 +17,7 @@ import type { ScriptStep, ScriptStepData } from '../../../pilot/src/provider/scr
 import type { LlmMessage } from '../../../pilot/src/provider/types'
 import { MODEL_PRICES, SONNET_5_5, type Price } from '../../../mcp/evals/creative/live'
 import type { BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
-import { createReplayCheck, keptStep, MADE_ID, recordEvent, toolResultsSeen, type StepUsage } from '../../../mcp/evals/creative/replay-divergence'
+import { createReplayCheck, keptStep, MADE_ID, madeIdKind, recordEvent, toolResultsSeen, type StepUsage } from '../../../mcp/evals/creative/replay-divergence'
 import { builtinCommands } from '../../src/commands/builtin'
 import { currentEdition } from '../../src/edition'
 import { editionToolGroups, withBrain } from '../../src/pilot-connect/brain'
@@ -91,8 +91,8 @@ export interface EvalStep extends ScriptStepData {
 
 /**
  * The recorded replies as script steps that swap the ids of the live run for the ones this run made. Each step pairs
- * the ids in the results it saw live with the ids in the results this run's model reads at the same point, in order,
- * and replaces them in its tool calls; the pairs build up over the run.
+ * the ids in the results it saw live with the ids in the results this run's model reads at the same point, in order and
+ * of the same kind (madeIdKind), and replaces them in its tool calls; the pairs build up over the run.
  */
 export function replaySteps(steps: readonly EvalStep[], check = createReplayCheck()): ScriptStep[] {
   const ids = new Map<string, string>()
@@ -104,7 +104,7 @@ export function replaySteps(steps: readonly EvalStep[], check = createReplayChec
     const now = toolResultsSeen(messages).join('\n').match(MADE_ID) ?? []
     was.forEach((id, i) => {
       const to = now[i]
-      if (to && to !== id && id.slice(0, 3) === to.slice(0, 3)) ids.set(id, to)
+      if (to && to !== id && madeIdKind(id) === madeIdKind(to)) ids.set(id, to)
     })
     if (!ids.size || !step.calls) return step
     let text = JSON.stringify(step.calls)
