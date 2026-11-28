@@ -27,7 +27,7 @@ import { gunzipSync } from 'node:zlib'
 import type { LlmHttpRequest, LlmTransport, MeshPart, PilotEvent } from '@slicerx/contracts'
 import { createScriptedClient, createTransportClient, type LlmMessage } from '@slicerx/pilot'
 import { createNodeTransport } from '@slicerx/pilot/node'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { budgetedClient, canStart, createBudget, HAIKU_5_5, STOP_MARGIN_USD } from '../../mcp/evals/creative/live'
 import { minWall as engineWall } from '../../mcp/src/body-facts'
 import { setGeomProvider } from '../src/geom/client'
@@ -36,6 +36,7 @@ import { get } from '../src/state/store'
 import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, evalPrice, replaySteps, SONNET_5_5, tabConfig, type CaseRun } from './mimir-build-evals/drive'
+import { madeIdKind } from '../../mcp/evals/creative/replay-divergence'
 import { loadRecording, recordLive, refreshScore, rescore, rescoreLine, scoreMoves, summarize } from './mimir-build-evals/recordings'
 import { MAX_LOADED_TOOLS, shape } from '../../../supabase/functions/mimir/shape'
 import { assemblySizes, checkCalls, checkFromCalls, classifyNoBuild, extraTurns, floorCheck, hingeCheck, hookCheck, lastCheckPass, lidStated, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
@@ -47,6 +48,28 @@ const summary = (r: CaseRun) => summarize(r.score)
 const REPLAY_DRIVE_MS = 170_000
 
 describe('build eval scoring', () => {
+  it('pairs a recorded id with the one this run made whatever time each was made at, and only one of the same kind', () => {
+    const made = (field: string, id: string) => JSON.stringify({ ok: true, summary: 'Sketch 1 is in the timeline', result: { [field]: id, name: 'Sketch 1', loops: 1 } })
+    const replay = (seen: string, now: string, sketch: string) => {
+      const [step] = replaySteps([{ seen: [seen], calls: [{ name: 'geom.extrude', args: { sketch, distance_mm: 80 } }] }])
+      if (typeof step !== 'function') throw new Error('a replayed step reads the results before it')
+      const asked: LlmMessage[] = [
+        { role: 'user', content: 'a phone stand' },
+        { role: 'assistant', content: '', toolCalls: [{ id: 'c0', name: 'design.sketch', arguments: '{}' }] },
+        { role: 'tool', callId: 'c0', content: now },
+      ]
+      return (step(asked).calls![0]!.args as { sketch: string }).sketch
+    }
+    // ids carry the time they were made: one recorded before the 2026-11-28 rollover starts smw, one made after it smx
+    expect(replay(made('id', 'smwapacdb1k'), made('id', 'smx05cbl91k'), 'smwapacdb1k')).toBe('smx05cbl91k')
+    expect(replay(made('id', 'smwapacdb1k'), made('id', 'sn0a2k3m71k'), 'smwapacdb1k')).toBe('sn0a2k3m71k')
+    // a step id never pairs with a group or dimension id where one stands in its place
+    expect(replay(made('id', 'smwapacdb1k'), made('id', 'gmx05cbl91k'), 'smwapacdb1k')).toBe('smwapacdb1k')
+    expect(replay(made('step', 'smwapacdb1k'), made('step', 'dmx05cbl91k'), 'smwapacdb1k')).toBe('smwapacdb1k')
+    expect(madeIdKind('smwapacdb1k')).toBe(madeIdKind('smx05cbl91k'))
+    expect(madeIdKind('obj_mwapacdc1')).not.toBe(madeIdKind('plan_mx05cbl9a'))
+  })
+
   it('carries a sketch id with no digit from this run into the next call, as it does one with a digit', () => {
     const made = (id: string) => JSON.stringify({ ok: true, summary: 'Sketch 1 is in the timeline', result: { id, name: 'Sketch 1', loops: 1 } })
     const [step] = replaySteps([{ seen: [made('smwapacdb1k')], calls: [{ name: 'geom.extrude', args: { sketch: 'smwapacdb1k', distance_mm: 80 } }] }])
@@ -1068,6 +1091,22 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
     expect(names.length).toBeGreaterThan(0)
     expect(names).toEqual(names.map((_, k) => `Sketch ${k + 1}`))
     expect(finishSketch({ loops: [{ points: [[0, 0], [20, 0], [20, 10], [0, 10]] }] }).name).toBe(`Sketch ${names.length + 1}`)
+  })
+
+  // Its ids carry the time this run makes them, and the recording's the time it was captured: a replay months later
+  // pairs them all the same.
+  it.skipIf(!loadRecording('phone-stand-lip'))('replays a case as it did live with the clock months past its recording', { timeout: 180_000 }, async () => {
+    const c = BUILD_CASES.find((x) => x.id === 'phone-stand-lip')!
+    const rec = loadRecording(c.id)!
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2027-06-01T12:00:00Z'))
+    try {
+      const r = await driveCase(c, { steps: rec.steps, timeoutMs: REPLAY_DRIVE_MS })
+      expect(r.error, r.error).toBeUndefined()
+      expect(summary(r)).toEqual(rec.score)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
