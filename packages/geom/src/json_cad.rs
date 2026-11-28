@@ -421,13 +421,13 @@ fn extrude_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value>
     let pattern: Option<face::Pattern> = field_or_default(req, "pattern")?;
     let font = font(req)?;
     let world = target.as_ref().map(Item::world);
-    let r = face::extrude_pattern(
+    let r = face::extrude_stored(
         &frame,
         &shape,
         &at,
         font.as_deref(),
         &spec,
-        world.as_ref(),
+        world.as_ref().zip(target.as_ref().map(|t| &t.transform)),
         pattern.as_ref(),
     )?;
     tool_reply(r, target.as_ref(), spec.operation, enc, boolean::storage_mesh)
@@ -1251,6 +1251,52 @@ mod tests {
             "{}",
             out["bounds"]
         );
+    }
+
+    /// a box stored as a part is: f32 corners, placed by `at`
+    #[allow(clippy::cast_possible_truncation, reason = "parts are stored as f32")]
+    fn stored_box(min: [f64; 3], max: [f64; 3], at: [f64; 3]) -> Value {
+        let f = |p: [f64; 3]| p.map(|v| f64::from(v as f32));
+        json!({ "mesh": MeshOut::Flat.mesh(&build::box_mesh(f(min), f(max))), "transform": translate(at) })
+    }
+
+    /// a round pin joined out of the box's end face at `x`, drawn where the face is, not where its f32 copy is
+    fn pin_on_end(x: f64, at: [f64; 3], diameter: f64, length: f64) -> crate::Result<Value> {
+        let req = json!({
+            "frame": { "origin": [x + at[0], at[1], 13.0 + at[2]], "normal": [1, 0, 0], "u": [0, 1, 0], "v": [0, 0, 1] },
+            "shape": { "type": "circle", "diameterMm": diameter }, "placement": {},
+            "spec": { "distanceMm": length, "extent": "oneSide", "operation": "join" },
+            "target": stored_box([0.0, -10.0, 0.0], [x, 10.0, 26.0], at),
+        });
+        call("shape.extrude", &req.to_string()).map(|t| serde_json::from_str(&t).unwrap())
+    }
+
+    #[test]
+    fn a_pin_started_on_a_stored_face_joins_however_its_coordinate_rounds_and_wherever_the_part_is() {
+        // 54.8, 70.2 and 30.3 are stored a little low, 39.4 and 60.7 a little high, 24 and 101 exactly
+        for x in [54.8, 70.2, 30.3, 39.4, 60.7, 24.0, 101.0] {
+            let volumes: Vec<f64> = [[0.0, 0.0, 0.0], [100.3, -40.7, 0.0], [237.15, 12.6, 3.3]]
+                .iter()
+                .map(|&at| {
+                    let out = pin_on_end(x, at, 6.0, 10.0)
+                        .unwrap_or_else(|e| panic!("pin at x {x}, part at {at:?}: {e}"));
+                    assert_eq!(out["shells"], 1, "pin at x {x}, part at {at:?}");
+                    out["volumeMm3"].as_f64().unwrap()
+                })
+                .collect();
+            assert!(
+                volumes.iter().all(|&v| (v - volumes[0]).abs() <= 1e-9 * v),
+                "pin at x {x}: {volumes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_flexi_fish_tail_pin_joins_its_body() {
+        // the creative eval's flexi-fish, step 18: a 4 mm pin on a face stored at 70.19999695 in a part placed at
+        // 31.8 mm, drawn at 70.2
+        let out = pin_on_end(70.2, [31.800_003_051_757_812, 90.0, 0.0], 4.0, 6.0).unwrap();
+        assert_eq!(out["shells"], 1);
     }
 
     #[test]

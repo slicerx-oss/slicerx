@@ -1058,7 +1058,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   })
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.15.1',
+    version: '1.15.2',
     source: 'command',
     permission: 'slice',
     description:

@@ -824,6 +824,22 @@ pub fn extrude_pattern(
     target: Option<&TriMesh>,
     pattern: Option<&Pattern>,
 ) -> Result<ExtrudeResult> {
+    let stored = target.map(|t| (t, &xform::IDENTITY));
+    extrude_stored(frame, shape, at, font, spec, stored, pattern)
+}
+
+/// [`extrude_pattern`] on a target placed by the transform of the part it is stored as: the frame its f32 positions
+/// are kept in.
+pub fn extrude_stored(
+    frame: &FaceFrame,
+    shape: &Shape,
+    at: &Placement,
+    font: Option<&[u8]>,
+    spec: &ExtrudeSpec,
+    stored: Option<(&TriMesh, &Mat4)>,
+    pattern: Option<&Pattern>,
+) -> Result<ExtrudeResult> {
+    let target = stored.map(|(t, _)| t);
     let (a, b) = ends(spec)?;
     let mut tool = body(frame, shape, at, font, spec, a, b)?;
     // A cut whose far end lands flush on a face of the body would leave a skin of no thickness there: the
@@ -842,11 +858,11 @@ pub fn extrude_pattern(
         }
     }
     tool = patterned(tool, frame, pattern)?;
-    if let (Operation::Join, Some(t)) = (spec.operation, target)
+    if let (Operation::Join, Some((t, placed))) = (spec.operation, stored)
         && a == -OVERLAP_MM
     {
         let span = |lo: f64, hi: f64| patterned(body(frame, shape, at, font, spec, lo, hi)?, frame, pattern);
-        tool = seated(tool, t, &frame.checked()?, span, b)?;
+        tool = seated(tool, t, placed, &frame.checked()?, span, b)?;
     }
     apply(tool, spec.operation, target)
 }
@@ -867,10 +883,12 @@ fn patterned(tool: TriMesh, frame: &FaceFrame, pattern: Option<&Pattern>) -> Res
 /// overlap keeps the boolean off a face of `target` that the start face sits on, so it stays only inside the body
 /// there. A start face on no face of the body (in air, or crossing the body) needs none, and where it hangs in air
 /// (a cap over a gap to another part) the join starts on its plane, so the gap below it stays exactly as asked.
-/// `span` makes the tool between two heights above the face frame `f`, and `b` is the far end.
+/// `span` makes the tool between two heights above the face frame `f`, and `b` is the far end. `placed` is the
+/// transform of the part the target is stored as (see `stored_rounding`).
 fn seated(
     tool: TriMesh,
     target: &TriMesh,
+    placed: &Mat4,
     f: &Frame,
     span: impl Fn(f64, f64) -> Result<TriMesh>,
     b: f64,
@@ -898,11 +916,44 @@ fn seated(
     if (whole - inside.volume()).abs() <= 1e-6 * whole {
         return Ok(tool);
     }
+    // A start drawn on the true face can miss the stored face by its rounding. A slab short of the body by no more
+    // than that lies in it; otherwise the join leaves a gap that storage closes into crossing faces.
+    let short = OVERLAP_MM * (whole - inside.volume()) / whole;
+    let top = inside
+        .positions
+        .iter()
+        .map(|&p| vec3::dot(f.w, vec3::sub(p, f.origin)))
+        .fold(f64::NEG_INFINITY, f64::max);
+    let rounding = stored_rounding(placed, f);
+    if short <= rounding && top >= -rounding {
+        return Ok(tool);
+    }
     let above = span(0.0, b)?;
     if inside.triangles.is_empty() {
         return Ok(above);
     }
     Ok(boolean::boolean(&[above], &[inside], BoolOp::Union, &opts)?.0)
+}
+
+/// How far f32 storage can move the body's face under the frame `f` along its normal: half an f32 spacing at each of
+/// the face's stored coordinates, in the frame of the part it is stored as (`placed` takes that frame to the world).
+/// Parts are kept as f32, and rounding moves a coordinate by at most half the spacing there.
+fn stored_rounding(placed: &Mat4, f: &Frame) -> f64 {
+    let Some(back) = xform::invert(placed) else {
+        return 0.0;
+    };
+    let q = xform::apply(&back, f.origin);
+    let n = vec3::normalize(xform::apply_dir(&back, f.w)).unwrap_or(f.w);
+    (0..3).map(|i| n[i].abs() * half_f32_spacing(q[i])).sum()
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the f32 a stored coordinate is kept as"
+)]
+fn half_f32_spacing(v: f64) -> f64 {
+    let f = (v.abs() as f32).max(f32::MIN_POSITIVE);
+    (f64::from(f32::from_bits(f.to_bits() + 1)) - f64::from(f)) / 2.0
 }
 
 /// True when the end cap of `tool` at height `h` above the face frame `f` lies on a face of `target`: some
