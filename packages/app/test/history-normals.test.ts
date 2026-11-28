@@ -51,7 +51,15 @@ describe('reading a tessellation', () => {
     const t = tessellated(today)
     expect(t.normals).toBeUndefined()
     expect('normals' in t).toBe(false)
-    expect(t).toEqual({ positions, indices, faces: { ids: [0, 0], table: [plane], keys: [77] } })
+    expect(t.positions).toBeInstanceOf(Float32Array)
+    expect({ ...t, positions: Array.from(t.positions) }).toEqual({ positions, indices, faces: { ids: [0, 0], table: [plane], keys: [77] } })
+  })
+
+  it('stores the points in f32, as an answer in buffers has them', () => {
+    // the kernel's points on a flat face at z 12, a few 1e-15 mm off it in f64, as an answer in lists gives them
+    const t = tessellated({ positions: [0, 0, 12.000000000000002, 60, 0, 11.999999999999995, 0, 60, 12], indices: [0, 1, 2] })
+    expect(t.positions).toBeInstanceOf(Float32Array)
+    expect(Array.from(t.positions)).toEqual([0, 0, 12, 60, 0, 12, 0, 60, 12])
   })
 
   it('gives a triangle on no face a face of its own, in both forms', () => {

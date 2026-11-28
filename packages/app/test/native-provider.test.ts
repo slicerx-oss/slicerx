@@ -20,6 +20,8 @@ import { designToolset } from '@slicerx/mcp/toolset'
 import { appDesignHost } from '../src/cad/design-host'
 import { forgetWaiting } from '../src/cad/waiting'
 import { get, set } from '../src/state/store'
+import { geomEngine } from '../../mcp/src/geom'
+import { f32Only, FLUSH_JOINS } from './flush-joins'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -565,6 +567,8 @@ describe("native provider: a design tool's answer", () => {
 
 const serveBin = process.env['SLICERX_GEOM_SERVE_BIN']
 const serveArgs = JSON.parse(process.env['SLICERX_GEOM_SERVE_ARGS'] ?? '[]') as string[]
+// sx-geom with the exact kernel, run once per call (cad-exact-native.test.ts)
+const onceBin = process.env['SLICERX_SX_GEOM_BIN']
 const HELLO = Buffer.from('SXGEOM1\n')
 
 /**
@@ -730,6 +734,34 @@ describe.skipIf(!serveBin)('native provider on the real engine', () => {
         expect(Array.from(part.positions)).toEqual(Array.from(wasm.parts[i]!.positions))
       }
     } finally {
+      await engine.end()
+    }
+  }, 120_000)
+
+  it.skipIf(process.env['SX_NATIVE_KERNEL'] !== '1' || !onceBin)('joins flush onto an exact top as the engine run once per call does, and hands no mesh step an f64 point', async () => {
+    vi.stubEnv('SX_BREP_DEV', '1')
+    const engine = processEngine()
+    const p = nativeProvider(engine)
+    const viaApp: EngineCall = (op, r) => p.call(op, r)
+    const viaOnce = geomEngine(onceBin!, 60_000) as EngineCall
+    try {
+      for (const d of FLUSH_JOINS) {
+        clearReplayCache()
+        const app = await replayHistory(f32Only(viaApp, 'app'), { history: d.history, exact: true }, { keepsBodies: true })
+        clearReplayCache()
+        const cli = await replayHistory(f32Only(viaOnce, 'once per call'), { history: d.history, exact: true })
+        expect(app.status.map((x) => x.state), `${d.name}: ${JSON.stringify(app.status)}`).toEqual(['done', 'done'])
+        expect(cli.status, d.name).toEqual(app.status)
+        // the replay the app runs itself gives the same part
+        clearReplayCache()
+        const own = await p.call<Replayed>('history.replay', { history: d.history, exact: true })
+        for (const r of [cli, own] as unknown as Replayed[]) {
+          expect(Array.from(r.parts[0]!.indices), d.name).toEqual(Array.from(app.parts[0]!.indices))
+          expect(Array.from(r.parts[0]!.positions), d.name).toEqual(Array.from(app.parts[0]!.positions))
+        }
+      }
+    } finally {
+      vi.unstubAllEnvs()
       await engine.end()
     }
   }, 120_000)
