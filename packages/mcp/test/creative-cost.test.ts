@@ -7,11 +7,15 @@ import type { LlmHttpRequest, LlmTransport } from '@slicerx/contracts'
 import { createScriptedClient, createTransportClient, MIMIR_CLOUD_MAX_TOOLS, type LlmClient } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { MAX_LOADED_TOOLS, shape } from '../../../supabase/functions/mimir/shape'
-import { callUsd, costClient, costTable, recordedUsage, sessionCost, type CallCost } from '../evals/creative/cost'
+import { callUsd, costClient, costTable, recordedUsage, requestPricing, sessionCost, type CallCost } from '../evals/creative/cost'
 import { budgetedClient, createBudget, HAIKU_5_5, SONNET_5_5 } from '../evals/creative/live'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { parseRecording } from '../evals/creative/recordings'
+import { capturedModels, recordEvent, type RecordedStep } from '../evals/creative/replay-divergence'
 import { runPrompt } from '../evals/creative/run'
+
+const HAIKU_5_5_ID = 'claude-haiku-5-5'
+const SONNET_5_5_ID = 'claude-sonnet-5-5'
 
 const P = CREATIVE_PROMPTS.find((x) => x.id === 'cable-organizer')!
 const SHEET = { name: 'pilot.sheet', args: { title: 'Size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }
@@ -61,6 +65,44 @@ describe('a live creative run on mimir cloud', () => {
     expect(rec.status === 'recorded' && recordedUsage(rec.steps)).toEqual({ requests: 1, input: 900, output: 50, cacheRead: 600, cacheWrite: 200 })
     expect(() => parseRecording(JSON.stringify({ status: 'recorded', model: 'm', provider: 'anthropic', capturedAt: 'now', steps: [{ text: 'x', usage: { input: 'a' } }] }))).toThrow(/usage/)
   }, 30_000)
+
+  it('keeps the model behind each reply when mimir cloud moves a session to another, and the meter prices each at its own', async () => {
+    // mimir cloud names the model of each reply (x-sx-model); this one answers the first request on Haiku and the next on Sonnet
+    let n = 0
+    const cloud: LlmClient = {
+      provider: 'anthropic',
+      async *stream() {
+        n++
+        yield { type: 'model', model: n === 1 ? HAIKU_5_5_ID : SONNET_5_5_ID }
+        if (n === 1) yield { type: 'tool_call', call: { id: 'c1', name: SHEET.name, arguments: JSON.stringify(SHEET.args) } }
+        else yield { type: 'text', delta: 'Done.' }
+        yield { type: 'usage', inputTokens: 900, outputTokens: 50 }
+        yield { type: 'done', stop: n === 1 ? 'tool_calls' : 'end' }
+      },
+    }
+    const run = await runPrompt(P, { geom: undefined, client: cloud, timeoutMs: 20_000 })
+    const saved = capturedModels(run.steps, HAIKU_5_5_ID)
+    expect(saved.requestModels?.slice(0, 2)).toEqual([HAIKU_5_5_ID, SONNET_5_5_ID])
+    expect(saved.requestModels).toHaveLength(run.steps.length)
+    expect(saved.model).toBe(`${HAIKU_5_5_ID}+${SONNET_5_5_ID}`)
+    // the model moves to the recording's list; no step keeps it
+    expect(saved.steps.some((s) => 'model' in s)).toBe(false)
+    const rec = parseRecording(JSON.stringify({ status: 'recorded', model: saved.model, requestModels: saved.requestModels, provider: 'anthropic', capturedAt: 'now', steps: saved.steps }))
+    expect(rec.status === 'recorded' && rec.requestModels).toEqual(saved.requestModels)
+    const priced = requestPricing({ model: saved.model, requestModels: saved.requestModels! }, saved.steps.length)
+    expect(priced).toEqual({ models: saved.requestModels })
+  }, 30_000)
+
+  it('keeps only the label when a reply did not name its model, and a replay keeps no model', () => {
+    const steps = [{ text: 'a', model: HAIKU_5_5_ID }, { text: 'b' }]
+    expect(capturedModels(steps, 'label')).toEqual({ steps: [{ text: 'a' }, { text: 'b' }], model: 'label' })
+    expect(capturedModels([], 'label')).toEqual({ steps: [], model: 'label' })
+    const step: RecordedStep = {}
+    recordEvent(step, { type: 'model', model: HAIKU_5_5_ID })
+    expect(step.model).toBeUndefined()
+    recordEvent(step, { type: 'model', model: HAIKU_5_5_ID }, true)
+    expect(step.model).toBe(HAIKU_5_5_ID)
+  })
 })
 
 describe('a replay counted as mimir cloud would bill it', () => {

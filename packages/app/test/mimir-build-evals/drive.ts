@@ -87,6 +87,8 @@ export interface EvalStep extends ScriptStepData {
   seen?: string[]
   /** What the provider said the request cost, kept by a live capture (creative replay-divergence.ts StepUsage). */
   usage?: StepUsage
+  /** The model that answered, kept by a live capture until it is saved (replay-divergence.ts capturedModels). */
+  model?: string
 }
 
 /**
