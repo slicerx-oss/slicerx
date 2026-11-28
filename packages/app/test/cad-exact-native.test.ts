@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, expect, it, vi } from 'vitest'
-import { clearReplayCache } from '@slicerx/cad-history'
+import { clearReplayCache, replayHistory, type EngineCall } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { geomEngine } from '../../mcp/src/geom'
+import { servedGeomEngine } from '../../mcp/src/geom-served'
 import { applyExtrude, BED_FRAME } from '../src/cad/cad-ops'
 import { setGeomProvider } from '../src/geom/client'
 import { get, set } from '../src/state/store'
@@ -13,6 +14,7 @@ import { cutSelected } from '../src/plate/geom-ops'
 import { applyHole, applyShell } from '../src/cad/holes'
 import { bounds } from '../src/plate/transform'
 import { binBuilt } from './binaries'
+import { f32Only, FLUSH_JOINS } from './flush-joins'
 
 const bin = process.env['SLICERX_SX_GEOM_BIN']
 const exact = binBuilt(bin, 'build sx-geom with the exact kernel (cargo build -p sx-geom --features brep) and name it in SLICERX_SX_GEOM_BIN')
@@ -69,3 +71,24 @@ it.skipIf(!exact)('creates and cuts a native exact body through the ordinary ext
   expect(calls).not.toContain('cut')
   expect(calls).not.toContain('shell')
 }, 40000)
+
+// --- an exact part's triangles reach a mesh step in f32, on every host
+
+it.skipIf(!exact)('joins flush onto an exact top with the same result through the engine run once per call and served, and hands no mesh step an f64 point', async () => {
+  vi.stubEnv('SX_BREP_DEV', '1')
+  const once = geomEngine(bin!, 60000) as EngineCall
+  const served = servedGeomEngine(bin!, { perCall: once })
+  expect(await served.keepsBodies()).toBe(true)
+  for (const d of FLUSH_JOINS) {
+    const runs = []
+    for (const [host, call, keepsBodies] of [['once per call', once, false], ['served', served, true]] as const) {
+      clearReplayCache()
+      const r = await replayHistory(f32Only(call, host), { history: d.history, exact: true }, keepsBodies ? { keepsBodies: true } : {})
+      expect(r.status.map((x) => x.state), `${d.name}, ${host}: ${JSON.stringify(r.status)}`).toEqual(['done', 'done'])
+      runs.push(r.parts[0]!)
+    }
+    const [a, b] = runs
+    expect(Array.from(b!.indices), d.name).toEqual(Array.from(a!.indices))
+    expect(Array.from(b!.positions), d.name).toEqual(Array.from(a!.positions))
+  }
+}, 120000)

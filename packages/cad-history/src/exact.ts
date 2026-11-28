@@ -487,7 +487,11 @@ export function tessellated(t: Tessellated): Pick<ExactPart, 'positions' | 'indi
   const triangles = Math.floor(t.indices.length / 3)
   // packed normals count only when every triangle corner has its pair
   const normals = t.normals && t.normals.length === triangles * 6 ? (t.normals instanceof Int16Array ? t.normals : Int16Array.from(t.normals)) : undefined
-  const mesh = { positions: t.positions, indices: t.indices, ...(normals ? { normals } : {}) }
+  // positions as every host stores them, in f32: an answer in lists (sx-geom run once per call) carries the kernel's
+  // f64 points, whose flat faces sit up to a few 1e-14 mm off their plane, and a later mesh join on such a face leaves
+  // slivers that cross once stored
+  const positions = t.positions instanceof Float32Array ? t.positions : Float32Array.from(t.positions)
+  const mesh = { positions, indices: t.indices, ...(normals ? { normals } : {}) }
   const given = t.faces
   const from = t.faceIds
   if (!given || !from || from.length !== triangles) return mesh
