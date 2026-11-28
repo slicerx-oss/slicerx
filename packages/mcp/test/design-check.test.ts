@@ -609,6 +609,37 @@ async function checkOn(all: HostDesign[], setup: (plans: ReturnType<typeof creat
   return { r, out: r.output as { design: string; designName: string; chosen: string; nozzleMm: number; pass: boolean }, plans }
 }
 
+// a step that built nothing as the design is now (broken, or skipped after a broken one) builds no planned feature: a
+// follow-up that breaks the uprights a lamp's base held fails its check by name, not passes on the step's tag
+describe('design.check counts only the steps that built', () => {
+  const lamp: PartPlan = { planId: 'lamp-1', part: 'Lamp', units: 'mm', features: ['Base', 'Posts', 'Shade'].map((name) => ({ name, sizes: {} })), overall: { x: 40, y: 20, z: 5 }, assumptions: [], questions: [] }
+  const tags = ['Base', 'Posts', 'Shade']
+  const body: BodyFacts = { size: { x: 40, y: 20, z: 5 }, holes: [], features: 3, steps: ['Pull 5 mm', 'Pull 30 mm', 'Pull 2 mm'], tags, stepIds: ['s1', 's2', 's3'], watertight: true, minWallMm: 4 }
+  const count = (r: ReturnType<typeof designCheck>) => r.items.find((i) => i.name === 'feature count')!
+
+  it('fails a feature whose only step is broken, and one skipped after it, naming each step', () => {
+    const r = designCheck(lamp, { ...body, unbuilt: [{ at: 1, state: 'broken' }, { at: 2, state: 'skipped' }] }, 0.4)
+    expect(count(r)).toMatchObject({ pass: false, got: '3 steps; Posts is not built: its step "s2" (Pull 30 mm) is broken; Shade is not built: its step "s3" (Pull 2 mm) did not run, after a broken step' })
+    expect(designCheck(lamp, body, 0.4).pass).toBe(true)
+  })
+
+  it('passes a feature that another step built, and names a feature with no step as before', () => {
+    const twice: BodyFacts = { ...body, features: 4, steps: [...body.steps!, 'Pull 31 mm'], tags: [...tags, 'Posts'], stepIds: ['s1', 's2', 's3', 's4'], unbuilt: [{ at: 1, state: 'broken' }] }
+    expect(count(designCheck(lamp, twice, 0.4))).toMatchObject({ pass: true })
+    const r = designCheck({ ...lamp, features: [...lamp.features, { name: 'Switch', sizes: {} }] }, { ...twice, unbuilt: [{ at: 1, state: 'broken' }, { at: 3, state: 'broken' }] }, 0.4)
+    expect(count(r).got).toMatch(/^4 steps, none tagged for Switch; Posts is not built: its step "s2" \(Pull 30 mm\) is broken$/)
+  })
+
+  it('reads which steps built from the design, through the tool', async () => {
+    const d = boxDesign('d1', 'Lamp')
+    const step = (id: string, feature: string): Step => ({ id, part: 0, transform: IDENTITY, params: { op: 'repair' }, feature }) as unknown as Step
+    const lit = { ...d, history: { version: 1, base: [], steps: [step('s1', 'Base'), step('s2', 'Posts'), step('s3', 'Shade')] }, status: [{ state: 'done' }, { state: 'broken', message: 'the shape stops 3.2 mm short of the part' }, { state: 'skipped' }] } as unknown as HostDesign
+    const { r, out } = await checkOn([lit], (p) => p.put(lamp), { planId: 'lamp-1' })
+    expect(out.pass).toBe(false)
+    expect(r.summary).toMatch(/Posts is not built: its step "s2" \(Repair\) is broken; Shade is not built: its step "s3" \(Repair\) did not run, after a broken step/)
+  })
+})
+
 describe('design.check picks the design it checks', () => {
   const a = boxDesign('d1', 'Bracket')
   const b = boxDesign('d2', 'Clip')

@@ -9,7 +9,7 @@
 // the runtime.
 import { nameKey, single } from '@slicerx/contracts/feature-name'
 import type { LlmMessage, LlmToolCall } from './provider/types'
-import { asksToRemove } from './turn-keeps'
+import { askedToRemove, asksToRemove } from './turn-keeps'
 
 /** The code on the chat's notice that mimir went on with the plan; a notice, never a failure (`waiting` is set). */
 export const PLAN_LEFT_CODE = 'plan_left'
@@ -225,7 +225,7 @@ const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((f)
  * design given when the run's calls name none. A feature built and tagged in an earlier run then counts as built.
  */
 export function planLeft(messages: readonly LlmMessage[], from = 0, now?: DesignNow): PlanLeft | null {
-  from = carriedPlanFrom(messages, from) ?? from
+  from = carriedPlanFrom(messages, from) ?? followedPlanFrom(messages, from) ?? from
   const calls = new Map<string, LlmToolCall>()
   let plan: { planId: string; part: string; features: string[]; amended: boolean } | undefined
   let design: string | undefined
@@ -382,6 +382,41 @@ export function carriedPlanFrom(messages: readonly LlmMessage[], runStart: numbe
   return last.at
 }
 
+/** Calls that look at a design or save it without changing it, beside READS. */
+const LOOKS: ReadonlySet<string> = new Set(['design.look', 'design.render', 'design.get_plan', 'design.lookup_sizes', 'design.save', 'geom.render', 'geom.paint_regions', 'geom.face_pick', 'geom.sketch_check', 'geom.layers_plan'])
+
+/**
+ * Where to read an approved plan from for a follow-up on its design: the message that called design.plan in an earlier
+ * run of the chat, when that call was the chat's last design.plan before this run and the person approved it with Go,
+ * and this run changes the design its part was built in (the first design a design or modeling call named after it).
+ * Undefined otherwise, as for a run that shows a plan of its own, works only on another design, or only reads.
+ */
+export function followedPlanFrom(messages: readonly LlmMessage[], runStart: number): number | undefined {
+  const calls = new Map<string, { call: LlmToolCall; at: number }>()
+  let last: { at: number; approved: boolean } | undefined
+  let design: string | undefined
+  let changed = false
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!
+    if (m.role === 'assistant') for (const c of m.toolCalls ?? []) calls.set(c.id, { call: c, at: i })
+    if (m.role !== 'tool') continue
+    const c = calls.get(m.callId)
+    if (!c) continue
+    const r = read(m.content)
+    if (c.call.name === 'design.plan') {
+      // a plan shown in this run is this run's own: planLeft reads it from the run's messages
+      if (c.at >= runStart) return undefined
+      last = { at: c.at, approved: r.ok && r.accepted === true && r.planId !== undefined }
+      design = undefined
+      continue
+    }
+    if (!last || !BUILDS.test(c.call.name) || !r.ok || !r.design) continue
+    design ??= r.design
+    if (i >= runStart && r.design === design && !READS.has(c.call.name) && !LOOKS.has(c.call.name)) changed = true
+  }
+  return last?.approved && changed ? last.at : undefined
+}
+
 /** Calls whose answer's lastStep is a step already there, not one they built: an undo, an edit, a move of the timeline marker. */
 const UNMAKES: ReadonlySet<string> = new Set(['design.undo', 'design.edit_step', 'design.roll'])
 
@@ -405,8 +440,10 @@ function asksAgain(words: string, feature: string): boolean {
 
 /**
  * The planned features mimir took away on purpose in design `design`, by name key (as nameKey compares them), read
- * from the whole chat: a step tagged with the feature that design.undo removed, or that design.edit_step turned off
- * (suppressed), with no step built for it since (nor that step turned back on). The design's history records both: an
+ * from the whole chat: a step tagged with the feature that design.undo removed in the request that made it, or in a
+ * later one that asks to remove it (an undo of earlier work for anything else is a rollback, its feature still to
+ * build), or that design.edit_step turned off (suppressed), with no step built for it since (nor that step turned
+ * back on). The design's history records both: an
  * undo's answer has fewer steps than the design had, so the steps it removed are the ones the results last named at
  * those places, and a suppressed step's row says so. Each is mimir's own call, made for the person's words ("take the
  * openings off") or to clear a check, so the note never sends mimir back to build the feature again. A message of the
@@ -426,10 +463,19 @@ export function takenAway(messages: readonly LlmMessage[], design: string): Set<
   const give = (s: { feature?: string } | undefined): void => {
     if (s?.feature) away.delete(nameKey(s.feature))
   }
+  // the person's requests so far, and their words in the latest, to tell an undo of an earlier request's work apart
+  let run = 0
+  let asked = ''
+  // the request each step was made in, by step id, from the call that made it
+  const madeIn = new Map<string, number>()
   for (const m of messages) {
     if (m.role === 'user') {
       const words = said(m.content)
-      if (words !== undefined) for (const [key, feature] of away) if (asksAgain(words, feature)) away.delete(key)
+      if (words !== undefined) {
+        run++
+        asked = words
+        for (const [key, feature] of away) if (asksAgain(words, feature)) away.delete(key)
+      }
       continue
     }
     if (m.role === 'assistant') for (const c of m.toolCalls ?? []) calls.set(c.id, c)
@@ -445,8 +491,9 @@ export function takenAway(messages: readonly LlmMessage[], design: string): Set<
       while (known.length < r.steps) known.push({ id: '' })
       if (r.last && r.last.index >= 1 && r.last.index <= r.steps) known[r.last.index - 1] = { id: r.last.id, ...(r.last.feature ? { feature: r.last.feature } : {}) }
     }
-    // an undo removes the steps past the design's new count
-    if (call.name === 'design.undo' && r.ok) for (const s of before.slice(known.length)) take(s)
+    // an undo removes the steps past the design's new count. One made for an earlier request is taken away only when
+    // the person asked to remove it; otherwise it is a rollback, and its feature is still to build
+    if (call.name === 'design.undo' && r.ok) for (const s of before.slice(known.length)) if (madeIn.get(s.id) === run || (s.feature && askedToRemove(asked, s.feature))) take(s)
     // a step turned off: by its row when the answer lists the steps, else by the call when it went through; turned
     // back on, it builds its feature again
     if (call.name === 'design.edit_step' && typeof args(call)['suppressed'] === 'boolean') {
@@ -455,7 +502,11 @@ export function takenAway(messages: readonly LlmMessage[], design: string): Set<
       else if (s?.off || (r.ok && !r.rows)) take(s)
     }
     // a step built again for the feature (or put back with design.redo) builds it again
-    if (r.ok && !READS.has(call.name) && !UNMAKES.has(call.name)) give(r.last)
+    if (r.ok && !READS.has(call.name) && !UNMAKES.has(call.name)) {
+      give(r.last)
+      // the steps this call made: new in its answer
+      for (const x of known) if (x.id && !madeIn.has(x.id) && !before.some((y) => y.id === x.id)) madeIn.set(x.id, run)
+    }
   }
   return new Set(away.keys())
 }

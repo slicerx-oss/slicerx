@@ -950,6 +950,54 @@ describe('a plan with features taken away on purpose', () => {
     expect(notices(two!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Handle.' })])
   })
 
+  // a follow-up that rolls back a feature an earlier request built, to make it again changed, has to make it again
+  describe('rolled back for a change', () => {
+    it('a feature built for an earlier request and undone for a change is still to build', async () => {
+      const client = createScriptedClient([...BUILT, amend('lean the posts back a little', []), undo, { text: 'I took the posts off to lean them.' }, { text: 'Done.' }], { chunk: false })
+      const [, two] = await chat(client, ['Make a stand', 'lean the posts back a little'], { tools: tools() })
+      const sent = notes(client.requests.at(-1)!.messages)
+      expect(sent).toHaveLength(1)
+      expect(sent[0]).toContain('Still to build: Posts.')
+      expect(notices(two!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Posts.' })])
+    })
+
+    it('gets no note once it is built again', async () => {
+      const client = createScriptedClient([...BUILT, amend('lean the posts back a little', []), undo, join('Posts'), { text: 'The posts lean back now.' }, { text: 'Spare reply.' }], { chunk: false })
+      await chat(client, ['Make a stand', 'lean the posts back a little'], { tools: tools() })
+      expect(client.requests.flatMap((r) => notes(r.messages))).toEqual([])
+      expect(client.remaining()).toBe(1)
+    })
+
+    it('is still to build when the follow-up changes the design without amending the plan', async () => {
+      const client = createScriptedClient([...BUILT, undo, { text: 'I took the posts off to lean them.' }, { text: 'Done.' }], { chunk: false })
+      const [, two] = await chat(client, ['Make a stand', 'lean the posts back a little'], { tools: tools() })
+      expect(notes(client.requests.at(-1)!.messages)).toEqual([expect.stringContaining('Still to build: Posts.')])
+      expect(notices(two!)).toEqual([expect.objectContaining({ message: 'mimir went on to the parts the plan still needs: Posts.' })])
+    })
+
+    it('gets no note on a follow-up that changes a step in place, or only looks', async () => {
+      const edit = { calls: [call('design.edit_step', { design: 'd1', step: 2, value: 30 })] }
+      const client = createScriptedClient([...BUILT, edit, { text: 'The posts are taller.' }, { calls: [call('design.steps', { design: 'd1' })] }, { text: 'It has two steps.' }, { text: 'Spare reply.' }], { chunk: false })
+      await chat(client, ['Make a stand', 'make the posts taller', 'what does it have?'], { tools: tools() })
+      expect(client.requests.flatMap((r) => notes(r.messages))).toEqual([])
+      expect(client.remaining()).toBe(1)
+    })
+
+    it('gets no note on a follow-up that builds another design', async () => {
+      const client = createScriptedClient([...BUILT, { calls: [call('design.new', { name: 'Lid' })] }, { calls: [call('geom.extrude', { design: 'd2', operation: 'new', name: 'Lid' })] }, { text: 'The lid is its own part.' }, { text: 'Spare reply.' }], { chunk: false })
+      await chat(client, ['Make a stand', 'make a lid as its own part'], { tools: tools() })
+      expect(client.requests.flatMap((r) => notes(r.messages))).toEqual([])
+      expect(client.remaining()).toBe(1)
+    })
+
+    it('gets no note when the person asked to remove it', async () => {
+      const client = createScriptedClient([...BUILT, amend('remove the posts', []), undo, { text: 'The posts are off.' }, { text: 'Spare reply.' }], { chunk: false })
+      await chat(client, ['Make a stand', 'remove the posts'], { tools: tools() })
+      expect(client.requests.flatMap((r) => notes(r.messages))).toEqual([])
+      expect(client.remaining()).toBe(1)
+    })
+  })
+
   describe('then follows the person', () => {
     const TAKEN: ScriptStepData[] = [...BUILT, amend('add a cap', ['Cap']), join('Cap'), undo, check, { text: 'I took the cap off: it would not hold.' }]
 

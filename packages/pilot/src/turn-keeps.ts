@@ -49,14 +49,24 @@ export interface Lost {
 }
 
 /**
- * What the run lost, against the steps at its start; null when it kept everything. A feature built again while the
- * step that made it before still stands is not counted: a second piece of one planned feature (another tier, another
+ * What the run lost, against the steps at its start; null when it kept everything. Paint with no plan feature is
+ * counted step by step, so fewer live paint steps of one name than at the start is that paint lost. A feature built
+ * again while the step that made it before still stands is not counted: a second piece of one planned feature (another tier, another
  * row) is a normal change, and telling it from a copy left behind needs where each step's shape stands.
  */
 export function lostFeatures(start: readonly KeptRow[], end: readonly KeptRow[], request: string): Lost | null {
   const was = new Set(start.filter(live).map(keyOf))
   const now = new Set(end.filter(live).map(keyOf))
   const removed = [...was].filter((k) => !now.has(k) && !askedToRemove(request, k))
+  // paint with no plan feature is counted step by step: a rollback that drops one of several paint steps of one name
+  // (each picked point its own step) loses that paint, which no other step makes
+  const paints = (rows: readonly KeptRow[]): Map<string, number> => {
+    const n = new Map<string, number>()
+    for (const r of rows) if (live(r) && r.op === 'paint' && !r.feature?.trim()) n.set(r.name, (n.get(r.name) ?? 0) + 1)
+    return n
+  }
+  const after = paints(end)
+  for (const [k, c] of paints(start)) if (now.has(k) && (after.get(k) ?? 0) < c && !askedToRemove(request, k)) removed.push(k)
   return removed.length ? { removed } : null
 }
 

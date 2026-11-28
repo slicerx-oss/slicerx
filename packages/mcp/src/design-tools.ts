@@ -18,7 +18,7 @@ import { jointProblem, LID_ON_HINGE, LID_STATEMENT, planFloors, underFloors, und
 import { realMemoryNote, realSizeProblem, type RealEntry } from './plan-detail'
 import { meshStats } from './mesh'
 import { movedStep, sizedStep } from './step-reshape'
-import { carriedSteps, leanRow, tiltedStep, tiltInput, tiltProblem, type Leaning } from './step-tilt'
+import { leanEdit, leanRow, tiltInput, type Leaning } from './step-tilt'
 import { FORMS_MAX, partForms } from './part-form'
 import { bodyOf, sectionEdited, SHAPE_WORDS, stationRows } from './section-edit'
 import { withThinNote } from './section-width'
@@ -639,7 +639,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
       size: z.object({ axis: z.enum(['x', 'y', 'z']), mm: z.number().positive().max(10_000) }).optional().describe("What the step made set this long along one axis, from its low end: an extrude's height or outline, a revolve along or across its axis, a loft along its run or across its sections. Copies a pattern made of it follow"),
       move: z.tuple([z.number(), z.number(), z.number()]).optional().describe('Shift what the step made by [x, y, z] mm, such as [0, 0, 6] to lift a part standing on a top raised 6 mm. Copies a pattern made of it follow'),
-      tilt: tiltInput.optional().describe("Lean what an extrude, a loft or an added part made (a post, a pole, a column) about its foot, in place: the step keeps its sizes, the steps built on it (a cap, a top) lean with it, a pattern made of it leans with it, and a later size or move of the step keeps the lean. Refused, naming the step, when the lean would run it into another step's shape, lift it off what it stands on, or leave behind a cut, a band of paint or a rounded edge on its top"),
+      tilt: tiltInput.optional().describe("Lean what an extrude, a revolve, a sweep, a loft or an added part made (a post, a pole, a column) about its foot, in place: the step keeps its sizes, the steps built on it (a cap, a top) lean with it, a pattern made of it leans with it, and a later size or move of the step keeps the lean. Refused, naming the step, when the lean would run it into another step's shape, lift it off what it stands on, or leave behind a cut, a band of paint or a rounded edge on its top. Asked of a pattern or an array step, it leans the steps the pattern repeats or the step that made the part the array copies, and every copy leans about its own foot"),
       section: sectionInput.optional().describe("Reshape a loft (a car body, fuselage, bottle, vase) by its stations, as slicerx_design_steps lists them front to back; its shapeWords give the edit for what the person said. Parts standing on the body are re-seated on its new top, and the answer says what moved, what now hangs past an edge, and what now needs supports"),
     })
   // a local model edits steps without the section edit, the tilt and the follow-up's size and move, which stay with the cloud ones
@@ -664,7 +664,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.10.0',
+    version: '1.13.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -684,20 +684,17 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         next = { ...unbound, params: r.params }
         said.push(`${r3(r.was)} mm to ${r3(i.size.mm)} mm along ${i.size.axis}`)
       }
-      // the steps built on a leaning step lean with it, in the same replay
+      // the steps a lean turns (a pattern's or an array's own steps among them) and those built on them, in the same replay
       let carried: Leaning[] = []
+      let leaned = false
       if (i.tilt) {
         if (i.section) throw new ToolInputError('tilt: lean a step in an edit of its own, not with a section edit')
-        const r = tiltedStep(next, i.tilt)
+        const r = await leanEdit(designs, d, k, next, i.tilt)
         if (typeof r === 'string') throw new ToolInputError(r)
-        const c = await carriedSteps(designs, d, k, r.step)
-        if (typeof c === 'string') throw new ToolInputError(c)
-        const why = await tiltProblem(designs, d, [{ k, was: next, now: r.step }, ...c])
-        if (why) throw new ToolInputError(why)
-        next = r.step
-        carried = c
-        said.push(r.said)
-        if (c.length) said.push(`${c.length === 1 ? 'step' : 'steps'} ${c.map((x) => x.k + 1).join(', ')} built on it ${c.length === 1 ? 'leans' : 'lean'} with it`)
+        next = r.group.find((g) => g.k === k)?.now ?? next
+        carried = r.group.filter((g) => g.k !== k)
+        leaned = r.group.some((g) => !!g.now.tilt)
+        said.push(...r.said)
       }
       if (i.section) {
         if (s.params.op !== 'sketch.loft') throw new ToolInputError('section: only a loft is edited by its sections; change this step by size, move or value')
@@ -735,7 +732,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         const { feature: _f, ...rest } = next
         next = i.feature.trim() ? { ...rest, feature: i.feature.trim() } : rest
       }
-      next = withPlannedEdits(d, next, i.tilt && next.tilt ? 'tilt' : i.move?.some((v) => v !== 0) ? 'move' : null)
+      next = withPlannedEdits(d, next, leaned ? 'tilt' : i.move?.some((v) => v !== 0) ? 'move' : null)
       const { broken: _b, ...clean } = next
       // the part's span along the axis a size or move works on, before the change, for the paint on it to follow
       const axisOf = i.size ? ({ x: 0, y: 1, z: 2 } as const)[i.size.axis] : 2
@@ -977,11 +974,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.29.0',
+    version: '1.30.0',
     source: 'command',
     permission: 'read',
     description:
-      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest; a display or fine plan passes within 1 mm or 5 percent, with a warning past the tighter one and no plan change needed), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), for a display or fine plan, that no curved body built by a loft is one outline stretched one way (sections that only grow or shrink in width while their top and bottom stay put), that its thinnest wall is at least twice the nozzle away from sharp edges and points (a thinner reading within two nozzle widths of a sharp outward edge or a point, the taper of a rim or a nose, passes with a warning that says where; a passed item can carry a warning, and the summary lists them) and, when the plan has a hook with a lip, that the hook's tip rises at least 3 mm above its lowest point toward its end and, when the plan sets a floor (a floor or bottom thickness in a plan with a wall, or a cut or shell down into the part at least half as deep as it is tall but less; a cut with its own height, such as window slits in a side, sets none), that the part is closed at the bottom: no opening through its lowest face but holes up to the plan's widest, each opening named by where it runs. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material; gap sizes in the plan too), and is checked only after slicerx_geom_fit_check has run on the design as it is now, over the planned pieces; until then the check is refused and uses no check. A plan the person made in the mimir tab whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer, approved or declined. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. After a change the person asked for, a check that fails only on items that failed before the change lists them in failedBefore; the change did not cause them. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over. A plan changed with amends is checked at its new sizes, and the result gives its revision; the change keeps the plan's fix round.",
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest; a display or fine plan passes within 1 mm or 5 percent, with a warning past the tighter one and no plan change needed), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (a broken or skipped step builds none) (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), for a display or fine plan, that no curved body built by a loft is one outline stretched one way (sections that only grow or shrink in width while their top and bottom stay put), that its thinnest wall is at least twice the nozzle away from sharp edges and points (a thinner reading within two nozzle widths of a sharp outward edge or a point, the taper of a rim or a nose, passes with a warning that says where; a passed item can carry a warning, and the summary lists them) and, when the plan has a hook with a lip, that the hook's tip rises at least 3 mm above its lowest point toward its end and, when the plan sets a floor (a floor or bottom thickness in a plan with a wall, or a cut or shell down into the part at least half as deep as it is tall but less; a cut with its own height, such as window slits in a side, sets none), that the part is closed at the bottom: no opening through its lowest face but holes up to the plan's widest, each opening named by where it runs. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material; gap sizes in the plan too), and is checked only after slicerx_geom_fit_check has run on the design as it is now, over the planned pieces; until then the check is refused and uses no check. A plan the person made in the mimir tab whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer, approved or declined. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. After a change the person asked for, a check that fails only on items that failed before the change lists them in failedBefore; the change did not cause them. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over. A plan changed with amends is checked at its new sizes, and the result gives its revision; the change keeps the plan's fix round.",
     localDescription:
       'After a planned part\'s last feature, check it against its plan (planId): size, holes, a step or more tagged with each planned feature, closed body, thinnest wall, and a closed floor when the plan sets one. A plan with printInPlace also gets pieces and gaps (gap sizes in the plan too), only after geom.fit_check has run on the design as it is now. Fix failed items once and check again; on stop, stop building and tell the person what is off. Give design when asked. More: kb.search "design check".',
     input: z.object({
